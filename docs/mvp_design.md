@@ -18,15 +18,15 @@
 | F3 | 预览渲染 | 标题、列表、表格、代码块、引用、图片、任务列表、行内样式 |
 | F4 | 保存与恢复 | 自动保存，杀进程重进不丢内容 |
 | F5 | 三形态适配 | 单屏态 / 双屏态 / 三屏展开态各自布局正确，切换时当前笔记不丢 |
-| F6 | 导入笔记库 | 从 GitHub 仓库拉取现有笔记库到沙箱 vault，让库不是空的 |
+| F6 | GitHub 双向同步 | clone 现有笔记库到沙箱 vault，并能把手机上的改动 commit + push 回去 |
 
 ### 1.3 明确不做（v2 及以后）
 
 全文搜索、双链 `[[wikilink]]` 与反链面板、关系图谱、标签与每日笔记、模板、插件系统、PDF 与附件预览、多 vault 切换。
 
-Git **双向同步**（在手机上 commit + push 回 GitHub）暂不列入 MVP —— 只做单向拉取导入（F6）。理由是双向同步的真正难点不是 git 协议，而是冲突处理与合并策略，属于深水区，先把"能在手机上读和改"跑通。
+**例外**：Git 双向同步（F6）**已纳入 MVP**。原因很直接——手机端"随手记必须能回写"是硬需求，不能留到 v2。原本担心的冲突处理深水区已经绕开：手机上不做合并，冲突直接推 `xt2` 分支，丢给 PC 端解决（见 4.4）。
 
-理由同上：这些功能的共同前提是**全库索引**，而索引层本身是独立的工作量。先跑通"单文件闭环"，再谈"库级别智能"。
+其余功能不做的共同理由：它们的前提都是**全库索引**，而索引层本身是独立的工作量。先跑通"单文件闭环"，再谈"库级别智能"。
 
 ## 2. 形态与断点
 
@@ -130,26 +130,37 @@ preferencesDir/
 
 工程已生成 `EntryBackupAbility`（backup extension）与 `backup_config.json`，MVP 阶段即可配置备份 `vault/` 目录，走系统备份恢复通道。
 
-### 4.4 Vault 初始化：从 GitHub 拉取
+### 4.4 同步：GitHub 双向（isomorphic-git）
 
-沙箱目录在文件管理器里不可见，所以必须有一条"把已有笔记库搬进来"的通道，选定为 GitHub 仓库拉取。
+**决策**：在 Web 组件内运行 isomorphic-git（纯 JS 实现），支持 clone / pull / commit / push。手机端必须能回写，所以单向导入方案作废。库规模在数百篇量级，性能顾虑不成立。
 
-| 路径 | 做法 | 成本 | 能力 |
-| --- | --- | --- | --- |
-| i. zipball 拉取（**MVP 采用**） | `@ohos.net.http` 拉 `https://api.github.com/repos/{owner}/{repo}/zipball/{branch}`，`@ohos.zlib` 解压到 vault | 低 | 只读导入 |
-| ii. isomorphic-git（v2） | 在已有的 Web 组件内跑 isomorphic-git，clone / pull / commit / push | 中高 | 双向同步 |
-| iii. libgit2（后置） | Native C++ 编译 libgit2 + NAPI 封装 | 高 | 双向且性能最好 |
+不采用更轻的 Git Data API 的原因：既然要回写，完整 git 语义（本地历史、diff、分支）带来的收益超过那点额外成本，且冲突可以用"推分支"优雅解决。
 
-MVP 采用路径 i，实现要点：
+#### 架构要点
 
-1. **认证**：私有库需要 PAT（fine-grained token，Contents 只读即可）。token 禁止明文存 preferences，必须用**关键资产存储服务**（Asset Store Kit）加密保存。
-2. **目录剥离**：zipball 解压后顶层是 `{owner}-{repo}-{sha}/`，导入时需去掉这一层，内容直接铺到 `vault/`。
-3. **过滤**：跳过 `.git/`、`.obsidian/`、`.DS_Store`，只导入 `.md` 与被引用到的图片资源。
-4. **原子性**：先解压到 `vault_import_tmp/`，校验文件数 > 0 后再整体替换 `vault/`；失败则保留原库不动——和单文件写入同一原则，绝不"边下边写"。
-5. **增量**：导入前请求 `GET /repos/{o}/{r}/commits/{branch}` 取最新 sha，与本地记录比对，未变化就不重复下载。
-6. **网络与体验**：下载放进 TaskPool，提供进度条；失败可重试。
+1. **运行位置**：Web 组件内（或其中 Worker）。isomorphic-git 只做计算、不依赖 DOM，因此即使 M0.5 的编辑器 spike 失败、编辑端降级到 `TextArea`，这条链路依然可用。
+2. **文件系统桥接**（核心工作量）：isomorphic-git 接受自定义 `fs` 对象，需实现 `readFile / writeFile / readdir / mkdir / rmdir / stat / lstat / unlink / readlink`，内部转发到 ArkTS，由 `@ohos.file.fs` 操作沙箱 `vault/`。**单一数据源必须留在沙箱**，不要在 Web 侧另存 IndexedDB 副本。
+3. **网络**：isomorphic-git 用 fetch 走 HTTPS，GitHub 的 smart HTTP 端点支持 CORS，可直连。`module.json5` 需补 `ohos.permission.INTERNET`。
+4. **认证**：PAT（fine-grained，Contents 读写）存**关键资产存储服务**（Asset Store Kit），禁止明文落 preferences。
+5. **性能**：跨语言 fs 调用是主要开销。clone/pull 放 Worker，避免逐文件往返（尽量批量化）；首次 clone 给进度条。数百篇量级下首次 clone 数十秒可接受，后续增量很快。
 
-**取舍**：单向拉取 = 手机上改的笔记不会回到 GitHub。若手机定位是"读 + 轻量记录"，这可以接受；一旦要回写，必须升级到路径 ii，且要一并定下冲突策略（本地优先 / 生成冲突副本 / 阻塞提示）。
+#### 同步流程：读 main，写 main，冲突推分支
+
+1. pull（fetch + 判断本地与远端是否分叉）
+2. 无分叉 → 手机改动 commit 后直接 push 到 `main`
+3. 分叉但可自动合并（不同文件，或同文件不同区域）→ 自动 merge → push `main`
+4. **分叉且真冲突** → 把手机改动 commit 并 push 到 `xt2` 分支，本地 main 重置到远端最新；同时把手机版本另存到 `drafts/conflicts/`，UI 标注"这篇有未合并改动，已推送到 xt2 分支"
+5. PC 端 `git merge xt2` 解冲突并推回 main；手机下次 pull 拿到合并结果，清除冲突标记
+
+这样手机上**不需要任何合并 UI**，冲突永远不丢数据，解冲突交给 PC 端熟悉的 git 工具。
+
+> 注意：git 无法把"未解决的冲突状态"直接 push（冲突是本地索引状态，不是可推送对象）。推到独立分支是达成同一目的的标准做法，而且比带 conflict marker 的文件更干净——PC 端看到的是两次正常提交。
+
+#### 为什么不采用"生成冲突副本"
+
+生成冲突副本 = 远端版本另存为 `xxx (远端版本).md`，本地保留手机版本，两边都在本地，回 PC 再挑。问题在于：① 库里多出待清理文件；② 它只是"留在本地不推"，解决不了"把改动推上去"。既然要双向，推分支更彻底。
+
+`drafts/conflicts/` 保留手机版本仅用于"手机上还能看到自己写的内容"，不是冲突解决方案本身。
 
 ## 5. 架构与模块划分
 
@@ -195,7 +206,7 @@ entry/src/main/ets/
 | M1 | 文件树 + 打开 md | 真实目录下能浏览并打开笔记 |
 | M2 | 编辑器 + 自动保存 | 输入中文流畅，杀进程重进内容还在 |
 | M3 | 预览渲染 | 表格/代码块/图片等语法正确渲染 |
-| M3.5 | GitHub 导入 | 填仓库地址与 token，拉取解压后文件树能看到真实笔记 |
+| M3.5 | GitHub 双向同步 | clone 成功，手机改动能 push，冲突能正确推到 xt2 分支 |
 | M4 | 三形态适配收口 | 形态切换不丢笔记、不丢光标 |
 | M5 | 打磨 | 暗色模式、大文档性能、空状态 |
 
@@ -209,7 +220,9 @@ M0.5 的结论决定 M2 走方案 A 还是 B，属于前置关卡，不能跳过
 - 打开 100KB 的 Markdown 文件耗时 < 1s
 - 编辑后立即杀掉进程，重新进入内容不丢
 - 写入过程中强制关闭应用，笔记文件不损坏（原子写生效）
-- 从私有 GitHub 仓库导入 500 篇笔记成功，中途断网重试不产生半包数据
+- 从私有 GitHub 仓库 clone 笔记库成功，中途断网重试不产生半初始化的 `.git`
+- 手机上改一篇笔记后 push 成功，PC 端能拉到该提交
+- 人为制造冲突（PC 与手机改同一处）后，手机改动完整出现在 `xt2` 分支，本地不丢内容
 - 暗色模式下编辑区与预览区均正常
 
 ## 9. 待定与风险
@@ -222,6 +235,8 @@ M0.5 的结论决定 M2 走方案 A 还是 B，属于前置关卡，不能跳过
 | WebView 输入法 | 高风险 | 决定方案 A 是否成立，M0.5 必须验证 |
 | 首帧加载 | 中风险 | WebView 初始化耗时，考虑预加载或骨架屏 |
 | 大文档桥接 | 中风险 | 必须增量 patch，不能全文往返 |
-| zip 解压接口 | 待核对 | `@ohos.zlib` 解压 API 名称与流式能力需按当前版本确认 |
-| GitHub 拉取限流 | 中风险 | 未认证请求限流严格，私有库必须带 token；大库下载耗时要给进度 |
-| 单向导入的落差 | 已接受 | 手机改动不回写 GitHub，v2 再评估双向 |
+| 网络权限 | 待改 | `module.json5` 需补 `ohos.permission.INTERNET` |
+| Web 组件 CORS | 高风险 | isomorphic-git 用 fetch 直连 GitHub，需实测 HarmonyOS Web 组件是否放行；这是 M3.5 的前置验证项 |
+| fs 桥接性能 | 中风险 | 每次文件读写都跨 JS↔ArkTS，必须批量化并放 Worker，否则 clone 会慢到不可用 |
+| PAT 安全 | 中风险 | 必须走关键资产存储服务，禁止明文；权限最小化（Contents 读写） |
+| 冲突后本地视图 | 中风险 | 冲突推分支后 main 被重置，手机上看不到刚写的内容，需靠 `drafts/conflicts/` 与 UI 标注兜住体验 |
