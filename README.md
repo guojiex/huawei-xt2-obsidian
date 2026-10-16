@@ -1,0 +1,1 @@
+# huawei-xt2-obsidian
