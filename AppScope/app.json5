@@ -1,7 +1,7 @@
 {
   "app": {
     "bundleName": "com.jxg.huaweiobsidian",
-    "vendor": "example",
+    "vendor": "jxg",
     "versionCode": 1000000,
     "versionName": "1.0.0",
     "buildVersion": "1",
