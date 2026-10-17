@@ -140,22 +140,43 @@
   /* 左滑操作条：包裹层负责裁剪，node 左移露出右侧按钮 */
   .node-wrap { position: relative; overflow: hidden; }
   .node { transition: transform .16s ease; }
-  .node-wrap[data-kind="file"].swiped .node { transform: translateX(-138px); }
-  .node-wrap[data-kind="dir"].swiped .node { transform: translateX(-92px); }
+  .node.drag { transition: none; }
+  .node-wrap[data-kind="file"].swiped .node { transform: translateX(-132px); }
+  .node-wrap[data-kind="dir"].swiped .node { transform: translateX(-88px); }
   .swipe {
     position: absolute; top: 0; right: 0; height: 100%;
-    display: flex; align-items: stretch;
+    display: flex; align-items: stretch; justify-content: flex-end;
   }
   .sw-btn {
-    width: 46px; border: none; border-left: 1px solid var(--border);
+    width: 44px; flex: none; border: none; border-left: 1px solid var(--border);
     background: var(--panel); color: var(--text);
-    font-size: 11px; font-family: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
   }
+  .sw-btn svg { display: block; }
   .sw-btn:hover { filter: brightness(1.15); }
   .sw-btn.danger { background: #c0392b; color: #fff; border-left-color: rgba(0,0,0,.25); }
+  .sw-txt { display: none; margin-left: 6px; font-size: 11px; font-family: inherit; }
+  /* 滑到底（越过阈值）：整条变红并撑满，只留删除 —— 松手即删 */
+  .node-wrap.will-del .swipe { width: 100%; background: #c0392b; }
+  .node-wrap.will-del .sw-btn:not(.danger) { display: none; }
+  .node-wrap.will-del .sw-btn.danger { flex: 1; width: auto; border-left: none; gap: 0; }
+  .node-wrap.will-del .sw-txt { display: inline; }
   .sw-hint {
     flex: none; padding: 4px 10px 8px; font-size: 10.5px; color: var(--muted); text-align: right;
   }
+  /* 撤销条（滑到底删除后的 5 秒后悔药） */
+  .undo-bar {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px; z-index: 60;
+    padding: 9px 14px; border-radius: 10px; background: #2b2f3a; color: #fff;
+    font-size: 12px; box-shadow: 0 6px 22px rgba(0,0,0,.35); white-space: nowrap;
+  }
+  .undo-bar.hidden { display: none; }
+  .undo-bar button {
+    background: none; border: none; color: #7fb2ff; font-size: 12px;
+    font-family: inherit; cursor: pointer; padding: 0;
+  }
+  .undo-bar button.hidden { display: none; }
   .side-foot {
     flex: none; padding: 8px; border-top: 1px solid var(--border);
     display: flex; gap: 6px;
@@ -421,6 +442,7 @@
               <span style="opacity:.6">搜索 v2</span>
             </div>
             <div class="tree" id="tree"></div>
+            <div class="sw-hint">← 按住任意一行向左拖：拖一半出操作，滑到底直接删除</div>
             <div class="side-foot">
               <button id="gotoVaults">管理库</button>
               <button>新建</button>
@@ -534,6 +556,11 @@
   </div>
 </div>
 
+<div class="undo-bar hidden" id="undoBar">
+  <span id="undoTxt">已删除</span>
+  <button id="undoBtn">撤销</button>
+</div>
+
 <div class="notes">
   <h3>设计稿说明（这几条是决策，看效果时一起判断）</h3>
   <ul>
@@ -544,7 +571,11 @@
     <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
     <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
     <li><b>折痕位置目前按等分假设</b>：设计稿把双屏折痕放在 50%、三屏放在 1/3 与 2/3。真机上应该用系统折叠状态接口拿实际折痕区域再校准，不能写死百分比。</li>
-    <li><b>左滑出操作条，不是左滑就删</b>：向左拖（鼠标拖或触摸滑都一样）露出「重命名 / 移动 / 删除」，<b>删除必须再过一次确认弹窗</b> —— 因为删除有两种语义（本地库真删 / Git 库只删本地副本），一个手势直接删太危险。<b>文件夹不给删除按钮</b>，只给重命名与移动：误删一个目录就是整个子树没了。同一时刻只允许一行处于滑开状态，拖动超过阈值就不算点击（避免误打开文件）。</li>
+    <li><b>左滑是跟手的三档手感，不是三个摆设按钮</b>：向左拖（鼠标拖或触摸滑都一样）时行会跟着手指走 ——<br>
+      ① <b>拖一半松手</b> → 吸附露出图标操作条（重命名 / 移动 / 删除，都是 44px 图标，不挤文件名）；<br>
+      ② <b>一路滑到底</b> → 整条变红、只剩「🗑 松手删除」，松手<b>直接删除</b>，底部弹 5 秒「撤销」条兜底；<br>
+      ③ <b>文件夹没有第三档</b>：滑到底只会回弹并提示「文件夹不能直接删除」——误删一个目录就是整个子树没了。<br>
+      越过操作条后拖动带阻尼（越滑越沉），防止手一抖就删掉。同一时刻只允许一行滑开，拖动超过 6px 就不算点击（避免误打开文件）。</li>
     <li><b>目录树可展开 / 折叠</b>：点目录行（或左侧箭头）切换，<b>折叠只影响显示，不动文件</b>；正在编辑的文件即使被折叠也不会关闭。子文件缩进比父目录深一级，<code>▾</code> = 展开、<code>▸</code> = 折叠，文件夹图标开口 / 闭合同步变化。<b>展开状态按库分别记忆</b>（切库回来还是原来的样子）。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
@@ -837,8 +868,16 @@
     document.getElementById('treeCount').textContent = (v ? v.files : 0) + ' 篇';
   }
 
-  /* ---------- 左滑手势（鼠标拖动与触摸等效） ---------- */
+  /* ---------- 左滑手势（鼠标拖动与触摸等效） ----------
+     三档手感：
+       1) 轻扫          → 跟手拖出操作条，松手吸附
+       2) 停在半开       → 露出图标操作（重命名 / 移动 / 删除）
+       3) 一路滑到底     → 整条变红，「松手删除」→ 直接删除 + 5 秒撤销条
+     目录不给「滑到底删除」：误删目录 = 整个子树消失                       */
   var drag = null, moved = false;
+  var SW_W = { file: 132, dir: 88 };   // 操作条宽度（与 CSS 的 translateX 一致）
+  var DEL_EXTRA = 36;                   // 越过操作条再滑这么多 → 进入删除区
+  var DAMP = 0.5;                       // 越界后的阻尼，防止误触（同时让"滑到底"不至于要拖满一屏）
 
   function wrapOf(el) {
     while (el && el !== treeEl) {
@@ -850,39 +889,135 @@
 
   function closeSwipe(except) {
     var ws = treeEl.querySelectorAll('.node-wrap.swiped');
-    for (var i = 0; i < ws.length; i++) { if (ws[i] !== except) { ws[i].classList.remove('swiped'); } }
+    for (var i = 0; i < ws.length; i++) {
+      if (ws[i] !== except) {
+        ws[i].classList.remove('swiped', 'will-del');
+        var n = ws[i].querySelector('.node');
+        if (n) { n.style.transform = ''; n.classList.remove('drag'); }
+      }
+    }
   }
 
   function px(e) { return (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX; }
+  function nodeOf(wrap) { return wrap.querySelector('.node'); }
+  function widthOf(wrap) { return SW_W[wrap.getAttribute('data-kind')] || 132; }
 
-  treeEl.addEventListener('mousedown', function (e) {
-    var wrap = wrapOf(e.target);
-    drag = wrap ? { wrap: wrap, x: px(e), open: wrap.classList.contains('swiped') } : null;
-    moved = false;
-  });
-  treeEl.addEventListener('touchstart', function (e) {
-    var wrap = wrapOf(e.target);
-    drag = wrap ? { wrap: wrap, x: px(e), open: wrap.classList.contains('swiped') } : null;
-    moved = false;
-  }, { passive: true });
+  function applyOffset(wrap, raw) {
+    var w = widthOf(wrap);
+    /* 越过操作条后加阻尼，越界越难拖 */
+    var off = raw >= -w ? raw : -(w + (-raw - w) * DAMP);
+    off = Math.max(-(w + DEL_EXTRA + 30), Math.min(0, off));
+    var n = nodeOf(wrap);
+    n.classList.add('drag');
+    n.style.transform = 'translateX(' + off + 'px)';
+    wrap.classList.toggle('will-del', off <= -(w + DEL_EXTRA));
+    return off;
+  }
 
-  document.addEventListener('mousemove', function (e) {
+  function startDrag(e) {
+    var wrap = wrapOf(e.target);
+    if (!wrap) { drag = null; return; }
+    var w = widthOf(wrap);
+    drag = { wrap: wrap, x: px(e), base: wrap.classList.contains('swiped') ? -w : 0, off: 0, w: w };
+    moved = false;
+  }
+
+  function moveDrag(e) {
     if (!drag) { return; }
     var dx = px(e) - drag.x;
     if (Math.abs(dx) > 6) { moved = true; }
-    if (dx < -10) { closeSwipe(drag.wrap); drag.wrap.classList.add('swiped'); }
-    else if (dx > 10 && drag.open) { drag.wrap.classList.remove('swiped'); }
-  });
-  document.addEventListener('touchmove', function (e) {
-    if (!drag) { return; }
-    var dx = px(e) - drag.x;
-    if (Math.abs(dx) > 6) { moved = true; }
-    if (dx < -10) { closeSwipe(drag.wrap); drag.wrap.classList.add('swiped'); }
-    else if (dx > 10 && drag.open) { drag.wrap.classList.remove('swiped'); }
-  }, { passive: true });
+    if (!moved) { return; }
+    closeSwipe(drag.wrap);
+    drag.off = applyOffset(drag.wrap, drag.base + dx);
+  }
 
-  document.addEventListener('mouseup', function () { drag = null; });
-  document.addEventListener('touchend', function () { drag = null; });
+  function endDrag() {
+    if (!drag) { return; }
+    var wrap = drag.wrap, w = drag.w, off = drag.off;
+    var isFile = wrap.getAttribute('data-kind') === 'file';
+    nodeOf(wrap).classList.remove('drag');
+    nodeOf(wrap).style.transform = '';
+    if (!moved) { drag = null; return; }
+    if (off <= -(w + DEL_EXTRA) && isFile) {
+      /* 滑到底：直接删除，靠撤销条兜底（不再弹确认，否则手势就白做了） */
+      wrap.classList.remove('will-del');
+      deleteWithUndo(parseInt(wrap.getAttribute('data-idx'), 10));
+    } else if (off <= -(w + DEL_EXTRA)) {
+      /* 目录滑到底：不删，提示一句 */
+      wrap.classList.remove('will-del');
+      showToast('文件夹不能直接删除（会带走整个目录）', '', null);
+    } else if (off <= -w / 2) {
+      closeSwipe(wrap);
+      wrap.classList.add('swiped');
+    } else {
+      wrap.classList.remove('swiped');
+    }
+    drag = null;
+  }
+
+  treeEl.addEventListener('mousedown', startDrag);
+  treeEl.addEventListener('touchstart', startDrag, { passive: true });
+  document.addEventListener('mousemove', moveDrag);
+  document.addEventListener('touchmove', moveDrag, { passive: true });
+  document.addEventListener('mouseup', endDrag);
+  document.addEventListener('touchend', endDrag);
+
+  /* ---------- 撤销条（滑到底删除的后悔药） ---------- */
+  var toastTimer = null;
+
+  function showToast(msg, btnLabel, undoFn) {
+    var bar = document.getElementById('undoBar');
+    document.getElementById('undoTxt').textContent = msg;
+    var btn = document.getElementById('undoBtn');
+    if (undoFn) {
+      btn.classList.remove('hidden');
+      btn.textContent = btnLabel || '撤销';
+      btn.onclick = function () { hideToast(); undoFn(); };
+    } else {
+      btn.classList.add('hidden');
+    }
+    bar.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, 5000);
+  }
+
+  function hideToast() {
+    clearTimeout(toastTimer);
+    document.getElementById('undoBar').classList.add('hidden');
+  }
+
+  /* 删除一行文件 + 记住现场，供 5 秒内撤销 */
+  function deleteWithUndo(idx) {
+    var rows = TREES[currentVault] || [];
+    var row = rows[idx];
+    if (!row || row[0] !== 'file') { return; }
+    var id = row[4];
+    var snap = {
+      idx: idx, row: row, id: id,
+      name: FILES[id], content: CONTENT[id], meta: META[id],
+      wasCurrent: current === id
+    };
+    rows.splice(idx, 1);
+    delete FILES[id]; delete CONTENT[id]; delete META[id];
+    var v = vaultById(currentVault);
+    if (v && v.files > 0) { v.files--; }
+    if (current === id) {                      // 删的正好是正在编辑的那篇 → 顺延到下一篇
+      current = '';
+      for (var i = 0; i < rows.length; i++) { if (rows[i][0] === 'file') { current = rows[i][4]; break; } }
+      loadFile();
+    }
+    closeSwipe(null);
+    renderTree(); updateVaultUI(); renderVaultMenu(); renderVaultCards();
+    showToast('已删除「' + (snap.name || row[1]) + '」', '撤销', function () {
+      var rs = TREES[currentVault] || [];
+      rs.splice(Math.min(snap.idx, rs.length), 0, snap.row);
+      FILES[snap.id] = snap.name; CONTENT[snap.id] = snap.content; META[snap.id] = snap.meta;
+      var vv = vaultById(currentVault);
+      if (vv) { vv.files++; }
+      if (snap.wasCurrent) { current = snap.id; loadFile(); }
+      renderTree(); updateVaultUI(); renderVaultMenu(); renderVaultCards();
+    });
+  }
 
   function vaultById(id) {
     for (var i = 0; i < VAULTS.length; i++) { if (VAULTS[i].id === id) { return VAULTS[i]; } }
@@ -894,6 +1029,12 @@
   var ICON_DIR = '<svg' + IC + '><path d="M2 4.2A1.2 1.2 0 013.2 3h2.6L7.3 4.7h5.5A1.2 1.2 0 0114 5.9v6.9A1.2 1.2 0 0112.8 14H3.2A1.2 1.2 0 012 12.8V4.2z"/></svg>';
   var ICON_FILE = '<svg' + IC + '><path d="M4 2h5l3 3v9H4z"/></svg>';
 
+  /* 操作条图标（14px，比图标文字省一半宽度） */
+  var IA = ' width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
+  var ICON_RENAME = '<svg' + IA + '><path d="M11.2 2.7l2.1 2.1-7.5 7.5-2.9.7.7-2.9 7.6-7.4z"/></svg>';
+  var ICON_MOVE = '<svg' + IA + '><path d="M2.5 13.5V4.6A1.1 1.1 0 013.6 3.5h2.2L7.3 5h5.1a1.1 1.1 0 011.1 1.1v1.6"/><path d="M2.5 13.5h11"/><path d="M9.5 8.6h5.2M12.1 6.3l2.6 2.3-2.6 2.3"/></svg>';
+  var ICON_TRASH = '<svg' + IA + '><path d="M3.2 4.6h9.6M6.4 4.6V3.1h3.2v1.5M4.7 4.6l.6 8.3h5.4l.6-8.3"/></svg>';
+
   function nodeHtml(row, idx) {
     var kind = row[0], label = row[1], open = row[2], depth = row[3], id = row[4];
     var cls = 'node ' + (kind === 'dir' ? 'dir indent-' + depth : 'indent-' + (depth + 1));
@@ -902,12 +1043,13 @@
     var icon = kind === 'dir' ? (open ? ICON_DIR_OPEN : ICON_DIR) : ICON_FILE;
     var attrs = kind === 'dir'
       ? ' data-dir="' + idx + '" title="点击展开 / 折叠 · 左滑重命名或移动"'
-      : (id ? ' data-id="' + id + '" title="点击打开 · 左滑重命名 / 移动 / 删除"' : '');
+      : (id ? ' data-id="' + id + '" title="点击打开 · 左滑出操作 · 滑到底直接删除"' : '');
     var sub = (kind === 'file' && META[id]) ? '<span class="nsub">' + META[id] + '</span>' : '';
     /* 目录不给「删除」：误删一个目录 = 整个子树消失 */
-    var acts = '<button class="sw-btn" data-act="rename">重命名</button>'
-      + '<button class="sw-btn" data-act="move">移动</button>'
-      + (kind === 'dir' ? '' : '<button class="sw-btn danger" data-act="del">删除</button>');
+    var acts = '<button class="sw-btn" data-act="rename" title="重命名">' + ICON_RENAME + '</button>'
+      + '<button class="sw-btn" data-act="move" title="移动">' + ICON_MOVE + '</button>'
+      + (kind === 'dir' ? '' : '<button class="sw-btn danger" data-act="del" title="删除">'
+        + ICON_TRASH + '<span class="sw-txt">松手删除</span></button>');
     return '<div class="node-wrap" data-kind="' + kind + '" data-idx="' + idx + '">'
       + '<div class="' + cls + '"' + attrs + '>' + caret + icon
       + '<span class="nlabel">' + esc(label) + sub + '</span></div>'
