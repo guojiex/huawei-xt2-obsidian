@@ -155,7 +155,21 @@ preferencesDir/
 
 #### 已验证 / 待验证
 
-**已验证**（`web/gitbridge/test/node_smoke.mjs`：用 node 伪造 ArkTS 后端，把打包产物真跑一遍，成功 clone 真实 GitHub 仓库并 checkout 出文件）。过程中修掉三个真坑：
+#### 多托管平台
+
+桥接层走的是标准 git smart HTTP，与平台无关，换 URL 即可。已实测：
+
+| 平台 | 公开库 | 认证方式 | 备注 |
+| --- | --- | --- | --- |
+| GitHub | 支持 | `Bearer <PAT>` | 用户名留空 |
+| Gitee | 支持 | `Basic(用户名:私人令牌)` | **不支持 Bearer**；私有库必须填用户名 |
+| 自建 GitLab | 理论支持 | `Basic(用户名:令牌)` | 未实测 |
+
+> Gitee 的坑：对"仓库不存在"和"私有库未认证"**都返回 401**（不是 404），排查时容易误判。
+> SyncPage 已对 401/404/网络错误做了人话翻译。
+
+**已验证**（`web/gitbridge/test/node_smoke.mjs`：用 node 伪造 ArkTS 后端，把打包产物真跑一遍）。
+GitHub 与 Gitee 均已成功 clone 并 checkout 出文件。过程中修掉三个真坑：
 
 1. `channel` 与调用方**重复解了一次 base64**，导致 `atob(undefined)`。
 2. http 响应体**必须包成异步块迭代器**——直接给裸 `Uint8Array` 会被 `getIterator` 当成逐字节迭代（`Uint8Array` 自带 `Symbol.iterator`），表现为 `EmptyServerResponseError`。
