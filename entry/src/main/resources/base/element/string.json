@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "曜石笔记主模块"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "曜石笔记主入口"
     },
     {
       "name": "EntryAbility_label",
-      "value": "label"
+      "value": "曜石笔记"
     }
   ]
 }
