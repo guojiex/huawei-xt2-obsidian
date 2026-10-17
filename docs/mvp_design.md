@@ -138,11 +138,30 @@ preferencesDir/
 
 #### 架构要点
 
-1. **运行位置**：Web 组件内（或其中 Worker）。isomorphic-git 只做计算、不依赖 DOM，因此即使 M0.5 的编辑器 spike 失败、编辑端降级到 `TextArea`，这条链路依然可用。
-2. **文件系统桥接**（核心工作量）：isomorphic-git 接受自定义 `fs` 对象，需实现 `readFile / writeFile / readdir / mkdir / rmdir / stat / lstat / unlink / readlink`，内部转发到 ArkTS，由 `@ohos.file.fs` 操作沙箱 `vault/`。**单一数据源必须留在沙箱**，不要在 Web 侧另存 IndexedDB 副本。
-3. **网络**：isomorphic-git 用 fetch 走 HTTPS，GitHub 的 smart HTTP 端点支持 CORS，可直连。`module.json5` 需补 `ohos.permission.INTERNET`。
-4. **认证**：PAT（fine-grained，Contents 读写）存**关键资产存储服务**（Asset Store Kit），禁止明文落 preferences。
-5. **性能**：跨语言 fs 调用是主要开销。clone/pull 放 Worker，避免逐文件往返（尽量批量化）；首次 clone 给进度条。数百篇量级下首次 clone 数十秒可接受，后续增量很快。
+1. **运行位置**：Web 组件加载 `resources/rawfile/gitbridge/index.html`（单文件内联，含打包好的 isomorphic-git + 桥接层，268 KB）。isomorphic-git 只做计算、不依赖 DOM，因此即使 M0.5 的编辑器 spike 失败、编辑端降级到 `TextArea`，这条链路依然可用。
+2. **文件系统桥接**（核心工作量）：isomorphic-git 接受自定义 `fs` 对象，实现 `readFile / writeFile / readdir / mkdir / rmdir / stat / lstat / unlink / rename`，内部转发到 ArkTS，由 `@ohos.file.fs` 操作沙箱 `vault/`。**单一数据源必须留在沙箱**，不要在 Web 侧另存 IndexedDB 副本。
+3. **网络（结论已修正）**：~~isomorphic-git 用 fetch 直连 GitHub~~ —— 早期假设 GitHub 支持 CORS，实测不成立：`github.com` 的 git 服务端点（`info/refs`、`git-upload-pack`）**不返回 CORS 头**，WebView 内 fetch 会被同源策略拦掉。因此改为注入**自定义 http client**，把请求转发给 ArkTS 的 `@ohos.net.http`，天然不受 CORS 限制。`module.json5` 已补 `ohos.permission.INTERNET`。
+4. **认证**：PAT（fine-grained，Contents 读写）。**当前暂存在 preferences（不安全）**，正式版必须迁移到关键资产存储服务（Asset Store Kit），代码里已标 TODO。
+5. **性能**：跨语言 fs 调用是主要开销。JS 侧做写缓冲，达到阈值（128 个文件 / 4 MB）才批量提交，避免逐文件跨桥；首次 clone 给进度条。
+
+#### 桥接协议
+
+- 通道：JS→ArkTS 用 `javaScriptProxy` 注入的 `window.__arkts.postMessage(json)`；ArkTS→JS 用 `runJavaScript` 调 `window.__gitBridge.onResult(id, ok, payloadB64)`。
+- 所有路径与二进制内容一律 base64，规避中文路径、二进制报文在 JSON / 脚本传参时被破坏。
+- payload 统一是「JSON 文本再做一次 base64」，从而不含引号与换行，避免脚本注入与转义问题。
+- fs 操作路径一律是 vault 内相对路径，ArkTS 侧校验并拒绝 `..` 与绝对路径。
+- 工作区 md 文件走 `tmp + rename` 原子写；`.git` 内部文件不做原子写（git 自身有完整性保障，且对象文件极多，原子写开销大）。
+- `unlink` 做成幂等：isomorphic-git 结束时会删未必存在的 `.git/shallow`。
+
+#### 已验证 / 待验证
+
+**已验证**（`web/gitbridge/test/node_smoke.mjs`：用 node 伪造 ArkTS 后端，把打包产物真跑一遍，成功 clone 真实 GitHub 仓库并 checkout 出文件）。过程中修掉三个真坑：
+
+1. `channel` 与调用方**重复解了一次 base64**，导致 `atob(undefined)`。
+2. http 响应体**必须包成异步块迭代器**——直接给裸 `Uint8Array` 会被 `getIterator` 当成逐字节迭代（`Uint8Array` 自带 `Symbol.iterator`），表现为 `EmptyServerResponseError`。
+3. isomorphic-git 的 `StreamReader` **强依赖 `Buffer`**（源码注释 #1855），WebView 里没有这个全局，已注入 `buffer` polyfill。
+
+**待真机验证**：大 packfile 经 `runJavaScript` 回传的长度上限；Web 组件在 1×1 隐藏尺寸下 JS 是否正常执行。
 
 #### 同步流程：读 main，写 main，冲突推分支
 
