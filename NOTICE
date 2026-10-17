@@ -1,0 +1,28 @@
+曜石笔记 (huawei-xt2-obsidian)
+Copyright (c) 2026 Jiexin Guo
+
+本工程整体采用 MIT 许可，详见 LICENSE。
+
+--------------------------------------------------------------------------
+第三方组件声明
+--------------------------------------------------------------------------
+
+下面这些组件以源码形式被打进本工程的构建产物：
+  entry/src/main/resources/rawfile/gitbridge/index.html
+（由 web/gitbridge 用 esbuild 打包为单文件，内含下列库的代码）
+
+1) isomorphic-git
+   MIT License
+   Copyright 2017-2023 the 'isomorphic-git' authors
+   https://github.com/isomorphic-git/isomorphic-git
+
+2) buffer
+   The MIT License (MIT)
+   Copyright (c) Feross Aboukhadijeh, and other contributors.
+   https://github.com/feross/buffer
+
+上述两项的许可正文与 LICENSE 中的 MIT 条款一致：保留版权声明与许可声明即可，
+无其他附加条件。若后续以 HAR 形式发布 git 桥接库，本文件须随包一并分发。
+
+注：esbuild 亦是 MIT 许可，但仅作为构建期依赖使用，其代码不会进入分发产物，
+故不在此列。

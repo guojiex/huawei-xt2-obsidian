@@ -1,6 +1,7 @@
 {
   "modelVersion": "26.0.0",
-  "description": "Please describe the basic information.",
+  "description": "曜石笔记：为华为 XT2 三折叠打造的本地 Markdown 笔记应用",
+  "license": "MIT",
   "dependencies": {
   },
   "devDependencies": {
