@@ -26,5 +26,7 @@
 .DS_Store
 Thumbs.db
 
-# ===== AI 工作记忆（本地会话数据，不入库） =====
+# ===== 本地工具残留（不入库） =====
 /.workbuddy/
+# IDE 在项目根目录误建的嵌套空 git 仓库，会让 git add 失败（does not have a commit checked out）
+/.codegenie/

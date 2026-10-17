@@ -42,16 +42,56 @@ display.getCurrentFoldCreaseRegion(): display.Rect   // left/top/width/height，
 
 **这条对我们是个坏消息**：三折叠有**两条**铰链，但该接口签名返回的是**单个 Rect**，官方未记载三折叠下会返回哪一段（或是否合并）。
 
-因此**不能把"三栏边界压在折痕上"直接建立在它之上**。三条出路（按推荐顺序）：
+因此**不能把"三栏边界压在折痕上"直接建立在它之上**。
 
-1. **优先用 `FoldSplitContainer`（arkui-advanced，API 12+）** ✅
-   官方折叠分栏组件，**悬停态自动避让折痕区**，且支持展开态/悬停态/折叠态三态配置，**含三分栏**。
-   与我们的需求（三屏态 = 列表 + 编辑 + 预览）模型吻合 —— 用官方组件比自己算折痕稳。
-   代价：需引入 advanced 组件库；分栏比例由组件控制，"各占 1/3"的假设可能要服从它的规则。
-2. 自算折痕：用 `getCurrentFoldCreaseRegion()` + `foldAngleChange` 双角度推断两条铰链位置，**必须真机校准**。
-3. 折中：继续用等分（50% / 1/3）做布局，**折痕只用于标注和微调**，不参与决定栏宽。
+### A2-bis `FoldSplitContainer` 核实结论：**不适用本工程**（2026-10-17 查官方文档确认）
+
+曾把它列为首选方案（悬停态自动避让折痕 + 支持三分栏），查完官方参数表后**否决**。三条硬伤：
+
+**① 它的"三分栏"不是三列横排，是「侧列贯穿 + 另两栏上下堆叠」。**
+
+```
+FoldSplitContainer 三分栏实际结构：
+
++---------------------------+------------------+
+|        primary            |                  |
+|        （主区）            |      extra       |
++---------------------------+   （扩展区，      |
+|        secondary          |    上下贯穿）     |
+|        （次区）            |                  |
++---------------------------+------------------+
+        ↑ verticalSplitRatio     ↑ horizontalSplitRatio
+         控制 primary:secondary     控制 (primary+secondary) : extra
+         的【高度】比               的【宽度】比
+```
+
+横排的列只有 **2 个**（左半区上下两栏 + 右半区一个贯穿列）。
+我们要的是**三块物理屏横向排列 → 文件树 | 编辑器 | 预览 三列横排**，模型对不上。
+
+**② 分栏比例只能用预设枚举，且没有 1:1:1。**
+
+`PresetSplitRatio` 只有三个值：`LAYOUT_1V1`(1:1) / `LAYOUT_3V2`(3:2) / `LAYOUT_2V3`(2:3)。
+**不支持任意比例**，做不到各占 1/3。默认值：有 extra 时 `horizontalSplitRatio` 默认 `LAYOUT_3V2`，即右侧列只占 2/5。
+
+**③ 它是为双折叠的「悬停态」设计的。**
+核心卖点是悬停态自动避让折痕；三折叠的三屏态（G 态）不在它的模型里。二分栏时只有 `verticalSplitRatio`（**上下**分），连"列表 | 详情"左右分栏都不是它的默认形态。
+
+> 补充事实（与选型无关但有用）：导入路径是 **`import { FoldSplitContainer } from '@kit.ArkUI'`**，
+> 不是独立的 advanced 包；配套类型 `ExpandedRegionLayoutOptions` / `HoverModeRegionLayoutOptions` /
+> `FoldedRegionLayoutOptions` / `PresetSplitRatio` / `ExtraRegionPosition` 同样从 `@kit.ArkUI` 导入。
+> 事件：`onHoverStatusChange`。
+
+→ **决策：三档布局全部自绘**，见 A2 末尾的三条出路之 ②/③。
+
+### 修正后的出路（按推荐顺序）
+
+1. **自绘 + 真机校准**（推荐起步方式）：自绘三档布局，宽度先用等分（50% / 1/3），
+   真机打印 `getCurrentFoldCreaseRegion()` 与 `foldAngleChange` 双角度，**校准后写死校准值**。
+2. **等分 + 折痕只做标注**：维持 50% / 1/3，折痕不参与决定栏宽。校准前的默认状态。
+3. （已否决）~~`FoldSplitContainer`~~ —— 模型与比例都不匹配，见上。
 
 > 官方折痕避让设计标准（悬停态）：上半屏内容由中线**向上避让 16vp**、下半屏**向下避让 40vp**。
+> 这条仍有参考价值：三折叠若进入类似的半折悬停姿态，可照此避让。
 
 ### A3 断点获取 ✅ —— 现有方案就是官方推荐
 
