@@ -1,23 +1,27 @@
+import { router } from '@kit.ArkUI'
+
 @Entry
 @Component
 struct Index {
-  @State message: string = 'Hello World';
-
   build() {
-    RelativeContainer() {
-      Text(this.message)
-        .id('HelloWorld')
-        .fontSize($r('app.float.page_text_font_size'))
+    Column() {
+      Text('曜石笔记')
+        .fontSize(24)
         .fontWeight(FontWeight.Bold)
-        .alignRules({
-          center: { anchor: '__container__', align: VerticalAlign.Center },
-          middle: { anchor: '__container__', align: HorizontalAlign.Center }
-        })
+        .margin({ bottom: 8 })
+
+      Text('先接入 GitHub 笔记库，再开始浏览和编辑')
+        .fontSize(13)
+        .fontColor('#666666')
+        .margin({ bottom: 24 })
+
+      Button('接入 GitHub 笔记库')
         .onClick(() => {
-          this.message = 'Welcome';
+          router.pushUrl({ url: 'pages/SyncPage' })
         })
     }
-    .height('100%')
     .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
   }
 }
