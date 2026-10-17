@@ -107,12 +107,13 @@ docs/harmonyos/
 | 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
 | 2026-10-17 | **原生埋点能力**（hiAppEvent / UIObserver 做展示·点击·页面上报） | 6 | [`qa/2026-10-17_埋点与事件打点.md`](qa/2026-10-17_埋点与事件打点.md) | **无需第三方 SDK**：曝光 `onVisibleAreaApproximateChange`(17+) / 点击 `UIObserver.on('willClick')`(12+) / 页面 `navDestinationSwitch`(12+)，**API 24 全部可用**；`hiAppEvent.write` 落盘 + `addWatcher` 累积触发批量 `takeNext()` 上报；**全局无侵入**方案（组件只声明 `.id()`/`.customProperty()`，Ability 层统一监听）最匹配文件树；⚠️ 可见区域计算**不支持遮挡与旋转**；🔴 **笔记内容一律禁止进埋点** |
 | 2026-10-17 | **小艺智能体 + 端侧意图**（Insight Intent 做笔记编辑） | 9 | [`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md) | 方案骨架：`FunctionComponent` 拉起自建智能体 + `@InsightIntentEntry` 端侧执行 + git 版本底座；**锚点定位法**是细粒度修改的关键；⚠️ **`onCreate → onExecute` 不建 window → 后台执行时 Web 组件不存在 → 我们的 Web 内 git 无法 commit**（架构冲突，出路待拍板）；⚠️ 官方示例用 TRUNC 覆盖写，**须改 `AtomicFile`** |
+| 2026-10-17 | **折痕接口追问**（带五态真机实测反馈） | 5 | [`qa/2026-10-17_折痕接口追问_实测反馈.md`](qa/2026-10-17_折痕接口追问_实测反馈.md) | 官方**无法定性**「两条中心相同 + 五态不变」，倾向系统侧实现限制；**`getLiveCreaseRegion()`（@since 20）为首选替代**（⚠️ 官方示例写错：是 `Display` **实例方法**，须 `getDefaultDisplaySync().getLiveCreaseRegion()`）；**断点方案 = 官方最佳实践**（印证 A3）；「左/右两屏 FS 都=1」**符合预期**（印证 A1）；无设备级常量；`FoldSplitContainer` 措辞修正为「三分栏语义 + 预设比例都不匹配」 |
 
 ### 仍未解决（下次提问优先从这里挑）
 
 | # | 问题 | 卡住什么 | 状态 |
 | --- | --- | --- | --- |
-| A-3 | 除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案 | 若有，可省掉自绘 + 真机校准 | ❓ **待问**（当前最该问的一条） |
+| ~~A-3~~ | ~~除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案~~ | ~~若有，可省掉自绘 + 真机校准~~ | ✅ **已答**（2026-10-17 折痕追问 Q4）：**没有**。官方立场是「布局适配优先基于响应式断点」，`FoldSplitContainer` 只有 `PresetSplitRatio` 三档预设且不对齐折痕 → **自绘等分是官方认可路线**，不必再找 |
 | ~~B-1~~ | ~~`onInterceptRequest` 能否拿到 POST body~~ | ~~同步层能否简化为拦截~~ | ✅ **已解决**：能拿到但是 `string`，**拦截方案否决**，转发为最终方案 |
 | ~~B-2~~ | ~~`WebMessagePort` 在 rawfile 页面能否建立~~ | ~~大数据通道选型~~ | ✅ **已解决**：可用、支持 ArrayBuffer；剩「上限多少」只能真机测 |
 | B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |

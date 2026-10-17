@@ -48,6 +48,13 @@ struct Index {
   @StorageProp('breakpoint') @Watch('onBreakpointChanged') breakpoint: string = Breakpoint.SM;
   /** 窗口宽度 vp（状态栏显示用） */
   @StorageProp('windowWidthVp') windowWidthVp: number = 0;
+  /** display.getFoldStatus() 读数（调试用，-1 = 没取到；三屏态返回值官方未记载，api_notes A1） */
+  @StorageProp('foldStatus') foldStatus: number = -1;
+  /**
+   * 折痕中心 x（**px**，多条逗号分隔；'-' = 没取到。api_notes A2 采集通道，不参与布局）。
+   * 存 px 而不是 vp：官方提醒 px2vp 应在 UI 上下文换算，故在页面侧 statusRightText() 里转。
+   */
+  @StorageProp('creasePx') creasePx: string = '-';
   /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
   @State vaults: VaultEntry[] = [];
   /** 当前库 id */
@@ -106,12 +113,33 @@ struct Index {
     return this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）';
   }
 
-  /** 顶栏汉堡：sm = 抽屉开关；md/lg = 唤回收起的侧栏（spec 非功能约束） */
+  /** 状态栏右侧读数：形态 · vp · FS:N（有折痕时追加 · C:x,y，px 在此换算成 vp） */
+  private statusRightText(): string {
+    let s: string = formLabelOf(this.breakpoint) + ' · ' + Math.round(this.windowWidthVp) + 'vp' +
+      ' · FS:' + this.foldStatus;
+    if (this.creasePx !== '-') {
+      s += ' · C:' + this.creaseVpText();
+    }
+    return s;
+  }
+
+  /** 折痕 px 串 → vp 串（页面侧换算，UI 上下文里 px2vp 才可靠） */
+  private creaseVpText(): string {
+    const parts: string[] = this.creasePx.split(',');
+    let out: string = '';
+    for (let i = 0; i < parts.length; i++) {
+      const px: number = parseInt(parts[i], 10);
+      out += (i === 0 ? '' : ',') + (isNaN(px) ? '?' : Math.round(px2vp(px)).toString());
+    }
+    return out;
+  }
+
+  /** 顶栏汉堡：sm = 抽屉开关；md/lg = 收起/唤回切换（toggle） */
   private onHamburger(): void {
     if (this.breakpoint === Breakpoint.SM) {
       this.drawerOpen = !this.drawerOpen;
     } else {
-      this.sidebarCollapsed = false;
+      this.sidebarCollapsed = !this.sidebarCollapsed;
     }
   }
 
@@ -515,9 +543,11 @@ struct Index {
         .fontColor('#8E8E93')
         .maxLines(1)
       Blank()
-      Text(formLabelOf(this.breakpoint) + ' · ' + Math.round(this.windowWidthVp) + 'vp')
+      Text(this.statusRightText())
         .fontSize(12)
         .fontColor('#8E8E93')
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
     .height(26)

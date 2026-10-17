@@ -113,6 +113,72 @@ export default class EntryAbility extends UIAbility {
       this.logFoldCalibration(widthVp, bp);
     }
     AppStorage.setOrCreate('breakpoint', bp);
+    // 每次尺寸变化都刷新 foldStatus（不受档位是否变化影响），供状态栏调试读数
+    AppStorage.setOrCreate('foldStatus', this.collectFoldStatus());
+    // 折痕只落 px，换算放到页面侧（UI 上下文）——官方提醒 px2vp 依赖窗口像素密度，
+    // 在 UIAbility 早期生命周期换算可能异常
+    AppStorage.setOrCreate('creasePx', this.collectCreasePx());
+  }
+
+  /**
+   * 采集折痕中心 x（**px**，多条逗号分隔），优先实时接口、失败回退旧接口。
+   *
+   * 两个接口都试一遍是为了横向对比：
+   * - `display.getLiveCreaseRegion()`   —— @since 20，官方答复推荐（SDK 实证：同步返回 FoldCreaseRegion）
+   * - `display.getCurrentFoldCreaseRegion()` —— 旧接口，实测五种形态恒为 372,372（api_notes A2）
+   *
+   * ⚠️ 只读数与日志，绝不进布局算式（A3 / A6：栏宽只由窗口宽决定）。取不到返回 '-'，不抛出。
+   */
+  private collectCreasePx(): string {
+    const current: string = this.readCreasePx(false);
+    const live: string = this.readCreasePx(true);
+    hilog.info(DOMAIN, FOLD_TAG, 'TODO(真机校准) crease current=%{public}s live=%{public}s', current, live);
+    return (live !== '-') ? live : current;
+  }
+
+  /** 读一个折痕接口，返回各 rect 中心 x（px）逗号串；顺带把 left/宽/高打进日志（判折痕方向要用） */
+  private readCreasePx(useLive: boolean): string {
+    try {
+      // ⚠️ 官方示例代码写的 display.getLiveCreaseRegion() 编译不过 —— SDK 实测它是
+      // interface Display 的**实例方法**（@ohos.display.d.ts:1432，@since 20），
+      // 而 getCurrentFoldCreaseRegion() 才是模块函数（同文件 425 行）。必须走实例。
+      const region: display.FoldCreaseRegion =
+        useLive ? display.getDefaultDisplaySync().getLiveCreaseRegion()
+          : display.getCurrentFoldCreaseRegion();
+      const rects: Array<display.Rect> = region.creaseRects;
+      if (rects.length === 0) {
+        return '-';
+      }
+      let out: string = '';
+      for (let i = 0; i < rects.length; i++) {
+        const center: number = rects[i].left + rects[i].width / 2;
+        out += (i === 0 ? '' : ',') + Math.round(center).toString();
+        hilog.info(DOMAIN, FOLD_TAG, 'crease %{public}s [%{public}d] left=%{public}d w=%{public}d h=%{public}d',
+          useLive ? 'LIVE' : 'CURRENT', i, rects[i].left, rects[i].width, rects[i].height);
+      }
+      return out;
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, FOLD_TAG, '折痕采集失败 %{public}s: %{public}s',
+        useLive ? 'LIVE' : 'CURRENT', JSON.stringify(err));
+      return '-';
+    }
+  }
+
+  /**
+   * 采集 display.getFoldStatus() 供 UI 调试显示（状态栏右下角 FS: 值）。
+   * 三折叠三屏态返回值官方未记载（api_notes A1），这里是唯一的第一手读数通道。
+   * 失败返回 -1，不抛出，避免影响启动。
+   */
+  private collectFoldStatus(): number {
+    try {
+      const status: display.FoldStatus = display.getFoldStatus();
+      return status as number;
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, FOLD_TAG, 'foldStatus 采集失败: %{public}s', JSON.stringify(err));
+      return -1;
+    }
   }
 
   /**
@@ -146,6 +212,9 @@ export default class EntryAbility extends UIAbility {
     try {
       display.on('foldStatusChange', (foldStatus: display.FoldStatus) => {
         const widthVp: number = AppStorage.get<number>('windowWidthVp') ?? -1;
+        // 物理折叠变化时同步刷新状态栏读数
+        AppStorage.setOrCreate('foldStatus', foldStatus as number);
+        AppStorage.setOrCreate('creasePx', this.collectCreasePx());
         hilog.info(DOMAIN, FOLD_TAG,
           'TODO(真机校准) foldStatusChange → foldStatus=%{public}s 窗口宽=%{public}dvp',
           JSON.stringify(foldStatus), Math.round(widthVp));
