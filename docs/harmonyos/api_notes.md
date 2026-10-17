@@ -134,20 +134,45 @@ port.postMessage(...)               // 支持 string、ArrayBuffer
 
 → **通道分工（待落码）**：控制指令走 `runJavaScript` / `javaScriptProxy`；**大文本与 git packfile 走 MessagePort 传 ArrayBuffer**。
 
-### B2 隐藏的计算型 Web 组件 ⚠️ → 改用离线 Web 组件
+> 📌 **二次核实（2026-10-17，见 `qa/2026-10-17_B组追问_Web组件.md` B-3）**：
+> `runJavaScript(script: string, callback: (result: string) => void)` —— **参数与返回值的长度上限官方均未记载** ❓。
+> 返回值是 JS 表达式的字符串化结果，二进制要先 base64（**膨胀 33%**）。→ 结论不变：packfile 走 MessagePort。
+
+### B2 隐藏的计算型 Web 组件 ⚠️ → **常驻用 `visibility(Hidden)`，不要用 NodeContainer 卸载**
 
 `visibility(Hidden)` / `opacity(0)` 时组件仍在树上、JS 环境保留（反向推断，未逐字记载）。**不建议用 1×1 像素**。
 
-官方方案：**`NodeController` + `NodeContainer` 动态挂载/卸载 Web 节点**（离线 Web 组件，官方为"页面保活"场景提供）。
-→ git 计算容器应改用这种方式承载。
+> ❌ **已推翻（2026-10-17）**：~~官方方案是 `NodeController` + `NodeContainer` 动态挂载/卸载~~ —— 二次核实确认
+> **NodeContainer 从组件树移除时 Web 组件被销毁、Chromium 实例释放，重新挂载会重新加载页面，JS 状态（变量/闭包/Worker）全丢**（⚠️ 推断，文档未记载"节点缓存/后台保活"）。
+>
+> ✅ **正确做法**：git 计算容器**常驻**，用 `Stack` + `visibility(Hidden)` 控制可见性而非存在性：
+> ```typescript
+> Stack() {
+>   Web({ src: $rawfile('gitbridge/index.html'), controller: this.controller })
+>     .width('100%').height('100%')
+>     .visibility(this.webVisible ? Visibility.Visible : Visibility.Hidden)
+>   NoteEditor()
+> }
+> ```
+> ⚠️ 待真机验证：Hidden 状态下 ArkWeb 会不会做内存优化（暂停 JS 执行 / 降低优先级）。
+> 详见 `qa/2026-10-17_B组追问_Web组件.md` B-4。
 
 ### B3 Worker 内无法访问 javaScriptProxy ⚠️ —— 影响我们的"桥接放 Worker"计划
 
 - Web 页面内可用标准 Web Worker（ArkWeb 基于 Chromium M114，推断）
 - **Worker 内访问不到 `javaScriptProxy` 注入的对象**：注入是"注入到 window 对象"，Worker 是独立全局作用域、没有 window
 
-→ **原计划"fs 桥接放 Worker"行不通**。可选：Worker 内 `postMessage` 回主线程代为调用；或统一走 WebMessagePort。
+→ **原计划"fs 桥接放 Worker"行不通**（直接调 javaScriptProxy 这条路）。
 → **MVP 决策：先放主线程**（数百篇量级可接受），性能实测不够再优化。文档里"必须批量化并放 Worker"的表述已修正。
+
+> 📌 **二次核实（2026-10-17，见 `qa/2026-10-17_B组追问_Web组件.md` B-6）**：Worker 可救，只是要换通道。
+> ArkWeb 基于 Chromium M114，标准 Web Worker 可用（⚠️ 推断）；`javaScriptProxy` 不可访问（因为它绑在 window 上）。
+> **绕过办法**：把原生侧的 `WebMessagePort` **transfer 进 Worker**，Worker 内直接用它收发 ArrayBuffer 与原生通信：
+> ```typescript
+> worker.postMessage({ type: 'init', port }, [port]);   // 主线程把 port 转移进 Worker
+> // worker 内：nativePort.onmessage = e => handle(e.data /* ArrayBuffer */)
+> ```
+> → **性能优化路径已明确**：桥接要进 Worker 时，走 transferred MessagePort，而不是 javaScriptProxy。MVP 仍先主线程。
 
 ### B4 rawfile 页面的 origin 与 CORS ✅ —— 官方更推荐"拦截"而非"转发"
 
@@ -168,7 +193,16 @@ onInterceptRequest 拦截请求
 > `onInterceptRequest` 回调的 `WebResourceRequest` **能否完整拿到 POST 请求体**，官方答复未覆盖。拿不到 → 拦截方案在 push 场景直接废掉。
 > 现有方案（JS 侧自定义 http client 转发到原生）已在 node 冒烟测试中**真实 clone 成功**，POST body 由我们自己构造、不受此限制。
 >
-> **决策：MVP 保留现有转发方案**（已验证 + 不依赖未验证前提）；把拦截方案记为优化项，先做 POST body 可行性验证再评估迁移。
+> **决策（2026-10-17 二次核实后定案）**：**拦截方案 ❌ 否决（对 push 不适用）**，现有转发方案为最终方案。
+>
+> 📌 二次核实结果（`qa/2026-10-17_B组追问_Web组件.md` B-1）：
+> - ✅ `WebResourceRequest` 有 `getMethod()` / `getUrl()` / `getHeader()` / **`getRequestBody(): string`**
+> - ⚠️ **返回类型是 `string` 而非 `ArrayBuffer`** → 文本 body 没问题，**二进制 packfile 经 string 序列化有编码损坏风险**
+> - ❓ 官方既未说"支持二进制"也未说"仅支持文本"
+>
+> → 结论：**clone/fetch（GET 为主）走拦截可行，但 `git-receive-pack`（push，POST + 大二进制）不可靠**。
+> 既然 push 是硬需求，统一走**转发**更省心，不再保留"拦截迁移"这条优化线。
+> ⚠️ 新接口名 `getRequestBody()` 本次答复**未附文档链接**，若将来真要用拦截，落码前在 DevEco 里用 `@kit.ArkWeb` 补全复核。
 
 ### B5 尺寸变化不重载 ✅，但有尺寸上限要注意
 
@@ -183,6 +217,34 @@ onInterceptRequest 拦截请求
 文档未记载系统性兼容问题，**必须真机实测** contenteditable / textarea。
 
 可配置项：`keyboardAvoidMode`（软键盘避让）、`blurOnKeyboardHideMode`、`onInterceptKeyboardAttach` + `WebKeyboardController`（完全接管键盘）。
+页面级键盘避让：`win.setWindowAvoidAreaTypes([AvoidAreaType.TYPE_KEYBOARD], cb)`。
+
+> 📌 **二次核实（2026-10-17，见 `qa/2026-10-17_B组追问_Web组件.md` B-5）**：官方仍**无**明确记载 ❓。
+> ⚠️ 上述键盘配置项主要影响**容器布局**，不直接管 Web 内部的输入逻辑。
+> ⚠️ **对方建议优先用 `<textarea>` 而非 `contenteditable`**（输入法兼容性更好）→ **与我们的选型冲突**：
+> 编辑器方案 A 用的 **CodeMirror 6 基于 `contenteditable`**。
+> → **M0.5 spike 必须实测**：拼音 / 语音 / 手写三种输入下的 **composition 预编辑事件**与**光标定位**。
+> 若 CM6 实测有问题，提前准备降级路径（textarea 自绘高亮 / CodeMirror 的 textarea 模式）。
+
+---
+
+### B7 WebMessagePort：rawfile 页面可用，支持 ArrayBuffer，上限未记载 （2026-10-17 新增）
+
+- ✅ `WebMessage` 定义 `interface WebMessage { data: string | ArrayBuffer }` —— **文档明确支持 ArrayBuffer**
+- ✅ `controller.createWebMessagePort()` 返回一对 port：一端注入 HTML（`postMessage`），一端原生持有（`onMessageEvent`）
+- ⚠️ **`resource://rawfile/` 页面可用**：它是 ArkWeb 内部协议，`createWebMessagePort` 是**组件级** API，不受页面协议的跨域策略影响
+- ❓ **单条消息的 ArrayBuffer 大小上限未记载**；推断受 Chromium IPC 单条上限（数十 MB 级）与设备内存约束
+- ⚠️ **传输策略：分块**（示例 4MB/块，末尾发完成标记如 `__TRANSFER_COMPLETE__`），不要赌单条上限
+
+```typescript
+// 原生侧接收
+nativePort.onMessageEvent((result: WebMessage) => {
+  if (result.data instanceof ArrayBuffer) { /* new Uint8Array(result.data) */ }
+});
+```
+
+→ **通道选型定案**：控制指令走 `runJavaScript` / `javaScriptProxy`；**大文本与 packfile 走 MessagePort + ArrayBuffer + 分块**。
+→ 真机需实测：上限具体多少、分块大小取多少最稳（列入 M0.5 spike）。
 
 ---
 
@@ -303,12 +365,12 @@ ohpm publish yourlib.har
 | **三屏态 FoldStatus 返回值未知** | ⚠️ 真机打印建映射表 | M0.5 顺带做 |
 | **AtomicFile 官方原子写** | ✅ **替换自研 tmp+rename** | M0.2 落码时 |
 | **Asset Store Kit 存令牌** | ✅ **实现 TokenStore，alias 按库** | M3.5 前 |
-| **大文本/packfile 走 WebMessagePort** | ✅ 新增通道，替代 runJavaScript 传大数据 | 真机验证后 |
-| **Worker 内拿不到 javaScriptProxy** | ✅ 桥接**不放 Worker**，先主线程 | 已修正文档 |
-| 拦截方案（onInterceptRequest） | ⏸ **暂缓**：POST body 获取是未验证前提 | 验证后再评估 |
-| 离线 Web 组件（NodeContainer） | ✅ git 容器改用它承载 | 真机阶段 |
+| **大文本/packfile 走 WebMessagePort** | ✅ 新增通道（**分块 4MB**），替代 runJavaScript 传大数据 | 真机验证上限后 |
+| **Worker 内拿不到 javaScriptProxy** | ✅ 桥接**先放主线程**；要进 Worker 时把 port **transfer** 进去 | 性能优化时 |
+| 拦截方案（onInterceptRequest） | ❌ **否决（2026-10-17）**：`getRequestBody()` 返回 **string**，二进制 packfile 有损坏风险 → push 不可靠 | 转发方案为最终方案 |
+| 离线 Web 组件（NodeContainer） | ❌ **推翻（2026-10-17）**：卸载即销毁、重挂会重载页面 → git 容器改 **`visibility(Hidden)` 常驻** | M0 落码时 |
 | 沙箱无权限需求 | ✅ 确认无遗漏 | — |
 | 后台同步不做 | ✅ 保持前台 | — |
 | HAR rawfile 可加载 | ✅ 抽库前置风险基本解除 | 抽库前编译确认 |
 | Web 组件 7680px 上限 | ✅ 三栏各 1/3 安全，全屏 Web 要留意 | 编码时注意 |
-| 中文输入法 | ❓ **M0.5 spike 头号验证项** | M0.5 |
+| 中文输入法 | ❓ **M0.5 spike 头号验证项**；⚠️ 官方建议优先 textarea，**与 CodeMirror 6（contenteditable）冲突**，实测不过要准备降级路径 | M0.5 |

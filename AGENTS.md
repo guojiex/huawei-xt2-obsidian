@@ -37,10 +37,11 @@
 | 3 | 三档断点靠 `window.on('windowSizeChange')` + `px2vp()`，**不要用 `getFoldDisplayMode()` 做形态分支** | 官方明确建议用统一断点机制；该接口不返回全部形态值 |
 | 4 | 三折叠**在系统里始终是 `phone`**，`deviceTypes` 保持 `["phone","tablet","2in1"]` 不用改 | 全展开 10 英寸也不会变成 tablet/2in1 |
 | 5 | **三栏自绘**，禁用 `FoldSplitContainer` | 已否决（见 §4），别再提 |
-| 6 | git 桥接**放主线程**，不放 Worker | Worker 内没有 window，拿不到 `javaScriptProxy` 注入的对象 |
+| 6 | git 桥接**先放主线程**；真要进 Worker，必须把 `WebMessagePort` **transfer** 进去再通信 | Worker 内没有 window，拿不到 `javaScriptProxy` 注入的对象；但 transferred MessagePort 可用 |
 | 7 | 原子写用 **`fileIo.AtomicFile`**，不要 tmp + `renameSync` | `renameSync` 的覆盖/原子性官方未记载 |
 | 8 | 访问令牌存 **`@kit.AssetStoreKit`**，敏感值只放 `SECRET`，不写明文、不进首选项 | 无需任何权限；`ALIAS` 不加密 |
-| 9 | 同步保留现有**「JS 侧自定义 http client 转发到原生」**方案 | 官方推荐的拦截方案缺一个未验证前提（POST body），已在 node 冒烟真实 clone 成功 |
+| 9 | 同步**只用**「JS 侧自定义 http client 转发到原生 `@ohos.net.http`」方案，**拦截方案（`onInterceptRequest`）已否决** | `getRequestBody()` 返回 **string**，二进制 packfile 有编码损坏风险 → push 不可靠（2026-10-17 定案，见 `docs/harmonyos/api_notes.md` B4） |
+| 9b | git 计算容器要**常驻**：用 `Stack` + `visibility(Hidden)`，**不要用 `NodeContainer` 动态卸载** | 卸载会销毁 Web 实例、JS 状态全丢，重挂会重新加载页面 |
 | 10 | 异步渲染下 **Web 组件宽高 ≤ 7680px 物理像素** | 超过会白屏；三栏各 1/3 时约 1061px，安全 |
 | 11 | **同步只做前台**，不申请后台长时任务权限 | 前台 clone/push 无需额外权限（Q4 已决，后台同步转需求池） |
 | 12 | 沙箱内读写**不需要任何权限**，当前只申请 `INTERNET` 是对的 | 官方确认 |
@@ -86,6 +87,8 @@ tools/
 | 同步方案 | **isomorphic-git 双向**，冲突推 `xt2` 分支 | — |
 | GitHub 单向 zipball 导入 | ❌ 放弃，改动会被覆盖 | — |
 | 库命名 | 显示名 = 目录名；非法字符过滤，重名自动加 `-2` | — |
+| 同步网络层 | **转发方案定案**，`onInterceptRequest` 拦截 **❌ 否决**（POST body 是 string） | 2026-10-17 |
+| 大数据通道 | **WebMessagePort + ArrayBuffer + 分块（4MB）**；`runJavaScript` 只走控制指令 | 2026-10-17 |
 | 后台同步 | **先不做**，已转 `requirements_backlog.md`；MVP 用「前台进度条 + 未推送角标」替代 | 2026-10-17 |
 | 抽 ohpm 库 | ⏸ **TODO 挂起**（Q3）。触发条件：`push` 跑通 / 真机全流程 / 出现第二个消费方 / 要对外发布 | 2026-10-17 |
 
@@ -103,6 +106,7 @@ tools/
 6. **Gitee 私有库用 Basic 认证**（`username:私人令牌`），GitHub 用 `Bearer <PAT>` 且用户名留空 —— 两者不一样，`SyncPage` 的 401/404 人话翻译依赖这个区分。
 7. **ArkTS 不允许无类型的对象字面量**，HTTP 请求等要显式声明类型（如 `const request: HttpRequestMsg = {...}`）。
 8. 中文文件名：**下划线，不用空格与连字符**（与 vault 命名规范一致）。
+9. ⚠️ **编辑器方案 A（CodeMirror 6）基于 `contenteditable`，而官方建议优先 `textarea`**（输入法兼容性更好）。M0.5 spike 必须**两者对比实测**（拼音/语音/手写的 composition 事件与光标），并提前想好降级路径，否则实测不过时 M2 会被卡死。
 
 ---
 
