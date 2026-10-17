@@ -242,6 +242,8 @@
     display: flex; align-items: center; justify-content: center; cursor: pointer;
     color: var(--text-secondary); flex: none; min-width: 0; padding: 0;
   }
+  /* 返回箭头是次级页的主操作，比普通图标按钮亮一档（深色下 60% 白偏灰） */
+  #backBtn { color: var(--text-primary); }
   .icon-btn:hover { background: var(--fill-hover); }
   .icon-btn:active { background: var(--fill-press); }
   .appbar .title {
@@ -473,7 +475,7 @@
     padding: var(--sp-5) max(var(--sp-5), calc((100% - 760px) / 2)) var(--sp-8);
   }
   .sync h2 { font-size: var(--fs-s1); margin: 0 0 var(--sp-1); font-weight: 700; letter-spacing: .3px; }
-  .sync .sub { color: var(--text-secondary); font-size: var(--fs-body2); margin-bottom: var(--sp-5); }
+  .sync .sub { color: var(--text-secondary); font-size: var(--fs-body2); line-height: 1.6; margin-bottom: var(--sp-5); }
   .notice {
     display: flex; gap: var(--sp-2); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-control);
     background: var(--brand-bg); color: var(--text-primary); font-size: var(--fs-body2); margin-bottom: var(--sp-4);
@@ -715,11 +717,14 @@
   <div class="device-wrap" id="wrap">
     <div class="device" id="device">
       <div class="appbar">
+        <button class="icon-btn hidden" id="backBtn" title="返回笔记">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+        </button>
         <button class="icon-btn" id="menuBtn" title="文件树">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
         <div class="title" id="appTitle">流式系统_流处理实战教程</div>
-        <button class="icon-btn" title="同步">
+        <button class="icon-btn" id="syncBtn" title="同步">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4.4V9h-4.6"/></svg>
         </button>
         <button class="icon-btn" id="settingsBtn" title="设置与关于">
@@ -768,7 +773,6 @@
 
         <!-- 同步视图 -->
         <div class="sync hidden" id="syncView">
-          <h2>导入 Git 仓库</h2>
           <div class="sub">每个仓库在 vaults/ 下成为一个独立目录，与已有笔记互不干扰</div>
           <div class="notice">
             <span>支持 GitHub、Gitee 与自建 GitLab。Gitee 私有库请填用户名，GitHub 留空。</span>
@@ -811,7 +815,6 @@
 
         <!-- 库管理视图 -->
         <div class="sync hidden" id="vaultsView">
-          <h2>笔记库</h2>
           <div class="sub">每个库是 vaults/ 下的一个独立目录，各自独立同步</div>
           <div class="vcards" id="vcards"></div>
           <div class="add-row">
@@ -833,7 +836,6 @@
 
         <!-- 设置 / 关于视图 -->
         <div class="sync hidden" id="settingsView">
-          <h2>设置与关于</h2>
           <div class="sub">版本号由应用包信息读出，不在代码里写死常量</div>
 
           <div class="set-group">
@@ -924,6 +926,11 @@
       落码前须核实 J-1（<code>Hds*</code> 组件可引入性）/ J-2（Symbol 引用方式）/ J-3（字体是否需显式指定），见
       <code>docs/harmonyos/api_notes.md</code> <b>I 组</b>；核实前用自绘兜底，<b>禁止凭记忆编组件名或资源 id</b>。
       本文件的 <code>:root</code> 与 <code>[data-theme="dark"]</code> 是 token 真源，ArkTS 侧改值时两边同步。</li>
+    <li><b>次级页面一定有返回</b>：库管理 / 导入仓库 / 设置都是<b>平级面板</b>，不是层级导航 ——
+      进任何一页，顶栏左上角的汉堡都换成<b>返回箭头</b>，一点回笔记视图；顶栏右侧图标按用途收敛
+      （导入页不再挂「同步」，设置页不再挂齿轮）。页面标题只出现在顶栏，内容区不重复一个大标题。
+      平级面板的理由：这三页都是「配完就回」的一次性任务，做成层级会让返回路径变成猜谜。<br>
+      ⚠️ 系统返回键 / 侧滑返回的拦截**待核实**（视图是条件渲染不是路由），但顶栏返回按钮是硬要求，不依赖它。</li>
     <li><b>多库模型</b>：vaults/ 下每个子目录是一个独立库。<code>local</code> 只是<b>默认库的名字</b>，本地库可以再新建任意个；每个 Git 仓库导入后也成为一个目录，各自独立同步。切换库只换目录，互不影响。</li>
     <li><b>名称即目录名</b>：改名会连 <code>vaults/</code> 下的目录一起改，不做「显示名」与「目录名」分离 —— 否则导出到电脑时目录名对不上，还得查映射表。输入时实时预览目标路径，重名自动加后缀，非法字符（<code>/ \ : * ? " &lt; &gt; |</code>）直接过滤掉。</li>
     <li><b>Git 库改名不影响远端</b>：改的只是手机上的文件夹名，remote 与分支不动，同步照常。弹窗里必须写明这一句，否则用户会以为改了远端仓库名而不敢改。</li>
@@ -2069,6 +2076,11 @@
     document.getElementById('appTitle').textContent = VIEW_TITLE[v]
       || (FILES[current] || '').replace(/\.md$/, '');
     document.getElementById('noteView').classList.toggle('hidden', v !== 'note');
+    /* 次级页面（库管理 / 导入仓库 / 设置）顶栏左键换成返回箭头 —— 否则进去了出不来 */
+    document.getElementById('backBtn').classList.toggle('hidden', v === 'note');
+    document.getElementById('menuBtn').classList.toggle('hidden', v !== 'note');
+    document.getElementById('syncBtn').classList.toggle('hidden', v !== 'note');
+    document.getElementById('settingsBtn').classList.toggle('hidden', v === 'settings');
     document.getElementById('syncView').classList.toggle('hidden', v !== 'sync');
     document.getElementById('vaultsView').classList.toggle('hidden', v !== 'vaults');
     document.getElementById('settingsView').classList.toggle('hidden', v !== 'settings');
@@ -2149,6 +2161,7 @@
       body.setAttribute('data-theme', t);
     });
   }
+  document.getElementById('backBtn').addEventListener('click', function () { setViewBtn('note'); });
   document.getElementById('btnBack').addEventListener('click', function () {
     var all = document.querySelectorAll('[data-v]');
     for (var j = 0; j < all.length; j++) { all[j].classList.remove('on'); }
