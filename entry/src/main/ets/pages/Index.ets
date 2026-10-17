@@ -1,5 +1,5 @@
 /**
- * Index.ets —— 三形态布局总装（v0.1 骨架）
+ * Index.ets —— 三形态布局总装 + 库模型接线（v0.1）
  *
  * 为什么三栏自绘而不用 FoldSplitContainer（api_notes.md A2-bis，2026-10-17 已否决）：
  * ① 它的「三分栏」不是三列横排，是「侧列贯穿 + 另两栏上下堆叠」，横排列只有 2 个，
@@ -14,10 +14,21 @@
  *   sm：单栏 + 抽屉侧栏（Stack 覆盖层，汉堡开关）
  *   md：侧栏 | 编辑 各 50%；收起 → 编辑 | 预览 各 50%（不跨折痕）
  *   lg：侧栏 | 编辑 | 预览 各 1/3；收起 → 编辑 2/3（跨第一条折痕，T016 红警示）| 预览 1/3
+ *
+ * 库模型接线：库列表/当前库 @State 持有、操作后从 VaultRegistry 刷新（单一数据源）；
+ * 对话框按操作拉起（每次新建 CustomDialogController 传新鲜参数，避免 builder 参数过期）。
  */
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { promptAction } from '@kit.ArkUI';
 import { Breakpoint } from '../model/Breakpoint';
+import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { VaultSidebar } from '../components/VaultSidebar';
+import { VaultManagerView } from '../components/VaultManagerView';
+import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
+
+const DOMAIN: number = 0x0000;
+const TAG: string = 'Index';
 
 /** 状态栏形态标签（与原型 FORMS 一致） */
 function formLabelOf(bp: string): string {
@@ -37,7 +48,9 @@ struct Index {
   @StorageProp('breakpoint') @Watch('onBreakpointChanged') breakpoint: string = Breakpoint.SM;
   /** 窗口宽度 vp（状态栏显示用） */
   @StorageProp('windowWidthVp') windowWidthVp: number = 0;
-  /** 当前库 id（数据源 VaultRegistry；库 CRUD 后 refreshFromRegistry） */
+  /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
+  @State vaults: VaultEntry[] = [];
+  /** 当前库 id */
   @State currentVaultId: string = '';
   /** sm 抽屉开关（瞬态 @State：UIAbility 折叠切换不重建则存活，api_notes A4 ✅） */
   @State drawerOpen: boolean = false;
@@ -46,13 +59,20 @@ struct Index {
   /** 库管理视图整体替换内容区（原型 vaultsView 结构） */
   @State showVaultManager: boolean = false;
 
+  /** 对话框控制器：每次拉起重 建（传新鲜目标参数），不复用旧实例防参数过期 */
+  private createDialogCtl: CustomDialogController | null = null;
+  private renameDialogCtl: CustomDialogController | null = null;
+  private deleteDialogCtl: CustomDialogController | null = null;
+
   aboutToAppear(): void {
     this.refreshFromRegistry();
   }
 
-  /** 从注册表刷新当前库（库切换/新建/改名/删除后调用） */
+  /** 从注册表刷新库列表与当前库（切库/新建/改名/删除后调用） */
   private refreshFromRegistry(): void {
-    this.currentVaultId = VaultRegistry.get().currentId();
+    const reg: VaultRegistry = VaultRegistry.get();
+    this.vaults = reg.list();
+    this.currentVaultId = reg.currentId();
   }
 
   /** 档位变化：抽屉语义只在 sm；切到 md/lg 强制收抽屉，防止回 sm 时意外打开 */
@@ -76,12 +96,103 @@ struct Index {
     }
   }
 
+  // ===== 库操作（对话框确认后执行；失败 toast + 日志，注册表不落半状态） =====
+
+  private doSwitchVault(id: string): void {
+    try {
+      VaultRegistry.get().setCurrent(id);
+      this.refreshFromRegistry();
+    } catch (error) {
+      this.toastRegistryError('切换库失败', error);
+    }
+  }
+
+  private doCreateVault(name: string): void {
+    try {
+      const reg: VaultRegistry = VaultRegistry.get();
+      const entry: VaultEntry = reg.createLocal(name);
+      // 原型行为：新建后自动切到新库（doCreate → switchVault）
+      reg.setCurrent(entry.id);
+      this.refreshFromRegistry();
+    } catch (error) {
+      this.toastRegistryError('新建库失败', error);
+    }
+  }
+
+  private doRenameVault(id: string, name: string): void {
+    try {
+      VaultRegistry.get().rename(id, name);
+      this.refreshFromRegistry();
+    } catch (error) {
+      this.toastRegistryError('改名失败', error);
+    }
+  }
+
+  private doDeleteVault(id: string): void {
+    try {
+      VaultRegistry.get().remove(id);
+      this.refreshFromRegistry();
+    } catch (error) {
+      this.toastRegistryError('删除失败', error);
+    }
+  }
+
+  /** 注册表操作失败：固定文案 toast + 详细原因进 hilog（不把异常原文弹给用户） */
+  private toastRegistryError(prefix: string, error: Object): void {
+    const err = error as Error;
+    hilog.warn(DOMAIN, TAG, '%{public}s: %{public}s', prefix, err.message ?? JSON.stringify(error));
+    promptAction.showToast({ message: prefix });
+  }
+
+  // ===== 对话框拉起（每次新建 controller 传新鲜参数） =====
+
+  private openCreateDialog(): void {
+    this.createDialogCtl = new CustomDialogController({
+      builder: CreateVaultDialog({
+        onConfirm: (name: string): void => {
+          this.doCreateVault(name);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.createDialogCtl.open();
+  }
+
+  private openRenameDialog(id: string): void {
+    this.renameDialogCtl = new CustomDialogController({
+      builder: RenameVaultDialog({
+        initialName: id,
+        onConfirm: (name: string): void => {
+          this.doRenameVault(id, name);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.renameDialogCtl.open();
+  }
+
+  private openDeleteDialog(id: string): void {
+    this.deleteDialogCtl = new CustomDialogController({
+      builder: DeleteVaultDialog({
+        vaultId: id,
+        onConfirm: (): void => {
+          this.doDeleteVault(id);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.deleteDialogCtl.open();
+  }
+
   build() {
     Column() {
       this.Appbar()
       Stack() {
         if (this.showVaultManager) {
-          this.ManagerPlaceholder()
+          this.ManagerView()
         } else if (this.breakpoint === Breakpoint.SM) {
           this.SmContent()
         } else {
@@ -151,7 +262,11 @@ struct Index {
           })
         VaultSidebar({
           asDrawer: true,
+          vaults: this.vaults,
           currentVaultId: this.currentVaultId,
+          onSwitchVault: (id: string): void => {
+            this.doSwitchVault(id);
+          },
           onManageVaults: (): void => {
             this.drawerOpen = false;
             this.showVaultManager = true;
@@ -174,9 +289,13 @@ struct Index {
         Column() {
           VaultSidebar({
             asDrawer: false,
+            vaults: this.vaults,
             currentVaultId: this.currentVaultId,
             onCollapse: (): void => {
               this.sidebarCollapsed = true;
+            },
+            onSwitchVault: (id: string): void => {
+              this.doSwitchVault(id);
             },
             onManageVaults: (): void => {
               this.showVaultManager = true;
@@ -300,27 +419,28 @@ struct Index {
     .height('100%')
   }
 
-  /** 库管理视图占位（T012/T013 接入真实 VaultManagerView 后移除） */
+  /** 库管理视图：整体替换内容区，自带返回（原型 vaultsView 结构） */
   @Builder
-  ManagerPlaceholder() {
-    Column({ space: 12 }) {
-      Text('库管理视图 · v0.1 占位')
-        .fontSize(14)
-        .fontColor('#8E8E93')
-      Button('返回笔记')
-        .fontSize(12)
-        .fontColor('#534AB7')
-        .backgroundColor('#EEEDFE')
-        .height(32)
-        .padding({ left: 14, right: 14 })
-        .onClick(() => {
-          this.showVaultManager = false;
-        })
-    }
-    .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor('#FFFFFF')
+  ManagerView() {
+    VaultManagerView({
+      vaults: this.vaults,
+      currentVaultId: this.currentVaultId,
+      onBack: (): void => {
+        this.showVaultManager = false;
+      },
+      onSetCurrent: (id: string): void => {
+        this.doSwitchVault(id);
+      },
+      onRename: (id: string): void => {
+        this.openRenameDialog(id);
+      },
+      onDelete: (id: string): void => {
+        this.openDeleteDialog(id);
+      },
+      onCreate: (): void => {
+        this.openCreateDialog();
+      }
+    })
   }
 
   /** 状态栏：当前库 + 档位 + vp 宽度（spec FR：状态栏联动断点） */
