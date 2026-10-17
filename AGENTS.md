@@ -98,7 +98,7 @@ tools/
 1. **命令行构建必须设 `JAVA_HOME`** → 用 `tools\build.ps1`（已指向 DevEco 自带的 `jbr`），否则 `spawn java ENOENT`。
 2. **`.codegenie/` 是 IDE 误建的嵌套空 git 仓库**（只有 `.git` 没有 commit），会让 `git add -A` 报 `does not have a commit checked out` 失败。已在 `.gitignore` 忽略，不要去删目录。
 3. **改完 `web/gitbridge/src` 必须重新打包并入库**：`node build.mjs` → 产物 `entry/src/main/resources/rawfile/gitbridge/index.html` 要一起提交，否则真机跑的是旧代码。
-4. **`web/gitbridge/package.json` 的 `smoke` 脚本路径是错的**（指向 `test/smoke.mjs`，实际是 `test/node_smoke.mjs`）。跑冒烟用 `node test/node_smoke.mjs`。
+4. 冒烟测试脚本是 **`npm run smoke`（= `node test/node_smoke.mjs`）**；文件名带 `node_` 前缀（它跑在 node 环境，不是鸿蒙环境），别手打成 `test/smoke.mjs`。
 5. **base64 编解码层级**：桥接 `channel.onResult` 内部**已经解过一次** base64，调用方不要再解一遍。
 6. **Gitee 私有库用 Basic 认证**（`username:私人令牌`），GitHub 用 `Bearer <PAT>` 且用户名留空 —— 两者不一样，`SyncPage` 的 401/404 人话翻译依赖这个区分。
 7. **ArkTS 不允许无类型的对象字面量**，HTTP 请求等要显式声明类型（如 `const request: HttpRequestMsg = {...}`）。
