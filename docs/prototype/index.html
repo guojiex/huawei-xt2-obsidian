@@ -361,6 +361,43 @@
     text-align: center; color: var(--muted); font-size: 12px; cursor: pointer;
   }
   .add-box:hover { border-color: var(--accent); color: var(--accent); }
+  .set-entry {
+    display: flex; align-items: center; gap: 9px; margin-top: 4px;
+    padding: 11px 13px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--panel); color: var(--text); font-size: 12.5px; cursor: pointer;
+  }
+  .set-entry:hover { border-color: var(--accent); color: var(--accent); }
+  .set-entry em { margin-left: auto; color: var(--muted); font-style: normal; font-size: 11.5px; }
+  .set-entry .arrow { color: var(--muted); font-size: 15px; }
+  .set-group {
+    border: 1px solid var(--border); border-radius: 11px; background: var(--panel);
+    margin-bottom: 13px; overflow: hidden;
+  }
+  .set-head {
+    padding: 8px 13px; font-size: 11px; color: var(--muted);
+    background: var(--panel-2); border-bottom: 1px solid var(--border);
+  }
+  .set-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 13px; font-size: 12.5px; border-bottom: 1px solid var(--border);
+  }
+  .set-row:last-child { border-bottom: none; }
+  .set-row > span:first-child { color: var(--muted); flex: none; width: 88px; }
+  .set-row code { font-family: Consolas, monospace; font-size: 11.5px; color: var(--text); }
+  .set-row em {
+    margin-left: auto; font-style: normal; font-size: 11px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px;
+  }
+  .set-row .set-val { color: var(--text); }
+  .set-row.dim { color: var(--muted); }
+  .hero { display: flex; align-items: center; gap: 12px; padding: 14px 13px; border-bottom: 1px solid var(--border); }
+  .hero-icon {
+    width: 42px; height: 42px; border-radius: 11px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--accent); color: #fff; font-size: 18px; font-weight: 600;
+  }
+  .hero-nm { font-size: 14px; font-weight: 600; }
+  .hero-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
   .add-row { display: flex; gap: 8px; margin-bottom: 14px; }
   .add-row .add-box { flex: 1; padding: 11px 6px; }
 
@@ -423,6 +460,7 @@
     <button data-v="note" class="on">笔记</button>
     <button data-v="vaults">库管理</button>
     <button data-v="sync">导入仓库</button>
+    <button data-v="settings">设置</button>
   </div>
   <div class="grp">
     <span class="lbl">主题</span>
@@ -442,6 +480,9 @@
         <div class="title" id="appTitle">流式系统_流处理实战教程</div>
         <button class="icon-btn" title="同步">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2v3h-3"/></svg>
+        </button>
+        <button class="icon-btn" id="settingsBtn" title="设置与关于">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>
         </button>
       </div>
 
@@ -541,6 +582,52 @@
             Git 库改名只影响手机上的目录，远端仓库名不变、同步不受影响。<br>
             删除语义不同：本地库连内容永久删除；Git 库只移除本地副本，可重新导入。
           </div>
+          <div class="set-entry" id="settingsEntry">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.2 3.2l1.4 1.4M11.4 11.4l1.4 1.4M12.8 3.2l-1.4 1.4M4.6 11.4l-1.4 1.4"/></svg>
+            <span>设置与关于</span>
+            <em id="entryVer">v0.1.0</em>
+            <span class="arrow">›</span>
+          </div>
+        </div>
+
+        <!-- 设置 / 关于视图 -->
+        <div class="sync hidden" id="settingsView">
+          <h2>设置与关于</h2>
+          <div class="sub">版本号由应用包信息读出，不在代码里写死常量</div>
+
+          <div class="set-group">
+            <div class="set-head">关于</div>
+            <div class="hero">
+              <div class="hero-icon">曜</div>
+              <div class="hero-txt">
+                <div class="hero-nm">曜石笔记</div>
+                <div class="hero-sub" id="setVer">版本 0.1.0（1）</div>
+              </div>
+            </div>
+            <div class="set-row"><span>包名</span><code>com.jxg.huaweiobsidian</code></div>
+            <div class="set-row"><span>开源许可</span><b>MIT · Jiexin Guo</b></div>
+            <div class="set-row"><span>定位</span><span class="set-val">为 XT2 三折叠做的本地 Markdown 笔记</span></div>
+          </div>
+
+          <div class="set-group">
+            <div class="set-head">诊断（真机校准用）</div>
+            <div class="set-row"><span>当前形态</span><b id="setForm">三屏展开 · 1120vp</b></div>
+            <div class="set-row"><span>断点档位</span><code id="setBp">lg</code></div>
+            <div class="set-row"><span>库目录</span><code id="setVault">vaults/local</code></div>
+            <div class="set-row"><span>折痕校准</span><span class="set-val">v0.1 只采集不参与布局</span></div>
+            <div class="last" style="margin-top:10px">
+              真机跑起来后，<code>FoldCalibration</code> 日志会打印 <code>getFoldStatus()</code>
+              与折痕区域的实际返回值；把实测值回填到项目文档，再换成常量表替掉等分布局。
+            </div>
+          </div>
+
+          <div class="set-group">
+            <div class="set-head">后续版本才有</div>
+            <div class="set-row dim"><span>外观主题</span><em>v0.2</em></div>
+            <div class="set-row dim"><span>编辑器选项</span><em>v0.2</em></div>
+            <div class="set-row dim"><span>Git 同步与凭据</span><em>v0.3</em></div>
+            <div class="set-row dim"><span>导出 / 备份</span><em>待拍板（Q2）</em></div>
+          </div>
         </div>
       </div>
 
@@ -554,7 +641,7 @@
       <div class="mask hidden" id="mask">
         <div class="confirm">
           <div class="ct" id="cfTitle">删除本地笔记？</div>
-          <div class="cd" id="cfDesc">该目录下的所有笔记会被永久删除，且无法恢复。建议先导出备份。</div>
+          <div class="cd" id="cfDesc">该目录下的所有笔记会被永久删除，且无法恢复。</div>
           <div class="path" id="cfPath">vaults/local</div>
           <div class="cinput hidden" id="cfInputRow">
             <input id="cfInput" placeholder="库名称">
@@ -585,7 +672,7 @@
     <li><b>多库模型</b>：vaults/ 下每个子目录是一个独立库。<code>local</code> 只是<b>默认库的名字</b>，本地库可以再新建任意个；每个 Git 仓库导入后也成为一个目录，各自独立同步。切换库只换目录，互不影响。</li>
     <li><b>名称即目录名</b>：改名会连 <code>vaults/</code> 下的目录一起改，不做「显示名」与「目录名」分离 —— 否则导出到电脑时目录名对不上，还得查映射表。输入时实时预览目标路径，重名自动加后缀，非法字符（<code>/ \ : * ? " &lt; &gt; |</code>）直接过滤掉。</li>
     <li><b>Git 库改名不影响远端</b>：改的只是手机上的文件夹名，remote 与分支不动，同步照常。弹窗里必须写明这一句，否则用户会以为改了远端仓库名而不敢改。</li>
-    <li><b>删除语义不同</b>：本地库删除 = 目录连内容一起删，不可恢复（建议先导出）；Git 库「移除本地副本」只删手机上的目录，远端仓库不动，可以重新导入。</li>
+    <li><b>删除语义不同</b>：本地库删除 = 目录连内容一起删，**不可恢复**（zip 导出还没做，删了就是真没了）；Git 库「移除本地副本」只删手机上的目录，远端仓库不动，可以重新导入。</li>
     <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
     <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
     <li><b>目录栏可以整体收起</b>（双屏 / 三屏都可以）：收起点侧栏右上角的「收起 «」，唤回点顶栏左上角的汉堡按钮。<b>但收起的代价在两种形态下不一样</b> ——<br>
@@ -599,6 +686,7 @@
       ③ <b>文件夹没有第三档</b>：滑到底只会回弹并提示「文件夹不能直接删除」——误删一个目录就是整个子树没了。<br>
       越过操作条后拖动带阻尼（越滑越沉），防止手一抖就删掉。同一时刻只允许一行滑开，拖动超过 6px 就不算点击（避免误打开文件）。</li>
     <li><b>目录树可展开 / 折叠</b>：点目录行（或左侧箭头）切换，<b>折叠只影响显示，不动文件</b>；正在编辑的文件即使被折叠也不会关闭。子文件缩进比父目录深一级，<code>▾</code> = 展开、<code>▸</code> = 折叠，文件夹图标开口 / 闭合同步变化。<b>展开状态按库分别记忆</b>（切库回来还是原来的样子）。</li>
+    <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、包名、许可</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
     <li><b>搜索标了 v2</b>：全文搜索依赖全库索引，MVP 不做；MVP 只做文件名检索。</li>
@@ -1296,7 +1384,7 @@
         ? '移除「' + v.name + '」的本地副本？' : '删除「' + v.name + '」？';
       document.getElementById('cfDesc').innerHTML = v.type === 'git'
         ? '只删除手机上的这个目录，远端仓库不受影响。<br>下次想用可以重新导入。'
-        : '该目录下的 ' + v.files + ' 篇笔记会被永久删除，无法恢复。建议先导出备份。';
+        : '该目录下的 ' + v.files + ' 篇笔记会被永久删除，无法恢复。';
       pathEl.textContent = v.dir;
       row.classList.add('hidden');
       pathEl.classList.remove('hidden');
@@ -1636,6 +1724,7 @@
     body.setAttribute('data-form', f);
     body.setAttribute('data-side', sideHidden ? 'hidden' : 'shown');
     document.getElementById('stForm').textContent = FORMS[f];
+    updateSettings();
     var sidebar = document.getElementById('sidebar');
     var preview = document.getElementById('previewPane');
     var menu = document.getElementById('menuBtn');
@@ -1719,7 +1808,9 @@
     document.getElementById('noteView').classList.toggle('hidden', v !== 'note');
     document.getElementById('syncView').classList.toggle('hidden', v !== 'sync');
     document.getElementById('vaultsView').classList.toggle('hidden', v !== 'vaults');
+    document.getElementById('settingsView').classList.toggle('hidden', v !== 'settings');
     if (v === 'vaults') { renderVaultCards(); }
+    if (v === 'settings') { updateSettings(); }
     if (syncBtns) {
       var all = document.querySelectorAll('[data-v]');
       for (var i = 0; i < all.length; i++) {
@@ -1735,6 +1826,23 @@
     }
     setView(v);
   }
+
+  /* ---------- 设置 / 关于 ---------- */
+  var APP_VERSION = '0.1.0';
+  var APP_BUILD = 1;
+
+  function updateSettings() {
+    var f = body.getAttribute('data-form');
+    document.getElementById('setForm').textContent = FORMS[f];
+    document.getElementById('setBp').textContent = f;
+    var v = vaultById(currentVault);
+    document.getElementById('setVault').textContent = v ? v.dir : ('vaults/' + currentVault);
+  }
+
+  document.getElementById('settingsBtn').addEventListener('click', function () { setViewBtn('settings'); });
+  document.getElementById('settingsEntry').addEventListener('click', function () { setViewBtn('settings'); });
+  document.getElementById('setVer').textContent = '版本 ' + APP_VERSION + '（' + APP_BUILD + '）';
+  document.getElementById('entryVer').textContent = 'v' + APP_VERSION;
 
   function fit() {
     var wrap = document.getElementById('wrap');

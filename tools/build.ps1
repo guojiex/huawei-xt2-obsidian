@@ -43,10 +43,18 @@ Write-Host "task      : $Task"
 Write-Host "deveco    : $DevEco"
 Write-Host "java home : $env:JAVA_HOME"
 
-& $hvigorw $Task --mode module -p product=default --node-home $nodeHome
+# ⚠️ hvigor 的 WARN（如「未配置签名，跳过签名」）走 stderr。
+# 在 $ErrorActionPreference='Stop' 下会被 PowerShell 当成 NativeCommandError 直接终止，
+# 出现「明明 BUILD SUCCESSFUL 却报失败」的假失败。
+# 故这里临时降级为 Continue + 把 stderr 并入 stdout，改以退出码判定成败。
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $hvigorw $Task --mode module -p product=default --node-home $nodeHome 2>&1
+$exitCode = $LASTEXITCODE
+$ErrorActionPreference = $prevEap
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "构建失败，exit=$LASTEXITCODE"
+if ($exitCode -ne 0) {
+    Write-Error "构建失败，exit=$exitCode"
 }
 
 Write-Host "`n产物：entry\build\default\outputs\default\entry-default-unsigned.hap (未签名)" -ForegroundColor Green

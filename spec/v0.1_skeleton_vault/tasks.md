@@ -113,8 +113,8 @@
 
 **Purpose**: 编译与可部署性验证（用户选定 build-only，无 UI 验证任务）
 
-- [ ] T020 编译验证：运行 `.\tools\build.ps1`（已内置 JAVA_HOME，勿手动设），修复循环直至 **BUILD SUCCESSFUL**；编译失败不许交付
-- [ ] T021 部署验证：尝试 `devecocli run --skip-build` 部署到已连接设备/模拟器；无可用设备则在报告中记录「无设备，部署未验证」
+- [x] T020 编译验证：运行 `.\tools\build.ps1`（已内置 JAVA_HOME，勿手动设），修复循环直至 **BUILD SUCCESSFUL**；编译失败不许交付
+- [x] T021 部署验证：尝试 `devecocli run --skip-build` 部署到已连接设备/模拟器；无可用设备则在报告中记录「无设备，部署未验证」
 
 ---
 

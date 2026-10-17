@@ -124,6 +124,8 @@ docs/harmonyos/
 | G-A | `hiAppEvent.write` 是否需要权限？事件落盘是否在应用沙箱内？ | 埋点链路能否零权限落地 | ❓ 待问（**埋点后置，不阻塞**） |
 | G-B | `UIObserver.on('willClick')` 只能观察，还是能拦截点击？ | 埋点是否够用（观察即可满足） | ❓ 待问 |
 | G-C | `customProperty()` 的值有无类型 / 长度限制？ | 组件标识怎么编码 | ❓ 待问 |
+| **H-1** | **API 24 下运行时读取自身 `versionName` 的确切接口与所需 flag**？读自身包信息要不要权限？ | 「关于」页显示版本号 | ❓ 待问（**别凭记忆写接口**） |
+| H-2 | `bundleManager` 的同步版本（如 `getBundleInfoForSelfSync`）在 API 24 是否可用？ | 同上，实现选型 | ❓ 待问 |
 
 **真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 

@@ -38,15 +38,24 @@ display.on('foldAngleChange', cb: Callback<Array<number>>)  // 三折叠返回�
 > **真机验证方案**：三个形态各打印一次 `getFoldStatus()` 与 `foldAngleChange` 的双角度值，据此建映射表。
 > **兜底**：以窗口宽度断点为主、foldStatus 为辅（见 A3）。
 
-### A2 折痕区域 ✅（但**只返回单个 Rect**，三折叠行为 ❓）
+### A2 折痕区域 ⚠️ **官方答复已被 SDK 实证推翻（2026-10-17）**
 
 ```typescript
-display.getCurrentFoldCreaseRegion(): display.Rect   // left/top/width/height，单位 px
+// ❌ 官方 Agent 的答复（2026-10-17 首批）：「只返回单个 Rect」
+~~display.getCurrentFoldCreaseRegion(): display.Rect~~
+
+// ✅ SDK 类型定义实证（v0.1 落码时查得）：返回结构体，折痕是【数组】
+display.getCurrentFoldCreaseRegion(): display.FoldCreaseRegion
+// FoldCreaseRegion { displayId: number, creaseRects: Array<Rect> }
 ```
 
-**这条对我们是个坏消息**：三折叠有**两条**铰链，但该接口签名返回的是**单个 Rect**，官方未记载三折叠下会返回哪一段（或是否合并）。
+**结论修正**：折痕是 **`creaseRects` 数组**，不是单个 Rect —— 这意味着三折叠的两条铰链**有可能**一次性全部拿到。
+（出处：`docs/releases/v0.1/需求文档.md` §6.1 验收记录；代码见 `EntryAbility.logFoldCalibration()`，它打印的类型就是 `display.FoldCreaseRegion`。）
 
-因此**不能把"三栏边界压在折痕上"直接建立在它之上**。
+> ⚠️ 但这**只是类型定义层面的事实**，不等于三折叠运行时真的返回两段 —— 仍属 ❓，**真机打印前不许进布局算式**。
+> 教训记一笔：**官方 Agent 的答复也要交叉验证**，能查 SDK 类型定义时优先查 SDK（这次就是靠 SDK 发现答复错了）。
+
+决策不变：本版本**折痕只做日志采集**（`TODO(真机校准)`），布局仍按等分；真机拿到实际 `creaseRects` 后再校准成常量表。
 
 ### A2-bis `FoldSplitContainer` 核实结论：**不适用本工程**（2026-10-17 查官方文档确认）
 
@@ -502,6 +511,41 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 
 ---
 
+## H 组：应用元信息与版本读取
+
+> 2026-10-17 建立。起因：需要「关于」页显示版本号，**运行时怎么读 `versionName` 尚未核实**。
+
+### H1 版本号的单一真源是 `AppScope/app.json5` ✅
+
+```
+AppScope/app.json5 → app.versionCode / app.versionName
+```
+
+⚠️ **当前值仍是工程模板默认（`1.0.0` / `1000000`）**，未与版本规则对齐。
+按 `docs/releases/README.md` R1：版本目录 `v0.1` → `versionName = "0.1.0"`，`versionCode` 单调递增。
+**发布时必须同步**（R9 第 2 条），否则装到手机上的版本号与版本档案对不上。
+
+### H2 运行时读取版本号 ❓ 待核实（**别凭记忆写**）
+
+候选路径（**均未核实，落码前必须 DevEco 补全确认**）：
+
+| 候选 | 说明 | 状态 |
+| --- | --- | --- |
+| `bundleManager.getBundleInfoForSelf(...)` → `BundleInfo.appInfo.versionName` | 读自身包信息 | ❓ 是否存在该 flag / 是否需要权限，未核实 |
+| 资源文件 `$r('app.string.xxx')` 手写版本字符串 | 简单但**必然与 app.json5 漂移** | ❌ 不推荐 |
+| 构建期注入常量 | 需改构建脚本 | ❓ 待评估 |
+
+> **硬规则**：版本号**只能从包信息读出**或**构建期注入**，**禁止在源码里手写版本字符串**——手写必然与 `app.json5` 不一致，且每次发版都要记得改。
+
+### H3 待核实清单
+
+| 编号 | 问题 |
+| --- | --- |
+| **H-1** | API 24 下运行时读取自身 `versionName` 的**确切接口与所需 flag**？读自身包信息是否需要权限？ |
+| **H-2** | `bundleManager` 的同步版本（如 `getBundleInfoForSelfSync`）在 API 24 是否可用？ |
+
+---
+
 ## 落地决策表
 
 | 结论 | 决策 | 何时做 |
@@ -509,7 +553,7 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 | 三档断点用 windowSizeChange + px2vp | ✅ 维持原方案 | 已是现状 |
 | UIAbility 折叠切换不重建 | ✅ 解除顾虑，仍需定期落盘 | 已是现状 |
 | 三折叠恒为 phone | ✅ deviceTypes 不动 | 已是现状 |
-| **折痕接口只返回单个 Rect** | ⚠️ **自绘等分 + 真机校准**（~~`FoldSplitContainer`~~ 已于 2026-10-17 否决） | **M0 前必须定** → 已定为自绘 |
+| ~~折痕接口只返回单个 Rect~~ | ⚠️ **纠正**：SDK 实证返回 `FoldCreaseRegion{ creaseRects: Array<Rect> }`（官方答复错了）。决策不变：**自绘等分 + 真机校准**（~~`FoldSplitContainer`~~ 已于 2026-10-17 否决） | 已定为自绘；真机校准待做 |
 | **三屏态 FoldStatus 返回值未知** | ⚠️ 真机打印建映射表 | M0.5 顺带做 |
 | **AtomicFile 官方原子写** | ✅ **替换自研 tmp+rename** | M0.2 落码时 |
 | **Asset Store Kit 存令牌** | ✅ **实现 TokenStore，alias 按库** | M3.5 前 |
