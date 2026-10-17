@@ -1,6 +1,10 @@
 # HarmonyOS API 核实笔记（API 24）
 
-> **来源**：华为官方 AI 助手对本工程 `docs/prompt_for_harmonyos_agent.md` 的答复（2026-10-17）。
+> 📌 本文件是**所有鸿蒙行为结论的单一真源**，维护规则见 [`README.md`](README.md)：
+> 提问前先查这里；结论只准链接不准复制；被推翻的加删除线保留；真机验证后把 ⚠️/❓ 改成 ✅ 并写实测值。
+>
+> **来源**：华为官方 AI 助手对本工程 [`prompts/2026-10-17_首批提问_API24.md`](prompts/2026-10-17_首批提问_API24.md) 的答复（2026-10-17）
+> （已问过什么见 [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md)）。
 > 本机版本：`compatibleSdkVersion 6.1.1(24)` = **API 24**，`targetSdkVersion 26.0.0`。
 >
 > **可信度标记**（落码前必看）：
@@ -295,7 +299,7 @@ ohpm publish yourlib.har
 | 三档断点用 windowSizeChange + px2vp | ✅ 维持原方案 | 已是现状 |
 | UIAbility 折叠切换不重建 | ✅ 解除顾虑，仍需定期落盘 | 已是现状 |
 | 三折叠恒为 phone | ✅ deviceTypes 不动 | 已是现状 |
-| **折痕接口只返回单个 Rect** | ⚠️ **改用 `FoldSplitContainer` 或真机校准** | **M0 前必须定** |
+| **折痕接口只返回单个 Rect** | ⚠️ **自绘等分 + 真机校准**（~~`FoldSplitContainer`~~ 已于 2026-10-17 否决） | **M0 前必须定** → 已定为自绘 |
 | **三屏态 FoldStatus 返回值未知** | ⚠️ 真机打印建映射表 | M0.5 顺带做 |
 | **AtomicFile 官方原子写** | ✅ **替换自研 tmp+rename** | M0.2 落码时 |
 | **Asset Store Kit 存令牌** | ✅ **实现 TokenStore，alias 按库** | M3.5 前 |

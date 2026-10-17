@@ -1,6 +1,9 @@
 # 待决清单：需要你拍板的 / 需要追问鸿蒙的
 
-> 整理于 2026-10-17，基于 `docs/harmonyos_api_notes.md` 的核实结论。
+> 整理于 2026-10-17，基于 `docs/harmonyos/api_notes.md` 的核实结论。
+>
+> 📌 与鸿蒙官方 Agent 的问答统一存 **`docs/harmonyos/`**（规则见 `docs/harmonyos/README.md`）：
+> 提问前先查 `api_notes.md` 与 `qa/` 索引，问过的不重复问。
 > 本机版本：**API 24**（`compatibleSdkVersion 6.1.1(24)`），目标设备华为 XT2 三折叠。
 >
 > 分三组：
