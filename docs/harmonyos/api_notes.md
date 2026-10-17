@@ -168,6 +168,22 @@ display.getCurrentFoldCreaseRegion(): display.FoldCreaseRegion
 > 教训（第二次）：**官方答复 + 示例代码也要用 SDK 与编译器验证**。
 > 上一次是 `build-profile` 的 `name` 字段（d.ts 说要、运行时 schema 拒绝），这一次是接口挂错了对象。
 
+#### 🧪 模拟器反证（2026-10-18，Huawei_TripleFold / API 26）：**接口本身没问题，是 XT2 的锅**
+
+同一份代码、同一套采集逻辑，在三折叠**模拟器**上跑出来的值**随形态变化**：
+
+| 形态 | 窗口宽 | `FS` | `C:`（折痕中心 vp） | 说明 |
+| --- | --- | --- | --- | --- |
+| 外屏合起（single） | 351 | 2 | `388,388` | 两条相同，但 388 > 351 —— 折痕在可视区外 |
+| 展开双屏（double） | 712 | 1 | `373` | **只有一条** |
+| 三屏展开（triple） | 1107 | 11 | `373,753` | **两条不同**，比例约 33.7% / 68% |
+
+→ **结论升级**：我们的用法（采集时机、px 换算、接口调用方式）**没有问题** ——
+模拟器上能拿到随形态变化的两条折痕，**真机恒定 `372,372` 是 XT2 设备/系统侧的实现缺陷**（与官方 Q1 的推断一致）。
+⚠️ 但这**不改变布局决策**：真机上数据就是错的，动态分栏在 XT2 上仍然做不了。
+→ **副产品**：三档断点在模拟器上同样验证通过（351→sm、712→md、1107→lg），
+说明断点阈值不是「只对 XT2 成立」的偶然值。
+
 #### 已落码：双接口同采，等第六轮读数
 
 `EntryAbility.collectCreasePx()` 现在**两个接口都读一遍**（都写 hilog，状态栏优先显示 live），
@@ -849,6 +865,52 @@ instancePath '/overrides/signingConfig', keyword 'propertyNames',
 有则注入、无则不签名（构建照样成功，产物 `-unsigned.hap`）。
 实测：`BUILD SUCCESSFUL` + `entry-default-signed.hap`，`build-profile.json5` 保持 `[]`。
 凭据抽取走 `.\tools\signing.ps1 -Import`。
+
+---
+
+## J 组：视觉基线的三个待核实项（J-1 / J-2 / J-3）—— ✅ 全部核实完毕（2026-10-18）
+
+> 来源：需求池 J 节 → v0.2 §3.5。铁律：**查不到就用兜底，禁止凭记忆编 `Hds*` 或 `sys.symbol.*`**。
+
+### J-1 `Hds*` 组件能否直接引？ ❌ **不存在，改为自绘同观感**
+
+在本地 SDK 里全量搜 `HdsListItem` / `HdsButton` / `HdsNavigation`：
+
+```
+sdk/default/openharmony/ets/api/ + component/   → 0 命中
+sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
+```
+
+**结论**：API 24 的 SDK 里**没有** UI Design Kit 的 `Hds*` 组件。
+→ 按需求 4.6 的兜底执行：**自绘同观感列表项**（主文本 16fp / 副文本 12fp / 行高 56vp / 选中主色实底）。
+不为一个列表项引整套 Design Kit（v0.2 §4「明确不做」也这么定）。
+
+### J-2 `SymbolGlyph` + `sys.symbol.*` 能否覆盖图标清单？ ⚠️ **只能核实 3 个 id，改为统一自绘**
+
+- `SymbolGlyph` 组件**存在**（`component/common.d.ts` 有 `SymbolGlyphModifier`）。
+- 但 `sys.symbol.*` 的**可用名单在 SDK 里查不到全量**，只有 d.ts 注释里出现的几个：
+  `sys.symbol.open_sidebar` / `chevron_down` / `chevron_forward` / `ohos_wifi` / `ohos_lungs`。
+  文件树需要的 文件夹 / 文档 / 收起 / 重命名 / 删除 **都核实不到**。
+
+**结论**：只用核实得到的 3 个会与自绘混成两套风格（4.7 明确禁止混用）→ **全部自绘**。
+实现见 `entry/src/main/ets/common/Icons.ets`：24 viewBox 描边、`strokeWidth 2`、圆头圆角。
+→ **待办（v0.3）**：拿到官方 Symbol 资源全量名单后，整体替换为 `SymbolGlyph`。
+
+> ⚠️ 自绘踩坑记录（两次，都已修）：
+> ① `Shape().viewPort()` **不缩放子 Path** —— 图标被渲染成几个像素的点；
+> ② `Path.commands` 的坐标单位是 **px**，而 `.width(size)` 是 **vp** ——
+>    直接按 24→size 缩放只能占容器 35%（460dpi 上看起来还是个点），
+>    系数必须是 `vp2px(size) / 24`。
+> ③ 路径**只用直线命令**（M/L/H/V/Z）：弧线命令 `a/A` 里的 flag 是 0/1，
+>    整体乘缩放系数会破坏语义，所以约定新增图标不许用弧线。
+
+### J-3 要不要显式 `fontFamily: 'HarmonyOS Sans'`？ ❌ **不需要**
+
+- SDK 自带 `HarmonyOS_Sans.ttf` / `HarmonyOS_Sans_Condensed.ttf`（`previewer/common/bin/fonts/`）；
+- HarmonyOS 系统的**默认字体就是 HarmonyOS Sans**，ArkUI 不设 `fontFamily` 即等于它。
+
+**结论**：**不写** `fontFamily`。显式写死反而会在多语言/系统换字体时变成硬编码负担。
+（若日后要区分 Condensed 做数字排版，再按需显式指定。）
 
 ---
 

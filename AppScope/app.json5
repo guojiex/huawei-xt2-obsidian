@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "com.jxg.huaweiobsidian",
     "vendor": "jxg",
-    "versionCode": 1000000,
-    "versionName": "1.0.0",
+    "versionCode": 2000,
+    "versionName": "0.2.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",
     "label": "$string:app_name"

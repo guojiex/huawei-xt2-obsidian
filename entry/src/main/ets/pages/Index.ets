@@ -1,22 +1,20 @@
 /**
- * Index.ets —— 三形态布局总装 + 库模型接线（v0.1）
+ * Index.ets —— 三形态布局总装 + 库模型接线（v0.1 骨架 / v0.2 视觉基线）
  *
- * 为什么三栏自绘而不用 FoldSplitContainer（api_notes.md A2-bis，2026-10-17 已否决）：
- * ① 它的「三分栏」不是三列横排，是「侧列贯穿 + 另两栏上下堆叠」，横排列只有 2 个，
- *    做不出「侧栏 | 编辑 | 预览」三列；
- * ② 分栏比例只有预设枚举 LAYOUT_1V1 / LAYOUT_3V2 / LAYOUT_2V3，无 1:1:1，
- *    也表达不了「md 收起 → 编辑|预览 各 50%」这类动态栏宽矩阵；
+ * 为什么三栏自绘而不用 FoldSplitContainer（api_notes.md A2-bis）：
+ * ① 它的「三分栏」不是三列横排，是「侧列贯穿 + 另两栏上下堆叠」，横排列只有 2 个；
+ * ② 分栏比例只有预设枚举 LAYOUT_1V1 / LAYOUT_3V2 / LAYOUT_2V3，无 1:1:1；
  * ③ 它为双折叠悬停态设计，三折叠三屏态不在其模型内。
- * 「一栏 = 一整块物理屏、栏边界压折痕」只有按断点等分自绘能保证（plan.md R5）。
+ * （2026-10-18 官方答复亦确认：布局适配优先基于响应式断点，精确对齐折痕非官方要求）
  *
- * 断点只用 windowSizeChange + px2vp（api_notes.md A3 ✅），不用 getFoldDisplayMode 做分支（A3）。
- * 布局矩阵（plan.md）：
- *   sm：单栏 + 抽屉侧栏（Stack 覆盖层，汉堡开关）
- *   md：侧栏 | 编辑 各 50%；收起 → 编辑 | 预览 各 50%（不跨折痕）
- *   lg：侧栏 | 编辑 | 预览 各 1/3；收起 → 编辑 2/3（跨第一条折痕，T016 红警示）| 预览 1/3
+ * 断点只用 windowSizeChange + px2vp（api_notes.md A3 ✅），不用 getFoldDisplayMode 做分支。
+ * 布局矩阵：
+ *   sm：单栏（编辑 / 预览二选一，顶部分段控件切换）+ 抽屉侧栏
+ *   md：侧栏 | 编辑 各 50%；收起 → 编辑 | 预览 各 50%
+ *   lg：侧栏 | 编辑 | 预览 各 1/3；收起 → 编辑 2/3（跨第一条折痕，红警示）| 预览 1/3
  *
- * 库模型接线：库列表/当前库 @State 持有、操作后从 VaultRegistry 刷新（单一数据源）；
- * 对话框按操作拉起（每次新建 CustomDialogController 传新鲜参数，避免 builder 参数过期）。
+ * v0.2 §3.5：本文件视觉全部走 token —— 颜色 `$r('app.color.*')`（深色自动切另一套）、
+ * 数值 `Space/Radius/FontSize/Size/Motion`（common/Tokens.ets）、图标 `Icon()`（common/Icons.ets）。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction } from '@kit.ArkUI';
@@ -26,6 +24,8 @@ import { VaultRegistry } from '../model/VaultRegistry';
 import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
+import { Icon } from '../common/Icons';
+import { Space, Radius, FontSize, Size } from '../common/Tokens';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -41,6 +41,19 @@ function formLabelOf(bp: string): string {
   return '三屏展开';
 }
 
+/** 单屏态分段控件的单个按钮 */
+@Extend(Text)
+function segItem(active: boolean) {
+  .fontSize(FontSize.body3)
+  .fontColor(active ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+  .fontWeight(active ? FontWeight.Medium : FontWeight.Normal)
+  .height(28)
+  .padding({ left: Space.s3, right: Space.s3 })
+  .textAlign(TextAlign.Center)
+  .borderRadius(Radius.full)
+  .backgroundColor(active ? $r('app.color.bg_card') : Color.Transparent)
+}
+
 @Entry
 @Component
 struct Index {
@@ -48,7 +61,7 @@ struct Index {
   @StorageProp('breakpoint') @Watch('onBreakpointChanged') breakpoint: string = Breakpoint.SM;
   /** 窗口宽度 vp（状态栏显示用） */
   @StorageProp('windowWidthVp') windowWidthVp: number = 0;
-  /** display.getFoldStatus() 读数（调试用，-1 = 没取到；三屏态返回值官方未记载，api_notes A1） */
+  /** display.getFoldStatus() 读数（调试用，-1 = 没取到；api_notes A1） */
   @StorageProp('foldStatus') foldStatus: number = -1;
   /**
    * 折痕中心 x（**px**，多条逗号分隔；'-' = 没取到。api_notes A2 采集通道，不参与布局）。
@@ -65,8 +78,13 @@ struct Index {
   @State sidebarCollapsed: boolean = false;
   /** 库管理视图整体替换内容区（原型 vaultsView 结构） */
   @State showVaultManager: boolean = false;
+  /**
+   * 单屏态「编辑 / 预览」二选一（v0.2 §3.4-3.3）。
+   * 只有一块屏放不下两栏；md/lg 两栏同时可见，这个状态不参与布局。
+   */
+  @State smMode: string = 'edit';
 
-  /** 对话框控制器：每次拉起重 建（传新鲜目标参数），不复用旧实例防参数过期 */
+  /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
   private renameDialogCtl: CustomDialogController | null = null;
   private deleteDialogCtl: CustomDialogController | null = null;
@@ -90,11 +108,9 @@ struct Index {
   }
 
   /**
-   * 系统返回键/侧滑返回拦截（需求 2.7b；api_notes I-1 已核实：@Entry 生命周期回调，
-   * 官方 FAQ 明确「返回 true 表示页面自己处理返回逻辑，不进行页面路由」）。
-   * 按优先级依次消费：① sm 抽屉打开 → 关抽屉（drawerOpen 仅 sm 有语义，
-   * 切 md/lg 时 onBreakpointChanged 已强制置 false，先判安全）；② 库管理视图 → 回笔记视图；
-   * ③ 都不是 → 返 false 走系统默认（退出应用）。对话框由 CustomDialogController/系统自理，不纳入。
+   * 系统返回键/侧滑返回拦截（需求 2.7b；api_notes I-1 / I3.1 已真机核实：侧滑同样触发）。
+   * 按优先级依次消费：① sm 抽屉打开 → 关抽屉；② 库管理视图 → 回笔记视图；
+   * ③ sm 预览态 → 回编辑态；④ 都不是 → 返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
     if (this.drawerOpen) {
@@ -103,6 +119,10 @@ struct Index {
     }
     if (this.showVaultManager) {
       this.showVaultManager = false;
+      return true;
+    }
+    if (this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
+      this.smMode = 'edit';
       return true;
     }
     return false;
@@ -234,6 +254,63 @@ struct Index {
     this.deleteDialogCtl.open();
   }
 
+  // ===== 视觉构件 =====
+
+  /** 顶栏图标按钮：视觉 22，热区 48（4.x 修正 v0.1 的 32×32 不足） */
+  @Builder
+  IconButton(name: string, color: ResourceColor, onTap: () => void) {
+    Row() {
+      Icon(name, 22, color)
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(Radius.icon)
+    .onClick(onTap)
+  }
+
+  /** 单屏态「编辑 / 预览」分段控件（SegmentedButton 观感） */
+  @Builder
+  SegToggle() {
+    Row({ space: 2 }) {
+      Text('编辑')
+        .segItem(this.smMode === 'edit')
+        .onClick(() => {
+          this.smMode = 'edit';
+        })
+      Text('预览')
+        .segItem(this.smMode === 'preview')
+        .onClick(() => {
+          this.smMode = 'preview';
+        })
+    }
+    .padding(2)
+    .borderRadius(Radius.full)
+    .backgroundColor($r('app.color.bg_secondary'))
+  }
+
+  /** 栏头：标题 + （单屏态才有的）编辑/预览切换 */
+  @Builder
+  PaneHead(title: string) {
+    Row() {
+      Text(title)
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_tertiary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+      if (this.breakpoint === Breakpoint.SM) {
+        this.SegToggle()
+      }
+    }
+    .width('100%')
+    .height(Size.paneHeadH)
+    .padding({ left: Space.s4, right: Space.s2 })
+    .alignItems(VerticalAlign.Center)
+    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
+  }
+
   build() {
     Column() {
       this.Appbar()
@@ -252,80 +329,71 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F2F2F7')
+    .backgroundColor($r('app.color.bg_page'))
   }
 
   /**
-   * 顶栏（需求 2.7，照原型 setView 逻辑）：
-   * 笔记视图 = 汉堡（sm 抽屉开关 / md+lg 收起唤回）+ 标题=当前库名 +「库管理」入口；
-   * 库管理视图 = 左上角换返回箭头（原型 #backBtn，主文本色——深色下 60% 白偏灰）+ 标题「笔记库」
-   * + 右侧「库管理」入口收敛不挂自己。
+   * 顶栏（需求 2.7）：笔记视图 = 汉堡（sm 抽屉 / md+lg 收起唤回）+ 标题 +「库管理」；
+   * 库管理视图 = 左上角换返回箭头 + 标题「笔记库」，右侧入口收敛。
+   * v0.2 §3.5：高度 56vp、标题 20fp/700、图标热区 48、颜色走 token。
    */
   @Builder
   Appbar() {
     Row() {
       if (this.showVaultManager) {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
-        Text('‹')
-          .fontSize(22)
-          .fontColor('#1C1C1E')
-          .width(32)
-          .height(32)
-          .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .onClick(() => {
-            this.showVaultManager = false;
-          })
+        this.IconButton('back', $r('app.color.text_primary'), (): void => {
+          this.showVaultManager = false;
+        })
       } else {
-        Text('☰')
-          .fontSize(18)
-          .fontColor('#8E8E93')
-          .width(32)
-          .height(32)
-          .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .onClick(() => {
-            this.onHamburger();
-          })
+        this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
+          this.onHamburger();
+        })
       }
       // 原型 VIEW_TITLE：次级视图标题固定为视图名，不显示当前库名
       Text(this.showVaultManager ? '笔记库' : this.currentVaultName())
-        .fontSize(13)
-        .fontWeight(FontWeight.Medium)
-        .fontColor('#1C1C1E')
+        .fontSize(FontSize.s2)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
         .layoutWeight(1)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ left: 10, right: 10 })
+        .margin({ left: Space.s2, right: Space.s2 })
       if (!this.showVaultManager) {
         Text('库管理')
-          .fontSize(12)
-          .fontColor('#8E8E93')
-          .height(28)
-          .padding({ left: 10, right: 10 })
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_secondary'))
+          .height(Size.touch)
+          .padding({ left: Space.s3, right: Space.s3 })
+          .textAlign(TextAlign.Center)
+          .borderRadius(Radius.control)
           .onClick(() => {
             this.showVaultManager = true;
           })
       }
     }
     .width('100%')
-    .height(48)
-    .padding({ left: 12, right: 12 })
+    .height(Size.appbarH)
+    .padding({ left: Space.s1, right: Space.s2 })
     .alignItems(VerticalAlign.Center)
-    .border({ width: { bottom: 1 }, color: '#E5E5EA' })
-    .backgroundColor('#FFFFFF')
+    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
   }
 
-  /** sm：单栏内容 + 抽屉侧栏覆盖层（Stack，汉堡开关，点遮罩关闭） */
+  /** sm：单栏内容（编辑 / 预览二选一）+ 抽屉侧栏覆盖层（Stack，汉堡开关，点遮罩关闭） */
   @Builder
   SmContent() {
     Stack({ alignContent: Alignment.Start }) {
-      this.EditorPane(false)
+      if (this.smMode === 'preview') {
+        this.PreviewPane()
+      } else {
+        this.EditorPane(false)
+      }
       if (this.drawerOpen) {
         Column()
           .width('100%')
           .height('100%')
-          .backgroundColor('rgba(0,0,0,0.35)')
+          .backgroundColor($r('app.color.mask'))
           .onClick(() => {
             this.drawerOpen = false;
           })
@@ -339,9 +407,13 @@ struct Index {
           onManageVaults: (): void => {
             this.drawerOpen = false;
             this.showVaultManager = true;
+          },
+          onCreateVault: (): void => {
+            this.drawerOpen = false;
+            this.openCreateDialog();
           }
         })
-          .width(280)
+          .width(Size.drawerW)
           .height('100%')
       }
     }
@@ -368,12 +440,15 @@ struct Index {
             },
             onManageVaults: (): void => {
               this.showVaultManager = true;
+            },
+            onCreateVault: (): void => {
+              this.openCreateDialog();
             }
           })
         }
         .layoutWeight(1)
         .height('100%')
-        .border({ width: { right: 1 }, color: '#E5E5EA' })
+        .border({ width: { right: 1 }, color: $r('app.color.line') })
 
         if (this.breakpoint === Breakpoint.MD) {
           // md 展开：侧栏 | 编辑 各 50%（预览隐藏，原型 applyForm）
@@ -394,10 +469,10 @@ struct Index {
           }
           .layoutWeight(1)
           .height('100%')
-          .border({ width: { left: 1 }, color: '#E5E5EA' })
+          .border({ width: { left: 1 }, color: $r('app.color.line') })
         }
       } else if (this.breakpoint === Breakpoint.MD) {
-        // md 收起：腾出的那一栏给预览 → 编辑 | 预览 各一整块屏，仍不跨折痕
+        // md 收起：腾出的那一栏给预览 → 编辑 | 预览 各一整块屏
         Column() {
           this.EditorPane(false)
         }
@@ -408,10 +483,10 @@ struct Index {
         }
         .layoutWeight(1)
         .height('100%')
-        .border({ width: { left: 1 }, color: '#E5E5EA' })
+        .border({ width: { left: 1 }, color: $r('app.color.line') })
       } else {
         // lg 收起：编辑扩 2/3 —— 会跨越第一条折痕，这是物理限制非 bug；
-        // 编辑区内渲染红色虚线折痕警示（位置见 EditorPane 注释）+ 预览 1/3
+        // 编辑区内渲染红色虚线折痕警示 + 预览 1/3
         Column() {
           this.EditorPane(true)
         }
@@ -422,7 +497,7 @@ struct Index {
         }
         .layoutWeight(1)
         .height('100%')
-        .border({ width: { left: 1 }, color: '#E5E5EA' })
+        .border({ width: { left: 1 }, color: $r('app.color.line') })
       }
     }
     .width('100%')
@@ -430,50 +505,39 @@ struct Index {
   }
 
   /**
-   * 编辑区占位（真实编辑器 v0.2 接入；结构照原型 editor-pane）。
+   * 编辑区占位（真实编辑器 v0.2 M2 接入）。
    * showHingeWarning：lg 收起态专用——编辑区扩到 2/3 会跨第一条折痕。
-   * 这是物理限制不是 bug：折痕位置硬件固定，某栏占不止一块屏必然横跨折痕（原型标红）。
-   * 警示线位置 = 编辑区宽的 50%：第一条折痕在整体宽度 1/3 处，编辑区占整体 2/3，
-   * 1/3 ÷ 2/3 = 50%。折痕实际坐标只做日志采集（TODO(真机校准)），不进布局算式（FR-003）。
+   * 警示线位置 = 编辑区宽的 50%：第一条折痕在整体 1/3 处，编辑区占 2/3，1/3 ÷ 2/3 = 50%。
+   * 折痕实际坐标只做读数（api_notes A2：真机返回不可用 / 模拟器可用），**不进布局算式**。
    */
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      Row() {
-        Text('源模式')
-          .fontSize(12)
-          .fontColor('#8E8E93')
-      }
-      .width('100%')
-      .height(34)
-      .padding({ left: 12, right: 12 })
-      .alignItems(VerticalAlign.Center)
-      .border({ width: { bottom: 1 }, color: '#E5E5EA' })
-      .backgroundColor('#FFFFFF')
+      this.PaneHead('源模式')
 
       Stack() {
         Column() {
           Text('编辑区 · v0.2')
-            .fontSize(14)
-            .fontColor('#8E8E93')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_tertiary'))
         }
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
-        .backgroundColor('#FFFFFF')
+        .backgroundColor($r('app.color.bg_card'))
 
         if (showHingeWarning) {
-          // 被内容横跨的折痕：红色虚线竖标（零宽 Column + 左边框），照原型 .hinge.crossed
+          // 被内容横跨的折痕：红色虚线竖标（零宽 Column + 左边框）
           Column()
             .width(0)
             .height('100%')
-            .border({ width: { left: 2 }, color: '#E0483C', style: BorderStyle.Dashed })
+            .border({ width: { left: 2 }, color: $r('app.color.danger'), style: BorderStyle.Dashed })
             .position({ x: '50%' })
           Text('被内容横跨')
-            .fontSize(10)
-            .fontColor('#E0483C')
-            .position({ x: '50%', y: 10 })
-            .translate({ x: 4 })
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.danger'))
+            .position({ x: '50%', y: Space.s3 })
+            .translate({ x: Space.s1 })
         }
       }
       .layoutWeight(1)
@@ -483,37 +547,27 @@ struct Index {
     .height('100%')
   }
 
-  /** 预览区占位（真实预览 v0.2 接入；结构照原型 preview-pane） */
+  /** 预览区占位（真实预览 v0.2 M3 接入） */
   @Builder
   PreviewPane() {
     Column() {
-      Row() {
-        Text('预览')
-          .fontSize(12)
-          .fontColor('#8E8E93')
-      }
-      .width('100%')
-      .height(34)
-      .padding({ left: 12, right: 12 })
-      .alignItems(VerticalAlign.Center)
-      .border({ width: { bottom: 1 }, color: '#E5E5EA' })
-      .backgroundColor('#FFFFFF')
+      this.PaneHead('预览')
 
       Column() {
         Text('预览 · v0.2')
-          .fontSize(14)
-          .fontColor('#8E8E93')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_tertiary'))
       }
       .layoutWeight(1)
       .width('100%')
       .justifyContent(FlexAlign.Center)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor($r('app.color.bg_card'))
     }
     .width('100%')
     .height('100%')
   }
 
-  /** 库管理视图：整体替换内容区（原型 vaultsView 结构）；返回走顶栏 ‹ 与 onBackPress，组件不自带（2.7c） */
+  /** 库管理视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress，组件不自带（2.7c） */
   @Builder
   ManagerView() {
     VaultManagerView({
@@ -539,21 +593,21 @@ struct Index {
   Statusbar() {
     Row() {
       Text(this.currentVaultName())
-        .fontSize(12)
-        .fontColor('#8E8E93')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)
       Blank()
       Text(this.statusRightText())
-        .fontSize(12)
-        .fontColor('#8E8E93')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .height(26)
-    .padding({ left: 14, right: 14 })
+    .height(Size.statusbarH)
+    .padding({ left: Space.s3, right: Space.s3 })
     .alignItems(VerticalAlign.Center)
-    .border({ width: { top: 1 }, color: '#E5E5EA' })
-    .backgroundColor('#FAFAFC')
+    .border({ width: { top: 1 }, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
   }
 }
