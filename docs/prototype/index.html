@@ -111,10 +111,28 @@
   /* 栏宽必须等于"一整块物理屏"，否则内容会横跨折痕 */
   [data-form="lg"] .sidebar { width: 33.333%; }
   [data-form="md"] .sidebar { width: 50%; }
+
+  /* ---------- 侧栏收起（仅 md / lg，sm 用抽屉） ---------- */
+  [data-side="hidden"] .sidebar { display: none; }
+  /* md：把腾出来的那一栏给「预览」→ 编辑 | 预览 各占一整块屏，仍然不跨折痕 */
+  [data-form="md"][data-side="hidden"] .editor-pane { flex: none; width: 50%; }
+  [data-form="md"][data-side="hidden"] .preview-pane { display: flex; flex: none; width: 50%; }
+  /* lg：编辑区扩到 2/3（屏1+屏2）→ 代价：跨越第一条折痕（原型里标红） */
+  [data-form="lg"][data-side="hidden"] .editor-pane { flex: none; width: 66.666%; }
+  [data-form="lg"][data-side="hidden"] .preview-pane { flex: none; width: 33.333%; }
+  /* 被内容横跨的折痕：标红警示 */
+  .hinge.crossed { border-left-color: #e0483c; opacity: .9; }
+  .hinge-note.crossed { color: #e0483c; }
+  .hinge-note.crossed::after { content: ' · 被内容横跨'; }
   .side-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 10px 12px; font-size: 12px; color: var(--muted); flex: none;
   }
+  .side-mini {
+    border: none; background: transparent; color: var(--muted);
+    font-size: 11px; font-family: inherit; cursor: pointer; padding: 2px 4px; border-radius: 5px;
+  }
+  .side-mini:hover { background: var(--panel); color: var(--text); }
   .tree { flex: 1; overflow: auto; padding: 0 6px 10px; }
   .node {
     display: flex; align-items: center; gap: 6px;
@@ -439,7 +457,7 @@
             </div>
             <div class="side-head">
               <span id="treeCount">3 篇</span>
-              <span style="opacity:.6">搜索 v2</span>
+              <button class="side-mini" id="sideHideBtn" title="收起目录栏">收起 «</button>
             </div>
             <div class="tree" id="tree"></div>
             <div class="sw-hint">← 按住任意一行向左拖：拖一半出操作，滑到底直接删除</div>
@@ -570,6 +588,10 @@
     <li><b>删除语义不同</b>：本地库删除 = 目录连内容一起删，不可恢复（建议先导出）；Git 库「移除本地副本」只删手机上的目录，远端仓库不动，可以重新导入。</li>
     <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
     <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
+    <li><b>目录栏可以整体收起</b>（双屏 / 三屏都可以）：收起点侧栏右上角的「收起 «」，唤回点顶栏左上角的汉堡按钮。<b>但收起的代价在两种形态下不一样</b> ——<br>
+      ① <b>双屏收起</b>：腾出来的那一栏<b>给预览</b>，变成「编辑 | 预览」各占一整块屏 → <b>仍然不跨折痕</b>，等于白赚一个预览栏；<br>
+      ② <b>三屏收起</b>：编辑区扩到 2/3（占下两块屏）→ <b>会跨越第一条折痕</b>，原型里那条折痕会标红并写明「被内容横跨」。<br>
+      这是物理约束，不是布局没调好：折痕位置是硬件固定的，只要某栏占了不止一块屏，它必然横跨折痕。<b>要"专注写作"还是要"不跨折痕"，只能二选一</b>。</li>
     <li><b>折痕位置目前按等分假设</b>：设计稿把双屏折痕放在 50%、三屏放在 1/3 与 2/3。真机上应该用系统折叠状态接口拿实际折痕区域再校准，不能写死百分比。</li>
     <li><b>左滑是跟手的三档手感，不是三个摆设按钮</b>：向左拖（鼠标拖或触摸滑都一样）时行会跟着手指走 ——<br>
       ① <b>拖一半松手</b> → 吸附露出图标操作条（重命名 / 移动 / 删除，都是 44px 图标，不挤文件名）；<br>
@@ -1607,8 +1629,12 @@
   /* ---------- 形态 / 视图 / 主题 ---------- */
   var FORMS = { sm: '外屏合起 · 360vp', md: '展开双屏 · 660vp', lg: '三屏展开 · 1120vp' };
 
+  /* sideHidden：md / lg 下把目录栏收起来（sm 走抽屉，与此无关） */
+  var sideHidden = false;
+
   function applyForm(f) {
     body.setAttribute('data-form', f);
+    body.setAttribute('data-side', sideHidden ? 'hidden' : 'shown');
     document.getElementById('stForm').textContent = FORMS[f];
     var sidebar = document.getElementById('sidebar');
     var preview = document.getElementById('previewPane');
@@ -1616,7 +1642,7 @@
 
     if (f === 'sm') {
       drawer = false;
-      sidebar.style.display = drawer ? 'flex' : 'none';
+      sidebar.style.display = 'none';
       sidebar.style.position = 'absolute';
       sidebar.style.left = '0'; sidebar.style.top = '48px'; sidebar.style.bottom = '26px';
       sidebar.style.zIndex = '30';
@@ -1627,33 +1653,61 @@
     } else {
       sidebar.style.position = ''; sidebar.style.left = ''; sidebar.style.top = ''; sidebar.style.bottom = '';
       sidebar.style.zIndex = ''; sidebar.style.width = ''; sidebar.style.boxShadow = '';
-      sidebar.style.display = 'flex';
-      preview.style.display = (f === 'lg') ? 'flex' : 'none';
-      menu.style.display = 'none';
+      sidebar.style.display = sideHidden ? 'none' : 'flex';
+      /* md 收起目录 → 腾出的那一栏给预览，仍是「一栏一屏」不跨折痕；lg 原本就有预览 */
+      preview.style.display = (f === 'lg' || (f === 'md' && sideHidden)) ? 'flex' : 'none';
+      menu.style.display = sideHidden ? 'flex' : 'none';
     }
     document.getElementById('noteView').style.position = 'relative';
     drawHinges(f);
     fit();
   }
 
+  function setSideHidden(h) {
+    sideHidden = h;
+    var f = body.getAttribute('data-form');
+    if (f === 'sm') { drawer = true; }         // sm 态「展开」= 开抽屉
+    applyForm(f);
+  }
+
   function toggleDrawer(open) {
-    drawer = (typeof open === 'boolean') ? open : !drawer;
-    document.getElementById('sidebar').style.display = drawer ? 'flex' : 'none';
+    if (body.getAttribute('data-form') === 'sm') {
+      drawer = (typeof open === 'boolean') ? open : !drawer;
+      document.getElementById('sidebar').style.display = drawer ? 'flex' : 'none';
+    } else {
+      setSideHidden(!sideHidden);
+    }
   }
   document.getElementById('menuBtn').addEventListener('click', function () { toggleDrawer(); });
+  document.getElementById('sideHideBtn').addEventListener('click', function () { setSideHidden(true); });
 
   function drawHinges(f) {
     var wrap = document.getElementById('wrap');
     var old = wrap.querySelectorAll('.hinge, .hinge-note');
     for (var i = 0; i < old.length; i++) { old[i].remove(); }
     var pts = (f === 'lg') ? [33.333, 66.666] : (f === 'md' ? [50] : []);
+    /* 收起目录后各栏占的区间；折痕落在区间内部（不是边界）就是被内容横跨 */
+    var spans = [];
+    if (f === 'md' && sideHidden) { spans = [[0, 50], [50, 100]]; }          // 编辑 | 预览，边界压折痕 ✓
+    else if (f === 'lg' && sideHidden) { spans = [[0, 66.666], [66.666, 100]]; } // 编辑占两块屏 ✗
+    else if (f === 'md') { spans = [[0, 50], [50, 100]]; }
+    else if (f === 'lg') { spans = [[0, 33.333], [33.333, 66.666], [66.666, 100]]; }
+
+    function isCrossed(p) {
+      for (var i = 0; i < spans.length; i++) {
+        if (p > spans[i][0] + 0.01 && p < spans[i][1] - 0.01) { return true; }
+      }
+      return false;
+    }
+
     pts.forEach(function (p) {
+      var x = isCrossed(p);
       var line = document.createElement('div');
-      line.className = 'hinge';
+      line.className = 'hinge' + (x ? ' crossed' : '');
       line.style.left = p + '%';
       wrap.appendChild(line);
       var tag = document.createElement('div');
-      tag.className = 'hinge-note';
+      tag.className = 'hinge-note' + (x ? ' crossed' : '');
       tag.style.left = p + '%';
       tag.textContent = '折痕';
       wrap.appendChild(tag);
