@@ -242,6 +242,75 @@
   }
   .hidden { display: none !important; }
 
+  /* ---------- 库切换器 ---------- */
+  .vault-switch {
+    position: relative; flex: none;
+    padding: 8px 10px; margin: 8px 8px 4px; border-radius: 9px;
+    background: var(--panel); border: 1px solid var(--border); cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .vault-switch:hover { border-color: var(--accent); }
+  .vault-switch .vname { flex: 1; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .vault-switch .vsub { display: block; font-size: 10.5px; color: var(--muted); font-weight: 400; }
+  .vault-switch .chev { color: var(--muted); font-size: 10px; }
+  .vault-menu {
+    position: absolute; left: 8px; right: 8px; top: 100%; z-index: 50;
+    margin-top: 4px; padding: 4px; border-radius: 9px;
+    background: var(--panel); border: 1px solid var(--border);
+    box-shadow: 0 6px 20px rgba(0,0,0,.12);
+  }
+  .vault-menu .vitem {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 12px;
+  }
+  .vault-menu .vitem:hover { background: var(--panel-2); }
+  .vault-menu .vitem.on { color: var(--accent); background: var(--accent-soft); }
+  .vault-menu .vitem .t { flex: 1; }
+  .vault-menu .sep { height: 1px; background: var(--border); margin: 4px 2px; }
+  .vbadge {
+    font-size: 10px; padding: 1px 6px; border-radius: 20px;
+    border: 1px solid var(--border); color: var(--muted); flex: none;
+  }
+  .vbadge.git { color: var(--ok); border-color: var(--ok); background: var(--ok-soft); }
+  .vbadge.local { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+  /* ---------- 库管理页 ---------- */
+  .vcards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .vcard {
+    border: 1px solid var(--border); border-radius: 11px; padding: 11px 12px;
+    background: var(--panel);
+  }
+  .vcard.cur { border-color: var(--accent); background: var(--accent-soft); }
+  .vcard .r1 { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .vcard .nm { font-size: 13px; font-weight: 500; }
+  .vcard .meta { font-size: 11.5px; color: var(--muted); line-height: 1.7; }
+  .vcard .ops { display: flex; gap: 6px; margin-top: 9px; }
+  .vcard .ops button { font-size: 11.5px; padding: 4px 9px; }
+  .btn-danger { color: var(--err); border-color: var(--err); background: var(--err-soft); }
+  .add-box {
+    border: 1px dashed var(--border); border-radius: 11px; padding: 14px;
+    text-align: center; color: var(--muted); font-size: 12px; cursor: pointer;
+  }
+  .add-box:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------- 确认层 ---------- */
+  .mask {
+    position: absolute; inset: 0; z-index: 60; display: flex;
+    align-items: center; justify-content: center; background: rgba(0,0,0,.35);
+  }
+  .confirm {
+    width: 300px; padding: 16px; border-radius: 13px;
+    background: var(--panel); border: 1px solid var(--border); box-shadow: 0 8px 30px rgba(0,0,0,.2);
+  }
+  .confirm .ct { font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
+  .confirm .cd { font-size: 12px; color: var(--muted); margin-bottom: 12px; line-height: 1.6; }
+  .confirm .cb { display: flex; gap: 8px; justify-content: flex-end; }
+  .confirm .path {
+    font-family: Consolas, monospace; font-size: 11px; color: var(--muted);
+    background: var(--code-bg); padding: 5px 8px; border-radius: 6px; margin-bottom: 10px;
+    word-break: break-all;
+  }
+
   /* ---------- 说明 ---------- */
   .notes {
     max-width: 1180px; margin: 26px auto 0; padding: 16px 18px;
@@ -265,7 +334,8 @@
   <div class="grp">
     <span class="lbl">视图</span>
     <button data-v="note" class="on">笔记</button>
-    <button data-v="sync">同步（F6）</button>
+    <button data-v="vaults">库管理</button>
+    <button data-v="sync">导入仓库</button>
   </div>
   <div class="grp">
     <span class="lbl">主题</span>
@@ -292,13 +362,19 @@
         <!-- 笔记视图 -->
         <div class="views" id="noteView" style="flex:1;min-height:0">
           <aside class="sidebar" id="sidebar">
+            <div class="vault-switch" id="vaultSwitch">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4l5 4-5 4V4zM9 4h5v8H9z"/></svg>
+              <span class="vname"><span id="curVaultName">本地笔记</span><span class="vsub" id="curVaultSub">vaults/local · 3 篇</span></span>
+              <span class="chev">▾</span>
+              <div class="vault-menu hidden" id="vaultMenu"></div>
+            </div>
             <div class="side-head">
-              <span>笔记库 · 182 篇</span>
+              <span id="treeCount">3 篇</span>
               <span style="opacity:.6">搜索 v2</span>
             </div>
             <div class="tree" id="tree"></div>
             <div class="side-foot">
-              <button id="gotoSync">同步</button>
+              <button id="gotoVaults">管理库</button>
               <button>新建</button>
             </div>
           </aside>
@@ -322,8 +398,8 @@
 
         <!-- 同步视图 -->
         <div class="sync hidden" id="syncView">
-          <h2>连接笔记库</h2>
-          <div class="sub">笔记保存在应用沙箱内，先从远端仓库拉取一次</div>
+          <h2>导入 Git 仓库</h2>
+          <div class="sub">每个仓库在 vaults/ 下成为一个独立目录，与已有笔记互不干扰</div>
           <div class="notice">
             <span>支持 GitHub、Gitee 与自建 GitLab。Gitee 私有库请填用户名，GitHub 留空。</span>
           </div>
@@ -342,11 +418,15 @@
             </div>
           </div>
           <div class="field">
+            <label>本地目录名（自动取仓库名，重名会加后缀）</label>
+            <input id="fDir" value="obsidian-vault">
+          </div>
+          <div class="field">
             <label>私人令牌 PAT（存关键资产，不明文落盘）</label>
             <input id="fToken" type="password" value="github_pat_11A••••••••••••">
           </div>
           <div class="actions">
-            <button class="primary" id="btnPull">拉取到本库</button>
+            <button class="primary" id="btnPull">导入为新库</button>
             <button id="btnErr">模拟 401 报错</button>
             <button id="btnBack">返回笔记</button>
           </div>
@@ -356,15 +436,39 @@
             <div class="t">无法访问该仓库</div>
             <div>仓库不存在，或令牌没有权限 —— 这两种情况服务端都返回 401。<br>请检查地址拼写、令牌是否勾选了 Contents 读权限。</div>
           </div>
-          <div class="last">上次同步：今天 10:24 · main @ a3f9c21 · 182 个文件 · 耗时 8.4s</div>
+          <div class="last" id="syncLast">已跟踪 1 个仓库 · 导入完成后会自动切换为新库</div>
+        </div>
+
+        <!-- 库管理视图 -->
+        <div class="sync hidden" id="vaultsView">
+          <h2>笔记库</h2>
+          <div class="sub">每个库是 vaults/ 下的一个独立目录，各自独立同步</div>
+          <div class="vcards" id="vcards"></div>
+          <div class="add-box" id="addVault">+ 导入 Git 仓库</div>
+          <div class="last">
+            本地笔记：随应用创建，可直接删除（删除前建议先导出）。<br>
+            Git 库：删除只移除本地副本，远端仓库不受影响。
+          </div>
         </div>
       </div>
 
       <div class="statusbar">
         <span><span class="dot"></span> 已保存</span>
         <span id="stCount">1,284 字</span>
-        <span>main @ a3f9c21</span>
+        <span id="stVault">本地笔记</span>
         <span style="margin-left:auto" id="stForm">三屏展开 · 1120vp</span>
+      </div>
+
+      <div class="mask hidden" id="mask">
+        <div class="confirm">
+          <div class="ct" id="cfTitle">删除本地笔记？</div>
+          <div class="cd" id="cfDesc">该目录下的所有笔记会被永久删除，且无法恢复。建议先导出备份。</div>
+          <div class="path" id="cfPath">vaults/local</div>
+          <div class="cb">
+            <button id="cfCancel">取消</button>
+            <button class="btn-danger" id="cfOk">确认删除</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -373,12 +477,15 @@
 <div class="notes">
   <h3>设计稿说明（这几条是决策，看效果时一起判断）</h3>
   <ul>
+    <li><b>多库模型</b>：vaults/ 下每个子目录是一个独立库。本地笔记随应用创建、开箱即用、可删除；每个 Git 仓库导入后成为一个目录，各自独立同步。切换库只换目录，互不影响。</li>
+    <li><b>删除语义不同</b>：本地库删除 = 目录连内容一起删，不可恢复（建议先导出）；Git 库「移除本地副本」只删手机上的目录，远端仓库不动，可以重新导入。</li>
     <li><b>栏边界对齐折痕</b>：全展开态三栏各占 1/3，正好落在两条铰链上，编辑区不跨折痕；合起态单栏 + 抽屉，双屏态两栏各 50%。橙色虚线是折痕标注，不是 UI。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
     <li><b>搜索标了 v2</b>：全文搜索依赖全库索引，MVP 不做；MVP 只做文件名检索。</li>
     <li><b>[[双链]] 与 #标签 只是渲染示意</b>：两者都依赖索引层，属需求池 B 组，MVP 后置。</li>
-    <li><b>同步页目前只有克隆</b>：pull / commit / push 未实现，所以手机上改了还推不回去；PAT 当前明文存 preferences，正式版必须迁关键资产存储服务。</li>
+    <li><b>跨库检索不做</b>：搜索与双链都只在当前库内生效（本就属 v2），切库后要重新搜。</li>
+    <li><b>导入目前只有克隆</b>：pull / commit / push 未实现，所以手机上改了还推不回去；PAT 当前明文存 preferences，正式版必须迁关键资产存储服务。</li>
   </ul>
 </div>
 
@@ -387,13 +494,49 @@
   var body = document.body;
 
   /* ---------- 数据 ---------- */
-  var FILES = [
-    { id: 'stream', name: '流式系统_流处理实战教程.md', dir: '10_Notes/Engineering/流式系统' },
-    { id: 'dataflow', name: 'Dataflow模型四要素.md', dir: '10_Notes/Engineering/流式系统' },
-    { id: 'intimacy', name: '亲密关系_第一章.md', dir: '10_Notes/Blog/reading' },
-    { id: 'tob', name: 'ToB三条线复盘.md', dir: '20_Projects/开窍研究所' },
-    { id: 'inbox', name: '2026-10-17 随手记.md', dir: '00_Inbox' }
+  /* 库注册表：每个库 = vaults/ 下的一个独立目录 */
+  var VAULTS = [
+    { id: 'local', name: '本地笔记', type: 'local', dir: 'vaults/local', files: 3 },
+    { id: 'obsidian-vault', name: 'obsidian-vault', type: 'git', dir: 'vaults/obsidian-vault',
+      remote: 'github.com/guojiex/obsidian-vault', branch: 'main', files: 182,
+      lastSync: '今天 10:24', commit: 'a3f9c21' }
   ];
+  var currentVault = 'local';
+
+  /* 每个库的文件树：[kind, label, open, depth, id?] */
+  var TREES = {
+    local: [
+      ['dir', '00_Inbox', true, 0],
+      ['file', '2026-10-17 随手记.md', false, 1, 'inbox'],
+      ['dir', '10_Notes', true, 0],
+      ['file', '快速上手.md', false, 1, 'welcome'],
+      ['file', '待办清单.md', false, 1, 'todo']
+    ],
+    'obsidian-vault': [
+      ['dir', '00_Inbox', false, 0],
+      ['dir', '10_Notes', true, 0],
+      ['dir', 'Engineering', true, 1],
+      ['dir', '流式系统', true, 2],
+      ['file', '流式系统_流处理实战教程.md', false, 2, 'stream'],
+      ['file', 'Dataflow模型四要素.md', false, 2, 'dataflow'],
+      ['dir', 'Blog/reading', true, 1],
+      ['file', '亲密关系_第一章.md', false, 2, 'intimacy'],
+      ['dir', '20_Projects', true, 0],
+      ['dir', '开窍研究所', true, 1],
+      ['file', 'ToB三条线复盘.md', false, 2, 'tob'],
+      ['dir', '30_Archive', false, 0]
+    ]
+  };
+
+  var FILES = {
+    'welcome': '快速上手.md',
+    'todo': '待办清单.md',
+    'inbox': '2026-10-17 随手记.md',
+    'stream': '流式系统_流处理实战教程.md',
+    'dataflow': 'Dataflow模型四要素.md',
+    'intimacy': '亲密关系_第一章.md',
+    'tob': 'ToB三条线复盘.md'
+  };
 
   var CONTENT = {
     stream: [
@@ -492,37 +635,71 @@
       '- 图标定了紫黑水晶，名字叫曜石笔记',
       '',
       '#Inbox'
+    ].join('\n'),
+
+    welcome: [
+      '# 快速上手',
+      '',
+      '这是**本地笔记**库，安装即可用，不需要连接任何远端仓库。',
+      '',
+      '## 能做什么',
+      '',
+      '- 直接在编辑区写 Markdown，右侧实时预览',
+      '- 全展开三屏时三栏常驻：文件树 / 编辑 / 预览',
+      '- 想搬入已有笔记库，去「库管理」导入 Git 仓库',
+      '',
+      '## 库是怎么组织的',
+      '',
+      '| 库 | 位置 | 说明 |',
+      '| --- | --- | --- |',
+      '| 本地笔记 | vaults/local | 随应用创建，可删除 |',
+      '| 导入的仓库 | vaults/<仓库名> | 各自独立同步 |',
+      '',
+      '> 每个库互不干扰：切库只换目录，不动其他库的内容。',
+      '',
+      '#Inbox #使用说明'
+    ].join('\n'),
+
+    todo: [
+      '# 待办清单',
+      '',
+      '- [x] 定应用名与图标',
+      '- [x] 跑通 Git 克隆桥接层',
+      '- [ ] M0.5：验证 WebView 里的中文输入法与光标',
+      '- [ ] M1：真实目录文件树',
+      '- [ ] 补 push，让手机上改的笔记能回写',
+      '',
+      '#TODO'
     ].join('\n')
   };
 
   /* ---------- 文件树 ---------- */
-  var current = 'stream';
+  var current = 'welcome';
   var drawer = false;
   var treeEl = document.getElementById('tree');
 
   function renderTree() {
+    var rows = TREES[currentVault] || [];
     var html = '';
-    html += nodeHtml('dir', '00_Inbox', false, 0);
-    html += nodeHtml('dir', '10_Notes', true, 0);
-    html += nodeHtml('dir', 'Engineering', true, 1);
-    html += nodeHtml('dir', '流式系统', true, 2);
-    html += nodeHtml('file', '流式系统_流处理实战教程.md', false, 2, 'stream');
-    html += nodeHtml('file', 'Dataflow模型四要素.md', false, 2, 'dataflow');
-    html += nodeHtml('dir', 'Blog/reading', true, 1);
-    html += nodeHtml('file', '亲密关系_第一章.md', false, 2, 'intimacy');
-    html += nodeHtml('dir', '20_Projects', true, 0);
-    html += nodeHtml('dir', '开窍研究所', true, 1);
-    html += nodeHtml('file', 'ToB三条线复盘.md', false, 2, 'tob');
-    html += nodeHtml('dir', '30_Archive', false, 0);
-    treeEl.innerHTML = html;
+    for (var i = 0; i < rows.length; i++) {
+      html += nodeHtml(rows[i][0], rows[i][1], rows[i][2], rows[i][3], rows[i][4]);
+    }
+    treeEl.innerHTML = html || '<div class="node" style="color:var(--muted)">（空库）</div>';
     var items = treeEl.querySelectorAll('[data-id]');
-    for (var i = 0; i < items.length; i++) {
-      items[i].addEventListener('click', function () {
+    for (var j = 0; j < items.length; j++) {
+      items[j].addEventListener('click', function () {
         current = this.getAttribute('data-id');
         loadFile();
         if (body.getAttribute('data-form') === 'sm') { toggleDrawer(false); }
       });
     }
+    var v = vaultById(currentVault);
+    document.getElementById('treeCount').textContent = (v ? v.files : 0) + ' 篇';
+  }
+
+  function vaultById(id) {
+    for (var i = 0; i < VAULTS.length; i++) { if (VAULTS[i].id === id) { return VAULTS[i]; } }
+    return null;
   }
 
   function nodeHtml(kind, label, open, depth, id) {
@@ -542,14 +719,144 @@
   var mdEl = document.getElementById('md');
 
   function loadFile() {
-    var f = null;
-    for (var i = 0; i < FILES.length; i++) { if (FILES[i].id === current) { f = FILES[i]; } }
     ta.value = CONTENT[current] || '';
-    document.getElementById('editName').textContent = f ? f.name : '';
-    document.getElementById('appTitle').textContent = (f ? f.name.replace(/\.md$/, '') : '');
+    var name = FILES[current] || '';
+    document.getElementById('editName').textContent = name;
+    document.getElementById('appTitle').textContent = name.replace(/\.md$/, '');
+    updateVaultUI();
     render();
     renderTree();
   }
+
+  function updateVaultUI() {
+    var v = vaultById(currentVault);
+    if (!v) { return; }
+    document.getElementById('curVaultName').textContent = v.name;
+    document.getElementById('curVaultSub').textContent = v.dir + ' · ' + v.files + ' 篇';
+    document.getElementById('stVault').textContent = (v.type === 'git')
+      ? v.name + ' @ ' + (v.commit || '—') : v.name;
+  }
+
+  /* ---------- 库切换器 ---------- */
+  function renderVaultMenu() {
+    var menu = document.getElementById('vaultMenu');
+    var html = '';
+    for (var i = 0; i < VAULTS.length; i++) {
+      var v = VAULTS[i];
+      html += '<div class="vitem' + (v.id === currentVault ? ' on' : '') + '" data-vid="' + v.id + '">'
+        + '<span class="t">' + esc(v.name) + '</span>'
+        + '<span class="vbadge ' + v.type + '">' + (v.type === 'git' ? 'Git' : '本地') + '</span></div>';
+    }
+    html += '<div class="sep"></div>';
+    html += '<div class="vitem" data-act="manage"><span class="t">管理库…</span></div>';
+    html += '<div class="vitem" data-act="import"><span class="t">导入 Git 仓库…</span></div>';
+    menu.innerHTML = html;
+    var items = menu.querySelectorAll('[data-vid]');
+    for (var j = 0; j < items.length; j++) {
+      items[j].addEventListener('click', function () {
+        switchVault(this.getAttribute('data-vid'));
+        menu.classList.add('hidden');
+      });
+    }
+    var acts = menu.querySelectorAll('[data-act]');
+    for (var k = 0; k < acts.length; k++) {
+      acts[k].addEventListener('click', function () {
+        menu.classList.add('hidden');
+        setView(this.getAttribute('data-act') === 'manage' ? 'vaults' : 'sync', true);
+      });
+    }
+  }
+
+  function switchVault(id) {
+    if (id === currentVault) { return; }
+    currentVault = id;
+    var rows = TREES[id] || [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i][0] === 'file') { current = rows[i][4]; break; }
+    }
+    loadFile();
+    renderVaultMenu();
+  }
+
+  document.getElementById('vaultSwitch').addEventListener('click', function (e) {
+    if (e.target.closest('[data-vid]') || e.target.closest('[data-act]')) { return; }
+    renderVaultMenu();
+    document.getElementById('vaultMenu').classList.toggle('hidden');
+  });
+
+  /* ---------- 库管理页 ---------- */
+  function renderVaultCards() {
+    var box = document.getElementById('vcards');
+    var html = '';
+    for (var i = 0; i < VAULTS.length; i++) {
+      var v = VAULTS[i];
+      var git = v.type === 'git';
+      html += '<div class="vcard' + (v.id === currentVault ? ' cur' : '') + '">'
+        + '<div class="r1"><span class="nm">' + esc(v.name) + '</span>'
+        + '<span class="vbadge ' + v.type + '">' + (git ? 'Git 仓库' : '本地') + '</span>'
+        + (v.id === currentVault ? '<span class="vbadge">当前</span>' : '') + '</div>'
+        + '<div class="meta">' + v.dir + '<br>'
+        + v.files + ' 篇'
+        + (git ? ' · ' + v.remote + ' (' + v.branch + ')<br>上次同步：' + (v.lastSync || '从未') : ' · 不参与同步')
+        + '</div>'
+        + '<div class="ops">'
+        + (v.id === currentVault ? '' : '<button data-use="' + v.id + '">设为当前</button>')
+        + (git ? '<button data-sync="' + v.id + '">同步</button>' : '')
+        + '<button class="btn-danger" data-del="' + v.id + '">' + (git ? '移除本地副本' : '删除') + '</button>'
+        + '</div></div>';
+    }
+    box.innerHTML = html;
+    bind(box, '[data-use]', 'use', function (id) { switchVault(id); renderVaultCards(); });
+    bind(box, '[data-sync]', 'sync', function (id) { setView('sync', true); });
+    bind(box, '[data-del]', 'del', function (id) { askDelete(id); });
+  }
+
+  function bind(root, sel, attr, fn) {
+    var els = root.querySelectorAll(sel);
+    for (var i = 0; i < els.length; i++) {
+      els[i].addEventListener('click', function () { fn(this.getAttribute('data-' + attr)); });
+    }
+  }
+
+  /* ---------- 删除确认 ---------- */
+  function askDelete(id) {
+    var v = vaultById(id);
+    if (!v) { return; }
+    document.getElementById('cfTitle').textContent = v.type === 'git'
+      ? '移除「' + v.name + '」的本地副本？' : '删除「' + v.name + '」？';
+    document.getElementById('cfDesc').innerHTML = v.type === 'git'
+      ? '只删除手机上的这个目录，远端仓库不受影响。<br>下次想用可以重新导入。'
+      : '该目录下的 ' + v.files + ' 篇笔记会被永久删除，无法恢复。建议先导出备份。';
+    document.getElementById('cfPath').textContent = v.dir;
+    document.getElementById('cfOk').setAttribute('data-target', id);
+    document.getElementById('mask').classList.remove('hidden');
+  }
+
+  document.getElementById('cfCancel').addEventListener('click', function () {
+    document.getElementById('mask').classList.add('hidden');
+  });
+  document.getElementById('cfOk').addEventListener('click', function () {
+    var id = this.getAttribute('data-target');
+    document.getElementById('mask').classList.add('hidden');
+    for (var i = 0; i < VAULTS.length; i++) {
+      if (VAULTS[i].id === id) { VAULTS.splice(i, 1); break; }
+    }
+    delete TREES[id];
+    if (currentVault === id) {
+      currentVault = VAULTS.length ? VAULTS[0].id : '';
+      var rows = TREES[currentVault] || [];
+      for (var j = 0; j < rows.length; j++) {
+        if (rows[j][0] === 'file') { current = rows[j][4]; break; }
+      }
+      loadFile();
+    }
+    renderVaultMenu();
+    renderVaultCards();
+    updateVaultUI();
+  });
+
+  document.getElementById('addVault').addEventListener('click', function () { setView('sync', true); });
+  document.getElementById('gotoVaults').addEventListener('click', function () { setView('vaults', true); });
 
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -735,10 +1042,26 @@
     });
   }
 
-  function setView(v) {
+  function setView(v, syncBtns) {
     body.setAttribute('data-view', v);
     document.getElementById('noteView').classList.toggle('hidden', v !== 'note');
     document.getElementById('syncView').classList.toggle('hidden', v !== 'sync');
+    document.getElementById('vaultsView').classList.toggle('hidden', v !== 'vaults');
+    if (v === 'vaults') { renderVaultCards(); }
+    if (syncBtns) {
+      var all = document.querySelectorAll('[data-v]');
+      for (var i = 0; i < all.length; i++) {
+        all[i].classList.toggle('on', all[i].getAttribute('data-v') === v);
+      }
+    }
+  }
+
+  function setViewBtn(v) {
+    var all = document.querySelectorAll('[data-v]');
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.toggle('on', all[i].getAttribute('data-v') === v);
+    }
+    setView(v);
   }
 
   function fit() {
@@ -783,12 +1106,6 @@
       body.setAttribute('data-theme', t);
     });
   }
-  document.getElementById('gotoSync').addEventListener('click', function () {
-    var all = document.querySelectorAll('[data-v]');
-    for (var j = 0; j < all.length; j++) { all[j].classList.remove('on'); }
-    document.querySelector('[data-v="sync"]').classList.add('on');
-    setView('sync');
-  });
   document.getElementById('btnBack').addEventListener('click', function () {
     var all = document.querySelectorAll('[data-v]');
     for (var j = 0; j < all.length; j++) { all[j].classList.remove('on'); }
@@ -831,13 +1148,47 @@
     timer = setInterval(function () {
       if (i >= steps.length) {
         clearInterval(timer); timer = null;
-        log('同步完成', true);
+        addImportedVault(dirName(), document.getElementById('fRepo').value, document.getElementById('fBranch').value);
         return;
       }
       barEl.style.width = steps[i][0] + '%';
       log(steps[i][1], i === steps.length - 1);
       i++;
     }, 420);
+  });
+
+  function dirName() {
+    var v = (document.getElementById('fDir').value || '').trim();
+    return v || 'repo';
+  }
+
+  function addImportedVault(name, url, branch) {
+    var id = name, n = 2;
+    while (vaultById(id)) { id = name + '-' + n; n++; }
+    VAULTS.push({
+      id: id, name: id, type: 'git', dir: 'vaults/' + id,
+      remote: url.replace(/^https?:\/\//, ''), branch: branch || 'main',
+      files: 182, lastSync: '刚刚', commit: 'a3f9c21'
+    });
+    TREES[id] = [
+      ['dir', '10_Notes', true, 0],
+      ['dir', 'Engineering', true, 1],
+      ['file', '流式系统_流处理实战教程.md', false, 1, 'stream'],
+      ['dir', 'Blog/reading', true, 1],
+      ['file', '亲密关系_第一章.md', false, 1, 'intimacy']
+    ];
+    currentVault = id;
+    current = 'stream';
+    loadFile();
+    renderVaultMenu();
+    renderVaultCards();
+    log('已创建库 vaults/' + id + ' 并设为当前库', true);
+    document.getElementById('syncLast').textContent = '已跟踪 ' + VAULTS.filter(function (v) { return v.type === 'git'; }).length + ' 个仓库';
+  }
+
+  document.getElementById('fRepo').addEventListener('input', function () {
+    var m = this.value.trim().replace(/\.git$/, '').match(/\/([^\/]+)$/);
+    if (m && m[1]) { document.getElementById('fDir').value = m[1]; }
   });
 
   document.getElementById('btnErr').addEventListener('click', function () {
@@ -850,6 +1201,8 @@
   });
 
   /* ---------- 初始化 ---------- */
+  renderVaultMenu();
+  renderVaultCards();
   renderTree();
   loadFile();
   applyForm('lg');
