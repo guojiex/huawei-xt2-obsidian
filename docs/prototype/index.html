@@ -84,6 +84,7 @@
     --h-item: 56px;
     --h-button: 40px;
     --h-statusbar: 32px;
+    --tree-indent: 24px;   /* 文件树每级缩进：等于「caret 16 + 间距」，上级图标正对下级箭头 */
 
     /* 阴影（Z 轴层级） */
     --elev-1: 0 1px 2px rgba(0, 0, 0, .05), 0 2px 8px rgba(0, 0, 0, .06);
@@ -307,8 +308,7 @@
   }
   [data-form="md"] .node .nsub, [data-form="lg"] .node .nsub { display: block; }
   [data-form="md"] .node, [data-form="lg"] .node { align-items: flex-start; min-height: var(--h-item); padding: var(--sp-2) var(--sp-3); }
-  .node svg { flex: none; color: var(--brand); opacity: .9; }
-  .node.dir svg { color: var(--text-secondary); }
+  .node svg { flex: none; }
   .node.dir { color: var(--text-primary); font-weight: 500; }
   .node.file { font-size: var(--fs-body2); }
   [data-form="md"] .node.file, [data-form="lg"] .node.file { font-size: var(--fs-body1); }
@@ -317,10 +317,18 @@
   [data-form="md"] .node .caret, [data-form="lg"] .node .caret { margin-top: 6px; }
   [data-form="md"] .node > svg, [data-form="lg"] .node > svg,
   [data-form="md"] .node .nlabel, [data-form="lg"] .node .nlabel { margin-top: 1px; }
-  .indent-1 { padding-left: var(--sp-8); }
-  .indent-2 { padding-left: var(--sp-12); }
-  .indent-3 { padding-left: 64px; }
-  .indent-4 { padding-left: 80px; }
+  /* 层级引导线：光靠 padding 差 16px 根本看不出父子，竖线才是层级的视觉锚 */
+  /* 引导线要跨过行的上下 padding 才能连成一条，否则会断成刻度 */
+  .node .guides {
+    display: flex; flex: none; align-self: stretch; padding-left: 10px;   /* 线落在缩进槽中心（槽 12–32） */
+    margin-top: calc(-1 * var(--sp-2)); margin-bottom: calc(-1 * var(--sp-2));
+  }
+  .node .guides i { width: var(--tree-indent); flex: none; border-left: 1px solid var(--line-strong); }
+  /* 目录 = 结构（主色图标 + 500 字重）；文件 = 内容（中性图标 + 400 字重） */
+  .node.dir > svg { color: var(--brand); opacity: 1; }
+  .node.file > svg { color: var(--text-tertiary); opacity: 1; }
+  .node.file { color: var(--text-secondary); }
+  .node.file.sel { color: var(--brand); }
 
   /* 左滑操作条：包裹层负责裁剪，node 左移露出右侧按钮（触控热区 48vp） */
   .node-wrap.swiped .swipe, .node-wrap.will-del .swipe { visibility: visible; }
@@ -466,6 +474,10 @@
     padding: 0 var(--sp-4); border-top: 1px solid var(--line);
     font-size: var(--fs-caption); color: var(--text-tertiary); background: var(--bg-card);
   }
+  .statusbar > span { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* 外屏 360vp 塞不下四段，库名让位（侧栏/抽屉里已经有了） */
+  [data-form="sm"] .statusbar { gap: var(--sp-3); }
+  [data-form="sm"] #stVault { display: none; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); display: inline-block; margin-right: 5px; }
 
   /* ---------- 同步 / 设置视图（通用内容页） ---------- */
@@ -926,6 +938,11 @@
       落码前须核实 J-1（<code>Hds*</code> 组件可引入性）/ J-2（Symbol 引用方式）/ J-3（字体是否需显式指定），见
       <code>docs/harmonyos/api_notes.md</code> <b>I 组</b>；核实前用自绘兜底，<b>禁止凭记忆编组件名或资源 id</b>。
       本文件的 <code>:root</code> 与 <code>[data-theme="dark"]</code> 是 token 真源，ArkTS 侧改值时两边同步。</li>
+    <li><b>目录层级靠三样东西说清</b>，不只靠缩进：<br>
+      ① <b>每级 24vp 缩进</b>（早先手写 32/48/64/80，级差 16vp 太窄，父子看起来一样深）；<br>
+      ② <b>竖向引导线</b>：每级一条，跨行连续——缩进只给"位置"，线才给"归属"，这是最省宽度的层级信号；<br>
+      ③ <b>目录与文件分色分工</b>：目录=主色文件夹图标 + 500 字重（结构），文件=中性文档图标 + 400 字重（内容）。<br>
+      子文件比父目录固定深一级；折叠后子项整体消失，线也跟着断，不会剩半截悬空。</li>
     <li><b>次级页面一定有返回</b>：库管理 / 导入仓库 / 设置都是<b>平级面板</b>，不是层级导航 ——
       进任何一页，顶栏左上角的汉堡都换成<b>返回箭头</b>，一点回笔记视图；顶栏右侧图标按用途收敛
       （导入页不再挂「同步」，设置页不再挂齿轮）。页面标题只出现在顶栏，内容区不重复一个大标题。
@@ -987,8 +1004,8 @@
       ['dir', '10_Notes', true, 0],
       ['dir', 'Engineering', true, 1],
       ['dir', '流式系统', true, 2],
-      ['file', '流式系统_流处理实战教程.md', false, 2, 'stream'],
-      ['file', 'Dataflow模型四要素.md', false, 2, 'dataflow'],
+      ['file', '流式系统_流处理实战教程.md', false, 3, 'stream'],
+      ['file', 'Dataflow模型四要素.md', false, 3, 'dataflow'],
       ['dir', 'Blog/reading', true, 1],
       ['file', '亲密关系_第一章.md', false, 2, 'intimacy'],
       ['dir', '20_Projects', true, 0],
@@ -1411,7 +1428,9 @@
 
   function nodeHtml(row, idx) {
     var kind = row[0], label = row[1], open = row[2], depth = row[3], id = row[4];
-    var cls = 'node ' + (kind === 'dir' ? 'dir' : 'file') + ' indent-' + (kind === 'dir' ? depth : depth + 1);
+    var d = depth;   /* depth 已是绝对层级（file 的 depth = 父目录 depth + 1），不要再 +1 */
+    var cls = 'node ' + (kind === 'dir' ? 'dir' : 'file');
+    var guides = '<span class="guides">' + '<i></i>'.repeat(d) + '</span>';
     if (id && id === current) { cls += ' sel'; }
     var caret = kind === 'dir'
       ? '<span class="caret">' + (open ? ICON_CARET_OPEN : ICON_CARET) + '</span>'
@@ -1427,7 +1446,7 @@
       + (kind === 'dir' ? '' : '<button class="sw-btn danger" data-act="del" title="删除">'
         + ICON_TRASH + '<span class="sw-txt">松手删除</span></button>');
     return '<div class="node-wrap" data-kind="' + kind + '" data-idx="' + idx + '">'
-      + '<div class="' + cls + '"' + attrs + '>' + caret + icon
+      + '<div class="' + cls + '"' + attrs + '>' + guides + caret + icon
       + '<span class="nlabel">' + esc(label) + sub + '</span></div>'
       + '<div class="swipe">' + acts + '</div></div>';
   }
