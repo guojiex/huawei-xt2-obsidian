@@ -100,14 +100,18 @@ docs/harmonyos/
 | 日期 | 主题 | 问题数 | 存档 | 关键产出 |
 | --- | --- | --- | --- | --- |
 | 2026-10-17 | 首批核实（三折叠 / Web 组件 / 文件存储 / HAR 发布 / 权限网络） | 20 | [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md) | 三折叠恒为 `phone`；折痕接口只返回**单个 Rect**；`FoldSplitContainer` **已否决**；原子写改用 `AtomicFile`；令牌存 `@kit.AssetStoreKit`；`runJavaScript` 长度未记载 → 大数据走 `WebMessagePort`；前台 clone/push 无需额外权限 |
+| 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
 
 ### 仍未解决（下次提问优先从这里挑）
 
-| # | 问题 | 卡住什么 | 出处 |
+| # | 问题 | 卡住什么 | 状态 |
 | --- | --- | --- | --- |
-| B-1 | `onInterceptRequest` 的 `WebResourceRequest` 能否拿到 **POST body** | 决定同步层能否从「转发」简化为「拦截」 | `api_notes.md` B4 |
-| A-3 | 除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案 | 若有，可省掉自绘 + 真机校准 | `docs/open_questions.md` |
-| B-2 | `WebMessagePort` 在 `resource://rawfile/` 页面能否建立、ArrayBuffer 上限 | 卡住大数据通道选型 → 影响 push | `api_notes.md` B1 |
+| A-3 | 除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案 | 若有，可省掉自绘 + 真机校准 | ❓ **待问**（当前最该问的一条） |
+| ~~B-1~~ | ~~`onInterceptRequest` 能否拿到 POST body~~ | ~~同步层能否简化为拦截~~ | ✅ **已解决**：能拿到但是 `string`，**拦截方案否决**，转发为最终方案 |
+| ~~B-2~~ | ~~`WebMessagePort` 在 rawfile 页面能否建立~~ | ~~大数据通道选型~~ | ✅ **已解决**：可用、支持 ArrayBuffer；剩「上限多少」只能真机测 |
+| B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |
+
+**真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 
 ---
 

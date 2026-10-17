@@ -89,7 +89,13 @@
 
 ---
 
-### 提示词 · B 组（最高价值：决定架构能否简化）
+### 提示词 · B 组 —— ✅ **已问过**（2026-10-17）
+
+> 答案已回来并归档：[`harmonyos/qa/2026-10-17_B组追问_Web组件.md`](harmonyos/qa/2026-10-17_B组追问_Web组件.md)
+> 关键结果：**B-1 拦截方案否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**B-4 推翻** NodeContainer（卸载即重载 → 改 `visibility(Hidden)` 常驻）；B-2/B-6 确认 MessagePort 可用且可 transfer 进 Worker。
+> **别再问这组**，除非要追问细节。
+
+<details><summary>当时的提问原文（留档）</summary>
 
 ```
 我在用 HarmonyOS 原生（ArkTS）开发一个笔记应用，工程 API 版本：
@@ -133,6 +139,8 @@ B-6 Web 页面内的标准 Web Worker，在 ArkWeb（Chromium M114）里是否�
      背景：我已知道 javaScriptProxy 注入的对象在 Worker 里访问不到（无 window），
      想确认 Worker 是否至少能用 MessagePort 与原生通信。
 ```
+
+</details>
 
 ---
 
@@ -232,12 +240,13 @@ D-5 三方库的 LICENSE 是否强制要求？如果我用 Apache-2.0，
 
 | 项 | 怎么测 |
 | --- | --- |
-| 中文输入法在 contenteditable 的实际表现 | 真机打字：候选词、光标跟随、中文标点、联想输入、长按选择 |
+| **中文输入法（含 CM6 的 contenteditable vs textarea）** | 真机打字：候选词、光标跟随、中文标点、联想输入、长按选择；⚠️ 官方建议优先 textarea，**必须顺带对比 textarea**，否则 CM6 实测不过时没有降级依据 |
 | 三屏态 `getFoldStatus()` 实际返回值 | 三个形态各打印一次，建映射表（若 A-1 问不出来） |
 | 两条铰链的实际位置 | 打印 `getCurrentFoldCreaseRegion()` + 双角度值，与视觉折痕对照 |
 | 大库 clone 的实际耗时 | 用你真实的笔记库（几百篇）跑一次，记时 |
 | `runJavaScript` 实际能传多长 | 二分法测：从 1KB 往上试到失败 |
-| WebMessagePort 在 rawfile 页面能否建立 | 写个最小 demo 验证（若 B-2 问不出来） |
+| WebMessagePort 单条 ArrayBuffer 的实际上限 | 分块 4MB 起步往上试，定出稳定块大小（可用性已确认，只剩上限） |
+| `visibility(Hidden)` 时 JS 是否被暂停/降优先级 | git 容器 Hidden 后发起一次 clone，看是否照常跑完 |
 | 折叠切换时 Web 组件是否闪烁/丢滚动位置 | 三形态来回切，看编辑区 |
 | 三屏态下 Web 组件宽度是否超 7680px 物理像素 | 打印实际像素宽度与断点值 |
 
@@ -254,11 +263,12 @@ A-1 / A-2（三折叠 FoldStatus 与折痕）
 A-3（有无官方多列横排方案）
    └─> 若有 → 可省掉自绘 + 校准；若无 → 自绘方案不变
 
-B-1（onInterceptRequest 能否拿 POST body）
-   └─> 决定同步层是否从「转发」迁到「拦截」（架构简化，非阻塞）
+~~B-1（onInterceptRequest 能否拿 POST body）~~ ✅ 已解决（2026-10-17）
+   └─> 结论：能拿但 getRequestBody() 返回 string，二进制有风险 → **拦截方案否决，转发方案定案**
 
-B-2（WebMessagePort 可用性）
-   └─> 卡住大数据通道选型 ──> 影响 push 与大文档编辑
+~~B-2（WebMessagePort 可用性）~~ ✅ 已解决（2026-10-17）
+   └─> 结论：rawfile 页面可用、支持 ArrayBuffer → 通道选型定案（分块 4MB）；
+       仅「单条上限多少」残留，只能真机测，不阻塞
 
 Q2（zip 导出进不进 MVP）
    └─> 独立，随时可做
@@ -267,4 +277,5 @@ Q3（抽库时机）⏸ TODO 挂起
    └─> 依赖 push 完成 + 真机验证，不阻塞任何当前工作
 ```
 
-**最该先问的两条**：**B-1**（可能直接简化架构）和 **A-3**（除了已否决的 `FoldSplitContainer`，官方还有没有面向三折叠三屏态的多列横排方案——若有就省掉自绘的折痕校准工作）。
+**最该先问的一条**：**A-3**（除了已否决的 `FoldSplitContainer`，官方还有没有面向三折叠三屏态的多列横排方案——若有就省掉自绘的折痕校准工作）。
+> 原本并列第一的 **B-1 已于 2026-10-17 有答案**（拦截方案否决），B 组其余问题一并回来了，见 `docs/harmonyos/qa/`。
