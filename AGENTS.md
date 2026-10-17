@@ -15,8 +15,9 @@
 | 1 | `docs/mvp_design.md` | 范围、架构、多库模型、**里程碑与进度（第 7 节）**、验收标准 |
 | 2 | `docs/open_questions.md` | **已定决策总表**（别重新讨论）+ 待拍板项 + TODO 挂起 |
 | 3 | `docs/harmonyos/api_notes.md` | 鸿蒙行为结论的**单一真源**，带 ✅/⚠️/❓ |
-| 4 | `docs/harmonyos/README.md` | 问答规则：提问前先查，别重复问 |
-| 5 | 本文件 §硬约束 + §已知坑 | 违反会编译失败或返工 |
+| 4 | `docs/releases/README.md` | **版本化开发规则**；再读当前版本的 `vX.Y/需求文档.md` |
+| 5 | `docs/harmonyos/README.md` | 问答规则：提问前先查，别重复问 |
+| 6 | 本文件 §硬约束 + §已知坑 | 违反会编译失败或返工 |
 
 ## 硬约束
 
@@ -52,7 +53,8 @@ web/gitbridge/                Web 内 isomorphic-git 桥接层（独立 npm 包�
   test/node_smoke.mjs         node 冒烟（真 clone GitHub / Gitee）
 docs/
   mvp_design.md               设计主文档（含进度与里程碑）
-  requirements_backlog.md     需求池（含"先不做"的项）
+  requirements_backlog.md     需求池（所有想做的，未分配）
+  releases/                   ★ 版本档案：vX.Y/需求文档.md（**落码前必看**）
   open_questions.md           已定决策总表 + 待决 + TODO 挂起
   harmonyos/                  ★ 鸿蒙知识库：api_notes.md（真源）/ qa/ / prompts/
   prototype/index.html        单文件交互原型（浏览器直接打开）
@@ -83,6 +85,14 @@ npm run smoke                  # node 冒烟（真 clone）
 3. 拿到回答：先存档 `qa/YYYY-MM-DD_主题_APIxx.md` → 再提炼进 `api_notes.md`（每条带 ✅/⚠️/❓）→ 更新索引
 4. 真机验证后把 ⚠️/❓ 改成 ✅ 并写**实测值**
 5. 结论只准链接不准复制到别的文档；被推翻的加删除线保留（不删）
+
+## 版本化开发（详见 `docs/releases/README.md`）
+
+- **一个版本一个目录**（`v0.1` / `v0.2` …），每个目录必须有 `需求文档.md`
+- **任何落码都必须能对应到当前版本需求文档里的某条需求** —— 需求池里没分配进版本的不许开工
+- **开新版本 = 先建目录 + 先写需求文档，再动手写代码**（不许先写代码后补文档）
+- 需求**只能从 `requirements_backlog.md` 分配进版本**，不许在版本目录里凭空新增
+- 版本发布后**冻结需求文档**（它是承诺记录），遗留问题进 `验收记录.md` 或回流需求池
 
 ## 已知坑
 
