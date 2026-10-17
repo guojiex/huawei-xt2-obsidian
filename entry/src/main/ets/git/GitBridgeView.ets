@@ -35,13 +35,22 @@ class GitBridgeImpl {
     this.fsBackend = fsBackend
   }
 
-  async init(gitDir: string, token: string): Promise<void> {
-    const payload = this.toB64(JSON.stringify({ gitDir: gitDir, token: token }))
+  async init(gitDir: string, token: string, username: string): Promise<void> {
+    const payload = this.toB64(JSON.stringify({
+      gitDir: gitDir,
+      token: token,
+      username: username
+    }))
     await this.controller.runJavaScript(`window.GitBridge.init('${payload}')`)
   }
 
-  async clone(url: string, branch: string, token: string): Promise<void> {
-    const payload = this.toB64(JSON.stringify({ url: url, branch: branch, token: token }))
+  async clone(url: string, branch: string, token: string, username: string): Promise<void> {
+    const payload = this.toB64(JSON.stringify({
+      url: url,
+      branch: branch,
+      token: token,
+      username: username
+    }))
     // 结果是异步的，通过 cloneResult 事件回传，这里只负责发起
     await this.controller.runJavaScript(`window.GitBridge.clone('${payload}')`)
   }
@@ -69,12 +78,12 @@ export class GitBridgeController {
     return this.readyFlag
   }
 
-  async init(gitDir: string, token: string): Promise<void> {
-    await this.impl?.init(gitDir, token)
+  async init(gitDir: string, token: string, username: string): Promise<void> {
+    await this.impl?.init(gitDir, token, username)
   }
 
-  async clone(url: string, branch: string, token: string): Promise<void> {
-    await this.impl?.clone(url, branch, token)
+  async clone(url: string, branch: string, token: string, username: string): Promise<void> {
+    await this.impl?.clone(url, branch, token, username)
   }
 
   async flush(): Promise<void> {
@@ -92,6 +101,8 @@ export struct GitBridgeView {
   @Prop vaultRoot: string = ''
   @Prop gitDir: string = '/vault'
   @Prop token: string = ''
+  /** Gitee 自建 GitLab 私有库需要；GitHub 留空即可 */
+  @Prop username: string = ''
   bridgeController: GitBridgeController = new GitBridgeController()
   onProgress: (p: GitProgress) => void = () => {}
   onLog: (msg: string) => void = () => {}
@@ -221,7 +232,7 @@ export struct GitBridgeView {
         backend.ensureRoot()
         this.fsBackend = backend
         this.bridgeController.bind(new GitBridgeImpl(this.controller, backend))
-        this.bridgeController.init(this.gitDir, this.token).then(() => {
+        this.bridgeController.init(this.gitDir, this.token, this.username).then(() => {
           this.onLog('git 桥接层就绪')
         }).catch((e: Error) => {
           this.onLog('初始化失败: ' + e.message)

@@ -19,18 +19,21 @@ import { jsonFromB64 } from './codec'
 interface InitConfig {
   gitDir: string
   token: string
+  username: string
 }
 
 interface CloneArgs {
   url: string
   branch: string
   token: string
+  username: string
 }
 
 let fs: BridgeFs | null = null
 let http: ReturnType<typeof createHttpClient> | null = null
 let gitDir = '/vault'
 let token = ''
+let username = ''
 
 function fail(e: any): string {
   const code = e?.code ? `${e.code}: ` : ''
@@ -46,8 +49,9 @@ const GitBridge = {
     const cfg = jsonFromB64<InitConfig>(configB64)
     gitDir = cfg.gitDir || '/vault'
     token = cfg.token || ''
+    username = cfg.username || ''
     fs = new BridgeFs(gitDir)
-    http = createHttpClient(token)
+    http = createHttpClient(token, username)
     return true
   },
 
@@ -61,6 +65,10 @@ const GitBridge = {
       if (!fs || !http) {
         throw new Error('EINIT: GitBridge 未初始化')
       }
+      // clone 可以带自己的凭据（页面上临时改的情况）
+      const authToken = args.token || token
+      const authUser = args.username || username
+      http = createHttpClient(authToken, authUser)
       emitEvent('progress', { phase: 'preparing', loaded: 0, total: 0 })
       await git.clone({
         fs: fs as any,
@@ -69,7 +77,8 @@ const GitBridge = {
         url: args.url,
         ref: args.branch || undefined,
         singleBranch: true,
-        onAuth: () => ({ username: 'x-access-token', password: args.token || token }),
+        // GitHub 的 username 可任意填；Gitee 必须是真实用户名
+        onAuth: () => ({ username: authUser || 'x-access-token', password: authToken }),
         onProgress: (p: any) => {
           emitEvent('progress', {
             phase: p?.phase ?? '',

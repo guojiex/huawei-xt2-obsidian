@@ -4,7 +4,7 @@
 // 不返回 CORS 头，WebView 内的 fetch 会被同源策略拦掉。
 // 这里把请求转发给 ArkTS 的原生 @ohos.net.http，天然不受 CORS 限制。
 
-import { b64FromBytes, b64FromJson, bytesFromB64 } from './codec'
+import { b64FromBytes, b64FromJson, b64FromText, bytesFromB64 } from './codec'
 import { request } from './channel'
 
 export interface GitHttpRequest {
@@ -54,7 +54,13 @@ function toStream(bytes: Uint8Array): AsyncIterable<Uint8Array> {
   })()
 }
 
-export function createHttpClient(token: string) {
+/**
+ * token + username 两个参数是为了兼容不同托管平台：
+ * - GitHub：Bearer <PAT>，或不带 username 的 Basic
+ * - Gitee / 自建 GitLab：私有库只认 Basic(username:password 或 username:私人令牌)，
+ *   Gitee 不支持 Bearer，传了会 401
+ */
+export function createHttpClient(token: string, username: string) {
   return {
     async request({ url, method, headers, body }: GitHttpRequest) {
       const bodyBytes = await collectBody(body)
@@ -63,7 +69,9 @@ export function createHttpClient(token: string) {
         ...(headers || {}),
       }
       if (token) {
-        mergedHeaders['Authorization'] = `Bearer ${token}`
+        mergedHeaders['Authorization'] = username
+          ? `Basic ${b64FromText(username + ':' + token)}`
+          : `Bearer ${token}`
       }
 
       // channel.onResult 已解过 base64，这里直接拿到解析后的对象
