@@ -110,6 +110,7 @@ docs/harmonyos/
 | ~~B-1~~ | ~~`onInterceptRequest` 能否拿到 POST body~~ | ~~同步层能否简化为拦截~~ | ✅ **已解决**：能拿到但是 `string`，**拦截方案否决**，转发为最终方案 |
 | ~~B-2~~ | ~~`WebMessagePort` 在 rawfile 页面能否建立~~ | ~~大数据通道选型~~ | ✅ **已解决**：可用、支持 ArrayBuffer；剩「上限多少」只能真机测 |
 | B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |
+| B-8 | 列表组件（List / ListItem 一类）在 **API 24** 是否提供**侧滑出操作区**的官方能力？接口名与用法是什么？ | 文件树左滑操作条怎么实现（自己写手势还是用官方能力） | ❓ 待问（**别凭记忆编接口名**） |
 
 **真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 

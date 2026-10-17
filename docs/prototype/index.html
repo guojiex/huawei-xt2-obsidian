@@ -136,6 +136,26 @@
   .indent-4 { padding-left: 76px; }
   .node.dir .caret { flex: none; }
   .node.dir:hover { color: var(--text); }
+
+  /* 左滑操作条：包裹层负责裁剪，node 左移露出右侧按钮 */
+  .node-wrap { position: relative; overflow: hidden; }
+  .node { transition: transform .16s ease; }
+  .node-wrap[data-kind="file"].swiped .node { transform: translateX(-138px); }
+  .node-wrap[data-kind="dir"].swiped .node { transform: translateX(-92px); }
+  .swipe {
+    position: absolute; top: 0; right: 0; height: 100%;
+    display: flex; align-items: stretch;
+  }
+  .sw-btn {
+    width: 46px; border: none; border-left: 1px solid var(--border);
+    background: var(--panel); color: var(--text);
+    font-size: 11px; font-family: inherit; cursor: pointer;
+  }
+  .sw-btn:hover { filter: brightness(1.15); }
+  .sw-btn.danger { background: #c0392b; color: #fff; border-left-color: rgba(0,0,0,.25); }
+  .sw-hint {
+    flex: none; padding: 4px 10px 8px; font-size: 10.5px; color: var(--muted); text-align: right;
+  }
   .side-foot {
     flex: none; padding: 8px; border-top: 1px solid var(--border);
     display: flex; gap: 6px;
@@ -313,6 +333,11 @@
     background: var(--bg); color: var(--fg); font-family: inherit;
   }
   .cinput input:focus { outline: none; border-color: var(--accent); }
+  .cinput select {
+    width: 100%; padding: 7px 8px; border-radius: 7px; font-size: 12px; font-family: inherit;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  }
+  .cinput select:focus { outline: none; border-color: var(--accent); }
   .cf-hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
   .cf-hint code { background: var(--panel); padding: 1px 4px; border-radius: 4px; }
 
@@ -495,6 +520,10 @@
             <input id="cfInput" placeholder="库名称">
             <div class="cf-hint" id="cfHint"></div>
           </div>
+          <div class="cinput hidden" id="cfSelectRow">
+            <select id="cfSelect"></select>
+            <div class="cf-hint" id="cfSelHint"></div>
+          </div>
           <div class="cb">
             <button id="cfCancel">取消</button>
             <button class="btn-danger" id="cfOk">确认删除</button>
@@ -515,6 +544,7 @@
     <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
     <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
     <li><b>折痕位置目前按等分假设</b>：设计稿把双屏折痕放在 50%、三屏放在 1/3 与 2/3。真机上应该用系统折叠状态接口拿实际折痕区域再校准，不能写死百分比。</li>
+    <li><b>左滑出操作条，不是左滑就删</b>：向左拖（鼠标拖或触摸滑都一样）露出「重命名 / 移动 / 删除」，<b>删除必须再过一次确认弹窗</b> —— 因为删除有两种语义（本地库真删 / Git 库只删本地副本），一个手势直接删太危险。<b>文件夹不给删除按钮</b>，只给重命名与移动：误删一个目录就是整个子树没了。同一时刻只允许一行处于滑开状态，拖动超过阈值就不算点击（避免误打开文件）。</li>
     <li><b>目录树可展开 / 折叠</b>：点目录行（或左侧箭头）切换，<b>折叠只影响显示，不动文件</b>；正在编辑的文件即使被折叠也不会关闭。子文件缩进比父目录深一级，<code>▾</code> = 展开、<code>▸</code> = 折叠，文件夹图标开口 / 闭合同步变化。<b>展开状态按库分别记忆</b>（切库回来还是原来的样子）。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
@@ -766,10 +796,11 @@
     }
     treeEl.innerHTML = html || '<div class="node" style="color:var(--muted)">（空库）</div>';
 
-    /* 点文件：打开 */
+    /* 点文件：打开（刚拖动过就不算点击） */
     var items = treeEl.querySelectorAll('[data-id]');
     for (var j = 0; j < items.length; j++) {
       items[j].addEventListener('click', function () {
+        if (moved) { moved = false; return; }
         current = this.getAttribute('data-id');
         loadFile();
         if (body.getAttribute('data-form') === 'sm') { toggleDrawer(false); }
@@ -780,14 +811,78 @@
     for (var k = 0; k < dirs.length; k++) {
       dirs[k].addEventListener('click', function (e) {
         e.stopPropagation();
+        if (moved) { moved = false; return; }
         var idx = parseInt(this.getAttribute('data-dir'), 10);
         var rs = TREES[currentVault] || [];
         if (rs[idx]) { rs[idx][2] = !rs[idx][2]; renderTree(); }
       });
     }
+    /* 操作条按钮：重命名 / 移动 / 删除（删除仅文件） */
+    var btns = treeEl.querySelectorAll('.sw-btn');
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].addEventListener('click', function (e) {
+        e.stopPropagation();
+        var wrap = wrapOf(this);
+        var kind = wrap.getAttribute('data-kind');
+        var row = (TREES[currentVault] || [])[parseInt(wrap.getAttribute('data-idx'), 10)];
+        if (!row) { return; }
+        var tgt = kind === 'dir' ? ('d:' + wrap.getAttribute('data-idx')) : row[4];
+        var act = this.getAttribute('data-act');
+        if (act === 'rename') { openDialog(kind === 'dir' ? 'dir-rename' : 'note-rename', tgt); }
+        else if (act === 'move') { openDialog(kind === 'dir' ? 'dir-move' : 'note-move', tgt); }
+        else { openDialog('note-del', tgt); }
+      });
+    }
     var v = vaultById(currentVault);
     document.getElementById('treeCount').textContent = (v ? v.files : 0) + ' 篇';
   }
+
+  /* ---------- 左滑手势（鼠标拖动与触摸等效） ---------- */
+  var drag = null, moved = false;
+
+  function wrapOf(el) {
+    while (el && el !== treeEl) {
+      if (el.className && String(el.className).indexOf('node-wrap') >= 0) { return el; }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function closeSwipe(except) {
+    var ws = treeEl.querySelectorAll('.node-wrap.swiped');
+    for (var i = 0; i < ws.length; i++) { if (ws[i] !== except) { ws[i].classList.remove('swiped'); } }
+  }
+
+  function px(e) { return (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX; }
+
+  treeEl.addEventListener('mousedown', function (e) {
+    var wrap = wrapOf(e.target);
+    drag = wrap ? { wrap: wrap, x: px(e), open: wrap.classList.contains('swiped') } : null;
+    moved = false;
+  });
+  treeEl.addEventListener('touchstart', function (e) {
+    var wrap = wrapOf(e.target);
+    drag = wrap ? { wrap: wrap, x: px(e), open: wrap.classList.contains('swiped') } : null;
+    moved = false;
+  }, { passive: true });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!drag) { return; }
+    var dx = px(e) - drag.x;
+    if (Math.abs(dx) > 6) { moved = true; }
+    if (dx < -10) { closeSwipe(drag.wrap); drag.wrap.classList.add('swiped'); }
+    else if (dx > 10 && drag.open) { drag.wrap.classList.remove('swiped'); }
+  });
+  document.addEventListener('touchmove', function (e) {
+    if (!drag) { return; }
+    var dx = px(e) - drag.x;
+    if (Math.abs(dx) > 6) { moved = true; }
+    if (dx < -10) { closeSwipe(drag.wrap); drag.wrap.classList.add('swiped'); }
+    else if (dx > 10 && drag.open) { drag.wrap.classList.remove('swiped'); }
+  }, { passive: true });
+
+  document.addEventListener('mouseup', function () { drag = null; });
+  document.addEventListener('touchend', function () { drag = null; });
 
   function vaultById(id) {
     for (var i = 0; i < VAULTS.length; i++) { if (VAULTS[i].id === id) { return VAULTS[i]; } }
@@ -806,11 +901,17 @@
     var caret = kind === 'dir' ? '<span class="caret">' + (open ? '▾' : '▸') + '</span>' : '<span class="caret"></span>';
     var icon = kind === 'dir' ? (open ? ICON_DIR_OPEN : ICON_DIR) : ICON_FILE;
     var attrs = kind === 'dir'
-      ? ' data-dir="' + idx + '" title="展开 / 折叠"'
-      : (id ? ' data-id="' + id + '"' : '');
+      ? ' data-dir="' + idx + '" title="点击展开 / 折叠 · 左滑重命名或移动"'
+      : (id ? ' data-id="' + id + '" title="点击打开 · 左滑重命名 / 移动 / 删除"' : '');
     var sub = (kind === 'file' && META[id]) ? '<span class="nsub">' + META[id] + '</span>' : '';
-    return '<div class="' + cls + '"' + attrs + '>' + caret + icon
-      + '<span class="nlabel">' + esc(label) + sub + '</span></div>';
+    /* 目录不给「删除」：误删一个目录 = 整个子树消失 */
+    var acts = '<button class="sw-btn" data-act="rename">重命名</button>'
+      + '<button class="sw-btn" data-act="move">移动</button>'
+      + (kind === 'dir' ? '' : '<button class="sw-btn danger" data-act="del">删除</button>');
+    return '<div class="node-wrap" data-kind="' + kind + '" data-idx="' + idx + '">'
+      + '<div class="' + cls + '"' + attrs + '>' + caret + icon
+      + '<span class="nlabel">' + esc(label) + sub + '</span></div>'
+      + '<div class="swipe">' + acts + '</div></div>';
   }
 
   /* ---------- 编辑器 + 高亮 + 预览 ---------- */
@@ -951,6 +1052,13 @@
 
   function updateHint() {
     var raw = document.getElementById('cfInput').value;
+    if (cfMode === 'note-rename' || cfMode === 'dir-rename') {
+      var nm = sanitizeDir(String(raw).replace(/\.md$/i, ''));
+      document.getElementById('cfHint').innerHTML = nm
+        ? '新名称：<code>' + esc(nm + (cfMode === 'note-rename' ? '.md' : '')) + '</code>'
+        : '名称不能为空，也不能只由 <code>/ \\ : * ? " &lt; &gt; |</code> 组成';
+      return;
+    }
     var d = sanitizeDir(raw);
     var id = d ? uniqueId(d) : '';
     var hint = document.getElementById('cfHint');
@@ -974,8 +1082,50 @@
     var pathEl = document.getElementById('cfPath');
     var okBtn = document.getElementById('cfOk');
     var input = document.getElementById('cfInput');
+    var selRow = document.getElementById('cfSelectRow');
     var v = vaultById(id);
     okBtn.className = '';
+    row.classList.add('hidden');
+    selRow.classList.add('hidden');
+    pathEl.classList.add('hidden');
+
+    if (mode === 'note-del' || mode === 'note-rename' || mode === 'dir-rename'
+      || mode === 'note-move' || mode === 'dir-move') {
+      var nm = nodeLabel(id);
+      var vv = vaultById(currentVault);
+      if (mode === 'note-del') {
+        document.getElementById('cfTitle').textContent = '删除「' + nm + '」？';
+        document.getElementById('cfDesc').innerHTML = (vv && vv.type === 'git')
+          ? '文件会从本地库中删除，<b>下次 push 后远端也会删除</b>。'
+          : '文件会被<b>永久删除，无法恢复</b>。（回收站还没做，误删就真没了）';
+        pathEl.textContent = (vv ? vv.dir : '') + '/' + nm;
+        pathEl.classList.remove('hidden');
+        okBtn.classList.add('btn-danger');
+        okBtn.textContent = '确认删除';
+      } else if (mode === 'note-rename' || mode === 'dir-rename') {
+        var isDir = (mode === 'dir-rename');
+        document.getElementById('cfTitle').textContent = isDir ? '重命名文件夹' : '重命名笔记';
+        document.getElementById('cfDesc').innerHTML = isDir
+          ? '文件夹名改了，里面的笔记不受影响。' : '文件名改了，内容不变。';
+        input.value = isDir ? nm : nm.replace(/\.md$/i, '');
+        row.classList.remove('hidden');
+        okBtn.classList.add('primary');
+        okBtn.textContent = '保存';
+      } else {
+        document.getElementById('cfTitle').textContent = '移动「' + nm + '」';
+        document.getElementById('cfDesc').innerHTML = (mode === 'dir-move')
+          ? '整个文件夹<b>连同里面的笔记一起</b>移动。' : '移动到别的文件夹下（选顶层就是移到库根目录）。';
+        fillDirSelect(id);
+        selRow.classList.remove('hidden');
+        okBtn.classList.add('primary');
+        okBtn.textContent = '移动到这里';
+      }
+      updateHint();
+      document.getElementById('mask').classList.remove('hidden');
+      input.focus();
+      input.select();
+      return;
+    }
 
     if (mode === 'delete') {
       document.getElementById('cfTitle').textContent = v.type === 'git'
@@ -1025,7 +1175,13 @@
     document.getElementById('mask').classList.add('hidden');
     if (cfMode === 'delete') { doDelete(id); }
     else if (cfMode === 'create') { doCreate(); }
-    else { doRename(id); }
+    else if (cfMode === 'rename') { doRename(id); }
+    else if (cfMode === 'note-del') { doDeleteNote(id); }
+    else if (cfMode === 'note-rename' || cfMode === 'dir-rename') {
+      doRenameNode(id, document.getElementById('cfInput').value);
+    } else if (cfMode === 'note-move' || cfMode === 'dir-move') {
+      doMoveNode(id, document.getElementById('cfSelect').value);
+    }
   });
 
   function doDelete(id) {
@@ -1076,6 +1232,102 @@
     renderVaultMenu();
     renderVaultCards();
     updateVaultUI();
+  }
+
+  /* ---------- 笔记 / 文件夹级操作（左滑操作条调起） ---------- */
+  function nodeIdx(id) {
+    if (String(id).indexOf('d:') === 0) { return parseInt(id.slice(2), 10); }
+    var rows = TREES[currentVault] || [];
+    for (var i = 0; i < rows.length; i++) { if (rows[i][4] === id) { return i; } }
+    return -1;
+  }
+
+  function nodeLabel(id) {
+    if (String(id).indexOf('d:') === 0) {
+      var r = (TREES[currentVault] || [])[parseInt(id.slice(2), 10)];
+      return r ? r[1] : '';
+    }
+    return FILES[id] || '';
+  }
+
+  /* [start, end) —— 该节点连同它的整棵子树 */
+  function nodeRange(rows, idx) {
+    var lv = levelOf(rows[idx]);
+    var end = idx + 1;
+    while (end < rows.length && levelOf(rows[end]) > lv) { end++; }
+    return [idx, end];
+  }
+
+  function fillDirSelect(id) {
+    var rows = TREES[currentVault] || [];
+    var self = nodeIdx(id);
+    var rg = self < 0 ? [-1, -1] : nodeRange(rows, self);
+    var html = '<option value="">（库根目录 / 顶层）</option>';
+    var stack = [], n = 0;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i][0] !== 'dir') { continue; }
+      if (self >= 0 && i >= rg[0] && i < rg[1]) { continue; }   // 排除自己与子孙
+      var d = rows[i][3];
+      stack.length = d; stack[d] = rows[i][1];
+      html += '<option value="' + i + '">' + esc(stack.slice(0, d + 1).join('/')) + '</option>';
+      n++;
+    }
+    document.getElementById('cfSelect').innerHTML = html;
+    document.getElementById('cfSelHint').innerHTML = '共 ' + n + ' 个可选文件夹';
+  }
+
+  function doDeleteNote(id) {
+    var rows = TREES[currentVault] || [];
+    var idx = nodeIdx(id);
+    if (idx < 0) { return; }
+    rows.splice(idx, 1);
+    delete FILES[id]; delete CONTENT[id]; delete META[id];
+    var v = vaultById(currentVault);
+    if (v && v.files > 0) { v.files--; }
+    if (current === id) {                       // 删的是正在编辑的那篇 → 顺延到下一篇
+      current = '';
+      for (var i = 0; i < rows.length; i++) { if (rows[i][0] === 'file') { current = rows[i][4]; break; } }
+      loadFile();
+    }
+    closeSwipe(null);
+    renderTree(); updateVaultUI(); renderVaultMenu(); renderVaultCards();
+  }
+
+  function doRenameNode(id, val) {
+    var rows = TREES[currentVault] || [];
+    var idx = nodeIdx(id);
+    if (idx < 0) { return; }
+    var isDir = String(id).indexOf('d:') === 0;
+    var base = sanitizeDir(String(val).replace(/\.md$/i, ''));
+    if (!base) { return; }
+    rows[idx][1] = isDir ? base : base + '.md';
+    if (!isDir) { FILES[id] = base + '.md'; }
+    closeSwipe(null);
+    renderTree();
+    if (current === id) { loadFile(); }
+  }
+
+  function doMoveNode(id, val) {
+    var rows = TREES[currentVault] || [];
+    var idx = nodeIdx(id);
+    if (idx < 0) { return; }
+    var ti = (val === '' || val === null) ? -1 : parseInt(val, 10);
+    var rg = nodeRange(rows, idx);
+    var seg = rows.slice(rg[0], rg[1]);
+    var dl = (ti < 0 ? 0 : levelOf(rows[ti]) + 1) - levelOf(rows[idx]);
+    for (var i = 0; i < seg.length; i++) { seg[i][3] = seg[i][3] + dl; }
+    var targetRow = ti < 0 ? null : rows[ti];
+    rows.splice(rg[0], rg[1] - rg[0]);
+    var pos;
+    if (!targetRow) {
+      pos = rows.length;                        // 顶层：追加到末尾
+    } else {
+      targetRow[2] = true;                      // 目标自动展开，否则移进去看不见
+      pos = nodeRange(rows, rows.indexOf(targetRow))[1];
+    }
+    rows.splice.apply(rows, [pos, 0].concat(seg));
+    closeSwipe(null);
+    renderTree();
   }
 
   document.getElementById('newLocal').addEventListener('click', function () { openDialog('create', ''); });
