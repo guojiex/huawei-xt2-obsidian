@@ -1,6 +1,7 @@
 {
   "name": "gitbridge",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "description": "运行在 Web 组件内的 isomorphic-git 桥接层，供 ArkTS 侧调用",
