@@ -108,8 +108,9 @@
     border-right: 1px solid var(--border);
     display: flex; flex-direction: column; min-height: 0;
   }
+  /* 栏宽必须等于"一整块物理屏"，否则内容会横跨折痕 */
   [data-form="lg"] .sidebar { width: 33.333%; }
-  [data-form="md"] .sidebar { width: 46%; }
+  [data-form="md"] .sidebar { width: 50%; }
   .side-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 10px 12px; font-size: 12px; color: var(--muted); flex: none;
@@ -122,6 +123,11 @@
   }
   .node:hover { background: var(--panel); }
   .node.sel { background: var(--accent-soft); color: var(--accent); }
+  .node .nlabel { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  /* 宽屏下侧栏有一整块物理屏宽，用副行把多余宽度填满，避免大片留白 */
+  .node .nsub { display: none; font-size: 10.5px; color: var(--muted); font-weight: 400; }
+  [data-form="md"] .node .nsub, [data-form="lg"] .node .nsub { display: block; }
+  [data-form="md"] .node, [data-form="lg"] .node { align-items: flex-start; padding: 6px 8px; }
   .node.dir { color: var(--muted); font-size: 12px; }
   .node .caret { width: 10px; color: var(--muted); font-size: 10px; }
   .indent-1 { padding-left: 22px; }
@@ -479,7 +485,9 @@
   <ul>
     <li><b>多库模型</b>：vaults/ 下每个子目录是一个独立库。本地笔记随应用创建、开箱即用、可删除；每个 Git 仓库导入后成为一个目录，各自独立同步。切换库只换目录，互不影响。</li>
     <li><b>删除语义不同</b>：本地库删除 = 目录连内容一起删，不可恢复（建议先导出）；Git 库「移除本地副本」只删手机上的目录，远端仓库不动，可以重新导入。</li>
-    <li><b>栏边界对齐折痕</b>：全展开态三栏各占 1/3，正好落在两条铰链上，编辑区不跨折痕；合起态单栏 + 抽屉，双屏态两栏各 50%。橙色虚线是折痕标注，不是 UI。</li>
+    <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
+    <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
+    <li><b>折痕位置目前按等分假设</b>：设计稿把双屏折痕放在 50%、三屏放在 1/3 与 2/3。真机上应该用系统折叠状态接口拿实际折痕区域再校准，不能写死百分比。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
     <li><b>搜索标了 v2</b>：全文搜索依赖全库索引，MVP 不做；MVP 只做文件名检索。</li>
@@ -536,6 +544,17 @@
     'dataflow': 'Dataflow模型四要素.md',
     'intimacy': '亲密关系_第一章.md',
     'tob': 'ToB三条线复盘.md'
+  };
+
+  /* 宽屏侧栏副行：修改时间 + 字数 */
+  var META = {
+    'welcome': '今天 09:12 · 0.4k 字',
+    'todo': '今天 10:05 · 0.2k 字',
+    'inbox': '今天 11:40 · 0.1k 字',
+    'stream': '10-15 21:08 · 1.3k 字',
+    'dataflow': '10-14 19:22 · 0.3k 字',
+    'intimacy': '10-12 23:51 · 0.5k 字',
+    'tob': '10-09 14:30 · 0.4k 字'
   };
 
   var CONTENT = {
@@ -710,7 +729,9 @@
       ? '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4l5 4-5 4V4zM9 4h5v8H9z" opacity="0"/></svg>'
       : '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2h5l3 3v9H4z"/></svg>';
     var attrs = id ? ' data-id="' + id + '"' : '';
-    return '<div class="' + cls + '"' + attrs + '>' + caret + icon + '<span>' + esc(label) + '</span></div>';
+    var sub = (kind === 'file' && META[id]) ? '<span class="nsub">' + META[id] + '</span>' : '';
+    return '<div class="' + cls + '"' + attrs + '>' + caret + icon
+      + '<span class="nlabel">' + esc(label) + sub + '</span></div>';
   }
 
   /* ---------- 编辑器 + 高亮 + 预览 ---------- */
