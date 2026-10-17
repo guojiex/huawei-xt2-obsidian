@@ -20,6 +20,16 @@
 *.har
 *.app
 
+# ===== 签名材料（含私钥，绝不入库；本仓库是公开 MIT 仓库）=====
+*.p12
+*.cer
+*.p7b
+*.csr
+# 本地签名凭据（hvigorfile.ts 从这里读，build-profile.json5 保持 []）
+local-signing.json
+# DevEco 自动签名会往 build-profile.json5 写密码明文；剥离后的本地副本放这里
+/.local/
+
 # ===== 日志与系统垃圾 =====
 *.log
 *.hprof

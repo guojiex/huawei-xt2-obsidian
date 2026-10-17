@@ -1,4 +1,4 @@
-# 命令行构建 HAP —— 不用打开 DevEco Studio。
+﻿# 命令行构建 HAP —— 不用打开 DevEco Studio。
 #
 # 前提：已安装 DevEco Studio（工具链与 SDK 都随它一起装好，无需另行下载）。
 # 用法（PowerShell）：
@@ -57,4 +57,14 @@ if ($exitCode -ne 0) {
     Write-Error "构建失败，exit=$exitCode"
 }
 
-Write-Host "`n产物：entry\build\default\outputs\default\entry-default-unsigned.hap (未签名)" -ForegroundColor Green
+# 产物提示按实际情况输出：签名由工程级 hvigorfile.ts 从 .local/local-signing.json 注入，
+# 注入成功时是 signed，没有本地凭据时才是 unsigned（见 tools/signing.ps1 -Status）。
+$outDir = Join-Path $repoRoot 'entry\build\default\outputs\default'
+$signed = Get-ChildItem -LiteralPath $outDir -Filter '*-signed.hap' -ErrorAction SilentlyContinue |
+          Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($signed) {
+    Write-Host "`n产物（已签名）：$($signed.Name)  $($signed.LastWriteTime)" -ForegroundColor Green
+} else {
+    Write-Host "`n产物（未签名）：entry\build\default\outputs\default\entry-default-unsigned.hap" -ForegroundColor Yellow
+    Write-Host "  要签名构建：DevEco 自动签名后跑 .\tools\signing.ps1 -Import" -ForegroundColor Yellow
+}

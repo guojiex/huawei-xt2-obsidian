@@ -114,6 +114,56 @@ FoldSplitContainer 三分栏实际结构：
 
 → **我们的三档断点（sm/md/lg）方案与官方思路一致，保持不变。**
 
+#### 真机实测（2026-10-17，Mate XT2 三折叠，首轮）
+
+| 形态 | 窗口宽 vp | 断点判定 |
+| --- | --- | --- |
+| 外屏合起 | 380 | sm ✅ |
+| 内折只用第一屏 | 379 | sm ✅ |
+| 展开双屏 | 709 | md ✅（∈[600,840)） |
+| 三屏全展开 | 1061 | lg ✅（≥840） |
+
+阈值 600 / 840 **四态全部命中**，断点矩阵真机验证通过（A3 ✅ → 已由真机加固）。
+
+⚠️ 但同一批数据推翻了「三栏等分 = 一栏一块物理屏」的假设，见 **A6**。
+
+### A6 ⚠️ 三栏等分 ≠ 一栏一块物理屏 —— 真机实测推翻（2026-10-17）
+
+由首轮实测的四个窗口宽反推 **XT2 三块物理屏的 vp 宽度**：
+
+| 块 | 宽度 vp | 怎么来的 |
+| --- | --- | --- |
+| 第一屏 | **379** | 内折只用第一屏时窗口宽 |
+| 第二屏 | **330** | 709 − 379 |
+| 第三屏 | **352** | 1061 − 709 |
+| 合计 | **1061** | = 三屏全展开窗口宽 ✅ 完全吻合 |
+
+等分三栏每栏 `1061 / 3 = 353.7`，栏边界落在 **353.7 / 707.3**；
+真实折痕在 **379 / 709** → 第一处偏 **25.3vp**，第二处仅偏 **1.7vp**。
+
+→ 这解释了用户的体感「大体上三分之一是准的，但和折痕有点差距」：第二处几乎重合，第一处明显偏。
+→ **结论**：设计前提「一栏 = 一整块物理屏、栏边界压折痕」（plan.md R5）**无法靠等分实现**，物理三屏不等宽。
+
+#### ✅ 决策（2026-10-17 用户拍板）：**不做精细适配**
+
+> 用户原话：「我觉得就按他官方给的折痕就差不多了，不用搞太精细没意义。」
+
+采纳如下，**推翻上面三条出路里的精细方案**：
+
+| 项 | 结论 |
+| --- | --- |
+| 三栏栏宽 | **维持等分**（`layoutWeight` 1:1:1），**不**按物理屏宽 379:330:352 动态分栏 |
+| 折痕数据用途 | **只用于警示线位置**，不参与分栏 |
+| 警示线位置 | 取官方 `getCurrentFoldCreaseRegion()` 的**第一条折痕**；取不到回退 `50%` |
+| 精度要求 | 不追求像素级。等分与真实折痕最大偏 25vp，视觉可接受，精细适配成本高收益低 |
+
+→ 即：出路 ③（等分 + 折痕只做标注）**+** 警示线按官方折痕取值。
+→ 本条从 v0.2 重排里**降级**：v0.2 只需做「警示线位置改用官方折痕」，动态分栏**不再立项**。
+
+⚠️ 前提：`EditorPane` 的红色警示线位置目前写死「编辑区宽 50%」（`position({ x: '50%' })`）。
+lg 收起态编辑区占前两块屏 709vp，折痕在 379vp → 精确值 `379/709 ≈ 53.5%`，与 50% 差约 25vp。
+按本决策，改为读官方折痕值即可，**不做机型校准表**。
+
 ### A4 折叠切换时 UIAbility ✅ 不重建
 
 窗口尺寸变化走事件通知，`onDestroy`/`onCreate` 由系统调度（销毁、内存回收），**与尺寸变化无关**。
@@ -607,6 +657,40 @@ since:       4（OpenHarmony）；phone/tablet 12、2in1 13
 
 > 🔴 **红线**：禁止凭记忆编 `Hds*` 组件名或 `sys.symbol.*` 资源 id。
 > 查不到就在需求文档的验收记录里写明「未核实，用兜底」。
+
+### I4 签名配置注入：`config.ohos.overrides.signingConfig` ✅ 已核实并落地（2026-10-17）
+
+**结论**：工程级 `hvigorfile.ts` 可用 `config.ohos.overrides.signingConfig` 覆盖
+`build-profile.json5` 的签名配置 → **后者永久保持 `"signingConfigs": []`**，凭据只留本地。
+这解决了「build-profile.json5 必须入库、但 DevEco 自动签名会往里写密码明文」的死结
+（该文件不能 ignore：移除后 hvigor 直接报 `00304035 Not Found`，实测）。
+
+**SDK 证据**（`C:\Program Files\Huawei\DevEco Studio\tools\hvigor\hvigor-ohos-plugin`）：
+
+| 文件 | 内容 |
+| --- | --- |
+| `src/options/build/app-ohos-config.d.ts` | `AppOhosConfig = { overrides?: Overrides }`，`Overrides = { appOpt?, signingConfig?: SigningConfigBuildOpt }` |
+| `src/tasks/sign/sign-util.d.ts` | `mergeSigningConfig(signingConfig, signingConfigFromHvigorfile)` → **overrides 优先级更高** |
+| `src/options/build/project-build-profile.d.ts` | `MaterialBuildOpt` 七字段（全必填）：`storeFile` `storePassword` `keyAlias` `keyPassword` `signAlg` `profile` `certpath` |
+
+⚠️ **运行时 schema 比 `.d.ts` 更严**（实测 `ERROR 00303038 Schema validate failed`）：
+`.d.ts` 里 `SigningConfigBuildOpt extends RequiredNamed`（含 `name: string`），
+但**写 `name` 会直接构建失败**——schema 只允许 `material` 与 `type` 两个字段：
+
+```
+instancePath '/overrides/signingConfig', keyword 'enum',
+  params: { allowedValues: [ 'material', 'type' ] }
+instancePath '/overrides/signingConfig', keyword 'propertyNames',
+  params: { propertyName: 'name' } → 'property name must be valid'
+```
+
+→ **类型定义与运行时校验冲突时，以运行时为准**（又一个「别只信 d.ts」的实证）。
+→ 工程级用 `appTasks`（不是 `hapTasks`，那是模块级）。
+
+**落地方式**：根 `hvigorfile.ts` 读 `.local/local-signing.json`（已 gitignore），
+有则注入、无则不签名（构建照样成功，产物 `-unsigned.hap`）。
+实测：`BUILD SUCCESSFUL` + `entry-default-signed.hap`，`build-profile.json5` 保持 `[]`。
+凭据抽取走 `.\tools\signing.ps1 -Import`。
 
 ---
 

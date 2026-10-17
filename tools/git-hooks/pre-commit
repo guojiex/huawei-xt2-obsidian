@@ -1,0 +1,40 @@
+#!/bin/sh
+# pre-commit：禁止把 HarmonyOS 签名凭据加入版本库
+# 安装： .\tools\signing.ps1 -InstallHook
+# 说明：签名版 build-profile.json5 只应存在于本地工作区，提交前先跑 -Off
+
+block=0
+
+# 1) 检查被暂存的文件内容是否含凭据
+for f in $(git diff --cached --name-only --diff-filter=ACM); do
+    case "$f" in
+        *.p12|*.cer|*.p7b|*.csr)
+            echo "[pre-commit] 拒绝提交：$f 是签名凭据文件" >&2
+            block=1
+            ;;
+        build-profile.json5)
+            if git show ":$f" | grep -qE 'keyPassword|storePassword|certpath|storeFile|keyAlias'; then
+                echo "[pre-commit] 拒绝提交：$f 含签名凭据（明文密码 / 本机路径）" >&2
+                echo "[pre-commit] 请先执行： .\\tools\\signing.ps1 -Off   然后重新 git add" >&2
+                block=1
+            fi
+            ;;
+    esac
+done
+
+# 2) 兜底：任何暂存文件里明文出现密码字段也拦
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '\.json5$|\.json$'; then
+    for f in $(git diff --cached --name-only --diff-filter=ACM | grep -E '\.json5$|\.json$'); do
+        if git show ":$f" | grep -qE '"(keyPassword|storePassword)"'; then
+            echo "[pre-commit] 拒绝提交：$f 含明文密码字段" >&2
+            block=1
+        fi
+    done
+fi
+
+if [ "$block" -ne 0 ]; then
+    echo "[pre-commit] 提交已中止。凭据泄露属不可逆事故（公开仓库需重写历史）。" >&2
+    exit 1
+fi
+
+exit 0
