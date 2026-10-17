@@ -298,6 +298,19 @@
     text-align: center; color: var(--muted); font-size: 12px; cursor: pointer;
   }
   .add-box:hover { border-color: var(--accent); color: var(--accent); }
+  .add-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  .add-row .add-box { flex: 1; padding: 11px 6px; }
+
+  /* 确认层内的命名输入 */
+  .cinput { margin-top: 10px; }
+  .cinput input {
+    width: 100%; box-sizing: border-box; font-size: 12.5px; padding: 7px 9px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--fg); font-family: inherit;
+  }
+  .cinput input:focus { outline: none; border-color: var(--accent); }
+  .cf-hint { font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+  .cf-hint code { background: var(--panel); padding: 1px 4px; border-radius: 4px; }
 
   /* ---------- 确认层 ---------- */
   .mask {
@@ -450,10 +463,14 @@
           <h2>笔记库</h2>
           <div class="sub">每个库是 vaults/ 下的一个独立目录，各自独立同步</div>
           <div class="vcards" id="vcards"></div>
-          <div class="add-box" id="addVault">+ 导入 Git 仓库</div>
+          <div class="add-row">
+            <div class="add-box" id="newLocal">+ 新建本地笔记库</div>
+            <div class="add-box" id="addVault">+ 导入 Git 仓库</div>
+          </div>
           <div class="last">
-            本地笔记：随应用创建，可直接删除（删除前建议先导出）。<br>
-            Git 库：删除只移除本地副本，远端仓库不受影响。
+            名称即目录名：改名会连 <code>vaults/</code> 下的目录一起改。<br>
+            Git 库改名只影响手机上的目录，远端仓库名不变、同步不受影响。<br>
+            删除语义不同：本地库连内容永久删除；Git 库只移除本地副本，可重新导入。
           </div>
         </div>
       </div>
@@ -470,6 +487,10 @@
           <div class="ct" id="cfTitle">删除本地笔记？</div>
           <div class="cd" id="cfDesc">该目录下的所有笔记会被永久删除，且无法恢复。建议先导出备份。</div>
           <div class="path" id="cfPath">vaults/local</div>
+          <div class="cinput hidden" id="cfInputRow">
+            <input id="cfInput" placeholder="库名称">
+            <div class="cf-hint" id="cfHint"></div>
+          </div>
           <div class="cb">
             <button id="cfCancel">取消</button>
             <button class="btn-danger" id="cfOk">确认删除</button>
@@ -483,7 +504,9 @@
 <div class="notes">
   <h3>设计稿说明（这几条是决策，看效果时一起判断）</h3>
   <ul>
-    <li><b>多库模型</b>：vaults/ 下每个子目录是一个独立库。本地笔记随应用创建、开箱即用、可删除；每个 Git 仓库导入后成为一个目录，各自独立同步。切换库只换目录，互不影响。</li>
+    <li><b>多库模型</b>：vaults/ 下每个子目录是一个独立库。<code>local</code> 只是<b>默认库的名字</b>，本地库可以再新建任意个；每个 Git 仓库导入后也成为一个目录，各自独立同步。切换库只换目录，互不影响。</li>
+    <li><b>名称即目录名</b>：改名会连 <code>vaults/</code> 下的目录一起改，不做「显示名」与「目录名」分离 —— 否则导出到电脑时目录名对不上，还得查映射表。输入时实时预览目标路径，重名自动加后缀，非法字符（<code>/ \ : * ? " &lt; &gt; |</code>）直接过滤掉。</li>
+    <li><b>Git 库改名不影响远端</b>：改的只是手机上的文件夹名，remote 与分支不动，同步照常。弹窗里必须写明这一句，否则用户会以为改了远端仓库名而不敢改。</li>
     <li><b>删除语义不同</b>：本地库删除 = 目录连内容一起删，不可恢复（建议先导出）；Git 库「移除本地副本」只删手机上的目录，远端仓库不动，可以重新导入。</li>
     <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
     <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
@@ -823,13 +846,15 @@
         + '<div class="ops">'
         + (v.id === currentVault ? '' : '<button data-use="' + v.id + '">设为当前</button>')
         + (git ? '<button data-sync="' + v.id + '">同步</button>' : '')
+        + '<button data-ren="' + v.id + '">改名</button>'
         + '<button class="btn-danger" data-del="' + v.id + '">' + (git ? '移除本地副本' : '删除') + '</button>'
         + '</div></div>';
     }
     box.innerHTML = html;
     bind(box, '[data-use]', 'use', function (id) { switchVault(id); renderVaultCards(); });
     bind(box, '[data-sync]', 'sync', function (id) { setView('sync', true); });
-    bind(box, '[data-del]', 'del', function (id) { askDelete(id); });
+    bind(box, '[data-ren]', 'ren', function (id) { openDialog('rename', id); });
+    bind(box, '[data-del]', 'del', function (id) { openDialog('delete', id); });
   }
 
   function bind(root, sel, attr, fn) {
@@ -839,26 +864,115 @@
     }
   }
 
-  /* ---------- 删除确认 ---------- */
-  function askDelete(id) {
-    var v = vaultById(id);
-    if (!v) { return; }
-    document.getElementById('cfTitle').textContent = v.type === 'git'
-      ? '移除「' + v.name + '」的本地副本？' : '删除「' + v.name + '」？';
-    document.getElementById('cfDesc').innerHTML = v.type === 'git'
-      ? '只删除手机上的这个目录，远端仓库不受影响。<br>下次想用可以重新导入。'
-      : '该目录下的 ' + v.files + ' 篇笔记会被永久删除，无法恢复。建议先导出备份。';
-    document.getElementById('cfPath').textContent = v.dir;
-    document.getElementById('cfOk').setAttribute('data-target', id);
-    document.getElementById('mask').classList.remove('hidden');
+  /* ---------- 弹层：删除 / 新建本地库 / 改名 ---------- */
+  /* 名称即目录名：显示名与 vaults/ 下的目录名始终一致 */
+  var cfMode = 'delete';
+  var cfTarget = '';
+
+  // 目录名消毒：去掉路径分隔符与 Windows 非法字符、控制字符、前导点
+  function sanitizeDir(name) {
+    return String(name || '')
+      .replace(/[\/\\:*?"<>|\x00-\x1f]/g, '')
+      .replace(/^\.+/, '')
+      .trim();
   }
+
+  function uniqueId(base) {
+    var id = base;
+    var n = 2;
+    while (vaultById(id)) { id = base + '-' + n; n++; }
+    return id;
+  }
+
+  function nextLocalName() {
+    var taken = {};
+    for (var i = 0; i < VAULTS.length; i++) { taken[VAULTS[i].name] = 1; }
+    var n = 2;
+    var name = '本地笔记 2';
+    while (taken[name]) { n++; name = '本地笔记 ' + n; }
+    return name;
+  }
+
+  function updateHint() {
+    var raw = document.getElementById('cfInput').value;
+    var d = sanitizeDir(raw);
+    var id = d ? uniqueId(d) : '';
+    var hint = document.getElementById('cfHint');
+    if (cfMode === 'create') {
+      hint.innerHTML = id
+        ? '目录：<code>vaults/' + esc(id) + '</code>' + (id !== d ? ' · 与现有库重名，已自动加后缀' : '')
+        : '名称不能为空，也不能只由 <code>/ \\ : * ? " &lt; &gt; |</code> 组成';
+    } else if (cfMode === 'rename') {
+      var v = vaultById(cfTarget);
+      hint.innerHTML = (v && id)
+        ? '<code>vaults/' + esc(v.id) + '</code> → <code>vaults/' + esc(id) + '</code>'
+          + (id !== d ? ' · 与现有库重名，已自动加后缀' : '')
+        : '名称不能为空';
+    }
+  }
+
+  function openDialog(mode, id) {
+    cfMode = mode;
+    cfTarget = id || '';
+    var row = document.getElementById('cfInputRow');
+    var pathEl = document.getElementById('cfPath');
+    var okBtn = document.getElementById('cfOk');
+    var input = document.getElementById('cfInput');
+    var v = vaultById(id);
+    okBtn.className = '';
+
+    if (mode === 'delete') {
+      document.getElementById('cfTitle').textContent = v.type === 'git'
+        ? '移除「' + v.name + '」的本地副本？' : '删除「' + v.name + '」？';
+      document.getElementById('cfDesc').innerHTML = v.type === 'git'
+        ? '只删除手机上的这个目录，远端仓库不受影响。<br>下次想用可以重新导入。'
+        : '该目录下的 ' + v.files + ' 篇笔记会被永久删除，无法恢复。建议先导出备份。';
+      pathEl.textContent = v.dir;
+      row.classList.add('hidden');
+      pathEl.classList.remove('hidden');
+      okBtn.classList.add('btn-danger');
+      okBtn.textContent = v.type === 'git' ? '移除本地副本' : '确认删除';
+    } else if (mode === 'create') {
+      document.getElementById('cfTitle').textContent = '新建本地笔记库';
+      document.getElementById('cfDesc').innerHTML =
+        '在 <code>vaults/</code> 下新建一个目录，不参与同步，与现有库互不影响。';
+      input.value = nextLocalName();
+      row.classList.remove('hidden');
+      pathEl.classList.add('hidden');
+      okBtn.classList.add('primary');
+      okBtn.textContent = '创建';
+    } else {
+      document.getElementById('cfTitle').textContent = '重命名「' + v.name + '」';
+      document.getElementById('cfDesc').innerHTML = v.type === 'git'
+        ? '目录名一起改。<b>远端仓库名与同步都不受影响</b> —— 改的只是手机上的文件夹。'
+        : '目录名一起改，库内的笔记不受影响。';
+      input.value = v.name;
+      row.classList.remove('hidden');
+      pathEl.classList.add('hidden');
+      okBtn.classList.add('primary');
+      okBtn.textContent = '保存';
+    }
+    updateHint();
+    document.getElementById('mask').classList.remove('hidden');
+    input.focus();
+    input.select();
+  }
+
+  document.getElementById('cfInput').addEventListener('input', updateHint);
 
   document.getElementById('cfCancel').addEventListener('click', function () {
     document.getElementById('mask').classList.add('hidden');
   });
+
   document.getElementById('cfOk').addEventListener('click', function () {
-    var id = this.getAttribute('data-target');
+    var id = cfTarget;
     document.getElementById('mask').classList.add('hidden');
+    if (cfMode === 'delete') { doDelete(id); }
+    else if (cfMode === 'create') { doCreate(); }
+    else { doRename(id); }
+  });
+
+  function doDelete(id) {
     for (var i = 0; i < VAULTS.length; i++) {
       if (VAULTS[i].id === id) { VAULTS.splice(i, 1); break; }
     }
@@ -874,8 +988,41 @@
     renderVaultMenu();
     renderVaultCards();
     updateVaultUI();
-  });
+  }
 
+  function doCreate() {
+    var raw = document.getElementById('cfInput').value;
+    var base = sanitizeDir(raw);
+    if (!base) { return; }
+    var id = uniqueId(base);
+    VAULTS.push({ id: id, name: id, type: 'local', dir: 'vaults/' + id, files: 0 });
+    TREES[id] = [];
+    current = '';
+    switchVault(id);
+    renderVaultMenu();
+    renderVaultCards();
+  }
+
+  function doRename(id) {
+    var v = vaultById(id);
+    if (!v) { return; }
+    var base = sanitizeDir(document.getElementById('cfInput').value);
+    if (!base) { return; }
+    var nid = uniqueId(base);
+    if (nid === id) { return; }
+    v.id = nid;
+    v.name = nid;
+    v.dir = 'vaults/' + nid;
+    TREES[nid] = TREES[id];
+    delete TREES[id];
+    if (currentVault === id) { currentVault = nid; }
+    renderTree();
+    renderVaultMenu();
+    renderVaultCards();
+    updateVaultUI();
+  }
+
+  document.getElementById('newLocal').addEventListener('click', function () { openDialog('create', ''); });
   document.getElementById('addVault').addEventListener('click', function () { setView('sync', true); });
   document.getElementById('gotoVaults').addEventListener('click', function () { setView('vaults', true); });
 
