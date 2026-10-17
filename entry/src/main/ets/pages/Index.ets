@@ -82,6 +82,19 @@ struct Index {
     }
   }
 
+  /**
+   * 系统返回键/侧滑返回拦截（需求 2.7；api_notes I-1 已核实：@Entry 生命周期回调，
+   * 官方 FAQ 明确「返回 true 表示页面自己处理返回逻辑，不进行页面路由」）。
+   * 库管理视图：返 true 自处理 → 回笔记视图；笔记视图：返 false 走系统默认（退出应用）。
+   */
+  onBackPress(): boolean {
+    if (this.showVaultManager) {
+      this.showVaultManager = false;
+      return true;
+    }
+    return false;
+  }
+
   /** 当前库名（显示名 = 目录名 = id；注册表兜底） */
   private currentVaultName(): string {
     return this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）';
@@ -208,21 +221,41 @@ struct Index {
     .backgroundColor('#F2F2F7')
   }
 
-  /** 顶栏：汉堡（sm 抽屉开关 / md+lg 收起唤回）、标题=当前库名、「库管理」入口 */
+  /**
+   * 顶栏（需求 2.7，照原型 setView 逻辑）：
+   * 笔记视图 = 汉堡（sm 抽屉开关 / md+lg 收起唤回）+ 标题=当前库名 +「库管理」入口；
+   * 库管理视图 = 左上角换返回箭头（原型 #backBtn，主文本色——深色下 60% 白偏灰）+ 标题「笔记库」
+   * + 右侧「库管理」入口收敛不挂自己。
+   */
   @Builder
   Appbar() {
     Row() {
-      Text('☰')
-        .fontSize(18)
-        .fontColor('#8E8E93')
-        .width(32)
-        .height(32)
-        .textAlign(TextAlign.Center)
-        .borderRadius(8)
-        .onClick(() => {
-          this.onHamburger();
-        })
-      Text(this.currentVaultName())
+      if (this.showVaultManager) {
+        // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
+        Text('‹')
+          .fontSize(22)
+          .fontColor('#1C1C1E')
+          .width(32)
+          .height(32)
+          .textAlign(TextAlign.Center)
+          .borderRadius(8)
+          .onClick(() => {
+            this.showVaultManager = false;
+          })
+      } else {
+        Text('☰')
+          .fontSize(18)
+          .fontColor('#8E8E93')
+          .width(32)
+          .height(32)
+          .textAlign(TextAlign.Center)
+          .borderRadius(8)
+          .onClick(() => {
+            this.onHamburger();
+          })
+      }
+      // 原型 VIEW_TITLE：次级视图标题固定为视图名，不显示当前库名
+      Text(this.showVaultManager ? '笔记库' : this.currentVaultName())
         .fontSize(13)
         .fontWeight(FontWeight.Medium)
         .fontColor('#1C1C1E')
@@ -230,14 +263,16 @@ struct Index {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ left: 10, right: 10 })
-      Text('库管理')
-        .fontSize(12)
-        .fontColor('#8E8E93')
-        .height(28)
-        .padding({ left: 10, right: 10 })
-        .onClick(() => {
-          this.showVaultManager = true;
-        })
+      if (!this.showVaultManager) {
+        Text('库管理')
+          .fontSize(12)
+          .fontColor('#8E8E93')
+          .height(28)
+          .padding({ left: 10, right: 10 })
+          .onClick(() => {
+            this.showVaultManager = true;
+          })
+      }
     }
     .width('100%')
     .height(48)
