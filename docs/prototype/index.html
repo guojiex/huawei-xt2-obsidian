@@ -132,6 +132,10 @@
   .node .caret { width: 10px; color: var(--muted); font-size: 10px; }
   .indent-1 { padding-left: 22px; }
   .indent-2 { padding-left: 40px; }
+  .indent-3 { padding-left: 58px; }
+  .indent-4 { padding-left: 76px; }
+  .node.dir .caret { flex: none; }
+  .node.dir:hover { color: var(--text); }
   .side-foot {
     flex: none; padding: 8px; border-top: 1px solid var(--border);
     display: flex; gap: 6px;
@@ -511,6 +515,7 @@
     <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
     <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
     <li><b>折痕位置目前按等分假设</b>：设计稿把双屏折痕放在 50%、三屏放在 1/3 与 2/3。真机上应该用系统折叠状态接口拿实际折痕区域再校准，不能写死百分比。</li>
+    <li><b>目录树可展开 / 折叠</b>：点目录行（或左侧箭头）切换，<b>折叠只影响显示，不动文件</b>；正在编辑的文件即使被折叠也不会关闭。子文件缩进比父目录深一级，<code>▾</code> = 展开、<code>▸</code> = 折叠，文件夹图标开口 / 闭合同步变化。<b>展开状态按库分别记忆</b>（切库回来还是原来的样子）。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
     <li><b>搜索标了 v2</b>：全文搜索依赖全库索引，MVP 不做；MVP 只做文件名检索。</li>
@@ -545,6 +550,7 @@
     ],
     'obsidian-vault': [
       ['dir', '00_Inbox', false, 0],
+      ['file', '2026-10-16 灵感.md', false, 1, 'idea'],
       ['dir', '10_Notes', true, 0],
       ['dir', 'Engineering', true, 1],
       ['dir', '流式系统', true, 2],
@@ -555,7 +561,9 @@
       ['dir', '20_Projects', true, 0],
       ['dir', '开窍研究所', true, 1],
       ['file', 'ToB三条线复盘.md', false, 2, 'tob'],
-      ['dir', '30_Archive', false, 0]
+      ['dir', '30_Archive', false, 0],
+      ['dir', '2025', false, 1],
+      ['file', '年度复盘.md', false, 2, 'year2025']
     ]
   };
 
@@ -566,7 +574,9 @@
     'stream': '流式系统_流处理实战教程.md',
     'dataflow': 'Dataflow模型四要素.md',
     'intimacy': '亲密关系_第一章.md',
-    'tob': 'ToB三条线复盘.md'
+    'tob': 'ToB三条线复盘.md',
+    'idea': '2026-10-16 灵感.md',
+    'year2025': '年度复盘.md'
   };
 
   /* 宽屏侧栏副行：修改时间 + 字数 */
@@ -577,7 +587,9 @@
     'stream': '10-15 21:08 · 1.3k 字',
     'dataflow': '10-14 19:22 · 0.3k 字',
     'intimacy': '10-12 23:51 · 0.5k 字',
-    'tob': '10-09 14:30 · 0.4k 字'
+    'tob': '10-09 14:30 · 0.4k 字',
+    'idea': '10-16 22:47 · 0.1k 字',
+    'year2025': '2025-12-31 · 2.1k 字'
   };
 
   var CONTENT = {
@@ -669,6 +681,22 @@
       '结论：先跑通一条，再复制工作流。 #项目'
     ].join('\n'),
 
+    idea: [
+      '# 2026-10-16 灵感',
+      '',
+      '- 折叠态下先只显示当前库，切库入口收到侧栏底部',
+      '- 目录树默认只展开到二级，深的让用户自己点开'
+    ].join('\n'),
+
+    year2025: [
+      '# 2025 年度复盘',
+      '',
+      '> 归档区，平时折叠起来，需要时再展开。',
+      '',
+      '- 流式系统笔记写完了一整轮',
+      '- 《亲密关系》读到第三章停了'
+    ].join('\n'),
+
     inbox: [
       '# 2026-10-17 随手记',
       '',
@@ -720,19 +748,41 @@
   var drawer = false;
   var treeEl = document.getElementById('tree');
 
+  /* 目录层级：dir 用 depth，file 用 depth+1（子文件比父目录深一级） */
+  function levelOf(row) { return row[0] === 'dir' ? row[3] : row[3] + 1; }
+
   function renderTree() {
     var rows = TREES[currentVault] || [];
     var html = '';
+    var hideLevel = -1;              // 遇到折叠目录后，深于它的行全部隐藏
     for (var i = 0; i < rows.length; i++) {
-      html += nodeHtml(rows[i][0], rows[i][1], rows[i][2], rows[i][3], rows[i][4]);
+      var lv = levelOf(rows[i]);
+      if (hideLevel >= 0) {
+        if (lv > hideLevel) { continue; }
+        hideLevel = -1;              // 回到同级或更浅 → 解除隐藏
+      }
+      html += nodeHtml(rows[i], i);
+      if (rows[i][0] === 'dir' && !rows[i][2]) { hideLevel = lv; }
     }
     treeEl.innerHTML = html || '<div class="node" style="color:var(--muted)">（空库）</div>';
+
+    /* 点文件：打开 */
     var items = treeEl.querySelectorAll('[data-id]');
     for (var j = 0; j < items.length; j++) {
       items[j].addEventListener('click', function () {
         current = this.getAttribute('data-id');
         loadFile();
         if (body.getAttribute('data-form') === 'sm') { toggleDrawer(false); }
+      });
+    }
+    /* 点目录：展开 / 折叠（不动当前打开的文件） */
+    var dirs = treeEl.querySelectorAll('[data-dir]');
+    for (var k = 0; k < dirs.length; k++) {
+      dirs[k].addEventListener('click', function (e) {
+        e.stopPropagation();
+        var idx = parseInt(this.getAttribute('data-dir'), 10);
+        var rs = TREES[currentVault] || [];
+        if (rs[idx]) { rs[idx][2] = !rs[idx][2]; renderTree(); }
       });
     }
     var v = vaultById(currentVault);
@@ -744,14 +794,20 @@
     return null;
   }
 
-  function nodeHtml(kind, label, open, depth, id) {
+  var IC = ' width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"';
+  var ICON_DIR_OPEN = '<svg' + IC + '><path d="M2 4.2A1.2 1.2 0 013.2 3h2.6L7.3 4.7h5.5A1.2 1.2 0 0114 5.9v1.2H2V4.2z"/><path d="M2 7.1h12v5.7A1.2 1.2 0 0112.8 14H3.2A1.2 1.2 0 012 12.8V7.1z"/></svg>';
+  var ICON_DIR = '<svg' + IC + '><path d="M2 4.2A1.2 1.2 0 013.2 3h2.6L7.3 4.7h5.5A1.2 1.2 0 0114 5.9v6.9A1.2 1.2 0 0112.8 14H3.2A1.2 1.2 0 012 12.8V4.2z"/></svg>';
+  var ICON_FILE = '<svg' + IC + '><path d="M4 2h5l3 3v9H4z"/></svg>';
+
+  function nodeHtml(row, idx) {
+    var kind = row[0], label = row[1], open = row[2], depth = row[3], id = row[4];
     var cls = 'node ' + (kind === 'dir' ? 'dir indent-' + depth : 'indent-' + (depth + 1));
     if (id && id === current) { cls += ' sel'; }
     var caret = kind === 'dir' ? '<span class="caret">' + (open ? '▾' : '▸') + '</span>' : '<span class="caret"></span>';
-    var icon = kind === 'dir'
-      ? '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 4l5 4-5 4V4zM9 4h5v8H9z" opacity="0"/></svg>'
-      : '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 2h5l3 3v9H4z"/></svg>';
-    var attrs = id ? ' data-id="' + id + '"' : '';
+    var icon = kind === 'dir' ? (open ? ICON_DIR_OPEN : ICON_DIR) : ICON_FILE;
+    var attrs = kind === 'dir'
+      ? ' data-dir="' + idx + '" title="展开 / 折叠"'
+      : (id ? ' data-id="' + id + '"' : '');
     var sub = (kind === 'file' && META[id]) ? '<span class="nsub">' + META[id] + '</span>' : '';
     return '<div class="' + cls + '"' + attrs + '>' + caret + icon
       + '<span class="nlabel">' + esc(label) + sub + '</span></div>';
