@@ -485,15 +485,12 @@ struct Index {
     .height('100%')
   }
 
-  /** 库管理视图：整体替换内容区，自带返回（原型 vaultsView 结构） */
+  /** 库管理视图：整体替换内容区（原型 vaultsView 结构）；返回走顶栏 ‹ 与 onBackPress，组件不自带（2.7c） */
   @Builder
   ManagerView() {
     VaultManagerView({
       vaults: this.vaults,
       currentVaultId: this.currentVaultId,
-      onBack: (): void => {
-        this.showVaultManager = false;
-      },
       onSetCurrent: (id: string): void => {
         this.doSwitchVault(id);
       },

@@ -1,7 +1,8 @@
 /**
  * VaultManagerView.ets —— 库管理视图（原型 vaultsView 结构）
  *
- * 以内容区整体替换形态挂载在 Index 内容区（T013 接线），自带「返回笔记」。
+ * 以内容区整体替换形态挂载在 Index 内容区（T013 接线）。
+ * 返回走 Index 顶栏返回箭头（2.7 硬要求，2.7c 起本组件不再自带返回入口）。
  * 卡片列表：当前库高亮；每卡「设为当前 / 改名 / 删除」。
  * 铁律：无 Git 导入入口（v0.3）；删除按钮直接拉起不可逆确认对话框（文案在 VaultDialogs）。
  */
@@ -13,7 +14,6 @@ export struct VaultManagerView {
   @Link vaults: VaultEntry[];
   /** 当前库 id（高亮用） */
   @Prop currentVaultId: string = '';
-  onBack: () => void = () => {};
   onSetCurrent: (id: string) => void = (id: string) => {};
   onRename: (id: string) => void = (id: string) => {};
   onDelete: (id: string) => void = (id: string) => {};
@@ -22,18 +22,8 @@ export struct VaultManagerView {
   build() {
     Scroll() {
       Column() {
-        // 返回入口（管理视图自带返回，spec T013）
-        Row() {
-          Text('‹ 返回笔记')
-            .fontSize(12)
-            .fontColor('#534AB7')
-            .onClick(() => {
-              this.onBack();
-            })
-        }
-        .width('100%')
-        .margin({ bottom: 12 })
-
+        // 返回入口已删（2.7c）：2.7 之前顶栏无返回、此处是唯一通道；
+        // 顶栏加 ‹ 后变重复入口（原型只有顶栏一个），且文本热区仅约 16vp 远小于 48vp。
         // 标题「笔记库」只保留在顶栏（2.7b：A 轮顶栏切标题后此处与之重复，删；
         // 原型 2026-10-17 同样删了内容区重复大标题）
         Text('每个库是 vaults/ 下的一个独立目录，各自独立同步')
