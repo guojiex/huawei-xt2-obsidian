@@ -30,8 +30,11 @@
 | 文件树左滑交互 | **左滑露出操作条**（重命名 / 移动 / 删除），**删除必须二次确认**；**文件夹不给删除按钮**（只重命名 / 移动） | 2026-10-17 |
 | 后台同步 | **先不做**，已转 `requirements_backlog.md`；MVP 用「前台进度条 + 未推送角标」替代 | 2026-10-17 |
 | 抽 ohpm 库 | ⏸ **TODO 挂起**，见下方挂起表 | 2026-10-17 |
+| **AI 助手（小艺智能体 + 端侧意图）** | ✗ **不进 MVP**（架构冲突未解 + 接口未核实）；需求已入 `requirements_backlog.md` G 节，结论见 `docs/harmonyos/api_notes.md` F 组 | 2026-10-17 |
+| 意图执行器写文件 | **必须走 `AtomicFile`**，官方示例的 TRUNC 覆盖写违反原子写硬约束 | 2026-10-17 |
 
-> 未拍板：**Q2 zip 导出进不进 MVP**（推荐进，排 M1）。进度与里程碑见 `docs/mvp_design.md` 第 7 节。
+> 未拍板：**Q2 zip 导出进不进 MVP**（推荐进，排 M1）；**Q5 AI 编辑的 git 出路**、**Q6 noteId 设计**（均不阻塞当前工作）。
+> 进度与里程碑见 `docs/mvp_design.md` 第 7 节。
 
 ## 📌 TODO 挂起项（暂不拍板，等触发条件）
 
@@ -100,6 +103,32 @@
 
 **决定**：MVP 只做前台同步；后台自动同步**不作为需求消失**，已登记进 `docs/requirements_backlog.md` 的 C 节（价值中高 / 成本 M / 状态「先不做，v2 再评估」），等前台链路真机跑稳后再回来评估。
 
+### Q5. AI 编辑笔记时，git 版本记录走哪条出路？（**阻塞 AI 功能**）
+
+背景：官方方案假定有**原生 ArkTS git**（`GitService.commit()`），而我们的 git 是 isomorphic-git
+**跑在 ArkWeb 页面里**；且后台意图执行的生命周期是 `onCreate → onExecute`，**不建 window**。
+
+| 出路 | 做法 | 代价 |
+| --- | --- | --- |
+| **A. commit 入队、延迟执行** ⭐推荐 | 意图执行器写完文件后把「待 commit 路径 + 消息」写进队列文件；App 回前台、Web 就绪后由主线程消费 | 反馈文案要改成「已修改，版本待提交」；撤销也要等提交后 |
+| B. 执行时同步拉起不可见 Web 再 commit | 冷启动建 WebView 有耗时，且 `visibility(Hidden)` 下 JS 是否执行**未验证** | 慢 + 可能根本不可用 |
+| C. 放弃意图内 git，改文件级备份 | 写前复制 `.bak` / 自建轻量历史目录 | 失去「改过什么」的历史查询；备份目录污染 vault |
+
+**我的推荐**：先问鸿蒙 **F-C**（后台执行时 ArkWeb 是否可用），拿到答案再拍板——
+若答案是「可用」，直接 A；若「不可用」，A 仍然成立（只是延迟更久）。
+→ 详见 `docs/harmonyos/api_notes.md` **F6**；需求清单见 `requirements_backlog.md` **G 节**。
+
+### Q6. `noteId` 怎么唯一定位一篇笔记？
+
+背景：官方示例假设单库单层（`filesDir/notes/<id>.md`），我们是**多库 + 多级目录**。
+
+| 选项 | 说明 |
+| --- | --- |
+| 拆成 `vaultId` + `path` 两个参数 ⭐推荐 | 大模型更不容易填错；但要补一个 `ListVaults` 意图让智能体知道有哪些库 |
+| 编码成单个 `noteId`（`<库id>::<相对路径>`） | 一个参数搞定，但字符串长、大模型容易漏字符 |
+
+**不阻塞当前工作**（AI 功能整体后置），可与 Q5 一起拍板。
+
 ---
 
 ## 第 2 组：需要追问鸿蒙 Agent 的技术问题
@@ -108,7 +137,62 @@
 
 复制下面「提示词」整段粘给鸿蒙官方 Agent。**建议一次只问一组**，答得笼统就拆开再问。
 
-按价值排序：**B 组（Web 组件）> A 组（三折叠）> C 组（文件/安全）> D 组（ohpm）**。
+按价值排序：**F 组（小艺智能体 / 端侧意图）> A 组（三折叠）> C 组（文件/安全）> D 组（ohpm）**。
+（B 组已于 2026-10-17 问完，别再问。）
+
+---
+
+### 提示词 · F 组 —— ❓ **待问**（AI 功能的前置问题）
+
+> 背景：用户希望「在 App 内接入小艺，用自然语言对笔记做细粒度编辑」。
+> 官方已给出方案骨架（自建智能体 + `@InsightIntentEntry` 端侧执行 + git 版本底座），
+> 但**未附文档链接**，且方案假设存在原生 git —— 与我们「git 跑在 Web 组件里」的现状冲突。
+> **最该先问的是 F-C**，它直接决定 Q5（git 出路）选哪条。
+
+```
+我在用 HarmonyOS 原生（ArkTS）开发一个本地 Markdown 笔记应用，工程 API 版本：
+compatibleSdkVersion 6.1.1(24)，即 API 24；targetSdkVersion 26.0.0。设备是华为 XT2 三折叠。
+
+我的架构有两个关键事实，请先记住：
+1) 笔记存在应用沙箱 filesDir/vaults/<库id>/ 下，是多库 + 多级目录结构。
+2) 版本管理用的是 isomorphic-git（纯 JS），它打包进一个离线 HTML，跑在 ArkWeb 的
+   Web 组件里（resource://rawfile/）。原生侧只有 fs 桥接和 http 桥接，真正的 git
+   计算在 JS 侧，不在 ArkTS 侧。
+
+我打算用「小艺开放平台自建智能体 + 端侧意图执行（Insight Intent）」让用户用小艺
+改笔记，官方给的方案假定我在意图执行器里能直接调用原生 git 做 commit。但我没有
+原生 git。所以请逐条核实（每条标注【文档明确记载】/【推断】/【不确定】，
+不确定的直接说不确定，并给出文档出处）：
+
+F-C（最关键）端侧意图以 UI_ABILITY_BACKGROUND 模式执行时，若应用是冷启动，
+     生命周期是 onCreate → onExecute，不经过 onWindowStageCreate。
+     请问：这种情况下，同一个 UIAbility 里已挂载的 ArkWeb（Web 组件）是否已存在？
+     如果我在 onCreate 里创建、或者页面尚未建立，能否在 onExecute 期间
+     跨 Web 边界调用页面内的 JS（比如 runJavaScript / WebMessagePort）？
+     换句话说：后台意图执行期间，我能不能用跑在 Web 组件里的 git 做一次 commit？
+     如果不能，官方推荐的做法是什么（例如把任务入队、等 UI 就绪后执行）？
+
+F-A  @kit.AgentFrameworkKit 里的 FunctionComponent / FunctionController，
+     在我的 API 24 上是否存在？最低支持的 API 版本是多少？
+     如果 API 24 不支持，应用内拉起自建智能体对话还有别的官方方式吗？
+
+F-B  @InsightIntentEntry 装饰器在 API 24 是否可用？
+     insight_intent.json 的 insightIntentsSrcEntry 字段到底支不支持数组？
+     该文件应该放在哪个目录下（entry/src/main/resources/base/profile/ 吗）？
+
+F-D  在小艺开放平台创建自建智能体后，把技能以 MCP 或插件形式发布到"我自己的智能体"，
+     具体流程是什么？是否真的不需要人工审核？
+     什么条件下才需要走人工审核（上小艺主对话入口）？
+
+F-E  声明端侧意图是否需要额外的权限声明或 module.json5 配置项？
+     真机调试意图调用的标准方法是什么（怎么触发、看什么日志）？
+
+另外顺带确认：意图参数用 JSON Schema 声明时，字段的 description 是否确实会被
+系统大模型用来理解如何填参？如果是，有没有书写建议或长度限制？
+
+如果你对上面任何接口名不确定，请直接说"不确定，请以 DevEco 代码补全为准"，
+不要猜测接口名或签名——我之前因为照着编造的接口名写过代码，浪费了很多时间。
+```
 
 ---
 
