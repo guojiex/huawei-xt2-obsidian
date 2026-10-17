@@ -80,7 +80,24 @@ XT2 有两条铰链，把屏幕分成三块。**规则是：一栏占且只占�
 
 由此带来一个副作用要接受：**侧栏会比它实际需要的宽**。文件树 240vp 就够，但双屏态 330vp、三屏态 373vp 是硬性约束，收窄就会跨折痕。处理方式是把多出来的宽度用起来（每条笔记多显示一行修改时间与字数、后续放最近打开列表或摘要），而不是压缩栏宽。
 
-**折痕位置不能写死**：上表的 50% / 1/3 是按三块屏等分假设的，真机上必须用系统折叠状态接口取实际折痕区域再校准。相关接口在不同 API 版本命名有差异，开工前按当前 API 参考核对。除分栏外，按钮、输入框、拖拽热区也不要横跨折痕。
+**折痕位置不能写死** —— 上表的 50% / 1/3 是按三块屏等分的假设。核实后的实际情况比预想麻烦（详见 `docs/harmonyos_api_notes.md` A 组）：
+
+- `display.getCurrentFoldCreaseRegion()` 的签名**只返回单个 Rect**，而三折叠有**两条**铰链；官方未记载三折叠下该接口返回哪一段。所以**不能把三栏边界直接建立在这个接口上**。
+- `display.getFoldStatus()` 的枚举只有 4 个值，**三屏全展开（G 态）对应哪个值官方文档未记载**，需真机打印确认（可配合 `foldAngleChange` 返回的两个折轴角度综合判断）。
+
+因此分栏实现有三条路，**优先级如下**：
+
+| 方案 | 说明 | 状态 |
+| --- | --- | --- |
+| ① 用 `FoldSplitContainer`（arkui-advanced，API 12+） | 官方折叠分栏组件，**悬停态自动避让折痕**，支持三分栏配置 | **优先评估**，M0 前定 |
+| ② 真机校准自算折痕 | 用 crease Rect + 双折轴角度推断两条铰链位置 | ①不适用时的备选 |
+| ③ 等分 + 折痕只做标注 | 维持 50% / 1/3 布局，折痕不参与决定栏宽 | 兜底 |
+
+**注意**：`EXPANDED` 在三折叠上表示"折轴一展开、折轴二折叠"，即**双屏态**；`FOLDED` 才是单屏态——与双折叠设备的直觉不同，别照搬。
+
+除分栏外，按钮、输入框、拖拽热区也不要横跨折痕；悬停态的官方避让标准是上半屏由中线向上避让 16vp、下半屏向下避让 40vp。
+
+**A5 已确认**：三折叠在系统中始终是 `phone`，全展开 10 英寸也不会变成 tablet / 2in1，所以 `deviceTypes` 不用改，断点差异全部交给 `windowSizeChange`（官方明确推荐这么做，不要用 `getFoldDisplayMode()` 做分支）。
 
 ## 3. 编辑器与渲染方案
 
@@ -153,9 +170,15 @@ preferencesDir/
 
 ### 4.2 写入策略（要点）
 
-- **原子写**：先写 `xxx.md.tmp`，写完 `fs.renameSync` 覆盖目标文件，避免写一半崩溃导致笔记损坏
+- **原子写：改用官方 `fileIo.AtomicFile`（API 15+，我们 API 24 可用）**，替换原设计的自研 `tmp + renameSync`。
+  原因是核实后发现 **`renameSync` 在目标已存在时是否覆盖、是否原子，官方文档均未记载**——把笔记完整性押在未记载的行为上不划算。`AtomicFile` 的语义正是我们要的：写临时文件 → `finishWrite()` 成功才重命名到目标位置 → `failWrite()` 失败则删临时文件、原文件不受影响。
+  ```ts
+  const af = new fileIo.AtomicFile(path)
+  const s = af.openWrite()
+  try { s.writeSync(content); s.closeSync(); af.finishWrite() } catch (e) { af.failWrite() }
+  ```
 - **触发时机**：停止输入 3 秒 / 页面隐藏 / 返回键拦截 / 形态切换前
-- **大目录遍历**放 TaskPool，不占 UI 线程；`fs.listFileSync` 对上千文件的目录要分页
+- **大目录遍历**放 TaskPool，不占 UI 线程。`fs.listFileSync` **无分页游标**（一次性返回 `string[]`，只有 `listNum` 限制条数），上千文件要在子线程里分批处理，别在主线程一次性构建大数组；**按后缀过滤只能自己写**——支持 `fileFilter` 的 `listFileExt` 是 API 26 才有，我们用不了
 - 编码统一 UTF-8，换行统一 LF
 
 ### 4.3 备份
@@ -173,8 +196,17 @@ preferencesDir/
 1. **运行位置**：Web 组件加载 `resources/rawfile/gitbridge/index.html`（单文件内联，含打包好的 isomorphic-git + 桥接层，268 KB）。isomorphic-git 只做计算、不依赖 DOM，因此即使 M0.5 的编辑器 spike 失败、编辑端降级到 `TextArea`，这条链路依然可用。
 2. **文件系统桥接**（核心工作量）：isomorphic-git 接受自定义 `fs` 对象，实现 `readFile / writeFile / readdir / mkdir / rmdir / stat / lstat / unlink / rename`，内部转发到 ArkTS，由 `@ohos.file.fs` 操作沙箱 `vault/`。**单一数据源必须留在沙箱**，不要在 Web 侧另存 IndexedDB 副本。
 3. **网络（结论已修正）**：~~isomorphic-git 用 fetch 直连 GitHub~~ —— 早期假设 GitHub 支持 CORS，实测不成立：`github.com` 的 git 服务端点（`info/refs`、`git-upload-pack`）**不返回 CORS 头**，WebView 内 fetch 会被同源策略拦掉。因此改为注入**自定义 http client**，把请求转发给 ArkTS 的 `@ohos.net.http`，天然不受 CORS 限制。`module.json5` 已补 `ohos.permission.INTERNET`。
-4. **认证**：PAT（fine-grained，Contents 读写）。**当前暂存在 preferences（不安全）**，正式版必须迁移到关键资产存储服务（Asset Store Kit），代码里已标 TODO。
+4. **认证**：PAT（fine-grained，Contents 读写）。**当前暂存在 preferences（不安全）**，必须迁移到 **Asset Store Kit**：`@kit.AssetStoreKit` 的 `asset.addSync/querySync`，**无需申请任何权限**；敏感值只能放 `asset.Tag.SECRET`（加密位），`ALIAS` 不加密、只作检索键。多库场景下 **alias 用 `vault:<库id>:token`**，每个库单独存一份。（读取时未找到会抛 `24000002`，需捕获。）
 5. **性能**：跨语言 fs 调用是主要开销。JS 侧做写缓冲，达到阈值（128 个文件 / 4 MB）才批量提交，避免逐文件跨桥；首次 clone 给进度条。
+
+**通道分工（核实后新增）**：`runJavaScript` 的脚本长度上限官方未记载，且返回值是 string，100KB 级文本往返有明显序列化开销，**不适合做数据通道**。因此：
+
+- 控制指令（init / clone / 状态查询）→ 继续走 `runJavaScript` + `javaScriptProxy`
+- **大文本与 git packfile → 必须改走 `WebMessagePort`**（`createWebMessagePort()`，支持 ArrayBuffer）
+
+**桥接不放在 Worker 里（原计划已修正）**：核实后确认 `javaScriptProxy` 是"注入到 window 对象"，而 **Worker 是独立全局作用域、没有 window，访问不到注入对象**。要 Worker 化就得在 Worker 与主线程之间再架一层 `postMessage` 中转，复杂度不划算。**MVP 先放主线程**（数百篇量级可接受），实测不够再优化。
+
+**git 计算容器的承载方式**：不要用 1×1 像素的隐藏 Web 组件。官方为"页面保活"提供的是 **`NodeController` + `NodeContainer` 动态挂载/卸载 Web 节点**（离线 Web 组件），用它承载 git 容器。
 
 #### 桥接协议
 
@@ -207,7 +239,9 @@ GitHub 与 Gitee 均已成功 clone 并 checkout 出文件。过程中修掉三�
 2. http 响应体**必须包成异步块迭代器**——直接给裸 `Uint8Array` 会被 `getIterator` 当成逐字节迭代（`Uint8Array` 自带 `Symbol.iterator`），表现为 `EmptyServerResponseError`。
 3. isomorphic-git 的 `StreamReader` **强依赖 `Buffer`**（源码注释 #1855），WebView 里没有这个全局，已注入 `buffer` polyfill。
 
-**待真机验证**：大 packfile 经 `runJavaScript` 回传的长度上限；Web 组件在 1×1 隐藏尺寸下 JS 是否正常执行。
+**待真机验证**：`WebMessagePort` 在 `resource://rawfile/` 页面上是否可用；`NodeContainer` 承载的离线 Web 组件内 JS 是否正常执行。
+
+**关于"拦截方案"（暂缓，仅记录）**：官方更推荐的做法是 `onInterceptRequest` 拦截请求、原生层代发、`WebResourceHandler.didReceiveResponseBody(ArrayBuffer)` 流式回填——这样 isomorphic-git 继续用原生 fetch，**JS 侧代码零改动**，且支持流式、不占内存峰值。听起来比我们现在的手动转发更优雅，**但 MVP 暂不迁移**，原因是它有一个未验证的致命前提：push 走的 `git-receive-pack` 是 **POST + 大二进制 body**，而 `onInterceptRequest` 回调能否完整拿到 POST 请求体，官方答复未覆盖。我们现有的转发方案 POST body 由 JS 侧自己构造、不受此限制，且已在 node 冒烟测试中真实 clone 成功。**决策：保留现有方案，先验证 POST body 可行性再评估迁移。**
 
 #### 同步流程：读 main，写 main，冲突推分支
 
@@ -339,7 +373,7 @@ entry/src/main/ets/
 
 | 阶段 | 产出 | 完成判定 |
 | --- | --- | --- |
-| M0 | 断点系统 + 空三栏骨架 | 旋转/折叠时布局按断点正确切换 |
+| M0 | 断点系统 + 空三栏骨架 | 旋转/折叠时布局按断点正确切换。**含 `FoldSplitContainer` 可行性评估**——它决定三栏是走官方组件还是自绘分栏，M0.2 之前必须定 |
 | M0.2 | 本地库 + 库注册表 | 首次启动自动建 `vaults/local`；能新建本地库、改名、删库、切库 |
 | M0.5 | WebView 编辑 spike | 中文输入法 / 光标 / 滚动 / 折叠 resize 四项给出结论 |
 | M1 | 文件树 + 打开 md | 真实目录下能浏览并打开笔记 |
@@ -376,14 +410,18 @@ M0.5 的结论决定 M2 走方案 A 还是 B，属于前置关卡，不能跳过
 | --- | --- | --- |
 | 编辑器方案 | 已定 A | spike（M0.5）结论决定是否需要降级到 B |
 | `deviceTypes` | 已完成 | 已补 `2in1` |
-| 折痕 API | 待核对 | 按当前 API 版本确认接口名与返回值 |
-| WebView 输入法 | 高风险 | 决定方案 A 是否成立，M0.5 必须验证 |
+| 折痕 API | **已核实，结论不利** | `getCurrentFoldCreaseRegion()` 只返回**单个 Rect**，三折叠有两条铰链，官方未记载返回哪一段 → 不能据此定栏边界。改优先评估 `FoldSplitContainer`，或真机校准（见 2.3） |
+| 三屏态 FoldStatus | **新风险** | `getFoldStatus()` 枚举只有 4 值，三屏全展开（G 态）对应哪个**官方未记载**；真机打印建映射表。注意 `EXPANDED` 在三折叠 = 双屏态 |
+| WebView 输入法 | 高风险 | 决定方案 A 是否成立，M0.5 必须验证（官方无记载，只能实测） |
 | 首帧加载 | 中风险 | WebView 初始化耗时，考虑预加载或骨架屏 |
-| 大文档桥接 | 中风险 | 必须增量 patch，不能全文往返 |
+| 大文档桥接 | 中风险 | 必须增量 patch，不能全文往返；且大数据要改走 `WebMessagePort` 传 ArrayBuffer |
+| WebMessagePort | **新风险** | runJavaScript 长度上限未记载，大数据通道依赖它，需先真机验证端口在 rawfile 页面可用 |
+| Web 组件尺寸上限 | 低风险 | 异步渲染模式下宽高不得超 **7680px 物理像素**，超了白屏；三栏各 1/3 时安全，全屏 Web 要留意 |
 | 网络权限 | 已完成 | `module.json5` 已补 `ohos.permission.INTERNET` |
-| Web 组件 CORS | 已规避 | git 端点不返回 CORS 头，已改为把请求转发到原生 `@ohos.net.http`，不再依赖 WebView 的 fetch |
-| fs 桥接性能 | 中风险 | 每次文件读写都跨 JS↔ArkTS，必须批量化并放 Worker，否则 clone 会慢到不可用 |
-| PAT 安全 | 中风险 | 必须走关键资产存储服务，禁止明文；权限最小化（Contents 读写）。多库后 token 按库存，不要共用一份 |
+| Web 组件 CORS | 已规避 | git 端点不返回 CORS 头，已改为把请求转发到原生 `@ohos.net.http`。官方更推荐 `onInterceptRequest` 拦截，但因 POST body 获取未验证，**MVP 不迁移** |
+| fs 桥接性能 | 中风险 | 每次文件读写都跨 JS↔ArkTS，必须批量化。**不能放 Worker**：`javaScriptProxy` 注入到 window，Worker 无 window 访问不到 → 先主线程 |
+| PAT 安全 | 已确认方案 | 用 `@kit.AssetStoreKit` 的 `asset.addSync/querySync`，无需权限，敏感值只放 `SECRET`；alias 用 `vault:<库id>:token` 按库存。**尚未实现**，现仍明文存 preferences |
+| 备份覆盖不全 | **新风险** | **PC/2in1 不支持备份恢复，Tablet 开自由多窗也不生效**。我们的 deviceTypes 含 2in1 → 备份不能作为唯一保命通道，**zip 导出仍要做** |
 | 多库状态隔离 | 中风险 | 当前库、最近打开、草稿、后续索引都必须按库隔离，最容易漏的是"切库后仍写到上一个库的草稿目录" |
 | 导入失败残留 | 中风险 | clone 中断会在 `vaults/` 留下半初始化目录，必须先 clone 到临时目录再整体改名，失败即删临时目录 |
 | 改名与同步并发 | 中风险 | 改名期间必须禁掉本库的同步与编辑，否则会写到已改名的旧路径；目录 rename 失败要整体回滚，禁止半状态 |

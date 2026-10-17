@@ -121,6 +121,12 @@ E3. 我的应用需要长时间持有网络请求（git clone 可能持续数十
 
 ## 拿到答案后要回填的地方
 
+> **状态：答案已于 2026-10-17 回填完毕**。核实结论沉淀在 **`docs/harmonyos_api_notes.md`**（按组整理，标注了每条的可信度），
+> 并已同步修订 `docs/mvp_design.md` 的 2.3（折痕）、4.2（原子写改 AtomicFile）、4.4（通道与容器）与风险表。
+>
+> 需要**真机验证**的项（未验证前不许落码）：三屏态 `FoldStatus` 返回值、折痕 Rect 在三折叠的行为、
+> `WebMessagePort` 在 rawfile 页面的可用性、中文输入法、拦截方案的 POST body 获取。
+
 | 组 | 影响的文档 / 代码 |
 | --- | --- |
 | A | `docs/mvp_design.md` 第 2 节（断点与折痕）、`EntryAbility.ets` 的断点监听 |
