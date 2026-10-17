@@ -34,10 +34,8 @@ export struct VaultManagerView {
         .width('100%')
         .margin({ bottom: 12 })
 
-        Text('笔记库')
-          .fontSize(15)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#1C1C1E')
+        // 标题「笔记库」只保留在顶栏（2.7b：A 轮顶栏切标题后此处与之重复，删；
+        // 原型 2026-10-17 同样删了内容区重复大标题）
         Text('每个库是 vaults/ 下的一个独立目录，各自独立同步')
           .fontSize(12)
           .fontColor('#8E8E93')

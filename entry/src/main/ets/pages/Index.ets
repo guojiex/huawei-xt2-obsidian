@@ -83,11 +83,17 @@ struct Index {
   }
 
   /**
-   * 系统返回键/侧滑返回拦截（需求 2.7；api_notes I-1 已核实：@Entry 生命周期回调，
+   * 系统返回键/侧滑返回拦截（需求 2.7b；api_notes I-1 已核实：@Entry 生命周期回调，
    * 官方 FAQ 明确「返回 true 表示页面自己处理返回逻辑，不进行页面路由」）。
-   * 库管理视图：返 true 自处理 → 回笔记视图；笔记视图：返 false 走系统默认（退出应用）。
+   * 按优先级依次消费：① sm 抽屉打开 → 关抽屉（drawerOpen 仅 sm 有语义，
+   * 切 md/lg 时 onBreakpointChanged 已强制置 false，先判安全）；② 库管理视图 → 回笔记视图；
+   * ③ 都不是 → 返 false 走系统默认（退出应用）。对话框由 CustomDialogController/系统自理，不纳入。
    */
   onBackPress(): boolean {
+    if (this.drawerOpen) {
+      this.drawerOpen = false;
+      return true;
+    }
     if (this.showVaultManager) {
       this.showVaultManager = false;
       return true;
