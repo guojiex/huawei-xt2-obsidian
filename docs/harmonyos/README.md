@@ -21,7 +21,8 @@ docs/harmonyos/
 ├── qa/                ← 每次问答的存档（原始/要点，一问一文件）
 │   ├── 2026-10-17_首批回答_API24.md
 │   ├── 2026-10-17_B组追问_Web组件.md
-│   └── 2026-10-17_小艺智能体_端侧意图框架.md
+│   ├── 2026-10-17_小艺智能体_端侧意图框架.md
+│   └── 2026-10-17_埋点与事件打点.md
 └── prompts/           ← 每次发出去的提问原文（可复用的模板）
     └── 2026-10-17_首批提问_API24.md
 ```
@@ -103,6 +104,7 @@ docs/harmonyos/
 | --- | --- | --- | --- | --- |
 | 2026-10-17 | 首批核实（三折叠 / Web 组件 / 文件存储 / HAR 发布 / 权限网络） | 20 | [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md) | 三折叠恒为 `phone`；折痕接口只返回**单个 Rect**；`FoldSplitContainer` **已否决**；原子写改用 `AtomicFile`；令牌存 `@kit.AssetStoreKit`；`runJavaScript` 长度未记载 → 大数据走 `WebMessagePort`；前台 clone/push 无需额外权限 |
 | 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
+| 2026-10-17 | **原生埋点能力**（hiAppEvent / UIObserver 做展示·点击·页面上报） | 6 | [`qa/2026-10-17_埋点与事件打点.md`](qa/2026-10-17_埋点与事件打点.md) | **无需第三方 SDK**：曝光 `onVisibleAreaApproximateChange`(17+) / 点击 `UIObserver.on('willClick')`(12+) / 页面 `navDestinationSwitch`(12+)，**API 24 全部可用**；`hiAppEvent.write` 落盘 + `addWatcher` 累积触发批量 `takeNext()` 上报；**全局无侵入**方案（组件只声明 `.id()`/`.customProperty()`，Ability 层统一监听）最匹配文件树；⚠️ 可见区域计算**不支持遮挡与旋转**；🔴 **笔记内容一律禁止进埋点** |
 | 2026-10-17 | **小艺智能体 + 端侧意图**（Insight Intent 做笔记编辑） | 9 | [`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md) | 方案骨架：`FunctionComponent` 拉起自建智能体 + `@InsightIntentEntry` 端侧执行 + git 版本底座；**锚点定位法**是细粒度修改的关键；⚠️ **`onCreate → onExecute` 不建 window → 后台执行时 Web 组件不存在 → 我们的 Web 内 git 无法 commit**（架构冲突，出路待拍板）；⚠️ 官方示例用 TRUNC 覆盖写，**须改 `AtomicFile`** |
 
 ### 仍未解决（下次提问优先从这里挑）
@@ -119,6 +121,9 @@ docs/harmonyos/
 | F-B | `@InsightIntentEntry` 在 API 24 是否可用？`insight_intent.json` 的 `insightIntentsSrcEntry` **是否支持数组**？文件放哪个目录？ | 意图声明能不能写 | ❓ 待问（官方自己也不确定） |
 | F-D | 自建智能体 + 技能（MCP / 插件）发布到**自己智能体**的确切流程，是否真免人工审核 | AI 功能上架路径与周期 | ❓ 待问 |
 | F-E | 端侧意图是否需要额外权限声明？真机怎么调试意图调用？ | 落码前准备 | ❓ 待问 |
+| G-A | `hiAppEvent.write` 是否需要权限？事件落盘是否在应用沙箱内？ | 埋点链路能否零权限落地 | ❓ 待问（**埋点后置，不阻塞**） |
+| G-B | `UIObserver.on('willClick')` 只能观察，还是能拦截点击？ | 埋点是否够用（观察即可满足） | ❓ 待问 |
+| G-C | `customProperty()` 的值有无类型 / 长度限制？ | 组件标识怎么编码 | ❓ 待问 |
 
 **真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 
