@@ -210,10 +210,13 @@
     border-radius: var(--r-control); box-shadow: var(--elev-3);
     display: flex; flex-direction: column;
   }
-  [data-form="sm"] .device { width: 360px; height: 780px; border-radius: 28px; }
+  /* 宽度 = Mate XT2 真机实测窗口宽（vp）：外屏 380 / 双屏 709 / 三屏 1061
+     （api_notes.md A3；原先的 360/660/1120 是估的，已作废）
+     高度仍是示意值，未实测 —— 只改宽度，不动高度 */
+  [data-form="sm"] .device { width: 380px; height: 780px; border-radius: 28px; }
   [data-form="md"] .device, [data-form="lg"] .device { border-radius: 20px; }
-  [data-form="md"] .device { width: 660px; height: 860px; }
-  [data-form="lg"] .device { width: 1120px; height: 830px; }
+  [data-form="md"] .device { width: 709px; height: 860px; }
+  [data-form="lg"] .device { width: 1061px; height: 830px; }
   .hinge-note {
     position: absolute; top: 0; transform: translateX(-50%);
     font-size: var(--fs-body3); color: var(--warning);
@@ -389,6 +392,25 @@
     font-size: var(--fs-body3); color: var(--text-tertiary); background: var(--bg-card);
   }
   .pane-head .name { color: var(--text-secondary); font-weight: 500; }
+  /* 单屏态「编辑 / 预览」切换（SegmentedButton 观感）——md/lg 两栏同时可见，不需要它 */
+  .seg {
+    margin-left: auto; flex: none; display: inline-flex; gap: 2px; padding: 2px;
+    border-radius: var(--r-full); background: var(--bg-secondary);
+  }
+  .seg button {
+    border: none; background: transparent; cursor: pointer; font-family: inherit;
+    font-size: var(--fs-body3); color: var(--text-secondary);
+    height: 28px; min-width: 48px; padding: 0 var(--sp-3); border-radius: var(--r-full);
+    white-space: nowrap;
+  }
+  .seg button:hover { color: var(--text-primary); }
+  .seg button.on {
+    background: var(--bg-card); color: var(--text-primary); font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+  }
+  /* 单屏独占整块屏：分隔线没意义；「源模式」标签让位给分段控件 */
+  [data-form="sm"] .preview-pane { border-left: none; }
+  [data-form="sm"] .src-tag, [data-form="sm"] .pv-label { display: none; }
   .editor-wrap { position: relative; flex: 1; min-height: 0; background: var(--bg-card); }
   .editor-wrap pre, .editor-wrap textarea {
     margin: 0; padding: var(--sp-4) var(--sp-5); border: none; outline: none;
@@ -475,7 +497,7 @@
     font-size: var(--fs-caption); color: var(--text-tertiary); background: var(--bg-card);
   }
   .statusbar > span { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-  /* 外屏 360vp 塞不下四段，库名让位（侧栏/抽屉里已经有了） */
+  /* 外屏 380vp（实测）塞不下四段，库名让位（侧栏/抽屉里已经有了） */
   [data-form="sm"] .statusbar { gap: var(--sp-3); }
   [data-form="sm"] #stVault { display: none; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); display: inline-block; margin-right: 5px; }
@@ -706,9 +728,9 @@
 <div class="controls">
   <div class="grp">
     <span class="lbl">形态</span>
-    <button data-f="sm">外屏合起 360vp</button>
-    <button data-f="md">展开双屏 660vp</button>
-    <button data-f="lg" class="on">全展开三屏 1120vp</button>
+    <button data-f="sm">外屏合起 380vp</button>
+    <button data-f="md">展开双屏 709vp</button>
+    <button data-f="lg" class="on">全展开三屏 1061vp</button>
   </div>
   <div class="grp">
     <span class="lbl">视图</span>
@@ -722,7 +744,7 @@
     <button data-t="light" class="on">浅色</button>
     <button data-t="dark">深色</button>
   </div>
-  <span class="hint">编辑区可直接输入，右侧预览实时更新</span>
+  <span class="hint">编辑区可直接输入，预览实时更新；单屏态用内容区右上角「编辑 / 预览」切换</span>
 </div>
 
 <div class="stage">
@@ -766,10 +788,13 @@
             </div>
           </aside>
 
-          <div class="editor-pane">
+          <div class="editor-pane" id="editorPane">
             <div class="pane-head">
               <span class="name" id="editName">流式系统_流处理实战教程.md</span>
-              <span>·</span><span>源模式</span>
+              <span class="src-tag">·</span><span class="src-tag">源模式</span>
+              <span class="seg hidden" id="modeSegEdit">
+                <button data-m="edit" class="on">编辑</button><button data-m="preview">预览</button>
+              </span>
             </div>
             <div class="editor-wrap">
               <pre id="hl" aria-hidden="true"></pre>
@@ -778,7 +803,12 @@
           </div>
 
           <div class="preview-pane" id="previewPane">
-            <div class="pane-head"><span>预览</span></div>
+            <div class="pane-head">
+              <span class="pv-label">预览</span>
+              <span class="seg hidden" id="modeSegPreview">
+                <button data-m="edit" class="on">编辑</button><button data-m="preview">预览</button>
+              </span>
+            </div>
             <div class="md" id="md"></div>
           </div>
         </div>
@@ -866,7 +896,7 @@
 
           <div class="set-group">
             <div class="set-head">诊断（真机校准用）</div>
-            <div class="set-row"><span>当前形态</span><b id="setForm">三屏展开 · 1120vp</b></div>
+            <div class="set-row"><span>当前形态</span><b id="setForm">三屏展开 · 1061vp</b></div>
             <div class="set-row"><span>断点档位</span><code id="setBp">lg</code></div>
             <div class="set-row"><span>库目录</span><code id="setVault">vaults/local</code></div>
             <div class="set-row"><span>折痕校准</span><span class="set-val">v0.1 只采集不参与布局</span></div>
@@ -890,7 +920,7 @@
         <span><span class="dot"></span> 已保存</span>
         <span id="stCount">1,284 字</span>
         <span id="stVault">本地笔记</span>
-        <span style="margin-left:auto" id="stForm">三屏展开 · 1120vp</span>
+        <span style="margin-left:auto" id="stForm">三屏展开 · 1061vp</span>
       </div>
 
       <div class="mask hidden" id="mask">
@@ -952,13 +982,27 @@
     <li><b>名称即目录名</b>：改名会连 <code>vaults/</code> 下的目录一起改，不做「显示名」与「目录名」分离 —— 否则导出到电脑时目录名对不上，还得查映射表。输入时实时预览目标路径，重名自动加后缀，非法字符（<code>/ \ : * ? " &lt; &gt; |</code>）直接过滤掉。</li>
     <li><b>Git 库改名不影响远端</b>：改的只是手机上的文件夹名，remote 与分支不动，同步照常。弹窗里必须写明这一句，否则用户会以为改了远端仓库名而不敢改。</li>
     <li><b>删除语义不同</b>：本地库删除 = 目录连内容一起删，**不可恢复**（zip 导出还没做，删了就是真没了）；Git 库「移除本地副本」只删手机上的目录，远端仓库不动，可以重新导入。</li>
-    <li><b>栏宽 = 一整块物理屏，边界压在折痕上</b>：双屏态两栏各 50%（左列表 / 右笔记），三屏态三栏各 1/3 —— 边界正好落在铰链上，所以没有任何一栏的内容会横跨折痕。合起态单栏 + 抽屉。橙色虚线是折痕标注，不是 UI。<b>规则本身比具体数值重要</b>：先定"一栏占一屏"，宽度是算出来的，不是拍出来的。</li>
-    <li><b>侧栏因此偏宽</b>：双屏态下侧栏有 330vp、三屏态 373vp，比文件树需要的 240vp 宽。既然不能收窄（收窄就会跨折痕），就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
-    <li><b>目录栏可以整体收起</b>（双屏 / 三屏都可以）：收起点侧栏右上角的「收起 «」，唤回点顶栏左上角的汉堡按钮。<b>但收起的代价在两种形态下不一样</b> ——<br>
-      ① <b>双屏收起</b>：腾出来的那一栏<b>给预览</b>，变成「编辑 | 预览」各占一整块屏 → <b>仍然不跨折痕</b>，等于白赚一个预览栏；<br>
-      ② <b>三屏收起</b>：编辑区扩到 2/3（占下两块屏）→ <b>会跨越第一条折痕</b>，原型里那条折痕会标红并写明「被内容横跨」。<br>
-      这是物理约束，不是布局没调好：折痕位置是硬件固定的，只要某栏占了不止一块屏，它必然横跨折痕。<b>要"专注写作"还是要"不跨折痕"，只能二选一</b>。</li>
-    <li><b>折痕位置目前按等分假设</b>：设计稿把双屏折痕放在 50%、三屏放在 1/3 与 2/3。真机上应该用系统折叠状态接口拿实际折痕区域再校准，不能写死百分比。</li>
+    <li><b>栏宽按等分，但等分 ≠ 折痕（真机实测推翻了早先假设）</b>：双屏两栏各 50%、三屏三栏各 1/3。<br>
+      ⚠️ 早先写的是「边界正好落在铰链上、没有任何一栏横跨折痕」——<b>真机数据证明这是错的</b>：
+      XT2 三块物理屏是 <b>379 / 330 / 352</b>（合计 1061）—— ⚠️ 这是<b>由实测窗口宽反推</b>的（1061−709=352、709−379=330），
+      <b>不是</b>系统折痕接口直读的值：`getCurrentFoldCreaseRegion()` 的 `creaseRects` 至今<b>没做过真机采集</b>（api_notes A2 ❓、清单 D3 未做）。
+      折痕在 <b>379</b> 与 <b>709</b>；
+      而等分点是 354.5（双屏）/ 353.7、707.3（三屏）→ <b>第一处差 25vp</b>。
+      后果：只要某栏右边界越过 379，它就横跨第一条折痕 —— 双屏的右栏、三屏的中栏与右栏<b>都横跨</b>。<br>
+      <b>v0.2 决策（用户拍板）</b>：维持等分、<b>不做动态分栏、不做机型校准表</b> ——「按官方折痕差不多就行，不用搞太精细」。
+      折痕值<b>只用于标注</b>，不参与分栏计算。橙色虚线 = 折痕真实位置，标红 = 该栏被内容横跨。</li>
+    <li><b>侧栏因此偏宽</b>：实测下双屏侧栏 354vp（709/2）、三屏侧栏 354vp（1061/3），比文件树需要的 240vp 宽。既然不做动态分栏，就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
+    <li><b>目录栏可以整体收起</b>（双屏 / 三屏都可以）：收起点侧栏右上角的「收起 «」，<b>唤回点顶栏左上角的汉堡 ☰</b>（toggle，v0.1 首轮修的就是它）。收起后双屏变「编辑 | 预览」、三屏编辑区扩到 2/3。<br>
+      ⚠️ 早先说「双屏收起仍然不跨折痕」也是错的 —— 等分边界 354.5 与折痕 379 不重合，双屏的右栏（收起后是预览栏）<b>同样横跨折痕</b>。
+      这是物理约束，不是布局没调好：折痕位置硬件固定，要真正不跨折痕就得按 379/330/352 分栏（即动态分栏，已决策不做）。</li>
+    <li><b>折痕位置已按真机反推</b>：设计稿里双屏折痕在 53.45%（379/709）、三屏在 35.72%（379/1061）与 66.82%（709/1061），
+      —— 与早先「折痕 = 等分点」的假设解耦，两个位置现在是<b>分开画的两件事</b>：等分是布局，折痕是硬件。</li>
+    <li><b>单屏态（外屏 380vp）用分段控件在「编辑 / 预览」之间切换</b>：只有一块屏，容不下两栏，编辑与预览<b>互相让位</b>。<br>
+      开关放在<b>内容区顶部右侧</b>（pane-head 右端）而不是顶栏右上角 —— 顶栏在 380vp 下已经挂了汉堡 / 同步 / 设置三个图标，
+      再挤一个 48vp 热区会打架；而且「编辑 / 预览」是<b>内容区的模式</b>，跟文件名并排放才读得懂。<br>
+      两个 pane 的 pane-head <b>各挂一个同样的分段控件</b>：切到预览后开关还留在原处，不会跟着编辑区一起消失（这是最容易踩的坑）。
+      切到预览时<b>收起软键盘</b>——真机上键盘会挡掉半屏。<br>
+      ⚠️ 双屏 / 三屏<b>不显示</b>这个开关：两栏 / 三栏同时可见，没有切换的必要。</li>
     <li><b>左滑是跟手的三档手感，不是三个摆设按钮</b>：向左拖（鼠标拖或触摸滑都一样）时行会跟着手指走 ——<br>
       ① <b>拖一半松手</b> → 吸附露出图标操作条（重命名 / 移动 / 删除，都是 44px 图标，不挤文件名）；<br>
       ② <b>一路滑到底</b> → 整条变红、只剩「🗑 松手删除」，松手<b>直接删除</b>，底部弹 5 秒「撤销」条兜底；<br>
@@ -2000,10 +2044,37 @@
   ta.addEventListener('scroll', function () { hl.scrollTop = ta.scrollTop; });
 
   /* ---------- 形态 / 视图 / 主题 ---------- */
-  var FORMS = { sm: '外屏合起 · 360vp', md: '展开双屏 · 660vp', lg: '三屏展开 · 1120vp' };
+  var FORMS = { sm: '外屏合起 · 380vp', md: '展开双屏 · 709vp', lg: '三屏展开 · 1061vp' };
 
   /* sideHidden：md / lg 下把目录栏收起来（sm 走抽屉，与此无关） */
   var sideHidden = false;
+
+  /* smMode：单屏态只有一块屏，编辑 / 预览二选一（md / lg 两栏同时可见，用不到） */
+  var smMode = 'edit';
+
+  function applySmMode() {
+    var f = body.getAttribute('data-form');
+    var editor = document.getElementById('editorPane');
+    var preview = document.getElementById('previewPane');
+    var segs = document.querySelectorAll('.seg');
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      if (f === 'sm') { s.classList.remove('hidden'); } else { s.classList.add('hidden'); }
+      var bs = s.querySelectorAll('button');
+      for (var j = 0; j < bs.length; j++) {
+        if (bs[j].getAttribute('data-m') === smMode) { bs[j].classList.add('on'); }
+        else { bs[j].classList.remove('on'); }
+      }
+    }
+    if (f === 'sm') {
+      /* 一块屏只能放一栏：两个 pane 互相让位。切到预览时收起软键盘（真机同理） */
+      editor.style.display = (smMode === 'edit') ? 'flex' : 'none';
+      preview.style.display = (smMode === 'preview') ? 'flex' : 'none';
+      if (smMode === 'preview') { ta.blur(); }
+    } else {
+      editor.style.display = '';
+    }
+  }
 
   function applyForm(f) {
     body.setAttribute('data-form', f);
@@ -2022,7 +2093,6 @@
       sidebar.style.zIndex = '30';
       sidebar.style.width = '300px';
       sidebar.style.boxShadow = '0 0 0 9999px rgba(0,0,0,0)';
-      preview.style.display = 'none';
       menu.style.display = 'flex';
     } else {
       sidebar.style.position = ''; sidebar.style.left = ''; sidebar.style.top = ''; sidebar.style.bottom = '';
@@ -2032,6 +2102,7 @@
       preview.style.display = (f === 'lg' || (f === 'md' && sideHidden)) ? 'flex' : 'none';
       menu.style.display = sideHidden ? 'flex' : 'none';
     }
+    applySmMode();
     document.getElementById('noteView').style.position = 'relative';
     drawHinges(f);
     fit();
@@ -2055,15 +2126,33 @@
   document.getElementById('menuBtn').addEventListener('click', function () { toggleDrawer(); });
   document.getElementById('sideHideBtn').addEventListener('click', function () { setSideHidden(true); });
 
+  /* 编辑 / 预览切换：两个 pane 的 pane-head 里各挂一个分段控件，切过去之后开关还在，不会消失 */
+  var modeSegs = document.querySelectorAll('.seg');
+  for (var si = 0; si < modeSegs.length; si++) {
+    modeSegs[si].addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) { return; }
+      smMode = b.getAttribute('data-m');
+      applySmMode();
+      render();
+    });
+  }
+
   function drawHinges(f) {
     var wrap = document.getElementById('wrap');
     var old = wrap.querySelectorAll('.hinge, .hinge-note');
     for (var i = 0; i < old.length; i++) { old[i].remove(); }
-    var pts = (f === 'lg') ? [33.333, 66.666] : (f === 'md' ? [50] : []);
-    /* 收起目录后各栏占的区间；折痕落在区间内部（不是边界）就是被内容横跨 */
+    /* 折痕位置 = 由实测窗口宽反推（api_notes A6）：三块物理屏 379 / 330 / 352，合计 1061
+         md（双屏 709 = 379+330）折痕在 379 → 53.45%
+         lg（三屏 1061）折痕在 379 / 709 → 35.72% / 66.82%
+       ⚠️ 反推值，非接口直读 —— creaseRects 未真机采集（A2 ❓）
+       ⚠️ 与下面的等分栏边界（50 / 33.33 / 66.67）不是一回事 —— 偏差就是 A6 登记的那 25vp */
+    var pts = (f === 'lg') ? [35.72, 66.82] : (f === 'md' ? [53.45] : []);
+    /* 各栏实际占的区间（等分，v0.2 决策维持等分不做动态分栏）；
+       折痕落在区间内部（不是边界）就是被内容横跨 */
     var spans = [];
-    if (f === 'md' && sideHidden) { spans = [[0, 50], [50, 100]]; }          // 编辑 | 预览，边界压折痕 ✓
-    else if (f === 'lg' && sideHidden) { spans = [[0, 66.666], [66.666, 100]]; } // 编辑占两块屏 ✗
+    if (f === 'md' && sideHidden) { spans = [[0, 50], [50, 100]]; }          // 编辑 | 预览
+    else if (f === 'lg' && sideHidden) { spans = [[0, 66.666], [66.666, 100]]; } // 编辑占两块屏
     else if (f === 'md') { spans = [[0, 50], [50, 100]]; }
     else if (f === 'lg') { spans = [[0, 33.333], [33.333, 66.666], [66.666, 100]]; }
 
