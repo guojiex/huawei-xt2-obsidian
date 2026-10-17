@@ -19,7 +19,9 @@ docs/harmonyos/
 ├── README.md          ← 本文件：规则 + 索引（唯一入口）
 ├── api_notes.md       ← 【单一真源】按主题分组的核实结论，长期维护
 ├── qa/                ← 每次问答的存档（原始/要点，一问一文件）
-│   └── 2026-10-17_首批回答_API24.md
+│   ├── 2026-10-17_首批回答_API24.md
+│   ├── 2026-10-17_B组追问_Web组件.md
+│   └── 2026-10-17_小艺智能体_端侧意图框架.md
 └── prompts/           ← 每次发出去的提问原文（可复用的模板）
     └── 2026-10-17_首批提问_API24.md
 ```
@@ -101,6 +103,7 @@ docs/harmonyos/
 | --- | --- | --- | --- | --- |
 | 2026-10-17 | 首批核实（三折叠 / Web 组件 / 文件存储 / HAR 发布 / 权限网络） | 20 | [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md) | 三折叠恒为 `phone`；折痕接口只返回**单个 Rect**；`FoldSplitContainer` **已否决**；原子写改用 `AtomicFile`；令牌存 `@kit.AssetStoreKit`；`runJavaScript` 长度未记载 → 大数据走 `WebMessagePort`；前台 clone/push 无需额外权限 |
 | 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
+| 2026-10-17 | **小艺智能体 + 端侧意图**（Insight Intent 做笔记编辑） | 9 | [`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md) | 方案骨架：`FunctionComponent` 拉起自建智能体 + `@InsightIntentEntry` 端侧执行 + git 版本底座；**锚点定位法**是细粒度修改的关键；⚠️ **`onCreate → onExecute` 不建 window → 后台执行时 Web 组件不存在 → 我们的 Web 内 git 无法 commit**（架构冲突，出路待拍板）；⚠️ 官方示例用 TRUNC 覆盖写，**须改 `AtomicFile`** |
 
 ### 仍未解决（下次提问优先从这里挑）
 
@@ -111,6 +114,11 @@ docs/harmonyos/
 | ~~B-2~~ | ~~`WebMessagePort` 在 rawfile 页面能否建立~~ | ~~大数据通道选型~~ | ✅ **已解决**：可用、支持 ArrayBuffer；剩「上限多少」只能真机测 |
 | B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |
 | B-8 | 列表组件（List / ListItem 一类）在 **API 24** 是否提供**侧滑出操作区**的官方能力？接口名与用法是什么？ | 文件树左滑操作条怎么实现（自己写手势还是用官方能力） | ❓ 待问（**别凭记忆编接口名**） |
+| **F-C** | **后台意图执行（`UI_ABILITY_BACKGROUND`）时，同一 UIAbility 里已挂载的 ArkWeb 组件是否可用？能否跨 Web 边界调用页面内 JS？** | **直接决定「AI 改笔记」里 git commit 走哪条出路**（见 `api_notes.md` F6） | ❓ **待问（AI 功能的第一优先问题）** |
+| F-A | `@kit.AgentFrameworkKit` 的 `FunctionComponent` / `FunctionController` 在 **API 24** 是否存在？最低支持版本？ | App 内对话入口能不能做 | ❓ 待问（未附文档链接，必须复核） |
+| F-B | `@InsightIntentEntry` 在 API 24 是否可用？`insight_intent.json` 的 `insightIntentsSrcEntry` **是否支持数组**？文件放哪个目录？ | 意图声明能不能写 | ❓ 待问（官方自己也不确定） |
+| F-D | 自建智能体 + 技能（MCP / 插件）发布到**自己智能体**的确切流程，是否真免人工审核 | AI 功能上架路径与周期 | ❓ 待问 |
+| F-E | 端侧意图是否需要额外权限声明？真机怎么调试意图调用？ | 落码前准备 | ❓ 待问 |
 
 **真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 

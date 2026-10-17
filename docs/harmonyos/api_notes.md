@@ -354,6 +354,87 @@ ohpm publish yourlib.har
 
 ---
 
+## F 组：小艺智能体与端侧意图（Insight Intent）
+
+> 来源：[`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md)（2026-10-17）
+> ⚠️ **本组所有结论均未附文档链接**，落码前必须在 DevEco 用 `@kit.*` 补全复核接口名与签名。
+> **不要在别的文档里复制本组结论**，一律链接过来 —— 下面标 ⚠️ 的随时可能被推翻。
+
+### F1 应用内对话入口：`FunctionComponent` ⚠️
+
+`@kit.AgentFrameworkKit` 提供 `FunctionComponent`（配 `FunctionController` 监听
+`agentDialogOpened` / `agentDialogClosed`），传 `agentId` 即可在 App 内拉起智能体对话面板。
+→ 这是「App 内嵌 AI 对话」的官方路径，**无需人工审核**（技能以 MCP / 插件形式发布到**自己**的智能体；
+要进小艺主对话入口才需审核）。
+
+### F2 意图声明：`@InsightIntentEntry` 装饰器 ⚠️
+
+意图执行器用 `@InsightIntentEntry({...})` 装饰，参数用 **JSON Schema 内联声明**；
+执行文件在 `insight_intent.json` 里用 `insightIntentsSrcEntry` 声明。
+⚠️ 官方自己也不确定该字段是否支持**数组形式**（答复用「若不支持请以 IDE 编译提示为准」带过）。
+→ 落码前先建一个单文件最小样例跑通编译，再决定怎么组织。
+
+### F3 参数传递：同名属性自动注入 ⚠️
+
+大模型解析出的参数**自动赋值给执行器的同名类属性**，随后触发 `onExecute()`。
+**每个字段的 `description` 会被大模型用来理解怎么填参 —— 务必写清楚**，这是意图能不能填对的关键。
+
+### F4 生命周期：`onCreate → onExecute`，不建 window ⚠️⚠️
+
+后台执行模式（`UI_ABILITY_BACKGROUND`）下若冷启动，生命周期顺序是
+`onCreate → onExecute`，**不经过 `onWindowStageCreate`**。
+→ 需在 `EntryAbility.onCreate` 里把 context 存进全局单例，否则执行器拿不到 `filesDir`。
+→ ⚠️ **这条对我们是致命的**：不建 window 意味着 **ArkWeb 组件没挂载 → 我们的 gitbridge 不可用 →
+意图内无法同步 commit**。详见 §F6。
+
+### F5 路径与写入 ✅ / ⚠️ 混合
+
+- ✅ **路径必须基于 `context.filesDir` 等 Context 属性动态获取，禁止硬编码沙箱目录字符串**
+  （与我们的既有硬约束一致）。
+- ⚠️ 官方示例代码用 `openSync(READ_WRITE | TRUNC)` 覆盖写 —— **违反我们的原子写硬约束（见 C1）**。
+  → **意图执行器里的写回必须换成 `fileIo.AtomicFile`**，别被示例带偏。
+- ✅ 单篇数 MB 时 `readTextSync` 全量读入内存有风险，改用 `createReadStream` 分段读。
+
+### F6 ⚠️ **关键冲突：git 版本底座在本工程里不成立**
+
+官方方案假定存在一个**原生 ArkTS git**（`GitService.commit()`）。
+我们的 git 是 **isomorphic-git 打包进 `rawfile/gitbridge/index.html`，跑在 ArkWeb 页面里**，
+ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」：
+
+> **后台意图执行时，Web 组件可能根本不存在 → commit 无处调用。**
+
+三种出路（**待拍板**，记录在 `docs/open_questions.md`）：
+
+| 出路 | 做法 | 代价 |
+| --- | --- | --- |
+| **A. commit 入队、延迟执行** ⭐推荐 | 执行器写文件后把「待 commit 路径 + 消息」写进队列文件；App 回前台、Web 就绪后由主线程消费 | 反馈文案要改成「已修改，版本待提交」 |
+| B. 执行时同步拉起不可见 Web 再 commit | 冷启动建 WebView 有耗时，且 Hidden 下 JS 是否执行未验证 | 慢 + 不可靠 |
+| C. 放弃意图内 git，改文件级备份 | 写前复制 `.bak` / 自建轻量历史目录 | 失去 git log 摘要等扩展，且污染 vault |
+
+→ 在出路拍板前，**不要把「AI 改笔记」排进 MVP 主链路**。
+
+### F7 意图设计：锚点定位法 ✅（值得直接采纳）
+
+「细粒度修改」的关键不在代码而在**参数设计**：修改指令必须携带 `anchor`（笔记原文中的精确片段），
+执行器用字符串定位后按 `action` 重组。比「第几行」「标题路径」可靠——
+大模型读完原文后擅长精确复制片段，且锚点对不上时可以**拒绝执行并要求重新读取**（防错改的闸门）。
+
+建议意图清单：`QueryNotes` / `ReadNote` / `EditNote`（`replace`·`insertBefore`·`insertAfter`·`delete`）/
+`AppendNote`（高频简单操作单独开意图，降低出错率）/ `UndoLastEdit`。
+
+→ **我们要补的工程细节**：anchor 在文中出现**多次**时必须拒绝执行，
+执行器应校验出现次数 >1 就要求智能体给更长的锚点。
+
+### F8 智能体侧约束 ✅（建议照抄进系统提示词）
+
+> 修改任何笔记前必须先调用 `ReadNote` 获取原文；
+> `anchor` 必须取自原文，禁止凭记忆编造；
+> 执行修改后向用户复述变更内容。
+
+高风险操作（删除整篇）**单独设意图**，并在智能体侧配置执行前向用户确认。
+
+---
+
 ## 落地决策表
 
 | 结论 | 决策 | 何时做 |
@@ -374,3 +455,5 @@ ohpm publish yourlib.har
 | HAR rawfile 可加载 | ✅ 抽库前置风险基本解除 | 抽库前编译确认 |
 | Web 组件 7680px 上限 | ✅ 三栏各 1/3 安全，全屏 Web 要留意 | 编码时注意 |
 | 中文输入法 | ❓ **M0.5 spike 头号验证项**；⚠️ 官方建议优先 textarea，**与 CodeMirror 6（contenteditable）冲突**，实测不过要准备降级路径 | M0.5 |
+| **小艺智能体 + 端侧意图** | ⚠️ 方案可行但**未附文档链接**，且 §F6 与我们的 Web 内 git **存在架构冲突** → 出路未拍板前**不进 MVP 主链路** | 核实 F-A/F-B/F-C 后 |
+| 意图执行器写文件 | ⚠️ 官方示例用 TRUNC 覆盖写 —— **必须改成 `AtomicFile`**（C1 硬约束优先于示例） | 落码时 |
