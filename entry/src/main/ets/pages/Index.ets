@@ -251,7 +251,7 @@ struct Index {
   @Builder
   SmContent() {
     Stack({ alignContent: Alignment.Start }) {
-      this.EditorPane()
+      this.EditorPane(false)
       if (this.drawerOpen) {
         Column()
           .width('100%')
@@ -309,14 +309,14 @@ struct Index {
         if (this.breakpoint === Breakpoint.MD) {
           // md 展开：侧栏 | 编辑 各 50%（预览隐藏，原型 applyForm）
           Column() {
-            this.EditorPane()
+            this.EditorPane(false)
           }
           .layoutWeight(1)
           .height('100%')
         } else {
           // lg 展开：侧栏 | 编辑 | 预览 各 1/3
           Column() {
-            this.EditorPane()
+            this.EditorPane(false)
           }
           .layoutWeight(1)
           .height('100%')
@@ -330,7 +330,7 @@ struct Index {
       } else if (this.breakpoint === Breakpoint.MD) {
         // md 收起：腾出的那一栏给预览 → 编辑 | 预览 各一整块屏，仍不跨折痕
         Column() {
-          this.EditorPane()
+          this.EditorPane(false)
         }
         .layoutWeight(1)
         .height('100%')
@@ -341,9 +341,10 @@ struct Index {
         .height('100%')
         .border({ width: { left: 1 }, color: '#E5E5EA' })
       } else {
-        // lg 收起：编辑扩 2/3 —— 会跨越第一条折痕，这是物理限制非 bug（T016 加红警示）
+        // lg 收起：编辑扩 2/3 —— 会跨越第一条折痕，这是物理限制非 bug；
+        // 编辑区内渲染红色虚线折痕警示（位置见 EditorPane 注释）+ 预览 1/3
         Column() {
-          this.EditorPane()
+          this.EditorPane(true)
         }
         .layoutWeight(2)
         .height('100%')
@@ -359,9 +360,15 @@ struct Index {
     .height('100%')
   }
 
-  /** 编辑区占位（真实编辑器 v0.2 接入；结构照原型 editor-pane） */
+  /**
+   * 编辑区占位（真实编辑器 v0.2 接入；结构照原型 editor-pane）。
+   * showHingeWarning：lg 收起态专用——编辑区扩到 2/3 会跨第一条折痕。
+   * 这是物理限制不是 bug：折痕位置硬件固定，某栏占不止一块屏必然横跨折痕（原型标红）。
+   * 警示线位置 = 编辑区宽的 50%：第一条折痕在整体宽度 1/3 处，编辑区占整体 2/3，
+   * 1/3 ÷ 2/3 = 50%。折痕实际坐标只做日志采集（TODO(真机校准)），不进布局算式（FR-003）。
+   */
   @Builder
-  EditorPane() {
+  EditorPane(showHingeWarning: boolean) {
     Column() {
       Row() {
         Text('源模式')
@@ -375,15 +382,33 @@ struct Index {
       .border({ width: { bottom: 1 }, color: '#E5E5EA' })
       .backgroundColor('#FFFFFF')
 
-      Column() {
-        Text('编辑区 · v0.2')
-          .fontSize(14)
-          .fontColor('#8E8E93')
+      Stack() {
+        Column() {
+          Text('编辑区 · v0.2')
+            .fontSize(14)
+            .fontColor('#8E8E93')
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor('#FFFFFF')
+
+        if (showHingeWarning) {
+          // 被内容横跨的折痕：红色虚线竖标（零宽 Column + 左边框），照原型 .hinge.crossed
+          Column()
+            .width(0)
+            .height('100%')
+            .border({ width: { left: 2 }, color: '#E0483C', style: BorderStyle.Dashed })
+            .position({ x: '50%' })
+          Text('被内容横跨')
+            .fontSize(10)
+            .fontColor('#E0483C')
+            .position({ x: '50%', y: 10 })
+            .translate({ x: 4 })
+        }
       }
       .layoutWeight(1)
       .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor('#FFFFFF')
     }
     .width('100%')
     .height('100%')
