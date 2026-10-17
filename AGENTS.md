@@ -59,6 +59,7 @@ docs/
   open_questions.md           已定决策总表 + 待决 + TODO 挂起
   harmonyos/                  ★ 鸿蒙知识库：api_notes.md（真源）/ qa/ / prompts/
   prototype/index.html        单文件交互原型（浏览器直接打开）
+spec/                        v0.1 的 spec/plan/tasks（**执行计划，不是承诺记录**）
 tools/build.ps1               命令行构建 HAP（不用开 DevEco）
 tools/gen_app_icon.py         程序化生成分层图标
 ```
