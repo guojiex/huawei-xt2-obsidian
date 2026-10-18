@@ -226,25 +226,4 @@ export class ExpandStore {
       hilog.error(DOMAIN, TAG, 'expand 状态写入失败: %{public}s', JSON.stringify(err));
     }
   }
-
-  /** 上次点过的目录（空串 = 没有记录，调用方按根目录处理） */
-  loadLastDir(vaultId: string): string {
-    if (this.store === null || vaultId.length === 0) {
-      return '';
-    }
-    return this.store.getSync('lastdir_' + vaultId, '') as string;
-  }
-
-  saveLastDir(vaultId: string, dir: string): void {
-    if (this.store === null || vaultId.length === 0) {
-      return;
-    }
-    try {
-      this.store.putSync('lastdir_' + vaultId, dir);
-      this.store.flush();
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, 'lastdir 写入失败: %{public}s', JSON.stringify(err));
-    }
-  }
 }

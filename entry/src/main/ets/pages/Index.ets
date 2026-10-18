@@ -22,11 +22,11 @@ import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { NoteService } from '../model/NoteService';
-import { FileTree, ExpandStore } from '../model/FileTree';
+import { FileTree } from '../model/FileTree';
 import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
-import { CreateNoteDialog } from '../components/NoteDialogs';
+import { CreateNoteDialog, DeletePathDialog } from '../components/NoteDialogs';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
@@ -119,6 +119,8 @@ struct Index {
   private renameDialogCtl: CustomDialogController | null = null;
   private deleteDialogCtl: CustomDialogController | null = null;
   private createNoteCtl: CustomDialogController | null = null;
+  /** 删除确认（文件/目录）对话框 controller（2026-10-18 方案 A 配套） */
+  private deletePathCtl: CustomDialogController | null = null;
 
   aboutToAppear(): void {
     this.refreshFromRegistry();
@@ -279,9 +281,8 @@ struct Index {
       const reg: VaultRegistry = VaultRegistry.get();
       const rel: string = NoteService.normalizeRelPath(rawName);
       const actual: string = NoteService.createNote(reg, this.currentVaultId, rel);
-      // 建完也记住这个目录：下次点「新建笔记」默认还在这里（与点行记忆同源）
-      new ExpandStore(reg.abilityContext())
-        .saveLastDir(this.currentVaultId, FileTree.parentOf(actual));
+      // （2026-10-18 用户拍板：移除「新建笔记」底部按钮、改目录树头部「＋」= 根目录入口，
+      //  不再记忆上次目录，故这里不再 saveLastDir。）
       this.currentFilePath = actual;
       this.revealPath = actual;
       this.treeSeq++;
@@ -291,6 +292,54 @@ struct Index {
       }
     } catch (error) {
       this.toastRegistryError('新建笔记失败', error);
+    }
+  }
+
+  /**
+   * 新建空文件夹（2026-10-18 方案 A：显式「新建文件夹」类型）。
+   * 顺序：normalizeDirPath（消毒、不补 .md）→ createFolder（逐级补建父目录、
+   * 重名加后缀）→ 记住新文件夹（下次新建默认进里面，与原型 lastDir 同策略）。
+   * 不动 currentFilePath：建文件夹不该抢走用户正在编辑的笔记。
+   */
+  private doCreateFolder(rawName: string): void {
+    if (this.currentVaultId.length === 0) {
+      promptAction.showToast({ message: '还没有笔记本' });
+      return;
+    }
+    try {
+      const reg: VaultRegistry = VaultRegistry.get();
+      const rel: string = NoteService.normalizeDirPath(rawName);
+      const actual: string = NoteService.createFolder(reg, this.currentVaultId, rel);
+      // （2026-10-18 用户拍板：头部「＋」= 根目录入口，不再记忆上次目录）
+      this.revealPath = actual;
+      this.treeSeq++;
+      if (this.breakpoint === Breakpoint.SM) {
+        this.drawerOpen = false;
+      }
+    } catch (error) {
+      this.toastRegistryError('新建文件夹失败', error);
+    }
+  }
+
+  /**
+   * 删除文件或整棵目录（2026-10-18 方案 A 配套：目录行尾删除按钮）。
+   * ⚠️ 不可恢复（回收站是需求池 B 组）—— 调用方（openDeletePathDialog）必须先过确认框。
+   * 删的是正在编辑的文件（或其子孙）时清空编辑器：留着已不存在文件的标题比空着更坏。
+   */
+  private doDeletePath(relPath: string): void {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    try {
+      NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
+      if (this.currentFilePath === relPath
+        || this.currentFilePath.startsWith(relPath + '/')) {
+        this.currentFilePath = '';
+      }
+      this.revealPath = '';
+      this.treeSeq++;
+    } catch (error) {
+      this.toastRegistryError('删除失败', error);
     }
   }
 
@@ -317,10 +366,10 @@ struct Index {
   }
 
   /**
-   * 打开新建笔记对话框。
-   * @param initialDir 预选目录（目录行 + 按钮入口传点击的目录）；空串 = 侧栏底部按钮入口，
-   *        此时读**上次点过的目录**（`ExpandStore.lastdir`，按库记忆；用户拍稿的需求：
-   *        「记住我之前点过什么文件夹」——想建根目录就在对话框的目录选择器里显式选根）。
+   * 打开新建（笔记 / 文件夹）对话框。
+   * @param initialDir 预选目录：目录行 + 按钮入口传点击的目录；空串 = 目录树头部「＋」入口，
+   *        **固定为 vault 根目录**（2026-10-18 用户拍板：移除底部「新建笔记」按钮，头部「＋」
+   *        作为根目录创建入口，与文件夹行尾「＋」（指定目录）两级入口一致，不再记忆上次目录）。
    */
   private openCreateNoteDialog(initialDir: string = ''): void {
     // 目录选择器的候选：全量目录（不受展开状态影响）
@@ -332,27 +381,44 @@ struct Index {
       hilog.warn(0x0001, 'Index', '列目录失败：%{public}s', err.message);
       dirs = [];
     }
-    if (initialDir.length === 0) {
-      try {
-        initialDir = new ExpandStore(VaultRegistry.get().abilityContext())
-          .loadLastDir(this.currentVaultId);
-      } catch (error) {
-        initialDir = '';
-      }
-    }
     this.createNoteCtl = new CustomDialogController({
       builder: CreateNoteDialog({
         vaultId: this.currentVaultId,
         dirs: dirs,
         initialDir: initialDir,
-        onConfirm: (rawName: string): void => {
-          this.doCreateNote(rawName);
+        onConfirm: (rawName: string, createType: string): void => {
+          // 2026-10-18 方案 A：对话框内「笔记 / 文件夹」切换，落到不同的创建方法
+          if (createType === 'folder') {
+            this.doCreateFolder(rawName);
+          } else {
+            this.doCreateNote(rawName);
+          }
         }
       }),
       autoCancel: true,
       customStyle: true
     });
     this.createNoteCtl.open();
+  }
+
+  /**
+   * 打开删除确认框（2026-10-18 方案 A 配套：目录行尾删除按钮）。
+   * 目前只有目录行带删除入口（文件行的删除等 1.6 左滑三档一起做），
+   * 所以 isDir 恒 true；DeletePathDialog 已支持文件形态，届时直接复用。
+   */
+  private openDeletePathDialog(relPath: string): void {
+    this.deletePathCtl = new CustomDialogController({
+      builder: DeletePathDialog({
+        relPath: relPath,
+        isDir: true,
+        onConfirm: (): void => {
+          this.doDeletePath(relPath);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.deletePathCtl.open();
   }
 
   private openRenameDialog(id: string): void {
@@ -549,6 +615,10 @@ struct Index {
             this.drawerOpen = false;
             this.openCreateNoteDialog(dirRelPath);
           },
+          onDeleteDir: (dirRelPath: string): void => {
+            this.drawerOpen = false;
+            this.openDeletePathDialog(dirRelPath);
+          },
           onSelectFile: (relPath: string): void => {
             this.onSelectFile(relPath);
           }
@@ -589,6 +659,9 @@ struct Index {
             },
             onCreateInDir: (dirRelPath: string): void => {
               this.openCreateNoteDialog(dirRelPath);
+            },
+            onDeleteDir: (dirRelPath: string): void => {
+              this.openDeletePathDialog(dirRelPath);
             },
             onSelectFile: (relPath: string): void => {
               this.onSelectFile(relPath);

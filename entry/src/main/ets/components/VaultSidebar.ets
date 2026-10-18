@@ -55,6 +55,11 @@ export struct VaultSidebar {
    * 差别仅在于对话框预填目标目录。
    */
   onCreateInDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
+  /**
+   * 「删除这个目录」回调（文件树目录行尾的删除按钮，2026-10-18 方案 A 配套）。
+   * 侧栏只透传，确认框（DeletePathDialog）与递归删除都在父级（Index）。
+   */
+  onDeleteDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
 
   /** 胶囊标签（本地 / 当前）—— 圆角 chip 场景 */
   @Builder
@@ -188,12 +193,25 @@ export struct VaultSidebar {
       .width('100%')
       .padding({ left: Space.s2, right: Space.s2 })
 
-      // 目录头：标签 + 收起入口（收起只在嵌入形态有意义，照原型 side-head）
+      // 目录头：标签 + 头部「＋」(vault 根目录新建) + 收起入口
+      // 2026-10-18 用户拍板：头部 ＋ 替代原底部「新建笔记」按钮（与文件夹行尾 ＋ 重复）
       Row() {
         Text('目录')
           .fontSize(FontSize.body3)
           .fontColor($r('app.color.text_tertiary'))
         Blank()
+        // 头部「＋」：在 vault 根目录新建（笔记 / 文件夹由对话框类型切换决定），不继承上次目录
+        Row() {
+          Icon('plus', 16, $r('app.color.text_tertiary'))
+        }
+        .height(Size.touch)
+        .width(Size.touch)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .borderRadius(Radius.icon)
+        .onClick(() => {
+          this.onCreateNote();
+        })
         if (!this.asDrawer) {
           // 热区补足 48（v0.1 遗留缺陷：原热区约 16vp）
           Row({ space: Space.s1 }) {
@@ -226,12 +244,16 @@ export struct VaultSidebar {
         },
         onCreateInDir: (dirRelPath: string): void => {
           this.onCreateInDir(dirRelPath);
+        },
+        onDeleteDir: (dirRelPath: string): void => {
+          this.onDeleteDir(dirRelPath);
         }
       })
         .layoutWeight(1)
         .width('100%')
 
-      // 底部：「管理库 / 新建」入口（照原型 side-foot）
+      // 底部：「管理库」入口（「新建」已移到目录树头部 ＋，2026-10-18 用户拍板：
+      // 原底部「新建笔记」与文件夹行尾 ＋ 在「在文件夹里建」重复，删按钮、头部加 ＋）
       Row({ space: Space.s2 }) {
         Text('管理库')
           .fontSize(FontSize.body3)
@@ -244,17 +266,6 @@ export struct VaultSidebar {
           .borderRadius(Radius.control)
           .onClick(() => {
             this.onManageVaults();
-          })
-        Text('新建笔记')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.on_brand'))
-          .height(Size.buttonH)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .backgroundColor($r('app.color.brand'))
-          .borderRadius(Radius.control)
-          .onClick(() => {
-            this.onCreateNote();
           })
       }
       .width('100%')

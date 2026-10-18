@@ -134,4 +134,90 @@ export class NoteService {
       return '';
     }
   }
+
+  // ===== 2026-10-18 方案 A：显式新建文件夹 + 目录删除 =====
+  // 背景：用户拍板原话「设计稿里面我要怎么新建文件夹？？？」—— 原先只能靠笔记名
+  // 带 / 隐式建目录，建不了空文件夹；而建了文件夹却没有删除入口（行尾只有
+  // rename/move）。本组方法把两者补齐，与 createNote/ normalizeRelPath 同一套消毒。
+
+  /**
+   * 文件夹路径归一化：与 normalizeRelPath 同款分段消毒，但**不补 .md**。
+   * - 末段为空（路径以 `/` 结尾）→ 抛错：用户想建的「只要目录/」没有文件名，
+   *   静默跳过空段会建出 `只要目录.md` 这种根目录文件，与意图正相反；
+   * - 全空 → 抛错，由调用方禁用确认按钮。
+   */
+  static normalizeDirPath(raw: string): string {
+    const parts: string[] = raw.split('/');
+    const segs: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const seg: string = sanitizeVaultName(parts[i]);
+      if (seg.length > 0) {
+        segs.push(seg);
+      }
+    }
+    if (segs.length === 0) {
+      throw new Error('文件夹名为空');
+    }
+    if (parts[parts.length - 1].trim().length === 0) {
+      throw new Error('请填写文件夹名称');
+    }
+    return segs.join('/');
+  }
+
+  /** 重名目录：已存在就在末段加 -2/-3…（与 uniqueRelPath 同策略，不覆盖） */
+  static uniqueDirPath(registry: VaultRegistry, vaultId: string, relPath: string): string {
+    if (!NoteService.exists(registry, vaultId, relPath)) {
+      return relPath;
+    }
+    let n: number = 2;
+    let candidate: string = relPath + '-' + n;
+    while (NoteService.exists(registry, vaultId, candidate)) {
+      n++;
+      candidate = relPath + '-' + n;
+    }
+    return candidate;
+  }
+
+  /**
+   * 新建空文件夹：逐级补建父目录 → 建末级目录 → 返回实际落地的相对路径。
+   * 中间目录缺失时一并建出（用户可一次输 `甲/乙/丙` 建三层）。
+   */
+  static createFolder(registry: VaultRegistry, vaultId: string, relPath: string): string {
+    const target: string = NoteService.uniqueDirPath(registry, vaultId, relPath);
+
+    const segs: string[] = target.split('/');
+    for (let i = 1; i < segs.length; i++) {
+      const dirRel: string = segs.slice(0, i).join('/');
+      const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
+      if (!fileIo.accessSync(dirAbs)) {
+        fileIo.mkdirSync(dirAbs);
+      }
+    }
+    const abs: string = registry.absoluteIn(vaultId, target);
+    if (!fileIo.accessSync(abs)) {
+      fileIo.mkdirSync(abs);
+    }
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建文件夹 %{public}s', target);
+    return target;
+  }
+
+  /**
+   * 删除文件或整棵目录（方案 A 配套：建了文件夹要能删）。
+   * 目录递归：先删子项再 rmdir（与 GitFsBackend 的 rmdir 前清空同一约束）。
+   * ⚠️ 不可恢复 —— 调用方必须先过确认对话框；回收站是需求池 B 组，v0.2 没有。
+   */
+  static deletePath(registry: VaultRegistry, vaultId: string, relPath: string): void {
+    const abs: string = registry.absoluteIn(vaultId, relPath);
+    const stat = fileIo.statSync(abs);
+    if (stat.isDirectory()) {
+      const names: string[] = fileIo.listFileSync(abs);
+      for (let i = 0; i < names.length; i++) {
+        NoteService.deletePath(registry, vaultId, relPath + '/' + names[i]);
+      }
+      fileIo.rmdirSync(abs);
+    } else {
+      fileIo.unlinkSync(abs);
+    }
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除 %{public}s', relPath);
+  }
 }
