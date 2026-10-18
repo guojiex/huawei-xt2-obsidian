@@ -13,6 +13,7 @@
  * AtomicFile 原子写，C1 硬约束）**、重命名 / 移动 / 删除（1.6 / 方案 A 已落）。
  */
 import { fileIo } from '@kit.CoreFileKit';
+import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { sanitizeVaultName } from './Vault';
@@ -135,34 +136,143 @@ export class NoteService {
     }
   }
 
+  /** 串行化所有原子写：flushSave 可能并发（防抖到点 + 切文件），同一 tmp 文件不能交叉写 */
+  private static saveChain: Promise<void> = Promise.resolve();
+
   /**
    * 保存笔记全文（M2 自动保存 / 2.3）。
-   * 用**官方 `AtomicFile`**（api_notes C1 ✅，API 24 可用）做原子写：
-   * `startWrite()` 返回 `WriteStream`，写用 `stream.write(str)`（继承自 stream.Writable，
-   * 返回 boolean、无 callback 即同步缓冲写），收尾用 `stream.close(): void`（同步 flush+关），
-   * 全部成功才 `finishWrite()` 落到目标——崩溃/中断时原文件完好、绝不写出半截内容；
-   * 失败 `failWrite()` 回滚不留 .tmp 残留。
-   * ⚠️ WriteStream 没有 `writeSync` / `closeSync`（那是 File 的方法），写/关只能用
-   * `write` / `close`。失败抛 `Error`：调用方（Index 自动保存）据此 toast。
+   * 用**官方 `AtomicFile`**（api_notes C1 ✅，API 24 可用）做原子写，**严格照官方示例流**：
+   * `startWrite()` → `stream.write(content, 'utf-8', 回调)` → 回调里 `finishWrite()` 落盘。
+   * ⚠️ **绝不能在 finishWrite 前调 `stream.close()`**（2026-10-18 真机 cppcrash SIGSEGV 实证：
+   * close+finishWrite 双重释放 native 侧引用，崩溃栈 napi_delete_reference ← free，见
+   * api_notes C1）。`write` 只把数据写进缓冲区，**回调触发才是落盘完成点**，finishWrite
+   * 必须等它；官方示例正是把 finishWrite 放在 write 回调里。
+   * - 空内容**不调 write**（Writable.write 禁空串会抛 401）：startWrite 已建空 tmp，
+   *   直接 finishWrite 即把文件截断为 0 字节；
+   * - 3s 超时兜底：write 回调不触发时 failWrite 回滚并拒绝，不让 flushSave 永久挂起；
+   * - 失败 `failWrite()` 回滚不留 .tmp 残留；崩溃/中断时原文件完好。
+   * 返回 Promise：flushSave await 它，失败 reject `Error`（调用方据此 toast）。
    */
-  static saveNote(registry: VaultRegistry, vaultId: string, relPath: string, content: string): void {
+  static saveNote(registry: VaultRegistry, vaultId: string, relPath: string, content: string): Promise<void> {
     const abs: string = registry.absoluteIn(vaultId, relPath);
-    const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(abs);
-    try {
-      const stream = atomicFile.startWrite();
-      stream.write(content);
-      stream.close();
-      atomicFile.finishWrite();
-      hilog.info(NOTE_DOMAIN, NOTE_TAG, '保存笔记 %{public}s（%{public}d 字）', relPath, content.length);
-    } catch (error) {
+    const job: Promise<void> = NoteService.saveChain.then((): Promise<void> => {
+      return NoteService.runAtomicSave(abs, relPath, content);
+    });
+    // 链上吞掉 rejection：单个保存失败不能断掉后续保存的排队
+    NoteService.saveChain = job.then((): void => {
+    }, (): void => {
+    });
+    return job;
+  }
+
+  /** 单次原子写（saveNote 经 saveChain 串行调用）；resolve=已落盘，reject=已回滚 */
+  private static runAtomicSave(abs: string, relPath: string, content: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(abs);
+      let settled: boolean = false;
+      let timerId: number = -1;
+      const fail = (msg: string): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.failWrite();
+        } catch (e) {
+          hilog.warn(NOTE_DOMAIN, NOTE_TAG, 'runAtomicSave 回滚 failWrite 失败（忽略）');
+        }
+        hilog.error(NOTE_DOMAIN, NOTE_TAG, '保存笔记失败 %{public}s: %{public}s', relPath, msg);
+        reject(new Error('保存笔记失败: ' + msg));
+      };
+      const commit = (): void => {
+        if (settled) {
+          return;
+        }
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.finishWrite();
+        } catch (error) {
+          const err = error as BusinessError;
+          fail(err.message);
+          return;
+        }
+        settled = true;
+        hilog.info(NOTE_DOMAIN, NOTE_TAG, '保存笔记 %{public}s（%{public}d 字）', relPath, content.length);
+        resolve();
+      };
       try {
-        atomicFile.failWrite();
-      } catch (e) {
-        hilog.warn(NOTE_DOMAIN, NOTE_TAG, 'saveNote 回滚 failWrite 失败（忽略）');
+        const stream: fileIo.WriteStream = atomicFile.startWrite();
+        timerId = setTimeout((): void => {
+          fail('write 回调 3s 未触发');
+        }, 3000);
+        if (content.length === 0) {
+          commit();
+        } else {
+          stream.write(content, 'utf-8', (err?: BusinessError): void => {
+            if (err !== undefined && err !== null) {
+              fail(err.message);
+              return;
+            }
+            commit();
+          });
+        }
+      } catch (error) {
+        const err = error as BusinessError;
+        fail(err.message);
       }
+    });
+  }
+
+  /**
+   * 读取库内图片等附件 → data URI（M3 预览「图片」项）。
+   * 给 PreviewWebView 的 `readAsset` 桥用：vault 沙箱文件 WebView 拿不到
+   * （resource://rawfile 跨域被禁，api_notes B4），经 JS→ArkTS 同步桥换成 data URI。
+   * 只放行图片扩展名白名单（防笔记里嵌 <img src="笔记.md"> 之类把任意文件泄给页面）；
+   * 读不到 / 不在白名单返回空串，Web 侧显示「图片不存在」。
+   */
+  static readAssetDataUri(registry: VaultRegistry, vaultId: string, relPath: string): string {
+    const lower: string = relPath.toLowerCase();
+    const exts: string[] = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+    let ext: string = '';
+    for (let i = 0; i < exts.length; i++) {
+      if (lower.endsWith(exts[i])) {
+        ext = exts[i];
+        break;
+      }
+    }
+    if (ext.length === 0) {
+      return '';
+    }
+    const mimes: Record<string, string> = {
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.webp': 'image/webp',
+      '.svg': 'image/svg+xml'
+    };
+    try {
+      const abs: string = registry.absoluteIn(vaultId, relPath);
+      const file: fileIo.File = fileIo.openSync(abs, fileIo.OpenMode.READ_ONLY);
+      try {
+        const size: number = fileIo.statSync(abs).size;
+        const buf: ArrayBuffer = new ArrayBuffer(size);
+        fileIo.readSync(file.fd, buf);
+        const helper: util.Base64Helper = new util.Base64Helper();
+        const b64: string = helper.encodeToStringSync(new Uint8Array(buf));
+        return 'data:' + mimes[ext] + ';base64,' + b64;
+      } finally {
+        fileIo.closeSync(file);
+      }
+    } catch (error) {
       const err = error as BusinessError;
-      hilog.error(NOTE_DOMAIN, NOTE_TAG, '保存笔记失败 %{public}s: %{public}s', relPath, err.message);
-      throw new Error('保存笔记失败: ' + err.message);
+      hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取附件失败 %{public}s: %{public}s', relPath, err.message);
+      return '';
     }
   }
 

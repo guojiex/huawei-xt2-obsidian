@@ -1,0 +1,17 @@
+{
+  "name": "mdpreview",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "运行在 Web 组件内的 Markdown 预览渲染器（marked，v0.2 M3）",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "marked": "^15.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
