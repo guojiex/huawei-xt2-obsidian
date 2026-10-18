@@ -109,4 +109,22 @@ export class NoteService {
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', target);
     return target;
   }
+
+  /**
+   * 读取笔记全文（M3 预览 / M2 编辑器加载用）。
+   * 读失败返回空串而不是抛错：调用方是 UI 层，读不到时给个空编辑器比崩掉好，
+   * 详情进 hilog。⚠️ 二进制/超大文件不在此考虑范围内（库只收 md，人为上限）。
+   */
+  static readNote(registry: VaultRegistry, vaultId: string, relPath: string): string {
+    try {
+      const abs: string = registry.absoluteIn(vaultId, relPath);
+      const text: string = fileIo.readTextSync(abs);
+      hilog.info(NOTE_DOMAIN, NOTE_TAG, '读取笔记 %{public}s（%{public}d 字）', relPath, text.length);
+      return text;
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取笔记失败 %{public}s: %{public}s', relPath, err.message);
+      return '';
+    }
+  }
 }

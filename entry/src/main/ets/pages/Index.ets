@@ -26,6 +26,7 @@ import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { CreateNoteDialog } from '../components/NoteDialogs';
+import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 
@@ -90,6 +91,13 @@ struct Index {
    * 不存在三处各记一份然后不同步的可能。
    */
   @State currentFilePath: string = '';
+  /**
+   * M0.5 spike：Web 编辑器（CodeMirror 6）的桥接句柄与「最近一次内容长度」。
+   * bridge 由本页创建并传给 EditorWebView（对象引用共享，页面 ready 时内部 bind）。
+   * editorLen 只用于观察击键是否过桥，-1 表示尚未有过编辑。
+   */
+  @State editorLen: number = -1;
+  private editorBridge: EditorBridge = new EditorBridge();
   /**
    * 文件树重扫信号（每次 +1 触发一次 rescan）。
    * 为什么不用「更聪明」的方案：树组件自己不知道外部什么时候改了磁盘
@@ -166,6 +174,21 @@ struct Index {
       this.drawerOpen = false;
       this.smMode = 'edit';
     }
+    void this.syncEditorContent();
+  }
+
+  /**
+   * 把当前选中笔记的全文下发给 Web 编辑器（M0.5 spike 的加载路径）。
+   * 读文件在 ArkTS 侧做（组件不碰 IO，硬约束 14）；读失败给空串，不弹错不崩。
+   */
+  private async syncEditorContent(): Promise<void> {
+    if (this.currentVaultId.length === 0 || this.currentFilePath.length === 0) {
+      await this.editorBridge.setContent('');
+      return;
+    }
+    const text: string = NoteService.readNote(
+      VaultRegistry.get(), this.currentVaultId, this.currentFilePath);
+    await this.editorBridge.setContent(text);
   }
 
   /** 状态栏右侧读数：形态 · vp · FS:N（有折痕时追加 · C:x,y，px 在此换算成 vp） */
@@ -605,24 +628,25 @@ struct Index {
       this.PaneHead(this.currentFilePath.length > 0 ? this.currentFilePath : '源模式')
 
       Stack() {
-        Column({ space: Space.s3 }) {
-          Text('编辑区 · v0.2')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_tertiary'))
-          // 选中文件后这里显示它的库内路径，用来验证「点侧栏 → 编辑区吃到同一份状态」
-          if (this.currentFilePath.length > 0) {
-            Text(this.currentFilePath)
-              .fontSize(FontSize.s3)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
+        // M0.5 spike：CodeMirror 6 跑在 Web 组件里（web/mdeditor → rawfile/mdeditor/index.html）。
+        // 内容由本页在「选中文件 / 切库」时读好下发；组件本身不碰文件 IO（硬约束 14）。
+        EditorWebView({
+          bridge: this.editorBridge,
+          onChange: (len: number): void => {
+            // 编辑中：只记长度（spike 期观察击键是否过桥正常）；保存是 M2 的事
+            if (len !== this.editorLen) {
+              this.editorLen = len;
+            }
+          },
+          onReady: (): void => {
+            // 页面就绪后补一次内容下发：EditorWebView 的指令队列保证此前收到的
+            // setContent 不丢，但首帧若在选中文件之前就绪，这里再同步一次更稳
+            void this.syncEditorContent();
+          },
+          onError: (msg: string): void => {
+            hilog.error(DOMAIN, TAG, '编辑器 Web: %{public}s', msg);
           }
-        }
-        .width('100%')
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor($r('app.color.bg_card'))
+        })
 
         if (showHingeWarning) {
           // 被内容横跨的折痕：红色虚线竖标（零宽 Column + 左边框）
@@ -640,6 +664,7 @@ struct Index {
       }
       .layoutWeight(1)
       .width('100%')
+      .backgroundColor($r('app.color.bg_card'))
     }
     .width('100%')
     .height('100%')

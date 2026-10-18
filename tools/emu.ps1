@@ -216,8 +216,17 @@ function Get-Log([string]$tagFilter, [int]$lines = 80) {
 if ($Ui) {
     if (-not (Start-Emu)) { exit 1 }
     if (-not (Install-Launch)) { exit 1 }
+    # Web 页面加载 + onPageEnd + ready 事件有延迟；spike 排查期等 12s 看注入能否追上
+    Start-Sleep -Seconds 12
     Write-Line "`n=== UI 控件树 ===" 'Cyan'
-    Get-UiLayout
+    $lay = Get-UiLayout -All
+    $lay | Out-File -FilePath (Join-Path $shotDir 'ui_ui.md') -Encoding utf8
+    Write-Line "已保存 ui_ui.md（$($lay.Count) 行）" 'Gray'
+    # hilog 必须在同一次调用里抓：模拟器进程随启动它的终端调用结束而被回收
+    Write-Line "`n=== hilog（EditorWebView / NoteService / FileTree）===" 'Cyan'
+    $log = (& $Hdc -t $Target shell "hilog -x 2>/dev/null | grep -E 'EditorWebView|NoteService|FileTree|ArkWeb' | tail -25" 2>&1)
+    $log | Out-File -FilePath (Join-Path $shotDir 'log_ui.txt') -Encoding utf8
+    $log | ForEach-Object { Write-Line ("  $_") 'DarkGray' }
     exit 0
 }
 
@@ -419,12 +428,32 @@ if ($Sel) {
     Invoke-TapXY $tx $ty | Out-Null
     Start-Sleep -Seconds 2
 
+    # 紧跟点击抓日志：放在 pidof/uiLayout 之后 hdc 会偶发 "Not match target founded"（原因未明，
+    # 2026-10-18 连丢两次证据，怀疑 uitest 把 hdc 与模拟器的连接打抖）。抓完再测 PID。
+    # 恢复手段：hdc kill 重启 PC 侧 hdc server（不动模拟器），等 target 重新出现再抓。
+    $logOk = $false
+    for ($try = 0; $try -lt 4 -and -not $logOk; $try++) {
+        $raw = (& $Hdc -t $Target shell 'hilog -x' 2>&1)
+        $joined = ($raw -join "`n")
+        if ($raw -and $joined -notmatch 'Not match target|need connect-key') {
+            $raw | Out-File -FilePath (Join-Path $shotDir 'log_sel.txt') -Encoding utf8
+            $logOk = $true
+        } else {
+            Write-Line "  hilog 第 $($try + 1) 次失败（hdc 抖动）→ kill hdc server 恢复" 'Yellow'
+            & $Hdc kill 2>&1 | Out-Null
+            Start-Sleep -Seconds 3
+            for ($w = 0; $w -lt 10; $w++) {
+                if ((Get-Targets) -contains $Target) { break }
+                Start-Sleep -Seconds 2
+            }
+        }
+    }
+    if (-not $logOk) { Write-Line 'hilog 抓取失败（hdc target 抖动，重试 4 次）' 'Red' }
+
     $pidAfter = ((& $Hdc -t $Target shell "pidof $Bundle" 2>&1) -join ' ').Trim()
     Write-Line "PID before=[$pidBefore] after=[$pidAfter]" 'Cyan'
 
     Get-UiLayout -All | Out-File -FilePath (Join-Path $shotDir 'ui_sel.md') -Encoding utf8
-    # 紧跟点击抓日志（放在最后一步时 hdc 会报 target not match，原因未明）
-    (& $Hdc -t $Target shell 'hilog -x' 2>&1) | Out-File -FilePath (Join-Path $shotDir 'log_sel.txt') -Encoding utf8
     Write-Line 'SAVED ui_sel.md / log_sel.txt' 'Cyan'
     exit 0
 }
