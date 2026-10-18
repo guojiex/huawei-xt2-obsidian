@@ -476,27 +476,41 @@ nativePort.onMessageEvent((result: WebMessage) => {
 
 官方专门能力：**`fileIo.AtomicFile`（API 15+，我们的 API 24 可用）**
 
+⚠️ **🔴 崩溃实证（2026-10-18 真机级定位，重要）**：`stream.close()` 后再 `finishWrite()` 会
+**SIGSEGV cppcrash**（栈：`musl free ← napi_delete_reference ← libfs.z.so`）。`close()` 已释放
+native 侧写句柄，`finishWrite()` 再清理同一引用 = **double free**。**AtomicFile 全程不要调 `close()`**。
+
+**官方示例的正确姿势**（js-apis-file-fs.md，write 走回调、`finishWrite()` 在回调里，无 close）：
+
 ```typescript
 import { fileIo } from '@kit.CoreFileKit';
 
 let atomicFile = new fileIo.AtomicFile(targetPath);
 try {
   let stream = atomicFile.startWrite();   // 返回 WriteStream（不是 File！）
-  stream.write(content);                 // WriteStream.write(str)：继承自 stream.Writable，返回 boolean，无 callback 即同步缓冲写
-  stream.close();                        // WriteStream.close(): void —— 同步 flush + 关（注意：没有 closeSync）
-  atomicFile.finishWrite();              // 成功：临时文件重命名到目标位置
+  if (content.length > 0) {
+    stream.write(content, 'utf-8', (err: BusinessError) => {   // Writable.write：回调 = 落盘完成点
+      if (err) { atomicFile.failWrite(); return; }
+      atomicFile.finishWrite();          // 成功：临时文件重命名到目标位置
+    });
+  } else {
+    atomicFile.finishWrite();            // 空内容：startWrite 已建空 tmp，直接 finish = 截断为 0 字节
+  }
 } catch (err) {
   atomicFile.failWrite();                // 失败：删临时文件，原文件不受影响
 }
 ```
 
-⚠️ **实测踩坑（2026-10-18 编译）**：`AtomicFile` 的写入口是 **`startWrite()`**（非 `openWrite()`），
-返回 **`WriteStream`**（非 `File`）。`WriteStream` 的写/关方法是 **`write(str)`** 与 **`close(): void`**——
-**没有** `writeSync` / `closeSync`（那两个是 `File` 实例的方法，不是 `WriteStream` 的）。
-混淆二者会 `ERROR: Property 'writeSync'/'closeSync' does not exist on type 'WriteStream'`。
-另外 `WriteStream.write` 来自 `stream.Writable`，签名 `write(chunk?: string | Uint8Array, encoding?, callback?): boolean`。
+⚠️ **要点（2026-10-18 实测定案）**：
+- 写入口是 **`startWrite()`**（非 `openWrite()`），返回 **`WriteStream`**（非 `File`）；
+  写/关方法是 **`write(str)`**，**没有** `writeSync`/`closeSync`（那是 `File` 的方法）。
+- `WriteStream.write` 继承 `stream.Writable`，**禁空字符串**（抛 401）——空内容直接 `finishWrite()` 截断。
+- **write 是异步缓冲写**：回调触发才算写完；不传回调返回 boolean 只代表入缓冲。保存路径必须
+  等回调（`NoteService.saveNote` 用 Promise 包回调 + 3s 超时兜底 + `saveChain` 串行化并发保存）。
+- **回调不触发会永久挂起**（拿它 await 的调用方全部卡死）——必须带超时。
 
-→ **直接采纳**，替换 4.2 节的自研 tmp+rename，以及 fs 桥接层里工作区 md 的写入。
+→ **已落地**（NoteService.saveNote），模拟器实测：保存 14 字笔记成功、进程不崩
+（修复前同场景 SIGSEGV）。
 
 ### C2 目录遍历 ✅
 
@@ -1076,6 +1090,59 @@ ArkUI 的百分比取**父级内容盒的 100%**，margin 加在盒外 —— �
 `left:23, width:1013`（右缘 1036px = 360vp）✅ 不再越界；修前右缘 ≈1084px、探出 8vp。
 已全库扫同类反模式（`width('100%')` + 水平 margin），仅此一处。
 
+### L-6 Web 内 CodeMirror：`setState` 重建会剥掉后挂的 listener；双 ready 会重建 view ❓→✅
+
+> 2026-10-18 排查「编辑器 change 事件绝迹 → 自动保存/预览联动全死」。模拟器日志定位 + 修复验证。
+> 踩坑位置：`web/mdeditor/src/index.ts` + `EditorWebView.ets`。
+
+**现象**：编辑器加载后 `updateListener`（CodeMirror `EditorView.updateListener`）从不触发，
+防抖自动保存、预览联动全部失效；但 `getContent`/`setContent` 桥接正常。
+
+**根因（两层叠加）**：
+1. **双 ready**：web 侧 `announceReady` 发一次 `ready`，ArkTS `onPageEnd` → `onArktsReady` 又发一次
+   （启动日志实证：37.267 与 37.470 两次「页面就绪」）。第二次 ready 走 `impl 已建 → setTheme` 分支。
+2. **setTheme 丢 listener**：`view.setState(EditorState.create({ extensions: extensionsFor(theme) }))`
+   —— 若 `updateListener` 是建 view 后才 concat 进 extensions 的（或在 `extensionsFor` 之外），
+   重建 state 时就**永久丢失**。change 事件从此绝迹。
+
+**修法（两层都要）**：
+- `updateListener` 挪进 `extensionsFor()` 内部 —— **任何 state 重建路径都自动带上**；
+- ArkTS 侧 ready 去重：`this.impl` 已存在则忽略第二次 ready（不重建 impl、不重发 onReady）。
+  重建会丢 in-flight `getContent` waiter；重发 onReady 会触发 loadFile 重读文件冲掉未保存改动。
+
+**判别特征**：桥接命令（runJavaScript 方向）正常但事件（postMessage 方向）不来，
+第一反应查「listener 被谁剥了」，而不是查注册时机。
+
+### L-7 `@Builder` 按值传参不随状态刷新 —— 要刷新用 `$$` + 命名 interface ❓→✅
+
+> 2026-10-18 修复「PaneHead 标题永远停在『源模式』」。踩坑位置：`Index.ets` 三栏 PaneHead。
+
+```typescript
+// ❌ 按值传参：调用时求值快照，this.mode 变了标题不动
+this.PaneHead('源模式')
+// ✅ 按引用传参：$$ 指向命名 interface 字段，状态变化自动重渲染
+interface PaneHeadParam { title: string }
+this.PaneHead({ title: ... })   // @Builder PaneHead($$: PaneHeadParam)
+```
+
+⚠️ `$$: { title: string }` 内联对象类型违反 `arkts-no-obj-literals-as-types`，**必须命名 interface**。
+**判别特征**：组件首帧渲染正确、状态变化后纹丝不动 → 查 `@Builder` 参数是不是按值快照。
+
+### L-8 模拟器环境限制清单（2026-10-18 定案）⚠️
+
+模拟器（API 24 x86）上一批接口/能力**确定性不可用**，别再在模拟器上验证这些项：
+
+| 项 | 表现 | 结论 |
+| --- | --- | --- |
+| IME × Web contenteditable | attach 失败 `errcode=80`，重启不恢复 | 真机才可验（M0.5 头号项） |
+| `uitest uiInput inputText` | 报成功但无 text 事件进 Web | 依赖 IME，同上废 |
+| `uinput -K -t '文本'` | 产生 kChar 事件但无 text payload，不插入 | 只能发键码，不能发文本 |
+| ArkWeb 异步渲染 | 编辑区像素 100% 纯白（连行号槽都没有），JS/桥接正常 | 模拟器白屏是常态；`renderMode: RenderMode.SYNC_RENDER`（since 12）已加，模拟器死亡未验完，**真机复验** |
+| 视觉验证 | 截图纯白但视觉模型会「看出」caret/文本 | **幻觉**：关键结论必须像素检测/日志佐证 |
+
+注入替代通道：**临时调试钩子**（隐形 `Text` + `LongPressGesture` → `editorBridge.setContent`）——
+`setContent` 派发的 doc 变更走真实 change→自动保存链，可验证保存链路；验收后移除。
+
 ---
 
 ## 落地决策表
@@ -1112,3 +1179,7 @@ ArkUI 的百分比取**父级内容盒的 100%**，margin 加在盒外 —— �
 | **桥接代理注册时机** | ✅ `onControllerAttached`（页面加载前，单次加载即注入）；❌ `onPageEnd` 注册要 `refresh()` 且页面加载两遍（**L-4 实测**） | 已落地（EditorWebView） |
 | **控件 inset 的写法** | ✅ 外包层 `padding` 做 inset；❌ 控件自身 `width('100%')` + 水平 `margin`（占宽 = 父宽 + 2×margin，溢出）（**L-5 实测**） | 已落地（VaultSidebar 库切换卡片） |
 | **registerJavaScriptProxy 签名** | ✅ 位置参数版 `(obj, name, methodList, asyncMethodList?, permission?)`；options 对象版是 deprecated `WebController` 的，编译直接错 | 已是现状 |
+| **AtomicFile 用法** | ✅ **回调式 write + 回调内 `finishWrite()`，全程禁 `close()`**（close+finish = double free → SIGSEGV，C1 实测）；空内容直接 finishWrite；写路径必须超时+串行化 | 已落地（NoteService.saveNote） |
+| **CodeMirror state 重建剥 listener** | ✅ updateListener 进 `extensionsFor()` 内部 + ArkTS 侧 ready 去重（双 ready 重建会永久丢 change 事件，**L-6 实测**） | 已落地（mdeditor） |
+| **@Builder 传参刷新** | ✅ 需随状态刷新的参数用 `$$: 命名 interface` 按引用传；按值传参是调用时快照（**L-7 实测**） | 已落地（PaneHead） |
+| **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ 文本注入 / ArkWeb 渲染在模拟器全不可用（**L-8**）；编辑器/输入法验证一律真机 | 已定案 |

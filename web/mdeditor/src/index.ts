@@ -5,10 +5,11 @@
  *      （照抄 web/gitbridge/build.mjs 的链路，见 AGENTS.md §Web 打包约定）
  *
  * 桥接协议（与 gitbridge 一致，JSON over javaScriptProxy.postMessage）：
- *   ArkTS → Web：window.__mdeditor.setContent(b64) / getContent() / focus() / setTheme(t)
+ *   ArkTS → Web：window.__mdeditor.setContent(b64) / requestContent(id) / focus() / setTheme(t)
  *   Web → ArkTS：postMessage(JSON)
  *     - {type:'event', name:'ready'}                 页面就绪，可以收内容了
  *     - {type:'event', name:'change', len:N}          内容变化（debounce 300ms，只报长度）
+ *     - {type:'event', name:'content', id:N, b64:S}   requestContent 的回复（全量内容）
  *
  * ⚠️ 为什么 change 只报长度不报内容：编辑中每次击键都过桥会把大文本反复序列化，
  * 内容统一由 ArkTS 在需要时（保存/切走）主动 getContent() 拉。硬约束 7 的同款思路。
@@ -32,10 +33,19 @@ declare global {
   }
 }
 
-/** 给 ArkTS 侧看的 API 面（setContent/getContent 走 base64，避免引号/换行转义地狱） */
+/**
+ * ⚠️ 踩坑（2026-10-18 模拟器实测定位，重要）：
+ * runJavaScript 的**返回值不能当数据通道**：ArkWeb（Chromium）的字符串返回值带
+ * JSON 编码痕迹（含引号等非 base64 字符），ArkTS 侧 decodeSync 直接抛
+ * "The input string contains unsupported characters"。官方 FAQ（faqs-arkweb-146）
+ * 的推荐做法：runJavaScript 只触发，Web 侧拿结果后经 __arkts.postMessage 回传。
+ * 故内容拉取走 requestContent(reqId) → content 事件往返，不走返回值。
+ */
 interface MdEditorApi {
   setContent(b64: string): void
+  /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
+  requestContent(reqId: number): void
   focus(): void
   setTheme(theme: string): void
   onArktsReady(): void
@@ -136,19 +146,35 @@ const DARK_THEME = EditorView.theme(
 
 let themeMode = 'light'
 
+// ---------- 实例 ----------
+let view: EditorView | null = null
+let changeTimer: number | undefined = undefined
+
 function extensionsFor(theme: string) {
   return [
     basicSetup,
     markdown(),
     syntaxHighlighting(defaultHighlightStyle),
     theme === 'dark' ? [DARK_THEME, oneDark] : [LIGHT_THEME],
-    EditorView.lineWrapping
+    EditorView.lineWrapping,
+    // ⚠️ change 上报监听必须放进 extensionsFor 跟着每次 state 重建（2026-10-18 崩溃排查
+    // 实证）：最初放在 ensureView 的 concat 里，setTheme 热切换用 extensionsFor 重建 state
+    // 时把它丢了 → docChanged 无人监听 → change 事件从此绝迹、防抖自动保存/预览联动全失效。
+    EditorView.updateListener.of((update) => {
+      if (!update.docChanged) {
+        return
+      }
+      // debounce：连续击键不逐帧过桥（保存/切走时 ArkTS 会主动拉全量）
+      if (changeTimer !== undefined) {
+        window.clearTimeout(changeTimer)
+      }
+      changeTimer = window.setTimeout(() => {
+        changeTimer = undefined
+        postToArkts({ type: 'event', name: 'change', len: update.state.doc.length })
+      }, 300)
+    })
   ]
 }
-
-// ---------- 实例 ----------
-let view: EditorView | null = null
-let changeTimer: number | undefined = undefined
 
 function ensureView(): EditorView {
   if (view) {
@@ -157,21 +183,7 @@ function ensureView(): EditorView {
   const parent = document.getElementById('editor') as HTMLElement
   const state = EditorState.create({
     doc: '',
-    extensions: extensionsFor(themeMode).concat([
-      EditorView.updateListener.of((update) => {
-        if (!update.docChanged) {
-          return
-        }
-        // debounce：连续击键不逐帧过桥（保存/切走时 ArkTS 会主动拉全量）
-        if (changeTimer !== undefined) {
-          window.clearTimeout(changeTimer)
-        }
-        changeTimer = window.setTimeout(() => {
-          changeTimer = undefined
-          postToArkts({ type: 'event', name: 'change', len: update.state.doc.length })
-        }, 300)
-      })
-    ])
+    extensions: extensionsFor(themeMode)
   })
   view = new EditorView({ state, parent })
   return view
@@ -194,6 +206,14 @@ const api: MdEditorApi = {
   getContent(): string {
     const v = ensureView()
     return b64encode(v.state.doc.toString())
+  },
+
+  /** ArkTS 侧内容拉取入口：把全量内容 base64 后经 content 事件回传（不走 runJavaScript 返回值） */
+  requestContent(reqId: number): void {
+    const v = ensureView()
+    const b64 = b64encode(v.state.doc.toString())
+    console.log('[mdeditor] requestContent id=' + reqId + ' len=' + v.state.doc.length)
+    postToArkts({ type: 'event', name: 'content', id: reqId, b64: b64 })
   },
 
   focus(): void {

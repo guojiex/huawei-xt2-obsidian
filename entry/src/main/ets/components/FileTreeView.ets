@@ -294,7 +294,16 @@ export struct FileTreeView {
         }
         .width('100%')
         .padding({ right: Space.s2 })
-      }, (n: TreeNode) => n.relPath)
+       }, (n: TreeNode) => {
+        // ⚠️ 踩坑（2026-10-18 实测 + 官方 ForEach 键值规则 faqs-arkui-219）：
+        // 键值相同的项不会重新执行 itemGenerator，行子树整体复用 —— 只用 relPath 时，
+        // 折叠/展开后 chevron 方向停在旧值（子行消失是因为键被移除，父行键没变）。
+        // 选中高亮同机理：不进键值的话，点新文件旧高亮不掉、新高亮不上。
+        if (n.isDir) {
+          return n.relPath + (this.isExpanded(n.relPath) ? '|e' : '|c');
+        }
+        return n.relPath + (n.relPath === this.currentFilePath ? '|s' : '|u');
+      })
     }
     .layoutWeight(1)
     .width('100%')

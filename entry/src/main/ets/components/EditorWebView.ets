@@ -9,9 +9,9 @@
  * （改了 Web 源码必须重跑打包，否则设备上跑旧代码 —— AGENTS.md §Web 打包约定）。
  */
 import { webview } from '@kit.ArkWeb'
-import { util } from '@kit.ArkTS'
 import { hilog } from '@kit.PerformanceAnalysisKit'
 import { common, ConfigurationConstant } from '@kit.AbilityKit'
+import { BridgeCodec } from '../common/BridgeCodec'
 
 const EDITOR_DOMAIN = 0x0000
 const EDITOR_TAG = 'EditorWebView'
@@ -28,10 +28,11 @@ class EditorNativeProxy {
 /** 桥接内部实现：页面就绪前收到的指令先进队列，ready 后按序补发 */
 class EditorImpl {
   private controller: webview.WebviewController
-  private base64: util.Base64Helper = new util.Base64Helper()
-  private encoder: util.TextEncoder = new util.TextEncoder()
   private readyFlag: boolean = false
   private pending: string[] = []
+  /** getContent 往返：reqId → 回调（Web 侧以 content 事件回内容，不走 runJavaScript 返回值） */
+  private contentWaiters: Map<number, (b64: string) => void> = new Map()
+  private nextReqId: number = 1
 
   constructor(controller: webview.WebviewController) {
     this.controller = controller
@@ -51,15 +52,55 @@ class EditorImpl {
   }
 
   async setContent(text: string): Promise<void> {
-    const payload = this.base64.encodeToStringSync(this.encoder.encodeInto(text))
+    // 空串直通（BridgeCodec）：空笔记是常态，util.Base64Helper 对空输入会抛错
+    const payload = BridgeCodec.encode(text)
     // base64 只含 [A-Za-z0-9+/=]，可以直接安全拼进 JS 字符串
     this.enqueue(`window.__mdeditor.setContent('${payload}')`)
   }
 
+  /**
+   * 拉取编辑器全量内容。⚠️ 不从 runJavaScript 的返回值取数（2026-10-18 模拟器实测）：
+   * ArkWeb（Chromium）的字符串返回值带 JSON 编码痕迹，decodeSync 直接抛
+   * "The input string contains unsupported characters"。改走官方推荐往返
+   * （FAQ faqs-arkweb-146）：runJavaScript 只触发 requestContent(reqId)（控制指令，
+   * 硬约束 7），Web 侧把内容经 __arkts.postMessage 的 content 事件送回。
+   */
   async getContent(): Promise<string> {
-    const b64: string = await this.controller.runJavaScript('window.__mdeditor.getContent()')
-    const bytes = this.base64.decodeSync(b64)
-    return new util.TextDecoder().decodeToString(bytes)
+    const reqId = this.nextReqId
+    this.nextReqId += 1
+    return new Promise<string>((resolve: (text: string) => void, reject: (e: Error) => void) => {
+      let settled = false
+      const timerId = setTimeout((): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        this.contentWaiters.delete(reqId)
+        reject(new Error('getContent 超时：Web 侧未回内容'))
+      }, 3000)
+      this.contentWaiters.set(reqId, (b64: string): void => {
+        if (settled) {
+          return
+        }
+        settled = true
+        clearTimeout(timerId)
+        try {
+          resolve(BridgeCodec.decode(b64))
+        } catch (error) {
+          reject(error as Error)
+        }
+      })
+      this.enqueue(`window.__mdeditor.requestContent(${reqId})`)
+    })
+  }
+
+  /** Web 侧 content 回复的落点（EditorWebView.handleMessage 按 reqId 路由过来） */
+  handleContent(reqId: number, b64: string): void {
+    const waiter = this.contentWaiters.get(reqId)
+    if (waiter) {
+      this.contentWaiters.delete(reqId)
+      waiter(b64)
+    }
   }
 
   focus(): void {
@@ -134,6 +175,8 @@ export struct EditorWebView {
 
   private controller: webview.WebviewController = new webview.WebviewController()
   private proxy: EditorNativeProxy = new EditorNativeProxy()
+  /** 当前桥接实现（ready 时创建；content 回复按 reqId 路由给它） */
+  private impl: EditorImpl | undefined = undefined
   /** 代理是否已注册（onControllerAttached 里注册，onPageEnd 兜底；见 build()） */
   private proxyRegistered: boolean = false
 
@@ -190,12 +233,24 @@ export struct EditorWebView {
     }
     const name = msg['name'] as string
     if (name === 'ready') {
+      if (this.impl) {
+        // 二次 ready（onPageEnd 的 onArktsReady 兜底会重发一次）直接忽略：
+        // 不重建 impl（会丢 in-flight getContent 的 waiter、重置 reqId），
+        // 不重发 onReady（会触发 loadFile 重读文件，冲掉编辑器里未保存的改动）。
+        // 双保险：web 侧 setTheme 曾因重建 state 丢 change 监听，见 web/mdeditor/src。
+        hilog.info(EDITOR_DOMAIN, EDITOR_TAG, '重复 ready，已忽略（桥接此前建立）')
+        return
+      }
       const impl = new EditorImpl(this.controller)
+      this.impl = impl
       this.bridge.bind(impl)
       impl.markReady()
       impl.setTheme(this.theme)
       hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'Web 编辑器页面就绪，桥接已建立');
       this.onReady()
+    } else if (name === 'content') {
+      // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContent Promise
+      this.impl?.handleContent(msg['id'] as number, msg['b64'] as string)
     } else if (name === 'change') {
       this.onChange((msg['len'] as number) ?? 0)
     }
@@ -203,7 +258,7 @@ export struct EditorWebView {
 
   build() {
     Column() {
-      Web({ src: $rawfile('mdeditor/index.html'), controller: this.controller })
+      Web({ src: $rawfile('mdeditor/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
         .onControllerAttached(() => {
           // ⚠️ 注册时机（2026-10-18 SDK 实证 + 官方生命周期文档）：
           // onControllerAttached 是注入 JS 对象的建议时机 —— controller 绑定后、页面加载前，

@@ -30,11 +30,17 @@ import { SettingsView } from '../components/SettingsView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { CreateNoteDialog, DeletePathDialog } from '../components/NoteDialogs';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
+import { PreviewWebView, PreviewBridge } from '../components/PreviewWebView';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
+
+/** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
+interface PaneHeadParam {
+  title: string;
+}
 
 /** 状态栏形态标签（与原型 FORMS 一致） */
 function formLabelOf(bp: string): string {
@@ -127,6 +133,17 @@ struct Index {
   private saveTimer: number = -1;
   private lastSavedText: string = '';
 
+  /**
+   * M3 预览（3.1/3.2）：marked 渲染器跑在 PreviewWebView 里，本页做「编辑 → 预览」联动。
+   * - `previewBridge`：内容 / 笔记目录 / 主题下发句柄（就绪前进队列不丢）；
+   * - `lastPreviewText`：已推给预览的内容镜像，跳过无变化的重复渲染；
+   * - `previewTimer`：联动防抖 500ms —— 编辑器 change 事件（Web 侧已 300ms 防抖）
+   *   到达后不立刻拉全量内容过桥，攒 500ms 再一次，避免连续击键反复渲染。
+   */
+  private previewBridge: PreviewBridge = new PreviewBridge();
+  private lastPreviewText: string = '';
+  private previewTimer: number = -1;
+
   /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
   private renameDialogCtl: CustomDialogController | null = null;
@@ -211,6 +228,9 @@ struct Index {
     }
     this.lastSavedText = text;
     await this.editorBridge.setContent(text);
+    // M3 联动：文件加载后预览同步本页内容 + 告知笔记目录（相对图片引用的解析基准）
+    this.previewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
+    this.pushPreview(text);
     return text;
   }
 
@@ -271,7 +291,7 @@ struct Index {
       return;
     }
     try {
-      NoteService.saveNote(VaultRegistry.get(), this.currentVaultId, path, text);
+      await NoteService.saveNote(VaultRegistry.get(), this.currentVaultId, path, text);
       this.lastSavedText = text;
     } catch (error) {
       this.toastRegistryError('保存失败', error);
@@ -290,6 +310,63 @@ struct Index {
       this.saveTimer = -1;
       void this.flushSave();
     }, 800);
+  }
+
+  // ===== M3 预览联动（3.2 编辑/预览实时联动） =====
+
+  /** 把文本推给预览渲染（相同内容跳过；预览未就绪时进其内部队列不丢） */
+  private pushPreview(text: string): void {
+    if (text === this.lastPreviewText) {
+      return;
+    }
+    this.lastPreviewText = text;
+    this.previewBridge.setContent(text);
+  }
+
+  /** 编辑器有改动：防抖 500ms 后从编辑器拉全量内容渲染预览 */
+  private schedulePreviewUpdate(): void {
+    if (this.previewTimer !== -1) {
+      clearTimeout(this.previewTimer);
+    }
+    this.previewTimer = setTimeout((): void => {
+      this.previewTimer = -1;
+      void this.updatePreviewFromEditor();
+    }, 500);
+  }
+
+  /**
+   * 从编辑器拉当前内容 → 推给预览。编辑器未就绪时退回 `lastSavedText`
+   * （已加载内容的镜像），保证预览永远有东西可渲染而不是空白。
+   */
+  private async updatePreviewFromEditor(): Promise<void> {
+    if (!this.editorBridge.ready) {
+      this.pushPreview(this.lastSavedText);
+      return;
+    }
+    let text: string = '';
+    try {
+      text = await this.editorBridge.getContent();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.warn(DOMAIN, TAG, '预览拉取编辑器内容失败: %{public}s', err.message);
+      return;
+    }
+    this.pushPreview(text);
+  }
+
+  /**
+   * 读库内图片 → data URI（PreviewWebView 的 readAsset 桥回调，M3 预览「图片」项）。
+   * 返回空串 = 图片不存在/不支持，Web 侧显示「图片不存在」。
+   */
+  private readVaultAsset(relPath: string): string {
+    if (this.currentVaultId.length === 0 || relPath.length === 0) {
+      return '';
+    }
+    try {
+      return NoteService.readAssetDataUri(VaultRegistry.get(), this.currentVaultId, relPath);
+    } catch (error) {
+      return '';
+    }
   }
 
   /** 状态栏右侧读数：形态 · vp · FS:N（有折痕时追加 · C:x,y，px 在此换算成 vp） */
@@ -579,6 +656,9 @@ struct Index {
         .segItem(this.smMode === 'preview')
         .onClick(() => {
           this.smMode = 'preview';
+          // 切到预览立刻拉一次编辑器当前内容：Web 侧 change 事件有 300ms 防抖，
+          // 点击前刚敲的字可能还没报上来，直接 getContent 才是最新
+          void this.updatePreviewFromEditor();
         })
     }
     .padding(2)
@@ -586,11 +666,12 @@ struct Index {
     .backgroundColor($r('app.color.bg_secondary'))
   }
 
-  /** 栏头：标题 + （单屏态才有的）编辑/预览切换 */
+  /** 栏头：标题 + （单屏态才有的）编辑/预览切换。⚠️ $$ 按引用传参：按值传参时
+   *  @Builder 不随状态刷新（实测：编辑区标题永远停在「源模式」，currentFilePath 变了不动） */
   @Builder
-  PaneHead(title: string) {
+  PaneHead($$: PaneHeadParam) {
     Row() {
-      Text(title)
+      Text($$.title)
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)
@@ -681,14 +762,23 @@ struct Index {
     .backgroundColor($r('app.color.bg_card'))
   }
 
-  /** sm：单栏内容（编辑 / 预览二选一）+ 抽屉侧栏覆盖层（Stack，汉堡开关，点遮罩关闭） */
+  /**
+   * sm：单栏内容（编辑 / 预览二选一）+ 抽屉侧栏覆盖层（Stack，汉堡开关，点遮罩关闭）。
+   * ⚠️ 编辑器**常驻**（Visibility 切换而非 if 卸载，同 git 容器的常驻铁律精神）：
+   * 卸载会销毁 Web 实例 —— 800ms 防抖窗口内未落盘的编辑、光标、撤销栈全丢。
+   * 预览是纯展示，可随用随挂（内容由 pushPreview 保证一致）。
+   */
   @Builder
   SmContent() {
     Stack({ alignContent: Alignment.Start }) {
+      Column() {
+        this.EditorPane(false)
+      }
+      .width('100%')
+      .height('100%')
+      .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
       if (this.smMode === 'preview') {
         this.PreviewPane()
-      } else {
-        this.EditorPane(false)
       }
       if (this.drawerOpen) {
         Column()
@@ -841,7 +931,7 @@ struct Index {
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      this.PaneHead(this.currentFilePath.length > 0 ? this.currentFilePath : '源模式')
+      this.PaneHead({ title: this.currentFilePath.length > 0 ? this.currentFilePath : '源模式' })
 
       Stack() {
         // M0.5 spike：CodeMirror 6 跑在 Web 组件里（web/mdeditor → rawfile/mdeditor/index.html）。
@@ -854,6 +944,7 @@ struct Index {
               this.editorLen = len;
             }
             this.scheduleSave();
+            this.schedulePreviewUpdate();
           },
           onReady: (): void => {
             // 页面就绪后补一次内容加载：EditorWebView 的指令队列保证此前收到的
@@ -887,21 +978,24 @@ struct Index {
     .height('100%')
   }
 
-  /** 预览区占位（真实预览 v0.2 M3 接入） */
+  /**
+   * 预览区（M3 3.1/3.2）：marked 渲染器跑在 Web 组件里（web/mdpreview → rawfile）。
+   * 内容由本页在「加载文件 / 编辑器变化（500ms 防抖）/ 切预览」时推送；
+   * 本地图片经 readVaultAsset 桥换 data URI。组件不碰文件 IO（硬约束 14）。
+   */
   @Builder
   PreviewPane() {
     Column() {
-      this.PaneHead('预览')
-
-      Column() {
-        Text('预览 · v0.2')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_tertiary'))
-      }
-      .layoutWeight(1)
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor($r('app.color.bg_card'))
+      this.PaneHead({ title: '预览' })
+      PreviewWebView({
+        bridge: this.previewBridge,
+        onReadAsset: (relPath: string): string => {
+          return this.readVaultAsset(relPath);
+        },
+        onError: (msg: string): void => {
+          hilog.error(DOMAIN, TAG, '预览 Web: %{public}s', msg);
+        }
+      })
     }
     .width('100%')
     .height('100%')
