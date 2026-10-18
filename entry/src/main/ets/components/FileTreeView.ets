@@ -39,6 +39,13 @@ export struct FileTreeView {
   @Prop @Watch('onReveal') revealPath: string = '';
   /** 选中文件回调（把相对路径交给父级，由父级决定编辑器要做什么） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
+  /**
+   * 「在这个目录下新建笔记」回调（目录行尾的 + 按钮，2026-10-18 方案 A 用户拍板）。
+   * 为什么要有它：侧栏底部「新建笔记」永远从根开始，想在目录里建必须手打完整路径；
+   * 设计稿（原型）在这一块是空白（footer 的「新建」是个没绑行为的死按钮），
+   * 所以入口形态是我们自己补的 —— 目录行 + 预填路径的对话框。
+   */
+  onCreateInDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
@@ -120,8 +127,17 @@ export struct FileTreeView {
     return this.expanded.indexOf(relPath) >= 0;
   }
 
+  /** 记住上次点过的目录（供新建笔记对话框默认定位，见 ExpandStore.lastdir） */
+  private saveLastDir(relPath: string): void {
+    this.ensureStore();
+    const store: ExpandStore = this.store as ExpandStore;
+    store.saveLastDir(this.vaultId, relPath);
+  }
+
   /** 展开/折叠：换整个数组触发刷新，并立刻落盘（需求 1.3） */
   private toggleDir(relPath: string): void {
+    // 点目录行 = 记住这个目录：新建笔记默认建在这里（2026-10-18 用户拍板）
+    this.saveLastDir(relPath);
     const next: string[] = [];
     let found: boolean = false;
     for (let i = 0; i < this.expanded.length; i++) {
@@ -221,6 +237,28 @@ export struct FileTreeView {
             .alignItems(VerticalAlign.Center)
             // 见下方 onClick 的踩坑说明：不把子控件排除在命中之外，点文件名会「点不动」
             .hitTestBehavior(HitTestMode.None)
+
+            // 目录行尾的「+」：在该目录下新建笔记（仅目录行有）。
+            // ⚠️ 位置有讲究：必须是内容 Row 的**兄弟**，不能塞进那个 Row 里 ——
+            // 内容 Row 整体设了 HitTestMode.None（子树透明，让点击冒泡到外层行），
+            // 塞进去的按钮也会变透明、点不动。放在外层行下，它自己吃点击，
+            // 不会误触展开/折叠（ArkUI 点击不向祖先行冒泡，最近的处理者消费）。
+            if (n.isDir) {
+              Row() {
+                Icon('plus', 16, $r('app.color.text_secondary'))
+              }
+              .width(Size.touch)
+              .height(Size.touch)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(Radius.icon)
+              .onClick(() => {
+                hilog.info(TREE_DOMAIN, TREE_TAG, '行内新建：目录 %{public}s', n.relPath);
+                // 点了 + 也算「点过这个目录」：即使取消对话框，记忆也已更新
+                this.saveLastDir(n.relPath);
+                this.onCreateInDir(n.relPath);
+              })
+            }
           }
           .width('100%')
           .height(Size.itemH)
@@ -236,6 +274,8 @@ export struct FileTreeView {
             if (n.isDir) {
               this.toggleDir(n.relPath);
             } else if (n.relPath !== this.currentFilePath) {
+              // 点文件行 = 记住它所在的目录（下次新建默认建在那里）
+              this.saveLastDir(FileTree.parentOf(n.relPath));
               this.onSelectFile(n.relPath);
             }
           })

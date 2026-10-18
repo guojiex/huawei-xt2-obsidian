@@ -75,6 +75,54 @@ export class FileTree {
     return out;
   }
 
+  /**
+   * 列出库里**所有**目录的 relPath（不受展开状态影响，只要目录不要文件）——
+   * 新建笔记对话框的「目录选择器」用（2026-10-18 用户拍板：对话框里选目录，
+   * 默认上次点过的目录，根目录作为一个选项）。
+   * 与 scan 的分工：scan 给可见行；这个给全量目录候选。
+   */
+  static allDirs(rootAbs: string): string[] {
+    const out: string[] = [];
+    FileTree.walkDirs(rootAbs, '', 0, out);
+    return out;
+  }
+
+  private static walkDirs(absDir: string, relDir: string, depth: number, out: string[]): void {
+    if (depth >= FileTree.MAX_DEPTH || out.length >= FileTree.MAX_NODES) {
+      return;
+    }
+    let names: string[] = [];
+    try {
+      names = fileIo.listFileSync(absDir);
+    } catch (error) {
+      const err = error as Error;
+      hilog.warn(DOMAIN, TAG, '列目录失败 %{public}s: %{public}s', relDir, err.message);
+      return;
+    }
+    const dirNames: string[] = [];
+    for (let i = 0; i < names.length; i++) {
+      const nm: string = names[i];
+      if (nm.length > 0 && !nm.startsWith('.') && FileTree.isDir(absDir, nm)) {
+        dirNames.push(nm);
+      }
+    }
+    dirNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
+    for (let i = 0; i < dirNames.length; i++) {
+      if (out.length >= FileTree.MAX_NODES) {
+        return;
+      }
+      const rel: string = relDir.length === 0 ? dirNames[i] : relDir + '/' + dirNames[i];
+      out.push(rel);
+      FileTree.walkDirs(absDir + '/' + dirNames[i], rel, depth + 1, out);
+    }
+  }
+
+  /** 库内相对路径的父目录（`a/b/c.md` → `a/b`；根下文件 → 空串） */
+  static parentOf(relPath: string): string {
+    const i: number = relPath.lastIndexOf('/');
+    return i > 0 ? relPath.substring(0, i) : '';
+  }
+
   private static walk(absDir: string, relDir: string, depth: number,
     expanded: string[], out: TreeNode[]): void {
     if (depth >= FileTree.MAX_DEPTH || out.length >= FileTree.MAX_NODES) {
@@ -134,6 +182,10 @@ export class FileTree {
 /**
  * 展开状态的持久化（需求 1.3：按库分别记忆）。
  * 存储键 = `expand_<vaultId>`，值 = JSON 数组字符串（不能直接用逗号拼：路径里可能含逗号）。
+ *
+ * 同文件还存 **lastdir_<vaultId>**（2026-10-18 用户拍板）：上次在树里点过的目录
+ * —— 点目录行记该目录、点文件行记它的父目录。新建笔记对话框默认建在那里，
+ * 想建根目录就在对话框的目录选择器里显式选「根目录」。
  */
 export class ExpandStore {
   private static readonly PREF_NAME: string = 'file_tree_state';
@@ -172,6 +224,27 @@ export class ExpandStore {
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, 'expand 状态写入失败: %{public}s', JSON.stringify(err));
+    }
+  }
+
+  /** 上次点过的目录（空串 = 没有记录，调用方按根目录处理） */
+  loadLastDir(vaultId: string): string {
+    if (this.store === null || vaultId.length === 0) {
+      return '';
+    }
+    return this.store.getSync('lastdir_' + vaultId, '') as string;
+  }
+
+  saveLastDir(vaultId: string, dir: string): void {
+    if (this.store === null || vaultId.length === 0) {
+      return;
+    }
+    try {
+      this.store.putSync('lastdir_' + vaultId, dir);
+      this.store.flush();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, 'lastdir 写入失败: %{public}s', JSON.stringify(err));
     }
   }
 }

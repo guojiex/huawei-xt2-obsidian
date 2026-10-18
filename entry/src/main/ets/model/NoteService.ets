@@ -30,7 +30,10 @@ export class NoteService {
    * - 每段按 `sanitizeVaultName` 消毒（去非法字符、去前导点、去空白）——所以段里输 `/` 会被吞掉，
    *   想建子目录请用 `/` 显式分隔；`..` 也到不了上级目录（前导点被去掉，且 Resolver 会拒绝）；
    * - 末段自动补 `.md`：笔记就该是 md，不补会在文件树里直接看不见（FileTree 只收 md）；
-   * - 全部为空 → 抛错，由调用方禁用确认按钮。
+   * - 全部为空 → 抛错，由调用方禁用确认按钮；
+   * - **末段为空**（路径以 `/` 结尾，如目录行 + 预填 `工程/` 后还没输名字）→ 抛错：
+   *   否则空段会被跳过，静默建出 `工程.md` 这种**根目录文件**，与用户意图正相反
+   *   （2026-10-18 加 initialDir 预填时发现的坑）。
    */
   static normalizeRelPath(raw: string): string {
     const parts: string[] = raw.split('/');
@@ -43,6 +46,10 @@ export class NoteService {
     }
     if (segs.length === 0) {
       throw new Error('笔记名为空');
+    }
+    // 末段为空 = 只给了目录没给名字（预填 initialDir 后的初始态就是这种）
+    if (parts[parts.length - 1].trim().length === 0) {
+      throw new Error('请填写笔记名称');
     }
     const last: string = segs[segs.length - 1].toLowerCase();
     if (!last.endsWith(NoteService.EXT) && !last.endsWith('.markdown')) {
