@@ -1056,6 +1056,7 @@
       ② <b>目录行尾的「+」</b>（只有目录行有，悬停才明显）—— 直接预填那个文件夹，一步到位。<br>
       对话框里<b>目录可改</b>：点目录行展开全库目录列表（<b>不受树折叠状态影响</b>，折叠目录里的嵌套目录也列得出来），<b>「根目录」恒为第一项</b> —— 要建在库根目录就显式选它。<br>
       名字<b>可以带 <code>/</code></b>（如 <code>工程/流式系统/第一篇</code>），缺少的目录会连名字一起建出来；非法字符（<code>\ : * ? " &lt; &gt; |</code>）直接过滤；重名自动加后缀；确认前实时预览目标路径。<br>
+      ⚠️ <b>末段必须是笔记名，不能以 <code>/</code> 结尾</b>（「只要目录/」会被拒绝：hint 警示 + 确认禁用）—— <b>暂不支持建空文件夹</b>，与 Obsidian 一致（文件夹永远跟着文件走）。这条边界 2026-10-18 才对齐：App 侧 <code>normalizeRelPath</code> 本就抛错，原型原先把末尾 <code>/</code> 当没输入、静默建成 <code>只要目录.md</code>，两端体验分裂。
       ⚠️ <b>设计稿原先没定义这个流程</b>：底部只有一个没绑行为的占位「新建」按钮，目录级新建入口、对话框形态均为实现期自补设计（2026-10-18 用户拍板：目录选择器 + 记忆上次目录）。</li>
     <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、包名、许可</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
@@ -1734,13 +1735,26 @@
     } else if (cfMode === 'note-new') {
       var segs = sanitizeNotePath(raw);
       var vv = vaultById(currentVault);
+      /* 末尾 / = 只想建目录没给名字。App 侧 normalizeRelPath 对这种抛错
+         「请填写笔记名称」。2026-10-18 用户问「文件夹里再建文件夹」场景时实测
+         两端不一致：原型曾把「只要目录/」静默建成 只要目录.md。此处对齐 App：
+         hint 警示 + 确认禁用，doCreateNote 里再拦一道（双保险）。 */
+      var trailingSlash = /\/\s*$/.test(String(raw || ''));
       var tail = segs.length ? segs.join('/') + '.md' : '…';
       var full = (vv ? vv.dir : 'vaults') + (cfDirPath ? '/' + cfDirPath : '') + '/' + tail;
-      hint.innerHTML = segs.length
-        ? '将创建：<code>' + esc(full) + '</code>'
+      var okB = document.getElementById('cfOk');
+      if (!segs.length) {
+        hint.innerHTML = '请填写笔记名称';
+        okB.disabled = true;
+      } else if (trailingSlash) {
+        hint.innerHTML = '名称不能以 <code>/</code> 结尾：<b>末段需要是笔记名</b>（暂不支持建空文件夹）';
+        okB.disabled = true;
+      } else {
+        hint.innerHTML = '将创建：<code>' + esc(full) + '</code>'
           + (dupInContainer(TREES[currentVault] || [], cfDirIdx, segs[segs.length - 1])
-            ? ' · 同名已存在，会自动加后缀' : '')
-        : '请填写笔记名称';
+            ? ' · 同名已存在，会自动加后缀' : '');
+        okB.disabled = false;
+      }
     }
   }
 
@@ -1754,6 +1768,7 @@
     var selRow = document.getElementById('cfSelectRow');
     var v = vaultById(id);
     okBtn.className = '';
+    okBtn.disabled = false;   // note-new 的 updateHint 会按名称合法度再禁用；其他模式复位
     row.classList.add('hidden');
     selRow.classList.add('hidden');
     pathEl.classList.add('hidden');
@@ -2080,8 +2095,13 @@
   }
 
   function doCreateNote() {
-    var segs = sanitizeNotePath(document.getElementById('cfInput').value);
-    if (!segs.length) { showToast('请填写笔记名称', '', null); return; }
+    var rawVal = document.getElementById('cfInput').value;
+    var segs = sanitizeNotePath(rawVal);
+    /* 与 App normalizeRelPath 对齐：末段为空（以 / 结尾）= 只给了目录没给名字，拒绝创建。
+       updateHint 里已禁用了确认按钮，这里是双保险（防 disabled 被绕过）。 */
+    if (!segs.length || /\/\s*$/.test(String(rawVal || ''))) {
+      showToast('请填写笔记名称', '', null); return;
+    }
     var rows = TREES[currentVault] || [];
     var cidx = (cfDirIdx >= 0 && rows[cfDirIdx]) ? cfDirIdx : -1;   // 从选中的目录出发
     /* 中间段：逐级找，缺少就建（新建的目录自动展开） */
