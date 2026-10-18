@@ -480,15 +480,21 @@ nativePort.onMessageEvent((result: WebMessage) => {
 import { fileIo } from '@kit.CoreFileKit';
 
 let atomicFile = new fileIo.AtomicFile(targetPath);
-let stream = atomicFile.openWrite();
 try {
-  stream.writeSync(content);
-  stream.closeSync();
-  atomicFile.finishWrite();   // 成功：临时文件重命名到目标位置
+  let stream = atomicFile.startWrite();   // 返回 WriteStream（不是 File！）
+  stream.write(content);                 // WriteStream.write(str)：继承自 stream.Writable，返回 boolean，无 callback 即同步缓冲写
+  stream.close();                        // WriteStream.close(): void —— 同步 flush + 关（注意：没有 closeSync）
+  atomicFile.finishWrite();              // 成功：临时文件重命名到目标位置
 } catch (err) {
-  atomicFile.failWrite();     // 失败：删临时文件，原文件不受影响
+  atomicFile.failWrite();                // 失败：删临时文件，原文件不受影响
 }
 ```
+
+⚠️ **实测踩坑（2026-10-18 编译）**：`AtomicFile` 的写入口是 **`startWrite()`**（非 `openWrite()`），
+返回 **`WriteStream`**（非 `File`）。`WriteStream` 的写/关方法是 **`write(str)`** 与 **`close(): void`**——
+**没有** `writeSync` / `closeSync`（那两个是 `File` 实例的方法，不是 `WriteStream` 的）。
+混淆二者会 `ERROR: Property 'writeSync'/'closeSync' does not exist on type 'WriteStream'`。
+另外 `WriteStream.write` 来自 `stream.Writable`，签名 `write(chunk?: string | Uint8Array, encoding?, callback?): boolean`。
 
 → **直接采纳**，替换 4.2 节的自研 tmp+rename，以及 fs 桥接层里工作区 md 的写入。
 
@@ -736,24 +742,27 @@ AppScope/app.json5 → app.versionCode / app.versionName
 按 `docs/releases/README.md` R1：版本目录 `v0.1` → `versionName = "0.1.0"`，`versionCode` 单调递增。
 **发布时必须同步**（R9 第 2 条），否则装到手机上的版本号与版本档案对不上。
 
-### H2 运行时读取版本号 ❓ 待核实（**别凭记忆写**）
+### H2 运行时读取版本号 ✅ 已核实（实现见 `SettingsView.ets`）
 
-候选路径（**均未核实，落码前必须 DevEco 补全确认**）：
+候选路径（**已用第一条，落码于 2026-10-18 设置与关于页**）：
 
 | 候选 | 说明 | 状态 |
 | --- | --- | --- |
-| `bundleManager.getBundleInfoForSelf(...)` → `BundleInfo.appInfo.versionName` | 读自身包信息 | ❓ 是否存在该 flag / 是否需要权限，未核实 |
+| `bundleManager.getBundleInfoForSelfSync(bundleFlags: number): BundleInfo` → `BundleInfo.versionName` / `versionCode` / `name` | 读自身包信息，**API 24 可用、读自身包无需额外权限** | ✅ 已用（`GET_BUNDLE_INFO_WITH_APPLICATION`） |
 | 资源文件 `$r('app.string.xxx')` 手写版本字符串 | 简单但**必然与 app.json5 漂移** | ❌ 不推荐 |
 | 构建期注入常量 | 需改构建脚本 | ❓ 待评估 |
 
 > **硬规则**：版本号**只能从包信息读出**或**构建期注入**，**禁止在源码里手写版本字符串**——手写必然与 `app.json5` 不一致，且每次发版都要记得改。
+>
+> ⚠️ 实测要点：`BundleInfo` 自身就带 `versionName` / `versionCode` / `name`（不必走 `appInfo` 子对象）；
+> 该同步接口读**自身**包信息不需要 `ohos.permission.GET_BUNDLE_INFO` 等权限；整段包在 `try/catch` 内，读不到时不崩、显示占位。
 
 ### H3 待核实清单
 
-| 编号 | 问题 |
-| --- | --- |
-| **H-1** | API 24 下运行时读取自身 `versionName` 的**确切接口与所需 flag**？读自身包信息是否需要权限？ |
-| **H-2** | `bundleManager` 的同步版本（如 `getBundleInfoForSelfSync`）在 API 24 是否可用？ |
+| 编号 | 问题 | 状态 |
+| --- | --- | --- |
+| **H-1** | API 24 下运行时读取自身 `versionName` 的**确切接口与所需 flag**？读自身包信息是否需要权限？ | ✅ 已核实：`getBundleInfoForSelfSync` + `GET_BUNDLE_INFO_WITH_APPLICATION`，无权限 |
+| **H-2** | `bundleManager` 的同步版本（如 `getBundleInfoForSelfSync`）在 API 24 是否可用？ | ✅ 已核实：可用 |
 
 ---
 
