@@ -1290,7 +1290,11 @@
   var drawer = false;
   var treeEl = document.getElementById('tree');
 
-  /* 目录层级：dir 用 depth，file 用 depth+1（子文件比父目录深一级） */
+  /* 目录层级：dir 用 depth，file 用 depth+1（子文件比父目录深一级）。
+     ⚠️ 只用于「视觉层级」场合（如路径拼接时给文件多算一级）；
+     折叠隐藏逻辑要用原始 row[3] —— 2026-10-18 jsdom 实测：根级文件（row[3]=0）
+     跟在折叠的顶层目录后面时，levelOf 算出 1 > hideLevel(0) 会被误藏，
+     与 App 侧「不递归进折叠目录」的语义不符（App 的根级文件永远可见）。 */
   function levelOf(row) { return row[0] === 'dir' ? row[3] : row[3] + 1; }
 
   function renderTree() {
@@ -1298,7 +1302,7 @@
     var html = '';
     var hideLevel = -1;              // 遇到折叠目录后，深于它的行全部隐藏
     for (var i = 0; i < rows.length; i++) {
-      var lv = levelOf(rows[i]);
+      var lv = rows[i][3];           // 原始深度：文件行的 depth 已含「比父目录深一级」
       if (hideLevel >= 0) {
         if (lv > hideLevel) { continue; }
         hideLevel = -1;              // 回到同级或更浅 → 解除隐藏
@@ -1777,6 +1781,15 @@
       document.getElementById('cfDirLabel').textContent = cfDirPath || '根目录';
       okBtn.classList.add('primary');
       okBtn.textContent = '创建';
+      /* ⚠️ 必须 return：函数后半段还有个 if (mode === 'delete') ... else { 重命名 v.name } 的
+         第二块，没有 mode 守卫 —— note-new 漏下去会落进 rename 的 else，而 vaultById(-1)
+         是 null，读 v.name 直接抛 TypeError，弹窗字段设好了也走不到 mask.classList.remove。
+         （2026-10-18 jsdom 实测复现：点「新建」无反应，堆栈 openDialog → v.name） */
+      updateHint();
+      document.getElementById('mask').classList.remove('hidden');
+      input.focus();
+      input.select();
+      return;
     } else if (mode === 'note-del' || mode === 'note-rename' || mode === 'dir-rename'
       || mode === 'note-move' || mode === 'dir-move') {
       var nm = nodeLabel(id);
