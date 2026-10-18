@@ -9,8 +9,8 @@
  * 路径铁律（硬约束 #14）：本文件**不拼任何沙箱路径**，
  * 绝对路径一律经 `VaultRegistry.absoluteIn()`（内部才是唯一的 VaultPathResolver）。
  *
- * 本文件当前只实现「新建」（v0.2 M1 的验证前提）；
- * 保存 / 读取 / 重命名 / 移动 / 删除分别在 M2、1.6 落到这里。
+ * 本文件当前实现：新建（M1 验证前提）、读取（M2/M3 共用）、**保存（M2 自动保存，
+ * AtomicFile 原子写，C1 硬约束）**、重命名 / 移动 / 删除（1.6 / 方案 A 已落）。
  */
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -132,6 +132,37 @@ export class NoteService {
       const err = error as BusinessError;
       hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取笔记失败 %{public}s: %{public}s', relPath, err.message);
       return '';
+    }
+  }
+
+  /**
+   * 保存笔记全文（M2 自动保存 / 2.3）。
+   * 用**官方 `AtomicFile`**（api_notes C1 ✅，API 24 可用）做原子写：
+   * `startWrite()` 返回 `WriteStream`，写用 `stream.write(str)`（继承自 stream.Writable，
+   * 返回 boolean、无 callback 即同步缓冲写），收尾用 `stream.close(): void`（同步 flush+关），
+   * 全部成功才 `finishWrite()` 落到目标——崩溃/中断时原文件完好、绝不写出半截内容；
+   * 失败 `failWrite()` 回滚不留 .tmp 残留。
+   * ⚠️ WriteStream 没有 `writeSync` / `closeSync`（那是 File 的方法），写/关只能用
+   * `write` / `close`。失败抛 `Error`：调用方（Index 自动保存）据此 toast。
+   */
+  static saveNote(registry: VaultRegistry, vaultId: string, relPath: string, content: string): void {
+    const abs: string = registry.absoluteIn(vaultId, relPath);
+    const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(abs);
+    try {
+      const stream = atomicFile.startWrite();
+      stream.write(content);
+      stream.close();
+      atomicFile.finishWrite();
+      hilog.info(NOTE_DOMAIN, NOTE_TAG, '保存笔记 %{public}s（%{public}d 字）', relPath, content.length);
+    } catch (error) {
+      try {
+        atomicFile.failWrite();
+      } catch (e) {
+        hilog.warn(NOTE_DOMAIN, NOTE_TAG, 'saveNote 回滚 failWrite 失败（忽略）');
+      }
+      const err = error as BusinessError;
+      hilog.error(NOTE_DOMAIN, NOTE_TAG, '保存笔记失败 %{public}s: %{public}s', relPath, err.message);
+      throw new Error('保存笔记失败: ' + err.message);
     }
   }
 

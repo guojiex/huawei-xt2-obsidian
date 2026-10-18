@@ -17,7 +17,8 @@
  * 数值 `Space/Radius/FontSize/Size/Motion`（common/Tokens.ets）、图标 `Icon()`（common/Icons.ets）。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
@@ -25,6 +26,7 @@ import { NoteService } from '../model/NoteService';
 import { FileTree } from '../model/FileTree';
 import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
+import { SettingsView } from '../components/SettingsView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { CreateNoteDialog, DeletePathDialog } from '../components/NoteDialogs';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
@@ -80,8 +82,8 @@ struct Index {
   @State drawerOpen: boolean = false;
   /** md/lg 侧栏收起态（瞬态 @State） */
   @State sidebarCollapsed: boolean = false;
-  /** 库管理视图整体替换内容区（原型 vaultsView 结构） */
-  @State showVaultManager: boolean = false;
+  /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
+  @State topView: string = 'note';
   /**
    * 当前打开文件的**库内相对路径**（如 `docs/架构.md`）。
    *
@@ -113,6 +115,17 @@ struct Index {
    * 只有一块屏放不下两栏；md/lg 两栏同时可见，这个状态不参与布局。
    */
   @State smMode: string = 'edit';
+
+  /**
+   * M2 自动保存（2.3）：编辑器 onChange → 防抖落盘。
+   * - `saveTimer`：-1 表示无待触发计时器；切换/后台时清零并立刻 flush。
+   * - `lastSavedText`：当前文件「已落盘或已加载」的内容镜像，用于跳过无变化的冗余写，
+   *   也防止 Web 的 setContent 回灌 change 事件被误判成新编辑而重写一遍。
+   * ⚠️ 切文件 / 新建 / 删除当前文件前必须先 flush 旧文件 —— 否则防抖触发时编辑器已是
+   * 新文件内容，却写进旧路径，造成数据损坏（实现见 loadFile / doCreateNote / doDeletePath）。
+   */
+  private saveTimer: number = -1;
+  private lastSavedText: string = '';
 
   /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
@@ -150,8 +163,8 @@ struct Index {
       this.drawerOpen = false;
       return true;
     }
-    if (this.showVaultManager) {
-      this.showVaultManager = false;
+    if (this.topView !== 'note') {
+      this.topView = 'note';
       return true;
     }
     if (this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
@@ -159,6 +172,11 @@ struct Index {
       return true;
     }
     return false;
+  }
+
+  /** 页面隐藏（应用退到后台）：立刻落盘，兜底「杀进程重进内容还在」（2.3） */
+  onPageHide(): void {
+    void this.flushSave();
   }
 
   /** 当前库名（显示名 = 目录名 = id；注册表兜底） */
@@ -172,26 +190,106 @@ struct Index {
    * 默认意图是「看/改它」，而不是开抽屉也不看 preview。
    */
   private onSelectFile(relPath: string): void {
-    this.currentFilePath = relPath;
+    hilog.info(DOMAIN, TAG, '选中文件 %{public}s', relPath);
     if (this.breakpoint === Breakpoint.SM) {
       this.drawerOpen = false;
       this.smMode = 'edit';
     }
-    void this.syncEditorContent();
+    void this.loadFile(relPath);
   }
 
   /**
-   * 把当前选中笔记的全文下发给 Web 编辑器（M0.5 spike 的加载路径）。
+   * 读取笔记全文并下发给 Web 编辑器（M0.5 spike 的加载路径）。
    * 读文件在 ArkTS 侧做（组件不碰 IO，硬约束 14）；读失败给空串，不弹错不崩。
+   * ⚠️ **先更新 `lastSavedText` 再下发给编辑器**：若 Web 的 setContent 回灌一个 change
+   * 事件，guard 才能识别「内容没变」跳过冗余写（否则会被当成新编辑重写一遍）。
    */
-  private async syncEditorContent(): Promise<void> {
-    if (this.currentVaultId.length === 0 || this.currentFilePath.length === 0) {
-      await this.editorBridge.setContent('');
+  private async readAndPush(relPath: string): Promise<string> {
+    let text: string = '';
+    if (this.currentVaultId.length > 0 && relPath.length > 0) {
+      text = NoteService.readNote(VaultRegistry.get(), this.currentVaultId, relPath);
+    }
+    this.lastSavedText = text;
+    await this.editorBridge.setContent(text);
+    return text;
+  }
+
+  /**
+   * 切换当前打开的文件（M2 协同 2.3）。
+   *
+   * ⚠️ **顺序（2026-10-18 修 bug 后定案）**：先把 `currentFilePath` 指向新文件，
+   * 再去 flush 旧文件（用捕获的 `prev` 作写入目标），最后加载新内容。
+   * 之前写成「先 await flushSave() 再赋值」有两个错：
+   *  1. flush 是跨进程 Web 调用（getContent → runJavaScript），一抛错/卡住，
+   *     `currentFilePath` 和 readAndPush 就永远不执行 —— 用户表现是「点了文件没反应、
+   *     左下角文件名一直停在第一篇」（loadFile 是 void 调用，异常被静默吞掉）。
+   *  2. UI（侧栏选中态 / 底部状态栏 / 编辑区标题）都被一次异步 IO 拖住才更新。
+   * 改成先切指针后 flush，UI 立刻跟上；flush 用捕获的 prev 写旧内容，**不会串到新路径**。
+   */
+  private async loadFile(relPath: string): Promise<void> {
+    const prev: string = this.currentFilePath;
+    this.currentFilePath = relPath;
+    // flush 失败不能挡住打开新文件：见 flushSave 的「永不抛错」约定
+    await this.flushSave(prev);
+    await this.readAndPush(relPath);
+  }
+
+  /**
+   * 立刻把编辑器当前内容落盘（防抖到点 / 切文件前 / 后台时调用）。
+   *
+   * @param targetPath 写入目标，缺省为 `currentFilePath`。切文件时由 loadFile 传入**旧路径**：
+   *   那时指针已经指向新文件，但编辑器里还是旧内容，必须写回旧路径。
+   *
+   * ⚠️ **本函数约定「永不抛错」**：它是尽力而为的保存，调用方（loadFile 切文件、
+   *   doDeletePath 删除、onPageHide 后台兜底）都排在关键动作之前，一旦抛出就会
+   *   连带把「打开文件 / 删除」整个动作吞掉（void 调用 + 静默 rejection）。
+   *   所以 getContent 与 saveNote 两处 IO 都各自包 try/catch。
+   */
+  private async flushSave(targetPath: string = ''): Promise<void> {
+    if (this.saveTimer !== -1) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = -1;
+    }
+    const path: string = targetPath.length > 0 ? targetPath : this.currentFilePath;
+    if (this.currentVaultId.length === 0 || path.length === 0) {
       return;
     }
-    const text: string = NoteService.readNote(
-      VaultRegistry.get(), this.currentVaultId, this.currentFilePath);
-    await this.editorBridge.setContent(text);
+    // 编辑器未就绪时 getContent 返回 ''，此时落盘会把真实文件清空 —— 必须跳过
+    if (!this.editorBridge.ready) {
+      return;
+    }
+    let text: string = '';
+    try {
+      text = await this.editorBridge.getContent();
+    } catch (error) {
+      // 拉不到内容：放弃这次保存（拿空串落盘会清空文件），但绝不让异常外泄挡住调用方
+      const err = error as BusinessError;
+      hilog.warn(DOMAIN, TAG, 'flushSave 拉取编辑器内容失败，跳过保存: %{public}s', err.message);
+      return;
+    }
+    if (text === this.lastSavedText) {
+      return;
+    }
+    try {
+      NoteService.saveNote(VaultRegistry.get(), this.currentVaultId, path, text);
+      this.lastSavedText = text;
+    } catch (error) {
+      this.toastRegistryError('保存失败', error);
+    }
+  }
+
+  /** 编辑器有改动：防抖 800ms 后再落盘，避免每次击键都写盘 */
+  private scheduleSave(): void {
+    if (this.currentFilePath.length === 0) {
+      return;
+    }
+    if (this.saveTimer !== -1) {
+      clearTimeout(this.saveTimer);
+    }
+    this.saveTimer = setTimeout((): void => {
+      this.saveTimer = -1;
+      void this.flushSave();
+    }, 800);
   }
 
   /** 状态栏右侧读数：形态 · vp · FS:N（有折痕时追加 · C:x,y，px 在此换算成 vp） */
@@ -281,9 +379,8 @@ struct Index {
       const reg: VaultRegistry = VaultRegistry.get();
       const rel: string = NoteService.normalizeRelPath(rawName);
       const actual: string = NoteService.createNote(reg, this.currentVaultId, rel);
-      // （2026-10-18 用户拍板：移除「新建笔记」底部按钮、改目录树头部「＋」= 根目录入口，
-      //  不再记忆上次目录，故这里不再 saveLastDir。）
-      this.currentFilePath = actual;
+      // 新笔记是空文件：先 flush 旧文件编辑，再指向新文件并加载空内容（loadFile 内部处理）
+      void this.loadFile(actual);
       this.revealPath = actual;
       this.treeSeq++;
       if (this.breakpoint === Breakpoint.SM) {
@@ -326,16 +423,21 @@ struct Index {
    * ⚠️ 不可恢复（回收站是需求池 B 组）—— 调用方（openDeletePathDialog）必须先过确认框。
    * 删的是正在编辑的文件（或其子孙）时清空编辑器：留着已不存在文件的标题比空着更坏。
    */
-  private doDeletePath(relPath: string): void {
+  private async doDeletePath(relPath: string): Promise<void> {
     if (this.currentVaultId.length === 0) {
       return;
     }
     try {
-      NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
-      if (this.currentFilePath === relPath
-        || this.currentFilePath.startsWith(relPath + '/')) {
+      // 删的是当前打开的文件（或其父目录）时：先落盘编辑，再删（删完文件就不复存在，
+      // 且必须在 deletePath 之前 await 完，否则 flushSave 的 getContent 在文件已删后
+      // 写回会 recreate 一个本该消失的文件）。
+      const isCurrent: boolean = this.currentFilePath === relPath
+        || this.currentFilePath.startsWith(relPath + '/');
+      if (isCurrent) {
+        await this.flushSave();
         this.currentFilePath = '';
       }
+      NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
       this.revealPath = '';
       this.treeSeq++;
     } catch (error) {
@@ -510,8 +612,10 @@ struct Index {
     Column() {
       this.Appbar()
       Stack() {
-        if (this.showVaultManager) {
+        if (this.topView === 'vaults') {
           this.ManagerView()
+        } else if (this.topView === 'settings') {
+          this.SettingsPane()
         } else if (this.breakpoint === Breakpoint.SM) {
           this.SmContent()
         } else {
@@ -528,17 +632,20 @@ struct Index {
   }
 
   /**
-   * 顶栏（需求 2.7）：笔记视图 = 汉堡（sm 抽屉 / md+lg 收起唤回）+ 标题 +「库管理」；
-   * 库管理视图 = 左上角换返回箭头 + 标题「笔记库」，右侧入口收敛。
+   * 顶栏（需求 2.7，贴合设计稿）：
+   *  - 笔记视图 = 汉堡（sm 抽屉 / md+lg 收起唤回）+ 标题（当前库名）+ 右上「同步 + 设置」图标；
+   *  - 次级视图（库管理 / 设置与关于）= 左上角换返回箭头 + 标题「笔记库」/「设置与关于」，
+   *    右上图标收敛（设计稿：同步图标仅在笔记视图显示、设置图标在设置视图隐藏）；
+   *  - 库管理入口不放在顶栏（侧栏下拉「管理库…」+ 底部「管理库」已覆盖，避免重复）。
    * v0.2 §3.5：高度 56vp、标题 20fp/700、图标热区 48、颜色走 token。
    */
   @Builder
   Appbar() {
     Row() {
-      if (this.showVaultManager) {
+      if (this.topView !== 'note') {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
         this.IconButton('back', $r('app.color.text_primary'), (): void => {
-          this.showVaultManager = false;
+          this.topView = 'note';
         })
       } else {
         this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
@@ -546,7 +653,8 @@ struct Index {
         })
       }
       // 原型 VIEW_TITLE：次级视图标题固定为视图名，不显示当前库名
-      Text(this.showVaultManager ? '笔记库' : this.currentVaultName())
+      Text(this.topView === 'note' ? this.currentVaultName()
+        : (this.topView === 'vaults' ? '笔记库' : '设置与关于'))
         .fontSize(FontSize.s2)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
@@ -554,17 +662,15 @@ struct Index {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ left: Space.s2, right: Space.s2 })
-      if (!this.showVaultManager) {
-        Text('库管理')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_secondary'))
-          .height(Size.touch)
-          .padding({ left: Space.s3, right: Space.s3 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.control)
-          .onClick(() => {
-            this.showVaultManager = true;
-          })
+      if (this.topView === 'note') {
+        // 设计稿顶栏右上 = 同步 + 设置 两个图标（库管理在侧栏下拉进，顶栏不重复摆）
+        this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
+          // 同步（Git 同步是 v0.3 能力）：跳独立「导入仓库」页
+          router.pushUrl({ url: 'pages/SyncPage' });
+        })
+        this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
+          this.topView = 'settings';
+        })
       }
     }
     .width('100%')
@@ -604,7 +710,7 @@ struct Index {
           },
           onManageVaults: (): void => {
             this.drawerOpen = false;
-            this.showVaultManager = true;
+            this.topView = 'vaults';
           },
           onCreateNote: (): void => {
             this.drawerOpen = false;
@@ -652,7 +758,7 @@ struct Index {
               this.doSwitchVault(id);
             },
             onManageVaults: (): void => {
-              this.showVaultManager = true;
+              this.topView = 'vaults';
             },
             onCreateNote: (): void => {
               this.openCreateNoteDialog();
@@ -743,15 +849,16 @@ struct Index {
         EditorWebView({
           bridge: this.editorBridge,
           onChange: (len: number): void => {
-            // 编辑中：只记长度（spike 期观察击键是否过桥正常）；保存是 M2 的事
+            // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
             if (len !== this.editorLen) {
               this.editorLen = len;
             }
+            this.scheduleSave();
           },
           onReady: (): void => {
-            // 页面就绪后补一次内容下发：EditorWebView 的指令队列保证此前收到的
+            // 页面就绪后补一次内容加载：EditorWebView 的指令队列保证此前收到的
             // setContent 不丢，但首帧若在选中文件之前就绪，这里再同步一次更稳
-            void this.syncEditorContent();
+            void this.loadFile(this.currentFilePath);
           },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '编辑器 Web: %{public}s', msg);
@@ -818,6 +925,15 @@ struct Index {
       onCreate: (): void => {
         this.openCreateDialog();
       }
+    })
+  }
+
+  /** 设置与关于视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级） */
+  @Builder
+  SettingsPane() {
+    SettingsView({
+      breakpoint: this.breakpoint,
+      currentVaultId: this.currentVaultId
     })
   }
 

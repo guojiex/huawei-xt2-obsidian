@@ -88,6 +88,11 @@ export class EditorBridge {
     this.impl = impl
   }
 
+  /** 编辑器页面是否就绪（ready 前 getContent 会返回 ''，落盘会清空文件，故保存前必查） */
+  get ready(): boolean {
+    return this.impl?.ready ?? false
+  }
+
   async setContent(text: string): Promise<void> {
     await this.impl?.setContent(text)
   }
