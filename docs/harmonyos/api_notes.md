@@ -939,9 +939,9 @@ sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
 
 ---
 
-## L 组：弹层与命中的两个坑（2026-10-18 实测，侧栏下拉菜单 + 文件树）
+## L 组：弹层、命中与 JS 桥接的坑（2026-10-18 实测，侧栏下拉菜单 + 文件树 + M0.5 spike）
 
-> 两条都是**模拟器实测复现 + 修复验证**过的，不是纸面结论。踩坑位置：`VaultSidebar` 库切换下拉菜单、`FileTreeView` 行点击。
+> 全部是**模拟器实测复现 + 修复验证**过的，不是纸面结论。踩坑位置：`VaultSidebar` 库切换下拉菜单、`FileTreeView` 行点击、`EditorWebView` + `web/mdeditor` 桥接。
 
 ### L-1 下拉菜单被文件树盖住 → 必须用 `bindPopup`，不能自己摆溢出节点 ❓→✅
 
@@ -998,6 +998,54 @@ sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
 `versionCode` 是装机唯一判定依据，语义版本放 `versionName`。
 本项目口径：v0.1 = 1000000，v0.2 = **1000001**（只递增）。
 
+### L-4 JS 调 ArkTS 桥接（`registerJavaScriptProxy`）两个坑 ❓→✅
+
+> 2026-10-18 排查 M0.5 spike「ready 事件不过桥」定位，模拟器实测修复验证。
+> 踩坑位置：`EditorWebView.ets` + `web/mdeditor/src/index.ts`。
+
+**坑 1（真正的根因）：桥接方法必须挂在注入对象上直接调用，不能 detach。**
+
+```typescript
+// ❌ 抛 "Javascript bridge method can't be invoked on a non-injected object"
+const fn = window.__arkts?.postMessage
+fn(JSON.stringify(msg))
+// ✅ 直接挂在对象上调
+window.__arkts.postMessage(JSON.stringify(msg))
+```
+
+Chromium 桥接方法（与 Android `@JavascriptInterface` 同款机制，crbug 514628）依赖**接收者 `this`**
+做注入校验：方法一旦从对象上取下来再调，`this` 丢失，一律判「非注入对象」。
+**误判警示**：此时 `typeof window.__arkts.postMessage === 'function'` 仍然是 true ——
+曾据此误判成「对象只是个未注入的壳」，白排查一轮。typeof 正常但调用报 non-injected，
+第一反应应该是查调用方式（detach / this），不是查注册。
+
+**坑 2（注册时机）：在 `onControllerAttached` 里注册，不要等 `onPageEnd`。**
+
+- `onControllerAttached`（SDK `component/web.d.ts:7214`，**@since 10**）是官方生命周期文档
+  建议的注入时机：controller 绑定后、页面加载前 → 代理随本次页面加载一起注入，
+  **无需 `refresh()`、页面只加载一次**，页面脚本首轮执行就能看到对象（实测 `try=0 arkts=yes`）。
+- `onPageEnd` 里注册：SDK 原话 *"Registed objects will not appear in JavaScript until the page
+  is next (re)load."* —— 必须再 `refresh()`，页面加载两遍。
+- `onPageBegin` 注册已属太晚（页面已开始加载）。
+
+**`WebviewController.registerJavaScriptProxy` 正确签名**（位置参数版，API 9+；options 对象版属于
+已 deprecated 的 `WebController`，混用直接编译错）：
+
+```typescript
+registerJavaScriptProxy(jsObject: object, name: string, methodList: Array<string>,
+                        asyncMethodList?: Array<string>, permission?: string): void
+```
+
+- `methodList` 同步方法（可拿返回值）；`asyncMethodList` 异步方法（不阻塞 JS 线程、无返回值）；
+  同一方法只注册到一个列表，重复注册默认按异步。
+- `permission` 默认空串 = 不做 URL 白名单校验；rawfile 页面生产环境建议显式配
+  `{"scheme":"resource","host":"rawfile","port":"","path":""}`。
+- 注册后必须 `refresh()` 才生效**仅对「注册时页面已加载」成立**；`onControllerAttached` 时机不需要。
+
+**实测通过（2026-10-18 三屏态）**：`onControllerAttached` 注册 → 页面单次加载 →
+`announceReady try=0 arkts=yes` → `ready sent to ArkTS at try=0` → ArkTS 侧
+`Web 编辑器页面就绪，桥接已建立`。JS→ArkTS 方向自此跑通（此前 gitbridge 只验证过 ArkTS→JS）。
+
 ---
 
 ## 落地决策表
@@ -1030,3 +1078,6 @@ sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
 | **浮在内容之上的菜单/浮层** | ✅ **一律走官方弹层**（`bindPopup` 等）；❌ 禁「offset 溢出 + 绝对定位」手搓浮层（会被后声明组件盖住，**L-1 实测**） | 已落地（侧栏库切换菜单） |
 | **行内子控件吃点击** | ✅ 行内不参与命中的节点统一 `hitTestBehavior(HitTestMode.None)`，冒泡到外层 Row（**L-2 实测**） | 已落地（文件树行） |
 | **versionCode** | ✅ 单调递增（v0.1=1000000 → v0.2=1000001）；调小直接 `install version downgrade` 装不上（**L-3 实测**） | 已是现状 |
+| **JS→ArkTS 桥接调用方式** | ✅ 桥接方法**必须挂在注入对象上直接调**（`window.__arkts.postMessage(x)`）；detach 后调用抛 `non-injected object`，且 `typeof` 仍是 function（**L-4 实测**，曾误判成「壳」） | 已落地（EditorWebView / gitbridge 复用） |
+| **桥接代理注册时机** | ✅ `onControllerAttached`（页面加载前，单次加载即注入）；❌ `onPageEnd` 注册要 `refresh()` 且页面加载两遍（**L-4 实测**） | 已落地（EditorWebView） |
+| **registerJavaScriptProxy 签名** | ✅ 位置参数版 `(obj, name, methodList, asyncMethodList?, permission?)`；options 对象版是 deprecated `WebController` 的，编译直接错 | 已是现状 |

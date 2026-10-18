@@ -1,0 +1,19 @@
+{
+  "name": "mdeditor",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "description": "运行在 Web 组件内的 CodeMirror 6 Markdown 编辑器（M0.5 spike）",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/theme-one-dark": "^6.1.2",
+    "codemirror": "^6.0.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
