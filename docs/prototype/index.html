@@ -384,6 +384,40 @@
   }
   .side-foot button { flex: 1; min-width: 0; font-size: var(--fs-body3); }
 
+  /* 目录行行内「+」：在该文件夹下新建笔记（仅目录行有，文件行没有） */
+  .node .row-plus {
+    flex: none; width: 32px; height: 32px; margin-right: calc(-1 * var(--sp-2));
+    border: none; border-radius: var(--r-control); background: none; color: var(--text-tertiary);
+    display: none; align-items: center; justify-content: center; cursor: pointer; padding: 0;
+  }
+  .node .row-plus svg { width: 16px; height: 16px; }
+  .node.dir .row-plus { display: inline-flex; }
+  .node .row-plus:hover { background: var(--bg-secondary); color: var(--brand); }
+  .node.sel .row-plus { color: var(--brand); }
+
+  /* 新建笔记对话框：目录选择器（点行展开内联列表，根目录恒第一项） */
+  .dir-pick {
+    width: 100%; display: flex; align-items: center; gap: var(--sp-2);
+    padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-control);
+    background: var(--bg-secondary); color: var(--text-primary); font-size: var(--fs-body2);
+    font-family: inherit; cursor: pointer; text-align: left; min-width: 0;
+  }
+  .dir-pick:hover { border-color: var(--brand); }
+  .dir-pick .dp-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dir-pick .dp-chev { flex: none; color: var(--text-tertiary); font-size: 10px; }
+  .dir-list {
+    margin-top: var(--sp-2); max-height: 168px; overflow: auto;
+    border: 1px solid var(--line); border-radius: var(--r-control); background: var(--bg-card);
+  }
+  .dir-list .dl-row {
+    display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+    font-size: var(--fs-body2); color: var(--text-primary); cursor: pointer; min-width: 0;
+  }
+  .dir-list .dl-row:hover { background: var(--bg-secondary); }
+  .dir-list .dl-row.on { background: var(--brand-bg-solid); color: var(--brand); font-weight: 500; }
+  .dir-list .dl-row .dl-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dir-list .dl-row .dl-n { flex: none; font-size: var(--fs-body3); color: var(--text-tertiary); }
+
   /* 编辑区 */
   .editor-pane { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
   .pane-head {
@@ -784,7 +818,7 @@
             <div class="sw-hint">← 按住任意一行向左拖：拖一半出操作，滑到底直接删除</div>
             <div class="side-foot">
               <button id="gotoVaults">管理库</button>
-              <button>新建</button>
+              <button id="newNoteBtn">新建笔记</button>
             </div>
           </aside>
 
@@ -932,6 +966,14 @@
             <input id="cfInput" placeholder="库名称">
             <div class="cf-hint" id="cfHint"></div>
           </div>
+          <div class="cinput hidden" id="cfDirRow">
+            <button class="dir-pick" id="cfDirPick">
+              <span class="dp-label" id="cfDirLabel">根目录</span>
+              <span class="dp-chev">▾</span>
+            </button>
+            <div class="dir-list hidden" id="cfDirList"></div>
+            <div class="cf-hint" id="cfDirHint">默认建在上次所在的文件夹；要建在库根目录，选第一项「根目录」。</div>
+          </div>
           <div class="cinput hidden" id="cfSelectRow">
             <select id="cfSelect"></select>
             <div class="cf-hint" id="cfSelHint"></div>
@@ -1009,6 +1051,12 @@
       ③ <b>文件夹没有第三档</b>：滑到底只会回弹并提示「文件夹不能直接删除」——误删一个目录就是整个子树没了。<br>
       越过操作条后拖动带阻尼（越滑越沉），防止手一抖就删掉。同一时刻只允许一行滑开，拖动超过 6px 就不算点击（避免误打开文件）。</li>
     <li><b>目录树可展开 / 折叠</b>：点目录行（或左侧箭头）切换，<b>折叠只影响显示，不动文件</b>；正在编辑的文件即使被折叠也不会关闭。子文件缩进比父目录深一级，<code>▾</code> = 展开、<code>▸</code> = 折叠，文件夹图标开口 / 闭合同步变化。<b>展开状态按库分别记忆</b>（切库回来还是原来的样子）。</li>
+    <li><b>新建笔记有两个入口，共用一个对话框</b>：<br>
+      ① <b>侧栏底部「新建笔记」</b> —— 默认建在<b>上次所在的文件夹</b>（点目录行记该目录、点文件行记它的父目录，按库记忆，杀进程不丢）；<br>
+      ② <b>目录行尾的「+」</b>（只有目录行有，悬停才明显）—— 直接预填那个文件夹，一步到位。<br>
+      对话框里<b>目录可改</b>：点目录行展开全库目录列表（<b>不受树折叠状态影响</b>，折叠目录里的嵌套目录也列得出来），<b>「根目录」恒为第一项</b> —— 要建在库根目录就显式选它。<br>
+      名字<b>可以带 <code>/</code></b>（如 <code>工程/流式系统/第一篇</code>），缺少的目录会连名字一起建出来；非法字符（<code>\ : * ? " &lt; &gt; |</code>）直接过滤；重名自动加后缀；确认前实时预览目标路径。<br>
+      ⚠️ <b>设计稿原先没定义这个流程</b>：底部只有一个没绑行为的占位「新建」按钮，目录级新建入口、对话框形态均为实现期自补设计（2026-10-18 用户拍板：目录选择器 + 记忆上次目录）。</li>
     <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、包名、许可</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
@@ -1266,6 +1314,8 @@
       items[j].addEventListener('click', function () {
         if (moved) { moved = false; return; }
         current = this.getAttribute('data-id');
+        var fi = nodeIdx(current);
+        if (fi >= 0) { lastDir = pathBefore(fi, (TREES[currentVault] || [])[fi][3]); }
         loadFile();
         if (body.getAttribute('data-form') === 'sm') { toggleDrawer(false); }
       });
@@ -1278,7 +1328,20 @@
         if (moved) { moved = false; return; }
         var idx = parseInt(this.getAttribute('data-dir'), 10);
         var rs = TREES[currentVault] || [];
-        if (rs[idx]) { rs[idx][2] = !rs[idx][2]; renderTree(); }
+        if (rs[idx]) {
+          rs[idx][2] = !rs[idx][2];
+          lastDir = pathBefore(idx, levelOf(rs[idx]) + 1);
+          renderTree();
+        }
+      });
+    }
+    /* 行内「+」（仅目录行）：在这个文件夹下新建笔记 —— 不触发展开/折叠 */
+    var plusBtns = treeEl.querySelectorAll('[data-plus]');
+    for (var pb = 0; pb < plusBtns.length; pb++) {
+      plusBtns[pb].addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (moved) { moved = false; return; }
+        openDialog('note-new', parseInt(this.getAttribute('data-plus'), 10));
       });
     }
     /* 操作条按钮：重命名 / 移动 / 删除（删除仅文件） */
@@ -1469,6 +1532,7 @@
   var ICON_RENAME = '<svg' + IA + '><path d="M15.4 4.6l4 4L8.6 19.4H4.6v-4z"/><path d="M13.4 6.6l4 4"/></svg>';
   var ICON_MOVE = '<svg' + IA + '><path d="M3.6 6.6a1.9 1.9 0 011.9-1.9h3.2l1.9 2.2h6.8a1.9 1.9 0 011.9 1.9v.6"/><path d="M3.6 8.8h16.8v7.6a2.4 2.4 0 01-2.4 2.4H6a2.4 2.4 0 01-2.4-2.4z"/><path d="M9.4 13.2h7.4M14 10.6l2.8 2.6L14 15.8"/></svg>';
   var ICON_TRASH = '<svg' + IA + '><path d="M4.6 7.2h14.8"/><path d="M9.6 7.2V5.4a1.4 1.4 0 011.4-1.4h2a1.4 1.4 0 011.4 1.4v1.8"/><path d="M6.6 7.2l.8 11a2 2 0 002 1.9h5.2a2 2 0 002-1.9l.8-11"/></svg>';
+  var ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 
   function nodeHtml(row, idx) {
     var kind = row[0], label = row[1], open = row[2], depth = row[3], id = row[4];
@@ -1484,6 +1548,11 @@
       ? ' data-dir="' + idx + '" title="点击展开 / 折叠 · 左滑重命名或移动"'
       : (id ? ' data-id="' + id + '" title="点击打开 · 左滑出操作 · 滑到底直接删除"' : '');
     var sub = (kind === 'file' && META[id]) ? '<span class="nsub">' + META[id] + '</span>' : '';
+    /* 行内「+」：仅目录行 —— 点了直接在这个文件夹下新建笔记（点它不触发展开/折叠） */
+    var plus = kind === 'dir'
+      ? '<button class="row-plus" data-plus="' + idx + '" title="在此文件夹下新建笔记">'
+        + ICON_PLUS + '</button>'
+      : '';
     /* 目录不给「删除」：误删一个目录 = 整个子树消失 */
     var acts = '<button class="sw-btn" data-act="rename" title="重命名">' + ICON_RENAME + '</button>'
       + '<button class="sw-btn" data-act="move" title="移动">' + ICON_MOVE + '</button>'
@@ -1491,7 +1560,7 @@
         + ICON_TRASH + '<span class="sw-txt">松手删除</span></button>');
     return '<div class="node-wrap" data-kind="' + kind + '" data-idx="' + idx + '">'
       + '<div class="' + cls + '"' + attrs + '>' + guides + caret + icon
-      + '<span class="nlabel">' + esc(label) + sub + '</span></div>'
+      + '<span class="nlabel">' + esc(label) + sub + '</span>' + plus + '</div>'
       + '<div class="swipe">' + acts + '</div></div>';
   }
 
@@ -1552,6 +1621,7 @@
   function switchVault(id) {
     if (id === currentVault) { return; }
     currentVault = id;
+    lastDir = '';                 // 目录记忆按库分别生效，切库回根
     var rows = TREES[id] || [];
     for (var i = 0; i < rows.length; i++) {
       if (rows[i][0] === 'file') { current = rows[i][4]; break; }
@@ -1606,6 +1676,10 @@
   /* 名称即目录名：显示名与 vaults/ 下的目录名始终一致 */
   var cfMode = 'delete';
   var cfTarget = '';
+  /* 新建笔记：目标目录（'' = 库根目录）+ 上次所在的目录（按库记忆，切库清空） */
+  var cfDirPath = '';
+  var cfDirIdx = -1;
+  var lastDir = '';
 
   // 目录名消毒：去掉路径分隔符与 Windows 非法字符、控制字符、前导点
   function sanitizeDir(name) {
@@ -1653,6 +1727,16 @@
         ? '<code>vaults/' + esc(v.id) + '</code> → <code>vaults/' + esc(id) + '</code>'
           + (id !== d ? ' · 与现有库重名，已自动加后缀' : '')
         : '名称不能为空';
+    } else if (cfMode === 'note-new') {
+      var segs = sanitizeNotePath(raw);
+      var vv = vaultById(currentVault);
+      var tail = segs.length ? segs.join('/') + '.md' : '…';
+      var full = (vv ? vv.dir : 'vaults') + (cfDirPath ? '/' + cfDirPath : '') + '/' + tail;
+      hint.innerHTML = segs.length
+        ? '将创建：<code>' + esc(full) + '</code>'
+          + (dupInContainer(TREES[currentVault] || [], cfDirIdx, segs[segs.length - 1])
+            ? ' · 同名已存在，会自动加后缀' : '')
+        : '请填写笔记名称';
     }
   }
 
@@ -1670,7 +1754,30 @@
     selRow.classList.add('hidden');
     pathEl.classList.add('hidden');
 
-    if (mode === 'note-del' || mode === 'note-rename' || mode === 'dir-rename'
+    if (mode === 'note-new') {
+      /* 新建笔记：目录选择器（点行展开全库目录列表，根目录恒第一项）+ 名称输入。
+         目标目录优先级：行内 + 按钮带来的目录 > 上次所在的目录（lastDir）。 */
+      document.getElementById('cfTitle').textContent = '新建笔记';
+      document.getElementById('cfDesc').innerHTML =
+        '选一个文件夹，再填笔记名。名字可以带 <code>/</code>，缺少的目录会一起建出来。';
+      input.value = '';
+      input.placeholder = '笔记名称';
+      row.classList.remove('hidden');
+      document.getElementById('cfDirRow').classList.remove('hidden');
+      document.getElementById('cfDirList').classList.add('hidden');
+      var wantIdx = (typeof id === 'number') ? id : -1;
+      var rows0 = TREES[currentVault] || [];
+      if (wantIdx >= 0 && rows0[wantIdx] && rows0[wantIdx][0] === 'dir') {
+        cfDirIdx = wantIdx;
+        cfDirPath = pathBefore(wantIdx, levelOf(rows0[wantIdx]) + 1);
+      } else {
+        cfDirIdx = dirIdxByPath(lastDir);
+        cfDirPath = lastDir;
+      }
+      document.getElementById('cfDirLabel').textContent = cfDirPath || '根目录';
+      okBtn.classList.add('primary');
+      okBtn.textContent = '创建';
+    } else if (mode === 'note-del' || mode === 'note-rename' || mode === 'dir-rename'
       || mode === 'note-move' || mode === 'dir-move') {
       var nm = nodeLabel(id);
       var vv = vaultById(currentVault);
@@ -1756,6 +1863,7 @@
     document.getElementById('mask').classList.add('hidden');
     if (cfMode === 'delete') { doDelete(id); }
     else if (cfMode === 'create') { doCreate(); }
+    else if (cfMode === 'note-new') { doCreateNote(); }
     else if (cfMode === 'rename') { doRename(id); }
     else if (cfMode === 'note-del') { doDeleteNote(id); }
     else if (cfMode === 'note-rename' || cfMode === 'dir-rename') {
@@ -1856,6 +1964,160 @@
     document.getElementById('cfSelect').innerHTML = html;
     document.getElementById('cfSelHint').innerHTML = '共 ' + n + ' 个可选文件夹';
   }
+
+  /* ---------- 新建笔记（2026-10-18 补设计稿：原型的「新建」是没绑行为的占位按钮） ---------- */
+
+  /* 扫描 rows[0..idx]，取前 levels 段目录名拼成路径（'' = 库根目录） */
+  function pathBefore(idx, levels) {
+    var rows = TREES[currentVault] || [];
+    var stack = [];
+    for (var i = 0; i <= idx && i < rows.length; i++) {
+      if (rows[i][0] !== 'dir') { continue; }
+      var d = rows[i][3];
+      stack.length = d; stack[d] = rows[i][1];
+    }
+    return stack.slice(0, levels).join('/');
+  }
+
+  /* 路径 → 目录行下标（找不到回 -1 = 根目录） */
+  function dirIdxByPath(path) {
+    if (!path) { return -1; }
+    var rows = TREES[currentVault] || [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i][0] !== 'dir') { continue; }
+      if (pathBefore(i, rows[i][3] + 1) === path) { return i; }
+    }
+    return -1;
+  }
+
+  /* 目录子树里的文件数（目录列表里显示「n 篇」） */
+  function countFilesUnder(rows, idx) {
+    var rg = nodeRange(rows, idx);
+    var n = 0;
+    for (var i = rg[0] + 1; i < rg[1]; i++) { if (rows[i][0] === 'file') { n++; } }
+    return n;
+  }
+
+  /* 笔记名 → 路径段数组：按 / 分段，每段单独消毒（去非法字符、去前导点、去空白），空段丢掉。
+     与 App 侧 NoteService.normalizeRelPath 同策略：名字可以带 /，缺少的目录连名字一起建出来。 */
+  function sanitizeNotePath(raw) {
+    return String(raw || '')
+      .split('/')
+      .map(function (s) {
+        return s.replace(/[\\:*?"<>|\x00-\x1f]/g, '').replace(/^\.+/, '').trim();
+      })
+      .filter(function (s) { return s.length > 0; });
+  }
+
+  /* 容器（目录行下标，-1 = 库根目录）里直接子文件是否已有同名。
+     目录行的文件子项 row[3] = 目录深度 + 1（levelOf 对文件会再多 +1，别用） */
+  function dupInContainer(rows, cidx, name) {
+    var lo = 0, hi = rows.length, fdepth = 0;
+    if (cidx >= 0 && rows[cidx]) {
+      var rg = nodeRange(rows, cidx);
+      lo = rg[0] + 1; hi = rg[1]; fdepth = rows[cidx][3] + 1;
+    }
+    for (var i = lo; i < hi; i++) {
+      if (rows[i][0] === 'file' && rows[i][3] === fdepth && rows[i][1] === name + '.md') { return true; }
+    }
+    return false;
+  }
+
+  /* 容器内的插入位置 {at, depth}：目录 → 子树末尾；根 → 表尾 */
+  function insertPosIn(rows, cidx) {
+    if (cidx < 0) { return { at: rows.length, depth: 0 }; }
+    var rg = nodeRange(rows, cidx);
+    return { at: rg[1], depth: rows[cidx][3] + 1 };
+  }
+
+  /* 在容器里找名为 name 的直接子目录行下标（没有回 -1） */
+  function childDir(rows, cidx, name) {
+    var pos = insertPosIn(rows, cidx);
+    for (var i = (cidx < 0 ? 0 : cidx + 1); i < pos.at; i++) {
+      if (rows[i][0] === 'dir' && rows[i][3] === pos.depth && rows[i][1] === name) { return i; }
+    }
+    return -1;
+  }
+
+  /* 库根目录下的文件数（目录列表第一项显示）。注意文件行的 row[3] 即视觉深度，
+     根目录文件 = 0；levelOf 对文件会 +1（给箭头留位），这里不能用 */
+  function countRootFiles() {
+    var rows = TREES[currentVault] || [];
+    var n = 0;
+    for (var i = 0; i < rows.length; i++) { if (rows[i][0] === 'file' && rows[i][3] === 0) { n++; } }
+    return n;
+  }
+
+  /* 目录选择器：点行展开全库目录（不受树折叠状态影响），根目录恒第一项 */
+  function renderDirList() {
+    var rows = TREES[currentVault] || [];
+    var html = '<div class="dl-row' + (cfDirIdx < 0 ? ' on' : '') + '" data-diridx="-1" data-path="">'
+      + '<span class="dl-name">根目录</span><span class="dl-n">' + countRootFiles() + ' 篇</span></div>';
+    var stack = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i][0] !== 'dir') { continue; }
+      var d = rows[i][3];
+      stack.length = d; stack[d] = rows[i][1];
+      var p = stack.slice(0, d + 1).join('/');
+      html += '<div class="dl-row' + (cfDirIdx >= 0 && p === cfDirPath ? ' on' : '') + '" data-diridx="' + i + '" data-path="' + esc(p) + '">'
+        + '<span class="dl-name" style="padding-left:' + (d * 14) + 'px">' + esc(rows[i][1]) + '</span>'
+        + '<span class="dl-n">' + countFilesUnder(rows, i) + ' 篇</span></div>';
+    }
+    document.getElementById('cfDirList').innerHTML = html;
+  }
+
+  function doCreateNote() {
+    var segs = sanitizeNotePath(document.getElementById('cfInput').value);
+    if (!segs.length) { showToast('请填写笔记名称', '', null); return; }
+    var rows = TREES[currentVault] || [];
+    var cidx = (cfDirIdx >= 0 && rows[cfDirIdx]) ? cfDirIdx : -1;   // 从选中的目录出发
+    /* 中间段：逐级找，缺少就建（新建的目录自动展开） */
+    for (var s = 0; s < segs.length - 1; s++) {
+      var found = childDir(rows, cidx, segs[s]);
+      if (found < 0) {
+        var p0 = insertPosIn(rows, cidx);
+        rows.splice(p0.at, 0, ['dir', segs[s], true, p0.depth, 'd' + Date.now().toString(36) + s]);
+        found = p0.at;
+      } else {
+        rows[found][2] = true;
+      }
+      cidx = found;
+    }
+    /* 末段：文件，重名加后缀 */
+    var base = segs[segs.length - 1], n = 1, label = base + '.md';
+    while (dupInContainer(rows, cidx, label.replace(/\.md$/i, ''))) { label = base + ' ' + n + '.md'; n++; }
+    var pos = insertPosIn(rows, cidx);
+    var nid = 'n' + Date.now().toString(36);
+    rows.splice(pos.at, 0, ['file', label, false, pos.depth, nid]);
+    FILES[nid] = label; CONTENT[nid] = ''; META[nid] = '刚刚';
+    lastDir = cidx >= 0 ? pathBefore(cidx, rows[cidx][3] + 1) : '';
+    var v = vaultById(currentVault);
+    if (v) { v.files++; }
+    current = nid;
+    document.getElementById('cfDirList').classList.add('hidden');
+    renderTree(); updateVaultUI(); loadFile();
+    showToast('已创建「' + label + '」', '', null);
+  }
+
+  document.getElementById('newNoteBtn').addEventListener('click', function () {
+    openDialog('note-new', -1);            // 侧栏入口：默认上次所在的目录
+  });
+
+  document.getElementById('cfDirPick').addEventListener('click', function () {
+    var list = document.getElementById('cfDirList');
+    if (list.classList.contains('hidden')) { renderDirList(); list.classList.remove('hidden'); }
+    else { list.classList.add('hidden'); }
+  });
+
+  document.getElementById('cfDirList').addEventListener('click', function (e) {
+    var row = e.target.closest('.dl-row');
+    if (!row) { return; }
+    cfDirIdx = parseInt(row.getAttribute('data-diridx'), 10);
+    cfDirPath = row.getAttribute('data-path') || '';
+    document.getElementById('cfDirLabel').textContent = cfDirPath || '根目录';
+    document.getElementById('cfDirList').classList.add('hidden');
+    updateHint();
+  });
 
   function doDeleteNote(id) {
     var rows = TREES[currentVault] || [];
