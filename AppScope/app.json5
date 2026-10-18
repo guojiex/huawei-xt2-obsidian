@@ -2,7 +2,10 @@
   "app": {
     "bundleName": "com.jxg.huaweiobsidian",
     "vendor": "jxg",
-    "versionCode": 2000,
+    // versionCode 必须**单调递增**：它是装机唯一判定依据，调小会导致
+    // 「install version downgrade code:9568263」——已装旧包的设备/模拟器一律装不上。
+    // 语义版本放 versionName（0.2.0），这里只管递增：v0.1 是 1000000，所以 v0.2 取 1000001。
+    "versionCode": 1000001,
     "versionName": "0.2.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",
