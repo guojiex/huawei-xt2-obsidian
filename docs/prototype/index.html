@@ -286,6 +286,8 @@
     height: 28px; min-width: 0; padding: 0 var(--sp-2); border-radius: var(--r-full);
   }
   .side-mini:hover { background: var(--fill-hover); color: var(--text-primary); }
+  .side-new { color: var(--brand); font-weight: 700; font-size: 17px; line-height: 1; }
+  .side-new:hover { background: var(--brand-bg); color: var(--brand); }
 
   .tree { flex: 1; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-3); }
   .node-wrap { position: relative; overflow: hidden; border-radius: var(--r-control); }
@@ -717,6 +719,21 @@
   .cf-hint { font-size: var(--fs-body3); color: var(--text-tertiary); margin-top: var(--sp-2); line-height: 1.6; }
   .cf-hint code { background: var(--bg-secondary); padding: 1px 5px; border-radius: var(--r-chip); }
 
+  /* ---------- 新建对话框的类型切换（笔记 / 文件夹） ---------- */
+  .seg {
+    display: flex; gap: 2px; padding: 2px;
+    background: var(--bg-secondary); border-radius: var(--r-control);
+  }
+  .seg-btn {
+    flex: 1; min-width: 0; height: var(--h-input); border: none; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: var(--fs-body2); font-family: inherit; color: var(--text-secondary);
+    background: transparent; border-radius: calc(var(--r-control) - 2px);
+    transition: background .15s, color .15s;
+  }
+  .seg-btn svg { width: 16px; height: 16px; flex: none; }
+  .seg-btn.on { background: var(--bg-card); color: var(--brand); font-weight: 500; box-shadow: var(--elev-1); }
+
   /* ---------- 确认层（弹出框圆角 16vp） ---------- */
   .mask {
     position: absolute; inset: 0; z-index: 60; display: flex;
@@ -812,13 +829,14 @@
             </div>
             <div class="side-head">
               <span id="treeCount">3 篇</span>
+              <span class="spacer" style="flex:1"></span>
+              <button class="side-mini side-new" id="newAtRootBtn" title="在 vault 根目录新建笔记 / 文件夹">＋</button>
               <button class="side-mini" id="sideHideBtn" title="收起目录栏">收起 «</button>
             </div>
             <div class="tree" id="tree"></div>
             <div class="sw-hint">← 按住任意一行向左拖：拖一半出操作，滑到底直接删除</div>
             <div class="side-foot">
               <button id="gotoVaults">管理库</button>
-              <button id="newNoteBtn">新建笔记</button>
             </div>
           </aside>
 
@@ -961,6 +979,12 @@
         <div class="confirm">
           <div class="ct" id="cfTitle">删除本地笔记？</div>
           <div class="cd" id="cfDesc">该目录下的所有笔记会被永久删除，且无法恢复。</div>
+          <div class="cinput hidden" id="cfTypeRow">
+            <div class="seg" id="cfTypeSeg">
+              <button class="seg-btn on" data-ct="note">笔记</button>
+              <button class="seg-btn" data-ct="folder">文件夹</button>
+            </div>
+          </div>
           <div class="path" id="cfPath">vaults/local</div>
           <div class="cinput hidden" id="cfInputRow">
             <input id="cfInput" placeholder="库名称">
@@ -1051,13 +1075,16 @@
       ③ <b>文件夹没有第三档</b>：滑到底只会回弹并提示「文件夹不能直接删除」——误删一个目录就是整个子树没了。<br>
       越过操作条后拖动带阻尼（越滑越沉），防止手一抖就删掉。同一时刻只允许一行滑开，拖动超过 6px 就不算点击（避免误打开文件）。</li>
     <li><b>目录树可展开 / 折叠</b>：点目录行（或左侧箭头）切换，<b>折叠只影响显示，不动文件</b>；正在编辑的文件即使被折叠也不会关闭。子文件缩进比父目录深一级，<code>▾</code> = 展开、<code>▸</code> = 折叠，文件夹图标开口 / 闭合同步变化。<b>展开状态按库分别记忆</b>（切库回来还是原来的样子）。</li>
-    <li><b>新建笔记有两个入口，共用一个对话框</b>：<br>
-      ① <b>侧栏底部「新建笔记」</b> —— 默认建在<b>上次所在的文件夹</b>（点目录行记该目录、点文件行记它的父目录，按库记忆，杀进程不丢）；<br>
-      ② <b>目录行尾的「+」</b>（只有目录行有，悬停才明显）—— 直接预填那个文件夹，一步到位。<br>
+    <li><b>新建（笔记 / 文件夹）有两级入口，共用一个对话框</b>：<br>
+      ① <b>目录树头部「＋」</b>（挨着「目录」标题 / 收起按钮）—— 在 <b>vault 根目录</b>新建（笔记或文件夹由对话框类型切换决定），<b>不继承上次目录</b>；<br>
+      ② <b>目录行尾的「＋」</b>（只有目录行有，悬停才明显）—— 直接预填那个文件夹，一步到位。<br>
+      ⚠️ <b>侧栏底部的「新建笔记」按钮已移除</b>（2026-10-18 用户拍板）：它和目录行「＋」在「在某个文件夹里建」上完全重复，唯一功能是根目录创建，已由头部「＋」接管。各级入口一致、不重复也不漏根目录场景。<br>
       对话框里<b>目录可改</b>：点目录行展开全库目录列表（<b>不受树折叠状态影响</b>，折叠目录里的嵌套目录也列得出来），<b>「根目录」恒为第一项</b> —— 要建在库根目录就显式选它。<br>
       名字<b>可以带 <code>/</code></b>（如 <code>工程/流式系统/第一篇</code>），缺少的目录会连名字一起建出来；非法字符（<code>\ : * ? " &lt; &gt; |</code>）直接过滤；重名自动加后缀；确认前实时预览目标路径。<br>
-      ⚠️ <b>末段必须是笔记名，不能以 <code>/</code> 结尾</b>（「只要目录/」会被拒绝：hint 警示 + 确认禁用）—— <b>暂不支持建空文件夹</b>，与 Obsidian 一致（文件夹永远跟着文件走）。这条边界 2026-10-18 才对齐：App 侧 <code>normalizeRelPath</code> 本就抛错，原型原先把末尾 <code>/</code> 当没输入、静默建成 <code>只要目录.md</code>，两端体验分裂。
-      ⚠️ <b>设计稿原先没定义这个流程</b>：底部只有一个没绑行为的占位「新建」按钮，目录级新建入口、对话框形态均为实现期自补设计（2026-10-18 用户拍板：目录选择器 + 记忆上次目录）。</li>
+      ⚠️ <b>末段不能为空，名称不能以 <code>/</code> 结尾</b>（「只要目录/」会被拒绝：hint 警示 + 确认禁用 + 创建时再拦一道）。这条边界 2026-10-18 对齐：App 侧 <code>normalizeRelPath</code> 本就抛错，原型原先把末尾 <code>/</code> 当没输入、静默建成 <code>只要目录.md</code>，两端体验分裂。<br>
+      📁 <b>建文件夹靠对话框里的「笔记 / 文件夹」切换</b>（2026-10-18 用户拍板方案 A —— 原话「设计稿里面我要怎么新建文件夹？？？」：此前只能靠笔记名带 <code>/</code> 隐式建目录，建不了空文件夹）：切到「文件夹」后选父目录、填名字（同样可带 <code>/</code> 建多层），确认即建<b>空目录</b>，重名自动加后缀，建完把 <code>lastDir</code> 记入新文件夹（下次新建默认进这里）。<br>
+      🗑 <b>删除同步配套</b>：目录行尾原先只有 rename / move、<b>没有删除按钮</b>（建了文件夹却删不掉），本版补上；确认文案按「空文件夹 / 连里面 N 篇笔记一起删 / 单文件」三种形态给，Git 库照旧加远端警告；<code>doDeleteNote</code> 按 <code>nodeRange</code> 整棵子树移除并扣减文件计数。
+      ⚠️ <b>设计稿原先没定义这个流程</b>：最早的版本底部只有一个没绑行为的占位「新建」按钮，目录级新建入口、对话框形态均为实现期自补设计（2026-10-18 用户拍板：目录选择器 + 头部「＋」根目录入口，移除底部按钮）。</li>
     <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、包名、许可</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
@@ -1559,10 +1586,13 @@
         + ICON_PLUS + '</button>'
       : '';
     /* 目录不给「删除」：误删一个目录 = 整个子树消失 */
+    /* 行内按钮：rename / move / del。目录也有 del —— 2026-10-18 方案 A 补：
+       原先 kind === 'dir' 时删按钮被去掉，建了文件夹却删不掉。目录删除走子树
+       splice（doDeleteNote 里按 nodeRange 整段移除）。 */
     var acts = '<button class="sw-btn" data-act="rename" title="重命名">' + ICON_RENAME + '</button>'
       + '<button class="sw-btn" data-act="move" title="移动">' + ICON_MOVE + '</button>'
-      + (kind === 'dir' ? '' : '<button class="sw-btn danger" data-act="del" title="删除">'
-        + ICON_TRASH + '<span class="sw-txt">松手删除</span></button>');
+      + '<button class="sw-btn danger" data-act="del" title="删除">'
+        + ICON_TRASH + '<span class="sw-txt">松手删除</span></button>';
     return '<div class="node-wrap" data-kind="' + kind + '" data-idx="' + idx + '">'
       + '<div class="' + cls + '"' + attrs + '>' + guides + caret + icon
       + '<span class="nlabel">' + esc(label) + sub + '</span>' + plus + '</div>'
@@ -1684,6 +1714,10 @@
   /* 新建笔记：目标目录（'' = 库根目录）+ 上次所在的目录（按库记忆，切库清空） */
   var cfDirPath = '';
   var cfDirIdx = -1;
+  /* 新建对话框的类型：'note' | 'folder'（2026-10-18 用户拍板方案 A ——
+     「设计稿里面我要怎么新建文件夹？？？」：原先只能靠笔记名带 / 隐式建目录，
+     建不了空文件夹；现在显式支持，入口共用侧栏「新建笔记」与目录行 +）。 */
+  var cfType = 'note';
   var lastDir = '';
 
   // 目录名消毒：去掉路径分隔符与 Windows 非法字符、控制字符、前导点
@@ -1740,23 +1774,58 @@
          两端不一致：原型曾把「只要目录/」静默建成 只要目录.md。此处对齐 App：
          hint 警示 + 确认禁用，doCreateNote 里再拦一道（双保险）。 */
       var trailingSlash = /\/\s*$/.test(String(raw || ''));
-      var tail = segs.length ? segs.join('/') + '.md' : '…';
+      var isFolder = (cfType === 'folder');
+      var tail = segs.length ? segs.join('/') + (isFolder ? '' : '.md') : '…';
       var full = (vv ? vv.dir : 'vaults') + (cfDirPath ? '/' + cfDirPath : '') + '/' + tail;
       var okB = document.getElementById('cfOk');
       if (!segs.length) {
-        hint.innerHTML = '请填写笔记名称';
+        hint.innerHTML = isFolder ? '请填写文件夹名称' : '请填写笔记名称';
         okB.disabled = true;
       } else if (trailingSlash) {
-        hint.innerHTML = '名称不能以 <code>/</code> 结尾：<b>末段需要是笔记名</b>（暂不支持建空文件夹）';
+        hint.innerHTML = isFolder
+          ? '名称不能以 <code>/</code> 结尾：<b>末段需要是文件夹名</b>'
+          : '名称不能以 <code>/</code> 结尾：<b>末段需要是笔记名</b>（要建空文件夹，切换到「文件夹」）';
         okB.disabled = true;
       } else {
-        hint.innerHTML = '将创建：<code>' + esc(full) + '</code>'
-          + (dupInContainer(TREES[currentVault] || [], cfDirIdx, segs[segs.length - 1])
-            ? ' · 同名已存在，会自动加后缀' : '');
+        var dupDir = isFolder && childDir(TREES[currentVault] || [], (cfDirIdx >= 0 ? cfDirIdx : -1), segs[segs.length - 1]) >= 0;
+        hint.innerHTML = (isFolder ? '将创建文件夹：<code>' : '将创建：<code>') + esc(full) + '</code>'
+          + (dupDir
+            ? ' · 同名已存在，会自动加后缀'
+            : (!isFolder && dupInContainer(TREES[currentVault] || [], cfDirIdx, segs[segs.length - 1])
+              ? ' · 同名已存在，会自动加后缀' : ''));
         okB.disabled = false;
       }
     }
   }
+
+  /* 新建对话框的「笔记 / 文件夹」类型切换（2026-10-18 方案 A 落地）：
+     标题/描述/placeholder/seg 选中态按 cfType 刷新，最后统一走 updateHint。
+     切到文件夹时不清空已输内容（用户可能是先打字再切类型）。 */
+  function refreshTypeUI() {
+    var isFolder = (cfType === 'folder');
+    var btns = document.querySelectorAll('#cfTypeSeg .seg-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      var isF = (b.getAttribute('data-ct') === 'folder');
+      b.classList.toggle('on', b.getAttribute('data-ct') === cfType);
+      b.innerHTML = (isF ? ICON_DIR : ICON_FILE) + (isF ? '文件夹' : '笔记');
+    }
+    document.getElementById('cfTitle').textContent = isFolder ? '新建文件夹' : '新建笔记';
+    document.getElementById('cfDesc').innerHTML = isFolder
+      ? '选一个父文件夹，再填名字。建出的文件夹是<b>空的</b>，之后可以在里面新建笔记。'
+      : '选一个文件夹，再填笔记名。名字可以带 <code>/</code>，缺少的目录会一起建出来。';
+    document.getElementById('cfInput').placeholder = isFolder ? '文件夹名称' : '笔记名称';
+    updateHint();
+  }
+
+  document.getElementById('cfTypeSeg').addEventListener('click', function (e) {
+    var btn = e.target.closest ? e.target.closest('.seg-btn') : null;
+    if (!btn) { return; }
+    var t = btn.getAttribute('data-ct');
+    if (t === cfType) { return; }
+    cfType = t;
+    refreshTypeUI();
+  });
 
   function openDialog(mode, id) {
     cfMode = mode;
@@ -1769,6 +1838,8 @@
     var v = vaultById(id);
     okBtn.className = '';
     okBtn.disabled = false;   // note-new 的 updateHint 会按名称合法度再禁用；其他模式复位
+    cfType = 'note';          // 类型切换只属于 note-new；其他模式进场先复位并隐藏
+    document.getElementById('cfTypeRow').classList.add('hidden');
     row.classList.add('hidden');
     selRow.classList.add('hidden');
     pathEl.classList.add('hidden');
@@ -1800,7 +1871,8 @@
          第二块，没有 mode 守卫 —— note-new 漏下去会落进 rename 的 else，而 vaultById(-1)
          是 null，读 v.name 直接抛 TypeError，弹窗字段设好了也走不到 mask.classList.remove。
          （2026-10-18 jsdom 实测复现：点「新建」无反应，堆栈 openDialog → v.name） */
-      updateHint();
+      document.getElementById('cfTypeRow').classList.remove('hidden');
+      refreshTypeUI();        // 内部会调 updateHint；同时按 cfType 刷标题/描述/placeholder
       document.getElementById('mask').classList.remove('hidden');
       input.focus();
       input.select();
@@ -1810,10 +1882,23 @@
       var nm = nodeLabel(id);
       var vv = vaultById(currentVault);
       if (mode === 'note-del') {
-        document.getElementById('cfTitle').textContent = '删除「' + nm + '」？';
-        document.getElementById('cfDesc').innerHTML = (vv && vv.type === 'git')
-          ? '文件会从本地库中删除，<b>下次 push 后远端也会删除</b>。'
-          : '文件会被<b>永久删除，无法恢复</b>。（回收站还没做，误删就真没了）';
+        /* 目录也能删（2026-10-18 方案 A 配套）：文案按「空文件夹 / 含 N 篇 / 文件」
+           三种形态给，Git 库再加远端警告。目录删除在 doDeleteNote 里按子树整段移除。 */
+        var isDirTgt = (String(id).indexOf('d:') === 0);
+        var subFiles = isDirTgt ? countFilesInSubtree(id) : 0;
+        document.getElementById('cfTitle').textContent =
+          isDirTgt ? '删除文件夹「' + nm + '」？' : '删除「' + nm + '」？';
+        var parts = [];
+        if (vv && vv.type === 'git') { parts.push('会从本地库中删除，<b>下次 push 后远端也会删除</b>'); }
+        if (isDirTgt) {
+          parts.push(subFiles > 0
+            ? '文件夹连里面的 <b>' + subFiles + ' 篇笔记</b>一起删除'
+            : '空文件夹，删除即消失');
+        } else {
+          parts.push('文件会被删除');
+        }
+        parts.push('<b>不可恢复</b>（回收站还没做，误删就真没了）');
+        document.getElementById('cfDesc').innerHTML = parts.join('，') + '。';
         pathEl.textContent = (vv ? vv.dir : '') + '/' + nm;
         pathEl.classList.remove('hidden');
         okBtn.classList.add('btn-danger');
@@ -1993,7 +2078,7 @@
     document.getElementById('cfSelHint').innerHTML = '共 ' + n + ' 个可选文件夹';
   }
 
-  /* ---------- 新建笔记（2026-10-18 补设计稿：原型的「新建」是没绑行为的占位按钮） ---------- */
+  /* ---------- 新建（笔记 / 文件夹）：头部「＋」= 根目录入口；目录行「＋」= 指定文件夹入口 ---------- */
 
   /* 扫描 rows[0..idx]，取前 levels 段目录名拼成路径（'' = 库根目录） */
   function pathBefore(idx, levels) {
@@ -2100,10 +2185,38 @@
     /* 与 App normalizeRelPath 对齐：末段为空（以 / 结尾）= 只给了目录没给名字，拒绝创建。
        updateHint 里已禁用了确认按钮，这里是双保险（防 disabled 被绕过）。 */
     if (!segs.length || /\/\s*$/.test(String(rawVal || ''))) {
-      showToast('请填写笔记名称', '', null); return;
+      showToast(cfType === 'folder' ? '请填写文件夹名称' : '请填写笔记名称', '', null); return;
     }
     var rows = TREES[currentVault] || [];
     var cidx = (cfDirIdx >= 0 && rows[cfDirIdx]) ? cfDirIdx : -1;   // 从选中的目录出发
+    /* 展开起点目录：建在折叠目录里（lastDir 记的目录可能是折叠的 —— 2026-10-18 run3
+       逮到：乙是 folder 模式建的 open=false，lastDir 指向它，在里面建笔记后 renderTree
+       把新行当折叠子项藏掉，用户以为没建成）。中间段缺失目录本就 open=true 同意图。 */
+    if (cidx >= 0) { rows[cidx][2] = true; }
+    if (cfType === 'folder') {
+      /* 中间段：逐级找，缺少就建（与笔记同逻辑） */
+      for (var s = 0; s < segs.length - 1; s++) {
+        var found = childDir(rows, cidx, segs[s]);
+        if (found < 0) {
+          var p0 = insertPosIn(rows, cidx);
+          rows.splice(p0.at, 0, ['dir', segs[s], true, p0.depth, 'd' + Date.now().toString(36) + s]);
+          found = p0.at;
+        } else {
+          rows[found][2] = true;
+        }
+        cidx = found;
+      }
+      /* 末段：空文件夹，重名加后缀；open=false（空的，展开也没内容） */
+      var base = segs[segs.length - 1], n = 1, dname = base;
+      while (childDir(rows, cidx, dname) >= 0) { dname = base + ' ' + n; n++; }
+      var pos = insertPosIn(rows, cidx);
+      rows.splice(pos.at, 0, ['dir', dname, false, pos.depth, 'd' + Date.now().toString(36)]);
+      lastDir = pathBefore(pos.at, pos.depth + 1);   // 下次新建默认进这个新文件夹（depth+1 = 含自身）
+      document.getElementById('cfDirList').classList.add('hidden');
+      renderTree(); updateVaultUI();
+      showToast('已创建文件夹「' + dname + '」', '', null);
+      return;
+    }
     /* 中间段：逐级找，缺少就建（新建的目录自动展开） */
     for (var s = 0; s < segs.length - 1; s++) {
       var found = childDir(rows, cidx, segs[s]);
@@ -2132,8 +2245,9 @@
     showToast('已创建「' + label + '」', '', null);
   }
 
-  document.getElementById('newNoteBtn').addEventListener('click', function () {
-    openDialog('note-new', -1);            // 侧栏入口：默认上次所在的目录
+  document.getElementById('newAtRootBtn').addEventListener('click', function () {
+    lastDir = '';                          // 头部 + = 在 vault 根目录建，不继承上次目录（2026-10-18 用户拍板：底部按钮与行尾 + 重复，删按钮、头部加 +）
+    openDialog('note-new', -1);
   });
 
   document.getElementById('cfDirPick').addEventListener('click', function () {
@@ -2152,17 +2266,38 @@
     updateHint();
   });
 
+  /* 目录子树里的文件数（删除确认文案用）。levelOf 对文件 +1，子树判定用 nodeRange */
+  function countFilesInSubtree(id) {
+    var rows = TREES[currentVault] || [];
+    var idx = nodeIdx(id);
+    if (idx < 0 || rows[idx][0] !== 'dir') { return 0; }
+    var rg = nodeRange(rows, idx);
+    var n = 0;
+    for (var i = rg[0]; i < rg[1]; i++) { if (rows[i][0] === 'file') { n++; } }
+    return n;
+  }
+
   function doDeleteNote(id) {
     var rows = TREES[currentVault] || [];
     var idx = nodeIdx(id);
     if (idx < 0) { return; }
-    rows.splice(idx, 1);
-    delete FILES[id]; delete CONTENT[id]; delete META[id];
+    /* 目录：整棵子树一起删（2026-10-18 方案 A 配套 —— 空文件夹也要能删）。
+       文件：只删自己那一行。 */
+    var isDir = (String(id).indexOf('d:') === 0);
+    var rg = isDir ? nodeRange(rows, idx) : [idx, idx + 1];
+    var removed = rows.splice(rg[0], rg[1] - rg[0]);
+    var nFiles = 0;
+    for (var i = 0; i < removed.length; i++) {
+      if (removed[i][0] === 'file') {
+        nFiles++;
+        delete FILES[removed[i][4]]; delete CONTENT[removed[i][4]]; delete META[removed[i][4]];
+        if (current === removed[i][4]) { current = ''; }   // 删的含正在编辑的 → 顺延
+      }
+    }
     var v = vaultById(currentVault);
-    if (v && v.files > 0) { v.files--; }
-    if (current === id) {                       // 删的是正在编辑的那篇 → 顺延到下一篇
-      current = '';
-      for (var i = 0; i < rows.length; i++) { if (rows[i][0] === 'file') { current = rows[i][4]; break; } }
+    if (v) { v.files = Math.max(0, v.files - nFiles); }
+    if (!current) {
+      for (var j = 0; j < rows.length; j++) { if (rows[j][0] === 'file') { current = rows[j][4]; break; } }
       loadFile();
     }
     closeSwipe(null);
@@ -2354,9 +2489,17 @@
     var segs = document.querySelectorAll('.seg');
     for (var i = 0; i < segs.length; i++) {
       var s = segs[i];
+      /* 只处理模式切换控件（内部有带 data-m 的按钮）。新建对话框的「笔记/文件夹」
+         切换（#cfTypeSeg）也用 .seg 类但在任何形态都该显示 —— 2026-10-18 浏览器实测：
+         lg 形态下这里把 #cfTypeSeg 加 hidden，而 openDialog 移除的是外层 #cfTypeRow 的
+         hidden，两层不是同一个元素，按钮被藏住点不到。 */
+      if (!s.querySelector('button[data-m]')) { continue; }
       if (f === 'sm') { s.classList.remove('hidden'); } else { s.classList.add('hidden'); }
       var bs = s.querySelectorAll('button');
       for (var j = 0; j < bs.length; j++) {
+        /* 跳过非模式切换的按钮（如新建对话框的「笔记/文件夹」切换，无 data-m）——
+           否则它的选中态会被这里清掉或误亮（undefined === undefined 陷阱） */
+        if (!bs[j].hasAttribute('data-m')) { continue; }
         if (bs[j].getAttribute('data-m') === smMode) { bs[j].classList.add('on'); }
         else { bs[j].classList.remove('on'); }
       }
@@ -2421,12 +2564,15 @@
   document.getElementById('menuBtn').addEventListener('click', function () { toggleDrawer(); });
   document.getElementById('sideHideBtn').addEventListener('click', function () { setSideHidden(true); });
 
-  /* 编辑 / 预览切换：两个 pane 的 pane-head 里各挂一个分段控件，切过去之后开关还在，不会消失 */
+  /* 编辑 / 预览切换：两个 pane 的 pane-head 里各挂一个分段控件，切过去之后开关还在，不会消失。
+     ⚠️ 只认带 data-m 的按钮 —— 2026-10-18 新建对话框的类型切换（#cfTypeSeg）也用 .seg 类，
+     被这个通用 handler 误抓过：它的按钮没有 data-m，undefined === undefined 命中，
+     applySmMode 把选中态搅乱（详见当日报废的 run3 首跑）。新增 .seg 必须带 data-m 或改这里。 */
   var modeSegs = document.querySelectorAll('.seg');
   for (var si = 0; si < modeSegs.length; si++) {
     modeSegs[si].addEventListener('click', function (e) {
       var b = e.target.closest('button');
-      if (!b) { return; }
+      if (!b || !b.hasAttribute('data-m')) { return; }
       smMode = b.getAttribute('data-m');
       applySmMode();
       render();
