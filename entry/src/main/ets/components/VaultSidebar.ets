@@ -49,6 +49,12 @@ export struct VaultSidebar {
   onCreateNote: () => void = () => {};
   /** 选中文件回调（向父级传递，由父级决定编辑器行为） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
+  /**
+   * 「在该目录下新建笔记」回调（文件树目录行尾的 + 按钮，2026-10-18 方案 A）。
+   * 侧栏自身只透传，对话框与消毒逻辑都在父级（Index）—— 与 onCreateNote 同一条链路，
+   * 差别仅在于对话框预填目标目录。
+   */
+  onCreateInDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
 
   /** 胶囊标签（本地 / 当前）—— 圆角 chip 场景 */
   @Builder
@@ -217,6 +223,9 @@ export struct VaultSidebar {
         revealPath: this.revealPath,
         onSelectFile: (relPath: string): void => {
           this.onSelectFile(relPath);
+        },
+        onCreateInDir: (dirRelPath: string): void => {
+          this.onCreateInDir(dirRelPath);
         }
       })
         .layoutWeight(1)

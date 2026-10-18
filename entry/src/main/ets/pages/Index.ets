@@ -22,6 +22,7 @@ import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { NoteService } from '../model/NoteService';
+import { FileTree, ExpandStore } from '../model/FileTree';
 import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
@@ -278,6 +279,9 @@ struct Index {
       const reg: VaultRegistry = VaultRegistry.get();
       const rel: string = NoteService.normalizeRelPath(rawName);
       const actual: string = NoteService.createNote(reg, this.currentVaultId, rel);
+      // 建完也记住这个目录：下次点「新建笔记」默认还在这里（与点行记忆同源）
+      new ExpandStore(reg.abilityContext())
+        .saveLastDir(this.currentVaultId, FileTree.parentOf(actual));
       this.currentFilePath = actual;
       this.revealPath = actual;
       this.treeSeq++;
@@ -312,10 +316,35 @@ struct Index {
     this.createDialogCtl.open();
   }
 
-  private openCreateNoteDialog(): void {
+  /**
+   * 打开新建笔记对话框。
+   * @param initialDir 预选目录（目录行 + 按钮入口传点击的目录）；空串 = 侧栏底部按钮入口，
+   *        此时读**上次点过的目录**（`ExpandStore.lastdir`，按库记忆；用户拍稿的需求：
+   *        「记住我之前点过什么文件夹」——想建根目录就在对话框的目录选择器里显式选根）。
+   */
+  private openCreateNoteDialog(initialDir: string = ''): void {
+    // 目录选择器的候选：全量目录（不受展开状态影响）
+    let dirs: string[] = [];
+    try {
+      dirs = FileTree.allDirs(VaultRegistry.get().vaultDirOf(this.currentVaultId));
+    } catch (error) {
+      const err = error as Error;
+      hilog.warn(0x0001, 'Index', '列目录失败：%{public}s', err.message);
+      dirs = [];
+    }
+    if (initialDir.length === 0) {
+      try {
+        initialDir = new ExpandStore(VaultRegistry.get().abilityContext())
+          .loadLastDir(this.currentVaultId);
+      } catch (error) {
+        initialDir = '';
+      }
+    }
     this.createNoteCtl = new CustomDialogController({
       builder: CreateNoteDialog({
         vaultId: this.currentVaultId,
+        dirs: dirs,
+        initialDir: initialDir,
         onConfirm: (rawName: string): void => {
           this.doCreateNote(rawName);
         }
@@ -515,6 +544,11 @@ struct Index {
             this.drawerOpen = false;
             this.openCreateNoteDialog();
           },
+          onCreateInDir: (dirRelPath: string): void => {
+            // 抽屉形态先关抽屉：对话框是窗口级弹层，但抽屉+遮罩叠着容易误触
+            this.drawerOpen = false;
+            this.openCreateNoteDialog(dirRelPath);
+          },
           onSelectFile: (relPath: string): void => {
             this.onSelectFile(relPath);
           }
@@ -552,6 +586,9 @@ struct Index {
             },
             onCreateNote: (): void => {
               this.openCreateNoteDialog();
+            },
+            onCreateInDir: (dirRelPath: string): void => {
+              this.openCreateNoteDialog(dirRelPath);
             },
             onSelectFile: (relPath: string): void => {
               this.onSelectFile(relPath);

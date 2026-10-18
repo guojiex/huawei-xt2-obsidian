@@ -33,6 +33,7 @@ const P_CHEVRON_RIGHT: string = 'M9 5l7 7-7 7';
 const P_COLLAPSE: string = 'M11 5l-5 7 5 7M18 5l-5 7 5 7';
 const P_FOLDER: string = 'M3 6h6l2 2h10v11H3z';
 const P_DOC: string = 'M7 3h6l4 4v14H7zM13 3v7h4';
+const P_PLUS: string = 'M12 5v14M5 12h14';
 const P_RENAME: string = 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4';
 const P_MOVE: string = 'M4 12h16M9 7l-5 5 5 5M15 7l5 5-5 5';
 const P_TRASH: string = 'M4 7h16M10 4h4M6 7l1 14h10l1-14M10 11v6M14 11v6';
@@ -55,6 +56,8 @@ function pathOf(name: string): string {
     return P_FOLDER;
   } else if (name === 'doc') {
     return P_DOC;
+  } else if (name === 'plus') {
+    return P_PLUS;
   } else if (name === 'rename') {
     return P_RENAME;
   } else if (name === 'move') {
