@@ -21,9 +21,11 @@ import { promptAction } from '@kit.ArkUI';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { NoteService } from '../model/NoteService';
 import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
+import { CreateNoteDialog } from '../components/NoteDialogs';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 
@@ -79,7 +81,26 @@ struct Index {
   /** 库管理视图整体替换内容区（原型 vaultsView 结构） */
   @State showVaultManager: boolean = false;
   /**
-   * 单屏态「编辑 / 预览」二选一（v0.2 §3.4-3.3）。
+   * 当前打开文件的**库内相对路径**（如 `docs/架构.md`）。
+   *
+   * 为什么放在这里而不是放在文件树组件里（需求 1.4）：
+   * 折叠父目录只改变「哪些行可见」，不应连带改变正在编辑的文件。
+   * 若当前文件由树持有，折叠动作会导致它被清掉（或被迫写例外逻辑绕过清理）。
+   * 放在总装页还有一个额外好处：侧栏选中态、编辑区标题、以后的预览来源共用同一份状态，
+   * 不存在三处各记一份然后不同步的可能。
+   */
+  @State currentFilePath: string = '';
+  /**
+   * 文件树重扫信号（每次 +1 触发一次 rescan）。
+   * 为什么不用「更聪明」的方案：树组件自己不知道外部什么时候改了磁盘
+   * （没有文件监听），用显式信号换确定性和简单性。
+   */
+  @State treeSeq: number = 0;
+  /**
+   * 需要树展开到可见的目标路径。建完笔记置位 → 树展开它的父目录 → 立刻看得见。
+   */
+  @State revealPath: string = '';
+  /** 单屏态「编辑 / 预览」二选一（v0.2 §3.4-3.3）。
    * 只有一块屏放不下两栏；md/lg 两栏同时可见，这个状态不参与布局。
    */
   @State smMode: string = 'edit';
@@ -88,6 +109,7 @@ struct Index {
   private createDialogCtl: CustomDialogController | null = null;
   private renameDialogCtl: CustomDialogController | null = null;
   private deleteDialogCtl: CustomDialogController | null = null;
+  private createNoteCtl: CustomDialogController | null = null;
 
   aboutToAppear(): void {
     this.refreshFromRegistry();
@@ -131,6 +153,19 @@ struct Index {
   /** 当前库名（显示名 = 目录名 = id；注册表兜底） */
   private currentVaultName(): string {
     return this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）';
+  }
+
+  /**
+   * 选中文件。
+   * 单屏态额外做两件事：关抽屉 + 回编辑态 —— 在只有一个栏位的地方点了文件，
+   * 默认意图是「看/改它」，而不是开抽屉也不看 preview。
+   */
+  private onSelectFile(relPath: string): void {
+    this.currentFilePath = relPath;
+    if (this.breakpoint === Breakpoint.SM) {
+      this.drawerOpen = false;
+      this.smMode = 'edit';
+    }
   }
 
   /** 状态栏右侧读数：形态 · vp · FS:N（有折痕时追加 · C:x,y，px 在此换算成 vp） */
@@ -204,6 +239,34 @@ struct Index {
     }
   }
 
+  /**
+   * 新建笔记（顺序不能乱）：
+   * 1. `normalizeRelPath` —— 消毒 + 补 `.md`（非法输入在这一步就抛错，不会落到磁盘）；
+   * 2. `createNote` —— 逐级补建父目录 + 写空文件，重名自动加后缀；
+   * 3. 置 currentFilePath / revealPath / treeSeq —— 让用户立刻看到刚建的那篇。
+   * 失败一律 toast，且**不改动任何 UI 状态**（笔记没建成就不该「选中」它）。
+   */
+  private doCreateNote(rawName: string): void {
+    if (this.currentVaultId.length === 0) {
+      promptAction.showToast({ message: '还没有笔记本' });
+      return;
+    }
+    try {
+      const reg: VaultRegistry = VaultRegistry.get();
+      const rel: string = NoteService.normalizeRelPath(rawName);
+      const actual: string = NoteService.createNote(reg, this.currentVaultId, rel);
+      this.currentFilePath = actual;
+      this.revealPath = actual;
+      this.treeSeq++;
+      if (this.breakpoint === Breakpoint.SM) {
+        this.drawerOpen = false;
+        this.smMode = 'edit';
+      }
+    } catch (error) {
+      this.toastRegistryError('新建笔记失败', error);
+    }
+  }
+
   /** 注册表操作失败：固定文案 toast + 详细原因进 hilog（不把异常原文弹给用户） */
   private toastRegistryError(prefix: string, error: Object): void {
     const err = error as Error;
@@ -224,6 +287,20 @@ struct Index {
       customStyle: true
     });
     this.createDialogCtl.open();
+  }
+
+  private openCreateNoteDialog(): void {
+    this.createNoteCtl = new CustomDialogController({
+      builder: CreateNoteDialog({
+        vaultId: this.currentVaultId,
+        onConfirm: (rawName: string): void => {
+          this.doCreateNote(rawName);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.createNoteCtl.open();
   }
 
   private openRenameDialog(id: string): void {
@@ -401,6 +478,9 @@ struct Index {
           asDrawer: true,
           vaults: this.vaults,
           currentVaultId: this.currentVaultId,
+          currentFilePath: this.currentFilePath,
+          refreshSeq: this.treeSeq,
+          revealPath: this.revealPath,
           onSwitchVault: (id: string): void => {
             this.doSwitchVault(id);
           },
@@ -408,9 +488,12 @@ struct Index {
             this.drawerOpen = false;
             this.showVaultManager = true;
           },
-          onCreateVault: (): void => {
+          onCreateNote: (): void => {
             this.drawerOpen = false;
-            this.openCreateDialog();
+            this.openCreateNoteDialog();
+          },
+          onSelectFile: (relPath: string): void => {
+            this.onSelectFile(relPath);
           }
         })
           .width(Size.drawerW)
@@ -432,6 +515,9 @@ struct Index {
             asDrawer: false,
             vaults: this.vaults,
             currentVaultId: this.currentVaultId,
+            currentFilePath: this.currentFilePath,
+            refreshSeq: this.treeSeq,
+            revealPath: this.revealPath,
             onCollapse: (): void => {
               this.sidebarCollapsed = true;
             },
@@ -441,8 +527,11 @@ struct Index {
             onManageVaults: (): void => {
               this.showVaultManager = true;
             },
-            onCreateVault: (): void => {
-              this.openCreateDialog();
+            onCreateNote: (): void => {
+              this.openCreateNoteDialog();
+            },
+            onSelectFile: (relPath: string): void => {
+              this.onSelectFile(relPath);
             }
           })
         }
@@ -513,13 +602,22 @@ struct Index {
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      this.PaneHead('源模式')
+      this.PaneHead(this.currentFilePath.length > 0 ? this.currentFilePath : '源模式')
 
       Stack() {
-        Column() {
+        Column({ space: Space.s3 }) {
           Text('编辑区 · v0.2')
             .fontSize(FontSize.body2)
             .fontColor($r('app.color.text_tertiary'))
+          // 选中文件后这里显示它的库内路径，用来验证「点侧栏 → 编辑区吃到同一份状态」
+          if (this.currentFilePath.length > 0) {
+            Text(this.currentFilePath)
+              .fontSize(FontSize.s3)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .maxLines(2)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
         }
         .width('100%')
         .height('100%')
@@ -592,7 +690,8 @@ struct Index {
   @Builder
   Statusbar() {
     Row() {
-      Text(this.currentVaultName())
+      // TEMP-MARKER：验证选中链路用，验证完删掉的第三行
+      Text(this.currentVaultName() + ' | ' + this.currentFilePath)
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)

@@ -939,6 +939,67 @@ sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
 
 ---
 
+## L 组：弹层与命中的两个坑（2026-10-18 实测，侧栏下拉菜单 + 文件树）
+
+> 两条都是**模拟器实测复现 + 修复验证**过的，不是纸面结论。踩坑位置：`VaultSidebar` 库切换下拉菜单、`FileTreeView` 行点击。
+
+### L-1 下拉菜单被文件树盖住 → 必须用 `bindPopup`，不能自己摆溢出节点 ❓→✅
+
+**现象**：库切换菜单能弹出来，但下半部分被左边的文件树盖住，点不动。
+
+**根因**：菜单原来是「Stack 内一个 `offset({ y: ... })` 溢出的普通 `Column`」。它是**页面内普通子节点**，
+而侧栏里文件树在它之后声明 —— **ArkUI 同级组件后声明的绘制在上层**，于是菜单被树盖住
+（`Stack` 默认不裁剪溢出内容，所以能看见、但点不到）。
+
+**修法**：改用官方弹层 `bindPopup(show, CustomPopupOptions)`，弹层挂在**窗口覆盖层**上，
+层级高于页面内一切组件，天然不可能被遮挡：
+
+```typescript
+.bindPopup(this.menuOpen, {
+  builder: this.VaultMenu(),          // @Builder 里放完全自定义的 token 化内容
+  placement: Placement.BottomLeft,
+  offset: { x: 0, y: Space.s2 },
+  mask: false,                        // 轻量下拉不需要半透明遮罩
+  autoCancel: true,                   // 点外面自动收起
+  popupColor: Color.Transparent,      // 底色由内容 Column 自己给（走 token）
+  onWillDismiss: (action: DismissPopupAction): void => {
+    action.dismiss();                 // ⚠️ 不调 dismiss() 菜单不会真消失
+    this.menuOpen = false;            // 同步 chevron 图标状态
+  }
+})
+```
+
+**实测结论（2026-10-18 三屏态）**：
+- 弹层在控件树里排在页面内容**之后**（独立节点，不嵌在侧栏 Column 里）→ 层级正确；
+- 点菜单项命中并跳转库管理页 ✅；点外面自动收起 ✅；再点一次切换器收起 ✅（**无双重 toggle**，
+  outside touch 被弹层消费、不会透传到底层组件的 `onClick`）；
+- 内容宽 240vp = `Size.sidebarW`、行高 48vp = `Size.touch`，与原型 vault-menu 一致。
+
+> 同类需求（任何「浮在页面内容之上」的东���）一律走弹层：`bindPopup` / `bindMenu` / `bindContextMenu` / `openMenu`。
+> **不要**再用「绝对定位 + offset 溢出」手搓浮层 —— z-order 取决于声明顺序，是个定时炸弹。
+
+### L-2 行内子控件吃掉点击 → `hitTestBehavior(HitTestMode.None)` ❓→✅
+
+**现象**：文件树里**目录行**点得了（折叠/展开正常），**文件行**点文件名没反应，点行的空白处才生效。
+
+**根因**：行内子控件（文件名 `Text`、图标、缩进格）各自是命中目标，会**吃掉**点击，
+`onClick` 挂在外层 `Row` 上反而不触发。目录行早期测试点到了箭头图标附近，看起来像好的，误判过一轮。
+
+**修法**：把行内不参与命中的子节点（缩进格 + 内容 `Row`）统一设
+`.hitTestBehavior(HitTestMode.None)`，让整行点击冒泡到外层 `Row` 的 `onClick`。
+
+> 判别实验（值得复用的思路）：同一行点上半部/下半部、点最左侧空白 —— 都用同一套坐标注入，
+> 只有「文件行文本区」失败，才定位到是子控件吃点击，而不是注入失效或应用崩溃。
+
+### L-3 `versionCode` 必须单调递增 ⚠️
+
+把 versionCode 从 1000000（v0.1）改成 2000（v0.2）→ 装机报
+`install version downgrade code:9568263`，**已装旧包的设备/模拟器一律装不上**。
+`versionCode` 是装机唯一判定依据，语义版本放 `versionName`。
+本项目口径：v0.1 = 1000000，v0.2 = **1000001**（只递增）。
+
+---
+
 ## 落地决策表
 
 | 结论 | 决策 | 何时做 |
@@ -966,3 +1027,6 @@ sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
 | **埋点（曝光/点击/页面）** | ✅ **用原生 `hiAppEvent` + `UIObserver`，不引第三方 SDK**；三类 API 起始版本 12–17，**API 24 全部可用**；🔴 **笔记内容一律禁止进埋点** | **后置**（不在 v0.1–v0.3） |
 | 埋点上报策略 | ✅ 非实时批量 + **失败即丢**（不做重试），避免与 git 同步抢带宽 | 落码时 |
 | 形态分布埋点（sm/md/lg 使用占比） | ✅ 本项目最独有的数据，**v0.1 发布后即可采集**且不触碰内容红线 | v0.1 之后评估 |
+| **浮在内容之上的菜单/浮层** | ✅ **一律走官方弹层**（`bindPopup` 等）；❌ 禁「offset 溢出 + 绝对定位」手搓浮层（会被后声明组件盖住，**L-1 实测**） | 已落地（侧栏库切换菜单） |
+| **行内子控件吃点击** | ✅ 行内不参与命中的节点统一 `hitTestBehavior(HitTestMode.None)`，冒泡到外层 Row（**L-2 实测**） | 已落地（文件树行） |
+| **versionCode** | ✅ 单调递增（v0.1=1000000 → v0.2=1000001）；调小直接 `install version downgrade` 装不上（**L-3 实测**） | 已是现状 |

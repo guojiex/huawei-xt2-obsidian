@@ -121,6 +121,11 @@ export class VaultRegistry {
     return this.state.currentVaultId;
   }
 
+  /** UIAbilityContext 转发（给需要 preferences 的子系统用，避免各处重复取 context） */
+  abilityContext(): common.UIAbilityContext {
+    return this.context;
+  }
+
   /** 当前库条目（不存在/列表空时返回 null）。 */
   currentEntry(): VaultEntry | null {
     return this.findEntry(this.state.currentVaultId);
@@ -229,6 +234,15 @@ export class VaultRegistry {
       n++;
     }
     return candidate;
+  }
+
+  /**
+   * 库内相对路径 → 沙箱绝对路径（转发唯一解析器）。
+   * 子系统（NoteService 等）要用绝对路径时走这里，不得自己拼 `filesDir + '/vaults/...'`
+   * （硬约束 #14：路径拼接只允许出现在 VaultPathResolver）。
+   */
+  absoluteIn(vaultId: string, relativePath: string): string {
+    return this.resolver.resolve(vaultId, relativePath);
   }
 
   /** 库目录绝对路径（转发唯一解析器，供 UI 展示路径但不自行拼接）。 */
