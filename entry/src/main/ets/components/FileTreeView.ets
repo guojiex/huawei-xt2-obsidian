@@ -46,6 +46,14 @@ export struct FileTreeView {
    * 所以入口形态是我们自己补的 —— 目录行 + 预填路径的对话框。
    */
   onCreateInDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
+  /**
+   * 「删除这个目录」回调（目录行尾的删除按钮，2026-10-18 方案 A 配套）。
+   * 为什么要有它：方案 A 补上「新建空文件夹」后，建了文件夹却删不掉 ——
+   * 目录行原先只有 rename/move（1.6 的左滑三档还没落码），删除入口先以
+   * 行尾常驻按钮的形式补上，确认框走 DeletePathDialog，整棵子树移除。
+   * ⚠️ 只加在目录行：文件行的删除等 1.6 左滑一起做，避免满树 trash 图标后又要拆。
+   */
+  onDeleteDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
@@ -127,17 +135,8 @@ export struct FileTreeView {
     return this.expanded.indexOf(relPath) >= 0;
   }
 
-  /** 记住上次点过的目录（供新建笔记对话框默认定位，见 ExpandStore.lastdir） */
-  private saveLastDir(relPath: string): void {
-    this.ensureStore();
-    const store: ExpandStore = this.store as ExpandStore;
-    store.saveLastDir(this.vaultId, relPath);
-  }
-
   /** 展开/折叠：换整个数组触发刷新，并立刻落盘（需求 1.3） */
   private toggleDir(relPath: string): void {
-    // 点目录行 = 记住这个目录：新建笔记默认建在这里（2026-10-18 用户拍板）
-    this.saveLastDir(relPath);
     const next: string[] = [];
     let found: boolean = false;
     for (let i = 0; i < this.expanded.length; i++) {
@@ -253,10 +252,25 @@ export struct FileTreeView {
               .alignItems(VerticalAlign.Center)
               .borderRadius(Radius.icon)
               .onClick(() => {
-                hilog.info(TREE_DOMAIN, TREE_TAG, '行内新建：目录 %{public}s', n.relPath);
-                // 点了 + 也算「点过这个目录」：即使取消对话框，记忆也已更新
-                this.saveLastDir(n.relPath);
-                this.onCreateInDir(n.relPath);
+              hilog.info(TREE_DOMAIN, TREE_TAG, '行内新建：目录 %{public}s', n.relPath);
+              this.onCreateInDir(n.relPath);
+              })
+
+              // 目录行尾的删除（2026-10-18 方案 A 配套）：与 + 同样必须是内容 Row 的
+              // 兄弟（塞进去会被 HitTestMode.None 透明掉，见上方 + 的说明）。
+              // 危险色常驻可能太吵，先用 tertiary，确认框里才是 danger。
+              Row() {
+                Icon('trash', 14, $r('app.color.text_tertiary'))
+              }
+              .width(Size.touch)
+              .height(Size.touch)
+              .margin({ left: Space.s1 })
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(Radius.icon)
+              .onClick(() => {
+                hilog.info(TREE_DOMAIN, TREE_TAG, '行内删除：目录 %{public}s', n.relPath);
+                this.onDeleteDir(n.relPath);
               })
             }
           }
@@ -274,8 +288,6 @@ export struct FileTreeView {
             if (n.isDir) {
               this.toggleDir(n.relPath);
             } else if (n.relPath !== this.currentFilePath) {
-              // 点文件行 = 记住它所在的目录（下次新建默认建在那里）
-              this.saveLastDir(FileTree.parentOf(n.relPath));
               this.onSelectFile(n.relPath);
             }
           })
