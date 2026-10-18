@@ -1046,6 +1046,27 @@ registerJavaScriptProxy(jsObject: object, name: string, methodList: Array<string
 `announceReady try=0 arkts=yes` → `ready sent to ArkTS at try=0` → ArkTS 侧
 `Web 编辑器页面就绪，桥接已建立`。JS→ArkTS 方向自此跑通（此前 gitbridge 只验证过 ArkTS→JS）。
 
+### L-5 `width('100%')` 配水平 margin = 溢出父级 ❓→✅
+
+> 2026-10-18 用户报告「vault-switch 卡片超出侧栏宽度」，模拟器 UI 树实测定位 + 修复验证。
+> 踩坑位置：`VaultSidebar.ets` 头部库切换卡片。
+
+```typescript
+// ❌ 卡片占宽 = 侧栏宽 + 2×margin，右缘越过栏间分隔线伸进编辑区
+.width('100%').margin({ left: Space.s2, right: Space.s2 })
+// ✅ inset 放外包层 padding（盒内，不溢出）；卡片自身只留垂直 margin
+Column() { Row(...).width('100%')... }.padding({ left: Space.s2, right: Space.s2 })
+```
+
+ArkUI 的百分比取**父级内容盒的 100%**，margin 加在盒外 —— 与 CSS `content-box` 同款行为，
+但 ArkUI 没有 `box-sizing` 和 `width:auto` 收缩兜底（块级子元素不设宽度才是撑满-减去margin）。
+**判别特征**：控件右缘越过父容器边界 / 压到相邻栏的分隔线。
+原型 `.vault-switch` 用 CSS `margin` + `width:auto` 不溢出，照抄进 ArkUI 必须换成外包层 padding。
+
+**实测通过（2026-10-18 三屏态，UI 树读数）**：侧栏 0–1061px（369vp），卡片
+`left:23, width:1013`（右缘 1036px = 360vp）✅ 不再越界；修前右缘 ≈1084px、探出 8vp。
+已全库扫同类反模式（`width('100%')` + 水平 margin），仅此一处。
+
 ---
 
 ## 落地决策表
@@ -1080,4 +1101,5 @@ registerJavaScriptProxy(jsObject: object, name: string, methodList: Array<string
 | **versionCode** | ✅ 单调递增（v0.1=1000000 → v0.2=1000001）；调小直接 `install version downgrade` 装不上（**L-3 实测**） | 已是现状 |
 | **JS→ArkTS 桥接调用方式** | ✅ 桥接方法**必须挂在注入对象上直接调**（`window.__arkts.postMessage(x)`）；detach 后调用抛 `non-injected object`，且 `typeof` 仍是 function（**L-4 实测**，曾误判成「壳」） | 已落地（EditorWebView / gitbridge 复用） |
 | **桥接代理注册时机** | ✅ `onControllerAttached`（页面加载前，单次加载即注入）；❌ `onPageEnd` 注册要 `refresh()` 且页面加载两遍（**L-4 实测**） | 已落地（EditorWebView） |
+| **控件 inset 的写法** | ✅ 外包层 `padding` 做 inset；❌ 控件自身 `width('100%')` + 水平 `margin`（占宽 = 父宽 + 2×margin，溢出）（**L-5 实测**） | 已落地（VaultSidebar 库切换卡片） |
 | **registerJavaScriptProxy 签名** | ✅ 位置参数版 `(obj, name, methodList, asyncMethodList?, permission?)`；options 对象版是 deprecated `WebController` 的，编译直接错 | 已是现状 |

@@ -124,54 +124,63 @@ export struct VaultSidebar {
 
   build() {
     Column() {
-      // 头部区：库切换器卡片（点击弹出库列表，见 VaultMenu）
-      Row({ space: Space.s2 }) {
-        Icon('folder', 18, $r('app.color.text_secondary'))
-        Column({ space: 2 }) {
-          Text(this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）')
-            .fontSize(FontSize.body2)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text('vaults/' + this.currentVaultId)
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
+      // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset。
+      // ⚠️ inset 不能写在卡片自己的 margin 上再配 width('100%')：ArkUI 的百分比取父级
+      // 内容盒的 100%，margin 加在盒外 → 卡片实际占宽 = 侧栏宽 + 2×margin，右缘越过
+      // 栏间分隔线伸进编辑区（2026-10-18 用户实测）。外包层 padding 在盒内，天然不溢出。
+      Column() {
+        // 库切换器卡片（点击弹出库列表，见 VaultMenu）
+        Row({ space: Space.s2 }) {
+          Icon('folder', 18, $r('app.color.text_secondary'))
+          Column({ space: 2 }) {
+            Text(this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text('vaults/' + this.currentVaultId)
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
 
-        Icon(this.menuOpen ? 'chevronUp' : 'chevronDown', 16, $r('app.color.text_tertiary'))
+          Icon(this.menuOpen ? 'chevronUp' : 'chevronDown', 16, $r('app.color.text_tertiary'))
+        }
+        // 此时 100% = 外包层的 content 盒 → 刚好放下，不再溢出侧栏
+        .width('100%')
+        .height(Size.itemH)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .margin({ top: Space.s2 })
+        .borderRadius(Radius.control)
+        .backgroundColor($r('app.color.bg_card'))
+        .border({ width: 1, color: $r('app.color.line') })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.menuOpen = !this.menuOpen;
+        })
+        // 下拉菜单：弹层挂窗口覆盖层（高于文件树），列全部库（当前高亮）+ 分隔线 + 「管理库…」
+        .bindPopup(this.menuOpen, {
+          builder: this.VaultMenu(),
+          placement: Placement.BottomLeft,
+          // 卡片左缘与侧栏左缘相距外包层 padding（s2），弹层贴卡片左缘 → offset 只补下间距
+          offset: { x: 0, y: Space.s2 },
+          mask: false,
+          autoCancel: true,
+          popupColor: Color.Transparent,
+          onWillDismiss: (action: DismissPopupAction): void => {
+            // 点菜单外 / 返回键收起：框架先回调这里，必须显式 dismiss() 才真正消失；
+            // 同时把 menuOpen 置回 false，chevron 图标才不会停在「已展开」
+            action.dismiss();
+            this.menuOpen = false;
+          }
+        })
       }
       .width('100%')
-      .height(Size.itemH)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .margin({ left: Space.s2, right: Space.s2, top: Space.s2 })
-      .borderRadius(Radius.control)
-      .backgroundColor($r('app.color.bg_card'))
-      .border({ width: 1, color: $r('app.color.line') })
-      .alignItems(VerticalAlign.Center)
-      .onClick(() => {
-        this.menuOpen = !this.menuOpen;
-      })
-      // 下拉菜单：弹层挂窗口覆盖层（高于文件树），列全部库（当前高亮）+ 分隔线 + 「管理库…」
-      .bindPopup(this.menuOpen, {
-        builder: this.VaultMenu(),
-        placement: Placement.BottomLeft,
-        // 卡片自身有 margin left Space.s2，弹层默认贴卡片左边缘 → offset 只补一个下间距
-        offset: { x: 0, y: Space.s2 },
-        mask: false,
-        autoCancel: true,
-        popupColor: Color.Transparent,
-        onWillDismiss: (action: DismissPopupAction): void => {
-          // 点菜单外 / 返回键收起：框架先回调这里，必须显式 dismiss() 才真正消失；
-          // 同时把 menuOpen 置回 false，chevron 图标才不会停在「已展开」
-          action.dismiss();
-          this.menuOpen = false;
-        }
-      })
+      .padding({ left: Space.s2, right: Space.s2 })
 
       // 目录头：标签 + 收起入口（收起只在嵌入形态有意义，照原型 side-head）
       Row() {
