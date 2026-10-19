@@ -83,7 +83,8 @@
     --h-panehead: 40px;
     --h-item: 56px;
     --h-button: 40px;
-    --h-statusbar: 32px;
+    --h-statusbar: 28px;
+    --h-touch: 48px;
     --tree-indent: 24px;   /* 文件树每级缩进：等于「caret 16 + 间距」，上级图标正对下级箭头 */
 
     /* 阴影（Z 轴层级） */
@@ -95,7 +96,7 @@
     --ease: cubic-bezier(.20, 0, 0, 1);
     --dur-fast: 120ms;
     --dur: 200ms;
-    --dur-slow: 320ms;
+    --dur-slow: 300ms;
 
     --font-sans: "HarmonyOS Sans SC", "HarmonyOS Sans", "HarmonyOS Sans TC",
                  "PingFang SC", "Microsoft YaHei", "Noto Sans SC",
@@ -233,7 +234,8 @@
   /* 库管理 / 设置 / 导入是全宽内容页，折痕标注在这里没有意义 */
   [data-view="vaults"] .hinge, [data-view="vaults"] .hinge-note,
   [data-view="sync"] .hinge, [data-view="sync"] .hinge-note,
-  [data-view="settings"] .hinge, [data-view="settings"] .hinge-note { display: none; }
+  [data-view="settings"] .hinge, [data-view="settings"] .hinge-note,
+  [data-view="trash"] .hinge, [data-view="trash"] .hinge-note { display: none; }
 
   /* ---------- 应用内 UI ---------- */
   .appbar {
@@ -242,7 +244,7 @@
     border-bottom: 1px solid var(--line); background: var(--bg-card);
   }
   .icon-btn {
-    width: 40px; height: 40px; border-radius: var(--r-full); border: none; background: transparent;
+    width: var(--h-touch); height: var(--h-touch); border-radius: var(--r-full); border: none; background: transparent;
     display: flex; align-items: center; justify-content: center; cursor: pointer;
     color: var(--text-secondary); flex: none; min-width: 0; padding: 0;
   }
@@ -283,13 +285,15 @@
   .side-mini {
     border: none; background: transparent; color: var(--text-tertiary);
     font-size: var(--fs-body3); font-family: inherit; cursor: pointer;
-    height: 28px; min-width: 0; padding: 0 var(--sp-2); border-radius: var(--r-full);
+    height: var(--h-touch); min-width: var(--h-touch); padding: 0 var(--sp-2); border-radius: var(--r-full);
   }
   .side-mini:hover { background: var(--fill-hover); color: var(--text-primary); }
   .side-new { color: var(--brand); font-weight: 700; font-size: 17px; line-height: 1; }
   .side-new:hover { background: var(--brand-bg); color: var(--brand); }
 
   .tree { flex: 1; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-3); }
+  .tree-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); padding: var(--sp-5); color: var(--text-secondary); font-size: var(--fs-body2); }
+  .tree-empty button { min-height: var(--h-touch); border: 0; border-radius: var(--r-button); background: var(--brand); color: var(--on-brand); padding: 0 var(--sp-4); }
   .node-wrap { position: relative; overflow: hidden; border-radius: var(--r-control); }
   /* HdsListItem 观感：主文本 16fp / 副文本 12fp / 最小高度 56vp / 圆角 12vp */
   .node {
@@ -388,7 +392,7 @@
 
   /* 目录行行内「+」：在该文件夹下新建笔记（仅目录行有，文件行没有） */
   .node .row-plus {
-    flex: none; width: 32px; height: 32px; margin-right: calc(-1 * var(--sp-2));
+    flex: none; width: var(--h-touch); height: var(--h-touch); margin-right: calc(-1 * var(--sp-2));
     border: none; border-radius: var(--r-control); background: none; color: var(--text-tertiary);
     display: none; align-items: center; justify-content: center; cursor: pointer; padding: 0;
   }
@@ -427,7 +431,7 @@
     padding: 0 var(--sp-4); border-bottom: 1px solid var(--line);
     font-size: var(--fs-body3); color: var(--text-tertiary); background: var(--bg-card);
   }
-  .pane-head .name { color: var(--text-secondary); font-weight: 500; }
+  .pane-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-weight: 500; }
   /* 单屏态「编辑 / 预览」切换（SegmentedButton 观感）——md/lg 两栏同时可见，不需要它 */
   .seg {
     margin-left: auto; flex: none; display: inline-flex; gap: 2px; padding: 2px;
@@ -525,6 +529,33 @@
     color: var(--brand); background: var(--brand-bg); padding: 2px var(--sp-2);
     border-radius: var(--r-full); font-size: var(--fs-caption);
   }
+  .pane-action { flex: none; margin-left: auto; min-width: 0; height: var(--h-touch); padding: 0 var(--sp-2); border: 0; background: transparent; color: var(--brand); font-size: var(--fs-body3); }
+  .pane-action + .seg { margin-left: 0; }
+  .backlinks { flex: none; max-height: 180px; overflow: auto; border-top: 1px solid var(--line); padding: var(--sp-3) var(--sp-5); background: var(--bg-secondary); }
+  .backlinks b { display: block; margin-bottom: var(--sp-2); }
+  .backlinks button { width: 100%; justify-content: flex-start; margin-top: var(--sp-1); border: 0; background: var(--bg-card); border-radius: var(--r-control); }
+  .wikilink { border: 0; min-width: 0; height: auto; display: inline; cursor: pointer; }
+  .asset-preview, .math-preview, .mermaid-preview { display: block; margin: var(--sp-3) 0; padding: var(--sp-4); border: 1px dashed var(--line-strong); border-radius: var(--r-control); background: var(--bg-secondary); color: var(--text-secondary); font-size: var(--fs-body2); }
+  .quick-mask { position: absolute; inset: 0; z-index: 48; display: flex; align-items: flex-start; justify-content: center; padding: var(--sp-6); background: rgba(0,0,0,.38); }
+  .quick-box { width: min(100%, 560px); max-height: 75%; display: flex; flex-direction: column; background: var(--bg-card); border-radius: var(--r-card); box-shadow: var(--elev-3); overflow: hidden; }
+  .quick-box input { height: var(--h-touch); width: 100%; border: 0; border-bottom: 1px solid var(--line); outline: none; padding: 0 var(--sp-4); background: var(--bg-card); color: var(--text-primary); font: inherit; }
+  .quick-tabs { display: flex; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line); }
+  .quick-tabs button { height: 32px; min-width: 0; border: 0; background: transparent; }
+  .quick-tabs button.on { background: var(--brand-bg); color: var(--brand); }
+  .quick-results { overflow: auto; padding: var(--sp-2); }
+  .quick-results button { width: 100%; height: auto; min-height: var(--h-touch); display: block; text-align: left; border: 0; border-radius: var(--r-control); padding: var(--sp-2) var(--sp-3); }
+  .quick-results small { display: block; color: var(--text-tertiary); }
+  .trash-item { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); margin-bottom: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-control); }
+  .trash-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .trash-item button { flex: none; }
+  .release-map { max-width: 1180px; margin: 0 auto var(--sp-4); padding: var(--sp-3) var(--sp-4); background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r-control); }
+  .release-map .top { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+  .release-map strong { font-size: var(--fs-body2); }
+  .release-map select { border: 1px solid var(--line-strong); background: var(--bg-card); color: var(--text-primary); border-radius: var(--r-control); padding: var(--sp-2); font: inherit; }
+  .release-map p { margin: var(--sp-2) 0 0; color: var(--text-secondary); font-size: var(--fs-body3); }
+  .release-map a { color: var(--brand); }
+  .version-annotated { position: relative; outline: 2px solid var(--brand); outline-offset: -2px; }
+  .version-annotated::after { content: attr(data-intro); position: absolute; right: 2px; top: -9px; z-index: 35; border-radius: var(--r-full); padding: 1px 5px; background: var(--brand); color: var(--on-brand); font-size: 10px; line-height: 1.3; font-weight: 700; pointer-events: none; }
   .todo { list-style: none; margin-left: -20px; }
 
   .statusbar {
@@ -559,7 +590,7 @@
   }
   .field input {
     width: 100%; font-family: inherit; font-size: var(--fs-body2); color: var(--text-primary);
-    height: var(--h-input); padding: 0 var(--sp-3);
+    height: var(--h-touch); padding: 0 var(--sp-3);
     border: 1px solid transparent; border-radius: var(--r-control);
     background: var(--bg-secondary);
     transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
@@ -789,13 +820,33 @@
     <button data-v="vaults">库管理</button>
     <button data-v="sync">导入仓库</button>
     <button data-v="settings">设置</button>
+    <button data-v="trash">回收站</button>
   </div>
   <div class="grp">
     <span class="lbl">主题</span>
     <button data-t="light" class="on">浅色</button>
-    <button data-t="dark">深色</button>
+    <button data-t="dark" data-intro="v1.0">深色</button>
   </div>
   <span class="hint">编辑区可直接输入，预览实时更新；单屏态用内容区右上角「编辑 / 预览」切换</span>
+</div>
+
+<div class="release-map">
+  <div class="top">
+    <strong>版本标注</strong>
+    <select id="releaseMark" aria-label="选择要查看的版本标注">
+      <option value="v0.1">v0.1 · 三形态与多库</option>
+      <option value="v0.2">v0.2 · 编辑、预览与回收站</option>
+      <option value="v0.3">v0.3 · Git 双向同步</option>
+      <option value="v0.4" selected>v0.4 · 文件名快切与最近打开</option>
+      <option value="v1.0">v1.0 · 深色、性能与恢复验收</option>
+      <option value="v1.1">v1.1 · 当前库全文搜索</option>
+      <option value="v1.2">v1.2 · 双链与反链</option>
+      <option value="v1.3">v1.3 · 图片、公式与 Mermaid</option>
+    </select>
+    <button id="releaseJump">查看该版 UI</button>
+    <span class="hint">蓝框只标设计归属，不表示代码已交付；切换版本不会改“关于”里的包版本。</span>
+  </div>
+  <p id="releaseDetail"></p>
 </div>
 
 <div class="stage">
@@ -805,11 +856,14 @@
         <button class="icon-btn hidden" id="backBtn" title="返回笔记">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
         </button>
-        <button class="icon-btn" id="menuBtn" title="文件树">
+        <button class="icon-btn" id="menuBtn" title="文件树" data-intro="v0.1">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
         <div class="title" id="appTitle">流式系统_流处理实战教程</div>
-        <button class="icon-btn" id="syncBtn" title="同步">
+        <button class="icon-btn" id="searchBtn" title="快速切换 / 搜索" data-intro="v0.4" aria-label="快速切换 / 搜索">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+        </button>
+        <button class="icon-btn" id="syncBtn" title="同步" data-intro="v0.3">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4.4V9h-4.6"/></svg>
         </button>
         <button class="icon-btn" id="settingsBtn" title="设置与关于">
@@ -821,29 +875,31 @@
         <!-- 笔记视图 -->
         <div class="views" id="noteView" style="flex:1;min-height:0">
           <aside class="sidebar" id="sidebar">
-            <div class="vault-switch" id="vaultSwitch">
+            <div class="vault-switch" id="vaultSwitch" data-intro="v0.1">
               <span class="vs-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 7.5A1.9 1.9 0 0 1 5.5 5.6h3.1l1.8 2.2h6.9a1.9 1.9 0 0 1 1.9 1.9v8.1a1.9 1.9 0 0 1-1.9 1.9H5.5a1.9 1.9 0 0 1-1.9-1.9z"/></svg></span>
               <span class="vname"><span id="curVaultName">本地笔记</span><span class="vsub" id="curVaultSub">vaults/local · 3 篇</span></span>
               <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg></span>
               <div class="vault-menu hidden" id="vaultMenu"></div>
             </div>
-            <div class="side-head">
+            <div class="side-head" data-intro="v0.2">
               <span id="treeCount">3 篇</span>
               <span class="spacer" style="flex:1"></span>
               <button class="side-mini side-new" id="newAtRootBtn" title="在 vault 根目录新建笔记 / 文件夹">＋</button>
               <button class="side-mini" id="sideHideBtn" title="收起目录栏">收起 «</button>
             </div>
-            <div class="tree" id="tree"></div>
-            <div class="sw-hint">← 按住任意一行向左拖：拖一半出操作，滑到底直接删除</div>
+            <div class="tree" id="tree" data-intro="v0.2"></div>
+            <div class="sw-hint">← 左滑显示操作；滑到底移入回收站，可撤销</div>
             <div class="side-foot">
               <button id="gotoVaults">管理库</button>
+              <button id="gotoTrash" data-intro="v0.2">回收站</button>
             </div>
           </aside>
 
           <div class="editor-pane" id="editorPane">
-            <div class="pane-head">
+            <div class="pane-head" data-intro="v0.2">
               <span class="name" id="editName">流式系统_流处理实战教程.md</span>
               <span class="src-tag">·</span><span class="src-tag">源模式</span>
+              <button class="pane-action" id="insertImageBtn" data-intro="v1.3" title="相册图片入口设计示意">＋ 图片示意</button>
               <span class="seg hidden" id="modeSegEdit">
                 <button data-m="edit" class="on">编辑</button><button data-m="preview">预览</button>
               </span>
@@ -855,18 +911,20 @@
           </div>
 
           <div class="preview-pane" id="previewPane">
-            <div class="pane-head">
+            <div class="pane-head" data-intro="v0.2">
               <span class="pv-label">预览</span>
+              <button class="pane-action" id="backlinksBtn" data-intro="v1.2" title="查看当前笔记的反链">反链</button>
               <span class="seg hidden" id="modeSegPreview">
                 <button data-m="edit" class="on">编辑</button><button data-m="preview">预览</button>
               </span>
             </div>
             <div class="md" id="md"></div>
+            <div class="backlinks hidden" id="backlinksPanel"></div>
           </div>
         </div>
 
         <!-- 同步视图 -->
-        <div class="sync hidden" id="syncView">
+        <div class="sync hidden" id="syncView" data-intro="v0.3">
           <div class="sub">每个仓库在 vaults/ 下成为一个独立目录，与已有笔记互不干扰</div>
           <div class="notice">
             <span>支持 GitHub、Gitee 与自建 GitLab。Gitee 私有库请填用户名，GitHub 留空。</span>
@@ -891,10 +949,11 @@
           </div>
           <div class="field">
             <label>私人令牌 PAT（存关键资产，不明文落盘）</label>
-            <input id="fToken" type="password" value="github_pat_11A••••••••••••">
+            <input id="fToken" type="password" placeholder="在应用中输入，不在设计稿保存令牌">
           </div>
           <div class="actions">
             <button class="primary" id="btnPull">导入为新库</button>
+            <button id="btnPush" data-intro="v0.3" title="v0.3 commit / push 入口设计示意">提交并推送 · 示意</button>
             <button id="btnErr">模拟 401 报错</button>
             <button id="btnBack">返回笔记</button>
           </div>
@@ -907,8 +966,14 @@
           <div class="last" id="syncLast">已跟踪 1 个仓库 · 导入完成后会自动切换为新库</div>
         </div>
 
+        <!-- v0.2：删除兜底。原型只演示当前页面内的恢复交互，真机需持久化。 -->
+        <div class="sync hidden" id="trashView" data-intro="v0.2">
+          <div class="sub">当前库的已删除笔记可恢复。原型仅在本页面内存中保留；真机实现须在重启后仍能恢复。</div>
+          <div id="trashItems"></div>
+        </div>
+
         <!-- 库管理视图 -->
-        <div class="sync hidden" id="vaultsView">
+        <div class="sync hidden" id="vaultsView" data-intro="v0.1">
           <div class="sub">每个库是 vaults/ 下的一个独立目录，各自独立同步</div>
           <div class="vcards" id="vcards"></div>
           <div class="add-row">
@@ -923,14 +988,14 @@
           <div class="set-entry" id="settingsEntry">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path fill="currentColor" stroke="none" d="M19.4 13a7.7 7.7 0 0 0 0-2l2-1.55a.5.5 0 0 0 .12-.63l-1.9-3.28a.5.5 0 0 0-.6-.22l-2.35.95a7.5 7.5 0 0 0-1.73-1l-.35-2.5a.5.5 0 0 0-.5-.42h-3.8a.5.5 0 0 0-.5.42l-.35 2.5a7.5 7.5 0 0 0-1.73 1l-2.35-.95a.5.5 0 0 0-.6.22L2.8 8.82a.5.5 0 0 0 .12.63L4.9 11a7.7 7.7 0 0 0 0 2l-1.98 1.55a.5.5 0 0 0-.12.63l1.9 3.28a.5.5 0 0 0 .6.22l2.35-.95c.53.43 1.11.77 1.73 1l.35 2.5a.5.5 0 0 0 .5.42h3.8a.5.5 0 0 0 .5-.42l.35-2.5a7.5 7.5 0 0 0 1.73-1l2.35.95a.5.5 0 0 0 .6-.22l1.9-3.28a.5.5 0 0 0-.12-.63zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
             <span>设置与关于</span>
-            <em id="entryVer">v0.1.0</em>
+            <em id="entryVer">v0.2.0</em>
             <span class="arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></span>
           </div>
         </div>
 
         <!-- 设置 / 关于视图 -->
-        <div class="sync hidden" id="settingsView">
-          <div class="sub">版本号由应用包信息读出，不在代码里写死常量</div>
+        <div class="sync hidden" id="settingsView" data-intro="v0.1">
+          <div class="sub">真机版本号应由应用包信息读出；下方数字只是设计稿样例，不随版本标注切换。</div>
 
           <div class="set-group">
             <div class="set-head">关于</div>
@@ -938,7 +1003,7 @@
               <div class="hero-icon">曜</div>
               <div class="hero-txt">
                 <div class="hero-nm">曜石笔记</div>
-                <div class="hero-sub" id="setVer">版本 0.1.0（1）</div>
+                <div class="hero-sub" id="setVer">版本 0.2.0（1000001）</div>
               </div>
             </div>
             <div class="set-row"><span>包名</span><code>com.jxg.huaweiobsidian</code></div>
@@ -959,17 +1024,18 @@
           </div>
 
           <div class="set-group">
-            <div class="set-head">后续版本才有</div>
-            <div class="set-row dim"><span>外观主题</span><em>v0.2</em></div>
-            <div class="set-row dim"><span>编辑器选项</span><em>v0.2</em></div>
-            <div class="set-row dim"><span>Git 同步与凭据</span><em>v0.3</em></div>
+            <div class="set-head">版本归属（设计标注）</div>
+            <div class="set-row"><span>视觉 token 与系统主题资源</span><em>v0.2</em></div>
+            <div class="set-row"><span>Git 同步与安全凭据</span><em>v0.3</em></div>
+            <div class="set-row"><span>完整深色体验验收</span><em>v1.0</em></div>
+            <div class="set-row"><span>全文搜索 / 双链 / 图片</span><em>v1.1 / 1.2 / 1.3</em></div>
             <div class="set-row dim"><span>导出 / 备份</span><em>待拍板（Q2）</em></div>
           </div>
         </div>
       </div>
 
       <div class="statusbar">
-        <span><span class="dot"></span> 已保存</span>
+        <span id="saveState"><span class="dot"></span> 已保存</span>
         <span id="stCount">1,284 字</span>
         <span id="stVault">本地笔记</span>
         <span style="margin-left:auto" id="stForm">三屏展开 · 1061vp</span>
@@ -996,7 +1062,7 @@
               <span class="dp-chev">▾</span>
             </button>
             <div class="dir-list hidden" id="cfDirList"></div>
-            <div class="cf-hint" id="cfDirHint">默认建在上次所在的文件夹；要建在库根目录，选第一项「根目录」。</div>
+            <div class="cf-hint" id="cfDirHint">头部「＋」默认根目录，文件夹行尾「＋」默认该文件夹；也可在此重新选择。</div>
           </div>
           <div class="cinput hidden" id="cfSelectRow">
             <select id="cfSelect"></select>
@@ -1008,11 +1074,21 @@
           </div>
         </div>
       </div>
+      <div class="quick-mask hidden" id="quickMask" data-intro="v0.4">
+        <div class="quick-box" role="dialog" aria-label="快速切换与搜索">
+          <input id="quickInput" placeholder="搜索当前库的笔记文件名" aria-label="搜索当前库">
+          <div class="quick-tabs">
+            <button data-search-mode="name" class="on">文件名 · v0.4</button>
+            <button data-search-mode="content" data-intro="v1.1">正文 · v1.1</button>
+          </div>
+          <div class="quick-results" id="quickResults"></div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="undo-bar hidden" id="undoBar">
+<div class="undo-bar hidden" id="undoBar" data-intro="v0.2">
   <span id="undoTxt">已删除</span>
   <button id="undoBtn">撤销</button>
 </div>
@@ -1082,22 +1158,65 @@
       对话框里<b>目录可改</b>：点目录行展开全库目录列表（<b>不受树折叠状态影响</b>，折叠目录里的嵌套目录也列得出来），<b>「根目录」恒为第一项</b> —— 要建在库根目录就显式选它。<br>
       名字<b>可以带 <code>/</code></b>（如 <code>工程/流式系统/第一篇</code>），缺少的目录会连名字一起建出来；非法字符（<code>\ : * ? " &lt; &gt; |</code>）直接过滤；重名自动加后缀；确认前实时预览目标路径。<br>
       ⚠️ <b>末段不能为空，名称不能以 <code>/</code> 结尾</b>（「只要目录/」会被拒绝：hint 警示 + 确认禁用 + 创建时再拦一道）。这条边界 2026-10-18 对齐：App 侧 <code>normalizeRelPath</code> 本就抛错，原型原先把末尾 <code>/</code> 当没输入、静默建成 <code>只要目录.md</code>，两端体验分裂。<br>
-      📁 <b>建文件夹靠对话框里的「笔记 / 文件夹」切换</b>（2026-10-18 用户拍板方案 A —— 原话「设计稿里面我要怎么新建文件夹？？？」：此前只能靠笔记名带 <code>/</code> 隐式建目录，建不了空文件夹）：切到「文件夹」后选父目录、填名字（同样可带 <code>/</code> 建多层），确认即建<b>空目录</b>，重名自动加后缀，建完把 <code>lastDir</code> 记入新文件夹（下次新建默认进这里）。<br>
+      📁 <b>建文件夹靠对话框里的「笔记 / 文件夹」切换</b>（2026-10-18 用户拍板方案 A —— 原话「设计稿里面我要怎么新建文件夹？？？」：此前只能靠笔记名带 <code>/</code> 隐式建目录，建不了空文件夹）：切到「文件夹」后选父目录、填名字（同样可带 <code>/</code> 建多层），确认即建<b>空目录</b>，重名自动加后缀；下次创建仍由所点入口决定默认目录。<br>
       🗑 <b>删除同步配套</b>：目录行尾原先只有 rename / move、<b>没有删除按钮</b>（建了文件夹却删不掉），本版补上；确认文案按「空文件夹 / 连里面 N 篇笔记一起删 / 单文件」三种形态给，Git 库照旧加远端警告；<code>doDeleteNote</code> 按 <code>nodeRange</code> 整棵子树移除并扣减文件计数。
       ⚠️ <b>设计稿原先没定义这个流程</b>：最早的版本底部只有一个没绑行为的占位「新建」按钮，目录级新建入口、对话框形态均为实现期自补设计（2026-10-18 用户拍板：目录选择器 + 头部「＋」根目录入口，移除底部按钮）。</li>
     <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、包名、许可</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
-    <li><b>搜索标了 v2</b>：全文搜索依赖全库索引，MVP 不做；MVP 只做文件名检索。</li>
-    <li><b>[[双链]] 与 #标签 只是渲染示意</b>：两者都依赖索引层，属需求池 B 组，MVP 后置。</li>
-    <li><b>跨库检索不做</b>：搜索与双链都只在当前库内生效（本就属 v2），切库后要重新搜。</li>
-    <li><b>导入目前只有克隆</b>：pull / commit / push 未实现，所以手机上改了还推不回去；PAT 当前明文存 preferences，正式版必须迁关键资产存储服务。</li>
+    <li><b>按版本看交互</b>：v0.4 是当前库文件名快切与最近打开；v1.1 增加当前库正文搜索。设计稿用内存样本演示，增量索引仍须按需求文档在真机实现。</li>
+    <li><b>[[双链]] 是 v1.2 示意</b>：当前原型可演示跳转、未创建目标和反链；自动补全、同名消歧与重命名更新引用仍按 v1.2 需求验收。<code>#标签</code> 只是着色样本，未分配版本功能。</li>
+    <li><b>搜索与双链只在当前库内生效</b>：切库后重新显示该库结果；跨库检索仍留在需求池。</li>
+    <li><b>Git 双向同步归 v0.3</b>：现有代码只有部分 clone 桥接；commit / push、安全令牌存储与真机验收仍待完成。此页的同步操作只是交互演示。</li>
   </ul>
 </div>
 
 <script>
 (function () {
   var body = document.body;
+  var RELEASES = {
+    'v0.1': ['三形态骨架、库切换与返回入口', '开发中，已有部分真机记录'],
+    'v0.2': ['文件树、编辑/预览、保存、左滑与回收站', '开发中，中文输入等仍待真机验收'],
+    'v0.3': ['Git 库导入、安全凭据、commit/push', '规划中，只有部分 clone 桥接代码'],
+    'v0.4': ['当前库文件名快切与最近打开', '规划中'],
+    'v1.0': ['完整深色体验、性能、空状态与 MVP 回归', '规划中'],
+    'v1.1': ['当前库正文搜索与增量索引', '规划中'],
+    'v1.2': ['双链跳转、未创建链接与反链', '规划中'],
+    'v1.3': ['相册图片、公式与 Mermaid 预览', '规划中']
+  };
+
+  function applyReleaseMark() {
+    var version = document.getElementById('releaseMark').value;
+    var nodes = document.querySelectorAll('[data-intro]');
+    for (var i = 0; i < nodes.length; i++) {
+      nodes[i].classList.toggle('version-annotated', nodes[i].getAttribute('data-intro') === version);
+    }
+    var info = RELEASES[version];
+    document.getElementById('releaseDetail').innerHTML = '<b>' + version + '</b> · ' + info[0]
+      + ' · ' + info[1] + ' · <a href="../releases/' + version + '/需求文档.md">查看需求文档</a>';
+  }
+  document.getElementById('releaseMark').addEventListener('change', applyReleaseMark);
+  document.getElementById('releaseJump').addEventListener('click', function () {
+    var version = document.getElementById('releaseMark').value;
+    if (version === 'v0.2') { setView('trash', true); }
+    else if (version === 'v0.3') { setView('sync', true); }
+    else if (version === 'v0.4') { setView('note', true); openQuick('name'); }
+    else if (version === 'v1.0') {
+      setView('note', true);
+      document.querySelector('[data-t="dark"]').click();
+    }
+    else if (version === 'v1.1') { setView('note', true); openQuick('content'); }
+    else if (version === 'v1.2') {
+      switchVault('obsidian-vault'); current = 'dataflow'; loadFile();
+      applyForm('lg'); setView('note', true); showBacklinks();
+    }
+    else if (version === 'v1.3') {
+      switchVault('obsidian-vault'); current = 'stream'; loadFile();
+      applyForm('lg'); setView('note', true);
+      if (!ta.value.includes('![相册图片示例]')) { document.getElementById('insertImageBtn').click(); }
+    }
+    else { setView('note', true); }
+  });
 
   /* ---------- 数据 ---------- */
   /* 库注册表：每个库 = vaults/ 下的一个独立目录 */
@@ -1271,7 +1390,7 @@
       '# 2026-10-17 随手记',
       '',
       '- 三折叠的三栏边界要对齐折痕，否则跨屏阅读会割裂',
-      '- 同步先做单向克隆，回写放 v2',
+      '- Git 双向同步归 v0.3；此设计稿只模拟交互',
       '- 图标定了紫黑水晶，名字叫曜石笔记',
       '',
       '#Inbox'
@@ -1317,6 +1436,8 @@
   var current = 'welcome';
   var drawer = false;
   var treeEl = document.getElementById('tree');
+  var RECENT = {};
+  var TRASH = {};
 
   /* 目录层级：dir 用 depth，file 用 depth+1（子文件比父目录深一级）。
      ⚠️ 只用于「视觉层级」场合（如路径拼接时给文件多算一级）；
@@ -1338,7 +1459,10 @@
       html += nodeHtml(rows[i], i);
       if (rows[i][0] === 'dir' && !rows[i][2]) { hideLevel = lv; }
     }
-    treeEl.innerHTML = html || '<div class="node" style="color:var(--text-tertiary)">（空库）</div>';
+    treeEl.innerHTML = html || '<div class="tree-empty" data-intro="v1.0"><span>这个库还没有笔记</span><button id="emptyCreateBtn">创建第一篇</button></div>';
+    var emptyCreateBtn = document.getElementById('emptyCreateBtn');
+    if (emptyCreateBtn) { emptyCreateBtn.addEventListener('click', function () { openDialog('note-new', -1); }); }
+    applyReleaseMark();
 
     /* 点文件：打开（刚拖动过就不算点击） */
     var items = treeEl.querySelectorAll('[data-id]');
@@ -1346,8 +1470,6 @@
       items[j].addEventListener('click', function () {
         if (moved) { moved = false; return; }
         current = this.getAttribute('data-id');
-        var fi = nodeIdx(current);
-        if (fi >= 0) { lastDir = pathBefore(fi, (TREES[currentVault] || [])[fi][3]); }
         loadFile();
         if (body.getAttribute('data-form') === 'sm') { toggleDrawer(false); }
       });
@@ -1362,7 +1484,6 @@
         var rs = TREES[currentVault] || [];
         if (rs[idx]) {
           rs[idx][2] = !rs[idx][2];
-          lastDir = pathBefore(idx, levelOf(rs[idx]) + 1);
           renderTree();
         }
       });
@@ -1467,7 +1588,7 @@
     nodeOf(wrap).style.transform = '';
     if (!moved) { drag = null; return; }
     if (off <= -(w + DEL_EXTRA) && isFile) {
-      /* 滑到底：直接删除，靠撤销条兜底（不再弹确认，否则手势就白做了） */
+      /* 滑到底：移入当前库回收站，同时显示 5 秒撤销入口。 */
       wrap.classList.remove('will-del');
       deleteWithUndo(parseInt(wrap.getAttribute('data-idx'), 10));
     } else if (off <= -(w + DEL_EXTRA)) {
@@ -1521,10 +1642,12 @@
     if (!row || row[0] !== 'file') { return; }
     var id = row[4];
     var snap = {
-      idx: idx, row: row, id: id,
+      vault: currentVault, idx: idx, row: row, id: id,
       name: FILES[id], content: CONTENT[id], meta: META[id],
       wasCurrent: current === id
     };
+    if (!TRASH[currentVault]) { TRASH[currentVault] = []; }
+    TRASH[currentVault].unshift(snap);
     rows.splice(idx, 1);
     delete FILES[id]; delete CONTENT[id]; delete META[id];
     var v = vaultById(currentVault);
@@ -1536,14 +1659,44 @@
     }
     closeSwipe(null);
     renderTree(); updateVaultUI(); renderVaultMenu(); renderVaultCards();
-    showToast('已删除「' + (snap.name || row[1]) + '」', '撤销', function () {
-      var rs = TREES[currentVault] || [];
-      rs.splice(Math.min(snap.idx, rs.length), 0, snap.row);
-      FILES[snap.id] = snap.name; CONTENT[snap.id] = snap.content; META[snap.id] = snap.meta;
-      var vv = vaultById(currentVault);
-      if (vv) { vv.files++; }
+    renderTrash();
+    showToast('已移入回收站：「' + (snap.name || row[1]) + '」', '撤销', function () { restoreTrashItem(snap); });
+  }
+
+  function restoreTrashItem(snap) {
+    var rows = TREES[snap.vault] || [];
+    if (!(TRASH[snap.vault] || []).includes(snap)) { return; }
+    if (rows.some(function (row) { return row[0] === 'file' && row[1] === snap.row[1] && row[3] === snap.row[3]; })) {
+      showToast('原位置已有同名文件，请先处理重名', '', null);
+      return;
+    }
+    rows.splice(Math.min(snap.idx, rows.length), 0, snap.row);
+    FILES[snap.id] = snap.name; CONTENT[snap.id] = snap.content; META[snap.id] = snap.meta;
+    var items = TRASH[snap.vault] || [];
+    TRASH[snap.vault] = items.filter(function (item) { return item !== snap; });
+    var v = vaultById(snap.vault);
+    if (v) { v.files++; }
+    if (currentVault === snap.vault) {
       if (snap.wasCurrent) { current = snap.id; loadFile(); }
-      renderTree(); updateVaultUI(); renderVaultMenu(); renderVaultCards();
+      else { renderTree(); updateVaultUI(); }
+    }
+    renderTrash(); renderVaultMenu(); renderVaultCards();
+  }
+
+  function renderTrash() {
+    var box = document.getElementById('trashItems');
+    var items = TRASH[currentVault] || [];
+    box.innerHTML = '';
+    if (!items.length) { box.textContent = '当前库的回收站为空'; return; }
+    items.forEach(function (snap) {
+      var row = document.createElement('div');
+      row.className = 'trash-item';
+      var name = document.createElement('span');
+      name.textContent = snap.name;
+      var btn = document.createElement('button');
+      btn.textContent = '恢复';
+      btn.addEventListener('click', function () { restoreTrashItem(snap); });
+      row.appendChild(name); row.appendChild(btn); box.appendChild(row);
     });
   }
 
@@ -1607,12 +1760,153 @@
   function loadFile() {
     ta.value = CONTENT[current] || '';
     var name = FILES[current] || '';
-    document.getElementById('editName').textContent = name;
-    document.getElementById('appTitle').textContent = name.replace(/\.md$/, '');
+    ta.disabled = !name;
+    ta.placeholder = name ? '' : '从左侧创建或选择一篇笔记';
+    document.getElementById('editName').textContent = name || '尚未选择笔记';
+    document.getElementById('appTitle').textContent = name ? name.replace(/\.md$/, '') : '曜石笔记';
+    document.getElementById('saveState').innerHTML = name ? '<span class="dot"></span> 已保存' : '等待创建笔记';
+    if (name) {
+      var recent = RECENT[currentVault] || [];
+      recent = recent.filter(function (id) { return id !== current; });
+      recent.unshift(current);
+      RECENT[currentVault] = recent.slice(0, 8);
+    }
     updateVaultUI();
     render();
     renderTree();
+    if (!document.getElementById('backlinksPanel').classList.contains('hidden')) { renderBacklinks(); }
   }
+
+  function currentFileRows() {
+    var rows = TREES[currentVault] || [], dirs = [], out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (row[0] === 'dir') { dirs[row[3]] = row[1]; dirs.length = row[3] + 1; }
+      else if (row[0] === 'file') {
+        out.push({ id: row[4], name: row[1], path: dirs.slice(0, row[3]).concat(row[1]).join('/') });
+      }
+    }
+    return out;
+  }
+
+  function fuzzyName(name, query) {
+    var n = name.toLocaleLowerCase(), q = query.toLocaleLowerCase(), at = 0;
+    for (var i = 0; i < q.length; i++) {
+      at = n.indexOf(q[i], at);
+      if (at < 0) { return false; }
+      at++;
+    }
+    return true;
+  }
+
+  var quickMode = 'name';
+  function renderQuick() {
+    var query = document.getElementById('quickInput').value.trim();
+    var box = document.getElementById('quickResults');
+    var files = currentFileRows();
+    var recent = RECENT[currentVault] || [];
+    box.innerHTML = '';
+    if (quickMode === 'name' && !query) {
+      files.sort(function (a, b) { return recent.indexOf(a.id) - recent.indexOf(b.id); });
+      files = files.filter(function (item) { return recent.indexOf(item.id) >= 0; });
+    } else if (quickMode === 'name') {
+      files = files.filter(function (item) { return fuzzyName(item.name, query); });
+    } else {
+      files = query ? files.filter(function (item) {
+        return (CONTENT[item.id] || '').toLocaleLowerCase().indexOf(query.toLocaleLowerCase()) >= 0;
+      }) : [];
+    }
+    if (!files.length) {
+      box.textContent = query ? '当前库没有匹配结果' : (quickMode === 'name' ? '暂无最近打开的笔记' : '输入关键词搜索当前库正文');
+      return;
+    }
+    files.forEach(function (item) {
+      var btn = document.createElement('button');
+      btn.setAttribute('data-open-id', item.id);
+      btn.textContent = item.name;
+      var sub = document.createElement('small');
+      sub.textContent = item.path;
+      if (quickMode === 'content') {
+        var content = CONTENT[item.id] || '';
+        var hit = content.toLocaleLowerCase().indexOf(query.toLocaleLowerCase());
+        sub.textContent += ' · …' + content.slice(Math.max(0, hit - 18), hit + query.length + 26).replace(/\s+/g, ' ') + '…';
+      }
+      btn.appendChild(sub);
+      box.appendChild(btn);
+    });
+  }
+
+  function openQuick(mode) {
+    quickMode = mode || 'name';
+    document.getElementById('quickMask').classList.remove('hidden');
+    document.getElementById('quickInput').value = '';
+    document.getElementById('quickInput').placeholder = quickMode === 'name' ? '搜索当前库的笔记文件名' : '搜索当前库的 Markdown 正文';
+    document.querySelectorAll('[data-search-mode]').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-search-mode') === quickMode); });
+    renderQuick();
+    document.getElementById('quickInput').focus();
+  }
+
+  function closeQuick() { document.getElementById('quickMask').classList.add('hidden'); }
+  document.getElementById('searchBtn').addEventListener('click', function () { openQuick('name'); });
+  document.getElementById('quickInput').addEventListener('input', renderQuick);
+  document.getElementById('quickMask').addEventListener('click', function (e) { if (e.target.id === 'quickMask') { closeQuick(); } });
+  document.getElementById('quickResults').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-open-id]');
+    if (!btn) { return; }
+    current = btn.getAttribute('data-open-id');
+    closeQuick();
+    setView('note', true);
+    loadFile();
+  });
+  document.querySelectorAll('[data-search-mode]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var query = document.getElementById('quickInput').value;
+      openQuick(b.getAttribute('data-search-mode'));
+      document.getElementById('quickInput').value = query;
+      renderQuick();
+    });
+  });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeQuick(); } });
+
+  function renderBacklinks() {
+    var box = document.getElementById('backlinksPanel');
+    var title = (FILES[current] || '').replace(/\.md$/, '');
+    box.innerHTML = '';
+    var head = document.createElement('b');
+    head.textContent = '反链 · v1.2 设计示意';
+    box.appendChild(head);
+    var sources = currentFileRows().filter(function (item) {
+      return item.id !== current && (CONTENT[item.id] || '').indexOf('[[' + title + ']]') >= 0;
+    });
+    if (!sources.length) {
+      var empty = document.createElement('span'); empty.textContent = '当前库暂无笔记引用这篇'; box.appendChild(empty);
+    }
+    sources.forEach(function (item) {
+      var btn = document.createElement('button'); btn.textContent = item.path;
+      btn.addEventListener('click', function () { current = item.id; loadFile(); });
+      box.appendChild(btn);
+    });
+  }
+  function showBacklinks() {
+    document.getElementById('backlinksPanel').classList.remove('hidden');
+    renderBacklinks();
+  }
+  document.getElementById('backlinksBtn').addEventListener('click', function () {
+    var panel = document.getElementById('backlinksPanel');
+    if (panel.classList.contains('hidden')) { showBacklinks(); }
+    else { panel.classList.add('hidden'); }
+  });
+
+  document.getElementById('insertImageBtn').addEventListener('click', function () {
+    if (!current) { showToast('请先创建或打开一篇笔记', '', null); return; }
+    var sample = '\n\n![相册图片示例](assets/示例图片.png)\n\n$$ E = mc^2 $$\n\n```mermaid\ngraph LR\n  笔记 --> 预览\n```\n';
+    var at = ta.selectionStart;
+    ta.value = ta.value.slice(0, at) + sample + ta.value.slice(at);
+    if (current) { CONTENT[current] = ta.value; }
+    render();
+    ta.focus();
+    showToast('已插入 v1.3 图片/公式/图表示意；原型不调用相册', '', null);
+  });
 
   function updateVaultUI() {
     var v = vaultById(currentVault);
@@ -1656,8 +1950,8 @@
   function switchVault(id) {
     if (id === currentVault) { return; }
     currentVault = id;
-    lastDir = '';                 // 目录记忆按库分别生效，切库回根
     var rows = TREES[id] || [];
+    current = '';
     for (var i = 0; i < rows.length; i++) {
       if (rows[i][0] === 'file') { current = rows[i][4]; break; }
     }
@@ -1711,14 +2005,11 @@
   /* 名称即目录名：显示名与 vaults/ 下的目录名始终一致 */
   var cfMode = 'delete';
   var cfTarget = '';
-  /* 新建笔记：目标目录（'' = 库根目录）+ 上次所在的目录（按库记忆，切库清空） */
+  /* 新建笔记：目标目录（'' = 库根目录），由创建入口预选 */
   var cfDirPath = '';
   var cfDirIdx = -1;
-  /* 新建对话框的类型：'note' | 'folder'（2026-10-18 用户拍板方案 A ——
-     「设计稿里面我要怎么新建文件夹？？？」：原先只能靠笔记名带 / 隐式建目录，
-     建不了空文件夹；现在显式支持，入口共用侧栏「新建笔记」与目录行 +）。 */
+  /* 新建对话框的类型：'note' | 'folder'；入口为目录树头部 + 与目录行尾 +。 */
   var cfType = 'note';
-  var lastDir = '';
 
   // 目录名消毒：去掉路径分隔符与 Windows 非法字符、控制字符、前导点
   function sanitizeDir(name) {
@@ -1845,8 +2136,7 @@
     pathEl.classList.add('hidden');
 
     if (mode === 'note-new') {
-      /* 新建笔记：目录选择器（点行展开全库目录列表，根目录恒第一项）+ 名称输入。
-         目标目录优先级：行内 + 按钮带来的目录 > 上次所在的目录（lastDir）。 */
+      /* 新建笔记：头部 + 默认根目录，目录行尾 + 默认该目录；对话框中仍可改目录。 */
       document.getElementById('cfTitle').textContent = '新建笔记';
       document.getElementById('cfDesc').innerHTML =
         '选一个文件夹，再填笔记名。名字可以带 <code>/</code>，缺少的目录会一起建出来。';
@@ -1861,8 +2151,8 @@
         cfDirIdx = wantIdx;
         cfDirPath = pathBefore(wantIdx, levelOf(rows0[wantIdx]) + 1);
       } else {
-        cfDirIdx = dirIdxByPath(lastDir);
-        cfDirPath = lastDir;
+        cfDirIdx = -1;
+        cfDirPath = '';
       }
       document.getElementById('cfDirLabel').textContent = cfDirPath || '根目录';
       okBtn.classList.add('primary');
@@ -1897,7 +2187,7 @@
         } else {
           parts.push('文件会被删除');
         }
-        parts.push('<b>不可恢复</b>（回收站还没做，误删就真没了）');
+        parts.push(isDirTgt ? '<b>文件夹删除不可恢复</b>；请确认其中没有需要保留的笔记' : '笔记会移入当前库回收站，可恢复');
         document.getElementById('cfDesc').innerHTML = parts.join('，') + '。';
         pathEl.textContent = (vv ? vv.dir : '') + '/' + nm;
         pathEl.classList.remove('hidden');
@@ -2189,9 +2479,7 @@
     }
     var rows = TREES[currentVault] || [];
     var cidx = (cfDirIdx >= 0 && rows[cfDirIdx]) ? cfDirIdx : -1;   // 从选中的目录出发
-    /* 展开起点目录：建在折叠目录里（lastDir 记的目录可能是折叠的 —— 2026-10-18 run3
-       逮到：乙是 folder 模式建的 open=false，lastDir 指向它，在里面建笔记后 renderTree
-       把新行当折叠子项藏掉，用户以为没建成）。中间段缺失目录本就 open=true 同意图。 */
+    /* 建在折叠目录里时展开起点目录，让新内容能看见。 */
     if (cidx >= 0) { rows[cidx][2] = true; }
     if (cfType === 'folder') {
       /* 中间段：逐级找，缺少就建（与笔记同逻辑） */
@@ -2211,7 +2499,6 @@
       while (childDir(rows, cidx, dname) >= 0) { dname = base + ' ' + n; n++; }
       var pos = insertPosIn(rows, cidx);
       rows.splice(pos.at, 0, ['dir', dname, false, pos.depth, 'd' + Date.now().toString(36)]);
-      lastDir = pathBefore(pos.at, pos.depth + 1);   // 下次新建默认进这个新文件夹（depth+1 = 含自身）
       document.getElementById('cfDirList').classList.add('hidden');
       renderTree(); updateVaultUI();
       showToast('已创建文件夹「' + dname + '」', '', null);
@@ -2236,7 +2523,6 @@
     var nid = 'n' + Date.now().toString(36);
     rows.splice(pos.at, 0, ['file', label, false, pos.depth, nid]);
     FILES[nid] = label; CONTENT[nid] = ''; META[nid] = '刚刚';
-    lastDir = cidx >= 0 ? pathBefore(cidx, rows[cidx][3] + 1) : '';
     var v = vaultById(currentVault);
     if (v) { v.files++; }
     current = nid;
@@ -2246,7 +2532,6 @@
   }
 
   document.getElementById('newAtRootBtn').addEventListener('click', function () {
-    lastDir = '';                          // 头部 + = 在 vault 根目录建，不继承上次目录（2026-10-18 用户拍板：底部按钮与行尾 + 重复，删按钮、头部加 +）
     openDialog('note-new', -1);
   });
 
@@ -2281,6 +2566,7 @@
     var rows = TREES[currentVault] || [];
     var idx = nodeIdx(id);
     if (idx < 0) { return; }
+    if (rows[idx][0] === 'file') { deleteWithUndo(idx); return; }
     /* 目录：整棵子树一起删（2026-10-18 方案 A 配套 —— 空文件夹也要能删）。
        文件：只删自己那一行。 */
     var isDir = (String(id).indexOf('d:') === 0);
@@ -2344,6 +2630,7 @@
   document.getElementById('newLocal').addEventListener('click', function () { openDialog('create', ''); });
   document.getElementById('addVault').addEventListener('click', function () { setView('sync', true); });
   document.getElementById('gotoVaults').addEventListener('click', function () { setView('vaults', true); });
+  document.getElementById('gotoTrash').addEventListener('click', function () { setView('trash', true); });
 
   function esc(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -2371,6 +2658,7 @@
     var out = [];
     var listType = null;
     var inCode = false;
+    var codeLang = '';
     var codeBuf = [];
     var para = [];
     var tbl = [];
@@ -2397,9 +2685,11 @@
       var line = lines[i];
       if (/^\s*```/.test(line)) {
         if (inCode) {
-          out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
-          codeBuf = []; inCode = false;
-        } else { flushPara(); flushList(); flushTable(); inCode = true; }
+          out.push(codeLang === 'mermaid'
+            ? '<div class="mermaid-preview" data-intro="v1.3">Mermaid 图表预览 · v1.3 设计示意<pre>' + esc(codeBuf.join('\n')) + '</pre></div>'
+            : '<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+          codeBuf = []; inCode = false; codeLang = '';
+        } else { flushPara(); flushList(); flushTable(); inCode = true; codeLang = line.trim().slice(3).trim(); }
         continue;
       }
       if (inCode) { codeBuf.push(line); continue; }
@@ -2411,6 +2701,12 @@
       } else { flushTable(); }
 
       if (!line.trim()) { flushPara(); flushList(); continue; }
+
+      if (/^\s*\$\$.+\$\$\s*$/.test(line)) {
+        flushPara(); flushList();
+        out.push('<div class="math-preview" data-intro="v1.3">公式预览 · v1.3 设计示意：' + esc(line.trim().slice(2, -2).trim()) + '</div>');
+        continue;
+      }
 
       if (/^\s*#{1,6}\s/.test(line)) {
         flushPara(); flushList();
@@ -2454,23 +2750,36 @@
 
   function inline(s) {
     var h = esc(s);
+    h = h.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<span class="asset-preview">图片路径预览 · $1（$2）；相册插入入口为 v1.3 示意</span>');
     h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
     h = h.replace(/(\*\*|__)(.+?)\1/g, '<strong>$2</strong>');
     h = h.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-    h = h.replace(/\[\[(.+?)\]\]/g, '<span class="wikilink">$1</span>');
-    h = h.replace(/(^|\s)(#[^\s#,，。、]+)/g, '$1<span class="tag">$2</span>');
+    h = h.replace(/\[\[(.+?)\]\]/g, '<button type="button" class="wikilink" title="v1.2 双链示意">$1</button>');
     return h;
   }
+
+  mdEl.addEventListener('click', function (e) {
+    var link = e.target.closest('.wikilink');
+    if (!link) { return; }
+    var target = link.textContent + '.md';
+    var matches = currentFileRows().filter(function (item) { return item.name === target; });
+    if (matches.length === 1) { current = matches[0].id; loadFile(); return; }
+    if (matches.length > 1) { showToast('同名笔记有多篇，正式版按路径消歧', '', null); return; }
+    openDialog('note-new', -1);
+    document.getElementById('cfInput').value = link.textContent;
+    updateHint();
+  });
 
   function render() {
     hl.innerHTML = highlight(ta.value);
     mdEl.innerHTML = renderMarkdown(ta.value);
+    applyReleaseMark();
     var n = ta.value.replace(/\s/g, '').length;
     document.getElementById('stCount').textContent = n.toLocaleString('en-US') + ' 字';
     hl.scrollTop = ta.scrollTop;
   }
 
-  ta.addEventListener('input', render);
+  ta.addEventListener('input', function () { if (current) { CONTENT[current] = ta.value; } render(); });
   ta.addEventListener('scroll', function () { hl.scrollTop = ta.scrollTop; });
 
   /* ---------- 形态 / 视图 / 主题 ---------- */
@@ -2618,23 +2927,27 @@
     });
   }
 
-  var VIEW_TITLE = { vaults: '笔记库', sync: '导入 Git 仓库', settings: '设置与关于' };
+  var VIEW_TITLE = { vaults: '笔记库', sync: '导入 Git 仓库', settings: '设置与关于', trash: '回收站' };
 
   function setView(v, syncBtns) {
+    closeQuick();
     body.setAttribute('data-view', v);
     document.getElementById('appTitle').textContent = VIEW_TITLE[v]
-      || (FILES[current] || '').replace(/\.md$/, '');
+      || (FILES[current] || '').replace(/\.md$/, '') || '曜石笔记';
     document.getElementById('noteView').classList.toggle('hidden', v !== 'note');
     /* 次级页面（库管理 / 导入仓库 / 设置）顶栏左键换成返回箭头 —— 否则进去了出不来 */
     document.getElementById('backBtn').classList.toggle('hidden', v === 'note');
     document.getElementById('menuBtn').classList.toggle('hidden', v !== 'note');
+    document.getElementById('searchBtn').classList.toggle('hidden', v !== 'note');
     document.getElementById('syncBtn').classList.toggle('hidden', v !== 'note');
     document.getElementById('settingsBtn').classList.toggle('hidden', v === 'settings');
     document.getElementById('syncView').classList.toggle('hidden', v !== 'sync');
     document.getElementById('vaultsView').classList.toggle('hidden', v !== 'vaults');
     document.getElementById('settingsView').classList.toggle('hidden', v !== 'settings');
+    document.getElementById('trashView').classList.toggle('hidden', v !== 'trash');
     if (v === 'vaults') { renderVaultCards(); }
     if (v === 'settings') { updateSettings(); }
+    if (v === 'trash') { renderTrash(); }
     if (syncBtns) {
       var all = document.querySelectorAll('[data-v]');
       for (var i = 0; i < all.length; i++) {
@@ -2652,8 +2965,8 @@
   }
 
   /* ---------- 设置 / 关于 ---------- */
-  var APP_VERSION = '0.1.0';
-  var APP_BUILD = 1;
+  var APP_VERSION = '0.2.0'; // 原型样例；实际应用须从包信息读取
+  var APP_BUILD = 1000001;
 
   function updateSettings() {
     var f = body.getAttribute('data-form');
@@ -2804,6 +3117,9 @@
     log('HTTP 401 Unauthorized');
     errBox.classList.remove('hidden');
   });
+  document.getElementById('btnPush').addEventListener('click', function () {
+    showToast('v0.3 提交并推送入口示意；原型不连接远端', '', null);
+  });
 
   /* ---------- 初始化 ---------- */
   renderVaultMenu();
@@ -2812,6 +3128,7 @@
   loadFile();
   applyForm('lg');
   setView('note');
+  applyReleaseMark();
 })();
 </script>
 </body>
