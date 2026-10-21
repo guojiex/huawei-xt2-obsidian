@@ -146,7 +146,7 @@ export struct CreateNoteDialog {
   build() {
     Column() {
       Text(this.createType === 'folder' ? '新建文件夹' : '新建笔记')
-        .fontSize(FontSize.body1)
+        .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
       Text(this.createType === 'folder'
@@ -328,7 +328,7 @@ export struct DeletePathDialog {
   build() {
     Column() {
       Text(this.isDir ? '删除文件夹？' : '删除笔记？')
-        .fontSize(FontSize.body1)
+        .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
       Text(this.isDir
@@ -412,7 +412,7 @@ export struct RenamePathDialog {
   build() {
     Column() {
       Text(this.isDir ? '重命名文件夹' : '重命名笔记')
-        .fontSize(FontSize.body1)
+        .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
       Text(this.isDir
@@ -539,7 +539,7 @@ export struct MovePathDialog {
   build() {
     Column() {
       Text('移动「' + this.relPath.substring(this.relPath.lastIndexOf('/') + 1) + '」')
-        .fontSize(FontSize.body1)
+        .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .maxLines(1)
