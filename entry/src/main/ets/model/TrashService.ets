@@ -67,6 +67,12 @@ export class TrashService {
         target = stem + '-' + n + ext;
       }
     }
+    // `.trash` 根必须先建：顶层文件没有父段可补建（ensureTrashParents 循环不跑），
+    // 嵌套文件的第一级 mkdir 也因 `.trash` 缺失而 ENOENT —— renameSync 必失败。
+    const trashRoot: string = registry.trashDirOf(vaultId);
+    if (!fileIo.accessSync(trashRoot)) {
+      fileIo.mkdirSync(trashRoot);
+    }
     TrashService.ensureTrashParents(registry, vaultId, target);
     const src: string = registry.absoluteIn(vaultId, relPath);
     const dst: string = registry.absoluteInTrash(vaultId, target);
