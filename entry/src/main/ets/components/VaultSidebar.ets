@@ -35,12 +35,22 @@ export struct VaultSidebar {
   @Prop revealPath: string = '';
   /** 下拉菜单开关（瞬态） */
   @State menuOpen: boolean = false;
+  /**
+   * 弹层宽（vp）：原型 .vault-menu 是 left:0; right:0 于 .vault-switch —— **与卡片同宽**，
+   * 不是固定值。侧栏宽随断点等分变化，故在卡片上 onAreaChange 实测回填。
+   */
+  @State menuW: number = Size.sidebarW;
   /** 「收起 «」回调（嵌入形态：父级收起侧栏） */
   onCollapse: () => void = () => {};
   /** 切库回调（点下拉菜单中的库项） */
   onSwitchVault: (id: string) => void = (id: string) => {};
   /** 「管理库」回调（父级切换到库管理视图） */
   onManageVaults: () => void = () => {};
+  /**
+   * 「导入 Git 仓库…」回调（原型 vault-menu 第二个动作项，走「导入仓库」页）。
+   * Git 同步是 v0.3 能力，此处只做导航跳转。
+   */
+  onImportGit: () => void = () => {};
   /**
    * 「新建笔记」回调（父级拉起新建笔记对话框）。
    * 原型侧栏底部的「新建」在这里落成**新建笔记** —— 新建库要去「库管理」页，
@@ -61,19 +71,26 @@ export struct VaultSidebar {
    */
   onDeleteDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
 
-  /** 胶囊标签（本地 / 当前）—— 圆角 chip 场景 */
+  /**
+   * 库类型徽标（照原型 .vbadge）：全圆胶囊（--r-full）、fs-caption、Medium；
+   * local = brand 字 + brand_bg 底（.vbadge.local），git = success 字 + success_bg 底（.vbadge.git）。
+   * 与选中态无关 —— 原型里徽标颜色只由库类型决定。
+   */
   @Builder
-  Tag(text: string, active: boolean) {
-    Text(text)
+  VaultBadge(v: VaultEntry) {
+    Text(v.type === 'git' ? 'Git' : '本地')
       .fontSize(FontSize.caption)
-      .fontColor(active ? $r('app.color.brand') : $r('app.color.text_tertiary'))
-      .padding({ left: Space.s2, right: Space.s2 })
-      .borderRadius(Radius.chip)
-      .border({ width: 1, color: active ? $r('app.color.brand') : $r('app.color.line') })
+      .fontWeight(FontWeight.Medium)
+      .fontColor(v.type === 'git' ? $r('app.color.success') : $r('app.color.brand'))
+      .padding({ top: 2, bottom: 2, left: Space.s2, right: Space.s2 })
+      .borderRadius(Radius.full)
+      .backgroundColor(v.type === 'git' ? $r('app.color.success_bg') : $r('app.color.brand_bg'))
   }
 
   /**
-   * 库切换下拉菜单内容（照原型 vault-menu：库项 + 分隔线 + 「管理库…」）。
+   * 库切换下拉菜单内容（照原型 vault-menu：库项 + 分隔线 + 「管理库…」+「导入 Git 仓库…」）。
+   * 逐条对原型：容器 padding --sp-2 / 圆角 --r-menu / elev-3；行 --vitem：48 高、
+   * padding 8/12、圆角 --r-control、字号 --fs-body1；选中 = brand 字 + --brand-bg 底 + 500。
    *
    * ⚠️ 为什么走 bindPopup 而不是「Stack 内 offset 溢出的普通 Column」：
    * 后者是页面内普通子节点，而侧栏里文件树在它之后声明 —— ArkUI 同级组件
@@ -86,66 +103,97 @@ export struct VaultSidebar {
       ForEach(this.vaults, (v: VaultEntry) => {
         Row({ space: Space.s2 }) {
           Text(v.id)
-            .fontSize(FontSize.body3)
+            .fontSize(FontSize.body1)
+            .fontWeight(v.id === this.currentVaultId ? FontWeight.Medium : FontWeight.Normal)
             .fontColor(v.id === this.currentVaultId
               ? $r('app.color.brand') : $r('app.color.text_primary'))
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
-          this.Tag('本地', v.id === this.currentVaultId)
+          this.VaultBadge(v)
         }
         .width('100%')
         .height(Size.touch)
-        .padding({ left: Space.s2, right: Space.s2 })
-        .borderRadius(Radius.icon)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .borderRadius(Radius.control)
         .backgroundColor(v.id === this.currentVaultId
-          ? $r('app.color.brand_bg_solid') : Color.Transparent)
+          ? $r('app.color.brand_bg') : Color.Transparent)
         .onClick(() => {
           this.menuOpen = false;
           this.onSwitchVault(v.id);
         })
       }, (v: VaultEntry) => v.id)
 
+      // 分隔线（原型 .sep：1px line，上下 --sp-1 / 左右 --sp-2 边距）
       Divider()
         .color($r('app.color.line'))
-        .margin({ top: Space.s1, bottom: Space.s1 })
+        .margin({ top: Space.s1, bottom: Space.s1, left: Space.s2, right: Space.s2 })
 
-      Row({ space: Space.s2 }) {
-        Icon('folder', 16, $r('app.color.text_secondary'))
+      // 动作项（原型 data-act 行：纯文字，不带图标）
+      Row() {
         Text('管理库…')
-          .fontSize(FontSize.body3)
+          .fontSize(FontSize.body1)
           .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
       }
       .width('100%')
       .height(Size.touch)
-      .padding({ left: Space.s2, right: Space.s2 })
-      .borderRadius(Radius.icon)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .borderRadius(Radius.control)
       .onClick(() => {
         this.menuOpen = false;
         this.onManageVaults();
       })
+
+      Row() {
+        Text('导入 Git 仓库…')
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .borderRadius(Radius.control)
+      .onClick(() => {
+        this.menuOpen = false;
+        this.onImportGit();
+      })
     }
-    .width(Size.sidebarW)
-    .padding(Space.s1)
+    // 与库切换卡片同宽（原型 left:0; right:0），实测宽由卡片 onAreaChange 回填
+    .width(this.menuW)
+    .padding(Space.s2)
     .borderRadius(Radius.menu)
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 16, color: '#1F000000', offsetX: 0, offsetY: 6 })
+    // 原型 --elev-3 的单层近似（两层 CSS 阴影 ArkUI 只能合一层）
+    .shadow({ radius: 30, color: '#2E000000', offsetX: 0, offsetY: 10 })
   }
 
   build() {
     Column() {
-      // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset。
+      // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset（原型 --sp-3 = 12）。
       // ⚠️ inset 不能写在卡片自己的 margin 上再配 width('100%')：ArkUI 的百分比取父级
       // 内容盒的 100%，margin 加在盒外 → 卡片实际占宽 = 侧栏宽 + 2×margin，右缘越过
       // 栏间分隔线伸进编辑区（2026-10-18 用户实测）。外包层 padding 在盒内，天然不溢出。
       Column() {
-        // 库切换器卡片（点击弹出库列表，见 VaultMenu）
-        Row({ space: Space.s2 }) {
-          Icon('folder', 18, $r('app.color.text_secondary'))
+        // 库切换器卡片（点击弹出库列表，见 VaultMenu）——照原型 .vault-switch：
+        // padding --sp-3 / 圆角 --r-card / 边框 line / --elev-1 / gap --sp-3。
+        Row({ space: Space.s3 }) {
+          // 原型 .vs-icon：32×32 圆角块（--r-icon），brand_bg 底 + brand 色图标
+          Row() {
+            Icon('folder', 18, $r('app.color.brand'))
+          }
+          .width(Space.s8)
+          .height(Space.s8)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
+          .backgroundColor($r('app.color.brand_bg'))
+
           Column({ space: 2 }) {
             Text(this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）')
-              .fontSize(FontSize.body2)
+              .fontSize(FontSize.body1)
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
               .maxLines(1)
@@ -163,21 +211,30 @@ export struct VaultSidebar {
         }
         // 此时 100% = 外包层的 content 盒 → 刚好放下，不再溢出侧栏
         .width('100%')
-        .height(Size.itemH)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .margin({ top: Space.s2 })
-        .borderRadius(Radius.control)
+        .padding(Space.s3)
+        .margin({ top: Space.s3, bottom: Space.s2 })
+        .borderRadius(Radius.card)
         .backgroundColor($r('app.color.bg_card'))
         .border({ width: 1, color: $r('app.color.line') })
+        // 原型 --elev-1 的单层近似
+        .shadow({ radius: 8, color: '#0F000000', offsetX: 0, offsetY: 2 })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.menuOpen = !this.menuOpen;
         })
-        // 下拉菜单：弹层挂窗口覆盖层（高于文件树），列全部库（当前高亮）+ 分隔线 + 「管理库…」
+        // 实测卡片宽回填弹层宽（原型 vault-menu 与卡片同宽，见 menuW 注释）
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          if (typeof newArea.width === 'number') {
+            this.menuW = newArea.width;
+          }
+        })
+        // 下拉菜单：弹层挂窗口覆盖层（高于文件树），列全部库（当前高亮）+ 分隔线 + 「管理库…」+「导入 Git 仓库…」
         .bindPopup(this.menuOpen, {
           builder: this.VaultMenu(),
           placement: Placement.BottomLeft,
-          // 卡片左缘与侧栏左缘相距外包层 padding（s2），弹层贴卡片左缘 → offset 只补下间距
+          // 关掉弹层自带小箭头（默认 true）：原型 vault-menu 没有气泡箭头
+          enableArrow: false,
+          // 弹层贴卡片左缘 → offset 只补下间距（原型 margin-top --sp-2）
           offset: { x: 0, y: Space.s2 },
           mask: false,
           autoCancel: true,
@@ -191,7 +248,7 @@ export struct VaultSidebar {
         })
       }
       .width('100%')
-      .padding({ left: Space.s2, right: Space.s2 })
+      .padding({ left: Space.s3, right: Space.s3 })
 
       // 目录头：标签 + 头部「＋」(vault 根目录新建) + 收起入口
       // 2026-10-18 用户拍板：头部 ＋ 替代原底部「新建笔记」按钮（与文件夹行尾 ＋ 重复）

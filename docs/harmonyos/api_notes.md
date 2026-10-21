@@ -996,7 +996,7 @@ sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
 - 弹层在控件树里排在页面内容**之后**（独立节点，不嵌在侧栏 Column 里）→ 层级正确；
 - 点菜单项命中并跳转库管理页 ✅；点外面自动收起 ✅；再点一次切换器收起 ✅（**无双重 toggle**，
   outside touch 被弹层消费、不会透传到底层组件的 `onClick`）；
-- 内容宽 240vp = `Size.sidebarW`、行高 48vp = `Size.touch`，与原型 vault-menu 一致。
+- ~~内容宽 240vp = `Size.sidebarW`、行高 48vp = `Size.touch`，与原型 vault-menu 一致~~（2026-10-21 修订：原型 `.vault-menu` 是 `left:0; right:0` 于切换卡片 —— **与卡片同宽**而非固定 240；现由卡片 `onAreaChange` 实测宽回填 `@State menuW`。行高 48 = `Size.touch` 不变）。
 
 > 同类需求（任何「浮在页面内容之上」的东���）一律走弹层：`bindPopup` / `bindMenu` / `bindContextMenu` / `openMenu`。
 > **不要**再用「绝对定位 + offset 溢出」手搓浮层 —— z-order 取决于声明顺序，是个定时炸弹。
