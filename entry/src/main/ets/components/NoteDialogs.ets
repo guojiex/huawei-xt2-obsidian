@@ -304,11 +304,12 @@ export struct CreateNoteDialog {
 }
 
 /**
- * 删除确认（2026-10-18 方案 A 配套：目录行尾删除按钮的确认框）。
+ * 删除确认（2026-10-18 方案 A 配套；1.7 起文案分流）。
  *
- * 目录与文件共用：文案按形态区分 —— 目录强调「连内容一起删、不可恢复」。
- * ⚠️ 不可恢复：回收站是需求池 B 组（v0.2 没有），撤销条是 1.7 的事，
- * 所以这里的「确认删除」是唯一一道闸，文案必须写死后果。
+ * 目录与文件共用，**语义不同**（原型 note-del 文案）：
+ *  - 文件 → 移入当前库回收站，可恢复（确认后走 TrashService.moveToTrash + 5 秒撤销条）；
+ *  - 目录 → 连同整棵子树永久删除，**不可恢复**，不进回收站
+ *    （误删一棵子树的代价不该被「撤销」轻描淡写 —— 原型目录不给滑到底删除同理）。
  */
 @CustomDialog
 export struct DeletePathDialog {
@@ -331,8 +332,8 @@ export struct DeletePathDialog {
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
       Text(this.isDir
-        ? '文件夹会连里面的所有内容一起删除，且无法恢复。（回收站还没做，误删就真没了）'
-        : '文件会被永久删除，无法恢复。（回收站还没做，误删就真没了）')
+        ? '文件夹会连里面的所有内容一起删除，且无法恢复。'
+        : '笔记会移入当前库回收站，可恢复。')
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_secondary'))
         .margin({ top: Space.s2, bottom: Space.s3 })
@@ -372,6 +373,252 @@ export struct DeletePathDialog {
       }
       .width('100%')
       .justifyContent(FlexAlign.End)
+    }
+    .width(Size.drawerW)
+    .padding(Space.s4)
+    .borderRadius(Radius.dialog)
+    .backgroundColor($r('app.color.bg_card'))
+    .alignItems(HorizontalAlign.Start)
+  }
+}
+
+/**
+ * 重命名文件 / 文件夹（1.6 左滑操作条的「重命名」，原型 note-rename / dir-rename）。
+ * - 文件：输入框预填**去掉 .md** 的名字，确认时自动补回；
+ * - 目录：预填目录名原样；
+ * - 确认后由 Index 调 NoteService.renamePath（消毒、重名加后缀都在那边，这里只收集输入）。
+ */
+@CustomDialog
+export struct RenamePathDialog {
+  controller?: CustomDialogController;
+  /** 待改名的库内相对路径 */
+  relPath: string = '';
+  /** 是否目录（标题 / 文案 / 是否补 .md 不同） */
+  isDir: boolean = false;
+  /** 预填名（文件传去掉扩展名的名字；目录传目录名） */
+  initialName: string = '';
+  /** 确认回调（传用户输入原文；消毒与重名处理在 NoteService.renamePath） */
+  onConfirm: (newName: string) => void = (newName: string) => {};
+  @State rawName: string = '';
+
+  aboutToAppear(): void {
+    this.rawName = this.initialName;
+  }
+
+  private canConfirm(): boolean {
+    return this.rawName.trim().length > 0;
+  }
+
+  build() {
+    Column() {
+      Text(this.isDir ? '重命名文件夹' : '重命名笔记')
+        .fontSize(FontSize.body1)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+      Text(this.isDir
+        ? '文件夹名改了，里面的笔记不受影响。'
+        : '文件名改了，内容不变。')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ top: Space.s2, bottom: Space.s3 })
+      Text(this.relPath)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .padding({ left: Space.s2, right: Space.s2, top: 5, bottom: 5 })
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.icon)
+        .margin({ bottom: Space.s3 })
+      TextInput({ text: this.rawName, placeholder: this.isDir ? '文件夹名称' : '笔记名称' })
+        .height(Size.buttonH)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_primary'))
+        .placeholderColor($r('app.color.text_tertiary'))
+        .padding({ left: Space.s3, right: Space.s3 })
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.control)
+        .onChange((value: string) => {
+          this.rawName = value;
+        })
+      Row({ space: Space.s2 }) {
+        Text('取消')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .height(30)
+          .padding({ left: Space.s4, right: Space.s4 })
+          .textAlign(TextAlign.Center)
+          .borderRadius(Radius.icon)
+          .border({ width: 1, color: $r('app.color.line') })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .onClick(() => {
+            this.controller?.close();
+          })
+        Text('保存')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.on_brand'))
+          .height(30)
+          .padding({ left: Space.s4, right: Space.s4 })
+          .textAlign(TextAlign.Center)
+          .borderRadius(Radius.icon)
+          .backgroundColor($r('app.color.brand'))
+          .enabled(this.canConfirm())
+          .opacity(this.canConfirm() ? 1 : 0.4)
+          .onClick(() => {
+            if (!this.canConfirm()) {
+              return;
+            }
+            this.controller?.close();
+            this.onConfirm(this.rawName);
+          })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      .margin({ top: Space.s4 })
+    }
+    .width(Size.drawerW)
+    .padding(Space.s4)
+    .borderRadius(Radius.dialog)
+    .backgroundColor($r('app.color.bg_card'))
+    .alignItems(HorizontalAlign.Start)
+  }
+}
+
+/**
+ * 移动文件 / 文件夹（1.6 左滑操作条的「移动」，原型 note-move / dir-move）。
+ * - 内联目录选择器（与 CreateNoteDialog 同款交互，为什么内联见那边的注释）；
+ * - 候选目录由 Index 传入：目录目标已剔除自身与子孙（移进自己内部 = 消失）；
+ * - 确认回调传选中的目标目录（空串 = 库根目录），移动逻辑在 NoteService.movePath。
+ */
+@CustomDialog
+export struct MovePathDialog {
+  controller?: CustomDialogController;
+  /** 待移动的库内相对路径 */
+  relPath: string = '';
+  /** 是否目录（文案不同） */
+  isDir: boolean = false;
+  /** 候选目录（库内相对路径；目录目标不含自身与子孙） */
+  dirs: string[] = [];
+  /** 预选目录（空串 = 库根目录） */
+  initialDir: string = '';
+  /** 确认回调（传目标目录，空串 = 库根目录） */
+  onConfirm: (destDir: string) => void = (destDir: string) => {};
+  @State selectedDir: string = '';
+  @State pickerOpen: boolean = false;
+
+  aboutToAppear(): void {
+    this.selectedDir = this.initialDir;
+  }
+
+  /** 目标选择的一行（根目录或某个目录）；选中态用主色 + 实底（同 CreateNoteDialog.DirItem） */
+  @Builder
+  DirItem(rel: string, label: string) {
+    Row({ space: Space.s2 }) {
+      Icon('folder', 14, this.selectedDir === rel
+        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      Text(label)
+        .fontSize(FontSize.body3)
+        .fontColor(this.selectedDir === rel
+          ? $r('app.color.brand') : $r('app.color.text_primary'))
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s2, right: Space.s2 })
+    .borderRadius(Radius.icon)
+    .backgroundColor(this.selectedDir === rel
+      ? $r('app.color.brand_bg_solid') : Color.Transparent)
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.selectedDir = rel;
+      this.pickerOpen = false;
+    })
+  }
+
+  build() {
+    Column() {
+      Text('移动「' + this.relPath.substring(this.relPath.lastIndexOf('/') + 1) + '」')
+        .fontSize(FontSize.body1)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+      Text(this.isDir
+        ? '整个文件夹连同里面的笔记一起移动。'
+        : '移动到别的文件夹下（选顶层就是移到库根目录）。')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ top: Space.s2, bottom: Space.s3 })
+
+      // 目标目录选择行（点开/收起内联列表）
+      Row({ space: Space.s2 }) {
+        Icon('folder', 16, $r('app.color.text_secondary'))
+        Text(this.selectedDir.length > 0 ? this.selectedDir : '根目录（库顶层）')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Icon(this.pickerOpen ? 'chevronUp' : 'chevronDown', 14, $r('app.color.text_tertiary'))
+      }
+      .width('100%')
+      .height(Size.buttonH)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .backgroundColor($r('app.color.bg_secondary'))
+      .borderRadius(Radius.control)
+      .alignItems(VerticalAlign.Center)
+      .onClick(() => {
+        this.pickerOpen = !this.pickerOpen;
+      })
+
+      if (this.pickerOpen) {
+        Scroll() {
+          Column({ space: 2 }) {
+            this.DirItem('', '根目录（库顶层）')
+            ForEach(this.dirs, (d: string) => {
+              this.DirItem(d, d)
+            }, (d: string) => d)
+          }
+        }
+        .width('100%')
+        .height(160)
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.control)
+        .padding(Space.s1)
+        .margin({ top: Space.s1 })
+      }
+
+      Row({ space: Space.s2 }) {
+        Text('取消')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .height(30)
+          .padding({ left: Space.s4, right: Space.s4 })
+          .textAlign(TextAlign.Center)
+          .borderRadius(Radius.icon)
+          .border({ width: 1, color: $r('app.color.line') })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .onClick(() => {
+            this.controller?.close();
+          })
+        Text('移动到这里')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.on_brand'))
+          .height(30)
+          .padding({ left: Space.s4, right: Space.s4 })
+          .textAlign(TextAlign.Center)
+          .borderRadius(Radius.icon)
+          .backgroundColor($r('app.color.brand'))
+          .onClick(() => {
+            this.controller?.close();
+            this.onConfirm(this.selectedDir);
+          })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      .margin({ top: Space.s4 })
     }
     .width(Size.drawerW)
     .padding(Space.s4)

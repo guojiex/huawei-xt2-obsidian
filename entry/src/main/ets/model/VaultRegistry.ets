@@ -250,6 +250,16 @@ export class VaultRegistry {
     return this.resolver.vaultDir(id);
   }
 
+  /** 回收站目录绝对路径（转发唯一解析器，1.7）。 */
+  trashDirOf(id: string): string {
+    return this.resolver.trashDir(id);
+  }
+
+  /** 回收站内相对路径 → 沙箱绝对路径（转发唯一解析器，1.7）。 */
+  absoluteInTrash(vaultId: string, relativePath: string): string {
+    return this.resolver.resolveInTrash(vaultId, relativePath);
+  }
+
   /** 注册表展示用相对路径：vaults/<id>（仅展示，不是文件系统绝对路径）。 */
   static displayPath(id: string): string {
     return 'vaults/' + id;

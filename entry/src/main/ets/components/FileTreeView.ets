@@ -15,8 +15,8 @@
  *    而「正在编辑什么」属于跨栏共享状态（侧栏选中态 + 编辑区标题 + 预览区来源同源），
  *    放在树里会让折叠动作连带改到它。这里只**回传选择**，不自己决定是否关闭。
  *
- * 后续 1.6（左滑三档）会落在 ListItem.swipeAction —— 已核实 API 24 存在
- * （sdk/default/openharmony/ets/component/list_item.d.ts:563），故本文件从一开始就用 List/ListItem。
+ * 后续 1.6（左滑三档）已落在本文件 ListItem.swipeAction（API 24 已核实，
+ * sdk/default/openharmony/ets/component/list_item.d.ts:563），故本文件从一开始就用 List/ListItem。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { FileTree, ExpandStore, TreeNode } from '../model/FileTree';
@@ -47,13 +47,19 @@ export struct FileTreeView {
    */
   onCreateInDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
   /**
-   * 「删除这个目录」回调（目录行尾的删除按钮，2026-10-18 方案 A 配套）。
-   * 为什么要有它：方案 A 补上「新建空文件夹」后，建了文件夹却删不掉 ——
-   * 目录行原先只有 rename/move（1.6 的左滑三档还没落码），删除入口先以
-   * 行尾常驻按钮的形式补上，确认框走 DeletePathDialog，整棵子树移除。
-   * ⚠️ 只加在目录行：文件行的删除等 1.6 左滑一起做，避免满树 trash 图标后又要拆。
+   * 左滑操作条（1.6 三档）的三个按钮回调。侧栏只透传，对话框与执行都在父级（Index）：
+   * - onRenamePath / onMovePath：拉起 RenamePathDialog / MovePathDialog；
+   * - onDeletePath：拉起 DeletePathDialog（文件 → 移入回收站，目录 → 永久删除确认）。
    */
-  onDeleteDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
+  onRenamePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onMovePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onDeletePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  /**
+   * 「滑到底直接删除」回调（1.6 第三档 → 1.7）：越过操作条 + DEL_EXTRA 后松手触发。
+   * 只有文件行接（原型同款：目录不给滑到底删除，误删一棵子树的代价不该这么轻）；
+   * 走 TrashService 移入回收站 + 5 秒撤销条，**不弹确认框**（原型 deleteWithUndo 同语义）。
+   */
+  onSwipeDelete: (relPath: string) => void = (relPath: string) => {};
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
@@ -194,6 +200,54 @@ export struct FileTreeView {
     .alignItems(HorizontalAlign.Center)
   }
 
+  /**
+   * 左滑操作条（1.6 三档，照原型 .swipe）：三个 48vp 热区按钮
+   * 重命名 / 移动 / 删除（danger 红底白图标），普通按钮 bg_card 底。
+   * 目录与文件同款（原型 acts 对两种行都渲染三个按钮）。
+   */
+  @Builder
+  SwipeBar(n: TreeNode) {
+    Row() {
+      Row() {
+        Icon('rename', 18, $r('app.color.text_secondary'))
+      }
+      .width(Size.touch)
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor($r('app.color.bg_card'))
+      .onClick(() => {
+        hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-重命名：%{public}s', n.relPath);
+        this.onRenamePath(n.relPath, n.isDir);
+      })
+      Row() {
+        Icon('move', 18, $r('app.color.text_secondary'))
+      }
+      .width(Size.touch)
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor($r('app.color.bg_card'))
+      .onClick(() => {
+        hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-移动：%{public}s', n.relPath);
+        this.onMovePath(n.relPath, n.isDir);
+      })
+      Row() {
+        Icon('trash', 18, $r('app.color.on_brand'))
+      }
+      .width(Size.touch)
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor($r('app.color.danger'))
+      .onClick(() => {
+        hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-删除：%{public}s', n.relPath);
+        this.onDeletePath(n.relPath, n.isDir);
+      })
+    }
+    .height('100%')
+  }
+
   @Builder
   TreeList() {
     List() {
@@ -242,6 +296,7 @@ export struct FileTreeView {
             // 内容 Row 整体设了 HitTestMode.None（子树透明，让点击冒泡到外层行），
             // 塞进去的按钮也会变透明、点不动。放在外层行下，它自己吃点击，
             // 不会误触展开/折叠（ArkUI 点击不向祖先行冒泡，最近的处理者消费）。
+            // （目录行尾的常驻 trash 按钮已移进 1.6 左滑操作条，见下方 swipeAction）
             if (n.isDir) {
               Row() {
                 Icon('plus', 16, $r('app.color.text_secondary'))
@@ -254,23 +309,6 @@ export struct FileTreeView {
               .onClick(() => {
               hilog.info(TREE_DOMAIN, TREE_TAG, '行内新建：目录 %{public}s', n.relPath);
               this.onCreateInDir(n.relPath);
-              })
-
-              // 目录行尾的删除（2026-10-18 方案 A 配套）：与 + 同样必须是内容 Row 的
-              // 兄弟（塞进去会被 HitTestMode.None 透明掉，见上方 + 的说明）。
-              // 危险色常驻可能太吵，先用 tertiary，确认框里才是 danger。
-              Row() {
-                Icon('trash', 14, $r('app.color.text_tertiary'))
-              }
-              .width(Size.touch)
-              .height(Size.touch)
-              .margin({ left: Space.s1 })
-              .justifyContent(FlexAlign.Center)
-              .alignItems(VerticalAlign.Center)
-              .borderRadius(Radius.icon)
-              .onClick(() => {
-                hilog.info(TREE_DOMAIN, TREE_TAG, '行内删除：目录 %{public}s', n.relPath);
-                this.onDeleteDir(n.relPath);
               })
             }
           }
@@ -294,7 +332,27 @@ export struct FileTreeView {
         }
         .width('100%')
         .padding({ right: Space.s2 })
-       }, (n: TreeNode) => {
+        // 左滑三档（1.6）：ListItem.swipeAction（API 24，list_item.d.ts:563 已核实）。
+        // - 轻扫拖出操作条（SwipeBar：重命名 / 移动 / 删除）；
+        // - 滑过操作条 + swipeDelExtra 再松手 → onAction（第三档）：
+        //   文件行 = 移入回收站 + 5 秒撤销（不弹确认框）；目录行 = 空操作（原型不给目录滑到底删除）。
+        // - edgeEffect.Spring：越过操作条后有阻尼回弹（原型 DAMP 的系统等价物）。
+        .swipeAction({
+          end: {
+            builder: (): void => {
+              this.SwipeBar(n);
+            },
+            actionAreaDistance: Size.swipeDelExtra,
+            onAction: (): void => {
+              if (!n.isDir) {
+                hilog.info(TREE_DOMAIN, TREE_TAG, '滑到底删除：%{public}s', n.relPath);
+                this.onSwipeDelete(n.relPath);
+              }
+            }
+          },
+          edgeEffect: SwipeEdgeEffect.Spring
+        })
+        }, (n: TreeNode) => {
         // ⚠️ 踩坑（2026-10-18 实测 + 官方 ForEach 键值规则 faqs-arkui-219）：
         // 键值相同的项不会重新执行 itemGenerator，行子树整体复用 —— 只用 relPath 时，
         // 折叠/展开后 chevron 方向停在旧值（子行消失是因为键被移除，父行键没变）。

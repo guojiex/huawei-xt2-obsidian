@@ -1143,6 +1143,33 @@ this.PaneHead({ title: ... })   // @Builder PaneHead($$: PaneHeadParam)
 注入替代通道：**临时调试钩子**（隐形 `Text` + `LongPressGesture` → `editorBridge.setContent`）——
 `setContent` 派发的 doc 变更走真实 change→自动保存链，可验证保存链路；验收后移除。
 
+### L-9 `ListItem.swipeAction` 三档手势落地（2026-10-21，SDK 核实 + 构建通过）✅ 签名 / ⚠️ 运行时待验
+
+API 24 SDK 签名（`sdk/default/openharmony/ets/component/list_item.d.ts:563`）：
+
+```ts
+swipeAction(value: SwipeActionOptions): T
+SwipeActionOptions { start?, end?: CustomBuilder | SwipeActionItem, edgeEffect?: SwipeEdgeEffect }
+SwipeActionItem {
+  builder: CustomBuilder,
+  actionAreaDistance?: Length,
+  onAction?: (isOperation?: boolean) => void,   // 手势松手越过 actionAreaDistance 后回调
+  onEnterActionArea?, onExitActionArea?, onStateChange?, ...
+}
+SwipeEdgeEffect { None, Spring, FolderLockMode }
+```
+
+三档语义的映射（原型 `index.html` 左滑行为 → ArkUI）：
+
+| 原型行为 | 落法 |
+| --- | --- |
+| 拖一半吸附露出 3 按钮条 | `swipeAction({ end: { builder: SwipeBar, ... }, edgeEffect: Spring })`，SwipeBar 自绘 重命名/移动/删除 三按钮（各 48vp） |
+| 滑到底 → 直接删除 + 5 秒撤销条 | `actionAreaDistance: Size.swipeDelExtra(36vp)`，松手越阈值触发 `onAction` → 移入回收站 + UndoBar（**只对文件行**） |
+| 文件夹没有第三档（回弹） | 目录行 `onAction` 空操作（不注册删除）；Spring 自动回弹 |
+
+- 状态：签名已在 SDK 核实、`arkts_check` + 签名 HAP 构建通过；**手势手感 / actionAreaDistance 阈值体感未实测**（模拟器手势注入不可靠，见 L-8），随真机验收。
+- 关联落码：`FileTreeView.ets`（SwipeBar + swipeAction）、`TrashService.ets`（`vaults/<库>/.trash/` 回收站 + 恢复拒绝覆盖）、`Index.ets`（UndoBar + doTrashFile）；详见 `docs/releases/v0.2/需求文档.md` §6。
+
 ---
 
 ## 落地决策表
@@ -1183,3 +1210,5 @@ this.PaneHead({ title: ... })   // @Builder PaneHead($$: PaneHeadParam)
 | **CodeMirror state 重建剥 listener** | ✅ updateListener 进 `extensionsFor()` 内部 + ArkTS 侧 ready 去重（双 ready 重建会永久丢 change 事件，**L-6 实测**） | 已落地（mdeditor） |
 | **@Builder 传参刷新** | ✅ 需随状态刷新的参数用 `$$: 命名 interface` 按引用传；按值传参是调用时快照（**L-7 实测**） | 已落地（PaneHead） |
 | **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ 文本注入 / ArkWeb 渲染在模拟器全不可用（**L-8**）；编辑器/输入法验证一律真机 | 已定案 |
+| **列表项三档左滑** | ✅ `ListItem.swipeAction` + `SwipeActionItem.actionAreaDistance/onAction`（`edgeEffect: Spring`），签名 API 24 已核实（**L-9**）；文件夹不注册 onAction 即无第三档 | 已落地（FileTreeView，手感待真机） |
+| **回收站位置** | ✅ `vaults/<库>/.trash/` 镜像原相对路径：FileTree 天然过滤点前缀、库 rename/delete 自动带着走、恢复目标=镜像路径无需元数据；**v0.3 Git 同步须给 `.trash` 配 .gitignore** | 已落地（TrashService） |
