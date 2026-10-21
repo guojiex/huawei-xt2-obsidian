@@ -62,6 +62,11 @@ export class Size {
   static readonly treeIndent: number = 24;
   /** 内容页限宽（4.9）：三屏 1061vp 下不把设置项拉成一整行 */
   static readonly contentMaxW: number = 760;
+  /**
+   * 左滑三档（1.6）：操作条完全滑出后**再滑这么多**进入删除区（原型 DEL_EXTRA = 36）。
+   * 配合 ListItem.swipeAction 的 actionAreaDistance；越过即触发 onAction（文件 → 移入回收站）。
+   */
+  static readonly swipeDelExtra: number = 36;
 }
 
 /** 动效（4.10）—— 与系统观感一致 */
@@ -69,6 +74,8 @@ export class Motion {
   static readonly durFast: number = 120;
   static readonly durBase: number = 200;
   static readonly durSlow: number = 300;
+  /** 撤销条（1.7）：滑到底删除后的后悔药显示时长（原型 showToast 5 秒） */
+  static readonly snack: number = 5000;
 }
 
 /** 正文行高（4.5：正文 16fp + 行高 1.65） */

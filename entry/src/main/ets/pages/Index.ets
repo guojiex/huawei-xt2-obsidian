@@ -28,11 +28,13 @@ import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
-import { CreateNoteDialog, DeletePathDialog } from '../components/NoteDialogs';
+import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } from '../components/NoteDialogs';
+import { TrashView } from '../components/TrashView';
+import { TrashService, UndoSnap } from '../model/TrashService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import { PreviewWebView, PreviewBridge } from '../components/PreviewWebView';
 import { Icon } from '../common/Icons';
-import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -117,6 +119,18 @@ struct Index {
    * 需要树展开到可见的目标路径。建完笔记置位 → 树展开它的父目录 → 立刻看得见。
    */
   @State revealPath: string = '';
+  /** 回收站视图重扫信号（删除 / 恢复 / 撤销后 +1，TrashView 重 list） */
+  @State trashSeq: number = 0;
+  /**
+   * 5 秒撤销条（1.7）：滑到底 / 确认删除把文件移入回收站后弹出。
+   * - undoVisible / undoMsg 驱动 UI；undoSnap 是恢复快照（非 @State：不驱动渲染）；
+   * - undoTimer 5 秒自动消失（原型 showToast 的 toastTimer）；
+   * - 撤销执行 TrashService.restore；失败（原位置重名）toast 原因，条照样收起。
+   */
+  @State undoVisible: boolean = false;
+  @State undoMsg: string = '';
+  private undoSnap: UndoSnap | null = null;
+  private undoTimer: number = -1;
   /** 单屏态「编辑 / 预览」二选一（v0.2 §3.4-3.3）。
    * 只有一块屏放不下两栏；md/lg 两栏同时可见，这个状态不参与布局。
    */
@@ -151,6 +165,9 @@ struct Index {
   private createNoteCtl: CustomDialogController | null = null;
   /** 删除确认（文件/目录）对话框 controller（2026-10-18 方案 A 配套） */
   private deletePathCtl: CustomDialogController | null = null;
+  /** 重命名 / 移动对话框 controller（1.6 左滑操作条） */
+  private renamePathCtl: CustomDialogController | null = null;
+  private movePathCtl: CustomDialogController | null = null;
 
   aboutToAppear(): void {
     this.refreshFromRegistry();
@@ -496,8 +513,8 @@ struct Index {
   }
 
   /**
-   * 删除文件或整棵目录（2026-10-18 方案 A 配套：目录行尾删除按钮）。
-   * ⚠️ 不可恢复（回收站是需求池 B 组）—— 调用方（openDeletePathDialog）必须先过确认框。
+   * 删除文件或整棵目录（1.6 起**只用于目录**：文件删除走 doTrashFile 进回收站）。
+   * ⚠️ 不可恢复（目录整棵子树不进回收站，原型语义）—— 调用方必须先过确认框。
    * 删的是正在编辑的文件（或其子孙）时清空编辑器：留着已不存在文件的标题比空着更坏。
    */
   private async doDeletePath(relPath: string): Promise<void> {
@@ -527,6 +544,150 @@ struct Index {
     const err = error as Error;
     hilog.warn(DOMAIN, TAG, '%{public}s: %{public}s', prefix, err.message ?? JSON.stringify(error));
     promptAction.showToast({ message: prefix });
+  }
+
+  // ===== 1.7 回收站：删除入站 + 5 秒撤销条 =====
+
+  /**
+   * 把文件移入回收站（滑到底直接删 / 删除确认框的「确认删除」，文件分支）。
+   * 顺序：删的是当前文件 → 先 flush 落盘再移（与 doDeletePath 同一条铁律）；
+   * 然后 TrashService.moveToTrash（renameSync 原子移动）→ 刷树/回收站 → 弹 5 秒撤销条。
+   * 快照记 wasCurrent：撤销后若是「删的正是这篇」就重新加载它（原型 snap.wasCurrent）。
+   */
+  private async doTrashFile(relPath: string): Promise<void> {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    try {
+      const wasCurrent: boolean = this.currentFilePath === relPath;
+      if (wasCurrent) {
+        await this.flushSave();
+      }
+      const reg: VaultRegistry = VaultRegistry.get();
+      const trashRel: string = TrashService.moveToTrash(reg, this.currentVaultId, relPath);
+      if (wasCurrent) {
+        this.currentFilePath = '';
+      }
+      this.treeSeq++;
+      this.trashSeq++;
+      const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
+      const snap: UndoSnap = { vaultId: this.currentVaultId, relPath: trashRel, wasCurrent: wasCurrent };
+      this.showUndo('已移入回收站：「' + name + '」', snap);
+    } catch (error) {
+      this.toastRegistryError('删除失败', error);
+    }
+  }
+
+  /** 撤销条：弹出（snap 为 null = 无按钮的纯提示条，原型 showToast 的无 undoFn 分支） */
+  private showUndo(msg: string, snap: UndoSnap | null): void {
+    this.undoMsg = msg;
+    this.undoSnap = snap;
+    this.undoVisible = true;
+    if (this.undoTimer !== -1) {
+      clearTimeout(this.undoTimer);
+    }
+    this.undoTimer = setTimeout((): void => {
+      this.undoTimer = -1;
+      this.undoVisible = false;
+    }, Motion.snack);
+  }
+
+  /** 撤销条：收起（点撤销 / 5 秒到点 / 新条覆盖旧条前） */
+  private hideUndo(): void {
+    if (this.undoTimer !== -1) {
+      clearTimeout(this.undoTimer);
+      this.undoTimer = -1;
+    }
+    this.undoVisible = false;
+  }
+
+  /** 撤销条「撤销」：从回收站恢复；原位置重名 → 换一条无按钮提示条告知原因（原型同款） */
+  private undoTrashRestore(): void {
+    const snap: UndoSnap | null = this.undoSnap;
+    this.hideUndo();
+    if (snap === null) {
+      return;
+    }
+    try {
+      TrashService.restore(VaultRegistry.get(), snap.vaultId, snap.relPath);
+      this.treeSeq++;
+      this.trashSeq++;
+      // 删的正是当时在编辑的那篇 → 撤销后重新加载（内容就是删除前 flush 落盘的那份）
+      if (snap.wasCurrent && snap.vaultId === this.currentVaultId) {
+        void this.loadFile(snap.relPath);
+      }
+    } catch (error) {
+      this.showUndo('原位置已有同名文件，请先处理重名', null);
+    }
+  }
+
+  /** 回收站视图「恢复」（1.8）：与撤销共用 TrashService.restore；重名 toast 原因 */
+  private doRestoreFromTrash(relPath: string): void {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    try {
+      TrashService.restore(VaultRegistry.get(), this.currentVaultId, relPath);
+      this.treeSeq++;
+      this.trashSeq++;
+    } catch (error) {
+      promptAction.showToast({ message: '原位置已有同名文件，请先处理重名' });
+    }
+  }
+
+  // ===== 1.6 左滑三档：重命名 / 移动 =====
+
+  /**
+   * 重命名文件/目录（只改最后一段）。正在编辑的文件被改名 → 指针跟着走
+   * （内容不动、只换标题；后续自动保存写到新路径）；父目录被改名 → 前缀替换。
+   */
+  private doRenamePath(relPath: string, isDir: boolean, newName: string): void {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    try {
+      const newRel: string = NoteService.renamePath(VaultRegistry.get(),
+        this.currentVaultId, relPath, newName, isDir);
+      this.retargetCurrent(relPath, newRel, isDir);
+      this.treeSeq++;
+    } catch (error) {
+      this.toastRegistryError('重命名失败', error);
+    }
+  }
+
+  /** 移动文件/目录到目标目录；revealPath 展开新位置的父目录，移完立刻看得见 */
+  private doMovePath(relPath: string, isDir: boolean, destDir: string): void {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    try {
+      const newRel: string = NoteService.movePath(VaultRegistry.get(),
+        this.currentVaultId, relPath, destDir, isDir);
+      this.retargetCurrent(relPath, newRel, isDir);
+      this.revealPath = newRel;
+      this.treeSeq++;
+    } catch (error) {
+      this.toastRegistryError('移动失败', error);
+    }
+  }
+
+  /**
+   * 改名/移动后把 currentFilePath 指到新路径（文件 = 等值替换；目录 = 前缀替换）。
+   * 只处理「正在编辑的正是被改的文件或其子孙」的情况，其他不动。
+   */
+  private retargetCurrent(oldRel: string, newRel: string, isDir: boolean): void {
+    if (this.currentFilePath.length === 0 || oldRel === newRel) {
+      return;
+    }
+    if (!isDir) {
+      if (this.currentFilePath === oldRel) {
+        this.currentFilePath = newRel;
+      }
+      return;
+    }
+    if (this.currentFilePath === oldRel || this.currentFilePath.startsWith(oldRel + '/')) {
+      this.currentFilePath = newRel + this.currentFilePath.substring(oldRel.length);
+    }
   }
 
   // ===== 对话框拉起（每次新建 controller 传新鲜参数） =====
@@ -581,23 +742,94 @@ struct Index {
   }
 
   /**
-   * 打开删除确认框（2026-10-18 方案 A 配套：目录行尾删除按钮）。
-   * 目前只有目录行带删除入口（文件行的删除等 1.6 左滑三档一起做），
-   * 所以 isDir 恒 true；DeletePathDialog 已支持文件形态，届时直接复用。
+   * 打开删除确认框（1.6 左滑操作条的「删除」按钮；2026-10-18 方案 A 起目录/文件共用）。
+   * 语义分流（原型 note-del 文案）：文件 → 移入回收站 + 5 秒撤销；目录 → 永久删除确认。
    */
-  private openDeletePathDialog(relPath: string): void {
+  private openDeletePathDialog(relPath: string, isDir: boolean): void {
     this.deletePathCtl = new CustomDialogController({
       builder: DeletePathDialog({
         relPath: relPath,
-        isDir: true,
+        isDir: isDir,
         onConfirm: (): void => {
-          this.doDeletePath(relPath);
+          if (isDir) {
+            void this.doDeletePath(relPath);
+          } else {
+            void this.doTrashFile(relPath);
+          }
         }
       }),
       autoCancel: true,
       customStyle: true
     });
     this.deletePathCtl.open();
+  }
+
+  /**
+   * 打开重命名对话框（1.6 左滑操作条的「重命名」；原型 note-rename / dir-rename）。
+   * 文件预填去掉 .md 的名字（确认时 NoteService.renamePath 自动补回）。
+   */
+  private openRenamePathDialog(relPath: string, isDir: boolean): void {
+    const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
+    let initial: string = name;
+    if (!isDir) {
+      const lower: string = name.toLowerCase();
+      if (lower.endsWith(NoteService.EXT)) {
+        initial = name.substring(0, name.length - NoteService.EXT.length);
+      } else if (lower.endsWith('.markdown')) {
+        initial = name.substring(0, name.length - '.markdown'.length);
+      }
+    }
+    this.renamePathCtl = new CustomDialogController({
+      builder: RenamePathDialog({
+        relPath: relPath,
+        isDir: isDir,
+        initialName: initial,
+        onConfirm: (newName: string): void => {
+          this.doRenamePath(relPath, isDir, newName);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.renamePathCtl.open();
+  }
+
+  /**
+   * 打开移动对话框（1.6 左滑操作条的「移动」；原型 note-move / dir-move）。
+   * 目录目标：候选目录剔除自身与子孙（移进自己内部 = 目录消失）；文件目标：全量目录。
+   */
+  private openMovePathDialog(relPath: string, isDir: boolean): void {
+    let dirs: string[] = [];
+    try {
+      const all: string[] = FileTree.allDirs(VaultRegistry.get().vaultDirOf(this.currentVaultId));
+      if (isDir) {
+        for (let i = 0; i < all.length; i++) {
+          const d: string = all[i];
+          if (d !== relPath && !d.startsWith(relPath + '/')) {
+            dirs.push(d);
+          }
+        }
+      } else {
+        dirs = all;
+      }
+    } catch (error) {
+      const err = error as Error;
+      hilog.warn(DOMAIN, TAG, '列目录失败：%{public}s', err.message);
+      dirs = [];
+    }
+    this.movePathCtl = new CustomDialogController({
+      builder: MovePathDialog({
+        relPath: relPath,
+        isDir: isDir,
+        dirs: dirs,
+        onConfirm: (destDir: string): void => {
+          this.doMovePath(relPath, isDir, destDir);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.movePathCtl.open();
   }
 
   private openRenameDialog(id: string): void {
@@ -692,15 +924,23 @@ struct Index {
   build() {
     Column() {
       this.Appbar()
-      Stack() {
+      // alignContent = Bottom：给撤销条（自动宽高的子节点）一个「底部居中」的落点；
+      // 其余视图都显式铺满 100%×100%，对齐方式对它们没有影响。
+      Stack({ alignContent: Alignment.Bottom }) {
         if (this.topView === 'vaults') {
           this.ManagerView()
+        } else if (this.topView === 'trash') {
+          this.TrashPane()
         } else if (this.topView === 'settings') {
           this.SettingsPane()
         } else if (this.breakpoint === Breakpoint.SM) {
           this.SmContent()
         } else {
           this.WideContent()
+        }
+        // 5 秒撤销条（1.7）：覆盖在内容之上，底部居中、离底 --sp-6（原型 .undo-bar）
+        if (this.undoVisible) {
+          this.UndoBar()
         }
       }
       .layoutWeight(1)
@@ -710,6 +950,51 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
+  }
+
+  /**
+   * 撤销条（1.7，照原型 .undo-bar / HdsSnackBar 观感）：
+   * 深底 snack_bg + snack_text 文案 + snack_action 色「撤销」按钮，圆角 --r-snack。
+   * 快照为 null 时只显示文案不显示按钮（纯提示条，原型 showToast 无 undoFn 分支）。
+   */
+  @Builder
+  UndoBar() {
+    Row({ space: Space.s4 }) {
+      Text(this.undoMsg)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.snack_text'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+      if (this.undoSnap !== null) {
+        Text('撤销')
+          .fontSize(FontSize.body2)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.snack_action'))
+          .onClick(() => {
+            this.undoTrashRestore();
+          })
+      }
+    }
+    .constraintSize({ maxWidth: '86%' })
+    .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
+    .borderRadius(Radius.snack)
+    .backgroundColor($r('app.color.snack_bg'))
+    // 原型 --elev-3 的单层近似（与 VaultMenu 同款）
+    .shadow({ radius: 30, color: '#2E000000', offsetX: 0, offsetY: 10 })
+    .margin({ bottom: Space.s6 })
+  }
+
+  /** 回收站视图（1.8）：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级） */
+  @Builder
+  TrashPane() {
+    TrashView({
+      vaultId: this.currentVaultId,
+      refreshSeq: this.trashSeq,
+      onRestore: (relPath: string): void => {
+        this.doRestoreFromTrash(relPath);
+      }
+    })
   }
 
   /**
@@ -735,7 +1020,8 @@ struct Index {
       }
       // 原型 VIEW_TITLE：次级视图标题固定为视图名，不显示当前库名
       Text(this.topView === 'note' ? this.currentVaultName()
-        : (this.topView === 'vaults' ? '笔记库' : '设置与关于'))
+        : (this.topView === 'vaults' ? '笔记库'
+          : (this.topView === 'trash' ? '回收站' : '设置与关于')))
         .fontSize(FontSize.s2)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
@@ -816,9 +1102,25 @@ struct Index {
             this.drawerOpen = false;
             this.openCreateNoteDialog(dirRelPath);
           },
-          onDeleteDir: (dirRelPath: string): void => {
+          onRenamePath: (relPath: string, isDir: boolean): void => {
             this.drawerOpen = false;
-            this.openDeletePathDialog(dirRelPath);
+            this.openRenamePathDialog(relPath, isDir);
+          },
+          onMovePath: (relPath: string, isDir: boolean): void => {
+            this.drawerOpen = false;
+            this.openMovePathDialog(relPath, isDir);
+          },
+          onDeletePath: (relPath: string, isDir: boolean): void => {
+            this.drawerOpen = false;
+            this.openDeletePathDialog(relPath, isDir);
+          },
+          onSwipeDelete: (relPath: string): void => {
+            this.drawerOpen = false;
+            void this.doTrashFile(relPath);
+          },
+          onOpenTrash: (): void => {
+            this.drawerOpen = false;
+            this.topView = 'trash';
           },
           onSelectFile: (relPath: string): void => {
             this.onSelectFile(relPath);
@@ -865,8 +1167,20 @@ struct Index {
             onCreateInDir: (dirRelPath: string): void => {
               this.openCreateNoteDialog(dirRelPath);
             },
-            onDeleteDir: (dirRelPath: string): void => {
-              this.openDeletePathDialog(dirRelPath);
+            onRenamePath: (relPath: string, isDir: boolean): void => {
+              this.openRenamePathDialog(relPath, isDir);
+            },
+            onMovePath: (relPath: string, isDir: boolean): void => {
+              this.openMovePathDialog(relPath, isDir);
+            },
+            onDeletePath: (relPath: string, isDir: boolean): void => {
+              this.openDeletePathDialog(relPath, isDir);
+            },
+            onSwipeDelete: (relPath: string): void => {
+              void this.doTrashFile(relPath);
+            },
+            onOpenTrash: (): void => {
+              this.topView = 'trash';
             },
             onSelectFile: (relPath: string): void => {
               this.onSelectFile(relPath);

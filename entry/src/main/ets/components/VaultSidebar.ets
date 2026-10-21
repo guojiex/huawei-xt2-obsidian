@@ -65,11 +65,13 @@ export struct VaultSidebar {
    * 差别仅在于对话框预填目标目录。
    */
   onCreateInDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
-  /**
-   * 「删除这个目录」回调（文件树目录行尾的删除按钮，2026-10-18 方案 A 配套）。
-   * 侧栏只透传，确认框（DeletePathDialog）与递归删除都在父级（Index）。
-   */
-  onDeleteDir: (dirRelPath: string) => void = (dirRelPath: string) => {};
+  /** 左滑操作条回调透传（1.6：重命名 / 移动 / 删除 / 滑到底删除），执行都在父级（Index） */
+  onRenamePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onMovePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onDeletePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onSwipeDelete: (relPath: string) => void = (relPath: string) => {};
+  /** 「回收站」回调（side-foot 第二按钮，1.8 回收站视图入口） */
+  onOpenTrash: () => void = () => {};
 
   /**
    * 库类型徽标（照原型 .vbadge）：全圆胶囊（--r-full）、fs-caption、Medium；
@@ -302,15 +304,32 @@ export struct VaultSidebar {
         onCreateInDir: (dirRelPath: string): void => {
           this.onCreateInDir(dirRelPath);
         },
-        onDeleteDir: (dirRelPath: string): void => {
-          this.onDeleteDir(dirRelPath);
+        onRenamePath: (relPath: string, isDir: boolean): void => {
+          this.onRenamePath(relPath, isDir);
+        },
+        onMovePath: (relPath: string, isDir: boolean): void => {
+          this.onMovePath(relPath, isDir);
+        },
+        onDeletePath: (relPath: string, isDir: boolean): void => {
+          this.onDeletePath(relPath, isDir);
+        },
+        onSwipeDelete: (relPath: string): void => {
+          this.onSwipeDelete(relPath);
         }
       })
         .layoutWeight(1)
         .width('100%')
 
-      // 底部：「管理库」入口（「新建」已移到目录树头部 ＋，2026-10-18 用户拍板：
-      // 原底部「新建笔记」与文件夹行尾 ＋ 在「在文件夹里建」重复，删按钮、头部加 ＋）
+      // 左滑提示（原型 .sw-hint）：caption / tertiary / 右对齐，padding 4·16·12
+      Text('← 左滑显示操作；滑到底移入回收站，可撤销')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .textAlign(TextAlign.RIGHT)
+        .padding({ top: Space.s1, left: Space.s4, right: Space.s4, bottom: Space.s3 })
+
+      // 底部（原型 side-foot）：「管理库 / 回收站」两个等宽按钮。
+      // （「新建」已移到目录树头部 ＋，2026-10-18 用户拍板；回收站是 1.8 的视图入口）
       Row({ space: Space.s2 }) {
         Text('管理库')
           .fontSize(FontSize.body3)
@@ -323,6 +342,18 @@ export struct VaultSidebar {
           .borderRadius(Radius.control)
           .onClick(() => {
             this.onManageVaults();
+          })
+        Text('回收站')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .height(Size.buttonH)
+          .layoutWeight(1)
+          .textAlign(TextAlign.Center)
+          .backgroundColor($r('app.color.bg_card'))
+          .border({ width: 1, color: $r('app.color.line') })
+          .borderRadius(Radius.control)
+          .onClick(() => {
+            this.onOpenTrash();
           })
       }
       .width('100%')

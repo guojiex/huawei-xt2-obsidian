@@ -9,6 +9,14 @@
 import { common } from '@kit.AbilityKit';
 
 export class VaultPathResolver {
+  /**
+   * 回收站目录段名（1.7）。`requireSafeSegment` 拒绝点开头段 —— 这是防**用户输入**
+   * 藏进隐藏目录的规则；`.trash` 是本解析器自有的常量段，不是外部输入，
+   * 故不走 requireSafeSegment，而是由 `trashDir()` 在这里唯一拼出（仍守硬约束 #14：
+   * 拼接只出现在本文件）。FileTree 天然过滤点开头目录，树里看不见它。
+   */
+  static readonly TRASH_SEG: string = '.trash';
+
   private context: common.UIAbilityContext;
 
   constructor(context: common.UIAbilityContext) {
@@ -29,11 +37,29 @@ export class VaultPathResolver {
     return this.vaultsRoot() + '/' + safeId;
   }
 
+  /** 回收站目录绝对路径：filesDir/vaults/<vaultId>/.trash（1.7）。 */
+  trashDir(vaultId: string): string {
+    return this.vaultDir(vaultId) + '/' + VaultPathResolver.TRASH_SEG;
+  }
+
   /**
    * 库内相对路径 → 沙箱绝对路径（v0.2 文件树与 v0.3+ 意图执行器共用入口）。
    * 拒绝绝对路径入参与 `..` 片段，防止逃逸 vaults/。
    */
   resolve(vaultId: string, relativePath: string): string {
+    return this.joinChecked(this.vaultDir(vaultId), relativePath);
+  }
+
+  /**
+   * 回收站内相对路径 → 沙箱绝对路径（1.7）。relPath = 原库内相对路径（镜像结构），
+   * 校验规则与 resolve 一致（拒绝绝对路径与 `..`）。
+   */
+  resolveInTrash(vaultId: string, relativePath: string): string {
+    return this.joinChecked(this.trashDir(vaultId), relativePath);
+  }
+
+  /** 在 base 之下按段拼接并逐段校验（resolve / resolveInTrash 共用）。 */
+  private joinChecked(base: string, relativePath: string): string {
     if (relativePath.length > 0 && relativePath.startsWith('/')) {
       throw new Error('VaultPathResolver: relativePath 不允许是绝对路径: ' + relativePath);
     }
@@ -49,7 +75,6 @@ export class VaultPathResolver {
       }
       kept.push(this.requireSafeSegment(seg));
     }
-    const base: string = this.vaultDir(vaultId);
     if (kept.length === 0) {
       return base;
     }

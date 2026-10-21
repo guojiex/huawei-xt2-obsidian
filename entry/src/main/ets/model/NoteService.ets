@@ -18,6 +18,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { sanitizeVaultName } from './Vault';
 import { VaultRegistry } from './VaultRegistry';
+import { FileTree } from './FileTree';
 
 const NOTE_DOMAIN: number = 0x0003;
 const NOTE_TAG: string = 'NoteService';
@@ -360,5 +361,77 @@ export class NoteService {
       fileIo.unlinkSync(abs);
     }
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除 %{public}s', relPath);
+  }
+
+  // ===== 1.6 左滑三档：重命名 / 移动 =====
+
+  /**
+   * 重命名文件或目录（只改最后一段，父路径不动）。
+   * - 名称走 `sanitizeVaultName` 消毒；文件自动补 `.md`（原型：输入框预填去掉 .md 的名字）；
+   * - 目标已存在 → 扩展名前加 -2/-3（同 uniqueRelPath 策略，不覆盖）；
+   * - 消毒后与原名相同 → 无操作返回原路径（改名框不做「必须不同」校验，原地保存不算错）；
+   * - renameSync 原子完成；返回实际落地的新相对路径（调用方据此更新 currentFilePath）。
+   */
+  static renamePath(registry: VaultRegistry, vaultId: string, relPath: string,
+    newName: string, isDir: boolean): string {
+    let base: string = sanitizeVaultName(newName);
+    if (base.length === 0) {
+      throw new Error('名称不能为空');
+    }
+    if (!isDir) {
+      const lower: string = base.toLowerCase();
+      if (!lower.endsWith(NoteService.EXT) && !lower.endsWith('.markdown')) {
+        base = base + NoteService.EXT;
+      }
+    }
+    const parent: string = FileTree.parentOf(relPath);
+    const target: string = parent.length > 0 ? parent + '/' + base : base;
+    if (target === relPath) {
+      return relPath;
+    }
+    const unique: string = isDir
+      ? NoteService.uniqueDirPath(registry, vaultId, target)
+      : NoteService.uniqueRelPath(registry, vaultId, target);
+    fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
+      registry.absoluteIn(vaultId, unique));
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '重命名 %{public}s → %{public}s', relPath, unique);
+    return unique;
+  }
+
+  /**
+   * 移动文件或目录到目标目录（目录选择器语义：destDir 为空串 = 库根目录）。
+   * - 只换父路径，不改名；目标已存在 → 同策略加后缀（不覆盖）；
+   * - 目录不允许移进自己或自己的子树（对话框侧已过滤候选，这里兜底再拦一次）；
+   * - 目标目录缺失时逐级补建（把笔记移进「刚被清空的目录」不至于失败）；
+   * - 返回实际落地的新相对路径（调用方据此更新 currentFilePath / revealPath）。
+   */
+  static movePath(registry: VaultRegistry, vaultId: string, relPath: string,
+    destDir: string, isDir: boolean): string {
+    if (isDir && (destDir === relPath || destDir.startsWith(relPath + '/'))) {
+      throw new Error('不能移动到自身内部');
+    }
+    const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
+    const target: string = destDir.length > 0 ? destDir + '/' + name : name;
+    if (target === relPath) {
+      return relPath;
+    }
+    // 补建目标目录（含中间层；已存在的段跳过）
+    if (destDir.length > 0) {
+      const segs: string[] = destDir.split('/');
+      for (let i = 1; i <= segs.length; i++) {
+        const dirRel: string = segs.slice(0, i).join('/');
+        const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
+        if (!fileIo.accessSync(dirAbs)) {
+          fileIo.mkdirSync(dirAbs);
+        }
+      }
+    }
+    const unique: string = isDir
+      ? NoteService.uniqueDirPath(registry, vaultId, target)
+      : NoteService.uniqueRelPath(registry, vaultId, target);
+    fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
+      registry.absoluteIn(vaultId, unique));
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '移动 %{public}s → %{public}s', relPath, unique);
+    return unique;
   }
 }
