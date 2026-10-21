@@ -324,8 +324,16 @@
   .node .caret { width: 16px; flex: none; color: var(--text-tertiary); display: flex; align-items: center; }
   .node .caret svg { width: 14px; height: 14px; color: var(--text-tertiary); }
   [data-form="md"] .node .caret, [data-form="lg"] .node .caret { margin-top: 6px; }
-  [data-form="md"] .node > svg, [data-form="lg"] .node > svg,
+  /* 宽屏行是 flex-start 排版（两行 Hds 观感），各元素靠 margin-top 落到主文本中线
+     （16px × 1.6 行高 → 中线 ≈ 13.8px）：图标 20px 高补 4px → 中心 14；文字块补 1px → 13.8 */
+  [data-form="md"] .node > svg, [data-form="lg"] .node > svg { margin-top: 4px; }
   [data-form="md"] .node .nlabel, [data-form="lg"] .node .nlabel { margin-top: 1px; }
+  /* 加号（仅目录行）原先漏在光学补偿清单外：48px 热区顶着行顶，字形中心 24px 吊在文字
+     中线下 ~10px，且把行从 56 撑到 64px。负 margin 把热区落回中线并还掉行高
+     （热区顶缘溢出行 2px 由行 overflow:hidden 裁掉，按钮背景透明、无视觉影响） */
+  [data-form="md"] .node .row-plus, [data-form="lg"] .node .row-plus {
+    align-self: auto; margin-top: -10px; margin-bottom: calc(-1 * var(--sp-2));
+  }
   /* 层级引导线：光靠 padding 差 16px 根本看不出父子，竖线才是层级的视觉锚 */
   /* 引导线要跨过行的上下 padding 才能连成一条，否则会断成刻度 */
   .node .guides {
@@ -393,6 +401,10 @@
   /* 目录行行内「+」：在该文件夹下新建笔记（仅目录行有，文件行没有） */
   .node .row-plus {
     flex: none; width: var(--h-touch); height: var(--h-touch); margin-right: calc(-1 * var(--sp-2));
+    /* 48px 热区比行内容（sm 32px）还高：上下各吃掉行的 padding（负 margin），
+       否则把目录行从 48 撑到 64px；align-self: center 让字形与文字共中线 */
+    align-self: center;
+    margin-top: calc(-1 * var(--sp-2)); margin-bottom: calc(-1 * var(--sp-2));
     border: none; border-radius: var(--r-control); background: none; color: var(--text-tertiary);
     display: none; align-items: center; justify-content: center; cursor: pointer; padding: 0;
   }
