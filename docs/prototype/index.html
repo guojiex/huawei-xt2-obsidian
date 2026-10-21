@@ -729,6 +729,21 @@
   }
   .hero-nm { font-size: var(--fs-s3); font-weight: 700; }
   .hero-sub { font-size: var(--fs-body3); color: var(--text-tertiary); margin-top: 2px; }
+  /* 关于组底部一行小字：开源 / 仓库信息（不占整行 set-row） */
+  .set-foot {
+    padding: var(--sp-2) var(--sp-4) var(--sp-3); font-size: var(--fs-caption);
+    color: var(--text-tertiary); border-top: 1px solid var(--line); background: var(--bg-page);
+  }
+  .set-foot a { color: inherit; }
+  /* 更新日志：新版本在上，只列用户可感知的变更 */
+  .chlog { padding: var(--sp-2) var(--sp-4); }
+  .chlog-item { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
+  .chlog-item:last-child { border-bottom: none; padding-bottom: var(--sp-1); }
+  .chlog-top { display: flex; align-items: baseline; gap: var(--sp-2); }
+  .chlog-top b { font-size: var(--fs-body2); color: var(--text-primary); }
+  .chlog-date { font-size: var(--fs-caption); color: var(--text-tertiary); }
+  .chlog-list { margin: var(--sp-1) 0 0; padding-left: 18px; font-size: var(--fs-body3); color: var(--text-secondary); }
+  .chlog-list li { margin-top: 2px; }
   .add-row { display: flex; gap: var(--sp-3); margin-bottom: var(--sp-4); }
   .add-row .add-box { flex: 1; min-height: var(--h-item); }
 
@@ -1006,9 +1021,37 @@
                 <div class="hero-sub" id="setVer">版本 0.2.0（1000001）</div>
               </div>
             </div>
-            <div class="set-row"><span>包名</span><code>com.jxg.huaweiobsidian</code></div>
-            <div class="set-row"><span>开源许可</span><b>MIT · Jiexin Guo</b></div>
             <div class="set-row"><span>定位</span><span class="set-val">为 XT2 三折叠做的本地 Markdown 笔记</span></div>
+            <!-- 包名行已删（2026-10-21）：开发期对 hdc 日志/签名用的诊断值，用户不需要 -->
+            <!-- 开源信息压成一行小字：应用 MIT + 打包 isomorphic-git / CodeMirror 等 MIT 组件，保留最低成本版权声明 -->
+            <div class="set-foot">
+              开源 · MIT ·
+              <a href="https://github.com/guojiex/huawei-xt2-obsidian" target="_blank">github.com/guojiex/huawei-xt2-obsidian</a>
+              （含 isomorphic-git、CodeMirror 等 MIT 组件）
+            </div>
+          </div>
+
+          <!-- 更新日志（2026-10-21 新增）：只列用户可感知的变更，最新在上 -->
+          <div class="set-group">
+            <div class="set-head">更新日志</div>
+            <div class="chlog">
+              <div class="chlog-item">
+                <div class="chlog-top"><b>v0.2</b><span class="chlog-date">开发中</span></div>
+                <ul class="chlog-list">
+                  <li>文件树：层级引导线、目录选择器新建（笔记 / 文件夹）、左滑三档（重命名 / 移动 / 删除）</li>
+                  <li>回收站：删除入站 + 5 秒撤销条 + 恢复</li>
+                  <li>编辑与保存：CodeMirror 源码编辑、防抖自动保存、原子写入</li>
+                  <li>视觉 token 基线（颜色 / 间距 / 字号统一引用设计 token）</li>
+                </ul>
+              </div>
+              <div class="chlog-item">
+                <div class="chlog-top"><b>v0.1</b><span class="chlog-date">2026-10</span></div>
+                <ul class="chlog-list">
+                  <li>三形态骨架（单 / 双 / 三屏）与多库注册表、库切换</li>
+                  <li>Git 桥接底层（isomorphic-git 打包进应用、clone 通道部分打通）</li>
+                </ul>
+              </div>
+            </div>
           </div>
 
           <div class="set-group">
@@ -1161,7 +1204,7 @@
       📁 <b>建文件夹靠对话框里的「笔记 / 文件夹」切换</b>（2026-10-18 用户拍板方案 A —— 原话「设计稿里面我要怎么新建文件夹？？？」：此前只能靠笔记名带 <code>/</code> 隐式建目录，建不了空文件夹）：切到「文件夹」后选父目录、填名字（同样可带 <code>/</code> 建多层），确认即建<b>空目录</b>，重名自动加后缀；下次创建仍由所点入口决定默认目录。<br>
       🗑 <b>删除同步配套</b>：目录行尾原先只有 rename / move、<b>没有删除按钮</b>（建了文件夹却删不掉），本版补上；确认文案按「空文件夹 / 连里面 N 篇笔记一起删 / 单文件」三种形态给，Git 库照旧加远端警告；<code>doDeleteNote</code> 按 <code>nodeRange</code> 整棵子树移除并扣减文件计数。
       ⚠️ <b>设计稿原先没定义这个流程</b>：最早的版本底部只有一个没绑行为的占位「新建」按钮，目录级新建入口、对话框形态均为实现期自补设计（2026-10-18 用户拍板：目录选择器 + 头部「＋」根目录入口，移除底部按钮）。</li>
-    <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、包名、许可</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
+    <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、一行开源/仓库信息、更新日志</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。<b>包名行已删</b>（2026-10-21 拍板：那是开发期对 hdc 日志/签名用的诊断值，用户不需要；要查去工程配置或 hdc）。开源信息压成关于组底部一行小字（应用 MIT + 打包 isomorphic-git / CodeMirror 等 MIT 组件，保留最低成本版权声明）。更新日志只列<b>用户可感知</b>的变更，最新在上。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
     <li><b>按版本看交互</b>：v0.4 是当前库文件名快切与最近打开；v1.1 增加当前库正文搜索。设计稿用内存样本演示，增量索引仍须按需求文档在真机实现。</li>
