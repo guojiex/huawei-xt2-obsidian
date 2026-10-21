@@ -6,9 +6,13 @@
  *
  * 消毒与重名预览共用 model 层同一套逻辑（Vault.sanitizeVaultName +
  * VaultRegistry.uniqueVaultId），对话框与注册表不各写一份，避免两处漂移。
+ *
+ * 视觉全部走 token（v0.2 §3.5）：数值用 common/Tokens.ets，颜色用
+ * $r('app.color.*')（base|dark 两套资源，深色模式自动切换）。
  */
 import { sanitizeVaultName } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { Space, Radius, FontSize, Size } from '../common/Tokens';
 
 /** 非法字符提示（新建/改名共用，照原型 updateHint 文案） */
 const BAD_NAME_HINT: string = '名称不能为空，也不能只由 / \\ : * ? " < > | 组成';
@@ -49,48 +53,50 @@ export struct CreateVaultDialog {
   build() {
     Column() {
       Text('新建本地笔记库')
-        .fontSize(14)
+        .fontSize(FontSize.body2)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#1C1C1E')
+        .fontColor($r('app.color.text_primary'))
       Text('在 vaults/ 下新建一个目录，不参与同步，与现有库互不影响。')
-        .fontSize(12)
-        .fontColor('#8E8E93')
-        .margin({ top: 6, bottom: 12 })
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ top: Space.s2, bottom: Space.s3 })
       TextInput({ placeholder: '库名称' })
-        .height(36)
-        .fontSize(13)
-        .padding({ left: 10, right: 10 })
-        .backgroundColor('#F2F2F7')
-        .borderRadius(8)
+        .height(Size.buttonH)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_primary'))
+        .placeholderColor($r('app.color.text_tertiary'))
+        .padding({ left: Space.s3, right: Space.s3 })
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.control)
         .onChange((value: string) => {
           this.rawName = value;
         })
       Text(this.hintText())
-        .fontSize(11)
-        .fontColor('#8E8E93')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
         .width('100%')
-        .margin({ top: 6 })
-      Row({ space: 8 }) {
+        .margin({ top: Space.s2 })
+      Row({ space: Space.s2 }) {
         Text('取消')
-          .fontSize(12)
-          .fontColor('#1C1C1E')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
           .height(30)
-          .padding({ left: 14, right: 14 })
+          .padding({ left: Space.s4, right: Space.s4 })
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .border({ width: 1, color: '#E5E5EA' })
-          .backgroundColor('#FAFAFC')
+          .borderRadius(Radius.icon)
+          .border({ width: 1, color: $r('app.color.line') })
+          .backgroundColor($r('app.color.bg_secondary'))
           .onClick(() => {
             this.controller?.close();
           })
         Text('创建')
-          .fontSize(12)
-          .fontColor('#FFFFFF')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.on_brand'))
           .height(30)
-          .padding({ left: 14, right: 14 })
+          .padding({ left: Space.s4, right: Space.s4 })
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .backgroundColor('#534AB7')
+          .borderRadius(Radius.icon)
+          .backgroundColor($r('app.color.brand'))
           .enabled(this.sanitized().length > 0)
           .opacity(this.sanitized().length > 0 ? 1 : 0.4)
           .onClick(() => {
@@ -99,12 +105,12 @@ export struct CreateVaultDialog {
       }
       .width('100%')
       .justifyContent(FlexAlign.End)
-      .margin({ top: 14 })
+      .margin({ top: Space.s4 })
     }
-    .width(300)
-    .padding(16)
-    .borderRadius(13)
-    .backgroundColor('#FFFFFF')
+    .width(Size.drawerW)
+    .padding(Space.s4)
+    .borderRadius(Radius.dialog)
+    .backgroundColor($r('app.color.bg_card'))
     .alignItems(HorizontalAlign.Start)
   }
 }
@@ -146,48 +152,50 @@ export struct RenameVaultDialog {
   build() {
     Column() {
       Text('重命名「' + this.initialName + '」')
-        .fontSize(14)
+        .fontSize(FontSize.body2)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#1C1C1E')
+        .fontColor($r('app.color.text_primary'))
       Text('目录名一起改，库内的笔记不受影响。')
-        .fontSize(12)
-        .fontColor('#8E8E93')
-        .margin({ top: 6, bottom: 12 })
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ top: Space.s2, bottom: Space.s3 })
       TextInput({ text: this.initialName, placeholder: '库名称' })
-        .height(36)
-        .fontSize(13)
-        .padding({ left: 10, right: 10 })
-        .backgroundColor('#F2F2F7')
-        .borderRadius(8)
+        .height(Size.buttonH)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_primary'))
+        .placeholderColor($r('app.color.text_tertiary'))
+        .padding({ left: Space.s3, right: Space.s3 })
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.control)
         .onChange((value: string) => {
           this.rawName = value;
         })
       Text(this.hintText())
-        .fontSize(11)
-        .fontColor('#8E8E93')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
         .width('100%')
-        .margin({ top: 6 })
-      Row({ space: 8 }) {
+        .margin({ top: Space.s2 })
+      Row({ space: Space.s2 }) {
         Text('取消')
-          .fontSize(12)
-          .fontColor('#1C1C1E')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
           .height(30)
-          .padding({ left: 14, right: 14 })
+          .padding({ left: Space.s4, right: Space.s4 })
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .border({ width: 1, color: '#E5E5EA' })
-          .backgroundColor('#FAFAFC')
+          .borderRadius(Radius.icon)
+          .border({ width: 1, color: $r('app.color.line') })
+          .backgroundColor($r('app.color.bg_secondary'))
           .onClick(() => {
             this.controller?.close();
           })
         Text('保存')
-          .fontSize(12)
-          .fontColor('#FFFFFF')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.on_brand'))
           .height(30)
-          .padding({ left: 14, right: 14 })
+          .padding({ left: Space.s4, right: Space.s4 })
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .backgroundColor('#534AB7')
+          .borderRadius(Radius.icon)
+          .backgroundColor($r('app.color.brand'))
           .enabled(this.sanitized().length > 0)
           .opacity(this.sanitized().length > 0 ? 1 : 0.4)
           .onClick(() => {
@@ -196,12 +204,12 @@ export struct RenameVaultDialog {
       }
       .width('100%')
       .justifyContent(FlexAlign.End)
-      .margin({ top: 14 })
+      .margin({ top: Space.s4 })
     }
-    .width(300)
-    .padding(16)
-    .borderRadius(13)
-    .backgroundColor('#FFFFFF')
+    .width(Size.drawerW)
+    .padding(Space.s4)
+    .borderRadius(Radius.dialog)
+    .backgroundColor($r('app.color.bg_card'))
     .alignItems(HorizontalAlign.Start)
   }
 }
@@ -226,43 +234,43 @@ export struct DeleteVaultDialog {
   build() {
     Column() {
       Text('删除本地笔记？')
-        .fontSize(14)
+        .fontSize(FontSize.body2)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#1C1C1E')
+        .fontColor($r('app.color.text_primary'))
       Text('该目录下的所有笔记会被永久删除，且无法恢复。')
-        .fontSize(12)
-        .fontColor('#8E8E93')
-        .margin({ top: 6, bottom: 12 })
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ top: Space.s2, bottom: Space.s3 })
       Text('vaults/' + this.vaultId)
-        .fontSize(11)
-        .fontColor('#8E8E93')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
         .width('100%')
-        .padding({ left: 8, right: 8, top: 5, bottom: 5 })
-        .backgroundColor('#F6F6F9')
-        .borderRadius(6)
-        .margin({ bottom: 12 })
-      Row({ space: 8 }) {
+        .padding({ left: Space.s2, right: Space.s2, top: 5, bottom: 5 })
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.icon)
+        .margin({ bottom: Space.s3 })
+      Row({ space: Space.s2 }) {
         Text('取消')
-          .fontSize(12)
-          .fontColor('#1C1C1E')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
           .height(30)
-          .padding({ left: 14, right: 14 })
+          .padding({ left: Space.s4, right: Space.s4 })
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .border({ width: 1, color: '#E5E5EA' })
-          .backgroundColor('#FAFAFC')
+          .borderRadius(Radius.icon)
+          .border({ width: 1, color: $r('app.color.line') })
+          .backgroundColor($r('app.color.bg_secondary'))
           .onClick(() => {
             this.controller?.close();
           })
         Text('确认删除')
-          .fontSize(12)
-          .fontColor('#A32D2D')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.danger'))
           .height(30)
-          .padding({ left: 14, right: 14 })
+          .padding({ left: Space.s4, right: Space.s4 })
           .textAlign(TextAlign.Center)
-          .borderRadius(8)
-          .border({ width: 1, color: '#A32D2D' })
-          .backgroundColor('#FCEBEB')
+          .borderRadius(Radius.icon)
+          .border({ width: 1, color: $r('app.color.danger') })
+          .backgroundColor($r('app.color.danger_bg'))
           .onClick(() => {
             this.confirm();
           })
@@ -270,10 +278,10 @@ export struct DeleteVaultDialog {
       .width('100%')
       .justifyContent(FlexAlign.End)
     }
-    .width(300)
-    .padding(16)
-    .borderRadius(13)
-    .backgroundColor('#FFFFFF')
+    .width(Size.drawerW)
+    .padding(Space.s4)
+    .borderRadius(Radius.dialog)
+    .backgroundColor($r('app.color.bg_card'))
     .alignItems(HorizontalAlign.Start)
   }
 }

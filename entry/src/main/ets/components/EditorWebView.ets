@@ -8,54 +8,54 @@
  * 桥接协议见 `web/mdeditor/src/index.ts` 头部注释；打包链路见 `web/mdeditor/build.mjs`
  * （改了 Web 源码必须重跑打包，否则设备上跑旧代码 —— AGENTS.md §Web 打包约定）。
  */
-import { webview } from '@kit.ArkWeb'
-import { hilog } from '@kit.PerformanceAnalysisKit'
-import { common, ConfigurationConstant } from '@kit.AbilityKit'
-import { BridgeCodec } from '../common/BridgeCodec'
+import { webview } from '@kit.ArkWeb';
+import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { BridgeCodec } from '../common/BridgeCodec';
 
-const EDITOR_DOMAIN = 0x0000
-const EDITOR_TAG = 'EditorWebView'
+const EDITOR_DOMAIN = 0x0000;
+const EDITOR_TAG = 'EditorWebView';
 
 /** 注入到 WebView window.__arkts 的对象：JS -> ArkTS 的唯一入口 */
 class EditorNativeProxy {
-  handler: (msg: string) => void = () => {}
+  handler: (msg: string) => void = () => {};
 
   postMessage(msg: string): void {
-    this.handler(msg)
+    this.handler(msg);
   }
 }
 
 /** 桥接内部实现：页面就绪前收到的指令先进队列，ready 后按序补发 */
 class EditorImpl {
-  private controller: webview.WebviewController
-  private readyFlag: boolean = false
-  private pending: string[] = []
+  private controller: webview.WebviewController;
+  private readyFlag: boolean = false;
+  private pending: string[] = [];
   /** getContent 往返：reqId → 回调（Web 侧以 content 事件回内容，不走 runJavaScript 返回值） */
-  private contentWaiters: Map<number, (b64: string) => void> = new Map()
-  private nextReqId: number = 1
+  private contentWaiters: Map<number, (b64: string) => void> = new Map();
+  private nextReqId: number = 1;
 
   constructor(controller: webview.WebviewController) {
-    this.controller = controller
+    this.controller = controller;
   }
 
   get ready(): boolean {
-    return this.readyFlag
+    return this.readyFlag;
   }
 
   markReady(): void {
-    this.readyFlag = true
-    const queue = this.pending
-    this.pending = []
+    this.readyFlag = true;
+    const queue = this.pending;
+    this.pending = [];
     for (const script of queue) {
-      void this.controller.runJavaScript(script)
+      void this.controller.runJavaScript(script);
     }
   }
 
   async setContent(text: string): Promise<void> {
     // 空串直通（BridgeCodec）：空笔记是常态，util.Base64Helper 对空输入会抛错
-    const payload = BridgeCodec.encode(text)
+    const payload = BridgeCodec.encode(text);
     // base64 只含 [A-Za-z0-9+/=]，可以直接安全拼进 JS 字符串
-    this.enqueue(`window.__mdeditor.setContent('${payload}')`)
+    this.enqueue(`window.__mdeditor.setContent('${payload}')`);
   }
 
   /**
@@ -66,91 +66,91 @@ class EditorImpl {
    * 硬约束 7），Web 侧把内容经 __arkts.postMessage 的 content 事件送回。
    */
   async getContent(): Promise<string> {
-    const reqId = this.nextReqId
-    this.nextReqId += 1
+    const reqId = this.nextReqId;
+    this.nextReqId += 1;
     return new Promise<string>((resolve: (text: string) => void, reject: (e: Error) => void) => {
-      let settled = false
+      let settled = false;
       const timerId = setTimeout((): void => {
         if (settled) {
-          return
+          return;
         }
-        settled = true
-        this.contentWaiters.delete(reqId)
-        reject(new Error('getContent 超时：Web 侧未回内容'))
-      }, 3000)
+        settled = true;
+        this.contentWaiters.delete(reqId);
+        reject(new Error('getContent 超时：Web 侧未回内容'));
+      }, 3000);
       this.contentWaiters.set(reqId, (b64: string): void => {
         if (settled) {
-          return
+          return;
         }
-        settled = true
-        clearTimeout(timerId)
+        settled = true;
+        clearTimeout(timerId);
         try {
-          resolve(BridgeCodec.decode(b64))
+          resolve(BridgeCodec.decode(b64));
         } catch (error) {
-          reject(error as Error)
+          reject(error as Error);
         }
-      })
-      this.enqueue(`window.__mdeditor.requestContent(${reqId})`)
-    })
+      });
+      this.enqueue(`window.__mdeditor.requestContent(${reqId})`);
+    });
   }
 
   /** Web 侧 content 回复的落点（EditorWebView.handleMessage 按 reqId 路由过来） */
   handleContent(reqId: number, b64: string): void {
-    const waiter = this.contentWaiters.get(reqId)
+    const waiter = this.contentWaiters.get(reqId);
     if (waiter) {
-      this.contentWaiters.delete(reqId)
-      waiter(b64)
+      this.contentWaiters.delete(reqId);
+      waiter(b64);
     }
   }
 
   focus(): void {
-    this.enqueue('window.__mdeditor.focus()')
+    this.enqueue('window.__mdeditor.focus()');
   }
 
   setTheme(theme: string): void {
-    const safe = theme === 'dark' ? 'dark' : 'light'
-    this.enqueue(`window.__mdeditor.setTheme('${safe}')`)
+    const safe = theme === 'dark' ? 'dark' : 'light';
+    this.enqueue(`window.__mdeditor.setTheme('${safe}')`);
   }
 
   private enqueue(script: string): void {
     if (this.readyFlag) {
-      void this.controller.runJavaScript(script)
+      void this.controller.runJavaScript(script);
     } else {
-      this.pending.push(script)
+      this.pending.push(script);
     }
   }
 }
 
 /** 父组件持有的句柄：页面就绪前调用会进队列，不会丢 */
 export class EditorBridge {
-  private impl: EditorImpl | undefined = undefined
+  private impl: EditorImpl | undefined = undefined;
 
   bind(impl: EditorImpl): void {
-    this.impl = impl
+    this.impl = impl;
   }
 
   /** 编辑器页面是否就绪（ready 前 getContent 会返回 ''，落盘会清空文件，故保存前必查） */
   get ready(): boolean {
-    return this.impl?.ready ?? false
+    return this.impl?.ready ?? false;
   }
 
   async setContent(text: string): Promise<void> {
-    await this.impl?.setContent(text)
+    await this.impl?.setContent(text);
   }
 
   async getContent(): Promise<string> {
     if (!this.impl) {
-      return ''
+      return '';
     }
-    return await this.impl.getContent()
+    return await this.impl.getContent();
   }
 
   focus(): void {
-    this.impl?.focus()
+    this.impl?.focus();
   }
 
   setTheme(theme: string): void {
-    this.impl?.setTheme(theme)
+    this.impl?.setTheme(theme);
   }
 }
 
@@ -163,39 +163,39 @@ export class EditorBridge {
 @Component
 export struct EditorWebView {
   /** 外部主题：'light' / 'dark'（跟随系统颜色模式，见 aboutToAppear） */
-  @Prop theme: string = 'light'
+  @Prop theme: string = 'light';
   /** 内容变化通知（debounce 300ms，只报长度；要内容请调 bridge.getContent()） */
-  onChange: (len: number) => void = (len: number) => {}
+  onChange: (len: number) => void = (len: number) => {};
   /** 页面就绪（首帧可交互） */
-  onReady: () => void = () => {}
+  onReady: () => void = () => {};
   /** Web 加载错误 */
-  onError: (msg: string) => void = (msg: string) => {}
+  onError: (msg: string) => void = (msg: string) => {};
   /** 父级通过这个句柄下发内容 / 拉取内容（外部传入同一实例，ready 时内部 bind） */
-  bridge: EditorBridge = new EditorBridge()
+  bridge: EditorBridge = new EditorBridge();
 
-  private controller: webview.WebviewController = new webview.WebviewController()
-  private proxy: EditorNativeProxy = new EditorNativeProxy()
+  private controller: webview.WebviewController = new webview.WebviewController();
+  private proxy: EditorNativeProxy = new EditorNativeProxy();
   /** 当前桥接实现（ready 时创建；content 回复按 reqId 路由给它） */
-  private impl: EditorImpl | undefined = undefined
+  private impl: EditorImpl | undefined = undefined;
   /** 代理是否已注册（onControllerAttached 里注册，onPageEnd 兜底；见 build()） */
-  private proxyRegistered: boolean = false
+  private proxyRegistered: boolean = false;
 
   aboutToAppear(): void {
     this.proxy.handler = (msg: string): void => {
-      this.handleMessage(msg)
-    }
+      this.handleMessage(msg);
+    };
     // 跟随系统深浅色：Web 内读不到 App 的 token，这里把主题显式传下去
     try {
-      const ctx = getContext(this) as common.UIAbilityContext
-      const mode = ctx.config?.colorMode
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const mode = ctx.config?.colorMode;
       if (mode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK) {
-        this.theme = 'dark'
+        this.theme = 'dark';
       } else {
-        this.theme = 'light'
+        this.theme = 'light';
       }
     } catch (error) {
-      const err = error as Error
-      this.onError('读取颜色模式失败: ' + err.message)
+      const err = error as Error;
+      this.onError('读取颜色模式失败: ' + err.message);
     }
   }
 
@@ -207,52 +207,52 @@ export struct EditorWebView {
    */
   private registerProxy(): void {
     if (this.proxyRegistered) {
-      return
+      return;
     }
     try {
-      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['postMessage'])
-      this.proxyRegistered = true
-      hilog.info(EDITOR_DOMAIN, EDITOR_TAG, '__arkts 代理已注册（页面加载前注入，无需 refresh）')
+      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['postMessage']);
+      this.proxyRegistered = true;
+      hilog.info(EDITOR_DOMAIN, EDITOR_TAG, '__arkts 代理已注册（页面加载前注入，无需 refresh）');
     } catch (error) {
-      const err = error as Error
-      hilog.error(EDITOR_DOMAIN, EDITOR_TAG, '注册代理失败: %{public}s', err.message)
+      const err = error as Error;
+      hilog.error(EDITOR_DOMAIN, EDITOR_TAG, '注册代理失败: %{public}s', err.message);
     }
   }
 
   private handleMessage(json: string): void {
-    let msg: Record<string, string | number> = {}
+    let msg: Record<string, string | number> = {};
     try {
-      msg = JSON.parse(json) as Record<string, string | number>
+      msg = JSON.parse(json) as Record<string, string | number>;
     } catch (error) {
       hilog.error(EDITOR_DOMAIN, EDITOR_TAG, '桥接消息解析失败: %{public}s', json);
-      this.onError('桥接消息解析失败: ' + json)
-      return
+      this.onError('桥接消息解析失败: ' + json);
+      return;
     }
     if (msg['type'] !== 'event') {
-      return
+      return;
     }
-    const name = msg['name'] as string
+    const name = msg['name'] as string;
     if (name === 'ready') {
       if (this.impl) {
         // 二次 ready（onPageEnd 的 onArktsReady 兜底会重发一次）直接忽略：
         // 不重建 impl（会丢 in-flight getContent 的 waiter、重置 reqId），
         // 不重发 onReady（会触发 loadFile 重读文件，冲掉编辑器里未保存的改动）。
         // 双保险：web 侧 setTheme 曾因重建 state 丢 change 监听，见 web/mdeditor/src。
-        hilog.info(EDITOR_DOMAIN, EDITOR_TAG, '重复 ready，已忽略（桥接此前建立）')
-        return
+        hilog.info(EDITOR_DOMAIN, EDITOR_TAG, '重复 ready，已忽略（桥接此前建立）');
+        return;
       }
-      const impl = new EditorImpl(this.controller)
-      this.impl = impl
-      this.bridge.bind(impl)
-      impl.markReady()
-      impl.setTheme(this.theme)
+      const impl = new EditorImpl(this.controller);
+      this.impl = impl;
+      this.bridge.bind(impl);
+      impl.markReady();
+      impl.setTheme(this.theme);
       hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'Web 编辑器页面就绪，桥接已建立');
-      this.onReady()
+      this.onReady();
     } else if (name === 'content') {
       // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContent Promise
-      this.impl?.handleContent(msg['id'] as number, msg['b64'] as string)
+      this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
     } else if (name === 'change') {
-      this.onChange((msg['len'] as number) ?? 0)
+      this.onChange((msg['len'] as number) ?? 0);
     }
   }
 
@@ -264,34 +264,34 @@ export struct EditorWebView {
           // onControllerAttached 是注入 JS 对象的建议时机 —— controller 绑定后、页面加载前，
           // 此时注册的代理会随本次页面加载一起注入，无需 refresh、页面只加载一次。
           // （onPageBegin 注册已属太晚；onPageEnd 注册必须 refresh 才会生效。）
-          this.registerProxy()
+          this.registerProxy();
         })
         .onPageEnd(() => {
           // 兜底：onControllerAttached 没跑成时（理论上不会），补注册 + refresh 使其生效
           if (!this.proxyRegistered) {
-            this.registerProxy()
+            this.registerProxy();
             if (this.proxyRegistered) {
-              this.controller.refresh()
+              this.controller.refresh();
             }
-            return
+            return;
           }
           // 招呼 Web 侧重发 ready（Web 侧也有轮询兜底）
           void this.controller.runJavaScript(
             'window.__mdeditor && window.__mdeditor.onArktsReady ? window.__mdeditor.onArktsReady() : 0').then(() => {
-            hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'onArktsReady() called')
+            hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'onArktsReady() called');
           }).catch((e: Error) => {
-            hilog.error(EDITOR_DOMAIN, EDITOR_TAG, 'onArktsReady failed: %{public}s', e.message)
-          })
+            hilog.error(EDITOR_DOMAIN, EDITOR_TAG, 'onArktsReady failed: %{public}s', e.message);
+          });
         })
         .onConsole((event): boolean => {
           // Web 页面 console 输出：spike 排查期的主要证据来源
           // 返回值 true = 不再走系统默认打印（我们只用 hilog 收）
-          const msg = event?.message?.getMessage() ?? ''
-          hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'console: %{public}s', msg)
-          return true
+          const msg = event?.message?.getMessage() ?? '';
+          hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'console: %{public}s', msg);
+          return true;
         })
         .onErrorReceive((event) => {
-          this.onError('Web 加载错误: ' + (event?.error?.getErrorInfo() ?? ''))
+          this.onError('Web 加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
         })
         .width('100%')
         .height('100%')
