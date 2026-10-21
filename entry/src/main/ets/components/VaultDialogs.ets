@@ -53,7 +53,7 @@ export struct CreateVaultDialog {
   build() {
     Column() {
       Text('新建本地笔记库')
-        .fontSize(FontSize.body2)
+        .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
       Text('在 vaults/ 下新建一个目录，不参与同步，与现有库互不影响。')
@@ -152,7 +152,7 @@ export struct RenameVaultDialog {
   build() {
     Column() {
       Text('重命名「' + this.initialName + '」')
-        .fontSize(FontSize.body2)
+        .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
       Text('目录名一起改，库内的笔记不受影响。')
@@ -234,7 +234,7 @@ export struct DeleteVaultDialog {
   build() {
     Column() {
       Text('删除本地笔记？')
-        .fontSize(FontSize.body2)
+        .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
       Text('该目录下的所有笔记会被永久删除，且无法恢复。')
