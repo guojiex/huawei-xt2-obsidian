@@ -802,6 +802,11 @@ struct Index {
             this.drawerOpen = false;
             this.topView = 'vaults';
           },
+          onImportGit: (): void => {
+            // 原型 vault-menu 的「导入 Git 仓库…」→ 独立「导入仓库」页（Git 同步属 v0.3）
+            this.drawerOpen = false;
+            router.pushUrl({ url: 'pages/SyncPage' });
+          },
           onCreateNote: (): void => {
             this.drawerOpen = false;
             this.openCreateNoteDialog();
@@ -849,6 +854,10 @@ struct Index {
             },
             onManageVaults: (): void => {
               this.topView = 'vaults';
+            },
+            onImportGit: (): void => {
+              // 原型 vault-menu 的「导入 Git 仓库…」→ 独立「导入仓库」页（Git 同步属 v0.3）
+              router.pushUrl({ url: 'pages/SyncPage' });
             },
             onCreateNote: (): void => {
               this.openCreateNoteDialog();

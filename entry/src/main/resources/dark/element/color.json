@@ -9,6 +9,7 @@
     { "name": "on_brand", "value": "#FFFFFF" },
 
     { "name": "success", "value": "#2BC48A" },
+    { "name": "success_bg", "value": "#292BC48A" },
     { "name": "warning", "value": "#FFA433" },
     { "name": "danger", "value": "#FF6B6B" },
     { "name": "danger_press", "value": "#E84C4C" },
