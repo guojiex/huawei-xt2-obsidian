@@ -1199,6 +1199,13 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 状态：签名已在 SDK 核实、`arkts_check` + 签名 HAP 构建通过；**手势手感 / actionAreaDistance 阈值体感未实测**（模拟器手势注入不可靠，见 L-8），随真机验收。
 - 关联落码：`FileTreeView.ets`（SwipeBar + swipeAction）、`TrashService.ets`（`vaults/<库>/.trash/` 回收站 + 恢复拒绝覆盖）、`Index.ets`（UndoBar + doTrashFile）；详见 `docs/releases/v0.2/需求文档.md` §6。
 
+### L-10 v0.4 快切遮罩外点击命中（2026-10-23，API SDK 声明 + API 26 模拟器）✅
+
+- 本机 API 24 SDK 的 `component/common.d.ts` 声明 `CommonMethod.onClick`、`onAreaChange`；`ClickEvent.windowX/windowY` 标注 API 10 起。`component/units.d.ts` 中 `Area.globalPosition` 是当前窗口坐标，标注 API 8 起；`Area.width/height` 提供控件实际尺寸。这些接口都不高于 API 24。
+- 快切遮罩与卡片是同屏自绘层。外层 `Row` 横向铺满屏幕，点在卡片左右间隙时会命中它，不能只依赖下层遮罩的点击回调。实现用 `onAreaChange` 记录卡片窗口边界，并在该 `Row` 的 `onClick` 里比较窗口坐标；卡片内点击不关闭，边界外点击关闭。
+- API 26 TripleFold 模拟器实测：sm、md、lg 左右空白均能关闭；md/lg 卡片与屏幕边缘之间的空白也能关闭。搜索框点击后保持焦点且弹层不误关。API 24 设备和 XT2 运行时仍待验。
+- 输入框聚焦时模拟器第一次系统 Back 只清除焦点、弹层仍在，第二次 Back 才关闭。尝试在输入框处理 Back 未改变该现象；目前尚未确定是输入焦点处理还是 IME 消费，API 24 / XT2 需实测，不宣称该状态下单次返回关闭。
+
 ---
 
 ## 落地决策表

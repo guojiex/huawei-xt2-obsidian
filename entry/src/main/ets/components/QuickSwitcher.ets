@@ -8,6 +8,36 @@ export struct QuickSwitcher {
   onSelect: (relPath: string) => void = (relPath: string) => {};
   onClose: () => void = () => {};
   @State query: string = '';
+  @State boxLeft: number = 0;
+  @State boxTop: number = 0;
+  @State boxWidth: number = 0;
+  @State boxHeight: number = 0;
+
+  // 外层 Row 横向铺满屏幕，左右空白的点击会落到 Row；按实测卡片区域区分内外点击。
+  private updateBoxBounds(area: Area): void {
+    const x: Length | undefined = area.globalPosition.x;
+    const y: Length | undefined = area.globalPosition.y;
+    if (typeof x === 'number' && typeof y === 'number' &&
+      typeof area.width === 'number' && typeof area.height === 'number') {
+      this.boxLeft = x;
+      this.boxTop = y;
+      this.boxWidth = area.width;
+      this.boxHeight = area.height;
+    }
+  }
+
+  private handleBoxClick(event: ClickEvent): void {
+    if (this.boxWidth <= 0 || this.boxHeight <= 0) {
+      return;
+    }
+    const insideBox: boolean = event.windowX >= this.boxLeft &&
+      event.windowX <= this.boxLeft + this.boxWidth &&
+      event.windowY >= this.boxTop &&
+      event.windowY <= this.boxTop + this.boxHeight;
+    if (!insideBox) {
+      this.onClose();
+    }
+  }
 
   private visiblePaths(): string[] {
     const normalized: string = this.query.trim().toLowerCase();
@@ -135,14 +165,20 @@ export struct QuickSwitcher {
         .borderRadius(Radius.dialog)
         .backgroundColor($r('app.color.bg_card'))
         .shadow(ShadowStyle.OUTER_DEFAULT_LG)
-        .onClick(() => {
-          // Consume taps on the quick-box so they do not close it through the mask.
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          this.updateBoxBounds(newArea);
+        })
+        .onClick((event: ClickEvent) => {
+          this.handleBoxClick(event);
         })
       }
       .width('100%')
       .padding(Space.s6)
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Top)
+      .onClick((event: ClickEvent) => {
+        this.handleBoxClick(event);
+      })
     }
     .width('100%')
     .height('100%')
