@@ -28,7 +28,7 @@
 - [x] T003 [P] 新建 `entry/src/main/ets/model/Breakpoint.ets`：断点常量（`'sm'|'md'|'lg'`）+ 阈值常量（600/840vp，出自 mvp_design §2）+ `breakpointFromWidthVp(widthVp): string` 半开区间判定（sm<600，md∈[600,840)，lg≥840）
 - [x] T004 [P] 新建 `entry/src/main/ets/model/VaultPathResolver.ets`：全工程唯一路径解析层——`vaultDir(vaultId)`、`resolve(vaultId, relativePath)`；Context 注入；路径只从 `context.filesDir` 拼出（AGENTS 硬约束 14）；拒绝 `..` 片段与绝对路径入参
 - [x] T005 [P] 新建 `entry/src/main/ets/model/Vault.ets`：`VaultEntry` 接口（id/type/createdAt，id=目录名=显示名）+ `sanitizeVaultName(raw): string` 消毒纯函数（过滤 `/ \ : * ? " < > |` 与控制字符 → 去前导点 → trim → 空返回空串）
-- [x] T006 新建 `entry/src/main/ets/model/VaultRegistry.ets`（依赖 T004、T005）：注册表单例——`init()`（首启无注册表时自动建 `vaults/local` 并设当前库）/`list()/currentId()/setCurrent(id)/createLocal(name)/rename(id,newName)/remove(id)`；重名自动加 `-2`；改名失败回滚禁半状态；删除后当前库回落列表第一个；preferences 单 key JSON 持久化（杀进程重进还在）
+- [x] T006 新建 `entry/src/main/ets/model/VaultRegistry.ets`（依赖 T004、T005）：注册表单例——`init()`（首启无注册表时自动建 `vaults/local` 并设当前库）/`list()/currentId()/setCurrent(id)/createLocal(name)/rename(id,newName)/remove(id)`；重名自动加 `-2`；改名失败回滚禁半状态；删除后当前库回落列表第一个；preferences 单 key JSON 持久化（正常退出后重进还在）
 - [x] T007 改造 `entry/src/main/ets/entryability/EntryAbility.ets`（依赖 T003）：`onWindowStageCreate` 中 `getMainWindowSync()` + `window.on('windowSizeChange')` 回调 `px2vp(size.width)` 判档写入 `AppStorage`（key：`breakpoint`、`windowWidthVp`）；loadContent 前用 `getWindowProperties().windowRect.width` **补算初始断点**（事件只在变化时触发）；**不用** `getFoldDisplayMode()` 做分支（api_notes A3）
 
 **Checkpoint**: 模型层可独立单测（逻辑自查），断点事件链路通，用户故事可开工。
@@ -50,9 +50,9 @@
 
 ## Phase 4: User Story 2 - 库模型：注册表持久化 + 库 CRUD (Priority: P1) 🎯 MVP
 
-**Goal**: 首启自动建 `vaults/local`；新建/改名/删除/切库全流程可用；杀进程重进库列表还在。
+**Goal**: 首启自动建 `vaults/local`；新建/改名/删除/切库全流程可用；正常退出后重进库列表还在。
 
-**Independent Test**: 新建库（含非法字符输入、重名输入）→ 改名 → 切库 → 删除（确认弹窗文案核对）→ 杀进程重进列表恢复。
+**Independent Test**: 新建库（含非法字符输入、重名输入）→ 改名 → 切库 → 删除（确认弹窗文案核对）→ 正常退出后重进列表恢复。
 
 - [x] T010 [US2] `entry/src/main/ets/components/VaultSidebar.ets` 库切换器接线：侧栏头部库切换器（当前库名 + 下拉菜单列全部库、当前项高亮、点选调 `VaultRegistry.setCurrent` 切库）
 - [x] T011 [US2] 新建 `entry/src/main/ets/components/VaultDialogs.ets`：三个 CustomDialog——①新建本地库（TextInput + 消毒结果与目标路径实时预览 + 空名禁用确认）；②改名（同结构，预填现名）；③删除确认（标题「删除本地笔记？」+ **不可逆/无法恢复**明示 + `vaults/<id>` 路径展示；**不出现**「建议先导出备份」文案——zip 导出未实现）

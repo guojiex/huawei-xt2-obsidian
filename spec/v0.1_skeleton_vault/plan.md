@@ -78,7 +78,7 @@ entry/src/main/ets/
 
 ### R4 形态切换状态保持：当前库进注册表持久层，UI 瞬态进组件 @State
 
-- **Decision**: 当前库 id 由 `VaultRegistry` 持久化（杀进程也恢复）；断点/窗口宽度进 `AppStorage`；侧栏收起态、库管理视图开关等 UI 瞬态留在 `@State`（UIAbility 折叠切换不重建，`api_notes.md` A4 ✅，@State 自然存活）。
+- **Decision**: 当前库 id 由 `VaultRegistry` 持久化（正常退出后也恢复）；断点/窗口宽度进 `AppStorage`；侧栏收起态、库管理视图开关等 UI 瞬态留在 `@State`（UIAbility 折叠切换不重建，`api_notes.md` A4 ✅，@State 自然存活）。
 - **Rationale**: 「状态不丢」分两级——跨进程的必须落盘（当前库），进程内的组件状态天然保留；不引入额外全局状态。
 - **Alternatives considered**: 全部塞 AppStorage（收起态等瞬态无持久价值，增加耦合）。
 
