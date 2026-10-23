@@ -1,5 +1,6 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { FsOpMsg, FsReadResult, FsReaddirResult, FsStatResult, OkResult } from './GitBridgeModels';
 
 /**
@@ -66,43 +67,86 @@ export class GitFsBackend {
     }
   }
 
-  /**
-   * 写文件。
-   * .git 内部文件不做原子写（git 自身有完整性保障，且对象文件极多，原子写开销大）；
-   * 工作区文件走 tmp + rename，避免写一半崩溃留下残文件。
-   */
-  write(rel: string, dataB64: string): OkResult {
+  /** 写文件：所有 Git 元数据、对象与工作区文件统一通过 AtomicFile 落盘。 */
+  async write(rel: string, dataB64: string): Promise<OkResult> {
     const abs = this.abs(rel);
     this.ensureParent(abs);
     const bytes = this.decodeBytes(dataB64);
-    if (this.isGitInternal(rel)) {
-      this.writeDirect(abs, bytes);
-    } else {
-      this.writeAtomic(abs, bytes);
-    }
+    await this.writeAtomic(abs, rel, bytes);
     return { ok: true };
   }
 
-  private isGitInternal(rel: string): boolean {
-    return rel === '.git' || rel.startsWith('.git/');
+  private writeAtomic(abs: string, rel: string, bytes: Uint8Array): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const atomicFile = new fs.AtomicFile(abs);
+      let settled = false;
+      let timerId = -1;
+      const fail = (stage: string, error: Error | Object): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.failWrite();
+        } catch (cleanupError) {
+          // Keep the original write error.
+        }
+        reject(this.toWriteError(stage, rel, error));
+      };
+      const commit = (): void => {
+        if (settled) {
+          return;
+        }
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.finishWrite();
+        } catch (error) {
+          fail('finishWrite', error as Error);
+          return;
+        }
+        settled = true;
+        resolve();
+      };
+
+      let stream: fs.WriteStream;
+      try {
+        stream = atomicFile.startWrite();
+      } catch (error) {
+        fail('startWrite', error as Error);
+        return;
+      }
+      timerId = setTimeout((): void => {
+        fail('write', new Error('write callback timed out'));
+      }, 3000);
+      if (bytes.length === 0) {
+        commit();
+      } else {
+        try {
+          stream.write(bytes, 'utf8', (error?: BusinessError): void => {
+            if (error !== undefined && error !== null) {
+              fail('write', error);
+              return;
+            }
+            commit();
+          });
+        } catch (error) {
+          fail('write', error as Error);
+        }
+      }
+    });
   }
 
-  private writeDirect(abs: string, bytes: Uint8Array): void {
-    const file = fs.openSync(abs, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
-    try {
-      fs.writeSync(file.fd, bytes.buffer);
-    } finally {
-      fs.closeSync(file);
-    }
-  }
-
-  private writeAtomic(abs: string, bytes: Uint8Array): void {
-    const tmp = abs + '.tmp';
-    this.writeDirect(tmp, bytes);
-    if (fs.accessSync(abs)) {
-      fs.unlinkSync(abs);
-    }
-    fs.renameSync(tmp, abs);
+  private toWriteError(stage: string, rel: string, error: Error | Object): Error {
+    const businessError = error as BusinessError;
+    const message = businessError.code !== undefined
+      ? `${businessError.code}: ${businessError.message}`
+      : error instanceof Error ? error.message : String(error);
+    return new Error(`AtomicFile ${stage} failed for ${rel}: ${message}`);
   }
 
   private ensureParent(abs: string): void {
@@ -165,12 +209,12 @@ export class GitFsBackend {
   }
 
   /** 批量执行（clone 时的落盘主力，避免逐次跨桥） */
-  batch(ops: FsOpMsg[]): OkResult {
+  async batch(ops: FsOpMsg[]): Promise<OkResult> {
     for (const op of ops) {
       const rel = this.decodePath(op.pathB64);
       switch (op.op) {
         case 'write':
-          this.write(rel, op.dataB64 ?? '');
+          await this.write(rel, op.dataB64 ?? '');
           break;
         case 'mkdir':
           this.mkdir(rel);

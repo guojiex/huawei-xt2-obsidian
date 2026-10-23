@@ -1,5 +1,6 @@
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { GitFsBackend } from './GitFsBackend';
 import { GitHttpBackend } from './GitHttpBackend';
 import {
@@ -147,11 +148,11 @@ export struct GitBridgeView {
 
     const id = msg.id ?? 0;
     if (msg.type === 'fs') {
-      try {
-        this.reply(id, true, this.handleFs(msg));
-      } catch (e) {
+      this.handleFs(msg).then((payload: Object) => {
+        this.reply(id, true, payload);
+      }).catch((e: Error) => {
         this.replyError(id, e);
-      }
+      });
       return;
     }
 
@@ -171,7 +172,7 @@ export struct GitBridgeView {
     }
   }
 
-  private handleFs(msg: BridgeMsg): Object {
+  private async handleFs(msg: BridgeMsg): Promise<Object> {
     const backend = this.fsBackend;
     if (!backend) {
       throw new Error('EINIT: fs backend 未初始化');
@@ -181,7 +182,7 @@ export struct GitBridgeView {
       case 'read':
         return backend.read(rel) as FsReadResult;
       case 'write':
-        return backend.write(rel, msg.dataB64 ?? '') as OkResult;
+        return await backend.write(rel, msg.dataB64 ?? '') as OkResult;
       case 'mkdir':
         return backend.mkdir(rel) as OkResult;
       case 'unlink':
@@ -195,7 +196,7 @@ export struct GitBridgeView {
       case 'stat':
         return backend.stat(rel) as FsStatResult;
       case 'batch':
-        return backend.batch((msg.ops ?? []) as FsOpMsg[]) as OkResult;
+        return await backend.batch((msg.ops ?? []) as FsOpMsg[]) as OkResult;
       default:
         throw new Error('ENOSYS: unsupported fs op ' + (msg.op ?? ''));
     }
@@ -213,7 +214,18 @@ export struct GitBridgeView {
 
   /** 失败回包：JS 侧会把 "CODE: msg" 还原成带 code 的 Error */
   private replyError(id: number, e: Error | Object): void {
-    const text = e instanceof Error ? (e.message ?? String(e)) : String(e);
+    const businessError = e as BusinessError;
+    let text: string;
+    if (businessError.code === 13900002) {
+      // isomorphic-git expects missing paths to use the Node.js ENOENT code.
+      text = `ENOENT: ${businessError.message}`;
+    } else if (e instanceof Error) {
+      text = e.message ?? String(e);
+    } else if (businessError.code !== undefined) {
+      text = `${businessError.code}: ${businessError.message}`;
+    } else {
+      text = String(e);
+    }
     const b64 = this.base64.encodeToStringSync(this.encoder.encodeInto(JSON.stringify(text)));
     this.controller.runJavaScript(`window.__gitBridge.onResult(${id}, false, '${b64}')`);
   }
