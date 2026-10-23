@@ -1121,15 +1121,10 @@ struct Index {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ left: Space.s2, right: Space.s2 })
       if (this.topView === 'note') {
-        // 设计稿顶栏右上 = 同步 + 设置 两个图标（库管理在侧栏下拉进，顶栏不重复摆）
-        Text('快切')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.brand'))
-          .height(Size.touch)
-          .padding({ left: Space.s2, right: Space.s2 })
-          .onClick(() => {
-            this.openQuickSwitcher();
-          })
+        // 设计稿顶栏右上 = 快切、同步、设置图标
+        this.IconButton('search', $r('app.color.text_secondary'), (): void => {
+          this.openQuickSwitcher();
+        })
         this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
           // 同步（Git 同步是 v0.3 能力）：跳独立「导入仓库」页
           router.pushUrl({ url: 'pages/SyncPage' });
