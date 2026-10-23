@@ -512,6 +512,35 @@ try {
 → **已落地**（NoteService.saveNote），模拟器实测：保存 14 字笔记成功、进程不崩
 （修复前同场景 SIGSEGV）。
 
+**2026-10-22 用法追问答复（用户带回）**：答复称官方 `failWrite()` 示例在 `try/catch` 的 `catch`
+中对同一 `AtomicFile` 实例调用 `failWrite()`，覆盖 `startWrite()` / `write()` 同步抛错；异步
+`write()` 回调失败时调用 `failWrite()`，成功时调用 `finishWrite()`。AtomicFile 示例不对
+`startWrite()` 返回的 `WriteStream` 显式 `close()`；写入会话以 `finishWrite()` / `failWrite()` 收尾。
+该答复没有附逐项文档直链，已存档于 [2026-10-22 AtomicFile 用法答复](qa/2026-10-22_API24_AtomicFile_startWrite_用法答复.md)。
+`failWrite()` 自身可能抛错，调用方应捕获清理异常；`delete()` 会删除原始文件和临时文件，不是
+保留旧文件的失败回滚替代方案。实例复用、重试和并发保证仍未记载。
+
+**13900020 边界**：用户带回答复将其通用含义确认为 “Invalid argument”，并指出在线方法章节引用
+基础文件 IO 错误码，SDK `@throws` 列表并不穷尽运行时可能返回的错误码。本机 API 26
+`@ohos.file.fs.d.ts` 的 `startWrite()` 列表仍未包含 13900020；这不解释其在本次调用中的具体
+触发条件，也不证明错误来自临时文件或某一内部操作。API 26 模拟器根因仍未知；不外推至 API 24
+运行时或 XT2。
+
+**2026-10-22 API 26 模拟器 clone 复测补充（⚠️ 具体根因未确认）**：Huawei_TripleFold 模拟器
+（系统识别型号 `emulator`，HarmonyOS 7.0.0.107、API 26、arm64-v8a）上，独立
+`filesDir/atomicfile_probe_20261022/probe.md` 字符串写入通过；非空 Git clone 仍在 `.git/config` 写入时返回
+13900020。早先 UI 的 `AtomicFile startWrite failed` 是因为实现把 `startWrite()` 与 `stream.write()` 放在同一
+`try/catch`，不能用作阶段证据。开启实时 hilog 后，同一应用进程记录 `GetWriteArg: Illegal write buffer or encoding`
+与 `WriteExec: Failed to resolve buf and options`；将两阶段分开捕获后，UI 显示
+`AtomicFile write failed for .git/config: 13900020: Invalid argument`。这支持“失败发生在 `WriteStream.write()`
+参数解析路径”的判断，不证明哪一个参数具体非法，也不证明 API 26 SDK 声明错误。
+
+本机 SDK 26.0.0.105 的 `@ohos.util.stream.d.ts` 声明 `Writable.write(chunk?: string | Uint8Array, encoding?: string,
+callback?: Function)`，列出的编码为 `utf8`、`gb18030`、`gbk`、`gb2312`。在新隔离目标上使用 `utf8`、省略 encoding、复制
+`Uint8Array` 后仍复现；这是该 API 26 模拟器的运行时证据，不外推至 API 24 运行时或 XT2。HTTP fixture 的
+`info/refs` 与 `git-upload-pack` 均返回 200；clone 未通过。设备、构建与逐轮页面结果见 [v0.3 §6](../releases/v0.3/需求文档.md)，
+需向鸿蒙核实二进制 chunk 的官方调用方式及该日志错误码的含义，见[2026-10-22 提示词](prompts/2026-10-22_API26_AtomicFile_clone_.git_config.md)。
+
 ### C2 目录遍历 ✅
 
 `listFileSync(path, options)` **无分页游标**，一次性返回 `string[]`；`ListFileOptions` 有 `recursion`、`listNum`（0 = 全部）。

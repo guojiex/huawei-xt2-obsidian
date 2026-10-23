@@ -103,6 +103,7 @@ docs/harmonyos/
 
 | 日期 | 主题 | 问题数 | 存档 | 关键产出 |
 | --- | --- | --- | --- | --- |
+| 2026-10-22 | **API 24/26 AtomicFile.startWrite 用法与失败处理** | 5 | [答复归档](qa/2026-10-22_API24_AtomicFile_startWrite_用法答复.md)；[提问原文](prompts/2026-10-21_API24_AtomicFile_startWrite_正确用法与失败处理.md) | 写入成功用 `finishWrite()`、失败用 `failWrite()`；答复称同步异常的 catch 也调用同一实例 `failWrite()`；不显式关闭返回流。13900020 通用含义已明确，具体触发原因仍未知，详见 [`api_notes.md`](api_notes.md) |
 | 2026-10-17 | 首批核实（三折叠 / Web 组件 / 文件存储 / HAR 发布 / 权限网络） | 20 | [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md) | 三折叠恒为 `phone`；折痕接口只返回**单个 Rect**；`FoldSplitContainer` **已否决**；原子写改用 `AtomicFile`；令牌存 `@kit.AssetStoreKit`；`runJavaScript` 长度未记载 → 大数据走 `WebMessagePort`；前台 clone/push 无需额外权限 |
 | 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
 | 2026-10-17 | **原生埋点能力**（hiAppEvent / UIObserver 做展示·点击·页面上报） | 6 | [`qa/2026-10-17_埋点与事件打点.md`](qa/2026-10-17_埋点与事件打点.md) | **无需第三方 SDK**：曝光 `onVisibleAreaApproximateChange`(17+) / 点击 `UIObserver.on('willClick')`(12+) / 页面 `navDestinationSwitch`(12+)，**API 24 全部可用**；`hiAppEvent.write` 落盘 + `addWatcher` 累积触发批量 `takeNext()` 上报；**全局无侵入**方案（组件只声明 `.id()`/`.customProperty()`，Ability 层统一监听）最匹配文件树；⚠️ 可见区域计算**不支持遮挡与旋转**；🔴 **笔记内容一律禁止进埋点** |
@@ -114,6 +115,7 @@ docs/harmonyos/
 | # | 问题 | 卡住什么 | 状态 |
 | --- | --- | --- | --- |
 | ~~A-3~~ | ~~除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案~~ | ~~若有，可省掉自绘 + 真机校准~~ | ✅ **已答**（2026-10-17 折痕追问 Q4）：**没有**。官方立场是「布局适配优先基于响应式断点」，`FoldSplitContainer` 只有 `PresetSplitRatio` 三档预设且不对齐折痕 → **自绘等分是官方认可路线**，不必再找 |
+| **C1-API26** | API 26 模拟器 clone 写 `.git/config` 时 `AtomicFile` 返回流的 `WriteStream.write(Uint8Array, ...)` 报 13900020 | v0.3 clone | 🟡 实时 hilog 记录 `Illegal write buffer or encoding` / `Failed to resolve buf and options`；旧 `startWrite failed` UI 标签由共享 `try/catch` 误标，分阶段捕获后定位到 `WriteStream.write()` 参数解析路径。`utf8`、不传 encoding、复制字节数组仍复现；具体原因未知，只在 API 26 模拟器实测，API 24 / XT2 未测试。见 [`api_notes.md`](api_notes.md)、[v0.3 §6](../releases/v0.3/需求文档.md) 与[更新后的追问提示词](prompts/2026-10-22_API26_AtomicFile_clone_.git_config.md) |
 | ~~B-1~~ | ~~`onInterceptRequest` 能否拿到 POST body~~ | ~~同步层能否简化为拦截~~ | ✅ **已解决**：能拿到但是 `string`，**拦截方案否决**，转发为最终方案 |
 | ~~B-2~~ | ~~`WebMessagePort` 在 rawfile 页面能否建立~~ | ~~大数据通道选型~~ | ✅ **已解决**：可用、支持 ArrayBuffer；剩「上限多少」只能真机测 |
 | B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |
