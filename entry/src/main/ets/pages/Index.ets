@@ -999,48 +999,52 @@ struct Index {
   }
 
   build() {
-    Column() {
-      this.Appbar()
-      // alignContent = Bottom：给撤销条（自动宽高的子节点）一个「底部居中」的落点；
-      // 其余视图都显式铺满 100%×100%，对齐方式对它们没有影响。
-      Stack({ alignContent: Alignment.Bottom }) {
-        if (this.topView === 'vaults') {
-          this.ManagerView()
-        } else if (this.topView === 'trash') {
-          this.TrashPane()
-        } else if (this.topView === 'settings') {
-          this.SettingsPane()
-        } else if (this.breakpoint === Breakpoint.SM) {
-          this.SmContent()
-        } else {
-          this.WideContent()
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column() {
+        this.Appbar()
+        // alignContent = Bottom：给撤销条（自动宽高的子节点）一个「底部居中」的落点；
+        // 其余视图都显式铺满 100%×100%，对齐方式对它们没有影响。
+        Stack({ alignContent: Alignment.Bottom }) {
+          if (this.topView === 'vaults') {
+            this.ManagerView()
+          } else if (this.topView === 'trash') {
+            this.TrashPane()
+          } else if (this.topView === 'settings') {
+            this.SettingsPane()
+          } else if (this.breakpoint === Breakpoint.SM) {
+            this.SmContent()
+          } else {
+            this.WideContent()
+          }
+          // 5 秒撤销条（1.7）：覆盖在内容之上，底部居中、离底 --sp-6（原型 .undo-bar）
+          if (this.undoVisible) {
+            this.UndoBar()
+          }
         }
-        // 5 秒撤销条（1.7）：覆盖在内容之上，底部居中、离底 --sp-6（原型 .undo-bar）
-        if (this.undoVisible) {
-          this.UndoBar()
-        }
-        if (this.quickSwitchOpen && this.topView === 'note') {
-          QuickSwitcher({
-            filePaths: this.quickSwitchFiles,
-            recentPaths: this.recentOpenPaths,
-            onSelect: (relPath: string): void => {
-              this.selectQuickSwitchFile(relPath);
-            },
-            onClose: (): void => {
-              this.quickSwitchOpen = false;
-            }
-          })
-            .width('100%')
-            .height('100%')
-        }
+        .layoutWeight(1)
+        .width('100%')
+        this.Statusbar()
       }
-      .layoutWeight(1)
       .width('100%')
-      this.Statusbar()
+      .height('100%')
+      .backgroundColor($r('app.color.bg_page'))
+      if (this.quickSwitchOpen && this.topView === 'note') {
+        QuickSwitcher({
+          filePaths: this.quickSwitchFiles,
+          recentPaths: this.recentOpenPaths,
+          onSelect: (relPath: string): void => {
+            this.selectQuickSwitchFile(relPath);
+          },
+          onClose: (): void => {
+            this.quickSwitchOpen = false;
+          }
+        })
+          .width('100%')
+          .height('100%')
+      }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.bg_page'))
   }
 
   /**
