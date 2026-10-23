@@ -30,6 +30,8 @@ const P_BACK: string = 'M15 5l-7 7 7 7';
 const P_CHEVRON_DOWN: string = 'M6 9.5l6 6 6-6';
 const P_CHEVRON_UP: string = 'M6 14.5l6-6 6 6';
 const P_CHEVRON_RIGHT: string = 'M9 5l7 7-7 7';
+// 搜索（放大镜）：圆环用折线近似，遵守本文件不使用弧线的约定
+const P_SEARCH: string = 'M10.8 4.3L13.29 4.79L15.39 6.21L16.81 8.31L17.3 10.8L16.81 13.29L15.39 15.39L13.29 16.81L10.8 17.3L8.31 16.81L6.21 15.39L4.79 13.29L4.3 10.8L4.79 8.31L6.21 6.21L8.31 4.79Z M16 16L20.5 20.5';
 const P_COLLAPSE: string = 'M11 5l-5 7 5 7M18 5l-5 7 5 7';
 const P_FOLDER: string = 'M3 6h6l2 2h10v11H3z';
 const P_DOC: string = 'M7 3h6l4 4v14H7zM13 3v7h4';
@@ -54,6 +56,8 @@ function pathOf(name: string): string {
     return P_CHEVRON_UP;
   } else if (name === 'chevronRight') {
     return P_CHEVRON_RIGHT;
+  } else if (name === 'search') {
+    return P_SEARCH;
   } else if (name === 'collapse') {
     return P_COLLAPSE;
   } else if (name === 'folder') {
