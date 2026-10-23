@@ -30,6 +30,10 @@ export interface TreeNode {
   depth: number;
 }
 
+interface ScanCount {
+  value: number;
+}
+
 /** 扫描 + 排序 */
 export class FileTree {
   static readonly MAX_DEPTH: number = 8;
@@ -76,6 +80,17 @@ export class FileTree {
   }
 
   /**
+   * 列出库内所有有效 Markdown 文件，不读取目录展开状态。
+   * 隐藏项、扩展名、深度和节点上限与文件树保持一致，供 v0.4 快速切换使用。
+   */
+  static allMarkdownFiles(rootAbs: string): string[] {
+    const out: string[] = [];
+    const count: ScanCount = { value: 0 };
+    FileTree.walkMarkdown(rootAbs, '', 0, out, count);
+    return out;
+  }
+
+  /**
    * 列出库里**所有**目录的 relPath（不受展开状态影响，只要目录不要文件）——
    * 新建笔记对话框的「目录选择器」用（2026-10-18 用户拍板：对话框里选目录，
    * 默认上次点过的目录，根目录作为一个选项）。
@@ -114,6 +129,51 @@ export class FileTree {
       const rel: string = relDir.length === 0 ? dirNames[i] : relDir + '/' + dirNames[i];
       out.push(rel);
       FileTree.walkDirs(absDir + '/' + dirNames[i], rel, depth + 1, out);
+    }
+  }
+
+  private static walkMarkdown(absDir: string, relDir: string, depth: number,
+    out: string[], count: ScanCount): void {
+    if (depth >= FileTree.MAX_DEPTH || count.value >= FileTree.MAX_NODES) {
+      return;
+    }
+    const dirNames: string[] = [];
+    const fileNames: string[] = [];
+    try {
+      const names: string[] = fileIo.listFileSync(absDir);
+      for (let i = 0; i < names.length; i++) {
+        const name: string = names[i];
+        if (name.length === 0 || name.startsWith('.')) {
+          continue;
+        }
+        if (FileTree.isDir(absDir, name)) {
+          dirNames.push(name);
+        } else if (name.endsWith('.md') || name.endsWith('.markdown')) {
+          fileNames.push(name);
+        }
+      }
+    } catch (error) {
+      const err = error as Error;
+      hilog.warn(DOMAIN, TAG, '读取目录失败 %{public}s: %{public}s', relDir, err.message);
+      return;
+    }
+    dirNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
+    fileNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
+    for (let i = 0; i < dirNames.length; i++) {
+      if (count.value >= FileTree.MAX_NODES) {
+        return;
+      }
+      const dirName: string = dirNames[i];
+      count.value++;
+      const dirRel: string = relDir.length === 0 ? dirName : relDir + '/' + dirName;
+      FileTree.walkMarkdown(absDir + '/' + dirName, dirRel, depth + 1, out, count);
+    }
+    for (let i = 0; i < fileNames.length; i++) {
+      if (count.value >= FileTree.MAX_NODES) {
+        return;
+      }
+      count.value++;
+      out.push(relDir.length === 0 ? fileNames[i] : relDir + '/' + fileNames[i]);
     }
   }
 

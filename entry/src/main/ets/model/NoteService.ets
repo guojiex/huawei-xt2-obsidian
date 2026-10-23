@@ -125,6 +125,12 @@ export class NoteService {
    * 详情进 hilog。⚠️ 二进制/超大文件不在此考虑范围内（库只收 md，人为上限）。
    */
   static readNote(registry: VaultRegistry, vaultId: string, relPath: string): string {
+    const text: string | null = NoteService.tryReadNote(registry, vaultId, relPath);
+    return text === null ? '' : text;
+  }
+
+  /** 与 readNote 相同，但保留失败状态，供 v0.4 只记录成功打开项。 */
+  static tryReadNote(registry: VaultRegistry, vaultId: string, relPath: string): string | null {
     try {
       const abs: string = registry.absoluteIn(vaultId, relPath);
       const text: string = fileIo.readTextSync(abs);
@@ -133,7 +139,7 @@ export class NoteService {
     } catch (error) {
       const err = error as BusinessError;
       hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取笔记失败 %{public}s: %{public}s', relPath, err.message);
-      return '';
+      return null;
     }
   }
 

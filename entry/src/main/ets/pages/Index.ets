@@ -30,7 +30,9 @@ import { SettingsView } from '../components/SettingsView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } from '../components/NoteDialogs';
 import { TrashView } from '../components/TrashView';
+import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
+import { RecentOpenStore } from '../model/RecentOpenStore';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import { PreviewWebView, PreviewBridge } from '../components/PreviewWebView';
 import { Icon } from '../common/Icons';
@@ -86,6 +88,11 @@ struct Index {
   @State vaults: VaultEntry[] = [];
   /** 当前库 id */
   @State currentVaultId: string = '';
+  /** v0.4 快切面板及当前库候选/最近打开项 */
+  @State quickSwitchOpen: boolean = false;
+  @State quickSwitchFiles: string[] = [];
+  @State recentOpenPaths: string[] = [];
+  private recentOpenStore: RecentOpenStore | null = null;
   /** sm 抽屉开关（瞬态 @State：UIAbility 折叠切换不重建则存活，api_notes A4 ✅） */
   @State drawerOpen: boolean = false;
   /** md/lg 侧栏收起态（瞬态 @State） */
@@ -171,6 +178,13 @@ struct Index {
 
   aboutToAppear(): void {
     this.refreshFromRegistry();
+    this.ensureRecentOpenStore();
+  }
+
+  private ensureRecentOpenStore(): void {
+    if (this.recentOpenStore === null) {
+      this.recentOpenStore = new RecentOpenStore(VaultRegistry.get().abilityContext());
+    }
   }
 
   /** 从注册表刷新库列表与当前库（切库/新建/改名/删除后调用） */
@@ -193,6 +207,10 @@ struct Index {
    * ③ sm 预览态 → 回编辑态；④ 都不是 → 返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
+    if (this.quickSwitchOpen) {
+      this.quickSwitchOpen = false;
+      return true;
+    }
     if (this.drawerOpen) {
       this.drawerOpen = false;
       return true;
@@ -232,23 +250,45 @@ struct Index {
     void this.loadFile(relPath);
   }
 
+  /** 打开快切时重新扫描当前库，候选与目录展开状态无关。 */
+  private openQuickSwitcher(): void {
+    if (this.topView !== 'note' || this.currentVaultId.length === 0) {
+      return;
+    }
+    const registry: VaultRegistry = VaultRegistry.get();
+    const files: string[] = FileTree.allMarkdownFiles(registry.vaultDirOf(this.currentVaultId));
+    this.ensureRecentOpenStore();
+    const store: RecentOpenStore = this.recentOpenStore as RecentOpenStore;
+    this.quickSwitchFiles = files;
+    this.recentOpenPaths = store.load(this.currentVaultId, files);
+    this.quickSwitchOpen = true;
+  }
+
+  private selectQuickSwitchFile(relPath: string): void {
+    this.quickSwitchOpen = false;
+    this.onSelectFile(relPath);
+  }
+
   /**
    * 读取笔记全文并下发给 Web 编辑器（M0.5 spike 的加载路径）。
-   * 读文件在 ArkTS 侧做（组件不碰 IO，硬约束 14）；读失败给空串，不弹错不崩。
+   * 读文件在 ArkTS 侧做（组件不碰 IO，硬约束 14）；读取失败返回 false，由切换方保留当前笔记并提示。
    * ⚠️ **先更新 `lastSavedText` 再下发给编辑器**：若 Web 的 setContent 回灌一个 change
    * 事件，guard 才能识别「内容没变」跳过冗余写（否则会被当成新编辑重写一遍）。
    */
-  private async readAndPush(relPath: string): Promise<string> {
-    let text: string = '';
+  private async readAndPush(relPath: string): Promise<boolean> {
+    let text: string | null = '';
     if (this.currentVaultId.length > 0 && relPath.length > 0) {
-      text = NoteService.readNote(VaultRegistry.get(), this.currentVaultId, relPath);
+      text = NoteService.tryReadNote(VaultRegistry.get(), this.currentVaultId, relPath);
+      if (text === null) {
+        return false;
+      }
     }
     this.lastSavedText = text;
     await this.editorBridge.setContent(text);
     // M3 联动：文件加载后预览同步本页内容 + 告知笔记目录（相对图片引用的解析基准）
     this.previewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
     this.pushPreview(text);
-    return text;
+    return true;
   }
 
   /**
@@ -265,10 +305,20 @@ struct Index {
    */
   private async loadFile(relPath: string): Promise<void> {
     const prev: string = this.currentFilePath;
+    const vaultId: string = this.currentVaultId;
     this.currentFilePath = relPath;
-    // flush 失败不能挡住打开新文件：见 flushSave 的「永不抛错」约定
-    await this.flushSave(prev);
-    await this.readAndPush(relPath);
+    if (!await this.flushSave(prev, vaultId)) {
+      this.currentFilePath = prev;
+      this.scheduleSave();
+      return;
+    }
+    if (!await this.readAndPush(relPath)) {
+      this.currentFilePath = prev;
+      promptAction.showToast({ message: '打开笔记失败' });
+      return;
+    }
+    this.ensureRecentOpenStore();
+    (this.recentOpenStore as RecentOpenStore).record(vaultId, relPath);
   }
 
   /**
@@ -282,18 +332,19 @@ struct Index {
    *   连带把「打开文件 / 删除」整个动作吞掉（void 调用 + 静默 rejection）。
    *   所以 getContent 与 saveNote 两处 IO 都各自包 try/catch。
    */
-  private async flushSave(targetPath: string = ''): Promise<void> {
+  private async flushSave(targetPath: string | null = null, targetVaultId: string = ''): Promise<boolean> {
     if (this.saveTimer !== -1) {
       clearTimeout(this.saveTimer);
       this.saveTimer = -1;
     }
-    const path: string = targetPath.length > 0 ? targetPath : this.currentFilePath;
-    if (this.currentVaultId.length === 0 || path.length === 0) {
-      return;
+    const path: string = targetPath === null ? this.currentFilePath : targetPath;
+    const vaultId: string = targetVaultId.length > 0 ? targetVaultId : this.currentVaultId;
+    if (vaultId.length === 0 || path.length === 0) {
+      return true;
     }
     // 编辑器未就绪时 getContent 返回 ''，此时落盘会把真实文件清空 —— 必须跳过
     if (!this.editorBridge.ready) {
-      return;
+      return true;
     }
     let text: string = '';
     try {
@@ -302,16 +353,19 @@ struct Index {
       // 拉不到内容：放弃这次保存（拿空串落盘会清空文件），但绝不让异常外泄挡住调用方
       const err = error as BusinessError;
       hilog.warn(DOMAIN, TAG, 'flushSave 拉取编辑器内容失败，跳过保存: %{public}s', err.message);
-      return;
+      promptAction.showToast({ message: '保存失败，请稍后重试' });
+      return false;
     }
     if (text === this.lastSavedText) {
-      return;
+      return true;
     }
     try {
-      await NoteService.saveNote(VaultRegistry.get(), this.currentVaultId, path, text);
+      await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text);
       this.lastSavedText = text;
+      return true;
     } catch (error) {
       this.toastRegistryError('保存失败', error);
+      return false;
     }
   }
 
@@ -419,9 +473,28 @@ struct Index {
   // ===== 库操作（对话框确认后执行；失败 toast + 日志，注册表不落半状态） =====
 
   private doSwitchVault(id: string): void {
+    void this.switchVault(id);
+  }
+
+  private async switchVault(id: string): Promise<void> {
     try {
+      if (id === this.currentVaultId) {
+        return;
+      }
+      const previousVaultId: string = this.currentVaultId;
+      const previousPath: string = this.currentFilePath;
+      if (!await this.flushSave(previousPath, previousVaultId)) {
+        return;
+      }
       VaultRegistry.get().setCurrent(id);
       this.refreshFromRegistry();
+      this.currentFilePath = '';
+      this.quickSwitchOpen = false;
+      this.quickSwitchFiles = [];
+      this.recentOpenPaths = [];
+      this.drawerOpen = false;
+      this.smMode = 'edit';
+      await this.readAndPush('');
     } catch (error) {
       this.toastRegistryError('切换库失败', error);
     }
@@ -648,6 +721,8 @@ struct Index {
     try {
       const newRel: string = NoteService.renamePath(VaultRegistry.get(),
         this.currentVaultId, relPath, newName, isDir);
+      this.ensureRecentOpenStore();
+      (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
       this.retargetCurrent(relPath, newRel, isDir);
       this.treeSeq++;
     } catch (error) {
@@ -663,6 +738,8 @@ struct Index {
     try {
       const newRel: string = NoteService.movePath(VaultRegistry.get(),
         this.currentVaultId, relPath, destDir, isDir);
+      this.ensureRecentOpenStore();
+      (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
       this.retargetCurrent(relPath, newRel, isDir);
       this.revealPath = newRel;
       this.treeSeq++;
@@ -942,6 +1019,20 @@ struct Index {
         if (this.undoVisible) {
           this.UndoBar()
         }
+        if (this.quickSwitchOpen && this.topView === 'note') {
+          QuickSwitcher({
+            filePaths: this.quickSwitchFiles,
+            recentPaths: this.recentOpenPaths,
+            onSelect: (relPath: string): void => {
+              this.selectQuickSwitchFile(relPath);
+            },
+            onClose: (): void => {
+              this.quickSwitchOpen = false;
+            }
+          })
+            .width('100%')
+            .height('100%')
+        }
       }
       .layoutWeight(1)
       .width('100%')
@@ -1031,6 +1122,14 @@ struct Index {
         .margin({ left: Space.s2, right: Space.s2 })
       if (this.topView === 'note') {
         // 设计稿顶栏右上 = 同步 + 设置 两个图标（库管理在侧栏下拉进，顶栏不重复摆）
+        Text('快切')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.brand'))
+          .height(Size.touch)
+          .padding({ left: Space.s2, right: Space.s2 })
+          .onClick(() => {
+            this.openQuickSwitcher();
+          })
         this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
           // 同步（Git 同步是 v0.3 能力）：跳独立「导入仓库」页
           router.pushUrl({ url: 'pages/SyncPage' });
