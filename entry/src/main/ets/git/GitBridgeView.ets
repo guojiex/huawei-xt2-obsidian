@@ -27,16 +27,20 @@ class GitNativeProxy {
 /** 桥接层内部实现，由组件在页面就绪后注入 controller */
 class GitBridgeImpl {
   private controller: webview.WebviewController;
-  private fsBackend: GitFsBackend;
+  /** fs 后端随 init 可重绑（v0.3 多库：每次导入 clone 到不同的 vaults/<id>） */
+  private fsBackend: GitFsBackend | undefined = undefined;
   private base64: util.Base64Helper = new util.Base64Helper();
   private encoder: util.TextEncoder = new util.TextEncoder();
 
-  constructor(controller: webview.WebviewController, fsBackend: GitFsBackend) {
+  constructor(controller: webview.WebviewController) {
     this.controller = controller;
-    this.fsBackend = fsBackend;
   }
 
-  async init(gitDir: string, token: string, username: string): Promise<void> {
+  /** （重）绑定 fs root 并把配置下发给 JS 侧。root = 沙箱绝对目录，gitDir = JS 侧 dir 标签。 */
+  async init(root: string, gitDir: string, token: string, username: string): Promise<void> {
+    const backend = new GitFsBackend(root);
+    backend.ensureRoot();
+    this.fsBackend = backend;
     const payload = this.toB64(JSON.stringify({
       gitDir: gitDir,
       token: token,
@@ -60,6 +64,42 @@ class GitBridgeImpl {
     await this.controller.runJavaScript('window.GitBridge.flush()');
   }
 
+  /** fs 请求分发（fs 后端必须已 init；未初始化时抛 EINIT 由回包通道带给 JS）。 */
+  async handleFs(msg: BridgeMsg): Promise<Object> {
+    const backend = this.fsBackend;
+    if (!backend) {
+      throw new Error('EINIT: fs backend 未初始化');
+    }
+    const rel = msg.pathB64 ? this.decodePath(msg.pathB64) : '';
+    switch (msg.op) {
+      case 'read':
+        return backend.read(rel) as FsReadResult;
+      case 'write':
+        return await backend.write(rel, msg.dataB64 ?? '') as OkResult;
+      case 'mkdir':
+        return backend.mkdir(rel) as OkResult;
+      case 'unlink':
+        return backend.unlink(rel) as OkResult;
+      case 'rmdir':
+        return backend.rmdir(rel) as OkResult;
+      case 'rename':
+        return backend.rename(rel, this.decodePath(msg.newPathB64 ?? '')) as OkResult;
+      case 'readdir':
+        return backend.readdir(rel) as FsReaddirResult;
+      case 'stat':
+        return backend.stat(rel) as FsStatResult;
+      case 'batch':
+        return await backend.batch((msg.ops ?? []) as FsOpMsg[]) as OkResult;
+      default:
+        throw new Error('ENOSYS: unsupported fs op ' + (msg.op ?? ''));
+    }
+  }
+
+  private decodePath(pathB64: string): string {
+    const bytes = this.base64.decodeSync(pathB64);
+    return new util.TextDecoder().decodeToString(bytes);
+  }
+
   private toB64(text: string): string {
     return this.base64.encodeToStringSync(this.encoder.encodeInto(text));
   }
@@ -79,8 +119,8 @@ export class GitBridgeController {
     return this.readyFlag;
   }
 
-  async init(gitDir: string, token: string, username: string): Promise<void> {
-    await this.impl?.init(gitDir, token, username);
+  async init(root: string, gitDir: string, token: string, username: string): Promise<void> {
+    await this.impl?.init(root, gitDir, token, username);
   }
 
   async clone(url: string, branch: string, token: string, username: string): Promise<void> {
@@ -112,7 +152,7 @@ export struct GitBridgeView {
   private controller: webview.WebviewController = new webview.WebviewController();
   private proxy: GitNativeProxy = new GitNativeProxy();
   private httpBackend: GitHttpBackend = new GitHttpBackend();
-  private fsBackend: GitFsBackend | undefined = undefined;
+  private impl: GitBridgeImpl | undefined = undefined;
   private base64: util.Base64Helper = new util.Base64Helper();
   private encoder: util.TextEncoder = new util.TextEncoder();
 
@@ -173,38 +213,11 @@ export struct GitBridgeView {
   }
 
   private async handleFs(msg: BridgeMsg): Promise<Object> {
-    const backend = this.fsBackend;
-    if (!backend) {
+    const impl = this.impl;
+    if (!impl) {
       throw new Error('EINIT: fs backend 未初始化');
     }
-    const rel = msg.pathB64 ? this.decodePath(msg.pathB64) : '';
-    switch (msg.op) {
-      case 'read':
-        return backend.read(rel) as FsReadResult;
-      case 'write':
-        return await backend.write(rel, msg.dataB64 ?? '') as OkResult;
-      case 'mkdir':
-        return backend.mkdir(rel) as OkResult;
-      case 'unlink':
-        return backend.unlink(rel) as OkResult;
-      case 'rmdir':
-        return backend.rmdir(rel) as OkResult;
-      case 'rename':
-        return backend.rename(rel, this.decodePath(msg.newPathB64 ?? '')) as OkResult;
-      case 'readdir':
-        return backend.readdir(rel) as FsReaddirResult;
-      case 'stat':
-        return backend.stat(rel) as FsStatResult;
-      case 'batch':
-        return await backend.batch((msg.ops ?? []) as FsOpMsg[]) as OkResult;
-      default:
-        throw new Error('ENOSYS: unsupported fs op ' + (msg.op ?? ''));
-    }
-  }
-
-  private decodePath(pathB64: string): string {
-    const bytes = this.base64.decodeSync(pathB64);
-    return new util.TextDecoder().decodeToString(bytes);
+    return await impl.handleFs(msg);
   }
 
   private reply(id: number, ok: boolean, payload: Object): void {
@@ -240,11 +253,10 @@ export struct GitBridgeView {
         controller: this.controller
       })
       .onPageEnd(() => {
-        const backend = new GitFsBackend(this.vaultRoot);
-        backend.ensureRoot();
-        this.fsBackend = backend;
-        this.bridgeController.bind(new GitBridgeImpl(this.controller, backend));
-        this.bridgeController.init(this.gitDir, this.token, this.username).then(() => {
+        const impl = new GitBridgeImpl(this.controller);
+        this.impl = impl;
+        this.bridgeController.bind(impl);
+        impl.init(this.vaultRoot, this.gitDir, this.token, this.username).then(() => {
           this.onLog('git 桥接层就绪');
         }).catch((e: Error) => {
           this.onLog('初始化失败: ' + e.message);

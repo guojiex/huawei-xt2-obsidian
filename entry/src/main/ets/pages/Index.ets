@@ -33,6 +33,7 @@ import { TrashView } from '../components/TrashView';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
+import { GitCredentialStore } from '../git/GitCredentialStore';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import { PreviewWebView, PreviewBridge } from '../components/PreviewWebView';
 import { Icon } from '../common/Icons';
@@ -229,6 +230,36 @@ struct Index {
   /** 页面隐藏（应用退到后台）：立刻落盘，兜底「杀进程重进内容还在」（2.3） */
   onPageHide(): void {
     void this.flushSave();
+  }
+
+  /**
+   * 返回本页（router.back from 导入页等）：注册表的当前库可能已被外部切换
+   * （v0.3 导入完成自动切库）—— 与本地 currentVaultId 不一致时对齐上下文。
+   */
+  onPageShow(): void {
+    const regId: string = VaultRegistry.get().currentId();
+    if (regId.length > 0 && regId !== this.currentVaultId) {
+      void this.adoptExternalVaultSwitch();
+    }
+  }
+
+  /** 外部入口切换了当前库：落盘旧库编辑后按 switchVault 的重置序列对齐本页状态。 */
+  private async adoptExternalVaultSwitch(): Promise<void> {
+    try {
+      if (!await this.flushSave()) {
+        return;
+      }
+      this.refreshFromRegistry();
+      this.currentFilePath = '';
+      this.quickSwitchOpen = false;
+      this.quickSwitchFiles = [];
+      this.recentOpenPaths = [];
+      this.drawerOpen = false;
+      this.smMode = 'edit';
+      await this.readAndPush('');
+    } catch (error) {
+      this.toastRegistryError('切换库失败', error);
+    }
   }
 
   /** 当前库名（显示名 = 目录名 = id；注册表兜底） */
@@ -514,7 +545,19 @@ struct Index {
 
   private doRenameVault(id: string, name: string): void {
     try {
-      VaultRegistry.get().rename(id, name);
+      const reg: VaultRegistry = VaultRegistry.get();
+      const before: VaultEntry | undefined = this.vaults.find((v: VaultEntry): boolean => v.id === id);
+      const renamed: VaultEntry = reg.rename(id, name);
+      // Git 库令牌按 alias `vault:<id>:token` 存（Asset Store Kit）——改名 = 换 id，迁移到新 alias
+      if (before !== undefined && before.type === 'git') {
+        try {
+          GitCredentialStore.migrateToken(id, renamed.id);
+        } catch (error) {
+          const err = error as BusinessError;
+          hilog.warn(DOMAIN, TAG, '令牌迁移失败 vault=%{public}s: %{public}s', id, err.message);
+          promptAction.showToast({ message: '改名成功，但令牌迁移失败，下次同步需重新填写' });
+        }
+      }
       this.refreshFromRegistry();
     } catch (error) {
       this.toastRegistryError('改名失败', error);
@@ -523,7 +566,13 @@ struct Index {
 
   private doDeleteVault(id: string): void {
     try {
-      VaultRegistry.get().remove(id);
+      const reg: VaultRegistry = VaultRegistry.get();
+      const target: VaultEntry | undefined = this.vaults.find((v: VaultEntry): boolean => v.id === id);
+      reg.remove(id);
+      // 移除 Git 库：令牌随库清理（只删本地副本与凭据，远端仓库不受影响）
+      if (target !== undefined && target.type === 'git') {
+        GitCredentialStore.removeToken(id);
+      }
       this.refreshFromRegistry();
     } catch (error) {
       this.toastRegistryError('删除失败', error);

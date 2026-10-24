@@ -37,6 +37,10 @@ interface VaultEntryRaw {
   id?: Object;
   type?: Object;
   createdAt?: Object;
+  remote?: Object;
+  branch?: Object;
+  authUsername?: Object;
+  lastSyncAt?: Object;
 }
 
 export class VaultRegistry {
@@ -111,7 +115,20 @@ export class VaultRegistry {
     const copy: VaultEntry[] = [];
     for (let i = 0; i < this.state.vaults.length; i++) {
       const v: VaultEntry = this.state.vaults[i];
-      copy.push({ id: v.id, type: v.type, createdAt: v.createdAt });
+      const item: VaultEntry = { id: v.id, type: v.type, createdAt: v.createdAt };
+      if (v.remote !== undefined) {
+        item.remote = v.remote;
+      }
+      if (v.branch !== undefined) {
+        item.branch = v.branch;
+      }
+      if (v.authUsername !== undefined) {
+        item.authUsername = v.authUsername;
+      }
+      if (v.lastSyncAt !== undefined) {
+        item.lastSyncAt = v.lastSyncAt;
+      }
+      copy.push(item);
     }
     return copy;
   }
@@ -160,6 +177,32 @@ export class VaultRegistry {
       fileIo.mkdirSync(dirPath);
     }
     const entry: VaultEntry = { id: id, type: 'local', createdAt: Date.now() };
+    this.state.vaults.push(entry);
+    this.persist();
+    return entry;
+  }
+
+  /**
+   * 登记导入完成的 Git 库（v0.3 / M3.5）。
+   * 前置：库目录已 clone 完成并 rename 到正式 id 位置（调用方保证，此处校验存在性）；
+   * 本方法只做入表 + 持久化，不碰文件系统 —— 失败时注册表未动（禁半状态）。
+   * remote / branch / authUsername 随注册表存 preferences（非敏感）；令牌只进 Asset Store Kit。
+   */
+  registerGit(id: string, remote: string, branch: string, authUsername: string): VaultEntry {
+    const dirPath: string = this.resolver.vaultDir(id);
+    if (!fileIo.accessSync(dirPath)) {
+      throw new Error('库目录不存在，拒绝登记: ' + id);
+    }
+    const entry: VaultEntry = { id: id, type: 'git', createdAt: Date.now() };
+    if (remote.length > 0) {
+      entry.remote = remote;
+    }
+    if (branch.length > 0) {
+      entry.branch = branch;
+    }
+    if (authUsername.length > 0) {
+      entry.authUsername = authUsername;
+    }
     this.state.vaults.push(entry);
     this.persist();
     return entry;
@@ -265,6 +308,11 @@ export class VaultRegistry {
     return 'vaults/' + id;
   }
 
+  /** vaults 根目录绝对路径（转发唯一解析器；git 桥接的初始 fs root 用）。 */
+  vaultsRootDir(): string {
+    return this.resolver.vaultsRoot();
+  }
+
   private idTaken(id: string, excludeId: string): boolean {
     if (id.length > 0 && id === excludeId) {
       return false;
@@ -315,7 +363,20 @@ export class VaultRegistry {
           continue;
         }
         // 校验通过后拷入严格模型，不直接引用解析产物
-        vaults.push({ id: item.id, type: item.type, createdAt: item.createdAt });
+        const entry: VaultEntry = { id: item.id, type: item.type, createdAt: item.createdAt };
+        if (typeof item.remote === 'string') {
+          entry.remote = item.remote;
+        }
+        if (typeof item.branch === 'string') {
+          entry.branch = item.branch;
+        }
+        if (typeof item.authUsername === 'string') {
+          entry.authUsername = item.authUsername;
+        }
+        if (typeof item.lastSyncAt === 'number') {
+          entry.lastSyncAt = item.lastSyncAt;
+        }
+        vaults.push(entry);
       }
       const rawCurrent = parsed.currentVaultId;
       const currentVaultId: string = typeof rawCurrent === 'string' ? rawCurrent : '';

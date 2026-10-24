@@ -1,15 +1,45 @@
 import { common } from '@kit.AbilityKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { preferences } from '@kit.ArkData';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { GitBridgeController, GitBridgeView } from '../git/GitBridgeView';
-import { GitFsBackend } from '../git/GitFsBackend';
+import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitProgress } from '../git/GitBridgeModels';
+import { VaultRegistry } from '../model/VaultRegistry';
+import { sanitizeVaultName, VaultEntry } from '../model/Vault';
 
-const STORE_NAME = 'git_sync';
+/** 旧版把令牌明文存在这个 preferences store（v0.3 起令牌只进 Asset Store Kit，进页一次性清除） */
+const LEGACY_STORE_NAME: string = 'git_sync';
+/** 导入中临时目录的后缀：先 clone 到 vaults/<id>__importing，成功后 rename 到正式 id（mvp_design §9 导入失败残留） */
+const IMPORTING_SUFFIX: string = '__importing';
 
 /**
- * GitHub 仓库接入页（F6）。
- * MVP 阶段只做 clone：把远端笔记库拉进沙箱 vault，让后面的浏览/编辑有内容可用。
+ * 从仓库地址推导库名：取最后一段路径，去掉 .git 后缀，再走库名消毒。
+ * 推不出来（空 / 全非法字符）时回落到固定名，由 uniqueVaultId 保证不重名。
+ */
+function repoNameFromUrl(url: string): string {
+  let u: string = url.trim();
+  while (u.endsWith('/')) {
+    u = u.substring(0, u.length - 1);
+  }
+  if (u.endsWith('.git')) {
+    u = u.substring(0, u.length - 4);
+  }
+  const idx: number = u.lastIndexOf('/');
+  const raw: string = idx >= 0 ? u.substring(idx + 1) : u;
+  const sanitized: string = sanitizeVaultName(raw);
+  return sanitized.length > 0 ? sanitized : 'Git 笔记库';
+}
+
+/**
+ * 导入 Git 仓库页（F6 / v0.3 M3.5）。
+ *
+ * 流程（对应 mvp_design §4.5 生命周期「导入仓库」）：
+ * 1. 从地址推导库名 → uniqueVaultId 定正式 id；
+ * 2. clone 到 `vaults/<正式id>__importing` 临时目录（失败即删，不留半初始化目录）；
+ * 3. 成功 → rename 到正式 id → 登记 VaultRegistry（type='git'）→ 令牌入 Asset Store Kit →
+ *    自动切为当前库 → 返回主页（Index.onPageShow 检测到外部切库后重置上下文）。
  */
 @Entry
 @Component
@@ -21,47 +51,35 @@ struct SyncPage {
   @State busy: boolean = false;
   @State progressText: string = '';
   @State logText: string = '';
-  @State fileCount: number = 0;
 
   private context: common.UIAbilityContext | undefined = undefined;
-  private vaultRoot: string = '';
   private bridgeCtrl: GitBridgeController = new GitBridgeController();
+  /** 本次导入的临时 id（clone 失败时的清理目标） */
+  private pendingTempId: string = '';
+  /** 本次导入的正式 id（clone 成功后 rename + 登记） */
+  private pendingFinalId: string = '';
 
   aboutToAppear(): void {
     this.context = getContext(this) as common.UIAbilityContext;
-    this.vaultRoot = this.context.filesDir + '/vault';
-    this.loadConfig();
+    this.cleanupLegacyToken();
   }
 
-  private store(): preferences.Preferences {
-    return preferences.getPreferencesSync(this.context, { name: STORE_NAME });
-  }
-
-  private loadConfig(): void {
-    const s = this.store();
-    this.repoUrl = s.getSync('repoUrl', '') as string;
-    this.branch = s.getSync('branch', 'main') as string;
-    // TODO(安全): MVP 暂存在 preferences，正式版必须迁移到关键资产存储服务（Asset Store Kit）
-    this.token = s.getSync('token', '') as string;
-    this.username = s.getSync('username', '') as string;
-    this.refreshFiles();
-  }
-
-  private saveConfig(): void {
-    const s = this.store();
-    s.putSync('repoUrl', this.repoUrl);
-    s.putSync('branch', this.branch);
-    s.putSync('token', this.token);
-    s.putSync('username', this.username);
-    s.flushSync();
-  }
-
-  private refreshFiles(): void {
+  /** 旧版曾把令牌明文存 preferences（git_sync/token）—— 一次性清除，此后令牌只进 Asset Store Kit。 */
+  private cleanupLegacyToken(): void {
+    const ctx = this.context;
+    if (ctx === undefined) {
+      return;
+    }
     try {
-      const backend = new GitFsBackend(this.vaultRoot);
-      this.fileCount = backend.listMarkdown('').length;
-    } catch (e) {
-      this.fileCount = 0;
+      const store = preferences.getPreferencesSync(ctx, { name: LEGACY_STORE_NAME });
+      if (store.hasSync('token')) {
+        store.delete('token');
+        store.flushSync();
+      }
+    } catch (error) {
+      // 清理失败不阻塞导入页本身
+      const err = error as BusinessError;
+      this.appendLog('旧令牌清理失败（可忽略）：' + err.message);
     }
   }
 
@@ -78,17 +96,19 @@ struct SyncPage {
     if (message.includes('404') || message.includes('NotFound')) {
       return '仓库或分支不存在，请检查地址与分支名';
     }
-    if (message.includes('AlreadyExists') || message.includes('EEXIST')) {
-      return 'vault 非空，git 拒绝克隆到非空目录（清理后再试）';
-    }
     if (message.includes('ENOTFOUND') || message.includes('ECONNREFUSED') || message.includes('timed out')) {
       return '网络不可达，请检查网络或 VPN';
     }
     return message;
   }
 
+  /** 将导入到的库 id（随地址输入实时推导，UI 预览用） */
+  private previewVaultId(): string {
+    return VaultRegistry.get().uniqueVaultId(repoNameFromUrl(this.repoUrl), '');
+  }
+
   private async doClone(): Promise<void> {
-    if (this.repoUrl.length === 0) {
+    if (this.repoUrl.trim().length === 0) {
       promptAction.showToast({ message: '请先填写仓库地址' });
       return;
     }
@@ -96,24 +116,128 @@ struct SyncPage {
       this.appendLog('桥接层尚未就绪，请稍候再试');
       return;
     }
-    this.saveConfig();
+    const reg: VaultRegistry = VaultRegistry.get();
+    const finalId: string = this.previewVaultId();
+    const tempId: string = reg.uniqueVaultId(finalId + IMPORTING_SUFFIX, '');
+    this.pendingFinalId = finalId;
+    this.pendingTempId = tempId;
     this.busy = true;
     this.progressText = '准备中…';
-    this.appendLog('开始拉取 ' + this.repoUrl);
-    await this.bridgeCtrl.clone(this.repoUrl, this.branch, this.token, this.username);
+    this.appendLog('开始导入 ' + this.repoUrl.trim() + ' → vaults/' + finalId);
+    try {
+      // 临时目录即本次 clone 的 fs root；gitDir 标签与 root 一致（JS 侧只做前缀剥离）
+      const tempDir: string = reg.vaultDirOf(tempId);
+      await this.bridgeCtrl.init(tempDir, tempDir, this.token, this.username);
+      await this.bridgeCtrl.clone(this.repoUrl.trim(), this.branch.trim(), this.token, this.username);
+    } catch (error) {
+      const err = error as BusinessError;
+      this.onCloneDone(false, err.message ?? String(error));
+    }
+  }
+
+  /** clone 结果（成功/失败共用）：成功走 rename → 登记 → 存令牌 → 切库 → 返回；失败清临时目录。 */
+  private onCloneDone(ok: boolean, message: string): void {
+    this.busy = false;
+    if (!ok) {
+      this.progressText = '失败';
+      this.appendLog('导入失败：' + this.explainError(message));
+      this.cleanupTempDir();
+      return;
+    }
+    const reg: VaultRegistry = VaultRegistry.get();
+    const tempDir: string = reg.vaultDirOf(this.pendingTempId);
+    const finalDir: string = reg.vaultDirOf(this.pendingFinalId);
+    try {
+      // 先 rename 再登记（文件系统操作成功后才改注册表，禁半状态）；
+      // 登记失败则把目录改回临时名回滚，避免"目录在注册表外"的孤儿半状态
+      fileIo.renameSync(tempDir, finalDir);
+      let entry: VaultEntry;
+      try {
+        entry = reg.registerGit(this.pendingFinalId, this.repoUrl.trim(), this.branch.trim(), this.username.trim());
+      } catch (regError) {
+        try {
+          fileIo.renameSync(finalDir, tempDir);
+        } catch (rollbackError) {
+          const rb = rollbackError as BusinessError;
+          this.appendLog('回滚失败，目录保留在 vaults/' + this.pendingFinalId + '（未登记）：' + rb.message);
+        }
+        const re = regError as BusinessError;
+        throw new Error(re.message ?? 'registerGit 登记失败');
+      }
+      // 令牌只进 Asset Store Kit；存失败不判导入失败（下次同步重填即可）
+      if (this.token.length > 0) {
+        try {
+          GitCredentialStore.saveToken(entry.id, this.token);
+        } catch (credError) {
+          const ce = credError as BusinessError;
+          this.appendLog('警告：令牌安全存储失败（code=' + ce.code + '），下次同步需重新填写');
+        }
+      }
+      reg.setCurrent(entry.id);
+      this.progressText = '完成';
+      this.appendLog('导入完成：vaults/' + entry.id + '（已切换为当前库）');
+      this.pendingTempId = '';
+      this.pendingFinalId = '';
+      promptAction.showToast({ message: '已导入 ' + entry.id });
+      router.back();
+    } catch (error) {
+      const err = error as BusinessError;
+      this.progressText = '失败';
+      this.appendLog('登记库失败：' + err.message);
+    }
+  }
+
+  /** 删除导入中的临时目录（clone 失败 / 中断时调用，防半初始化残留）。 */
+  private cleanupTempDir(): void {
+    if (this.pendingTempId.length === 0) {
+      return;
+    }
+    try {
+      const dir: string = VaultRegistry.get().vaultDirOf(this.pendingTempId);
+      if (fileIo.accessSync(dir)) {
+        // rmdirSync 递归语义已核对（api_notes T002：删除目录及其所有子目录和文件）
+        fileIo.rmdirSync(dir);
+      }
+      this.appendLog('已清理临时目录 vaults/' + this.pendingTempId);
+    } catch (error) {
+      const err = error as BusinessError;
+      this.appendLog('临时目录清理失败（vaults/' + this.pendingTempId + '，可手动删除）：' + err.message);
+    }
+    this.pendingTempId = '';
+    this.pendingFinalId = '';
   }
 
   build() {
     Column() {
-      Text('接入 GitHub 笔记库')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .margin({ bottom: 12 })
+      Row() {
+        Text('‹ 返回')
+          .fontSize(16)
+          .onClick(() => {
+            if (!this.busy) {
+              router.back();
+            }
+          })
+        Blank()
+        Text('导入 Git 仓库')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+        Blank()
+        Text('‹ 返回')
+          .fontSize(16)
+          .fontColor(Color.Transparent)
+      }
+      .width('100%')
+      .margin({ bottom: 16 })
 
       TextInput({ placeholder: 'https://github.com/owner/repo.git', text: this.repoUrl })
         .onChange((value: string) => {
           this.repoUrl = value;
         })
+        .margin({ bottom: 8 })
+
+      Text('将导入为：vaults/' + (this.repoUrl.trim().length > 0 ? this.previewVaultId() : '（填写地址后推导）'))
+        .fontSize(12)
+        .fontColor($r('app.color.text_secondary'))
         .margin({ bottom: 8 })
 
       TextInput({ placeholder: '分支（main / master）', text: this.branch })
@@ -136,15 +260,11 @@ struct SyncPage {
         .margin({ bottom: 12 })
 
       Row() {
-        Button(this.busy ? '拉取中…' : '拉取到本机')
+        Button(this.busy ? '导入中…' : '导入为本机笔记库')
           .enabled(!this.busy)
           .onClick(() => {
             this.doClone();
           })
-        Text('已导入 ' + this.fileCount + ' 篇笔记')
-          .fontSize(12)
-          .fontColor('#666666')
-          .margin({ left: 12 })
       }
       .margin({ bottom: 12 })
 
@@ -155,17 +275,17 @@ struct SyncPage {
       Scroll() {
         Text(this.logText)
           .fontSize(11)
-          .fontColor('#444444')
+          .fontColor($r('app.color.text_secondary'))
       }
       .layoutWeight(1)
       .align(Alignment.TopStart)
 
       // 承载 isomorphic-git 的隐形引擎
       GitBridgeView({
-        vaultRoot: this.vaultRoot,
-        gitDir: '/vault',
-        token: this.token,
-        username: this.username,
+        vaultRoot: VaultRegistry.get().vaultsRootDir(),
+        gitDir: VaultRegistry.get().vaultsRootDir(),
+        token: '',
+        username: '',
         bridgeController: this.bridgeCtrl,
         onProgress: (p: GitProgress) => {
           this.progressText = p.phase + ' ' + p.loaded + '/' + p.total;
@@ -174,12 +294,7 @@ struct SyncPage {
           this.appendLog(msg);
         },
         onCloneDone: (ok: boolean, message: string) => {
-          this.busy = false;
-          this.progressText = ok ? '完成' : '失败';
-          this.appendLog(ok ? '拉取完成' : '拉取失败：' + this.explainError(message));
-          if (ok) {
-            this.refreshFiles();
-          }
+          this.onCloneDone(ok, message);
         }
       })
     }

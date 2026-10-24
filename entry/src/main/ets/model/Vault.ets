@@ -6,14 +6,25 @@
  * 否则导出到电脑时目录名对不上，还得查映射表。
  */
 
-/** 库条目：id（= 目录名 = 显示名）/ type / createdAt。 */
+/** 库条目：id（= 目录名 = 显示名）/ type / createdAt + Git 库可选字段（v0.3）。 */
 export interface VaultEntry {
   /** 目录名 = 显示名（不分离） */
   id: string;
-  /** 'local'（v0.1 仅此一种；'git' 为 v0.3 预留） */
+  /** 'local' | 'git'（v0.3 起导入的仓库为 'git'） */
   type: string;
   /** 创建时间戳（ms） */
   createdAt: number;
+  /** Git 库：远端仓库地址（local 库无此字段） */
+  remote?: string;
+  /** Git 库：跟踪分支（clone 时的 ref） */
+  branch?: string;
+  /**
+   * Git 库：认证用户名（Gitee / 自建 GitLab 私有库需要，GitHub 留空）。
+   * 非敏感、可明文，随注册表存 preferences；令牌本身只进 Asset Store Kit。
+   */
+  authUsername?: string;
+  /** 上次同步时间戳（ms），同步落地后更新 */
+  lastSyncAt?: number;
 }
 
 /** 默认库名：首启自动创建，随应用即用，不配远端也能进应用（spec.md FR-007）。 */
