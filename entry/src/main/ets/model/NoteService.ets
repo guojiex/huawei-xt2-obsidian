@@ -19,6 +19,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { sanitizeVaultName } from './Vault';
 import { VaultRegistry } from './VaultRegistry';
 import { FileTree } from './FileTree';
+import { NoteDraftService } from './NoteDraftService';
 
 const NOTE_DOMAIN: number = 0x0003;
 const NOTE_TAG: string = 'NoteService';
@@ -354,18 +355,19 @@ export class NoteService {
    * 目录递归：先删子项再 rmdir（与 GitFsBackend 的 rmdir 前清空同一约束）。
    * ⚠️ 不可恢复 —— 调用方必须先过确认对话框；回收站是需求池 B 组，v0.2 没有。
    */
-  static deletePath(registry: VaultRegistry, vaultId: string, relPath: string): void {
+  static async deletePath(registry: VaultRegistry, vaultId: string, relPath: string): Promise<void> {
     const abs: string = registry.absoluteIn(vaultId, relPath);
     const stat = fileIo.statSync(abs);
     if (stat.isDirectory()) {
       const names: string[] = fileIo.listFileSync(abs);
       for (let i = 0; i < names.length; i++) {
-        NoteService.deletePath(registry, vaultId, relPath + '/' + names[i]);
+        await NoteService.deletePath(registry, vaultId, relPath + '/' + names[i]);
       }
       fileIo.rmdirSync(abs);
     } else {
       fileIo.unlinkSync(abs);
     }
+    await NoteDraftService.discardPath(registry, vaultId, relPath);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除 %{public}s', relPath);
   }
 
@@ -378,8 +380,8 @@ export class NoteService {
    * - 消毒后与原名相同 → 无操作返回原路径（改名框不做「必须不同」校验，原地保存不算错）；
    * - renameSync 原子完成；返回实际落地的新相对路径（调用方据此更新 currentFilePath）。
    */
-  static renamePath(registry: VaultRegistry, vaultId: string, relPath: string,
-    newName: string, isDir: boolean): string {
+  static async renamePath(registry: VaultRegistry, vaultId: string, relPath: string,
+    newName: string, isDir: boolean): Promise<string> {
     let base: string = sanitizeVaultName(newName);
     if (base.length === 0) {
       throw new Error('名称不能为空');
@@ -398,8 +400,23 @@ export class NoteService {
     const unique: string = isDir
       ? NoteService.uniqueDirPath(registry, vaultId, target)
       : NoteService.uniqueRelPath(registry, vaultId, target);
-    fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
-      registry.absoluteIn(vaultId, unique));
+    const copiedDrafts: boolean = await NoteDraftService.copySubtree(
+      registry, vaultId, relPath, vaultId, unique, isDir);
+    try {
+      fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
+        registry.absoluteIn(vaultId, unique));
+    } catch (error) {
+      if (copiedDrafts) {
+        NoteDraftService.cleanupOrphans(registry);
+      }
+      const err = error as Error;
+      throw new Error(err.message);
+    }
+    try {
+      await NoteDraftService.discardPath(registry, vaultId, relPath);
+    } catch (error) {
+      // 新路径草稿已先写好；下次启动会清理正式源文件已不存在的旧草稿。
+    }
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '重命名 %{public}s → %{public}s', relPath, unique);
     return unique;
   }
@@ -411,8 +428,8 @@ export class NoteService {
    * - 目标目录缺失时逐级补建（把笔记移进「刚被清空的目录」不至于失败）；
    * - 返回实际落地的新相对路径（调用方据此更新 currentFilePath / revealPath）。
    */
-  static movePath(registry: VaultRegistry, vaultId: string, relPath: string,
-    destDir: string, isDir: boolean): string {
+  static async movePath(registry: VaultRegistry, vaultId: string, relPath: string,
+    destDir: string, isDir: boolean): Promise<string> {
     if (isDir && (destDir === relPath || destDir.startsWith(relPath + '/'))) {
       throw new Error('不能移动到自身内部');
     }
@@ -435,8 +452,23 @@ export class NoteService {
     const unique: string = isDir
       ? NoteService.uniqueDirPath(registry, vaultId, target)
       : NoteService.uniqueRelPath(registry, vaultId, target);
-    fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
-      registry.absoluteIn(vaultId, unique));
+    const copiedDrafts: boolean = await NoteDraftService.copySubtree(
+      registry, vaultId, relPath, vaultId, unique, isDir);
+    try {
+      fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
+        registry.absoluteIn(vaultId, unique));
+    } catch (error) {
+      if (copiedDrafts) {
+        NoteDraftService.cleanupOrphans(registry);
+      }
+      const err = error as Error;
+      throw new Error(err.message);
+    }
+    try {
+      await NoteDraftService.discardPath(registry, vaultId, relPath);
+    } catch (error) {
+      // 新路径草稿已先写好；下次启动会清理正式源文件已不存在的旧草稿。
+    }
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '移动 %{public}s → %{public}s', relPath, unique);
     return unique;
   }

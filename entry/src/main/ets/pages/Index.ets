@@ -201,12 +201,28 @@ struct Index {
     if (this.breakpoint !== Breakpoint.SM) {
       this.drawerOpen = false;
     }
+    if (this.currentFilePath.length > 0) {
+      void this.refreshAfterBreakpointChange(this.currentFilePath, this.currentVaultId);
+    }
+  }
+
+  private async refreshAfterBreakpointChange(path: string, vaultId: string): Promise<void> {
+    if (path !== this.currentFilePath || vaultId !== this.currentVaultId) {
+      return;
+    }
+    if (!await this.flushSave(path, vaultId)) {
+      return;
+    }
+    if (path !== this.currentFilePath || vaultId !== this.currentVaultId) {
+      return;
+    }
+    await this.readAndPush(path);
   }
 
   /**
    * 系统返回键/侧滑返回拦截（需求 2.7b；api_notes I-1 / I3.1 已真机核实：侧滑同样触发）。
-   * 按优先级依次消费：① sm 抽屉打开 → 关抽屉；② 库管理视图 → 回笔记视图；
-   * ③ sm 预览态 → 回编辑态；④ 都不是 → 返 false 走系统默认（退出应用）。
+   * 按优先级依次消费：① 快切/抽屉；② 次级视图；③ 图片查看器；④ sm 预览态；
+   * 都不是则返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
     if (this.quickSwitchOpen) {
@@ -219,6 +235,9 @@ struct Index {
     }
     if (this.topView !== 'note') {
       this.topView = this.topView === 'history' ? 'settings' : 'note';
+      return true;
+    }
+    if (this.previewBridge.closeImageViewer()) {
       return true;
     }
     if (this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
@@ -318,8 +337,9 @@ struct Index {
     this.lastSavedText = text;
     await this.editorBridge.setContent(text);
     // M3 联动：文件加载后预览同步本页内容 + 告知笔记目录（相对图片引用的解析基准）
+    this.previewBridge.resetDocument();
     this.previewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
-    this.pushPreview(text);
+    this.pushPreview(text, true);
     return true;
   }
 
@@ -418,8 +438,8 @@ struct Index {
   // ===== M3 预览联动（3.2 编辑/预览实时联动） =====
 
   /** 把文本推给预览渲染（相同内容跳过；预览未就绪时进其内部队列不丢） */
-  private pushPreview(text: string): void {
-    if (text === this.lastPreviewText) {
+  private pushPreview(text: string, force: boolean = false): void {
+    if (!force && text === this.lastPreviewText) {
       return;
     }
     this.lastPreviewText = text;
@@ -764,12 +784,12 @@ struct Index {
    * 重命名文件/目录（只改最后一段）。正在编辑的文件被改名 → 指针跟着走
    * （内容不动、只换标题；后续自动保存写到新路径）；父目录被改名 → 前缀替换。
    */
-  private doRenamePath(relPath: string, isDir: boolean, newName: string): void {
+  private async doRenamePath(relPath: string, isDir: boolean, newName: string): Promise<void> {
     if (this.currentVaultId.length === 0) {
       return;
     }
     try {
-      const newRel: string = NoteService.renamePath(VaultRegistry.get(),
+      const newRel: string = await NoteService.renamePath(VaultRegistry.get(),
         this.currentVaultId, relPath, newName, isDir);
       this.ensureRecentOpenStore();
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
@@ -781,12 +801,12 @@ struct Index {
   }
 
   /** 移动文件/目录到目标目录；revealPath 展开新位置的父目录，移完立刻看得见 */
-  private doMovePath(relPath: string, isDir: boolean, destDir: string): void {
+  private async doMovePath(relPath: string, isDir: boolean, destDir: string): Promise<void> {
     if (this.currentVaultId.length === 0) {
       return;
     }
     try {
-      const newRel: string = NoteService.movePath(VaultRegistry.get(),
+      const newRel: string = await NoteService.movePath(VaultRegistry.get(),
         this.currentVaultId, relPath, destDir, isDir);
       this.ensureRecentOpenStore();
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
@@ -1421,8 +1441,9 @@ struct Index {
           },
           onReady: (): void => {
             // 页面就绪后补一次内容加载：EditorWebView 的指令队列保证此前收到的
-            // setContent 不丢，但首帧若在选中文件之前就绪，这里再同步一次更稳
-            void this.loadFile(this.currentFilePath);
+            // setContent 不丢。Web 容器因窗口尺寸变化重建时只重读，不先 flush 空 WebView，
+            // 避免把当前笔记覆盖为空文件。
+            void this.readAndPush(this.currentFilePath);
           },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '编辑器 Web: %{public}s', msg);

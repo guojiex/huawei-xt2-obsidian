@@ -21,7 +21,7 @@
 
 import { basicSetup } from 'codemirror'
 import { EditorView } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
@@ -48,6 +48,7 @@ interface MdEditorApi {
   requestContent(reqId: number): void
   focus(): void
   setTheme(theme: string): void
+  setEditable(editable: boolean): void
   onArktsReady(): void
 }
 
@@ -116,16 +117,17 @@ announceReady()
 
 // ---------- 主题 ----------
 // 浅色：底色走 App 的 bg_card(#FFFFFF)、文字 text_primary(#E6000000)，与侧栏同源；
+// Harmony 色值是 ARGB，CSS 的 8 位 hex 则是 RRGGBBAA，因此半透明色在这里显式写 rgba。
 // 深色：oneDark 变体，底色对齐 bg_card(#1C1C1F)。字号/行高与 Tokens.ets 的
 // FontSize.body2(14) / LINE_HEIGHT_BODY(1.65) 保持一致 —— Web 内不能引 token，两边手工同步。
 const LIGHT_THEME = EditorView.theme(
   {
-    '&': { backgroundColor: '#FFFFFF', color: '#E6000000', fontSize: '14px' },
+    '&': { backgroundColor: '#FFFFFF', color: 'rgba(0, 0, 0, 0.9)', fontSize: '14px' },
     '.cm-content': { fontFamily: 'system-ui, sans-serif', lineHeight: '1.65', padding: '8px 0' },
-    '.cm-gutters': { backgroundColor: '#FFFFFF', border: 'none', color: '#66000000' },
-    '.cm-activeLine': { backgroundColor: '#0A000000' },
-    '.cm-activeLineGutter': { backgroundColor: '#0A000000' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: '#1F007DFF' },
+    '.cm-gutters': { backgroundColor: '#FFFFFF', border: 'none', color: 'rgba(0, 0, 0, 0.4)' },
+    '.cm-activeLine': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+    '.cm-activeLineGutter': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(0, 125, 255, 0.12)' },
     '.cm-cursor': { borderLeftColor: '#007DFF' }
   },
   { dark: false }
@@ -133,12 +135,12 @@ const LIGHT_THEME = EditorView.theme(
 
 const DARK_THEME = EditorView.theme(
   {
-    '&': { backgroundColor: '#1C1C1F', color: '#EBFFFFFF', fontSize: '14px' },
+    '&': { backgroundColor: '#1C1C1F', color: 'rgba(255, 255, 255, 0.92)', fontSize: '14px' },
     '.cm-content': { fontFamily: 'system-ui, sans-serif', lineHeight: '1.65', padding: '8px 0' },
-    '.cm-gutters': { backgroundColor: '#1C1C1F', border: 'none', color: '#99FFFFFF' },
-    '.cm-activeLine': { backgroundColor: '#1FFFFFFF' },
-    '.cm-activeLineGutter': { backgroundColor: '#1FFFFFFF' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: '#334EA1FF' },
+    '.cm-gutters': { backgroundColor: '#1C1C1F', border: 'none', color: 'rgba(255, 255, 255, 0.6)' },
+    '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
+    '.cm-activeLineGutter': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(78, 161, 255, 0.2)' },
     '.cm-cursor': { borderLeftColor: '#4EA1FF' }
   },
   { dark: true }
@@ -149,6 +151,9 @@ let themeMode = 'light'
 // ---------- 实例 ----------
 let view: EditorView | null = null
 let changeTimer: number | undefined = undefined
+const editableCompartment = new Compartment()
+const readOnlyCompartment = new Compartment()
+let isEditable = true
 
 function extensionsFor(theme: string) {
   return [
@@ -156,6 +161,8 @@ function extensionsFor(theme: string) {
     markdown(),
     syntaxHighlighting(defaultHighlightStyle),
     theme === 'dark' ? [DARK_THEME, oneDark] : [LIGHT_THEME],
+    editableCompartment.of(EditorView.editable.of(isEditable)),
+    readOnlyCompartment.of(EditorState.readOnly.of(!isEditable)),
     EditorView.lineWrapping,
     // ⚠️ change 上报监听必须放进 extensionsFor 跟着每次 state 重建（2026-10-18 崩溃排查
     // 实证）：最初放在 ensureView 的 concat 里，setTheme 热切换用 extensionsFor 重建 state
@@ -229,6 +236,16 @@ const api: MdEditorApi = {
         selection: view.state.selection,
         extensions: extensionsFor(themeMode)
       }))
+    }
+  },
+
+  setEditable(editable: boolean): void {
+    isEditable = editable
+    if (view) {
+      view.dispatch({ effects: [
+        editableCompartment.reconfigure(EditorView.editable.of(editable)),
+        readOnlyCompartment.reconfigure(EditorState.readOnly.of(!editable))
+      ] })
     }
   },
 

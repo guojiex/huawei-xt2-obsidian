@@ -432,9 +432,9 @@ onInterceptRequest 拦截请求
 - **异步渲染模式下 Web 组件宽高不能超过 7680px（物理像素），超过会白屏**。三折叠全展开宽度大，全屏 Web 要留意；我们三栏各 1/3 时单栏约 1061px，安全。
 - `onRenderExited`（渲染子进程异常退出）后需 `loadUrl` 重载，此时状态会丢 → 回调里做数据保存。
 
-### B6 中文输入法 ❓ —— 仍是 M0.5 spike 的头号验证项
+### B6 中文输入法 ❓ —— M0.5 spike 尚未收口
 
-文档未记载系统性兼容问题，**必须真机实测** contenteditable / textarea。
+Huawei_TripleFold API 26 arm64 模拟器已确认安装并运行系统输入法；历史操作还观察到 `textarea` 能唤起中文拼音键盘，随后 CodeMirror 可收到已提交的“你好”。完整的 composition 事件序列、首次点击 CodeMirror 未弹键盘的原因，以及系统性 A/B 对照仍待验证。按当前验收顺序先继续模拟器验证，XT2 真机项目留到功能开发完成后统一验收。
 
 可配置项：`keyboardAvoidMode`（软键盘避让）、`blurOnKeyboardHideMode`、`onInterceptKeyboardAttach` + `WebKeyboardController`（完全接管键盘）。
 页面级键盘避让：`win.setWindowAvoidAreaTypes([AvoidAreaType.TYPE_KEYBOARD], cb)`。
@@ -445,6 +445,11 @@ onInterceptRequest 拦截请求
 > 编辑器方案 A 用的 **CodeMirror 6 基于 `contenteditable`**。
 > → **M0.5 spike 必须实测**：拼音 / 语音 / 手写三种输入下的 **composition 预编辑事件**与**光标定位**。
 > 若 CM6 实测有问题，提前准备降级路径（textarea 自绘高亮 / CodeMirror 的 textarea 模式）。
+
+**2026-10-22 模拟器能力检查（Huawei_TripleFold，HarmonyOS 7.0.0.107，API 26，arm64）**：HDC 查询到
+系统包 `com.huawei.hmos.inputmethod` 已安装（版本 `1.2.6.463`），进程列表中有 `inputmethod_service`；应用
+`com.jxg.huaweiobsidian`（v0.2.0，compatibleSdkVersion 6.1.1(24)）正在运行。17:33 屏幕截图中软键盘已显示，底栏可见“中/英”；随后在 CodeMirror 中逐键输入 `nihao`，键盘显示拼音 `ni'hao` 和候选“你好”，点候选后编辑区出现“你好”。按两次退格并等待 2 秒后，编辑区恢复为空白。截图：`.local/shots/pinyin_nihao_20261022_173935.png`、`.local/shots/pinyin_cleared_20261022_174110.png`。此前一次点按未观察到键盘，不代表输入法不可用。
+此前的实际操作记录见 [2026-10-19 模拟器输入法答复](qa/2026-10-19_API26_三折叠模拟器输入法答复.md)：`textarea` 曾唤起中文拼音键盘，之后 CodeMirror 可输入并提交中文。现有截图与留存事件记录没有完整的 `compositionstart/update/end` 序列，因此只确认系统输入法可用、拼音候选可提交到 CodeMirror；composition 细节、光标与滚动、首次焦点差异和系统性 A/B 对照仍待模拟器验证。结论只适用于此 API 26 arm64 模拟器，不外推到 API 24 x86 或 XT2。
 
 ---
 
@@ -626,7 +631,6 @@ ohpm publish yourlib.har
 ## F 组：小艺智能体与端侧意图（Insight Intent）
 
 > 2026-10-25 范围调整见 [v0.6 需求](../releases/v0.6/需求文档.md)：首期本地操作不调用 Web/git，F6 的冲突仅约束未来自动 commit；F-A/F-B 等接口置信度未因此改变。新的接入核实提示词见 [提问](prompts/2026-10-25_API24_小艺本地笔记操作接入核实.md)。
-
 
 > 来源：[`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md)（2026-10-17）
 > ⚠️ **本组所有结论均未附文档链接**，落码前必须在 DevEco 用 `@kit.*` 补全复核接口名与签名。
@@ -815,7 +819,7 @@ AppScope/app.json5 → app.versionCode / app.versionName
 ## I 组：视觉与设计系统（UI Design Kit / Symbol / 字体）
 
 > 2026-10-17 建立。起因：用户要求设计稿按华为设计资源修，引出的**落码侧待核实项**。
-> ⚠️ 本组**全部未核实**，按铁律 5：**未核实项不进关键路径**，先用兜底方案（自绘 / 默认样式）。
+> ~~⚠️ 本组全部未核实，未核实项不进关键路径，先用兜底方案。~~ → 已于 2026-10-18 核实，当前结论见 **J 组**；以下保留最初的问题清单，不再作为待问项。
 
 ### I1 三个待核实项 ❓（对应需求池 J 节）
 
@@ -1266,6 +1270,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 `ets/api/@ohos.security.asset.d.ts`：`querySync` 与 `removeSync` 自 API 12；查询用 `ReturnType.ATTRIBUTES`（只读属性，不取 SECRET），按返回的 ALIAS 删除本应用 `vault:*:token` 条目，包含 pending-import。24000002 表示不存在，视为无需删除；其他错误中止本次重置并展示失败。不要假定 M1 自动清除了 AssetStore 的安全资产，因此显式清理当前应用的 Git 别名后再调用 M1。
 
 全链路逻辑由 mock 单测验证，禁止为了测试而清空已有设备数据。用户在 App 内主动确认的重置功能与主动制造崩溃实验不同。
+
 
 ## N 组：Agent 后台与通知（2026-10-25 SDK 声明核对）
 

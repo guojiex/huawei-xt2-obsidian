@@ -112,6 +112,15 @@ class EditorImpl {
     this.enqueue(`window.__mdeditor.setTheme('${safe}')`);
   }
 
+  async setEditable(editable: boolean): Promise<void> {
+    const script: string = `window.__mdeditor.setEditable(${editable})`;
+    if (this.readyFlag) {
+      await this.controller.runJavaScript(script);
+    } else {
+      this.pending.push(script);
+    }
+  }
+
   private enqueue(script: string): void {
     if (this.readyFlag) {
       void this.controller.runJavaScript(script);
@@ -151,6 +160,10 @@ export class EditorBridge {
 
   setTheme(theme: string): void {
     this.impl?.setTheme(theme);
+  }
+
+  async setEditable(editable: boolean): Promise<void> {
+    await this.impl?.setEditable(editable);
   }
 }
 

@@ -57,6 +57,11 @@ const html = `<!doctype html>
     --text-tertiary: rgba(0, 0, 0, .40);
     --r-chip: 8px;
     --r-control: 12px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --h-touch: 48px;
+    --preview-image-max-ratio: .6;
+    --image-viewer-bg: rgba(0, 0, 0, .8);
   }
   [data-theme="dark"] {
     --brand: #4EA1FF;
@@ -112,6 +117,25 @@ const html = `<!doctype html>
   #content th { background: var(--bg-secondary); font-weight: 600; color: var(--text-primary); }
   #content hr { border: none; border-top: 1px solid var(--line); margin: 24px 0; }
   #content img { max-width: 100%; border-radius: var(--r-chip); }
+  #content img.preview-local-image {
+    display: block; max-height: var(--preview-image-max-height, none);
+    width: auto; height: auto; object-fit: contain; cursor: zoom-in;
+  }
+  #content img.preview-local-image:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .image-viewer {
+    position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    gap: var(--sp-3); padding: var(--sp-4); box-sizing: border-box;
+    background: var(--image-viewer-bg);
+  }
+  .image-viewer.hidden { display: none; }
+  .image-viewer-toolbar { display: flex; justify-content: flex-end; flex: none; }
+  #image-viewer-close {
+    min-height: var(--h-touch); padding: 0 var(--sp-3); border: 1px solid var(--line);
+    border-radius: var(--r-control); background: var(--bg-card); color: var(--text-primary);
+    font: inherit;
+  }
+  .image-viewer-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+  #image-viewer-full { display: block; max-width: 100%; width: auto; height: auto; margin: 0 auto; }
   #content a { color: var(--brand); text-decoration: none; }
   #content input[type="checkbox"] { accent-color: var(--brand); width: 15px; height: 15px; vertical-align: -2px; margin-right: 6px; }
   #content .empty { color: var(--text-tertiary); font-size: 14px; text-align: center; margin-top: 40px; }
@@ -119,6 +143,12 @@ const html = `<!doctype html>
 </head>
 <body>
 <div id="content"></div>
+<div id="image-viewer" class="image-viewer hidden" role="dialog" aria-modal="true" aria-label="完整图片">
+  <div class="image-viewer-toolbar"><button id="image-viewer-close">关闭图片</button></div>
+  <div id="image-viewer-scroll" class="image-viewer-scroll" tabindex="0" aria-label="完整图片，可滚动查看">
+    <img id="image-viewer-full" alt="">
+  </div>
+</div>
 <script>
 ${safe}
 </script>

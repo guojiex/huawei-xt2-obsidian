@@ -3,8 +3,8 @@
  *
  * 与 EditorWebView 同族但职责更窄：
  *  - 方向以 ArkTS → JS 为主（setContent / setNoteDir / setTheme，页面就绪前指令进队列）；
- *  - JS → ArkTS 只有一条**同步**通道 `__arkts.readAsset(relPathB64) → data URI`，
- *    用于把 vault 沙箱里的本地图片喂给 WebView（resource://rawfile 页面拿不到沙箱文件，
+ *  - JS → ArkTS：`readAsset(relPathB64) → data URI` 读取本地图片，以及图片查看器打开/关闭状态通知。
+ *    资源路径仍由父级的统一解析器处理（resource://rawfile 页面拿不到沙箱文件，
  *    api_notes B4；不做请求拦截，避免 onInterceptRequest 波及页面主资源加载）。
  *
  * ⚠️ 桥接方法必须挂在注入对象上直接调用（L-4 踩坑），Web 侧已按此实现。
@@ -20,12 +20,17 @@ import { BridgeCodec } from '../common/BridgeCodec';
 const PREVIEW_DOMAIN = 0x0000;
 const PREVIEW_TAG = 'PreviewWebView';
 
-/** 注入到 WebView window.__arkts 的对象：JS -> ArkTS 的唯一入口（本地图片读取） */
+/** 注入到 WebView window.__arkts 的 JS → ArkTS 接口。 */
 class PreviewNativeProxy {
   readAssetHandler: (relPath: string) => string = () => '';
+  imageViewerChangeHandler: (state: string) => void = () => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
+  }
+
+  onImageViewerChange(state: string): void {
+    this.imageViewerChangeHandler(state);
   }
 }
 
@@ -57,6 +62,10 @@ class PreviewImpl {
     this.enqueue(`window.__mdpreview.setContent('${payload}')`);
   }
 
+  resetDocument(): void {
+    this.enqueue('window.__mdpreview.resetDocument()');
+  }
+
   setNoteDir(dir: string): void {
     const payload = BridgeCodec.encode(dir);
     this.enqueue(`window.__mdpreview.setNoteDir('${payload}')`);
@@ -65,6 +74,10 @@ class PreviewImpl {
   setTheme(theme: string): void {
     const safe = theme === 'dark' ? 'dark' : 'light';
     this.enqueue(`window.__mdpreview.setTheme('${safe}')`);
+  }
+
+  closeImageViewer(): void {
+    this.enqueue('window.__mdpreview.closeImageViewer()');
   }
 
   private enqueue(script: string): void {
@@ -79,21 +92,53 @@ class PreviewImpl {
 /** 父组件持有的句柄：页面就绪前调用会进队列，不会丢 */
 export class PreviewBridge {
   private impl: PreviewImpl | undefined = undefined;
+  private content: string = '';
+  private hasContent: boolean = false;
+  private noteDir: string = '';
+  private theme: string = 'light';
 
   bind(impl: PreviewImpl): void {
     this.impl = impl;
+    impl.setNoteDir(this.noteDir);
+    impl.setTheme(this.theme);
+    if (this.hasContent) {
+      impl.setContent(this.content);
+    }
   }
 
   setContent(text: string): void {
+    this.content = text;
+    this.hasContent = true;
     this.impl?.setContent(text);
   }
 
   setNoteDir(dir: string): void {
+    this.noteDir = dir;
     this.impl?.setNoteDir(dir);
   }
 
   setTheme(theme: string): void {
+    this.theme = theme === 'dark' ? 'dark' : 'light';
     this.impl?.setTheme(theme);
+  }
+
+  private imageViewerOpen: boolean = false;
+
+  setImageViewerOpen(open: boolean): void {
+    this.imageViewerOpen = open;
+  }
+
+  closeImageViewer(): boolean {
+    if (!this.imageViewerOpen) {
+      return false;
+    }
+    this.impl?.closeImageViewer();
+    return true;
+  }
+
+  resetDocument(): void {
+    this.imageViewerOpen = false;
+    this.impl?.resetDocument();
   }
 }
 
@@ -119,6 +164,9 @@ export struct PreviewWebView {
   private proxyRegistered: boolean = false;
 
   aboutToAppear(): void {
+    this.proxy.imageViewerChangeHandler = (state: string): void => {
+      this.bridge.setImageViewerOpen(state === 'open');
+    };
     // JS 桥收的是 base64（避免引号/换行转义），这里解开再交给父级回调
     this.proxy.readAssetHandler = (relB64: string): string => {
       try {
@@ -146,6 +194,10 @@ export struct PreviewWebView {
     }
   }
 
+  aboutToDisappear(): void {
+    this.bridge.setImageViewerOpen(false);
+  }
+
   /**
    * 注册 __arkts 代理（幂等）。时机与 EditorWebView 相同（L-4 实证）：
    * onControllerAttached = 页面加载前注册，随页面一次注入，无需 refresh。
@@ -155,7 +207,7 @@ export struct PreviewWebView {
       return;
     }
     try {
-      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['readAsset']);
+      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['readAsset', 'onImageViewerChange']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (error) {
@@ -183,7 +235,6 @@ export struct PreviewWebView {
           // window.__mdpreview 必然存在（构建产物单文件内联，无外链资源）。
           const impl = new PreviewImpl(this.controller);
           this.bridge.bind(impl);
-          impl.setTheme(this.theme);
           impl.markReady();
           hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '预览页面就绪，桥接已建立');
         })

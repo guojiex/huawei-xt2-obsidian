@@ -15,11 +15,15 @@
  */
 
 import { marked } from 'marked'
+import { resolveVaultImagePath } from './renderer.mjs'
 
 declare global {
   interface Window {
     __mdpreview: MdPreviewApi
-    __arkts?: { readAsset?: (relB64: string) => string }
+    __arkts?: {
+      readAsset?: (relB64: string) => string
+      onImageViewerChange?: (state: string) => void
+    }
   }
 }
 
@@ -28,6 +32,8 @@ interface MdPreviewApi {
   setContent(b64: string): void
   setNoteDir(b64: string): void
   setTheme(theme: string): void
+  resetDocument(): void
+  closeImageViewer(): void
 }
 
 // ---------- base64（浏览器侧，处理 UTF-8，与 mdeditor 同款） ----------
@@ -49,23 +55,6 @@ function b64decode(b64: string): string {
   return new TextDecoder().decode(bytes)
 }
 
-/** 库内相对路径拼接：'docs' + 'img/a.png' → 'docs/img/a.png'；允许 src 自带 'a/../b' 归一 */
-function joinVaultPath(dir: string, src: string): string {
-  const base = dir.length > 0 ? dir + '/' + src : src
-  const segs: string[] = []
-  for (const seg of base.split('/')) {
-    if (seg === '' || seg === '.') {
-      continue
-    }
-    if (seg === '..') {
-      segs.pop()
-      continue
-    }
-    segs.push(seg)
-  }
-  return segs.join('/')
-}
-
 /** 当前笔记所在目录（库内相对，'' = 根目录）—— 相对图片引用的解析基准 */
 let noteDir = ''
 
@@ -82,13 +71,24 @@ function localizeImages(root: HTMLElement): void {
     if (src.length === 0 || /^(https?:|data:|blob:)/i.test(src)) {
       continue
     }
-    const rel = joinVaultPath(noteDir, src)
+    const rel = resolveVaultImagePath(noteDir, src)
     try {
       const arkts = window.__arkts
       if (arkts && typeof arkts.readAsset === 'function') {
         const dataUri = arkts.readAsset(b64encode(rel))
         if (dataUri.length > 0) {
           img.src = dataUri
+          img.classList.add('preview-local-image')
+          img.tabIndex = 0
+          img.setAttribute('role', 'button')
+          img.setAttribute('title', '点击查看完整图片')
+          img.addEventListener('click', () => openImage(img))
+          img.addEventListener('keydown', (event: KeyboardEvent) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              openImage(img)
+            }
+          })
         } else {
           img.alt = src + '（图片不存在）'
         }
@@ -99,6 +99,95 @@ function localizeImages(root: HTMLElement): void {
   }
 }
 
+let imageReturnTarget: HTMLImageElement | null = null
+let imageReturnScrollTop = 0
+
+function notifyImageViewerChange(open: boolean): void {
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onImageViewerChange === 'function') {
+    arkts.onImageViewerChange(open ? 'open' : 'closed')
+  }
+}
+
+function openImage(image: HTMLImageElement): void {
+  const content = document.getElementById('content') as HTMLElement
+  const fullImage = document.getElementById('image-viewer-full') as HTMLImageElement
+  const viewer = document.getElementById('image-viewer') as HTMLElement
+  imageReturnTarget = image
+  imageReturnScrollTop = content.scrollTop
+  fullImage.src = image.src
+  fullImage.alt = image.alt
+  const scroll = document.getElementById('image-viewer-scroll') as HTMLElement
+  scroll.scrollTop = 0
+  viewer.classList.remove('hidden')
+  notifyImageViewerChange(true)
+  document.getElementById('image-viewer-close')?.focus()
+}
+
+function closeImageViewer(): void {
+  const viewer = document.getElementById('image-viewer') as HTMLElement
+  if (viewer.classList.contains('hidden')) {
+    return
+  }
+  viewer.classList.add('hidden')
+  const fullImage = document.getElementById('image-viewer-full') as HTMLImageElement
+  fullImage.removeAttribute('src')
+  notifyImageViewerChange(false)
+  if (imageReturnTarget && imageReturnTarget.isConnected) {
+    imageReturnTarget.focus()
+  }
+  const content = document.getElementById('content') as HTMLElement
+  content.scrollTop = imageReturnScrollTop
+  imageReturnTarget = null
+}
+
+function resetPreviewDocument(): void {
+  closeImageViewer()
+  const content = document.getElementById('content') as HTMLElement
+  content.scrollTop = 0
+}
+
+const viewer = document.getElementById('image-viewer') as HTMLElement
+document.getElementById('image-viewer-close')?.addEventListener('click', closeImageViewer)
+viewer.addEventListener('click', (event: MouseEvent) => {
+  if (event.target === viewer) {
+    closeImageViewer()
+  }
+})
+document.addEventListener('keydown', (event: KeyboardEvent) => {
+  if (viewer.classList.contains('hidden')) {
+    return
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    closeImageViewer()
+  } else if (event.key === 'Tab') {
+    const close = document.getElementById('image-viewer-close') as HTMLElement
+    const scroll = document.getElementById('image-viewer-scroll') as HTMLElement
+    if (event.shiftKey && document.activeElement === close) {
+      event.preventDefault()
+      scroll.focus()
+    } else if (!event.shiftKey && document.activeElement === scroll) {
+      event.preventDefault()
+      close.focus()
+    }
+  }
+})
+
+function updateImageBounds(): void {
+  const content = document.getElementById('content') as HTMLElement
+  const height = content.clientHeight
+  const ratio = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--preview-image-max-ratio'))
+  if (height > 0 && Number.isFinite(ratio) && ratio > 0) {
+    content.style.setProperty('--preview-image-max-height', `${height * ratio}px`)
+  }
+}
+
+const contentResizeObserver = new ResizeObserver(updateImageBounds)
+contentResizeObserver.observe(document.getElementById('content') as HTMLElement)
+window.addEventListener('resize', updateImageBounds)
+
 marked.setOptions({ gfm: true, breaks: false })
 
 const api: MdPreviewApi = {
@@ -107,11 +196,13 @@ const api: MdPreviewApi = {
     const el = document.getElementById('content') as HTMLElement
     if (text.trim().length === 0) {
       el.innerHTML = '<div class="empty">空笔记</div>'
+      updateImageBounds()
       console.log('[mdpreview] setContent: empty')
       return
     }
     el.innerHTML = marked.parse(text) as string
     localizeImages(el)
+    updateImageBounds()
     console.log('[mdpreview] setContent len=' + text.length)
   },
 
@@ -121,6 +212,14 @@ const api: MdPreviewApi = {
 
   setTheme(theme: string): void {
     document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light')
+  },
+
+  resetDocument(): void {
+    resetPreviewDocument()
+  },
+
+  closeImageViewer(): void {
+    closeImageViewer()
   }
 }
 

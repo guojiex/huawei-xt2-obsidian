@@ -4,6 +4,7 @@ import { display, window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { breakpointFromWidthVp } from '../model/Breakpoint';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { NoteDraftService } from '../model/NoteDraftService';
 import { SampleVaultInstaller } from '../model/SampleVaultInstaller';
 
 const DOMAIN = 0x0000;
@@ -34,6 +35,7 @@ export default class EntryAbility extends UIAbility {
 
     // 库注册表单例初始化：必须先于 loadContent，页面侧才能直接 VaultRegistry.get()
     const registry: VaultRegistry = VaultRegistry.initialize(this.context);
+    NoteDraftService.cleanupOrphans(registry);
 
     // ===== 断点系统（T007）=====
     // 断点只由窗口宽度（vp）计算：window.on('windowSizeChange') + px2vp() 是官方推荐的

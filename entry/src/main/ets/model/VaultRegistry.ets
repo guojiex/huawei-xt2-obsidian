@@ -227,11 +227,7 @@ export class VaultRegistry {
     if (target === null) {
       throw new Error('库不存在: ' + id);
     }
-    const sanitized: string = sanitizeVaultName(newName);
-    if (sanitized.length === 0) {
-      throw new Error('库名不能为空，也不能只由 / \\ : * ? " < > | 等字符组成');
-    }
-    const newId: string = this.uniqueVaultId(sanitized, id);
+    const newId: string = this.previewRenameId(id, newName);
     if (newId === id) {
       return target;
     }
@@ -245,6 +241,18 @@ export class VaultRegistry {
     }
     this.persist();
     return target;
+  }
+
+  /** 预览改名后实际库 id，供相关本地数据在库目录改名前迁移。 */
+  previewRenameId(id: string, newName: string): string {
+    if (this.findEntry(id) === null) {
+      throw new Error('库不存在: ' + id);
+    }
+    const sanitized: string = sanitizeVaultName(newName);
+    if (sanitized.length === 0) {
+      throw new Error('库名不能为空，也不能只由 / \\ : * ? " < > | 等字符组成');
+    }
+    return this.uniqueVaultId(sanitized, id);
   }
 
   /**
@@ -295,6 +303,26 @@ export class VaultRegistry {
    */
   absoluteIn(vaultId: string, relativePath: string): string {
     return this.resolver.resolve(vaultId, relativePath);
+  }
+
+  draftsRoot(): string {
+    return this.resolver.draftsRoot();
+  }
+
+  draftsRootRecoveryFile(): string {
+    return this.resolver.draftsRootRecoveryFile();
+  }
+
+  draftsVaultDirOf(vaultId: string): string {
+    return this.resolver.draftsVaultDir(vaultId);
+  }
+
+  draftDirectory(vaultId: string, relativeDirectory: string): string {
+    return this.resolver.draftDirectory(vaultId, relativeDirectory);
+  }
+
+  absoluteDraftIn(vaultId: string, relativePath: string): string {
+    return this.resolver.resolveDraft(vaultId, relativePath);
   }
 
   /** 库目录绝对路径（转发唯一解析器，供 UI 展示路径但不自行拼接）。 */

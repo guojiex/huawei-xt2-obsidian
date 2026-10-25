@@ -16,6 +16,7 @@ export class VaultPathResolver {
    * 拼接只出现在本文件）。FileTree 天然过滤点开头目录，树里看不见它。
    */
   static readonly TRASH_SEG: string = '.trash';
+  private static readonly DRAFTS_SEG: string = 'drafts';
 
   private context: common.UIAbilityContext;
 
@@ -40,6 +41,31 @@ export class VaultPathResolver {
   /** 回收站目录绝对路径：filesDir/vaults/<vaultId>/.trash（1.7）。 */
   trashDir(vaultId: string): string {
     return this.vaultDir(vaultId) + '/' + VaultPathResolver.TRASH_SEG;
+  }
+
+  /** 草稿根目录及单库路径也只在此处从 Context 属性拼出。 */
+  draftsRoot(): string {
+    return this.context.filesDir + '/' + VaultPathResolver.DRAFTS_SEG;
+  }
+
+  /** 非目录草稿根的保留位置；仅用于启动自愈，避免覆盖未知残留内容。 */
+  draftsRootRecoveryFile(): string {
+    return this.draftsRoot() + '.recovery';
+  }
+
+  draftsVaultDir(vaultId: string): string {
+    return this.draftsRoot() + '/' + this.requireSafeSegment(vaultId);
+  }
+
+  draftDirectory(vaultId: string, relativeDirectory: string): string {
+    return this.joinChecked(this.draftsVaultDir(vaultId), relativeDirectory);
+  }
+
+  resolveDraft(vaultId: string, relativePath: string): string {
+    if (relativePath.length === 0) {
+      throw new Error('VaultPathResolver: 草稿路径不能为空');
+    }
+    return this.joinChecked(this.draftsVaultDir(vaultId), relativePath) + '.draft';
   }
 
   /**

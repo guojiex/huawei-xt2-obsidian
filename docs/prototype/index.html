@@ -87,6 +87,10 @@
     --h-touch: 48px;
     --preview-image-max-ratio: .6; /* 原型起点，非 XT2 官方阈值 */
     --image-viewer-bg: rgba(0, 0, 0, .8);
+    --share-mask-bg: rgba(0, 0, 0, .38);
+    --share-width: 340px;
+    --share-preview-height: 320px;
+    --share-max-height: 90%;
     --viewport-width: 1061px;
     --viewport-height: 830px;
     --settings-content-width: 760px;
@@ -496,7 +500,7 @@
      左边框会与 sidebar 的 border-right 形成双线 —— 去掉；md 收起态（编辑|预览
      同屏）两条线之间隔着真实边界，保留 */
   [data-form="md"]:not([data-side="hidden"]) .preview-pane { border-left: none; }
-  [data-form="sm"] .src-tag, [data-form="sm"] .pv-label { display: none; }
+  [data-form="sm"] #editName, [data-form="sm"] .src-tag, [data-form="sm"] .pv-label { display: none; }
   .editor-wrap { position: relative; flex: 1; min-height: 0; background: var(--bg-card); }
   .editor-wrap pre, .editor-wrap textarea {
     margin: 0; padding: var(--sp-4) var(--sp-5); border: none; outline: none;
@@ -942,6 +946,30 @@
   [data-form="sm"] .agent-nav:not(.open) { display: none; }
   [data-form="sm"] .agent-bar strong { flex-basis: 100%; }
 
+
+  /* 单篇分享设计：sm 底部面板，md/lg 面板保持在最右一栏。 */
+  .share-mask { position: absolute; inset: 0; z-index: 55; display: flex; align-items: center; justify-content: flex-end; padding: var(--sp-2); background: var(--share-mask-bg); }
+  .share-box { width: min(100%, var(--share-width)); max-height: var(--share-max-height); overflow-y: auto; padding: var(--sp-4); border-radius: var(--r-dialog); background: var(--bg-card); box-shadow: var(--elev-3); }
+  [data-form="sm"] .share-mask { align-items: flex-end; padding: 0; }
+  [data-form="sm"] .share-box { width: 100%; }
+  .share-head, .share-targets { display: flex; align-items: center; gap: var(--sp-2); }
+  .share-head strong { flex: 1; font-size: var(--fs-s2); }
+  .share-box button { min-height: var(--h-touch); }
+  .share-caption { color: var(--text-secondary); font-size: var(--fs-body3); line-height: 1.65; overflow-wrap: anywhere; margin: var(--sp-2) 0 var(--sp-4); }
+  .share-option { display: flex; align-items: center; gap: var(--sp-3); width: 100%; height: auto; text-align: left; margin: var(--sp-2) 0; padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--r-control); background: var(--bg-secondary); }
+  .share-option span { flex: 1; min-width: 0; }
+  .share-option small { display: block; margin-top: var(--sp-1); font-size: var(--fs-body3); color: var(--text-secondary); white-space: normal; }
+  .share-option:disabled { opacity: .5; cursor: default; }
+  .share-box h3 { font-size: var(--fs-body1); overflow-wrap: anywhere; }
+  .share-paper { padding: var(--sp-4); background: var(--bg-secondary); border-radius: var(--r-control); max-height: var(--share-preview-height); overflow: auto; }
+  .share-paper.md { font-size: var(--fs-body2); }
+  .share-paper.md img { max-height: none; cursor: default; }
+  .share-paper pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .share-link { width: 100%; padding: var(--sp-3); color: var(--text-primary); background: var(--bg-secondary); border: 1px solid var(--line); border-radius: var(--r-control); font: inherit; }
+  .share-targets button { flex: 1; }
+  .share-primary { width: 100%; margin-top: var(--sp-3); background: var(--brand); color: var(--on-brand); border: 0; border-radius: var(--r-button); }
+
+
   #settingsView { padding: 0; overflow: hidden; flex-direction: column; }
   #settingsView:not(.hidden) { display: flex; }
   .settings-tabs { flex: none; display: flex; overflow-x: auto; padding: var(--sp-2); gap: var(--sp-1); background: var(--bg-card); border-bottom: 1px solid var(--line); }
@@ -1004,9 +1032,10 @@
     <button data-t="dark" data-intro="v1.0">深色</button>
   </div>
   <div class="grp">
-    <span class="lbl">分享</span>
+    <span class="lbl">原型链接</span>
     <button id="copyLinkBtn" title="把当前形态 / 视图 / 主题写进 URL 并复制，对方打开即复现同一画面">复制当前页面链接</button>
   </div>
+  <div class="grp"><span class="lbl">分享场景</span><button id="demoLocalShare">本地笔记 / 配图</button><button id="demoGitShare">Git 笔记 / 知识库</button></div>
   <span class="hint">编辑区可直接输入，预览实时更新；单屏 / 双屏态用内容区右上角「编辑 / 预览」切换；URL 实时同步形态 / 视图 / 主题，复制链接即可分享当前页面</span>
 </div>
 
@@ -1019,6 +1048,7 @@
       <option value="v0.4">v0.4 · 文件名快切与最近打开</option>
       <option value="v0.5">v0.5 · 共享样例库与渲染基线</option>
       <option value="v0.7" selected>v0.7 · Agent 工作区与本地 mock（优先）</option>
+      <option value="v0.8">v0.8 · 笔记、文件夹与知识库分享</option>
       <option value="v1.0">v1.0 · 深色、性能与恢复验收</option>
       <option value="v1.1">v1.1 · 当前库全文搜索</option>
       <option value="v1.2">v1.2 · 双链与反链</option>
@@ -1048,6 +1078,7 @@
         <button class="icon-btn" id="searchBtn" title="快速切换 / 搜索" data-intro="v0.4" aria-label="快速切换 / 搜索">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
         </button>
+        <button class="icon-btn" id="shareNoteBtn" data-intro="v0.8" title="分享当前笔记" aria-label="分享当前笔记"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V4l8 8-8 8v-5C8 15 4 17 2 21c0-7 4-12 12-12Z"/></svg></button>
         <button class="icon-btn hidden" id="xiaoyiBtn" title="Agent 对话 · 本地 mock" data-intro="v0.7" aria-label="Agent 对话"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 4H6a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h2v3l4-3h6a3 3 0 0 0 3-3v-3"/><path d="m18 2 1.1 3.4L22.5 6.5l-3.4 1.1L18 11l-1.1-3.4L13.5 6.5l3.4-1.1Z"/></svg></button>
         <button class="icon-btn" id="syncBtn" title="同步" data-intro="v0.3">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4.4V9h-4.6"/></svg>
@@ -1063,7 +1094,7 @@
           <aside class="sidebar" id="sidebar">
             <div class="vault-switch" id="vaultSwitch" data-intro="v0.1">
               <span class="vs-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 7.5A1.9 1.9 0 0 1 5.5 5.6h3.1l1.8 2.2h6.9a1.9 1.9 0 0 1 1.9 1.9v8.1a1.9 1.9 0 0 1-1.9 1.9H5.5a1.9 1.9 0 0 1-1.9-1.9z"/></svg></span>
-              <span class="vname"><span id="curVaultName">本地笔记</span><span class="vsub" id="curVaultSub">vaults/local · 3 篇</span></span>
+              <span class="vname"><span id="curVaultName">本地笔记</span><span class="vsub" id="curVaultSub">本地库 · 3 篇</span></span>
               <span class="chev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg></span>
               <div class="vault-menu hidden" id="vaultMenu"></div>
             </div>
@@ -1077,6 +1108,7 @@
             <div class="sw-hint">← 左滑显示操作；滑到底移入回收站，可撤销</div>
             <div class="side-foot">
               <button id="gotoVaults">管理库</button>
+              <button id="shareVaultBtn" class="hidden">分享知识库</button>
               <button id="gotoTrash" data-intro="v0.2">回收站</button>
             </div>
           </aside>
@@ -1279,13 +1311,6 @@
             <div class="set-head">更新日志</div>
             <div class="chlog" id="recentChangelog"></div>
             <button class="pane-action" id="openHistoryBtn">查看完整版本记录 ›</button>
-          </div><div class="set-group">
-            <div class="set-head">版本归属（设计标注）</div>
-            <div class="set-row"><span>视觉 token 与系统主题资源</span><em>v0.2</em></div>
-            <div class="set-row"><span>Git 同步与安全凭据</span><em>v0.3</em></div>
-            <div class="set-row"><span>完整深色体验验收</span><em>v1.0</em></div>
-            <div class="set-row"><span>全文搜索 / 双链 / 图片</span><em>v1.1 / 1.2 / 1.3</em></div>
-            <div class="set-row dim"><span>导出 / 备份</span><em>待拍板（Q2）</em></div>
           </div></section>
         </div>
       </div>
@@ -1331,6 +1356,15 @@
         </div>
       </div>
       <!-- 版本标注放卡片上，避免 .version-annotated 的 relative 定位覆盖蒙版的 absolute。 -->
+      <!-- v0.8 分享交互设计；发送目标仅演示，不调用外部应用。 -->
+      <div class="share-mask hidden" id="shareMask">
+        <section class="share-box" data-intro="v0.8" role="dialog" aria-modal="true" aria-labelledby="shareTitle" tabindex="-1">
+          <div class="share-head"><button id="shareBack" class="hidden" aria-label="返回分享方式">‹</button><strong id="shareTitle">分享笔记</strong><button id="shareClose" aria-label="关闭分享">关闭</button></div>
+          <p id="shareSubtitle" class="share-caption"></p>
+          <div id="shareBody"></div>
+          <p class="share-caption">v0.8 交互设计 · App 待实施；微信 / 飞书发送为演示，不会实际上传或发送内容。</p>
+        </section>
+      </div>
       <div class="image-mask hidden" id="imageMask" role="dialog" aria-modal="true" aria-label="完整图片">
         <div class="image-toolbar"><button id="closeImageBtn">关闭图片</button></div>
         <div class="image-scroll" id="imageScroll" tabindex="0" aria-label="图片内容，可滚动"><img id="fullImage" alt=""></div>
@@ -1357,6 +1391,7 @@
 <div class="notes">
   <h3>设计稿说明（这几条是决策，看效果时一起判断）</h3>
   <ul>
+    <li><b>版本归属（设计标注）</b>：视觉 token 与系统主题资源归 v0.2；Git 同步与安全凭据归 v0.3；完整深色体验验收归 v1.0；全文搜索 / 双链 / 图片分别归 v1.1 / v1.2 / v1.3；导出 / 备份仍待拍板（Q2）。这些信息只用于查看设计稿时定位交互，不属于用户可见的“关于”内容。</li>
     <li><b>视觉基线（本轮改动）</b>：整套 draft 按 HarmonyOS Design 重做，不再是随手调的数值 ——
       <b>色板</b>用语义色（品牌 <code>#007DFF</code> + 成功/警告/危险 + 三级文本灰），深色模式另有一套 token；
       <b>圆角</b>按控件场景取（图标 8 / 列表项·输入框 12 / 卡片·弹窗 16 / 按钮·菜单 20 / SnackBar 18 / 徽标全圆）；
@@ -1409,9 +1444,10 @@
     <li><b>URL 带着当前页面状态，可分享（2026-10-25）</b>：形态 / 视图 / 目录栏收起 / 编辑预览模式 / 主题都会实时写进地址栏 hash（<code>#f=lg&amp;v=note&amp;side=shown&amp;m=edit&amp;t=light</code>）。<br>
       复制地址栏、或点控件区「<b>复制当前页面链接</b>」，对方打开即复现同一画面（含深色模式与单屏预览态）；手动改 hash / 浏览器前进后退同样即时生效。<br>
       拖拽出来的栏宽<b>不进</b> URL —— 那是临时手感，不是要分享的状态。</li>
+    <li><b>笔记标题按形态分工（2026-10-25）</b>：双屏 / 三屏目录栏展开时，顶栏显示「曜石笔记」，库名与切库入口保留在侧栏；目录栏收起时，顶栏显示当前库名。侧栏副标题只显示「本地库 / Git 库 · N 篇」，不展示内部目录路径。编辑栏头显示当前文件名；单屏顶栏显示当前笔记名，编辑栏头不再重复文件名。文件树保留文件名与选中态，预览里的 Markdown 标题属于正文，原样保留。</li>
     <li><b>单屏态（外屏 380vp）用分段控件在「编辑 / 预览」之间切换</b>：只有一块屏，容不下两栏，编辑与预览<b>互相让位</b>。<br>
       开关放在<b>内容区顶部右侧</b>（pane-head 右端）而不是顶栏右上角 —— 顶栏在 380vp 下已经挂了汉堡 / 同步 / 设置三个图标，
-      再挤一个 48vp 热区会打架；而且「编辑 / 预览」是<b>内容区的模式</b>，跟文件名并排放才读得懂。<br>
+      再挤一个 48vp 热区会打架；「编辑 / 预览」是<b>内容区的模式</b>，单屏笔记名统一由顶栏显示。<br>
       两个 pane 的 pane-head <b>各挂一个同样的分段控件</b>：切到预览后开关还留在原处，不会跟着编辑区一起消失（这是最容易踩的坑）。
       切到预览时<b>收起软键盘</b>——真机上键盘会挡掉半屏。<br>
       ⚠️ <b>双屏 / 三屏</b>：md 双屏正文区同样只有一栏位置，**同样显示**这个开关 —— 点「预览」由预览**抢占正文区**、目录栏不动（2026-10-25 用户拍板）；md **收起目录栏**后两栏同屏，开关隐藏；**lg 三栏同屏不加**（已有独立预览栏）。</li>
@@ -1440,6 +1476,7 @@
     <li><b>按版本看交互</b>：v0.4 是当前库文件名快切与最近打开；v1.1 增加当前库正文搜索。设计稿用内存样本演示，增量索引仍须按需求文档在真机实现。</li>
     <li><b>[[双链]] 是 v1.2 示意</b>：当前原型可演示跳转、未创建目标和反链；自动补全、同名消歧与重命名更新引用仍按 v1.2 需求验收。<code>#标签</code> 只是着色样本，未分配版本功能。</li>
     <li><b>搜索与双链只在当前库内生效</b>：切库后重新显示该库结果；跨库检索仍留在需求池。</li>
+    <li><b>内容分享（2026-10-25，已分配 v0.8）</b>：顶栏分享按钮 → 图片预览 / Markdown 文件；引用本地图片时改为 ZIP，包含本篇与配图。Git 库另有笔记网页链接；目录底部及库管理卡片的「分享知识库」打开仓库首页链接面板。微信 / 飞书为系统分享去向示意，不真实发送；小红书等社媒适配后置。控件区的两个「分享场景」按钮可直接查看本地配图与 Git 示例。后续范围扩展为文件夹与整库 ZIP，Git 可选 ZIP 或链接；这些新增选择交互待补，完整承诺见 v0.8 需求文档。</li>
     <li><b>Git 双向同步归 v0.3</b>：现有代码只有部分 clone 桥接；commit / push、安全令牌存储与真机验收仍待完成。此页的同步操作只是交互演示。</li>
   </ul>
 </div>
@@ -1455,6 +1492,7 @@
     'v0.5': ['共享样例库与渲染基线', '样例同源，App 设备验收待完成'],
     'v0.7': ['本地 Agent 对话、Tools/Skills 与配置', '本地优先；原型 mock 可体验，App 待实施'],
     'v0.6': ['真实小艺平台接入', '暂缓，等待用户开通能力；尚未接入'],
+    'v0.8': ['单篇图片 / MD / ZIP、文件夹与整库 ZIP、Git ZIP / 链接选择', '规划中；单篇原型已有，文件夹与整库 ZIP 交互待补'],
     'v1.0': ['完整深色体验、性能、空状态与 MVP 回归', '规划中'],
     'v1.1': ['当前库正文搜索与增量索引', '规划中'],
     'v1.2': ['双链跳转、未创建链接与反链', '规划中'],
@@ -1484,6 +1522,7 @@
       if (version === 'v0.7') { setView('agent', true); }
     }
     else if (version === 'v0.6') { showToast('真实小艺接入仍暂缓；工作区与 mock 请查看 v0.7', '', null); }
+    else if (version === 'v0.8') { document.getElementById('demoLocalShare').click(); }
     else if (version === 'v1.0') {
       setView('note', true);
       document.querySelector('[data-t="dark"]').click();
@@ -1507,10 +1546,94 @@
   var currentVault = 'local';
   var TREES = {"local": [["dir", "00_开始", true, 0], ["file", "欢迎使用.md", false, 1, "welcome"], ["file", "快速上手.md", false, 1, "inbox"], ["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "stream"], ["file", "任务清单.md", false, 1, "todo"], ["dir", "20_样式", true, 0], ["file", "双链与嵌入.md", false, 1, "dataflow"], ["file", "属性与提示块.md", false, 1, "intimacy"], ["file", "公式与流程图.md", false, 1, "tob"], ["file", "样式支持清单.md", false, 1, "year2025"], ["dir", "30_小艺", true, 0], ["file", "可编辑练习.md", false, 1, "idea"], ["dir", "40_阅读", true, 0], ["file", "读书对话练习.md", false, 1, "reading_journal"]]};
   var FILES = {"welcome": "欢迎使用.md", "inbox": "快速上手.md", "stream": "基础排版.md", "todo": "任务清单.md", "dataflow": "双链与嵌入.md", "intimacy": "属性与提示块.md", "tob": "公式与流程图.md", "year2025": "样式支持清单.md", "idea": "可编辑练习.md", "reading_journal": "读书对话练习.md"};
-  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 518 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符", "reading_journal": "样例 · 254 字符"};
-  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 的相同行为仍待实现。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n", "reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n"};
+  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 535 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符", "reading_journal": "样例 · 254 字符"};
+  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n", "reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n"};
   var SAMPLE_ASSETS = {"50_Assets/笔记流程.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwIiB2aWV3Qm94PSIwIDAgNjQwIDE2MCI+PHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAiIHJ4PSIxNiIgZmlsbD0iI0YxRjNGNSIvPjxnIGZpbGw9IiMwMDdERkYiPjxyZWN0IHg9IjI0IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iMjQwIiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iNDU2IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9nPjxnIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjI0IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+PHRleHQgeD0iMTA0IiB5PSI4OSI+6K6w5b2VPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iODkiPuaVtOeQhjwvdGV4dD48dGV4dCB4PSI1MzYiIHk9Ijg5Ij7lm57pob48L3RleHQ+PC9nPjxwYXRoIGQ9Ik0xOTIgODBoNDBtMTc2IDBoNDAiIHN0cm9rZT0iIzAwN0RGRiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PC9zdmc+Cg==", "50_Assets/长图排版示例.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwMCIgdmlld0JveD0iMCAwIDY0MCAxNjAwIj4KPHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAwIiByeD0iMjQiIGZpbGw9IiNGMUYzRjUiLz4KPGcgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjx0ZXh0IHg9IjMyMCIgeT0iOTAiIGZvbnQtc2l6ZT0iMzYiIGZpbGw9IiMyMDIxMjQiPumVv+WbvuaOkueJiOekuuS+izwvdGV4dD4KPGcgZmlsbD0iIzAwN0RGRiI+PHJlY3QgeD0iODAiIHk9IjE4MCIgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIyMDAiIHJ4PSIyNCIvPjxyZWN0IHg9IjgwIiB5PSI1MDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48cmVjdCB4PSI4MCIgeT0iODIwIiB3aWR0aD0iNDgwIiBoZWlnaHQ9IjIwMCIgcng9IjI0Ii8+PHJlY3QgeD0iODAiIHk9IjExNDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48L2c+CjxnIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjMyIj48dGV4dCB4PSIzMjAiIHk9IjI5MiI+MDEg6KeC5a+fPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iNjEyIj4wMiDorrDlvZU8L3RleHQ+PHRleHQgeD0iMzIwIiB5PSI5MzIiPjAzIOaVtOeQhjwvdGV4dD48dGV4dCB4PSIzMjAiIHk9IjEyNTIiPjA0IOWbnumhvjwvdGV4dD48L2c+CjxwYXRoIGQ9Ik0zMjAgNDAwdjgwbTAgMjQwdjgwbTAgMjQwdjgwIiBzdHJva2U9IiMwMDdERkYiIHN0cm9rZS13aWR0aD0iOCIvPgo8dGV4dCB4PSIzMjAiIHk9IjE0ODAiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiMyMDIxMjQiPuetieavlOWujOaVtOaYvuekuu+8jOS4jeijgeWJquWGheWuuTwvdGV4dD48L2c+Cjwvc3ZnPgo="};
   /* SAMPLE_VAULT_END */
+
+
+  /* ---------- 单篇分享：仅 UI 演示，正文取当前编辑内容 ---------- */
+  var shareState = null, shareReturnFocus = null;
+  function closeShare() {
+    document.getElementById('shareMask').classList.add('hidden');
+    if (shareReturnFocus) { shareReturnFocus.focus(); shareReturnFocus = null; }
+  }
+  function openShare(scope, vaultId) {
+    if (scope === 'note' && !FILES[current]) { return; }
+    shareReturnFocus = document.activeElement;
+    var v = vaultById(vaultId || currentVault);
+    var file = currentFileRows().find(function (f) { return f.id === current; });
+    var text = ta.value;
+    var images = [];
+    text.replace(/!\[[^\]]*\]\(([^)]+)\)|!\[\[([^\]]+)\]\]/g, function (_, md, wiki) {
+      var path = (md || wiki).split('|')[0].replace(/^<|>$/g, '').trim();
+      if (!/^(https?:|data:|\/\/)/i.test(path) && /\.(png|jpe?g|gif|webp|svg|bmp)(?:[?#].*)?$/i.test(path) && images.indexOf(path) < 0) { images.push(path); }
+      return _;
+    });
+    var remote = v.type === 'git' ? String(v.remote || '').replace(/\.git$/, '').replace(/\/$/, '') : '';
+    if (remote && !/^https?:\/\//.test(remote)) { remote = 'https://' + remote; }
+    var link = scope === 'vault' ? remote : (remote && file ? remote + '/blob/' + encodeURIComponent(v.branch || 'main') + '/' + file.path.split('/').map(encodeURIComponent).join('/') : '');
+    // 导入示例没有真实远端文件清单，链接页明确按未验证示意展示。
+    shareState = { scope: scope, vault: v, name: scope === 'vault' ? v.name : FILES[current], text: text, images: images, link: link };
+    document.getElementById('shareMask').classList.remove('hidden');
+    renderShare(scope === 'vault' ? 'link' : 'formats');
+    document.querySelector('.share-box').focus();
+  }
+  function renderShare(step) {
+    var s = shareState;
+    document.getElementById('shareTitle').textContent = s.scope === 'vault' ? '分享知识库' : ({ formats: '分享笔记', image: '图片预览', file: '文件预览', link: '分享笔记链接', targets: '选择分享去向' }[step]);
+    document.getElementById('shareSubtitle').textContent = s.name + ' · ' + (s.scope === 'vault' ? '仓库首页链接' : '仅当前一篇笔记');
+    document.getElementById('shareBack').classList.toggle('hidden', step === 'formats' || (s.scope === 'vault' && step === 'link'));
+    var box = document.getElementById('shareBody');
+    if (step === 'formats') {
+      box.innerHTML = '<button class="share-option" data-share-step="image"><b>图片</b><span>分享排版长图<small>保留图文排版，发送前预览</small></span>›</button>'
+        + '<button class="share-option" data-share-step="file"><b>' + (s.images.length ? 'ZIP' : 'MD') + '</b><span>' + (s.images.length ? '笔记与本地图片' : 'Markdown 原文件') + '<small>' + (s.images.length ? '1 篇笔记 + ' + s.images.length + ' 张配图，解压后阅读' : '发送 .md 文件，方便继续编辑') + '</small></span>›</button>'
+        + (s.vault.type === 'git' ? '<button class="share-option" data-share-step="link"><b>链接</b><span>远端笔记网页<small>接收人打开仓库中的这一篇笔记</small></span>›</button>' : '<p class="share-caption">本地笔记保存在设备上，可分享图片或文件。</p>');
+    } else if (step === 'image') {
+      box.innerHTML = '<div class="share-paper md" id="sharePaper"></div><p class="share-caption">长图预览，可滚动检查全文；按当前编辑内容生成。</p><button class="share-primary" data-share-step="targets">分享图片</button>';
+      document.getElementById('sharePaper').innerHTML = renderMarkdown(s.text);
+      document.querySelectorAll('#sharePaper img').forEach(function (img) { img.removeAttribute('role'); img.removeAttribute('tabindex'); img.removeAttribute('title'); });
+      s.format = '图片';
+    } else if (step === 'file') {
+      var zip = s.images.length > 0;
+      s.format = zip ? 'ZIP 文件' : 'Markdown 文件';
+      box.innerHTML = '<h3>' + esc(s.name.replace(/\.md$/, '') + (zip ? '.zip' : '.md')) + '</h3><div class="share-paper"><strong>文件内容</strong><p>' + esc(s.name) + '</p>' + s.images.map(function (path, i) { return '<p>' + esc('images/' + (i + 1) + '_' + path.split('/').pop()) + '</p>'; }).join('') + '</div><p class="share-caption">' + (zip ? '仅包含本篇与引用的本地图片；包内调整相对路径。不会打包其他笔记，网络图片保留链接。' : '保留 Markdown 源码；网络图片保留链接。') + '</p><button class="share-primary" data-share-step="targets">分享' + (zip ? ' ZIP' : ' Markdown') + '</button>';
+    } else if (step === 'link') {
+      s.format = '链接';
+      box.innerHTML = '<input class="share-link" id="shareLinkValue" aria-label="远端链接示意" readonly><p class="share-caption">' + (s.scope === 'vault' ? '打开仓库首页，不导出整个知识库。' : '打开远端笔记；尚未推送的修改不会包含在链接中。仅支持已存在远端的笔记。') + ' 私有仓库需要接收人有访问权限。</p><p class="share-caption">原型按示例仓库拼接链接，尚未验证远端页面。</p><button class="share-primary" data-share-step="targets">分享链接</button>';
+      document.getElementById('shareLinkValue').value = s.link;
+    } else {
+      box.innerHTML = '<h3>' + esc(s.format) + '</h3><p class="share-caption">系统分享面板示意</p><div class="share-targets"><button data-share-target="微信">微信</button><button data-share-target="飞书">飞书</button></div><p id="shareResult" class="share-caption" role="status">选择去向预览交接反馈。</p>';
+    }
+    document.querySelector('.share-box').focus();
+  }
+  document.getElementById('shareNoteBtn').addEventListener('click', function () { openShare('note'); });
+  document.getElementById('shareVaultBtn').addEventListener('click', function () { openShare('vault'); });
+  document.getElementById('shareClose').addEventListener('click', closeShare);
+  document.getElementById('shareBack').addEventListener('click', function () { renderShare(shareState.scope === 'vault' ? 'link' : 'formats'); });
+  document.getElementById('shareMask').addEventListener('click', function (e) {
+    if (e.target.id === 'shareMask') { closeShare(); return; }
+    var step = e.target.closest('[data-share-step]');
+    if (step) { renderShare(step.getAttribute('data-share-step')); }
+    var target = e.target.closest('[data-share-target]');
+    if (target) { document.getElementById('shareResult').textContent = '演示：将' + shareState.format + '交给' + target.getAttribute('data-share-target') + '，由你选择联系人后发送。本页未发送内容。'; }
+  });
+  document.getElementById('shareMask').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.stopPropagation(); closeShare(); }
+    if (e.key === 'Tab') {
+      var items = Array.from(this.querySelectorAll('button:not(.hidden), input')).filter(function (el) { return !el.disabled && el.getClientRects().length; });
+      var first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && (document.activeElement === first || document.activeElement.classList.contains('share-box'))) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+  document.getElementById('demoLocalShare').addEventListener('click', function () {
+    switchVault('local'); current = 'stream'; loadFile(); setView('note', true); openShare('note');
+  });
+  document.getElementById('demoGitShare').addEventListener('click', function () {
+    if (!vaultById('分享示例')) { addImportedVault('分享示例', 'https://github.com/example/notes', 'main'); }
+    switchVault('分享示例'); setView('note', true); openShare('note');
+  });
 
   /* ---------- 文件树 ---------- */
   var current = 'welcome';
@@ -1887,13 +2010,22 @@
   });
 
 
+  function updateAppTitle() {
+    var view = body.getAttribute('data-view');
+    var vault = vaultById(currentVault);
+    var noteName = (FILES[current] || '').replace(/\.md$/, '');
+    document.getElementById('appTitle').textContent = VIEW_TITLE[view]
+      || (body.getAttribute('data-form') === 'sm' ? noteName : (sideHidden && vault && vault.name))
+      || '曜石笔记';
+  }
+
   function loadFile() {
     ta.value = CONTENT[current] || '';
     var name = FILES[current] || '';
     ta.disabled = !name;
+    document.getElementById('shareNoteBtn').disabled = !name;
     ta.placeholder = name ? '' : '从左侧创建或选择一篇笔记';
     document.getElementById('editName').textContent = name || '尚未选择笔记';
-    document.getElementById('appTitle').textContent = name ? name.replace(/\.md$/, '') : '曜石笔记';
     document.getElementById('saveState').innerHTML = name ? '<span class="dot"></span> 已保存' : '等待创建笔记';
     if (name) {
       var recent = RECENT[currentVault] || [];
@@ -2039,10 +2171,12 @@
   });
 
   function updateVaultUI() {
+    updateAppTitle();
     var v = vaultById(currentVault);
     if (!v) { return; }
+    document.getElementById('shareVaultBtn').classList.toggle('hidden', v.type !== 'git');
     document.getElementById('curVaultName').textContent = v.name;
-    document.getElementById('curVaultSub').textContent = v.dir + ' · ' + v.files + ' 篇';
+    document.getElementById('curVaultSub').textContent = (v.type === 'git' ? 'Git 库' : '本地库') + ' · ' + v.files + ' 篇';
     document.getElementById('stVault').textContent = (v.type === 'git')
       ? v.name + ' @ ' + (v.commit || '—') : v.name;
   }
@@ -2112,13 +2246,14 @@
         + '</div>'
         + '<div class="ops">'
         + (v.id === currentVault ? '' : '<button data-use="' + v.id + '">设为当前</button>')
-        + (git ? '<button data-sync="' + v.id + '">同步</button>' : '')
+        + (git ? '<button data-sync="' + v.id + '">同步</button><button data-share-vault="' + v.id + '">分享知识库</button>' : '')
         + '<button data-ren="' + v.id + '">改名</button>'
         + '<button class="btn-danger" data-del="' + v.id + '">' + (git ? '移除本地副本' : '删除') + '</button>'
         + '</div></div>';
     }
     box.innerHTML = html;
     bind(box, '[data-use]', 'use', function (id) { switchVault(id); renderVaultCards(); });
+    bind(box, '[data-share-vault]', 'share-vault', function (id) { openShare('vault', id); });
     bind(box, '[data-sync]', 'sync', function (id) { setView('sync', true); });
     bind(box, '[data-ren]', 'ren', function (id) { openDialog('rename', id); });
     bind(box, '[data-del]', 'del', function (id) { openDialog('delete', id); });
@@ -3019,6 +3154,7 @@
 
   function applyForm(f) {
     body.setAttribute('data-form', f);
+    updateAppTitle();
     body.setAttribute('data-side', sideHidden ? 'hidden' : 'shown');
     document.getElementById('stForm').textContent = viewportDescription();
     updateSettings();
@@ -3041,7 +3177,7 @@
       sidebar.style.display = sideHidden ? 'none' : 'flex';
       /* md 收起目录 → 腾出的那一栏给预览，仍是「一栏一屏」不跨折痕；lg 原本就有预览 */
       preview.style.display = (f === 'lg' || (f === 'md' && sideHidden)) ? 'flex' : 'none';
-      menu.style.display = sideHidden ? 'flex' : 'none';
+      menu.style.display = 'flex';
     }
     applySmMode();
     applySplit();
@@ -3304,9 +3440,10 @@
     if (body.getAttribute('data-view') === 'agent' && agentStores[currentVault]) { agentSession().draft = ag('agentInput').value; }
     closeQuick();
     closeImage();
+    closeShare();
+    document.getElementById('shareNoteBtn').classList.toggle('hidden', v !== 'note');
     body.setAttribute('data-view', v);
-    document.getElementById('appTitle').textContent = VIEW_TITLE[v]
-      || (FILES[current] || '').replace(/\.md$/, '') || '曜石笔记';
+    updateAppTitle();
     document.getElementById('noteView').classList.toggle('hidden', v !== 'note');
     /* 次级页面（库管理 / 导入仓库 / 设置）顶栏左键换成返回箭头 —— 否则进去了出不来 */
     document.getElementById('backBtn').classList.toggle('hidden', v === 'note');
