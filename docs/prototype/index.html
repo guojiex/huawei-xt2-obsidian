@@ -87,6 +87,11 @@
     --h-touch: 48px;
     --preview-image-max-ratio: .6; /* 原型起点，非 XT2 官方阈值 */
     --image-viewer-bg: rgba(0, 0, 0, .8);
+    --agent-nav-wide: 33.333%;
+    --agent-nav-compact: 50%;
+    --agent-library-width: 160px;
+    --agent-input-max-height: 144px;
+    --agent-focus-width: 2px;
     --tree-indent: 24px;   /* 文件树每级缩进：等于「caret 16 + 间距」，上级图标正对下级箭头 */
 
     /* 阴影（Z 轴层级） */
@@ -866,6 +871,60 @@
     font-family: var(--font-mono); font-size: var(--fs-body3);
     background: var(--bg-secondary); padding: 1px 6px; border-radius: var(--r-chip);
   }
+
+  /* 小艺工作区：lg 同时显示对话与文件；md/sm 共用导航槽。 */
+  .agent-page { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+  .agent-bar { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .agent-bar strong { font-size: var(--fs-body1); flex: 1; }
+  .agent-bar label { font-size: var(--fs-body3); }
+  .agent-bar select { max-width: var(--agent-library-width); }
+  .agent-notice { padding: var(--sp-2) var(--sp-4); background: var(--brand-bg); color: var(--text-secondary); font-size: var(--fs-body3); }
+  .agent-layout { flex: 1; min-height: 0; display: flex; position: relative; }
+  .agent-nav { flex: none; width: var(--agent-nav-wide); display: flex; position: relative; min-height: 0; background: var(--bg-secondary); border-right: 1px solid var(--line); }
+  .agent-tabs { position: absolute; left: 0; right: 0; top: 0; height: var(--h-touch); display: flex; gap: var(--sp-1); padding: 0 var(--sp-2); z-index: 1; background: var(--bg-secondary); border-bottom: 1px solid var(--line); }
+  .agent-threads, .agent-files { flex: 1; min-width: 0; overflow: auto; padding: var(--sp-3); padding-top: calc(var(--h-touch) + var(--sp-3)); }
+  .agent-files { border-left: 1px solid var(--line); }
+  .agent-chat { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .agent-chat-head { padding: var(--sp-3) var(--sp-4); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); border-bottom: 1px solid var(--line); }
+  .agent-chat-head strong { font-size: var(--fs-body1); overflow-wrap: anywhere; }
+  .agent-caption { font-size: var(--fs-body3); color: var(--text-secondary); line-height: 1.5; margin: var(--sp-2) 0; }
+  .agent-page button { min-height: var(--h-touch); height: auto; white-space: normal; overflow-wrap: anywhere; }
+  .agent-new { width: 100%; margin-bottom: var(--sp-3); }
+  .agent-thread { width: 100%; display: block; text-align: left; padding: var(--sp-3); margin-bottom: var(--sp-2); border-radius: var(--r-control); background: transparent; border: 1px solid transparent; }
+  .agent-thread.on { background: var(--brand-bg); color: var(--brand); }
+  .agent-file { margin: var(--sp-2) 0; padding: var(--sp-3); background: var(--bg-card); border-radius: var(--r-control); overflow-wrap: anywhere; font-size: var(--fs-body2); cursor: grab; }
+  .agent-file button { margin-top: var(--sp-2); }
+  .agent-search { display: block; font-size: var(--fs-body3); }
+  .agent-page input, .agent-page textarea, .agent-page select { box-sizing: border-box; min-width: 0; min-height: var(--h-touch); padding: var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-control); color: var(--text-primary); background: var(--bg-card); font: inherit; }
+  .agent-page input, .agent-page textarea { width: 100%; }
+  .agent-messages { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-4); }
+  .agent-message { margin-bottom: var(--sp-5); padding: var(--sp-4); border-radius: var(--r-card); background: var(--bg-secondary); overflow-wrap: anywhere; }
+  .agent-message.user { margin-left: var(--sp-6); background: var(--brand-bg); }
+  .agent-message p { white-space: pre-wrap; line-height: 1.7; font-size: var(--fs-body2); margin: var(--sp-3) 0; }
+  .agent-message strong { font-size: var(--fs-body3); }
+  .agent-message details { margin-top: var(--sp-3); font-size: var(--fs-body3); }
+  .agent-message pre { white-space: pre-wrap; overflow-wrap: anywhere; font: var(--fs-body3)/1.6 var(--font-mono); }
+  .agent-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+  .agent-compose { flex: none; margin: 0 var(--sp-4); padding: var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-card); background: var(--bg-card); }
+  .agent-compose.drag-over { outline: var(--agent-focus-width) solid var(--brand); background: var(--brand-bg); }
+  .agent-compose textarea { border: 0; resize: none; max-height: var(--agent-input-max-height); }
+  .agent-compose-foot { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); }
+  #agentSend { background: var(--brand); color: var(--on-brand); }
+  .agent-refs { display: flex; flex-wrap: wrap; gap: var(--sp-2); max-height: var(--agent-input-max-height); overflow: auto; }
+  .agent-ref { max-width: 100%; padding: var(--sp-2); border-radius: var(--r-control); background: var(--brand-bg); font-size: var(--fs-body3); overflow-wrap: anywhere; }
+  .agent-status { min-height: var(--sp-4); margin: var(--sp-2) var(--sp-4); font-size: var(--fs-body3); color: var(--text-secondary); overflow-wrap: anywhere; }
+  [data-form="lg"] .agent-nav { flex-direction: column; }
+  [data-form="lg"] .agent-threads { flex: 0 1 40%; min-height: 0; }
+  [data-form="lg"] .agent-files { padding-top: var(--sp-3); border-left: none; border-top: 1px solid var(--line); min-height: 0; }
+  [data-form="md"] #agentHideNav { display: none; }
+  [data-form="lg"] #agentHideNav, [data-form="lg"] #agentSwitchPane { display: none; }
+  [data-form="md"] .agent-nav { width: var(--agent-nav-compact); }
+  [data-form="md"] .agent-nav[data-tab="threads"] .agent-files, [data-form="sm"] .agent-nav[data-tab="threads"] .agent-files { display: none; }
+  [data-form="md"] .agent-nav[data-tab="files"] .agent-threads, [data-form="sm"] .agent-nav[data-tab="files"] .agent-threads { display: none; }
+  [data-form="sm"] .agent-nav { position: absolute; inset: 0; z-index: 45; width: auto; }
+  [data-form="sm"] .agent-nav:not(.open) { display: none; }
+  [data-form="sm"] .agent-bar strong { flex-basis: 100%; }
+
 </style>
 </head>
 <body data-form="lg" data-view="note" data-theme="light">
@@ -934,6 +993,7 @@
         <button class="icon-btn" id="searchBtn" title="快速切换 / 搜索" data-intro="v0.4" aria-label="快速切换 / 搜索">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
         </button>
+        <button class="icon-btn hidden" id="xiaoyiBtn" title="小艺笔记助手 · 交互设计" data-intro="v0.6" aria-label="小艺笔记助手">小艺</button>
         <button class="icon-btn" id="syncBtn" title="同步" data-intro="v0.3">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4.4V9h-4.6"/></svg>
         </button>
@@ -1040,6 +1100,27 @@
         </div>
 
         <!-- v0.2：删除兜底。原型只演示当前页面内的恢复交互，真机需持久化。 -->
+        <div id="agentView" class="agent-page hidden" data-intro="v0.6">
+          <div class="agent-bar"><strong>与小艺一起读笔记</strong><label>知识库 <select id="agentVault" aria-label="对话所属知识库"></select></label><button id="agentSwitchPane">对话 / 笔记</button></div>
+          <div class="agent-notice">交互演示 · 小艺尚未开通；对话回复是原创预设样本，笔记操作仅影响本页，刷新恢复。</div>
+          <div class="agent-layout">
+            <aside class="agent-nav" id="agentNav">
+              <div class="agent-tabs"><button id="agentThreadsTab" aria-pressed="true">对话</button><button id="agentFilesTab" aria-pressed="false">笔记</button><button id="agentHideNav">收起</button></div>
+              <section class="agent-threads"><button id="agentNew" class="agent-new">＋ 新对话</button><div id="agentThreads"></div></section>
+              <section class="agent-files"><label class="agent-search">查找笔记<input id="agentSearch" placeholder="文件名或路径"></label><p class="agent-caption">拖进输入框引用；也可点“引用”</p><div id="agentFiles"></div></section>
+            </aside>
+            <section class="agent-chat" aria-label="Agent 对话">
+              <div class="agent-chat-head"><div><strong id="agentTitle">读书讨论</strong><p class="agent-caption" id="agentScope"></p></div><button id="agentAttach">＋ 引用笔记</button></div>
+              <div id="agentMessages" class="agent-messages" role="log" aria-live="polite"></div>
+              <div class="agent-compose" id="agentDrop" tabindex="0" aria-label="对话输入区，可拖入当前库笔记">
+                <div id="agentRefs" class="agent-refs"></div>
+                <label class="agent-caption" for="agentInput">讨论内容</label><textarea id="agentInput" rows="3" placeholder="用自己的话说说你读懂了什么，或者把笔记拖到这里…"></textarea>
+                <div class="agent-compose-foot"><span class="agent-caption">Enter 发送 · Shift+Enter 换行</span><button id="agentSend">发送</button></div>
+              </div>
+              <p id="agentStatus" class="agent-status" role="status"></p>
+            </section>
+          </div>
+        </div>
         <div class="sync hidden" id="trashView" data-intro="v0.2">
           <div class="sub">当前库的已删除笔记可恢复。原型仅在本页面内存中保留；真机实现须在重启后仍能恢复。</div>
           <div id="trashItems"></div>
@@ -1281,6 +1362,7 @@
     <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、一行开源/仓库信息、更新日志</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。<b>包名行已删</b>（2026-10-21 拍板：那是开发期对 hdc 日志/签名用的诊断值，用户不需要；要查去工程配置或 hdc）。开源信息压成关于组底部一行小字（应用 MIT + 打包 isomorphic-git / CodeMirror 等 MIT 组件，保留最低成本版权声明）。更新日志只列<b>用户可感知</b>的变更，最新在上。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
+    <li><b>小艺对话工作区（v0.6）</b>：选择 v0.6 后查看该版 UI，进入库内多轮对话；三屏左侧上下显示对话与笔记列表，右侧两屏聊天，拖入或点击引用笔记。明确写入直接执行，消息内查看改动与撤销。回复为原创预设演示，小艺能力仍未开通，接入开发仍在外部依赖队列。</li>
     <li><b>图片限高与完整查看</b>：预览图片先按可视预览区的 60% 高度等比缩放，不裁剪；点击图片或按回车可看完整长图，关闭或 Esc 回到原笔记。60% 是原型起点，App 渲染器尚未同步实现。</li>
     <li><b>单屏顶栏沿用现状</b>：紧凑单行标题和 48px 热区搜索图标，不新增常驻搜索框或单独缩小字号。</li>
     <li><b>按版本看交互</b>：v0.4 是当前库文件名快切与最近打开；v1.1 增加当前库正文搜索。设计稿用内存样本演示，增量索引仍须按需求文档在真机实现。</li>
@@ -1312,6 +1394,7 @@
     for (var i = 0; i < nodes.length; i++) {
       nodes[i].classList.toggle('version-annotated', nodes[i].getAttribute('data-intro') === version);
     }
+    document.getElementById('xiaoyiBtn').classList.toggle('hidden', version !== 'v0.6' || body.getAttribute('data-view') !== 'note');
     var info = RELEASES[version];
     document.getElementById('releaseDetail').innerHTML = '<b>' + version + '</b> · ' + info[0]
       + ' · ' + info[1] + ' · <a href="../releases/' + version + '/需求文档.md">查看需求文档</a>';
@@ -1323,7 +1406,9 @@
     else if (version === 'v0.3') { setView('sync', true); }
     else if (version === 'v0.4') { setView('note', true); openQuick('name'); }
     else if (version === 'v0.5' || version === 'v0.6') {
-      switchVault('local'); current = version === 'v0.5' ? 'welcome' : 'idea'; loadFile(); setView('note', true);
+      if (body.getAttribute('data-view') === 'agent') { setView('note', true); }
+      switchVault('local'); current = version === 'v0.5' ? 'welcome' : 'reading_journal'; loadFile(); setView('note', true);
+      if (version === 'v0.6') { setView('agent', true); }
     }
     else if (version === 'v1.0') {
       setView('note', true);
@@ -1344,12 +1429,12 @@
 
   /* ---------- 数据 ---------- */
   /* SAMPLE_VAULT_BEGIN: generated by tools/build_sample_vault.py */
-  var VAULTS = [{"id": "local", "name": "本地笔记", "type": "local", "dir": "vaults/local", "files": 9}];
+  var VAULTS = [{"id": "local", "name": "本地笔记", "type": "local", "dir": "vaults/local", "files": 10}];
   var currentVault = 'local';
-  var TREES = {"local": [["dir", "00_开始", true, 0], ["file", "欢迎使用.md", false, 1, "welcome"], ["file", "快速上手.md", false, 1, "inbox"], ["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "stream"], ["file", "任务清单.md", false, 1, "todo"], ["dir", "20_样式", true, 0], ["file", "双链与嵌入.md", false, 1, "dataflow"], ["file", "属性与提示块.md", false, 1, "intimacy"], ["file", "公式与流程图.md", false, 1, "tob"], ["file", "样式支持清单.md", false, 1, "year2025"], ["dir", "30_小艺", true, 0], ["file", "可编辑练习.md", false, 1, "idea"]]};
-  var FILES = {"welcome": "欢迎使用.md", "inbox": "快速上手.md", "stream": "基础排版.md", "todo": "任务清单.md", "dataflow": "双链与嵌入.md", "intimacy": "属性与提示块.md", "tob": "公式与流程图.md", "year2025": "样式支持清单.md", "idea": "可编辑练习.md"};
-  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 518 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符"};
-  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 的相同行为仍待实现。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n"};
+  var TREES = {"local": [["dir", "00_开始", true, 0], ["file", "欢迎使用.md", false, 1, "welcome"], ["file", "快速上手.md", false, 1, "inbox"], ["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "stream"], ["file", "任务清单.md", false, 1, "todo"], ["dir", "20_样式", true, 0], ["file", "双链与嵌入.md", false, 1, "dataflow"], ["file", "属性与提示块.md", false, 1, "intimacy"], ["file", "公式与流程图.md", false, 1, "tob"], ["file", "样式支持清单.md", false, 1, "year2025"], ["dir", "30_小艺", true, 0], ["file", "可编辑练习.md", false, 1, "idea"], ["dir", "40_阅读", true, 0], ["file", "读书对话练习.md", false, 1, "reading_journal"]]};
+  var FILES = {"welcome": "欢迎使用.md", "inbox": "快速上手.md", "stream": "基础排版.md", "todo": "任务清单.md", "dataflow": "双链与嵌入.md", "intimacy": "属性与提示块.md", "tob": "公式与流程图.md", "year2025": "样式支持清单.md", "idea": "可编辑练习.md", "reading_journal": "读书对话练习.md"};
+  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 518 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符", "reading_journal": "样例 · 254 字符"};
+  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 的相同行为仍待实现。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n", "reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n"};
   var SAMPLE_ASSETS = {"50_Assets/笔记流程.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwIiB2aWV3Qm94PSIwIDAgNjQwIDE2MCI+PHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAiIHJ4PSIxNiIgZmlsbD0iI0YxRjNGNSIvPjxnIGZpbGw9IiMwMDdERkYiPjxyZWN0IHg9IjI0IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iMjQwIiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iNDU2IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9nPjxnIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjI0IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+PHRleHQgeD0iMTA0IiB5PSI4OSI+6K6w5b2VPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iODkiPuaVtOeQhjwvdGV4dD48dGV4dCB4PSI1MzYiIHk9Ijg5Ij7lm57pob48L3RleHQ+PC9nPjxwYXRoIGQ9Ik0xOTIgODBoNDBtMTc2IDBoNDAiIHN0cm9rZT0iIzAwN0RGRiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PC9zdmc+Cg==", "50_Assets/长图排版示例.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwMCIgdmlld0JveD0iMCAwIDY0MCAxNjAwIj4KPHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAwIiByeD0iMjQiIGZpbGw9IiNGMUYzRjUiLz4KPGcgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjx0ZXh0IHg9IjMyMCIgeT0iOTAiIGZvbnQtc2l6ZT0iMzYiIGZpbGw9IiMyMDIxMjQiPumVv+WbvuaOkueJiOekuuS+izwvdGV4dD4KPGcgZmlsbD0iIzAwN0RGRiI+PHJlY3QgeD0iODAiIHk9IjE4MCIgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIyMDAiIHJ4PSIyNCIvPjxyZWN0IHg9IjgwIiB5PSI1MDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48cmVjdCB4PSI4MCIgeT0iODIwIiB3aWR0aD0iNDgwIiBoZWlnaHQ9IjIwMCIgcng9IjI0Ii8+PHJlY3QgeD0iODAiIHk9IjExNDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48L2c+CjxnIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjMyIj48dGV4dCB4PSIzMjAiIHk9IjI5MiI+MDEg6KeC5a+fPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iNjEyIj4wMiDorrDlvZU8L3RleHQ+PHRleHQgeD0iMzIwIiB5PSI5MzIiPjAzIOaVtOeQhjwvdGV4dD48dGV4dCB4PSIzMjAiIHk9IjEyNTIiPjA0IOWbnumhvjwvdGV4dD48L2c+CjxwYXRoIGQ9Ik0zMjAgNDAwdjgwbTAgMjQwdjgwbTAgMjQwdjgwIiBzdHJva2U9IiMwMDdERkYiIHN0cm9rZS13aWR0aD0iOCIvPgo8dGV4dCB4PSIzMjAiIHk9IjE0ODAiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiMyMDIxMjQiPuetieavlOWujOaVtOaYvuekuu+8jOS4jeijgeWJquWGheWuuTwvdGV4dD48L2c+Cjwvc3ZnPgo="};
   /* SAMPLE_VAULT_END */
 
@@ -3112,9 +3197,10 @@
      syncUrl 走 replaceState，不触发本事件，无循环风险 */
   window.addEventListener('hashchange', function () { initFromUrl(); });
 
-  var VIEW_TITLE = { vaults: '笔记库', sync: '导入 Git 仓库', settings: '设置与关于', history: '版本记录', trash: '回收站' };
+  var VIEW_TITLE = { agent: '小艺对话', vaults: '笔记库', sync: '导入 Git 仓库', settings: '设置与关于', history: '版本记录', trash: '回收站' };
 
   function setView(v, syncBtns) {
+    if (body.getAttribute('data-view') === 'agent' && agentStores[currentVault]) { agentSession().draft = ag('agentInput').value; }
     closeQuick();
     closeImage();
     body.setAttribute('data-view', v);
@@ -3126,12 +3212,15 @@
     document.getElementById('menuBtn').classList.toggle('hidden', v !== 'note');
     document.getElementById('searchBtn').classList.toggle('hidden', v !== 'note');
     document.getElementById('syncBtn').classList.toggle('hidden', v !== 'note');
+    document.getElementById('xiaoyiBtn').classList.toggle('hidden', v !== 'note' || document.getElementById('releaseMark').value !== 'v0.6');
     document.getElementById('settingsBtn').classList.toggle('hidden', v === 'settings' || v === 'history');
     document.getElementById('syncView').classList.toggle('hidden', v !== 'sync');
     document.getElementById('vaultsView').classList.toggle('hidden', v !== 'vaults');
     document.getElementById('settingsView').classList.toggle('hidden', v !== 'settings');
     document.getElementById('historyView').classList.toggle('hidden', v !== 'history');
     document.getElementById('trashView').classList.toggle('hidden', v !== 'trash');
+    document.getElementById('agentView').classList.toggle('hidden', v !== 'agent');
+    if (v === 'agent') { renderAgent(); }
     if (v === 'vaults') { renderVaultCards(); }
     if (v === 'settings') { updateSettings(); }
     if (v === 'trash') { renderTrash(); }
@@ -3372,6 +3461,171 @@
   document.getElementById('btnPush').addEventListener('click', function () {
     showToast('v0.3 提交并推送入口示意；原型不连接远端', '', null);
   });
+
+  /* AGENT_DESIGN_BEGIN: offline conversation samples, no model or platform calls */
+  var agentStores = {}, agentActive = {}, agentSerial = 0, agentLastWrite = null;
+  function ag(id) { return document.getElementById(id); }
+  function agentEsc(value) { return esc(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+  function agentStatus(text) { ag('agentStatus').textContent = text; }
+  function agentSession() {
+    var store = agentStores[currentVault];
+    if (!store) {
+      var row = currentFileRows().find(function (r) { return r.id === 'reading_journal'; });
+      var refs = row ? [{ id: row.id, path: row.path, content: CONTENT[row.id] }] : [];
+      store = agentStores[currentVault] = [
+        { id: 'reading', title: '从读懂到会用', draft: '', refs: [], messages: [
+          { role: 'user', text: '这是我的读书笔记。我能复述概念，但遇到反例就说不清楚，你能追问我吗？', refs: refs },
+          { role: 'assistant', text: '先试着合上笔记，用一个新的例子解释“熟悉不等于理解”。再找一个反例：什么表现说明你只是记住了定义？\n\n你回答后，我们再一起检查边界，把可用的结论沉淀成笔记。', refs: refs }
+        ] },
+        { id: 'review', title: '下一轮阅读怎么安排', draft: '', refs: [], messages: [
+          { role: 'assistant', text: '可以带着一个问题开始：你这次最希望理解什么？把相关笔记拖进输入框，我们围绕它讨论。', refs: [] }
+        ] }
+      ];
+      agentActive[currentVault] = 'reading';
+    }
+    return store.find(function (s) { return s.id === agentActive[currentVault]; }) || store[0];
+  }
+  function agentRefAllowed(vault, id) {
+    return vault === currentVault && currentFileRows().some(function (r) { return r.id === id; });
+  }
+  function agentAddRef(vault, id) {
+    if (!agentRefAllowed(vault, id)) { agentStatus('只能引用本次对话所属知识库中的现有笔记。'); return; }
+    var session = agentSession();
+    if (!session.refs.includes(id)) { session.refs.push(id); }
+    renderAgentRefs(); agentStatus('已加入引用；发送时读取笔记内容。可以继续添加同库笔记。');
+    if (body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); }
+    ag('agentInput').focus();
+  }
+  function renderAgentRefs() {
+    ag('agentRefs').innerHTML = agentSession().refs.map(function (id) {
+      return '<button class="agent-ref" data-remove-ref="' + agentEsc(id) + '" aria-label="移除引用：' + agentEsc(FILES[id] || id) + '">▤ ' + agentEsc(FILES[id] || '笔记已移除') + ' ×</button>';
+    }).join('');
+  }
+  function renderAgentFiles() {
+    var query = ag('agentSearch').value.trim().toLocaleLowerCase();
+    var rows = currentFileRows().filter(function (r) { return r.path.toLocaleLowerCase().includes(query); });
+    ag('agentFiles').innerHTML = rows.map(function (r) {
+      return '<div class="agent-file" draggable="true" data-drag-note="' + agentEsc(r.id) + '"><div>' + agentEsc(r.path) + '</div><button data-add-ref="' + agentEsc(r.id) + '">引用到对话</button></div>';
+    }).join('') || '<p class="agent-caption">当前库没有匹配笔记。</p>';
+  }
+  function agentNav(tab) {
+    ag('agentNav').setAttribute('data-tab', tab);
+    ag('agentNav').classList.add('open');
+    ag('agentThreadsTab').setAttribute('aria-pressed', String(tab === 'threads'));
+    ag('agentFilesTab').setAttribute('aria-pressed', String(tab === 'files'));
+  }
+  function renderAgent() {
+    if (body.getAttribute('data-view') === 'agent') { ag('appTitle').textContent = '小艺对话'; }
+    var session = agentSession();
+    ag('agentVault').innerHTML = VAULTS.map(function (v) { return '<option value="' + agentEsc(v.id) + '"' + (v.id === currentVault ? ' selected' : '') + '>' + agentEsc(v.name) + '</option>'; }).join('');
+    ag('agentTitle').textContent = session.title;
+    ag('agentScope').textContent = vaultById(currentVault).name + ' · 仅使用本库与本段对话中明确引用的笔记';
+    ag('agentThreads').innerHTML = agentStores[currentVault].map(function (s) {
+      return '<button class="agent-thread' + (s === session ? ' on' : '') + '" data-session="' + agentEsc(s.id) + '">' + agentEsc(s.title) + '</button>';
+    }).join('');
+    ag('agentInput').value = session.draft;
+    renderAgentFiles(); renderAgentRefs();
+    ag('agentMessages').innerHTML = session.messages.map(function (m, i) {
+      var refs = (m.refs || []).map(function (r) { return '<button class="agent-ref" data-open-ref="' + agentEsc(r.id) + '">' + agentEsc(r.path) + '</button>'; }).join('');
+      var actions = m.role === 'assistant' ? '<div class="agent-actions"><button data-write="append" data-message="' + i + '"' + (!m.refs.length ? ' disabled' : '') + '>追加到引用笔记</button><button data-write="create" data-message="' + i + '">存为新笔记</button></div>' : '';
+      var result = m.result ? '<details open><summary>' + agentEsc(m.result.status) + ' · ' + agentEsc(m.result.path) + '</summary><p>修改前</p><pre>' + agentEsc(m.result.before || '（新笔记）') + '</pre><p>修改后</p><pre>' + agentEsc(m.result.after) + '</pre></details><div class="agent-actions"><button data-open-ref="' + agentEsc(m.result.id) + '">查看笔记</button><button data-undo="' + i + '"' + (m.result.undone ? ' disabled' : '') + '>撤销这次操作</button></div>' : '';
+      return '<article class="agent-message ' + m.role + '"><strong>' + (m.role === 'user' ? '你' : '小艺 · 演示回复') + '</strong><div>' + refs + '</div><p>' + agentEsc(m.text) + '</p>' + actions + result + '</article>';
+    }).join('');
+    ag('agentMessages').scrollTop = ag('agentMessages').scrollHeight;
+  }
+  function agentSend() {
+    var session = agentSession(), text = ag('agentInput').value.trim();
+    if (!text) { agentStatus('先写下你想讨论的问题。'); return; }
+    var refs = session.refs.map(function (id) {
+      if (!agentRefAllowed(currentVault, id)) { throw new Error('引用已失效，请移除后重新选择。'); }
+      var row = currentFileRows().find(function (r) { return r.id === id; });
+      return { id: id, path: row.path, content: CONTENT[id] };
+    });
+    session.messages.push({ role: 'user', text: text, refs: refs });
+    if (session.title === '新对话') { session.title = text.slice(0, 18); }
+    if (!refs.length) { refs = (session.messages.slice(0, -1).reverse().find(function (m) { return m.refs.length; }) || {}).refs || []; }
+    session.messages.push({ role: 'assistant', text: '【预设演示回复，未调用模型】\n我们把问题再具体一点：请用自己的话解释一个关键概念，举一个例子，再给一个可能推翻它的反例。\n\n这轮讨论可以按“我的解释 → 反例 → 修正后的结论 → 下一步行动”记录。下方按钮可直接把这段原创演示文字追加到第一篇引用笔记，或存为新笔记；操作后可查看改动并撤销。', refs: refs });
+    session.draft = ''; session.refs = []; renderAgent(); agentStatus('已展示一轮追问演示；真实对话能力尚未接入。');
+  }
+  function agentWrite(action, messageIndex) {
+    var session = agentSession(), m = session.messages[messageIndex];
+    if (!m || m.role !== 'assistant') { return; }
+    if (m.result && !m.result.undone) { agentStatus('这条回复已写入，请查看结果，避免重复写入。'); return; }
+    var id, before, after, path;
+    if (action === 'append') {
+      var ref = m.refs[0];
+      if (!ref || !agentRefAllowed(currentVault, ref.id)) { throw new Error('目标笔记已移除，请重新引用。'); }
+      id = ref.id; path = ref.path; before = CONTENT[id];
+      if (!currentFileRows().some(function (r) { return r.id === id && r.path === path; })) { throw new Error('引用笔记已改名或移动，请重新引用。'); }
+      if (id === current && ta.value !== before) { throw new Error('编辑区还有未保存内容，请先保存或重新引用。'); }
+      if (before !== ref.content) { throw new Error('笔记在引用后已变化。请重新引用并发送，再执行写入。'); }
+      after = before + '\n\n## 对话沉淀\n\n' + m.text + '\n';
+    } else {
+      var n = 1; path = '读书对话沉淀.md';
+      while (currentFileRows().some(function (r) { return r.path === path; })) { n++; path = '读书对话沉淀_' + n + '.md'; }
+      id = 'agent-note-' + (++agentSerial); before = ''; after = '# 读书对话沉淀\n\n' + m.text + '\n';
+      FILES[id] = path; META[id] = '对话演示'; TREES[currentVault].push(['file', path, false, 0, id]); vaultById(currentVault).files++;
+    }
+    CONTENT[id] = after;
+    m.result = { id: id, path: path, before: before, after: after, created: action === 'create', status: '已写入本页样本', vault: currentVault };
+    agentLastWrite = m.result;
+    if (current === id) { var pos = ta.scrollTop; loadFile(); ta.scrollTop = pos; }
+    renderAgent(); agentStatus('已直接执行；未弹二次确认。结果卡可查看改动或撤销。');
+  }
+  function agentUndo(index) {
+    var m = agentSession().messages[index], r = m && m.result;
+    if (!r || r !== agentLastWrite || r.undone || r.vault !== currentVault || !currentFileRows().some(function (row) { return row.id === r.id && row.path === r.path; }) || CONTENT[r.id] !== r.after || (r.id === current && ta.value !== r.after)) { throw new Error('已有后续修改或操作，不能撤销覆盖；请查看笔记。'); }
+    if (r.created) {
+      TREES[currentVault] = TREES[currentVault].filter(function (row) { return row[4] !== r.id; });
+      delete FILES[r.id]; delete META[r.id]; delete CONTENT[r.id]; vaultById(currentVault).files--;
+      if (current === r.id) { current = (currentFileRows()[0] || {}).id || ''; }
+    } else { CONTENT[r.id] = r.before; }
+    r.undone = true; r.status = '已撤销'; agentLastWrite = null; loadFile(); renderAgent(); agentStatus('已撤销最近一次笔记操作，对话保留。');
+  }
+  ag('xiaoyiBtn').addEventListener('click', function () { setView('agent', true); });
+  ag('agentNav').setAttribute('data-tab', 'threads');
+  ag('agentNew').addEventListener('click', function () {
+    agentSession(); var session = { id: 'chat-' + (++agentSerial), title: '新对话', messages: [], refs: [], draft: '' };
+    agentStores[currentVault].unshift(session); agentActive[currentVault] = session.id; renderAgent();
+    ag('agentNav').classList.remove('open'); ag('agentInput').focus(); agentStatus('新对话只属于当前知识库。');
+  });
+  ag('agentVault').addEventListener('change', function () {
+    agentSession().draft = ag('agentInput').value; switchVault(this.value); renderAgent(); agentStatus('已切换知识库，对话、草稿和引用各自隔离。首期不支持跨库联合对话。');
+  });
+  ag('agentInput').addEventListener('input', function () { agentSession().draft = this.value; });
+  ag('agentInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); try { agentSend(); } catch (err) { agentStatus(err.message); } } });
+  ag('agentSend').addEventListener('click', function () { try { agentSend(); } catch (err) { agentStatus(err.message); } });
+  ag('agentSearch').addEventListener('input', renderAgentFiles);
+  ag('agentThreadsTab').addEventListener('click', function () { agentNav('threads'); });
+  ag('agentFilesTab').addEventListener('click', function () { agentNav('files'); });
+  ag('agentAttach').addEventListener('click', function () { agentNav('files'); ag('agentSearch').focus(); });
+  ag('agentSwitchPane').addEventListener('click', function () { agentNav('threads'); });
+  ag('agentHideNav').addEventListener('click', function () { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); });
+  ag('agentView').addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (ag('agentNav').classList.contains('open') && body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); } else { setView('note', true); } } });
+  ag('agentView').addEventListener('click', function (e) {
+    var target = e.target.closest('button'); if (!target) { return; }
+    try {
+      if (target.hasAttribute('data-add-ref')) { agentAddRef(currentVault, target.getAttribute('data-add-ref')); }
+      if (target.hasAttribute('data-remove-ref')) { agentSession().refs = agentSession().refs.filter(function (id) { return id !== target.getAttribute('data-remove-ref'); }); renderAgentRefs(); }
+      if (target.hasAttribute('data-session')) { agentSession().draft = ag('agentInput').value; agentActive[currentVault] = target.getAttribute('data-session'); renderAgent(); ag('agentNav').classList.remove('open'); agentStatus(''); }
+      if (target.hasAttribute('data-open-ref')) { var id = target.getAttribute('data-open-ref'); if (!agentRefAllowed(currentVault, id)) { throw new Error('笔记已移除或不属于当前库。'); } current = id; loadFile(); setView('note', true); }
+      if (target.hasAttribute('data-write')) { agentWrite(target.getAttribute('data-write'), Number(target.getAttribute('data-message'))); }
+      if (target.hasAttribute('data-undo')) { agentUndo(Number(target.getAttribute('data-undo'))); }
+    } catch (err) { agentStatus(err.message); }
+  });
+  ag('agentFiles').addEventListener('dragstart', function (e) {
+    var row = e.target.closest('[data-drag-note]'); if (!row) { return; }
+    e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('application/x-yaoshi-note', JSON.stringify({ vault: currentVault, id: row.getAttribute('data-drag-note') }));
+  });
+  ag('agentDrop').addEventListener('dragover', function (e) { if (Array.from(e.dataTransfer.types).includes('application/x-yaoshi-note')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; this.classList.add('drag-over'); } });
+  ag('agentDrop').addEventListener('dragleave', function (e) { if (!this.contains(e.relatedTarget)) { this.classList.remove('drag-over'); } });
+  ag('agentDrop').addEventListener('drop', function (e) {
+    e.preventDefault(); this.classList.remove('drag-over');
+    try { var ref = JSON.parse(e.dataTransfer.getData('application/x-yaoshi-note')); agentAddRef(ref.vault, ref.id); }
+    catch (_) { agentStatus('请从当前库笔记列表拖入，外部文件或文本不作为笔记引用。'); }
+  });
+  /* AGENT_DESIGN_END */
+
 
   /* ---------- 初始化 ---------- */
   renderVaultMenu();
