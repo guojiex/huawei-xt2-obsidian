@@ -875,14 +875,16 @@
     <select id="releaseMark" aria-label="选择要查看的版本标注">
       <option value="v0.1">v0.1 · 三形态与多库</option>
       <option value="v0.2">v0.2 · 编辑、预览与回收站</option>
-      <option value="v0.3">v0.3 · Git 双向同步</option>
       <option value="v0.4">v0.4 · 文件名快切与最近打开</option>
       <option value="v0.5" selected>v0.5 · 共享样例库与渲染基线</option>
-      <option value="v0.6">v0.6 · 小艺本地操作（等待能力开通）</option>
       <option value="v1.0">v1.0 · 深色、性能与恢复验收</option>
       <option value="v1.1">v1.1 · 当前库全文搜索</option>
       <option value="v1.2">v1.2 · 双链与反链</option>
       <option value="v1.3">v1.3 · 图片、公式与 Mermaid</option>
+      <optgroup label="外部依赖 · 暂缓，不参与当前执行">
+        <option value="v0.6">v0.6 · 小艺（等待能力开通）</option>
+        <option value="v0.3">v0.3 · Git（等待鸿蒙回复）</option>
+      </optgroup>
     </select>
     <button id="releaseJump">查看该版 UI</button>
     <span class="hint">蓝框只标设计归属，不表示代码已交付；切换版本不会改“关于”里的包版本。</span>

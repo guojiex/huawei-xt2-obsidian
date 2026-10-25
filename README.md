@@ -4,7 +4,7 @@
 
 ## 共享样例库与当前优先级
 
-[sample_vault](sample_vault/README.md) 是原型、首次安装与渲染回归的共用内容源。修改 Markdown 后运行 `python3 tools/build_sample_vault.py`，用 `--check` 检查产物一致性。2026-10-25 排期：v0.5 样例与渲染基线 → 本地体验收口；v0.6 小艺等待用户开通能力，Git 继续 pending。
+[sample_vault](sample_vault/README.md) 是原型、首次安装与渲染回归的共用内容源。修改 Markdown 后运行 `python3 tools/build_sample_vault.py`，用 `--check` 检查产物一致性。2026-10-25 排期：v0.5 样例与渲染基线 → v1.0 本地体验收口 → v1.1 全文搜索 → v1.2 双链与反链 → v1.3 丰富 Markdown；小艺与 Git 统一排在末尾外部依赖队列，条件未解除前不领取。版本号不代表执行顺序。
 
 ## 版本记录
 
