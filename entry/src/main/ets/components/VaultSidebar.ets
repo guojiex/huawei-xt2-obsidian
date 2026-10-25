@@ -23,6 +23,8 @@ export struct VaultSidebar {
   @Link vaults: VaultEntry[];
   /** 当前库 id（显示名 = 目录名 = id） */
   @Prop currentVaultId: string = '';
+  /** 当前库内有效 Markdown 笔记数 */
+  @Prop noteCount: number = 0;
   /** 当前打开文件的库内相对路径（父级持有，树只画选中态） */
   @Prop currentFilePath: string = '';
   /**
@@ -172,6 +174,15 @@ export struct VaultSidebar {
     .shadow({ radius: 30, color: '#2E000000', offsetX: 0, offsetY: 10 })
   }
 
+  private vaultTypeLabel(): string {
+    for (let i: number = 0; i < this.vaults.length; i++) {
+      if (this.vaults[i].id === this.currentVaultId) {
+        return this.vaults[i].type === 'git' ? 'Git 库' : '本地库';
+      }
+    }
+    return '本地库';
+  }
+
   build() {
     Column() {
       // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset（原型 --sp-3 = 12）。
@@ -200,7 +211,7 @@ export struct VaultSidebar {
               .fontColor($r('app.color.text_primary'))
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text('vaults/' + this.currentVaultId)
+            Text(this.vaultTypeLabel() + ' · ' + this.noteCount + ' 篇')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_tertiary'))
               .maxLines(1)

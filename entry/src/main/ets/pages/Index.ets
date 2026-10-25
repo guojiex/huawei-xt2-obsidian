@@ -90,6 +90,8 @@ struct Index {
   @State vaults: VaultEntry[] = [];
   /** 当前库 id */
   @State currentVaultId: string = '';
+  /** 当前库内 Markdown 笔记数量（随注册表和文件树刷新） */
+  @State currentVaultNoteCount: number = 0;
   /** v0.4 快切面板及当前库候选/最近打开项 */
   @State quickSwitchOpen: boolean = false;
   @State quickSwitchFiles: string[] = [];
@@ -194,6 +196,19 @@ struct Index {
     const reg: VaultRegistry = VaultRegistry.get();
     this.vaults = reg.list();
     this.currentVaultId = reg.currentId();
+    this.refreshCurrentVaultNoteCount();
+  }
+
+  private refreshCurrentVaultNoteCount(): void {
+    this.currentVaultNoteCount = this.currentVaultId.length > 0
+      ? FileTree.allMarkdownFiles(VaultRegistry.get().vaultDirOf(this.currentVaultId)).length
+      : 0;
+  }
+
+  /** 文件树内容变化时同步更新计数，并通知侧栏重扫。 */
+  private refreshFileTree(): void {
+    this.refreshCurrentVaultNoteCount();
+    this.treeSeq++;
   }
 
   /** 档位变化：抽屉语义只在 sm；切到 md/lg 强制收抽屉，防止回 sm 时意外打开 */
@@ -285,6 +300,38 @@ struct Index {
   /** 当前库名（显示名 = 目录名 = id；注册表兜底） */
   private currentVaultName(): string {
     return this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）';
+  }
+
+  private currentFileName(): string {
+    if (this.currentFilePath.length === 0) {
+      return '';
+    }
+    return this.currentFilePath.substring(this.currentFilePath.lastIndexOf('/') + 1);
+  }
+
+  private currentNoteName(): string {
+    const name: string = this.currentFileName();
+    return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
+  }
+
+  private appBarTitle(): string {
+    if (this.topView === 'note') {
+      if (this.breakpoint === Breakpoint.SM) {
+        const noteName: string = this.currentNoteName();
+        return noteName.length > 0 ? noteName : '曜石笔记';
+      }
+      return this.sidebarCollapsed ? this.currentVaultName() : '曜石笔记';
+    }
+    if (this.topView === 'vaults') {
+      return '笔记库';
+    }
+    if (this.topView === 'trash') {
+      return '回收站';
+    }
+    if (this.topView === 'history') {
+      return '版本记录';
+    }
+    return this.topView === 'agent' ? 'Agent 对话' : '设置';
   }
 
   /**
@@ -619,7 +666,7 @@ struct Index {
       // 新笔记是空文件：先 flush 旧文件编辑，再指向新文件并加载空内容（loadFile 内部处理）
       void this.loadFile(actual);
       this.revealPath = actual;
-      this.treeSeq++;
+      this.refreshFileTree();
       if (this.breakpoint === Breakpoint.SM) {
         this.drawerOpen = false;
         this.smMode = 'edit';
@@ -646,7 +693,7 @@ struct Index {
       const actual: string = NoteService.createFolder(reg, this.currentVaultId, rel);
       // （2026-10-18 用户拍板：头部「＋」= 根目录入口，不再记忆上次目录）
       this.revealPath = actual;
-      this.treeSeq++;
+      this.refreshFileTree();
       if (this.breakpoint === Breakpoint.SM) {
         this.drawerOpen = false;
       }
@@ -676,7 +723,7 @@ struct Index {
       }
       NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
       this.revealPath = '';
-      this.treeSeq++;
+      this.refreshFileTree();
     } catch (error) {
       this.toastRegistryError('删除失败', error);
     }
@@ -711,7 +758,7 @@ struct Index {
       if (wasCurrent) {
         this.currentFilePath = '';
       }
-      this.treeSeq++;
+      this.refreshFileTree();
       this.trashSeq++;
       const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
       const snap: UndoSnap = { vaultId: this.currentVaultId, relPath: trashRel, wasCurrent: wasCurrent };
@@ -753,7 +800,7 @@ struct Index {
     }
     try {
       TrashService.restore(VaultRegistry.get(), snap.vaultId, snap.relPath);
-      this.treeSeq++;
+      this.refreshFileTree();
       this.trashSeq++;
       // 删的正是当时在编辑的那篇 → 撤销后重新加载（内容就是删除前 flush 落盘的那份）
       if (snap.wasCurrent && snap.vaultId === this.currentVaultId) {
@@ -771,7 +818,7 @@ struct Index {
     }
     try {
       TrashService.restore(VaultRegistry.get(), this.currentVaultId, relPath);
-      this.treeSeq++;
+      this.refreshFileTree();
       this.trashSeq++;
     } catch (error) {
       promptAction.showToast({ message: '原位置已有同名文件，请先处理重名' });
@@ -794,7 +841,7 @@ struct Index {
       this.ensureRecentOpenStore();
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
       this.retargetCurrent(relPath, newRel, isDir);
-      this.treeSeq++;
+      this.refreshFileTree();
     } catch (error) {
       this.toastRegistryError('重命名失败', error);
     }
@@ -812,7 +859,7 @@ struct Index {
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
       this.retargetCurrent(relPath, newRel, isDir);
       this.revealPath = newRel;
-      this.treeSeq++;
+      this.refreshFileTree();
     } catch (error) {
       this.toastRegistryError('移动失败', error);
     }
@@ -1045,12 +1092,12 @@ struct Index {
     .backgroundColor($r('app.color.bg_secondary'))
   }
 
-  /** 栏头：标题 + （单屏态才有的）编辑/预览切换。⚠️ $$ 按引用传参：按值传参时
+  /** 栏头：宽屏显示标题；sm 隐去标题，只保留编辑/预览切换。⚠️ $$ 按引用传参：按值传参时
    *  @Builder 不随状态刷新（实测：编辑区标题永远停在「源模式」，currentFilePath 变了不动） */
   @Builder
   PaneHead($$: PaneHeadParam) {
     Row() {
-      Text($$.title)
+      Text(this.breakpoint === Breakpoint.SM ? '' : $$.title)
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)
@@ -1166,7 +1213,7 @@ struct Index {
 
   /**
    * 顶栏（需求 2.7，贴合设计稿）：
-   *  - 笔记视图 = 汉堡（sm 抽屉 / md+lg 收起唤回）+ 标题（当前库名）+ 右上「同步 + 设置」图标；
+   *  - 笔记视图 = 汉堡（sm 抽屉 / md+lg 收起唤回）+ 形态对应标题 + 右上「同步 + 设置」图标；
    *  - 次级视图（库管理 / 设置与关于）= 左上角换返回箭头 + 标题「笔记库」/「设置与关于」，
    *    右上图标收敛（设计稿：同步图标仅在笔记视图显示、设置图标在设置视图隐藏）；
    *  - 库管理入口不放在顶栏（侧栏下拉「管理库…」+ 底部「管理库」已覆盖，避免重复）。
@@ -1178,17 +1225,15 @@ struct Index {
       if (this.topView !== 'note') {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
         this.IconButton('back', $r('app.color.text_primary'), (): void => {
-          this.topView = this.topView === 'history' ? 'settings' : 'note';
+          this.leaveSecondaryView();
         })
       } else {
         this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
           this.onHamburger();
         })
       }
-      // 原型 VIEW_TITLE：次级视图标题固定为视图名，不显示当前库名
-      Text(this.topView === 'note' ? this.currentVaultName()
-        : (this.topView === 'vaults' ? '笔记库'
-          : (this.topView === 'trash' ? '回收站' : (this.topView === 'history' ? '版本记录' : '设置与关于'))))
+      // 笔记视图标题随形态与目录栏显隐变化；次级视图固定显示页面名。
+      Text(this.appBarTitle())
         .fontSize(FontSize.s2)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
@@ -1248,6 +1293,7 @@ struct Index {
           asDrawer: true,
           vaults: this.vaults,
           currentVaultId: this.currentVaultId,
+          noteCount: this.currentVaultNoteCount,
           currentFilePath: this.currentFilePath,
           refreshSeq: this.treeSeq,
           revealPath: this.revealPath,
@@ -1315,6 +1361,7 @@ struct Index {
             asDrawer: false,
             vaults: this.vaults,
             currentVaultId: this.currentVaultId,
+            noteCount: this.currentVaultNoteCount,
             currentFilePath: this.currentFilePath,
             refreshSeq: this.treeSeq,
             revealPath: this.revealPath,
@@ -1424,7 +1471,7 @@ struct Index {
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      this.PaneHead({ title: this.currentFilePath.length > 0 ? this.currentFilePath : '源模式' })
+      this.PaneHead({ title: this.currentFilePath.length > 0 ? this.currentFileName() : '尚未选择笔记' })
 
       Stack() {
         // M0.5 spike：CodeMirror 6 跑在 Web 组件里（web/mdeditor → rawfile/mdeditor/index.html）。
