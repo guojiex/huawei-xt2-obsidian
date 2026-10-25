@@ -285,21 +285,35 @@
   /* ---------- 可拖拽分栏（仅 lg 三屏展开，2026-10-25 用户需求：仿微信） ---------- */
   /* md / sm 固定等分不拖（用户明确 2 屏不需要）；lg 收起目录栏时也不拖（两栏固定 2/3+1/3） */
   .splitter {
-    display: none; flex: none; width: 14px;
-    position: relative; z-index: 20; cursor: col-resize;
+    display: none; width: 14px;
+    /* 绝对定位浮在栏缝上：不占 flex 布局空间。曾作为 flex 项存在——两条 14px
+       把手把整行撑出容器 28px，B 被 .device 的 overflow:hidden 裁掉，看不见
+       也拖不到（2026-10-25 用户报告「右边不能动」，实测复现后修复） */
+    position: absolute; top: 0; bottom: 0; margin-left: -7px;
+    z-index: 20; cursor: col-resize;
     touch-action: none; background: transparent;
   }
-  [data-form="lg"]:not([data-side="hidden"]) .splitter { display: block; }
-  /* 中间把手：4vp 竖条，悬浮/拖动时拉长并点亮品牌色 */
+  /* 2026-10-25 设计改版（用户拍板「用 Navigation Split」）：
+     展开态只有目录|编辑一道缝有把手 —— 对应 Navigation Split 官方 dragBar 位，
+     编辑|预览 在 content 区固定等分不拖；收起态反过来，只有编辑|预览一道缝有
+     把手（自绘，视觉同官方）。任何时刻只有一根活把手。 */
+  [data-form="lg"]:not([data-side="hidden"]) #splitterA { display: block; }
+  [data-form="lg"][data-side="hidden"] #splitterB { display: block; }
+  /* 官方 dragBar 观感：1vp 细线（Navigation divider 默认 #33000000）+ 中央小圆钮 */
+  .splitter::before {
+    content: ''; position: absolute; left: 50%; top: 0; bottom: 0;
+    transform: translateX(-50%);
+    width: 1px; background: var(--line);
+  }
   .splitter::after {
     content: ''; position: absolute; left: 50%; top: 50%;
     transform: translate(-50%, -50%);
-    width: 4px; height: 40px; border-radius: var(--r-full);
+    width: 4px; height: 28px; border-radius: var(--r-full);
     background: var(--line-strong);
     transition: height var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
   }
-  .splitter:hover::after { height: 56px; background: var(--brand); }
-  .splitter.dragging::after { height: 64px; background: var(--brand); }
+  .splitter:hover::after { height: 40px; background: var(--brand); }
+  .splitter.dragging::after { height: 48px; background: var(--brand); }
   body.split-dragging { cursor: col-resize; user-select: none; }
 
   /* ---------- 侧栏收起（仅 md / lg，sm 用抽屉） ---------- */
@@ -1112,7 +1126,7 @@
               <button id="gotoTrash" data-intro="v0.2">回收站</button>
             </div>
           </aside>
-          <div class="splitter" id="splitterA" title="拖动调整目录栏宽度（双击恢复等分）"></div>
+          <div class="splitter" id="splitterA" title="拖动调整目录栏宽度（Navigation 官方拖动条 · 双击恢复等分）"></div>
 
           <div class="editor-pane" id="editorPane">
             <div class="pane-head" data-intro="v0.2">
@@ -1140,7 +1154,7 @@
             <div class="md" id="md"></div>
             <div class="backlinks hidden" id="backlinksPanel"></div>
           </div>
-          <div class="splitter" id="splitterB" title="拖动调整编辑 / 预览宽度（双击恢复等分）"></div>
+          <div class="splitter" id="splitterB" title="拖动调整编辑 / 预览宽度（收起目录栏时才出现 · 双击恢复等分）"></div>
         </div>
 
         <!-- 同步视图 -->
@@ -1244,7 +1258,7 @@
 <div class="settings-tabs" role="tablist" aria-label="设置分类"><button id="settings-tab-general" role="tab" aria-controls="settings-general" aria-selected="true" tabindex="0" data-settings-tab="general">通用</button><button id="settings-tab-agent" role="tab" aria-controls="settings-agent" aria-selected="false" tabindex="-1" data-settings-tab="agent">Agent</button><button id="settings-tab-data" role="tab" aria-controls="settings-data" aria-selected="false" tabindex="-1" data-settings-tab="data">数据</button><button id="settings-tab-about" role="tab" aria-controls="settings-about" aria-selected="false" tabindex="-1" data-settings-tab="about">关于</button></div><section id="settings-general" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-general"><div class="set-group">
             <div class="set-head">布局（三屏分栏，v1.0）</div>
             <div class="set-row"><span>当前栏宽</span><code id="setSplit">目录 33.3% · 编辑 33.3% · 预览 33.3%</code></div>
-            <div class="set-row"><span>三屏展开时拖动两个分栏中间的把手改宽度（双击把手快速恢复）；拖后的宽度会记住，刷新不丢。</span></div>
+            <div class="set-row"><span>三屏展开时，目录栏右侧把手（Navigation 官方拖动条）调目录宽，编辑 / 预览固定等分；收起目录栏后，编辑 / 预览中间的把手才可调。双击把手快速恢复；拖后的宽度会记住，刷新不丢。</span></div>
             <button id="resetSplitBtn">恢复等分栏宽</button>
           </div><div class="set-group">
             <div class="set-head">诊断（真机校准用）</div>
@@ -1436,11 +1450,10 @@
       这是物理约束，不是布局没调好：折痕位置硬件固定，要真正不跨折痕就得按 379/330/352 分栏（即动态分栏，已决策不做）。</li>
     <li><b>折痕位置已按真机反推</b>：设计稿里双屏折痕在 53.45%（379/709）、三屏在 35.72%（379/1061）与 66.82%（709/1061），
       —— 与早先「折痕 = 等分点」的假设解耦，两个位置现在是<b>分开画的两件事</b>：等分是布局，折痕是硬件。</li>
-    <li><b>分栏可以拖着改宽（仅 lg 三屏展开，2026-10-25 用户需求：仿微信）</b>：三栏展开时两个分栏中间各有一个 14vp 热区的把手，<b>拖着走实时改宽</b>。<br>
-      <b>松手时距折痕 16vp 内自动吸附</b>到折痕位置（35.72% / 66.82%）—— 既满足「拖动改宽」，又不破坏「栏边界压折痕」原则；
-      拖到折痕以外的位置不拦截，折痕线<b>标红警示</b>（用户主动选择即接受）。<b>每栏最小 18%</b>（约 190vp，目录树仍可用）。<br>
-      <b>双击把手恢复等分</b>（拖乱了的一键回家）；设置页「布局」组也有「恢复等分栏宽」按钮，并显示当前栏宽。<b>拖后的宽度会记住</b>（刷新不丢；App 侧按 lg 单独记一份进 preferences）。md / sm <b>没有</b>这个把手（用户明确 2 屏不需要，固定等分）；lg 收起目录栏（两栏态）也不拖。<br>
-      📌 需求登记在 <code>docs/requirements_backlog.md</code> D 节，<b>已分配 v1.0</b>（§3-6，随 MVP 完结与三形态真机回归验收）；持久化与重置入口均已拍板落地。</li>
+    <li><b>分栏可以拖着改宽（2026-10-25 用户拍板：展开态用 Navigation Split）</b>：<b>三屏展开时</b>只有目录栏右侧一个把手 —— 对应 ArkTS 侧 <code>Navigation</code> 分栏模式的<b>官方拖动条</b>（<code>enableDragBar(true)</code>，微信 / 华为备忘录同款），连续拖拽实时改宽、范围约 <code>navBarWidthRange [233vp, 488vp]</code>；<b>编辑 / 预览在内容区固定等分，中间没有把手</b>。<br>
+      <b>收起目录栏后</b>（两栏态）反过来：编辑 / 预览中间出现把手才可拖（自绘 overlay，视觉与官方一致：1vp 细线 + 中央圆钮），保留<b>松手距折痕 16vp 吸附</b>（66.82%）与每栏最小 18%；拖到跨折痕位置不拦截，折痕线<b>标红警示</b>。<br>
+      <b>双击把手恢复等分</b>（拖乱了的一键回家）；设置页「布局」组也有「恢复等分栏宽」按钮，并显示当前栏宽。<b>拖后的宽度会记住</b>（刷新不丢；App 侧目录宽进 preferences）。md / sm <b>没有</b>把手（用户明确 2 屏不需要，固定等分）。<br>
+      📌 需求登记在 <code>docs/requirements_backlog.md</code> D 节，<b>已分配 v1.0</b>（§3-6，随 MVP 完结与三形态真机回归验收）；持久化与重置入口均已拍板落地。展开态跟随官方组件行为（无吸附）是自觉取舍：官方 dragBar 不提供吸附回调。</li>
     <li><b>URL 带着当前页面状态，可分享（2026-10-25）</b>：形态 / 视图 / 目录栏收起 / 编辑预览模式 / 主题都会实时写进地址栏 hash（<code>#f=lg&amp;v=note&amp;side=shown&amp;m=edit&amp;t=light</code>）。<br>
       复制地址栏、或点控件区「<b>复制当前页面链接</b>」，对方打开即复现同一画面（含深色模式与单屏预览态）；手动改 hash / 浏览器前进后退同样即时生效。<br>
       拖拽出来的栏宽<b>不进</b> URL —— 那是临时手感，不是要分享的状态。</li>
@@ -3220,13 +3233,15 @@
     });
   }
 
-  /* 各栏实际占的区间（百分比）：md 恒等分；lg 收起时 2/3+1/3；
-     lg 三栏展开时读 splitLg —— 分隔条拖到这里，折痕 crossed 跟着实时重算 */
+  /* 各栏实际占的区间（百分比）：md 恒等分；lg 收起时读 editW（编辑|预览可拖）；
+     lg 展开时目录 = sideW，编辑|预览均分剩余（固定）—— 分隔条拖到这里，
+     折痕 crossed 跟着实时重算 */
   function currentSpans(f) {
     if (f === 'md') { return [[0, 50], [50, 100]]; }
     if (f === 'lg') {
-      if (sideHidden) { return [[0, 66.666], [66.666, 100]]; }
-      return [[0, splitLg[0]], [splitLg[0], splitLg[1]], [splitLg[1], 100]];
+      if (sideHidden) { return [[0, editW], [editW, 100]]; }
+      var mid = (100 + sideW) / 2;
+      return [[0, sideW], [sideW, mid], [mid, 100]];
     }
     return [];
   }
@@ -3242,7 +3257,7 @@
        ⚠️ 与下面的等分栏边界（50 / 33.33 / 66.67）不是一回事 —— 偏差就是 A6 登记的那 25vp */
     var pts = (f === 'lg') ? [35.72, 66.82] : (f === 'md' ? [53.45] : []);
     /* 各栏实际占的区间：折痕落在区间内部（不是边界）就是被内容横跨。
-       md 恒等分；lg 收起时 2/3+1/3；lg 三栏展开时读 splitLg（拖拽分隔条实时变） */
+       md 恒等分；lg 收起 / 展开分别读 editW / sideW（拖拽分隔条实时变） */
     var spans = currentSpans(f);
 
     function isCrossed(p) {
@@ -3267,42 +3282,45 @@
   }
 
   /* ---------- 可拖拽分栏（仅 lg 三屏展开，2026-10-25 用户需求：仿微信） ---------- */
-  /* splitLg[0] = 目录栏右边界（%），splitLg[1] = 编辑区右边界（%）。
-     折痕（35.72 / 66.82）不强制对齐：松手 1.5% 内弱吸附；拖到跨折痕的位置时
-     drawHinges 会把折痕标红警示（用户主动选择，接受）。md / sm 不走这里。 */
-  var splitLg = [33.333, 66.666];
-  var SPLIT_MIN = 18;    /* 每栏最小占比（18% × 1061vp ≈ 190vp，目录树仍可用） */
+  /* 2026-10-25 设计改版（用户拍板「展开态用 Navigation Split」）：
+     sideW = 目录栏右边界 %（展开态，对应 Navigation 的 navBarWidth，官方 dragBar 连续
+              拖拽、范围由 navBarWidthRange 限定、**无折痕吸附**——官方组件限制）；
+     editW = 编辑区右边界 %（仅 lg 收起态：目录不占位后 编辑|预览 两栏，自绘把手，
+              保留折痕弱吸附/最小钳制/双击重置）。
+     两个值互相独立：展开动目录、收起动编辑预览，任何时刻只有一个在调。
+     md / sm 不走这里（固定等分）。 */
+  var sideW = 33.333;
+  var editW = 66.666;
+  var SIDE_MIN = 22;    /* 目录栏范围 ≈ 官方 navBarWidthRange [233vp, 488vp]（1061vp 屏） */
+  var SIDE_MAX = 46;
+  var SPLIT_MIN = 18;   /* 收起态编辑栏最小占比（18% ≈ 190vp） */
   var SPLIT_MAX = 82;
-  var SPLIT_SNAP = 1.5;  /* 吸附阈值 %（约 16vp） */
+  var SPLIT_SNAP = 1.5; /* 吸附阈值 %（约 16vp） */
   var SPLIT_STORE_KEY = 'xt2-proto-split';  /* 拖后宽度持久化（2026-10-25 用户拍板） */
 
-  function clampPair(a, b) {
-    a = Math.max(SPLIT_MIN, Math.min(SPLIT_MAX - SPLIT_MIN, a));
-    b = Math.max(a + SPLIT_MIN, Math.min(SPLIT_MAX, b));
-    return [a, b];
-  }
-  function snapPair(a, b) {
-    if (Math.abs(a - 35.72) <= SPLIT_SNAP) { a = 35.72; }
-    if (Math.abs(b - 66.82) <= SPLIT_SNAP) { b = 66.82; }
-    return clampPair(a, b);
+  function clampSide(v) { return Math.max(SIDE_MIN, Math.min(SIDE_MAX, v)); }
+  function clampEdit(v) { return Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, v)); }
+  function snapEdit(v) {
+    if (Math.abs(v - 66.82) <= SPLIT_SNAP) { v = 66.82; }
+    return clampEdit(v);
   }
   /* 持久化：拖后宽度刷新不丢；localStorage 被禁（个别浏览器 file:// 场景）时静默降级 */
   function saveSplit() {
-    try { localStorage.setItem(SPLIT_STORE_KEY, JSON.stringify(splitLg)); } catch (e) { /* 降级：不持久 */ }
+    try { localStorage.setItem(SPLIT_STORE_KEY, JSON.stringify({ s: sideW, e: editW })); } catch (e) { /* 降级：不持久 */ }
   }
   function loadSplit() {
     try {
       var raw = localStorage.getItem(SPLIT_STORE_KEY);
       if (!raw) { return; }
-      var arr = JSON.parse(raw);
-      if (Array.isArray(arr) && arr.length === 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
-        splitLg = clampPair(arr[0], arr[1]);
+      var o = JSON.parse(raw);
+      if (o && typeof o.s === 'number' && typeof o.e === 'number') {
+        sideW = clampSide(o.s); editW = clampEdit(o.e);
       }
     } catch (e) { /* 解析失败用默认等分 */ }
   }
-  /* 重置：设置页入口 + 双击把手共用 */
+  /* 重置：设置页入口 + 双击把手共用（两个值都回等分、都清持久化） */
   function resetSplit() {
-    splitLg = [33.333, 66.666];
+    sideW = 33.333; editW = 66.666;
     try { localStorage.removeItem(SPLIT_STORE_KEY); } catch (e) { /* 同上 */ }
     applySplit();
     if (body.getAttribute('data-form') === 'lg') { drawHinges('lg'); }
@@ -3313,25 +3331,40 @@
     var sidebar = document.getElementById('sidebar');
     var editor = document.getElementById('editorPane');
     var preview = document.getElementById('previewPane');
-    if (f === 'lg' && !sideHidden && !viewportRotated) {
-      sidebar.style.width = splitLg[0] + '%';
-      editor.style.width = (splitLg[1] - splitLg[0]) + '%';
-      editor.style.flex = 'none';
-      preview.style.width = (100 - splitLg[1]) + '%';
-      preview.style.flex = 'none';
+    var spA = document.getElementById('splitterA'), spB = document.getElementById('splitterB');
+    if (f === 'lg' && !viewportRotated) {
+      if (!sideHidden) {
+        /* 展开态（三栏）：目录 = sideW（官方 dragBar 拖它）；
+           编辑 | 预览 均分剩余空间、固定不动（内容区内部，无把手） */
+        sidebar.style.width = sideW + '%';
+        var rest = (100 - sideW) / 2;
+        editor.style.width = rest + '%'; editor.style.flex = 'none';
+        preview.style.width = rest + '%'; preview.style.flex = 'none';
+        spA.style.left = sideW + '%';
+      } else {
+        /* 收起态（两栏）：目录不占位，编辑 | 预览 = editW（自绘把手拖它） */
+        sidebar.style.width = '';
+        editor.style.width = editW + '%'; editor.style.flex = 'none';
+        preview.style.width = (100 - editW) + '%'; preview.style.flex = 'none';
+        spB.style.left = editW + '%';
+      }
     } else if (f !== 'sm') {
       /* 回到 CSS 默认（md 50 / lg 收起 66.666）。
          sm 跳过：抽屉宽度 300px 由 applyForm 管，这里清掉会打架 */
       sidebar.style.width = '';
       editor.style.width = ''; editor.style.flex = '';
       preview.style.width = ''; preview.style.flex = '';
+      spA.style.left = '';
+      spB.style.left = '';
     }
     /* 设置页「当前栏宽」行同步（元素常驻 DOM，视图隐藏也能更新） */
     var el = document.getElementById('setSplit');
     if (el) {
-      el.textContent = (f === 'lg' && !sideHidden && !viewportRotated)
-        ? '目录 ' + splitLg[0].toFixed(1) + '% · 编辑 ' + (splitLg[1] - splitLg[0]).toFixed(1) + '% · 预览 ' + (100 - splitLg[1]).toFixed(1) + '%'
-        : '仅三屏展开可调（当前固定等分）';
+      el.textContent = (f === 'lg' && !viewportRotated)
+        ? (sideHidden
+          ? '编辑 ' + editW.toFixed(1) + '% · 预览 ' + (100 - editW).toFixed(1) + '%'
+          : '目录 ' + sideW.toFixed(1) + '% · 编辑 ' + ((100 - sideW) / 2).toFixed(1) + '% · 预览 ' + ((100 - sideW) / 2).toFixed(1) + '%')
+        : '仅三屏可调（当前固定等分）';
     }
   }
 
@@ -3341,32 +3374,36 @@
       var r = noteViewRect();
       return (clientX - r.left) / r.width * 100;
     }
-    function draggingAllowed() {
-      return body.getAttribute('data-form') === 'lg' && !sideHidden && !viewportRotated;
+    /* 两根把手各管一摊、互不同时出现（显示条件见 CSS）：
+       A = 展开态目录栏宽（对应官方 navBarWidth，连续拖拽不吸附）
+       B = 收起态编辑栏宽（自绘，保留折痕吸附） */
+    function activeSplitter(idx) {
+      var f = body.getAttribute('data-form');
+      if (f !== 'lg' || viewportRotated) { return null; }
+      return (idx === 0) ? (sideHidden ? null : 'side') : (sideHidden ? 'edit' : null);
     }
-    var drag = null; /* { idx, startPct, base:[a,b] } */
+    var drag = null; /* { idx, which, startPct, base } */
     var nodes = document.querySelectorAll('.splitter');
     for (var i = 0; i < nodes.length; i++) {
       (function (sp, idx) {
         sp.addEventListener('pointerdown', function (e) {
-          if (!draggingAllowed()) { return; }
+          if (!activeSplitter(idx)) { return; }
           e.preventDefault();
           sp.setPointerCapture(e.pointerId);
           sp.classList.add('dragging');
           body.classList.add('split-dragging');
-          drag = { idx: idx, startPct: pctOf(e.clientX), base: splitLg.slice() };
+          drag = { idx: idx, which: activeSplitter(idx), startPct: pctOf(e.clientX), base: (idx === 0 ? sideW : editW) };
         });
         sp.addEventListener('pointermove', function (e) {
           if (!drag || drag.idx !== idx) { return; }
-          var pair = splitLg.slice();
-          pair[drag.idx] = drag.base[drag.idx] + (pctOf(e.clientX) - drag.startPct);
-          splitLg = clampPair(pair[0], pair[1]);
+          var v = drag.base + (pctOf(e.clientX) - drag.startPct);
+          if (drag.which === 'side') { sideW = clampSide(v); } else { editW = clampEdit(v); }
           applySplit();
           drawHinges('lg'); /* 栏宽变了，折痕 crossed 标红跟着实时重算 */
         });
         function endDrag(e) {
           if (!drag || drag.idx !== idx) { return; }
-          splitLg = snapPair(splitLg[0], splitLg[1]);
+          if (drag.which === 'edit') { editW = snapEdit(editW); } /* 收起态才吸附折痕 66.82；展开态官方行为=连续无吸附 */
           applySplit();
           drawHinges('lg');
           saveSplit();   /* 拖后宽度持久化（2026-10-25 用户拍板） */
@@ -3379,7 +3416,7 @@
         sp.addEventListener('pointercancel', endDrag);
         /* 双击分隔条 = 恢复等分（拖乱了一键回家；与设置页「恢复等分栏宽」同一动作） */
         sp.addEventListener('dblclick', function () {
-          if (!draggingAllowed()) { return; }
+          if (!activeSplitter(idx)) { return; }
           resetSplit();
         });
       })(nodes[i], i);
