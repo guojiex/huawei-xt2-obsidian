@@ -625,6 +625,9 @@ ohpm publish yourlib.har
 
 ## F 组：小艺智能体与端侧意图（Insight Intent）
 
+> 2026-10-25 范围调整见 [v0.6 需求](../releases/v0.6/需求文档.md)：首期本地操作不调用 Web/git，F6 的冲突仅约束未来自动 commit；F-A/F-B 等接口置信度未因此改变。新的接入核实提示词见 [提问](prompts/2026-10-25_API24_小艺本地笔记操作接入核实.md)。
+
+
 > 来源：[`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md)（2026-10-17）
 > ⚠️ **本组所有结论均未附文档链接**，落码前必须在 DevEco 用 `@kit.*` 补全复核接口名与签名。
 > **不要在别的文档里复制本组结论**，一律链接过来 —— 下面标 ⚠️ 的随时可能被推翻。
@@ -1248,3 +1251,18 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 | **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ 文本注入 / ArkWeb 渲染在模拟器全不可用（**L-8**）；编辑器/输入法验证一律真机 | 已定案 |
 | **列表项三档左滑** | ✅ `ListItem.swipeAction` + `SwipeActionItem.actionAreaDistance/onAction`（`edgeEffect: Spring`），签名 API 24 已核实（**L-9**）；文件夹不注册 onAction 即无第三档 | 已落地（FileTreeView，手感待真机） |
 | **回收站位置** | ✅ `vaults/<库>/.trash/` 镜像原相对路径：FileTree 天然过滤点前缀、库 rename/delete 自动带着走、恢复目标=镜像路径无需元数据；**v0.3 Git 同步须给 `.trash` 配 .gitignore** | 已落地（TrashService） |
+
+
+## M 组：设置内重置数据（2026-10-25）
+
+### M1 ApplicationContext.clearUpApplicationData ✅ SDK 明确 / ⚠️ 设备未验
+
+本机 SDK `ets/api/application/ApplicationContext.d.ts`：`clearUpApplicationData(): Promise<void>`，`@since 11`、Stage、主线程调用；声明明确清理应用文件路径数据并撤销应用请求的用户授权，**会终止应用进程，终止后后续回调不再触发**。不是 `restartApp()`，不应在成功回调中恢复库或提示“完成”；产品要求用户重新打开，由首装链路恢复样例。
+
+声明异常：16000011（context 不存在）、16000050（内部错误）。无新增权限要求。此处是 SDK 契约核实，尚未实际清空模拟器或 XT2；它不证明设备清理/重开结果。
+
+### M2 Git 凭据清理 ✅ SDK 签名 / ⚠️ 运行时未验
+
+`ets/api/@ohos.security.asset.d.ts`：`querySync` 与 `removeSync` 自 API 12；查询用 `ReturnType.ATTRIBUTES`（只读属性，不取 SECRET），按返回的 ALIAS 删除本应用 `vault:*:token` 条目，包含 pending-import。24000002 表示不存在，视为无需删除；其他错误中止本次重置并展示失败。不要假定 M1 自动清除了 AssetStore 的安全资产，因此显式清理当前应用的 Git 别名后再调用 M1。
+
+全链路逻辑由 mock 单测验证，禁止为了测试而清空已有设备数据。用户在 App 内主动确认的重置功能与主动制造崩溃实验不同。

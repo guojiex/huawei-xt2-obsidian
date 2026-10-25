@@ -56,6 +56,7 @@ export class VaultRegistry {
   private store: preferences.Preferences | null = null;
   private state: VaultRegistryState = { vaults: [], currentVaultId: '' };
   private initialized: boolean = false;
+  private sampleInstallPending: boolean = false;
 
   private constructor(context: common.UIAbilityContext) {
     this.context = context;
@@ -105,9 +106,17 @@ export class VaultRegistry {
     } else {
       // 首启：无注册表 → 建默认库 vaults/local
       this.state = { vaults: [], currentVaultId: '' };
+      this.sampleInstallPending = !fileIo.accessSync(this.resolver.vaultDir(DEFAULT_VAULT_ID));
       this.createDefaultVault();
     }
     this.initialized = true;
+  }
+
+  /** One-shot first-install grant; existing directories and later launches are never seeded. */
+  consumeSampleInstall(): boolean {
+    const pending: boolean = this.sampleInstallPending;
+    this.sampleInstallPending = false;
+    return pending;
   }
 
   /** 库列表（返回拷贝，调用方改动不影响注册表内部状态）。 */

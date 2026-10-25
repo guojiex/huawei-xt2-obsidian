@@ -4,6 +4,7 @@ import { display, window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { breakpointFromWidthVp } from '../model/Breakpoint';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { SampleVaultInstaller } from '../model/SampleVaultInstaller';
 
 const DOMAIN = 0x0000;
 const TAG = 'EntryAbility';
@@ -32,7 +33,7 @@ export default class EntryAbility extends UIAbility {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onWindowStageCreate');
 
     // 库注册表单例初始化：必须先于 loadContent，页面侧才能直接 VaultRegistry.get()
-    VaultRegistry.initialize(this.context);
+    const registry: VaultRegistry = VaultRegistry.initialize(this.context);
 
     // ===== 断点系统（T007）=====
     // 断点只由窗口宽度（vp）计算：window.on('windowSizeChange') + px2vp() 是官方推荐的
@@ -55,12 +56,16 @@ export default class EntryAbility extends UIAbility {
     // ===== 折痕 / FoldStatus 数据采集日志点（T014，TODO(真机校准)）=====
     this.registerFoldCalibrationLogging();
 
-    windowStage.loadContent('pages/Index', (err) => {
-      if (err.code) {
-        hilog.error(DOMAIN, TAG, 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
-        return;
-      }
-      hilog.info(DOMAIN, TAG, 'Succeeded in loading the content.');
+    void SampleVaultInstaller.install(registry).catch((error: Error): void => {
+      hilog.error(DOMAIN, TAG, '样例库预置失败，保留已写入内容，不自动重试: %{public}s', error.message);
+    }).then((): void => {
+      windowStage.loadContent('pages/Index', (err) => {
+        if (err.code) {
+          hilog.error(DOMAIN, TAG, 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
+          return;
+        }
+        hilog.info(DOMAIN, TAG, 'Succeeded in loading the content.');
+      });
     });
 
     try {

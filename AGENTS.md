@@ -93,6 +93,13 @@ node build.mjs                 # 改了 src/ 后必做：重新打包 rawfile �
 npm run smoke                  # node 冒烟（真 clone）
 ```
 
+## 静态内容生成
+
+- 样例真源：`sample_vault/notes/` + `manifest.json`，运行 `python3 tools/build_sample_vault.py`。
+- 版本记录真源：`changelog.json`，运行 `python3 tools/build_changelog.py`；App 包版本仍取 `AppScope/app.json5` / 运行时包信息。
+- 两个脚本都提供 `--check`，提交前检查并连同生成产物提交；不要手改生成的 ETS、CHANGELOG.md 或原型标记区。
+- 复用说明见 `docs/engineering/数据驱动页面.md`，不把个人笔记、令牌或运行时状态写入静态产物。
+
 ## 鸿蒙知识库工作流
 
 与官方 Agent 的问答**一律落 `docs/harmonyos/`**，规则见其 `README.md`，摘要：

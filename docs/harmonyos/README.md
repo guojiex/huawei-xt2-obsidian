@@ -110,6 +110,8 @@ docs/harmonyos/
 | 2026-10-17 | **小艺智能体 + 端侧意图**（Insight Intent 做笔记编辑） | 9 | [`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md) | 方案骨架：`FunctionComponent` 拉起自建智能体 + `@InsightIntentEntry` 端侧执行 + git 版本底座；**锚点定位法**是细粒度修改的关键；⚠️ **`onCreate → onExecute` 不建 window → 后台执行时 Web 组件不存在 → 我们的 Web 内 git 无法 commit**（架构冲突，出路待拍板）；⚠️ 官方示例用 TRUNC 覆盖写，**须改 `AtomicFile`** |
 | 2026-10-17 | **折痕接口追问**（带五态真机实测反馈） | 5 | [`qa/2026-10-17_折痕接口追问_实测反馈.md`](qa/2026-10-17_折痕接口追问_实测反馈.md) | 官方**无法定性**「两条中心相同 + 五态不变」，倾向系统侧实现限制；**`getLiveCreaseRegion()`（@since 20）为首选替代**（⚠️ 官方示例写错：是 `Display` **实例方法**，须 `getDefaultDisplaySync().getLiveCreaseRegion()`）；**断点方案 = 官方最佳实践**（印证 A3）；「左/右两屏 FS 都=1」**符合预期**（印证 A1）；无设备级常量；`FoldSplitContainer` 措辞修正为「三分栏语义 + 预设比例都不匹配」 |
 
+> **2026-10-25 下一轮待问**：[API 24 小艺本地操作接入核实](prompts/2026-10-25_API24_小艺本地笔记操作接入核实.md)。排期已提前至 v0.6，不依赖 Web/git；F-A/F-B 等仍未确认，不代表本轮已获得官方支持。
+
 ### 仍未解决（下次提问优先从这里挑）
 
 | # | 问题 | 卡住什么 | 状态 |
@@ -134,6 +136,8 @@ docs/harmonyos/
 **真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 
 ---
+
+> 设置内重置 API 与边界已按 SDK 核实，见 [api_notes M1/M2](api_notes.md)。API ≥11/12，可用于 API 24；尚未执行设备清理，不代表真实重置已验收。
 
 ## 版本锚点
 

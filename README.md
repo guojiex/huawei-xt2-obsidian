@@ -2,9 +2,19 @@
 
 曜石笔记 —— 为华为 XT2 三折叠打造的本地 Markdown 笔记应用（ArkTS · Stage 模型 · API 24）。
 
+## 共享样例库与当前优先级
+
+[sample_vault](sample_vault/README.md) 是原型、首次安装与渲染回归的共用内容源。修改 Markdown 后运行 `python3 tools/build_sample_vault.py`，用 `--check` 检查产物一致性。2026-10-25 排期：v0.5 样例与渲染基线 → v0.6 小艺本地操作；Git 后置并继续 pending。
+
+## 版本记录
+
+[changelog.json](changelog.json) 为内容真源，运行 `python3 tools/build_changelog.py` 生成 [完整记录](CHANGELOG.md)、App 版本记录数据和原型数据。关于展示最近 3 条，完整记录可在 App 内离线查看。维护方式见 [数据驱动页面技术储备](docs/engineering/数据驱动页面.md)。
+
 ## 文档入口
 
 - **[`AGENTS.md`](AGENTS.md)** —— 开发手册（开工前必读：硬约束、已定决策、已知坑）
+- **[`docs/releases/实施总清单.md`](docs/releases/实施总清单.md)** —— 当前实现进度、阻塞项和执行顺序
+- [`docs/releases/README.md`](docs/releases/README.md) —— 版本规则与需求索引
 - [`docs/mvp_design.md`](docs/mvp_design.md) —— MVP 设计主文档（范围 / 架构 / 里程碑 / 验收）
 - [`docs/requirements_backlog.md`](docs/requirements_backlog.md) —— 需求池
 - [`docs/open_questions.md`](docs/open_questions.md) —— 待决清单与 TODO 挂起项

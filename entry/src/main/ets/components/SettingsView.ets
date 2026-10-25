@@ -9,43 +9,18 @@
  *    **包名行已删**（设计稿 2026-10-21 拍板：那是开发期对 hdc 日志/签名用的诊断值，用户不需要）；
  *    版本号**运行时从自身包信息读出，不在代码写死常量**（api_notes H-1/H-2：
  *    getBundleInfoForSelfSync 在 try/catch 内调用，失败兜底显示占位，读不到也不崩）；
- *  - 更新日志卡：只列用户可感知的变更，最新在上（v0.1 / v0.2 与设计稿 .chlog 一致）；
+ *  - 更新日志卡：数据驱动的最近记录，最新在上，内容由 changelog.json 生成；
  *  - 诊断卡：当前形态 / 断点 / 库目录（真机校准对照）；
  *  - 后续版本才有的设置项在底部灰显占位。
  * 视觉：token 化 + 内容页限宽 760vp 居中（需求 4.9）。
  */
-import { bundleManager } from '@kit.AbilityKit';
+import { bundleManager, common } from '@kit.AbilityKit';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
-
-/** 更新日志一条（vX.Y）：只列用户可感知的变更，与设计稿 .chlog 同源 */
-interface ChlogEntry {
-  ver: string;
-  date: string;
-  items: string[];
-}
-
-/** 更新日志数据：新增版本时在头部插入一条（最新在上） */
-const CHANGELOG: ChlogEntry[] = [
-  {
-    ver: 'v0.2',
-    date: '开发中',
-    items: [
-      '文件树：层级引导线、目录选择器新建（笔记 / 文件夹）、左滑三档（重命名 / 移动 / 删除）',
-      '回收站：删除入站 + 5 秒撤销条 + 恢复',
-      '编辑与保存：CodeMirror 源码编辑、防抖自动保存、原子写入',
-      '视觉 token 基线（颜色 / 间距 / 字号统一引用设计 token）'
-    ]
-  },
-  {
-    ver: 'v0.1',
-    date: '2026-10',
-    items: [
-      '三形态骨架（单 / 双 / 三屏）与多库注册表、库切换',
-      'Git 桥接底层（isomorphic-git 打包进应用、clone 通道部分打通）'
-    ]
-  }
-];
+import { ResetDataDialog } from './ResetDataDialog';
+import { AppDataResetService } from '../model/AppDataResetService';
+import { RECENT_CHANGELOG } from '../model/ChangelogData';
+import { ChangelogList } from './ChangelogList';
 
 @Component
 export struct SettingsView {
@@ -53,9 +28,39 @@ export struct SettingsView {
   @Prop breakpoint: string = '';
   /** 当前库 id（诊断区显示库目录） */
   @Prop currentVaultId: string = '';
+  onOpenHistory: () => void = () => {};
 
   @State versionName: string = '—';
   @State versionCode: number = 0;
+  @State resetting: boolean = false;
+  @State resetError: string = '';
+  private resetDialog: CustomDialogController | null = null;
+
+  private confirmReset(): void {
+    if (this.resetting) {
+      return;
+    }
+    this.resetDialog = new CustomDialogController({
+      builder: ResetDataDialog({ onConfirm: (): void => { void this.resetData(); } })
+    });
+    this.resetDialog.open();
+  }
+
+  private async resetData(): Promise<void> {
+    if (this.resetting) {
+      return;
+    }
+    this.resetting = true;
+    this.resetError = '';
+    try {
+      await AppDataResetService.reset(getContext(this) as common.UIAbilityContext);
+    } catch (error) {
+      const err = error as Error;
+      this.resetting = false;
+      this.resetError = '重置未完成，部分访问令牌可能已清除。' + err.message;
+    }
+  }
+
 
   aboutToAppear(): void {
     try {
@@ -119,42 +124,6 @@ export struct SettingsView {
     }
     .width('100%')
     .margin({ bottom: Space.s2 })
-  }
-
-  /** 更新日志一条：版本号 + 日期 + 变更列表（最新在上） */
-  @Builder
-  ChlogItem(entry: ChlogEntry) {
-    Column() {
-      Row() {
-        Text(entry.ver)
-          .fontSize(FontSize.body2)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-        Text(entry.date)
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_tertiary'))
-          .margin({ left: Space.s2 })
-      }
-      .alignItems(VerticalAlign.Bottom)
-      .margin({ bottom: Space.s1 })
-      ForEach(entry.items, (item: string) => {
-        Row() {
-          Text('·')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_secondary'))
-          Text(item)
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_secondary'))
-            .layoutWeight(1)
-            .margin({ left: Space.s1 })
-        }
-        .alignItems(VerticalAlign.Top)
-        .margin({ bottom: Space.s1 })
-      }, (item: string) => item)
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-    .margin({ bottom: Space.s3 })
   }
 
   build() {
@@ -221,16 +190,20 @@ export struct SettingsView {
           .backgroundColor($r('app.color.bg_card'))
           .margin({ bottom: Space.s4 })
 
-          // 更新日志卡：只列用户可感知的变更，最新在上
+          // 更新日志卡：数据驱动的最近记录，最新在上
           Column() {
             Text('更新日志')
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_tertiary'))
               .width('100%')
               .margin({ bottom: Space.s2 })
-            ForEach(CHANGELOG, (entry: ChlogEntry) => {
-              this.ChlogItem(entry)
-            }, (entry: ChlogEntry) => entry.ver)
+            ChangelogList({ entries: RECENT_CHANGELOG })
+            Text('查看完整版本记录 ›')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .height(Size.touch)
+              .width('100%')
+              .onClick(() => { this.onOpenHistory(); })
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
@@ -253,6 +226,38 @@ export struct SettingsView {
           }
           .width('100%')
           .alignItems(HorizontalAlign.Start)
+          .padding(Space.s4)
+          .borderRadius(Radius.card)
+          .border({ width: 1, color: $r('app.color.line') })
+          .backgroundColor($r('app.color.bg_card'))
+          .margin({ bottom: Space.s4 })
+
+          Column({ space: Space.s3 }) {
+            Text('数据管理')
+              .fontSize(FontSize.body3)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+            Text('清除所有本地数据，重新打开后恢复首次安装的样例笔记库。此操作无法撤销。')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+            Button(this.resetting ? '正在重置…' : '重置所有数据')
+              .width('100%')
+              .height(Size.touch)
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.danger'))
+              .backgroundColor($r('app.color.danger_bg'))
+              .borderRadius(Radius.button)
+              .enabled(!this.resetting)
+              .onClick(() => { this.confirmReset(); })
+            if (this.resetError.length > 0) {
+              Text(this.resetError)
+                .fontSize(FontSize.body3)
+                .fontColor($r('app.color.danger'))
+                .width('100%')
+            }
+          }
+          .width('100%')
           .padding(Space.s4)
           .borderRadius(Radius.card)
           .border({ width: 1, color: $r('app.color.line') })

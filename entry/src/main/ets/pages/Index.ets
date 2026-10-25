@@ -27,6 +27,7 @@ import { FileTree } from '../model/FileTree';
 import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
+import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } from '../components/NoteDialogs';
 import { TrashView } from '../components/TrashView';
@@ -217,7 +218,7 @@ struct Index {
       return true;
     }
     if (this.topView !== 'note') {
-      this.topView = 'note';
+      this.topView = this.topView === 'history' ? 'settings' : 'note';
       return true;
     }
     if (this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
@@ -1058,6 +1059,8 @@ struct Index {
             this.ManagerView()
           } else if (this.topView === 'trash') {
             this.TrashPane()
+          } else if (this.topView === 'history') {
+            ReleaseHistoryView()
           } else if (this.topView === 'settings') {
             this.SettingsPane()
           } else if (this.breakpoint === Breakpoint.SM) {
@@ -1155,7 +1158,7 @@ struct Index {
       if (this.topView !== 'note') {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
         this.IconButton('back', $r('app.color.text_primary'), (): void => {
-          this.topView = 'note';
+          this.topView = this.topView === 'history' ? 'settings' : 'note';
         })
       } else {
         this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
@@ -1165,7 +1168,7 @@ struct Index {
       // 原型 VIEW_TITLE：次级视图标题固定为视图名，不显示当前库名
       Text(this.topView === 'note' ? this.currentVaultName()
         : (this.topView === 'vaults' ? '笔记库'
-          : (this.topView === 'trash' ? '回收站' : '设置与关于')))
+          : (this.topView === 'trash' ? '回收站' : (this.topView === 'history' ? '版本记录' : '设置与关于'))))
         .fontSize(FontSize.s2)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
@@ -1497,7 +1500,8 @@ struct Index {
   SettingsPane() {
     SettingsView({
       breakpoint: this.breakpoint,
-      currentVaultId: this.currentVaultId
+      currentVaultId: this.currentVaultId,
+      onOpenHistory: (): void => { this.topView = 'history'; }
     })
   }
 

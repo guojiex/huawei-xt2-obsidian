@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "entry": "welcome",
+  "notes": [
+    {
+      "id": "welcome",
+      "path": "00_开始/欢迎使用.md"
+    },
+    {
+      "id": "inbox",
+      "path": "00_开始/快速上手.md"
+    },
+    {
+      "id": "stream",
+      "path": "10_写作/基础排版.md"
+    },
+    {
+      "id": "todo",
+      "path": "10_写作/任务清单.md"
+    },
+    {
+      "id": "dataflow",
+      "path": "20_样式/双链与嵌入.md"
+    },
+    {
+      "id": "intimacy",
+      "path": "20_样式/属性与提示块.md"
+    },
+    {
+      "id": "tob",
+      "path": "20_样式/公式与流程图.md"
+    },
+    {
+      "id": "year2025",
+      "path": "20_样式/样式支持清单.md"
+    },
+    {
+      "id": "idea",
+      "path": "30_小艺/可编辑练习.md"
+    }
+  ],
+  "assets": [
+    "50_Assets/笔记流程.svg"
+  ]
+}
