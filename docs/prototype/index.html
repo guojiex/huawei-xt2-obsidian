@@ -85,6 +85,8 @@
     --h-button: 40px;
     --h-statusbar: 28px;
     --h-touch: 48px;
+    --preview-image-max-ratio: .6; /* 原型起点，非 XT2 官方阈值 */
+    --image-viewer-bg: rgba(0, 0, 0, .8);
     --tree-indent: 24px;   /* 文件树每级缩进：等于「caret 16 + 间距」，上级图标正对下级箭头 */
 
     /* 阴影（Z 轴层级） */
@@ -255,7 +257,7 @@
   .icon-btn:active { background: var(--fill-press); }
   .appbar .title {
     font-size: var(--fs-s2); font-weight: 700; letter-spacing: .3px;
-    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .views { flex: 1; display: flex; min-height: 0; }
 
@@ -492,7 +494,7 @@
     border-left: 1px solid var(--line); background: var(--bg-card);
   }
   .md {
-    flex: 1; overflow: auto; padding: var(--sp-5) var(--sp-5) var(--sp-12);
+    flex: 1; min-height: 0; overflow: auto; padding: var(--sp-5) var(--sp-5) var(--sp-12);
     font-size: var(--fs-body1); line-height: 1.65; color: var(--text-primary);
   }
   .md h1 { font-size: var(--fs-s1); margin: 0 0 var(--sp-4); font-weight: 700; letter-spacing: .3px; line-height: 1.3; }
@@ -532,6 +534,13 @@
   .md th:last-child, .md td:last-child { border-right: none; }
   .md tbody tr:last-child td { border-bottom: none; }
   .md th { background: var(--bg-secondary); font-weight: 600; color: var(--text-primary); }
+  .md img { display: block; max-width: 100%; max-height: var(--preview-image-max-height, none); width: auto; height: auto; object-fit: contain; border-radius: var(--r-icon); cursor: zoom-in; }
+  .md img:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  .image-mask { position: absolute; inset: 0; z-index: 70; display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); background: var(--image-viewer-bg); }
+  .image-toolbar { display: flex; justify-content: flex-end; flex: none; }
+  .image-toolbar button { height: var(--h-touch); }
+  .image-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .image-scroll img { display: block; max-width: 100%; width: auto; height: auto; margin: 0 auto; }
   .md hr { border: none; border-top: 1px solid var(--line); margin: var(--sp-6) 0; }
   .md input[type="checkbox"] { accent-color: var(--brand); width: 15px; height: 15px; vertical-align: -2px; margin-right: 6px; }
   .wikilink {
@@ -869,7 +878,7 @@
       <option value="v0.3">v0.3 · Git 双向同步</option>
       <option value="v0.4">v0.4 · 文件名快切与最近打开</option>
       <option value="v0.5" selected>v0.5 · 共享样例库与渲染基线</option>
-      <option value="v0.6">v0.6 · 小艺本地操作（待接入）</option>
+      <option value="v0.6">v0.6 · 小艺本地操作（等待能力开通）</option>
       <option value="v1.0">v1.0 · 深色、性能与恢复验收</option>
       <option value="v1.1">v1.1 · 当前库全文搜索</option>
       <option value="v1.2">v1.2 · 双链与反链</option>
@@ -1130,6 +1139,10 @@
         </div>
       </div>
       <!-- 版本标注放卡片上，避免 .version-annotated 的 relative 定位覆盖蒙版的 absolute。 -->
+      <div class="image-mask hidden" id="imageMask" role="dialog" aria-modal="true" aria-label="完整图片">
+        <div class="image-toolbar"><button id="closeImageBtn">关闭图片</button></div>
+        <div class="image-scroll" id="imageScroll" tabindex="0" aria-label="图片内容，可滚动"><img id="fullImage" alt=""></div>
+      </div>
       <div class="quick-mask hidden" id="quickMask">
         <div class="quick-box" role="dialog" aria-modal="true" aria-label="快速切换与搜索" data-intro="v0.4">
           <input id="quickInput" placeholder="搜索当前库的笔记文件名" aria-label="搜索当前库">
@@ -1220,6 +1233,8 @@
     <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、一行开源/仓库信息、更新日志</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。<b>包名行已删</b>（2026-10-21 拍板：那是开发期对 hdc 日志/签名用的诊断值，用户不需要；要查去工程配置或 hdc）。开源信息压成关于组底部一行小字（应用 MIT + 打包 isomorphic-git / CodeMirror 等 MIT 组件，保留最低成本版权声明）。更新日志只列<b>用户可感知</b>的变更，最新在上。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
+    <li><b>图片限高与完整查看</b>：预览图片先按可视预览区的 60% 高度等比缩放，不裁剪；点击图片或按回车可看完整长图，关闭或 Esc 回到原笔记。60% 是原型起点，App 渲染器尚未同步实现。</li>
+    <li><b>单屏顶栏沿用现状</b>：紧凑单行标题和 48px 热区搜索图标，不新增常驻搜索框或单独缩小字号。</li>
     <li><b>按版本看交互</b>：v0.4 是当前库文件名快切与最近打开；v1.1 增加当前库正文搜索。设计稿用内存样本演示，增量索引仍须按需求文档在真机实现。</li>
     <li><b>[[双链]] 是 v1.2 示意</b>：当前原型可演示跳转、未创建目标和反链；自动补全、同名消歧与重命名更新引用仍按 v1.2 需求验收。<code>#标签</code> 只是着色样本，未分配版本功能。</li>
     <li><b>搜索与双链只在当前库内生效</b>：切库后重新显示该库结果；跨库检索仍留在需求池。</li>
@@ -1236,7 +1251,7 @@
     'v0.3': ['Git 库导入、安全凭据、commit/push', 'pending，后置；已有部分 clone 桥接代码'],
     'v0.4': ['当前库文件名快切与最近打开', '规划中'],
     'v0.5': ['共享样例库与渲染基线', '样例同源，App 设备验收待完成'],
-    'v0.6': ['小艺本地笔记操作', '高优先级，平台接口待核实；尚未接入'],
+    'v0.6': ['小艺本地笔记操作', '暂缓，等待用户开通能力；尚未接入'],
     'v1.0': ['完整深色体验、性能、空状态与 MVP 回归', '规划中'],
     'v1.1': ['当前库正文搜索与增量索引', '规划中'],
     'v1.2': ['双链跳转、未创建链接与反链', '规划中'],
@@ -1285,9 +1300,9 @@
   var currentVault = 'local';
   var TREES = {"local": [["dir", "00_开始", true, 0], ["file", "欢迎使用.md", false, 1, "welcome"], ["file", "快速上手.md", false, 1, "inbox"], ["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "stream"], ["file", "任务清单.md", false, 1, "todo"], ["dir", "20_样式", true, 0], ["file", "双链与嵌入.md", false, 1, "dataflow"], ["file", "属性与提示块.md", false, 1, "intimacy"], ["file", "公式与流程图.md", false, 1, "tob"], ["file", "样式支持清单.md", false, 1, "year2025"], ["dir", "30_小艺", true, 0], ["file", "可编辑练习.md", false, 1, "idea"]]};
   var FILES = {"welcome": "欢迎使用.md", "inbox": "快速上手.md", "stream": "基础排版.md", "todo": "任务清单.md", "dataflow": "双链与嵌入.md", "intimacy": "属性与提示块.md", "tob": "公式与流程图.md", "year2025": "样式支持清单.md", "idea": "可编辑练习.md"};
-  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 388 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符"};
-  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n"};
-  var SAMPLE_ASSETS = {"50_Assets/笔记流程.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwIiB2aWV3Qm94PSIwIDAgNjQwIDE2MCI+PHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAiIHJ4PSIxNiIgZmlsbD0iI0YxRjNGNSIvPjxnIGZpbGw9IiMwMDdERkYiPjxyZWN0IHg9IjI0IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iMjQwIiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iNDU2IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9nPjxnIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjI0IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+PHRleHQgeD0iMTA0IiB5PSI4OSI+6K6w5b2VPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iODkiPuaVtOeQhjwvdGV4dD48dGV4dCB4PSI1MzYiIHk9Ijg5Ij7lm57pob48L3RleHQ+PC9nPjxwYXRoIGQ9Ik0xOTIgODBoNDBtMTc2IDBoNDAiIHN0cm9rZT0iIzAwN0RGRiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PC9zdmc+Cg=="};
+  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 518 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符"};
+  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 的相同行为仍待实现。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n"};
+  var SAMPLE_ASSETS = {"50_Assets/笔记流程.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwIiB2aWV3Qm94PSIwIDAgNjQwIDE2MCI+PHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAiIHJ4PSIxNiIgZmlsbD0iI0YxRjNGNSIvPjxnIGZpbGw9IiMwMDdERkYiPjxyZWN0IHg9IjI0IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iMjQwIiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iNDU2IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9nPjxnIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjI0IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+PHRleHQgeD0iMTA0IiB5PSI4OSI+6K6w5b2VPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iODkiPuaVtOeQhjwvdGV4dD48dGV4dCB4PSI1MzYiIHk9Ijg5Ij7lm57pob48L3RleHQ+PC9nPjxwYXRoIGQ9Ik0xOTIgODBoNDBtMTc2IDBoNDAiIHN0cm9rZT0iIzAwN0RGRiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PC9zdmc+Cg==", "50_Assets/长图排版示例.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwMCIgdmlld0JveD0iMCAwIDY0MCAxNjAwIj4KPHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAwIiByeD0iMjQiIGZpbGw9IiNGMUYzRjUiLz4KPGcgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjx0ZXh0IHg9IjMyMCIgeT0iOTAiIGZvbnQtc2l6ZT0iMzYiIGZpbGw9IiMyMDIxMjQiPumVv+WbvuaOkueJiOekuuS+izwvdGV4dD4KPGcgZmlsbD0iIzAwN0RGRiI+PHJlY3QgeD0iODAiIHk9IjE4MCIgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIyMDAiIHJ4PSIyNCIvPjxyZWN0IHg9IjgwIiB5PSI1MDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48cmVjdCB4PSI4MCIgeT0iODIwIiB3aWR0aD0iNDgwIiBoZWlnaHQ9IjIwMCIgcng9IjI0Ii8+PHJlY3QgeD0iODAiIHk9IjExNDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48L2c+CjxnIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjMyIj48dGV4dCB4PSIzMjAiIHk9IjI5MiI+MDEg6KeC5a+fPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iNjEyIj4wMiDorrDlvZU8L3RleHQ+PHRleHQgeD0iMzIwIiB5PSI5MzIiPjAzIOaVtOeQhjwvdGV4dD48dGV4dCB4PSIzMjAiIHk9IjEyNTIiPjA0IOWbnumhvjwvdGV4dD48L2c+CjxwYXRoIGQ9Ik0zMjAgNDAwdjgwbTAgMjQwdjgwbTAgMjQwdjgwIiBzdHJva2U9IiMwMDdERkYiIHN0cm9rZS13aWR0aD0iOCIvPgo8dGV4dCB4PSIzMjAiIHk9IjE0ODAiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiMyMDIxMjQiPuetieavlOWujOaVtOaYvuekuu+8jOS4jeijgeWJquWGheWuuTwvdGV4dD48L2c+Cjwvc3ZnPgo="};
   /* SAMPLE_VAULT_END */
 
   /* ---------- 文件树 ---------- */
@@ -1614,6 +1629,53 @@
   var ta = document.getElementById('src');
   var hl = document.getElementById('hl');
   var mdEl = document.getElementById('md');
+  var imageReturnFocus = null;
+  function updateImageBounds() {
+    var height = mdEl.clientHeight;
+    if (height > 0) {
+      var ratio = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--preview-image-max-ratio'));
+      mdEl.style.setProperty('--preview-image-max-height', (height * ratio) + 'px');
+    }
+  }
+  var imageResizeObserver = new ResizeObserver(updateImageBounds);
+  imageResizeObserver.observe(mdEl);
+
+  function openImage(image) {
+    imageReturnFocus = document.activeElement;
+    var full = document.getElementById('fullImage');
+    full.src = image.src;
+    full.alt = image.alt;
+    document.getElementById('imageScroll').scrollTop = 0;
+    document.getElementById('imageMask').classList.remove('hidden');
+    document.getElementById('closeImageBtn').focus();
+  }
+  function closeImage() {
+    document.getElementById('imageMask').classList.add('hidden');
+    document.getElementById('fullImage').removeAttribute('src');
+    if (imageReturnFocus) { imageReturnFocus.focus(); }
+    imageReturnFocus = null;
+  }
+  document.getElementById('closeImageBtn').addEventListener('click', closeImage);
+  document.getElementById('imageMask').addEventListener('click', function (e) {
+    if (e.target.id === 'imageMask') { closeImage(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (document.getElementById('imageMask').classList.contains('hidden')) { return; }
+    if (e.key === 'Escape') {
+      e.preventDefault(); closeImage();
+    } else if (e.key === 'Tab') {
+      var close = document.getElementById('closeImageBtn');
+      var scroll = document.getElementById('imageScroll');
+      if (e.shiftKey && document.activeElement === close) { e.preventDefault(); scroll.focus(); }
+      else if (!e.shiftKey && document.activeElement === scroll) { e.preventDefault(); close.focus(); }
+    }
+  });
+  mdEl.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'IMG' && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault(); openImage(e.target);
+    }
+  });
+
 
   function loadFile() {
     ta.value = CONTENT[current] || '';
@@ -2635,7 +2697,7 @@
       var path = [];
       parts.forEach(function (part) { if (part === '..') { path.pop(); } else if (part && part !== '.') { path.push(part); } });
       var asset = SAMPLE_ASSETS[path.join('/')];
-      return asset ? '<img alt="' + alt + '" src="' + asset + '">' : '<span class="asset-preview">图片引用：' + alt + '（' + src + '）</span>';
+      return asset ? '<img class="preview-image" tabindex="0" role="button" title="点击查看完整图片" alt="' + alt + '" src="' + asset + '">' : '<span class="asset-preview">图片引用：' + alt + '（' + src + '）</span>';
     });
     h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
     h = h.replace(/(\*\*|__)(.+?)\1/g, '<strong>$2</strong>');
@@ -2645,6 +2707,7 @@
   }
 
   mdEl.addEventListener('click', function (e) {
+    if (e.target.tagName === 'IMG') { openImage(e.target); return; }
     var link = e.target.closest('.wikilink');
     if (!link) { return; }
     var target = link.textContent + '.md';
@@ -2659,6 +2722,7 @@
   function render() {
     hl.innerHTML = highlight(ta.value);
     mdEl.innerHTML = renderMarkdown(ta.value);
+    updateImageBounds();
     applyReleaseMark();
     var n = ta.value.replace(/\s/g, '').length;
     document.getElementById('stCount').textContent = n.toLocaleString('en-US') + ' 字';
@@ -2817,6 +2881,7 @@
 
   function setView(v, syncBtns) {
     closeQuick();
+    closeImage();
     body.setAttribute('data-view', v);
     document.getElementById('appTitle').textContent = VIEW_TITLE[v]
       || (FILES[current] || '').replace(/\.md$/, '') || '曜石笔记';
@@ -2855,7 +2920,7 @@
   /* CHANGELOG_BEGIN: generated by tools/build_changelog.py */
   var APP_VERSION = "0.2.0";
   var APP_BUILD = 1000001;
-  var RELEASE_HISTORY = [{"version": "0.5.0", "date": "2026-10-25", "status": "in_progress", "title": "共享样例与数据管理", "changes": ["共享样例笔记库供原型与首次安装使用，旧数据不自动覆盖。", "设置新增重置所有数据入口，确认后重新打开恢复样例。", "关于与完整版本记录改为同源数据生成。", "本阶段仍在开发，完整设备验收尚未完成。"], "statusLabel": "开发中"}, {"version": "0.4.0", "date": "2026-10-23", "status": "implemented", "title": "快速找到笔记", "changes": ["按当前库文件名或部分路径快速打开笔记，支持中文和同名路径区分。", "最近打开按库保存，删除、改名和移动后更新失效路径。", "快切以遮罩弹层显示，卡片外点击关闭；API 26 模拟器已验证，XT2 待验。"], "statusLabel": "已实现 · 未发布"}, {"version": "0.3.0", "date": "2026-10-23", "status": "pending", "title": "Git 同步暂缓", "changes": ["同步页已接入多库注册表和令牌安全存储；完整 clone 验收与回写仍未完成。", "等待鸿蒙回复，优先推进共享样例与小艺本地操作。"], "statusLabel": "暂缓 · 未发布"}, {"version": "0.2.0", "date": "2026-10-24", "status": "in_progress", "title": "本地编辑与预览", "changes": ["文件树支持新建、改名、移动、回收站与撤销。", "Markdown 编辑、预览与自动保存已有实现；草稿恢复仍在开发和验证中。", "统一视觉 token；部分设备、输入法和恢复落盘验证仍待完成。"], "statusLabel": "开发中"}, {"version": "0.1.0", "date": "2026-10-17", "status": "implemented", "title": "三形态骨架与多库", "changes": ["支持单屏、双屏、三屏断点布局。", "本地多库支持创建、切换、改名与删除，注册表持久化。", "已有部分 XT2 布局与返回验收记录，尚未正式发布。"], "statusLabel": "已实现 · 未发布"}];
+  var RELEASE_HISTORY = [{"version": "0.5.0", "date": "2026-10-25", "status": "in_progress", "title": "共享样例与数据管理", "changes": ["共享样例笔记库供原型与首次安装使用，旧数据不自动覆盖。", "设置新增重置所有数据入口，确认后重新打开恢复样例。", "关于与完整版本记录改为同源数据生成。", "本阶段仍在开发，完整设备验收尚未完成。"], "statusLabel": "开发中"}, {"version": "0.4.0", "date": "2026-10-23", "status": "implemented", "title": "快速找到笔记", "changes": ["按当前库文件名或部分路径快速打开笔记，支持中文和同名路径区分。", "最近打开按库保存，删除、改名和移动后更新失效路径。", "快切以遮罩弹层显示，卡片外点击关闭；API 26 模拟器已验证，XT2 待验。"], "statusLabel": "已实现 · 未发布"}, {"version": "0.3.0", "date": "2026-10-23", "status": "pending", "title": "Git 同步暂缓", "changes": ["同步页已接入多库注册表和令牌安全存储；完整 clone 验收与回写仍未完成。", "等待鸿蒙回复，优先推进共享样例与本地体验；小艺另待能力开通。"], "statusLabel": "暂缓 · 未发布"}, {"version": "0.2.0", "date": "2026-10-24", "status": "in_progress", "title": "本地编辑与预览", "changes": ["文件树支持新建、改名、移动、回收站与撤销。", "Markdown 编辑、预览与自动保存已有实现；草稿恢复仍在开发和验证中。", "统一视觉 token；部分设备、输入法和恢复落盘验证仍待完成。"], "statusLabel": "开发中"}, {"version": "0.1.0", "date": "2026-10-17", "status": "implemented", "title": "三形态骨架与多库", "changes": ["支持单屏、双屏、三屏断点布局。", "本地多库支持创建、切换、改名与删除，注册表持久化。", "已有部分 XT2 布局与返回验收记录，尚未正式发布。"], "statusLabel": "已实现 · 未发布"}];
   var RECENT_RELEASE_HISTORY = [{"version": "0.5.0", "date": "2026-10-25", "status": "in_progress", "title": "共享样例与数据管理", "changes": ["共享样例笔记库供原型与首次安装使用，旧数据不自动覆盖。", "设置新增重置所有数据入口，确认后重新打开恢复样例。", "关于与完整版本记录改为同源数据生成。", "本阶段仍在开发，完整设备验收尚未完成。"], "statusLabel": "开发中"}, {"version": "0.4.0", "date": "2026-10-23", "status": "implemented", "title": "快速找到笔记", "changes": ["按当前库文件名或部分路径快速打开笔记，支持中文和同名路径区分。", "最近打开按库保存，删除、改名和移动后更新失效路径。", "快切以遮罩弹层显示，卡片外点击关闭；API 26 模拟器已验证，XT2 待验。"], "statusLabel": "已实现 · 未发布"}, {"version": "0.2.0", "date": "2026-10-24", "status": "in_progress", "title": "本地编辑与预览", "changes": ["文件树支持新建、改名、移动、回收站与撤销。", "Markdown 编辑、预览与自动保存已有实现；草稿恢复仍在开发和验证中。", "统一视觉 token；部分设备、输入法和恢复落盘验证仍待完成。"], "statusLabel": "开发中"}];
   /* CHANGELOG_END */
 
