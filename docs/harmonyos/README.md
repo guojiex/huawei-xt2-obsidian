@@ -146,3 +146,5 @@ docs/harmonyos/
 | 2026-10-17 | **API 24**（DevEco Studio 26.0.0.851，`targetSdkVersion 26.0.0`） | 本目录现有全部结论均基于此版本 |
 
 > 升级 `compatibleSdkVersion` 后：旧结论一律视为「待复核」，在 `api_notes.md` 顶部加一行版本提示，不要直接删。
+
+> Agent 后台与通知：已做 [SDK 声明核对](qa/2026-10-25_API24_Agent后台与通知_SDK核对.md)，结论见 api_notes N1–N3；[官方核实提示词](prompts/2026-10-25_API24_Agent_loop_后台与通知核实.md)待问，不阻塞 v0.7 本地 mock。

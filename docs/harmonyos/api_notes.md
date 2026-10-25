@@ -1266,3 +1266,19 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 `ets/api/@ohos.security.asset.d.ts`：`querySync` 与 `removeSync` 自 API 12；查询用 `ReturnType.ATTRIBUTES`（只读属性，不取 SECRET），按返回的 ALIAS 删除本应用 `vault:*:token` 条目，包含 pending-import。24000002 表示不存在，视为无需删除；其他错误中止本次重置并展示失败。不要假定 M1 自动清除了 AssetStore 的安全资产，因此显式清理当前应用的 Git 别名后再调用 M1。
 
 全链路逻辑由 mock 单测验证，禁止为了测试而清空已有设备数据。用户在 App 内主动确认的重置功能与主动制造崩溃实验不同。
+
+## N 组：Agent 后台与通知（2026-10-25 SDK 声明核对）
+
+来源：[本机 SDK 核对记录](qa/2026-10-25_API24_Agent后台与通知_SDK核对.md)。SDK 实际为 API26；下列只按 @since 检查声明，不等于 API24/XT2 运行验证。官方待核实项见 [提问](prompts/2026-10-25_API24_Agent_loop_后台与通知核实.md)。
+
+### N1 ⚠️ 短时/长时接口存在，Agent 场景资格未确认
+
+`requestSuspendDelay`（since 9）、`startBackgroundRunning(context, ContinuousTaskRequest)`（since 21）在本机声明中存在。短时任务不保证整个 Agent loop 完成；长时任务需匹配适用类别与权限。`MODE_DATA_TRANSFER` 描述上传/下载与进度更新，不能把所有网络推理自动归入；phone 上持续计算/特殊场景有受限权限条件。XT2 大屏不改变 phone 身份。是否允许本应用的 Agent 后台执行仍为 ❓，默认前台，不开启假后台模式。
+
+### N2 ⚠️ 通知声明覆盖 ≤24，授权与设备表现待验
+
+本机声明 `notificationManager.publish(request)` since 9、`isNotificationEnabled()` since 11、带 UIAbilityContext 的 `requestEnableNotification(context, callback)` since 10。授权申请需 UI 已加载，拒绝后不可反复弹同一申请。仅证明声明范围，尚未执行系统授权或发通知。完成通知与长时任务系统通知分开处理；通知权限不等于后台运行资格。通知正文不包含笔记内容或文件信息。
+
+### N3 ❓ 小艺后台意图不等于自有 Agent loop 可后台常驻
+
+F4 仍为未充分核实的平台生命周期记录；不能据此声称支持持续模型请求、工具循环、流式回调或进程回收后的恢复。Worker/脱离 Web 的原生 Runner 也不提供系统运行许可。v0.7 mock 独立推进；v0.6 等待正式消息/工具协议、背景资格与通知路径核实，不因本组声明核对恢复实施。

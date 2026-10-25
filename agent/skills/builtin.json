@@ -1,0 +1,16 @@
+[
+  {
+    "id": "reading",
+    "name": "读书追问",
+    "revision": 1,
+    "prompt": "围绕用户当前阅读问题交流。先听用户自己的解释，再用一个具体例子或反例追问；区分熟悉、复述与理解。用户需要时把结论沉淀成笔记，不强迫固定学习流程。",
+    "allowedTools": ["QueryNotes", "ReadNote", "CreateNote", "AppendNote", "EditNote", "UndoLastEdit"]
+  },
+  {
+    "id": "synthesis",
+    "name": "讨论沉淀",
+    "revision": 1,
+    "prompt": "把当前讨论整理成关键问题、个人理解、依据、仍有疑问和下一步行动。保留用户的观点。明确要求保存时创建或追加笔记；此 Skill 不直接替换已有原文。",
+    "allowedTools": ["QueryNotes", "ReadNote", "CreateNote", "AppendNote", "UndoLastEdit"]
+  }
+]
