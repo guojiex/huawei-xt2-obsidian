@@ -948,6 +948,10 @@
   .settings-tabs button { flex: 1; min-width: 0; min-height: var(--h-touch); height: auto; white-space: nowrap; background: transparent; }
   .settings-tabs button[aria-selected="true"] { background: var(--brand-bg); color: var(--brand); }
   .settings-panel { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-5) max(var(--sp-5), calc((100% - var(--settings-content-width)) / 2)) var(--sp-8); }
+  #settings-agent .set-body { padding: var(--sp-4); }
+  #settings-agent .set-body > :first-child { margin-top: 0; }
+  #settings-agent .set-body > :last-child { margin-bottom: 0; }
+  #settings-agent .agent-config-check input { margin: 0; flex: none; }
   .agent-config-label { display: block; margin: var(--sp-3) 0; font-size: var(--fs-body2); }
   #settings-agent textarea, #settings-agent select { box-sizing: border-box; width: 100%; min-height: var(--h-touch); padding: var(--sp-3); margin: var(--sp-2) 0; color: var(--text-primary); background: var(--bg-card); border: 1px solid var(--line-strong); border-radius: var(--r-control); font: var(--fs-body2)/1.6 var(--font-sans); }
   #settings-agent textarea { resize: vertical; }
@@ -1222,32 +1226,32 @@
             </div>
           </div></section>          <section class="settings-panel hidden" id="settings-agent" role="tabpanel" aria-labelledby="settings-tab-agent">
             <div class="set-group" data-intro="v0.7">
-              <div class="set-head">Agent · 本地 mock</div>
+              <div class="set-head">Agent · 本地 mock</div><div class="set-body">
               <p class="sub">配置在本浏览器保存，下一轮生效；固定 mock 回复不会因为修改提示词而变成真实模型回复。</p>
               <label class="agent-config-label" for="configSystemPrompt">系统提示词 · 内置“读书讨论”</label>
               <div id="configPromptVersion" class="agent-caption"></div>
               <textarea id="configSystemPrompt" rows="9" spellcheck="false"></textarea>
               <div class="agent-actions"><button id="configSavePrompt">保存系统提示词</button><button id="configResetPrompt">恢复内置提示词</button></div>
-            </div>
+            </div></div>
             <div class="set-group">
-              <div class="set-head">Skills · 行为模板</div>
+              <div class="set-head">Skills · 行为模板</div><div class="set-body">
               <label class="agent-config-label" for="configSkill">选择要编辑的 Skill</label><select id="configSkill"></select>
               <textarea id="configSkillPrompt" rows="5" spellcheck="false"></textarea>
               <p id="configSkillTools" class="agent-caption"></p>
               <div class="agent-actions"><button id="configSaveSkill">保存 Skill</button><button id="configResetSkill">恢复此 Skill 内置版本</button></div>
               <p class="agent-caption">Skill 是提示词与允许工具的模板，不运行代码。对话页可选择本轮 Skill。</p>
-            </div>
+            </div></div>
             <div class="set-group">
-              <div class="set-head">Tools · 本地工具</div><div id="configTools"></div>
+              <div class="set-head">Tools · 本地工具</div><div class="set-body"><div id="configTools"></div>
               <p class="agent-caption">关闭后下一轮不能调用；Skill 不能越过开关。撤销保留为恢复入口。不支持安装脚本、Shell 或外部 MCP。</p>
-            </div>
+            </div></div>
             <div class="set-group">
-              <div class="set-head">上下文与执行</div>
+              <div class="set-head">上下文与执行</div><div class="set-body">
               <p class="agent-caption">仅当前知识库、当前对话和明确引用的笔记；不自动扫描整库。每轮冻结系统提示词、Skill 和工具权限。</p>
               <label class="agent-config-label">执行模式 <select disabled aria-label="后台执行尚待核实"><option>前台执行 · 后台资格待核实</option></select></label>
               <label class="agent-config-check"><input type="checkbox" id="configNotify">任务结束时通知（偏好）</label>
               <p class="agent-caption">尚未申请系统通知权限，此偏好不代表已获授权。原型不会在后台执行或发送系统通知。</p>
-            </div>
+            </div></div>
             <p id="agentConfigStatus" class="agent-status" role="status" aria-live="polite"></p>
           </section>
 <section id="settings-data" class="settings-panel hidden" role="tabpanel" aria-labelledby="settings-tab-data"><div class="set-group" data-intro="v0.5">
