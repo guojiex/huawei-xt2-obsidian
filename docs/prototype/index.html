@@ -918,8 +918,9 @@
   .agent-compose textarea { border: 0; resize: none; max-height: var(--agent-input-max-height); }
   .agent-compose-foot { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); }
   #agentSend { background: var(--brand); color: var(--on-brand); }
-  .agent-refs { display: flex; flex-wrap: wrap; gap: var(--sp-2); max-height: var(--agent-input-max-height); overflow: auto; }
+  .agent-refs { font-size: var(--fs-body3); color: var(--text-secondary); display: flex; flex-wrap: wrap; gap: var(--sp-2); max-height: var(--agent-input-max-height); overflow: auto; }
   .agent-ref { max-width: 100%; padding: var(--sp-2); border-radius: var(--r-control); background: var(--brand-bg); font-size: var(--fs-body3); overflow-wrap: anywhere; }
+  .agent-inline-ref { display: inline; min-height: 0 !important; padding: var(--sp-1) var(--sp-2); margin: 0 var(--sp-1); border: none; border-radius: var(--r-chip); color: var(--brand); background: var(--brand-bg); font: inherit; vertical-align: baseline; }
   .agent-status { min-height: var(--sp-4); margin: var(--sp-2) var(--sp-4); font-size: var(--fs-body3); color: var(--text-secondary); overflow-wrap: anywhere; }
   [data-form="lg"] .agent-nav { flex-direction: column; }
   [data-form="lg"] .agent-threads { flex: 0 1 36%; min-height: 0; }
@@ -1130,15 +1131,15 @@
             <aside class="agent-nav" id="agentNav">
               <div class="agent-tabs"><button id="agentThreadsTab" aria-pressed="true">对话</button><button id="agentFilesTab" aria-pressed="false">笔记</button><button id="agentHideNav">收起</button></div>
               <section class="agent-threads"><div class="side-head"><span>最近对话</span><button id="agentNew" class="side-mini" title="新对话" aria-label="新对话">＋</button></div><div id="agentThreads" class="agent-thread-list"></div></section>
-              <section class="agent-files"><div class="side-head"><span>笔记</span><span id="agentFileCount" class="agent-caption"></span></div><label class="agent-search"><input id="agentSearch" aria-label="查找当前库笔记" placeholder="搜索笔记"></label><div id="agentFiles" class="tree"></div><div class="agent-file-hint">点击引用 · 拖到输入框引用</div></section>
+              <section class="agent-files"><div class="side-head"><span>笔记</span><span id="agentFileCount" class="agent-caption"></span></div><label class="agent-search"><input id="agentSearch" aria-label="查找当前库笔记" placeholder="搜索笔记"></label><div id="agentFiles" class="tree"></div><div class="agent-file-hint">先定位光标，再点击或拖入笔记</div></section>
             </aside>
             <section class="agent-chat" aria-label="Agent 对话">
               <div class="agent-chat-head"><div><strong id="agentTitle">读书讨论</strong><p class="agent-caption" id="agentScope"></p></div><div class="agent-actions"><label class="agent-caption">Skill <select id="agentSkill" aria-label="本轮 Skill"></select></label><button id="agentSettings">Agent 设置</button><button id="agentAttach">＋ 引用笔记</button></div></div>
               <div id="agentMessages" class="agent-messages" role="log" aria-live="polite"></div>
               <div class="agent-compose" id="agentDrop" tabindex="0" aria-label="对话输入区，可拖入当前库笔记">
                 <div id="agentRefs" class="agent-refs"></div>
-                <details class="agent-caption"><summary>可体验的固定问法</summary><div id="agentExamples" class="agent-actions"></div></details><label class="agent-caption" for="agentInput">讨论内容</label><textarea id="agentInput" rows="3" placeholder="用自己的话说说你读懂了什么，或者把笔记拖到这里…"></textarea>
-                <div class="agent-compose-foot"><span class="agent-caption">Enter 发送 · Shift+Enter 换行</span><button id="agentSend">发送</button></div>
+                <details class="agent-caption"><summary>可体验的固定问法</summary><div id="agentExamples" class="agent-actions"></div></details><label class="agent-caption" for="agentInput">讨论内容</label><textarea id="agentInput" rows="3" placeholder="先参考 [[笔记 A]] 讨论这一点，再参考 [[笔记 B]] 比较另一点…"></textarea>
+                <div class="agent-compose-foot"><span class="agent-caption">引用插入光标处 · Enter 发送</span><button id="agentSend">发送</button></div>
               </div>
               <p id="agentStatus" class="agent-status" role="status"></p>
             </section>
@@ -3643,17 +3644,44 @@
   function agentRefAllowed(vault, id) {
     return vault === currentVault && currentFileRows().some(function (r) { return r.id === id; });
   }
+  function agentMessageParts(text, strict) {
+    var files = currentFileRows(), parts = [], ids = [], end = 0;
+    var pattern = /\[\[([^\]\r\n]+)\]\]/g, match;
+    while ((match = pattern.exec(text))) {
+      if (match.index > end) { parts.push({ type: 'text', text: text.slice(end, match.index) }); }
+      var file = files.find(function (row) { return row.path === match[1]; });
+      if (!file) {
+        if (strict) { throw new Error('引用不存在或已改名：' + match[1] + '。请重新插入引用。'); }
+        parts.push({ type: 'text', text: match[0] });
+      } else {
+        parts.push({ type: 'note_ref', sourceId: file.id, path: file.path });
+        if (!ids.includes(file.id)) { ids.push(file.id); }
+      }
+      end = pattern.lastIndex;
+    }
+    if (end < text.length) { parts.push({ type: 'text', text: text.slice(end) }); }
+    return { parts: parts, ids: ids };
+  }
   function agentAddRef(vault, id) {
     if (!agentRefAllowed(vault, id)) { agentStatus('只能引用本次对话所属知识库中的现有笔记。'); return; }
-    var session = agentSession();
-    if (!session.refs.includes(id)) { session.refs.push(id); }
-    renderAgentRefs(); renderAgentFiles(); agentStatus('已加入引用；发送时读取笔记内容。可以继续添加同库笔记。');
+    var input = ag('agentInput'), session = agentSession();
+    var file = currentFileRows().find(function (row) { return row.id === id; });
+    var start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+    var end = typeof input.selectionEnd === 'number' ? input.selectionEnd : start;
+    var token = '[[' + file.path + ']]';
+    input.value = input.value.slice(0, start) + token + input.value.slice(end);
+    session.draft = input.value; session.refs = agentMessageParts(input.value, false).ids;
+    renderAgentRefs(); renderAgentFiles(); agentStatus('已在光标处插入引用；可在前后继续写，或再次插入其他笔记。');
     if (body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); }
-    ag('agentInput').focus();
+    input.focus(); input.setSelectionRange(start + token.length, start + token.length);
   }
   function renderAgentRefs() {
-    ag('agentRefs').innerHTML = agentSession().refs.map(function (id) {
-      return '<button class="agent-ref" data-remove-ref="' + agentEsc(id) + '" aria-label="移除引用：' + agentEsc(FILES[id] || id) + '">▤ ' + agentEsc(FILES[id] || '笔记已移除') + ' ×</button>';
+    var parsed = agentMessageParts(ag('agentInput').value, false);
+    ag('agentRefs').textContent = parsed.ids.length ? '正文内已引用 ' + parsed.parts.filter(function (part) { return part.type === 'note_ref'; }).length + ' 处 · 可在原位置编辑或删除' : '';
+  }
+  function agentRenderMessageParts(parts) {
+    return parts.map(function (part) {
+      return part.type === 'text' ? agentEsc(part.text) : '<button class="agent-inline-ref" data-open-ref="' + agentEsc(part.sourceId) + '" title="' + agentEsc(part.path) + '">▤ ' + agentEsc(part.path) + '</button>';
     }).join('');
   }
   function renderAgentFiles() {
@@ -3701,27 +3729,28 @@
     ag('agentInput').value = session.draft;
     renderAgentFiles(); renderAgentRefs();
     ag('agentMessages').innerHTML = session.messages.map(function (m, i) {
-      var refs = (m.refs || []).map(function (r) { return '<button class="agent-ref" data-open-ref="' + agentEsc(r.id) + '">' + agentEsc(r.path) + '</button>'; }).join('');
-      var actions = m.role === 'assistant' ? '<div class="agent-actions"><button data-write="append" data-message="' + i + '"' + (!m.refs.length ? ' disabled' : '') + '>追加到引用笔记</button><button data-write="create" data-message="' + i + '">存为新笔记</button></div>' : '';
+      var refs = (m.parts ? [] : m.refs || []).map(function (r) { return '<button class="agent-ref" data-open-ref="' + agentEsc(r.id) + '">' + agentEsc(r.path) + '</button>'; }).join('');
+      var actions = m.role === 'assistant' ? '<div class="agent-actions"><button data-write="append" data-message="' + i + '"' + (!m.refs.length ? ' disabled' : '') + '>' + (m.refs.length > 1 ? '追加到首篇引用' : '追加到引用笔记') + '</button><button data-write="create" data-message="' + i + '">存为新笔记</button></div>' : '';
       var trace = (m.trace || []).map(function (event) { return '<details><summary>' + agentEsc(event.name + ' · ' + event.status) + '</summary><pre>' + agentEsc(event.result) + '</pre></details>'; }).join('');
       var configLabel = m.runConfig ? '<div class="agent-caption">配置 v' + m.runConfig.revision + ' · Skill ' + agentEsc(m.runConfig.skillId) + '</div>' : '';
       var result = m.result ? '<details open><summary>' + agentEsc(m.result.status) + ' · ' + agentEsc(m.result.path) + '</summary><p>修改前</p><pre>' + agentEsc(m.result.before || '（新笔记）') + '</pre><p>修改后</p><pre>' + agentEsc(m.result.after) + '</pre></details><div class="agent-actions"><button data-open-ref="' + agentEsc(m.result.id) + '">查看笔记</button><button data-undo="' + i + '"' + (m.result.undone ? ' disabled' : '') + '>撤销这次操作</button></div>' : '';
-      return '<article class="agent-message ' + m.role + '"><strong>' + (m.role === 'user' ? '你' : 'Agent · 固定 mock') + '</strong><div>' + refs + '</div><p>' + agentEsc(m.text) + '</p>' + configLabel + trace + actions + result + '</article>';
+      return '<article class="agent-message ' + m.role + '"><strong>' + (m.role === 'user' ? '你' : 'Agent · 固定 mock') + '</strong><div>' + refs + '</div><p>' + (m.parts ? agentRenderMessageParts(m.parts) : agentEsc(m.text)) + '</p>' + configLabel + trace + actions + result + '</article>';
     }).join('');
     ag('agentMessages').scrollTop = ag('agentMessages').scrollHeight;
   }
   function agentSend() {
     var session = agentSession(), text = ag('agentInput').value.trim();
     if (!text) { agentStatus('先写下你想讨论的问题。'); return; }
-    var refs = session.refs.map(function (id) {
+    var parsed = agentMessageParts(text, true);
+    var refs = parsed.ids.map(function (id) {
       if (!agentRefAllowed(currentVault, id)) { throw new Error('引用已失效，请移除后重新选择。'); }
       var row = currentFileRows().find(function (r) { return r.id === id; });
       return { id: id, path: row.path, content: CONTENT[id] };
     });
-    session.messages.push({ role: 'user', text: text, refs: refs });
+    session.messages.push({ role: 'user', text: text, parts: parsed.parts, refs: refs });
     if (session.title === '新对话') { session.title = text.slice(0, 18); }
     if (!refs.length) { refs = (session.messages.slice(0, -1).reverse().find(function (m) { return m.refs.length; }) || {}).refs || []; }
-    agentRunMock(text, refs, session);
+    agentRunMock(text, refs, session, parsed.parts);
     session.draft = ''; session.refs = []; renderAgent(); agentStatus('已执行本地固定场景；真实小艺调用未接入。');
   }
   function agentWrite(action, messageIndex, config, payload) {
@@ -3776,7 +3805,7 @@
   ag('agentVault').addEventListener('change', function () {
     agentSession().draft = ag('agentInput').value; switchVault(this.value); renderAgent(); agentStatus('已切换知识库，对话、草稿和引用各自隔离。首期不支持跨库联合对话。');
   });
-  ag('agentInput').addEventListener('input', function () { agentSession().draft = this.value; });
+  ag('agentInput').addEventListener('input', function () { agentSession().draft = this.value; agentSession().refs = agentMessageParts(this.value, false).ids; renderAgentRefs(); renderAgentFiles(); });
   ag('agentInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); try { agentSend(); } catch (err) { agentStatus(err.message); } } });
   ag('agentSettings').addEventListener('click', function () { setView('settings', true); setSettingsTab('agent'); });
   ag('agentSkill').addEventListener('change', function () { agentSession().skillId = this.value; agentStatus('本轮 Skill 已选择，下一次发送生效。'); });
@@ -3794,7 +3823,6 @@
       if (target.hasAttribute('data-example')) { var scene = AGENT_MOCK_SCENARIOS.find(function (s) { return s.id === target.getAttribute('data-example'); }); ag('agentInput').value = scene.inputs[0]; agentSession().draft = scene.inputs[0]; ag('agentInput').focus(); }
       if (target.hasAttribute('data-agent-dir')) { var row = (TREES[currentVault] || [])[Number(target.getAttribute('data-agent-dir'))]; if (row && row[0] === 'dir') { row[2] = !row[2]; renderAgentFiles(); renderTree(); } }
       if (target.hasAttribute('data-add-ref')) { agentAddRef(currentVault, target.getAttribute('data-add-ref')); }
-      if (target.hasAttribute('data-remove-ref')) { agentSession().refs = agentSession().refs.filter(function (id) { return id !== target.getAttribute('data-remove-ref'); }); renderAgentRefs(); renderAgentFiles(); }
       if (target.hasAttribute('data-session')) { agentSession().draft = ag('agentInput').value; agentActive[currentVault] = target.getAttribute('data-session'); renderAgent(); ag('agentNav').classList.remove('open'); agentStatus(''); }
       if (target.hasAttribute('data-open-ref')) { var id = target.getAttribute('data-open-ref'); if (!agentRefAllowed(currentVault, id)) { throw new Error('笔记已移除或不属于当前库。'); } current = id; loadFile(); setView('note', true); }
       if (target.hasAttribute('data-write')) { agentWrite(target.getAttribute('data-write'), Number(target.getAttribute('data-message'))); }
@@ -3818,11 +3846,11 @@
     if (!config.enabledTools.includes(name)) { throw new Error('TOOL_DISABLED：当前工具开关或 Skill 不允许 ' + name); }
   }
   function agentMockScenario(text) {
-    return AGENT_MOCK_SCENARIOS.find(function (scene) { return scene.inputs.includes(text.trim()); });
+    return AGENT_MOCK_SCENARIOS.find(function (scene) { return scene.inputs.includes(text.replace(/\[\[([^\]\r\n]+)\]\]/g, '').trim()); });
   }
-  function agentRunMock(text, refs, session) {
+  function agentRunMock(text, refs, session, parts) {
     var config = agentRunConfig(session.skillId || agentConfig.defaultSkill);
-    var message = { role: 'assistant', text: '', refs: refs.map(function (r) { return { id: r.id, path: r.path, content: r.content }; }), runConfig: config, trace: [] };
+    var message = { role: 'assistant', text: '', contextParts: parts || [], refs: refs.map(function (r) { return { id: r.id, path: r.path, content: r.content }; }), runConfig: config, trace: [] };
     session.messages.push(message);
     var index = session.messages.length - 1, scenario = agentMockScenario(text);
     if (!scenario) { message.text = '未命中固定 mock 场景，不会调用工具。可发送：' + AGENT_MOCK_SCENARIOS.map(function (s) { return s.inputs[0]; }).join('、') + '。'; return; }
@@ -3832,6 +3860,7 @@
         var event = { name: step.name, status: 'running', result: '' }; message.trace.push(event);
         try {
           agentAssertTool(step.name, config);
+          if (['AppendNote', 'EditNote'].includes(step.name) && message.refs.length > 1) { throw new Error('AMBIGUOUS_TARGET：引用了多篇笔记，请明确要修改哪篇；本固定写入场景需要单一目标引用'); }
           if (step.name === 'QueryNotes') {
             var matches = currentFileRows().filter(function (row) { return row.path.includes(step.query); });
             event.result = matches.map(function (row) { return row.path; }).join('\n') || '没有匹配笔记';

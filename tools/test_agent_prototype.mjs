@@ -17,7 +17,7 @@ function fixture({ storageFails = false } = {}) {
       nodes.set(id, { value: '', innerHTML: '', textContent: '', handlers: {}, scrollTop: 0,
         classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c), toggle: (c, force) => { if (force === undefined ? !classes.has(c) : force) classes.add(c); else classes.delete(c); } },
         addEventListener(type, fn) { this.handlers[type] = fn; },
-        setAttribute(k, v) { attrs[k] = v; }, getAttribute(k) { return attrs[k]; }, focus() {}, contains() { return false; }
+        setAttribute(k, v) { attrs[k] = v; }, getAttribute(k) { return attrs[k]; }, focus() {}, setSelectionRange(start,end) { this.selectionStart=start; this.selectionEnd=end; }, contains() { return false; }
       });
     }
     return nodes.get(id);
@@ -58,7 +58,7 @@ test('drag/click reference semantics deduplicate and reject another vault', () =
   assert.match(f.get('agentStatus').textContent, /只能引用/);
 });
 test('send captures references, clears composer and preserves multi-turn messages', () => {
-  const f = fixture(); f.run("agentAddRef('local','reading_journal')"); f.get('agentInput').value = '请追问我'; f.run('agentSend()');
+  const f = fixture(); f.run("agentAddRef('local','reading_journal')"); f.get('agentInput').value = '[[阅读.md]]请追问我'; f.run('agentSend()');
   assert.equal(f.run('agentSession().messages.length'), 4);
   assert.equal(f.run('agentSession().messages[2].refs[0].content'), '# 阅读\n我的理解');
   assert.equal(f.run('agentSession().refs.length'), 0); assert.equal(f.get('agentInput').value, '');
@@ -113,7 +113,7 @@ test('mock scenarios return different fixed replies and unmatched input never wr
 });
 test('scripted read then append invokes tools and exposes actual results', () => {
   const f = fixture(); f.run("agentAddRef('local','reading_journal')");
-  f.get('agentInput').value = '把这轮结论追加到笔记'; f.run('agentSend()');
+  f.get('agentInput').value = '[[阅读.md]]把这轮结论追加到笔记'; f.run('agentSend()');
   assert.equal(f.run('agentSession().messages.at(-1).trace.length'), 2);
   assert.equal(f.run('agentSession().messages.at(-1).trace[1].status'), 'completed');
   assert.match(f.c.CONTENT.reading_journal, /阅读后的自检/);
@@ -122,14 +122,14 @@ test('scripted read then append invokes tools and exposes actual results', () =>
 });
 test('disabled tool is rejected by scripts and manual result-card actions', () => {
   const f = fixture(); f.run("agentConfig.enabledTools = ['ReadNote','UndoLastEdit']; agentAddRef('local','reading_journal')");
-  const before = f.c.CONTENT.reading_journal; f.get('agentInput').value = '把这轮结论追加到笔记'; f.run('agentSend()');
+  const before = f.c.CONTENT.reading_journal; f.get('agentInput').value = '[[阅读.md]]把这轮结论追加到笔记'; f.run('agentSend()');
   assert.match(f.run('agentSession().messages.at(-1).text'), /TOOL_DISABLED/);
   assert.equal(f.c.CONTENT.reading_journal, before);
   assert.throws(() => f.run("agentWrite('create',1)"), /TOOL_DISABLED/);
 });
 test('skill tool restriction is enforced even if the global tool is enabled', () => {
   const f = fixture(); f.run("agentSession().skillId='synthesis'; agentAddRef('local','reading_journal')");
-  f.get('agentInput').value = '把熟悉改成理解'; f.run('agentSend()');
+  f.get('agentInput').value = '[[阅读.md]]把熟悉改成理解'; f.run('agentSend()');
   assert.match(f.run('agentSession().messages.at(-1).text'), /TOOL_DISABLED/);
   assert.equal(f.c.CONTENT.reading_journal, '# 阅读\n我的理解');
 });
@@ -158,17 +158,17 @@ test('settings tabs retain prompt drafts and keyboard navigation selects a panel
 
 test('read and filename query report actual current-library results', () => {
   const f = fixture(); f.run("agentAddRef('local','reading_journal')");
-  f.get('agentInput').value = '读取引用笔记'; f.run('agentSend()');
+  f.get('agentInput').value = '[[阅读.md]]读取引用笔记'; f.run('agentSend()');
   assert.match(f.run('agentSession().messages.at(-1).trace[0].result'), /我的理解/);
   f.get('agentInput').value = '查找阅读笔记'; f.run('agentSend()');
   assert.equal(f.run('agentSession().messages.at(-1).trace[0].result'), '阅读.md');
 });
 test('edit uses a unique exact anchor and rejects repeated anchors without a write', () => {
   const f = fixture(); f.c.CONTENT.reading_journal = '熟悉不等于理解'; f.c.ta.value = '熟悉不等于理解';
-  f.run("agentAddRef('local','reading_journal')"); f.get('agentInput').value = '把熟悉改成理解'; f.run('agentSend()');
+  f.run("agentAddRef('local','reading_journal')"); f.get('agentInput').value = '[[阅读.md]]把熟悉改成理解'; f.run('agentSend()');
   assert.equal(f.c.CONTENT.reading_journal, '熟悉只是起点，理解还需要例子与反例');
   const g = fixture(); g.c.CONTENT.reading_journal = '熟悉不等于理解；熟悉不等于理解'; g.c.ta.value = g.c.CONTENT.reading_journal;
-  g.run("agentAddRef('local','reading_journal')"); g.get('agentInput').value = '把熟悉改成理解'; g.run('agentSend()');
+  g.run("agentAddRef('local','reading_journal')"); g.get('agentInput').value = '[[阅读.md]]把熟悉改成理解'; g.run('agentSend()');
   assert.match(g.run('agentSession().messages.at(-1).text'), /ANCHOR_NOT_UNIQUE/);
   assert.equal(g.c.CONTENT.reading_journal, '熟悉不等于理解；熟悉不等于理解');
 });
@@ -203,4 +203,38 @@ test('normal note tree retains its controls while Agent uses reference actions',
   const agent=f.run("nodeHtml(['file','阅读.md',false,0,'reading_journal'],0,true)");
   assert.match(normal,/sw-btn/); assert.match(normal,/data-id=/); assert.doesNotMatch(normal,/data-add-ref/);
   assert.match(agent,/data-add-ref/); assert.doesNotMatch(agent,/sw-btn/);
+});
+
+test('insert at cursor preserves text before/after and allows repeated source mentions', () => {
+  const f = fixture(); f.get('agentInput').value = '先参考，解释原因'; f.get('agentInput').setSelectionRange(3,3);
+  f.run("agentAddRef('local','reading_journal')");
+  assert.equal(f.get('agentInput').value, '先参考[[阅读.md]]，解释原因');
+  assert.equal(f.get('agentInput').selectionStart, '先参考[[阅读.md]]'.length);
+  f.run("agentAddRef('local','reading_journal')");
+  assert.equal(f.run("agentMessageParts(ag('agentInput').value,true).parts.filter(p=>p.type==='note_ref').length"), 2);
+  assert.equal(f.run('agentSession().refs.length'), 1);
+});
+test('one message preserves A/B/A placement with deduplicated content snapshots', () => {
+  const f = fixture(); f.c.TREES.local.push(['file','B.md',false,0,'b']); f.c.FILES.b='B.md'; f.c.CONTENT.b='B 的观点';
+  f.get('agentInput').value = '先参考[[阅读.md]]解释观点。再参考[[B.md]]比较分歧，最后回到[[阅读.md]]。'; f.run('agentSend()');
+  assert.equal(f.run("agentSession().messages[2].parts.map(p=>p.type==='text'?p.text:p.sourceId).join('|')"), '先参考|reading_journal|解释观点。再参考|b|比较分歧，最后回到|reading_journal|。');
+  assert.equal(f.run('agentSession().messages[2].refs.length'), 2);
+  assert.equal(f.run('agentSession().messages[3].contextParts.length'), 7);
+  const rendered=f.get('agentMessages').innerHTML;
+  assert.match(rendered,/先参考<button class="agent-inline-ref"/);
+  assert.match(rendered,/解释观点。再参考<button class="agent-inline-ref"/);
+});
+test('removed or invalid inline references do not silently send draft attachments', () => {
+  const f = fixture(); f.get('agentNew').handlers.click(); f.run("agentAddRef('local','reading_journal')");
+  f.get('agentInput').value='不引用笔记，只讨论'; f.get('agentInput').handlers.input.call(f.get('agentInput')); f.run('agentSend()');
+  assert.equal(f.run('agentSession().messages[0].refs.length'),0);
+  const count=f.run('agentSession().messages.length'); f.get('agentInput').value='请看[[已删除.md]]';
+  assert.throws(()=>f.run('agentSend()'),/引用不存在/); assert.equal(f.run('agentSession().messages.length'),count);
+  assert.equal(f.get('agentInput').value,'请看[[已删除.md]]');
+});
+test('ambiguous multi-reference write is rejected instead of changing the first note', () => {
+  const f = fixture(); f.c.TREES.local.push(['file','B.md',false,0,'b']); f.c.FILES.b='B.md'; f.c.CONTENT.b='B';
+  f.get('agentInput').value='[[阅读.md]][[B.md]]把这轮结论追加到笔记'; f.run('agentSend()');
+  assert.match(f.run('agentSession().messages.at(-1).text'),/AMBIGUOUS_TARGET/);
+  assert.equal(f.c.CONTENT.reading_journal,'# 阅读\n我的理解'); assert.equal(f.c.CONTENT.b,'B');
 });
