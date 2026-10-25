@@ -214,6 +214,12 @@ docs/releases/vX.Y/需求文档.md（本版本承诺交付的）
 
 ---
 
+## Agent 独立版本线
+
+App 版本继续管理 UI、平台与装机交付。Agent 的 loop、上下文、Tools/Skills、配置与运行恢复另见 [Agent 版本索引](../agent/README.md) 和 [独立需求清单](../agent/requirements_backlog.md)。App v0.7 集成 Agent v0.1；真实小艺 App v0.6 对应 Agent v0.3，继续外部暂缓。Agent 版本不是 AppScope 包版本，也不修改现有 App 发布档案。
+
+Agent 需求先进入 docs/agent/requirements_backlog.md 再分配其版本；App UI 需求仍从本项目 App 需求池分配，两边通过需求编号与兼容映射关联，不能只更新其中一边完成状态。Agent 新建版本目录也必须先有需求文档；没有实际发布证据不得标记发布。
+
 ## 5. 与其他文档的分工（别写错地方）
 
 | 文档 | 回答什么问题 |
