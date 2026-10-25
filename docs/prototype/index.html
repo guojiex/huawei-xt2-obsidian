@@ -766,6 +766,9 @@
   }
   .set-row:last-child { border-bottom: none; }
   .set-row > span:first-child { color: var(--text-secondary); flex: none; width: 96px; font-size: var(--fs-body2); }
+  .set-row > span:only-child { width: auto; flex: 1; line-height: 1.6; }
+  .set-actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4) var(--sp-4); }
+  .set-actions button { min-height: var(--h-touch); height: auto; white-space: normal; }
   .set-row code { font-family: var(--font-mono); font-size: var(--fs-body3); color: var(--text-primary); }
   .set-row em {
     margin-left: auto; font-style: normal; font-size: var(--fs-caption); color: var(--text-tertiary);
@@ -1229,7 +1232,7 @@
 <section id="settings-data" class="settings-panel hidden" role="tabpanel" aria-labelledby="settings-tab-data"><div class="set-group" data-intro="v0.5">
             <div class="set-head">数据管理</div>
             <div class="set-row"><span>清除本地数据，重新打开后恢复初始样例库。无法撤销。</span></div>
-            <button id="resetDataBtn" class="btn-danger">重置所有数据</button>
+            <div class="set-actions"><button id="resetDataBtn" class="btn-danger">重置所有数据</button></div>
           </div></section><section id="settings-about" class="settings-panel hidden" role="tabpanel" aria-labelledby="settings-tab-about"><p class="sub">版本取自包配置，版本记录来自 changelog.json。</p><div class="set-group">
             <div class="set-head">关于</div>
             <div class="hero">
