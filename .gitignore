@@ -44,3 +44,7 @@ Thumbs.db
 /.cache/
 # IDE 在项目根目录误建的嵌套空 git 仓库，会让 git add 失败（does not have a commit checked out）
 /.codegenie/
+
+# AGC credentials (do not commit)
+.env
+agc_private.json
