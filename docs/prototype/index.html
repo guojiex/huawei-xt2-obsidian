@@ -881,26 +881,33 @@
   .agent-bar select { max-width: var(--agent-library-width); }
   .agent-notice { padding: var(--sp-2) var(--sp-4); background: var(--brand-bg); color: var(--text-secondary); font-size: var(--fs-body3); }
   .agent-layout { flex: 1; min-height: 0; display: flex; position: relative; }
-  .agent-nav { flex: none; width: var(--agent-nav-wide); display: flex; position: relative; min-height: 0; background: var(--bg-secondary); border-right: 1px solid var(--line); }
-  .agent-tabs { position: absolute; left: 0; right: 0; top: 0; height: var(--h-touch); display: flex; gap: var(--sp-1); padding: 0 var(--sp-2); z-index: 1; background: var(--bg-secondary); border-bottom: 1px solid var(--line); }
-  .agent-threads, .agent-files { flex: 1; min-width: 0; overflow: auto; padding: var(--sp-3); padding-top: calc(var(--h-touch) + var(--sp-3)); }
-  .agent-files { border-left: 1px solid var(--line); }
+  .agent-nav { flex: none; width: var(--agent-nav-wide); display: flex; position: relative; flex-direction: column; min-height: 0; background: var(--bg-page); border-right: 1px solid var(--line); }
+  .agent-tabs { flex: none; display: flex; gap: var(--sp-1); padding: var(--sp-2); background: var(--bg-page); border-bottom: 1px solid var(--line); }
+  .agent-tabs button { flex: 1; background: transparent; color: var(--text-secondary); }
+  .agent-tabs button[aria-pressed="true"] { background: var(--bg-card); color: var(--text-primary); }
+  .agent-threads, .agent-files { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+  .agent-nav .side-head { min-height: var(--h-touch); height: auto; }
+  .agent-nav .side-mini { width: var(--h-touch); }
+  .agent-thread-list { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-2); }
+  .agent-files { border-top: 1px solid var(--line); }
+  .agent-files .tree { min-height: 0; }
+  .agent-file-hint { padding: var(--sp-2) var(--sp-3); color: var(--text-tertiary); font-size: var(--fs-body3); }
   .agent-chat { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-  .agent-chat-head { padding: var(--sp-3) var(--sp-4); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); border-bottom: 1px solid var(--line); }
+  .agent-chat-head { flex-wrap: wrap; padding: var(--sp-3) var(--sp-4); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); border-bottom: 1px solid var(--line); }
   .agent-chat-head strong { font-size: var(--fs-body1); overflow-wrap: anywhere; }
   .agent-caption { font-size: var(--fs-body3); color: var(--text-secondary); line-height: 1.5; margin: var(--sp-2) 0; }
   .agent-page button { min-height: var(--h-touch); height: auto; white-space: normal; overflow-wrap: anywhere; }
-  .agent-new { width: 100%; margin-bottom: var(--sp-3); }
-  .agent-thread { width: 100%; display: block; text-align: left; padding: var(--sp-3); margin-bottom: var(--sp-2); border-radius: var(--r-control); background: transparent; border: 1px solid transparent; }
-  .agent-thread.on { background: var(--brand-bg); color: var(--brand); }
-  .agent-file { margin: var(--sp-2) 0; padding: var(--sp-3); background: var(--bg-card); border-radius: var(--r-control); overflow-wrap: anywhere; font-size: var(--fs-body2); cursor: grab; }
-  .agent-file button { margin-top: var(--sp-2); }
-  .agent-search { display: block; font-size: var(--fs-body3); }
+  .agent-thread { width: 100%; display: flex; align-items: center; gap: var(--sp-3); text-align: left; padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-1); border-radius: var(--r-control); background: transparent; border: none; font-size: var(--fs-body2); }
+  .agent-thread svg { flex: none; color: var(--text-tertiary); }
+  .agent-thread span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-thread:hover { background: var(--fill-hover); }
+  .agent-thread.on { background: var(--brand-bg-solid); color: var(--brand); }
+  .agent-search { display: block; padding: var(--sp-2) var(--sp-3); }
   .agent-page input, .agent-page textarea, .agent-page select { box-sizing: border-box; min-width: 0; min-height: var(--h-touch); padding: var(--sp-3); border: 1px solid var(--line-strong); border-radius: var(--r-control); color: var(--text-primary); background: var(--bg-card); font: inherit; }
   .agent-page input, .agent-page textarea { width: 100%; }
   .agent-messages { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-4); }
-  .agent-message { margin-bottom: var(--sp-5); padding: var(--sp-4); border-radius: var(--r-card); background: var(--bg-secondary); overflow-wrap: anywhere; }
-  .agent-message.user { margin-left: var(--sp-6); background: var(--brand-bg); }
+  .agent-message { margin-bottom: var(--sp-6); padding: var(--sp-2) 0; overflow-wrap: anywhere; }
+  .agent-message.user { margin-left: var(--sp-12); padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--bg-secondary); }
   .agent-message p { white-space: pre-wrap; line-height: 1.7; font-size: var(--fs-body2); margin: var(--sp-3) 0; }
   .agent-message strong { font-size: var(--fs-body3); }
   .agent-message details { margin-top: var(--sp-3); font-size: var(--fs-body3); }
@@ -915,8 +922,9 @@
   .agent-ref { max-width: 100%; padding: var(--sp-2); border-radius: var(--r-control); background: var(--brand-bg); font-size: var(--fs-body3); overflow-wrap: anywhere; }
   .agent-status { min-height: var(--sp-4); margin: var(--sp-2) var(--sp-4); font-size: var(--fs-body3); color: var(--text-secondary); overflow-wrap: anywhere; }
   [data-form="lg"] .agent-nav { flex-direction: column; }
-  [data-form="lg"] .agent-threads { flex: 0 1 40%; min-height: 0; }
-  [data-form="lg"] .agent-files { padding-top: var(--sp-3); border-left: none; border-top: 1px solid var(--line); min-height: 0; }
+  [data-form="lg"] .agent-threads { flex: 0 1 36%; min-height: 0; }
+  [data-form="lg"] .agent-files { min-height: 0; }
+  [data-form="lg"] .agent-tabs { display: none; }
   [data-form="md"] #agentHideNav { display: none; }
   [data-form="lg"] #agentHideNav, [data-form="lg"] #agentSwitchPane { display: none; }
   [data-form="md"] .agent-nav { width: var(--agent-nav-compact); }
@@ -1121,8 +1129,8 @@
           <div class="agent-layout">
             <aside class="agent-nav" id="agentNav">
               <div class="agent-tabs"><button id="agentThreadsTab" aria-pressed="true">对话</button><button id="agentFilesTab" aria-pressed="false">笔记</button><button id="agentHideNav">收起</button></div>
-              <section class="agent-threads"><button id="agentNew" class="agent-new">＋ 新对话</button><div id="agentThreads"></div></section>
-              <section class="agent-files"><label class="agent-search">查找笔记<input id="agentSearch" placeholder="文件名或路径"></label><p class="agent-caption">拖进输入框引用；也可点“引用”</p><div id="agentFiles"></div></section>
+              <section class="agent-threads"><div class="side-head"><span>最近对话</span><button id="agentNew" class="side-mini" title="新对话" aria-label="新对话">＋</button></div><div id="agentThreads" class="agent-thread-list"></div></section>
+              <section class="agent-files"><div class="side-head"><span>笔记</span><span id="agentFileCount" class="agent-caption"></span></div><label class="agent-search"><input id="agentSearch" aria-label="查找当前库笔记" placeholder="搜索笔记"></label><div id="agentFiles" class="tree"></div><div class="agent-file-hint">点击引用 · 拖到输入框引用</div></section>
             </aside>
             <section class="agent-chat" aria-label="Agent 对话">
               <div class="agent-chat-head"><div><strong id="agentTitle">读书讨论</strong><p class="agent-caption" id="agentScope"></p></div><div class="agent-actions"><label class="agent-caption">Skill <select id="agentSkill" aria-label="本轮 Skill"></select></label><button id="agentSettings">Agent 设置</button><button id="agentAttach">＋ 引用笔记</button></div></div>
@@ -1759,12 +1767,12 @@
   var ICON_TRASH = '<svg' + IA + '><path d="M4.6 7.2h14.8"/><path d="M9.6 7.2V5.4a1.4 1.4 0 011.4-1.4h2a1.4 1.4 0 011.4 1.4v1.8"/><path d="M6.6 7.2l.8 11a2 2 0 002 1.9h5.2a2 2 0 002-1.9l.8-11"/></svg>';
   var ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 
-  function nodeHtml(row, idx) {
+  function nodeHtml(row, idx, forAgent) {
     var kind = row[0], label = row[1], open = row[2], depth = row[3], id = row[4];
     var d = depth;   /* depth 已是绝对层级（file 的 depth = 父目录 depth + 1），不要再 +1 */
     var cls = 'node ' + (kind === 'dir' ? 'dir' : 'file');
     var guides = '<span class="guides">' + '<i></i>'.repeat(d) + '</span>';
-    if (id && id === current) { cls += ' sel'; }
+    if (id && (forAgent ? agentSession().refs.includes(id) : id === current)) { cls += ' sel'; }
     var caret = kind === 'dir'
       ? '<span class="caret">' + (open ? ICON_CARET_OPEN : ICON_CARET) + '</span>'
       : '<span class="caret"></span>';
@@ -1772,9 +1780,12 @@
     var attrs = kind === 'dir'
       ? ' data-dir="' + idx + '" title="点击展开 / 折叠 · 左滑重命名或移动"'
       : (id ? ' data-id="' + id + '" title="点击打开 · 左滑出操作 · 滑到底直接删除"' : '');
+    if (forAgent) {
+      attrs = kind === 'dir' ? ' data-agent-dir="' + idx + '" tabindex="0" role="button" aria-expanded="' + String(open) + '" title="展开 / 折叠目录"' : ' data-add-ref="' + agentEsc(id) + '" data-drag-note="' + agentEsc(id) + '" draggable="true" tabindex="0" role="button" title="点击引用，或拖到输入框"';
+    }
     var sub = (kind === 'file' && META[id]) ? '<span class="nsub">' + META[id] + '</span>' : '';
     /* 行内「+」：仅目录行 —— 点了直接在这个文件夹下新建笔记（点它不触发展开/折叠） */
-    var plus = kind === 'dir'
+    var plus = kind === 'dir' && !forAgent
       ? '<button class="row-plus" data-plus="' + idx + '" title="在此文件夹下新建笔记">'
         + ICON_PLUS + '</button>'
       : '';
@@ -1789,7 +1800,7 @@
     return '<div class="node-wrap" data-kind="' + kind + '" data-idx="' + idx + '">'
       + '<div class="' + cls + '"' + attrs + '>' + guides + caret + icon
       + '<span class="nlabel">' + esc(label) + sub + '</span>' + plus + '</div>'
-      + '<div class="swipe">' + acts + '</div></div>';
+      + (forAgent ? '' : '<div class="swipe">' + acts + '</div>') + '</div>';
   }
 
   /* ---------- 编辑器 + 高亮 + 预览 ---------- */
@@ -3636,7 +3647,7 @@
     if (!agentRefAllowed(vault, id)) { agentStatus('只能引用本次对话所属知识库中的现有笔记。'); return; }
     var session = agentSession();
     if (!session.refs.includes(id)) { session.refs.push(id); }
-    renderAgentRefs(); agentStatus('已加入引用；发送时读取笔记内容。可以继续添加同库笔记。');
+    renderAgentRefs(); renderAgentFiles(); agentStatus('已加入引用；发送时读取笔记内容。可以继续添加同库笔记。');
     if (body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); }
     ag('agentInput').focus();
   }
@@ -3647,10 +3658,27 @@
   }
   function renderAgentFiles() {
     var query = ag('agentSearch').value.trim().toLocaleLowerCase();
-    var rows = currentFileRows().filter(function (r) { return r.path.toLocaleLowerCase().includes(query); });
-    ag('agentFiles').innerHTML = rows.map(function (r) {
-      return '<div class="agent-file" draggable="true" data-drag-note="' + agentEsc(r.id) + '"><div>' + agentEsc(r.path) + '</div><button data-add-ref="' + agentEsc(r.id) + '">引用到对话</button></div>';
-    }).join('') || '<p class="agent-caption">当前库没有匹配笔记。</p>';
+    var rows = TREES[currentVault] || [], ancestors = [], matches = new Set(), hideLevel = -1;
+    var files = currentFileRows(), paths = {};
+    files.forEach(function (file) { paths[file.id] = file.path; });
+    if (query) {
+      rows.forEach(function (row, index) {
+        if (row[0] === 'dir') { ancestors[row[3]] = index; ancestors.length = row[3] + 1; }
+        else if ((paths[row[4]] || '').toLocaleLowerCase().includes(query)) {
+          matches.add(index); ancestors.slice(0, row[3]).forEach(function (parent) { matches.add(parent); });
+        }
+      });
+    }
+    var html = '';
+    rows.forEach(function (row, index) {
+      if (query && !matches.has(index)) { return; }
+      if (!query && hideLevel >= 0) { if (row[3] > hideLevel) { return; } hideLevel = -1; }
+      var shown = row.slice(); if (query && shown[0] === 'dir') { shown[2] = true; }
+      html += nodeHtml(shown, index, true);
+      if (!query && row[0] === 'dir' && !row[2]) { hideLevel = row[3]; }
+    });
+    ag('agentFiles').innerHTML = html || '<p class="agent-caption">' + (query ? '没有匹配的笔记' : '这个库还没有笔记') + '</p>';
+    ag('agentFileCount').textContent = files.length + ' 篇';
   }
   function agentNav(tab) {
     ag('agentNav').setAttribute('data-tab', tab);
@@ -3668,7 +3696,7 @@
     ag('agentExamples').innerHTML = AGENT_MOCK_SCENARIOS.map(function (scene) { return '<button data-example="' + scene.id + '">' + agentEsc(scene.inputs[0]) + '</button>'; }).join('');
     ag('agentScope').textContent = vaultById(currentVault).name + ' · 仅使用本库与本段对话中明确引用的笔记';
     ag('agentThreads').innerHTML = agentStores[currentVault].map(function (s) {
-      return '<button class="agent-thread' + (s === session ? ' on' : '') + '" data-session="' + agentEsc(s.id) + '">' + agentEsc(s.title) + '</button>';
+      return '<button class="agent-thread' + (s === session ? ' on' : '') + '" data-session="' + agentEsc(s.id) + '" title="' + agentEsc(s.title) + '"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3V6a2 2 0 0 1 2-2Z"/></svg><span>' + agentEsc(s.title) + '</span></button>';
     }).join('');
     ag('agentInput').value = session.draft;
     renderAgentFiles(); renderAgentRefs();
@@ -3761,17 +3789,19 @@
   ag('agentHideNav').addEventListener('click', function () { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); });
   ag('agentView').addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (ag('agentNav').classList.contains('open') && body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); } else { setView('note', true); } } });
   ag('agentView').addEventListener('click', function (e) {
-    var target = e.target.closest('button'); if (!target) { return; }
+    var target = e.target.closest('button, [data-add-ref], [data-agent-dir]'); if (!target) { return; }
     try {
       if (target.hasAttribute('data-example')) { var scene = AGENT_MOCK_SCENARIOS.find(function (s) { return s.id === target.getAttribute('data-example'); }); ag('agentInput').value = scene.inputs[0]; agentSession().draft = scene.inputs[0]; ag('agentInput').focus(); }
+      if (target.hasAttribute('data-agent-dir')) { var row = (TREES[currentVault] || [])[Number(target.getAttribute('data-agent-dir'))]; if (row && row[0] === 'dir') { row[2] = !row[2]; renderAgentFiles(); renderTree(); } }
       if (target.hasAttribute('data-add-ref')) { agentAddRef(currentVault, target.getAttribute('data-add-ref')); }
-      if (target.hasAttribute('data-remove-ref')) { agentSession().refs = agentSession().refs.filter(function (id) { return id !== target.getAttribute('data-remove-ref'); }); renderAgentRefs(); }
+      if (target.hasAttribute('data-remove-ref')) { agentSession().refs = agentSession().refs.filter(function (id) { return id !== target.getAttribute('data-remove-ref'); }); renderAgentRefs(); renderAgentFiles(); }
       if (target.hasAttribute('data-session')) { agentSession().draft = ag('agentInput').value; agentActive[currentVault] = target.getAttribute('data-session'); renderAgent(); ag('agentNav').classList.remove('open'); agentStatus(''); }
       if (target.hasAttribute('data-open-ref')) { var id = target.getAttribute('data-open-ref'); if (!agentRefAllowed(currentVault, id)) { throw new Error('笔记已移除或不属于当前库。'); } current = id; loadFile(); setView('note', true); }
       if (target.hasAttribute('data-write')) { agentWrite(target.getAttribute('data-write'), Number(target.getAttribute('data-message'))); }
       if (target.hasAttribute('data-undo')) { agentUndo(Number(target.getAttribute('data-undo'))); }
     } catch (err) { agentStatus(err.message); }
   });
+  ag('agentFiles').addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-add-ref], [data-agent-dir]')) { e.preventDefault(); e.target.click(); } });
   ag('agentFiles').addEventListener('dragstart', function (e) {
     var row = e.target.closest('[data-drag-note]'); if (!row) { return; }
     e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('application/x-yaoshi-note', JSON.stringify({ vault: currentVault, id: row.getAttribute('data-drag-note') }));

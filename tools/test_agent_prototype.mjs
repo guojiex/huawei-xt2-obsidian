@@ -36,6 +36,7 @@ function fixture({ storageFails = false } = {}) {
     function loadFile() { ta.value = CONTENT[current] || ''; }
     function switchVault(id) { currentVault = id; current = TREES[id][0][4]; loadFile(); }`, c);
   vm.runInContext(builtins + configCode, c);
+  vm.runInContext(html.slice(html.indexOf('  var IC ='), html.indexOf('  /* ---------- 编辑器 + 高亮 + 预览 ---------- */')), c);
   vm.runInContext(code, c);
   return { c, get, storage, run: (s) => vm.runInContext(s, c) };
 }
@@ -183,4 +184,23 @@ test('stored configuration cannot add unknown tools or disable recovery', () => 
   const f = fixture();
   assert.equal(f.run("agentNormalizeConfig({version:1,enabledTools:['Shell','ReadNote']}).enabledTools.join(',')"), 'ReadNote,UndoLastEdit');
   assert.equal(f.run("agentNormalizeConfig({version:1,systemPrompt:'  ',promptSource:'custom'}).promptSource"), 'builtin');
+});
+
+
+test('Agent reuses normal tree rows, hides collapsed children and preserves ancestor paths in search', () => {
+  const f = fixture();
+  f.c.TREES.local = [['dir','阅读',false,0],['file','阅读.md',false,1,'reading_journal']];
+  f.run('renderAgentFiles()'); assert.match(f.get('agentFiles').innerHTML,/node dir/); assert.doesNotMatch(f.get('agentFiles').innerHTML,/data-add-ref/);
+  f.get('agentSearch').value='阅读.md'; f.run('renderAgentFiles()');
+  assert.match(f.get('agentFiles').innerHTML,/node dir/); assert.match(f.get('agentFiles').innerHTML,/node file/);
+  assert.match(f.get('agentFiles').innerHTML,/data-drag-note/); assert.match(f.get('agentFiles').innerHTML,/class="guides"/);
+  assert.doesNotMatch(f.get('agentFiles').innerHTML,/sw-btn|row-plus|agent-file"/);
+  assert.equal(f.c.TREES.local[0][2], false);
+});
+test('normal note tree retains its controls while Agent uses reference actions', () => {
+  const f = fixture();
+  const normal=f.run("nodeHtml(['file','阅读.md',false,0,'reading_journal'],0)");
+  const agent=f.run("nodeHtml(['file','阅读.md',false,0,'reading_journal'],0,true)");
+  assert.match(normal,/sw-btn/); assert.match(normal,/data-id=/); assert.doesNotMatch(normal,/data-add-ref/);
+  assert.match(agent,/data-add-ref/); assert.doesNotMatch(agent,/sw-btn/);
 });
