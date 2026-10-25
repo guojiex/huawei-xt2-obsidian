@@ -927,7 +927,10 @@
   [data-form="lg"] .agent-files { min-height: 0; }
   [data-form="lg"] .agent-tabs { display: none; }
   [data-form="md"] #agentHideNav { display: none; }
-  [data-form="lg"] #agentHideNav, [data-form="lg"] #agentSwitchPane { display: none; }
+  [data-form="lg"] #agentHideNav { display: none; }
+  [data-form="lg"] .agent-nav[data-show-files="false"] .agent-threads { flex: 1; }
+  [data-form="lg"] .agent-nav[data-show-threads="false"] .agent-files { border-top: none; }
+  .agent-bar button[aria-pressed="true"] { background: var(--brand-bg); color: var(--brand); }
   [data-form="md"] .agent-nav { width: var(--agent-nav-compact); }
   [data-form="md"] .agent-nav[data-tab="threads"] .agent-files, [data-form="sm"] .agent-nav[data-tab="threads"] .agent-files { display: none; }
   [data-form="md"] .agent-nav[data-tab="files"] .agent-threads, [data-form="sm"] .agent-nav[data-tab="files"] .agent-threads { display: none; }
@@ -1125,13 +1128,13 @@
 
         <!-- v0.2：删除兜底。原型只演示当前页面内的恢复交互，真机需持久化。 -->
         <div id="agentView" class="agent-page hidden" data-intro="v0.7">
-          <div class="agent-bar"><strong>Agent · 与笔记一起读</strong><label>知识库 <select id="agentVault" aria-label="对话所属知识库"></select></label><button id="agentSwitchPane">对话 / 笔记</button></div>
+          <div class="agent-bar"><strong>Agent · 与笔记一起读</strong><label>知识库 <select id="agentVault" aria-label="对话所属知识库"></select></label><div class="agent-actions"><button id="agentSwitchPane" aria-label="显示或隐藏会话列表" aria-controls="agentThreadPane" aria-pressed="true">会话</button><button id="agentToggleFiles" aria-label="显示或隐藏文件列表" aria-controls="agentFilePane" aria-pressed="true">文件</button></div></div>
           <div class="agent-notice">本地 mock · 固定问法返回对应回复；工具只修改本页样例，无网络。小艺接入、后台与系统通知仍后置。</div>
           <div class="agent-layout">
             <aside class="agent-nav" id="agentNav">
               <div class="agent-tabs"><button id="agentThreadsTab" aria-pressed="true">对话</button><button id="agentFilesTab" aria-pressed="false">笔记</button><button id="agentHideNav">收起</button></div>
-              <section class="agent-threads"><div class="side-head"><span>最近对话</span><button id="agentNew" class="side-mini" title="新对话" aria-label="新对话">＋</button></div><div id="agentThreads" class="agent-thread-list"></div></section>
-              <section class="agent-files"><div class="side-head"><span>笔记</span><span id="agentFileCount" class="agent-caption"></span></div><label class="agent-search"><input id="agentSearch" aria-label="查找当前库笔记" placeholder="搜索笔记"></label><div id="agentFiles" class="tree"></div><div class="agent-file-hint">先定位光标，再点击或拖入笔记</div></section>
+              <section class="agent-threads" id="agentThreadPane"><div class="side-head"><span>最近对话</span><button id="agentNew" class="side-mini" title="新对话" aria-label="新对话">＋</button><button id="agentCollapseThreads" class="side-mini" title="折叠会话列表" aria-label="折叠会话列表">‹</button></div><div id="agentThreads" class="agent-thread-list"></div></section>
+              <section class="agent-files" id="agentFilePane"><div class="side-head"><span>笔记</span><span id="agentFileCount" class="agent-caption"></span><button id="agentCollapseFiles" class="side-mini" title="折叠文件列表" aria-label="折叠文件列表">‹</button></div><label class="agent-search"><input id="agentSearch" aria-label="查找当前库笔记" placeholder="搜索笔记"></label><div id="agentFiles" class="tree"></div><div class="agent-file-hint">先定位光标，再点击或拖入笔记</div></section>
             </aside>
             <section class="agent-chat" aria-label="Agent 对话">
               <div class="agent-chat-head"><div><strong id="agentTitle">读书讨论</strong><p class="agent-caption" id="agentScope"></p></div><div class="agent-actions"><label class="agent-caption">Skill <select id="agentSkill" aria-label="本轮 Skill"></select></label><button id="agentSettings">Agent 设置</button><button id="agentAttach">＋ 引用笔记</button></div></div>
@@ -3708,15 +3711,38 @@
     ag('agentFiles').innerHTML = html || '<p class="agent-caption">' + (query ? '没有匹配的笔记' : '这个库还没有笔记') + '</p>';
     ag('agentFileCount').textContent = files.length + ' 篇';
   }
+  var agentPanels = { threads: true, files: true };
+  function updateAgentPanels() {
+    var nav = ag('agentNav');
+    nav.setAttribute('data-show-threads', String(agentPanels.threads));
+    nav.setAttribute('data-show-files', String(agentPanels.files));
+    nav.classList.toggle('hidden', !agentPanels.threads && !agentPanels.files);
+    ag('agentThreadPane').classList.toggle('hidden', !agentPanels.threads);
+    ag('agentFilePane').classList.toggle('hidden', !agentPanels.files);
+    ag('agentSwitchPane').setAttribute('aria-pressed', String(agentPanels.threads));
+    ag('agentToggleFiles').setAttribute('aria-pressed', String(agentPanels.files));
+    var active = nav.getAttribute('data-tab');
+    if (!agentPanels[active]) { active = agentPanels.threads ? 'threads' : 'files'; nav.setAttribute('data-tab', active); }
+    ag('agentThreadsTab').setAttribute('aria-pressed', String(active === 'threads'));
+    ag('agentFilesTab').setAttribute('aria-pressed', String(active === 'files'));
+  }
+  function toggleAgentPanel(panel) {
+    agentPanels[panel] = !agentPanels[panel];
+    if (agentPanels[panel]) { agentNav(panel); }
+    else { updateAgentPanels(); ag('agentInput').focus(); }
+  }
   function agentNav(tab) {
+    agentPanels[tab] = true;
     ag('agentNav').setAttribute('data-tab', tab);
     ag('agentNav').classList.add('open');
     ag('agentThreadsTab').setAttribute('aria-pressed', String(tab === 'threads'));
     ag('agentFilesTab').setAttribute('aria-pressed', String(tab === 'files'));
+    updateAgentPanels();
   }
   function renderAgent() {
     if (body.getAttribute('data-view') === 'agent') { ag('appTitle').textContent = 'Agent 对话'; }
     var session = agentSession();
+    updateAgentPanels();
     ag('agentVault').innerHTML = VAULTS.map(function (v) { return '<option value="' + agentEsc(v.id) + '"' + (v.id === currentVault ? ' selected' : '') + '>' + agentEsc(v.name) + '</option>'; }).join('');
     ag('agentTitle').textContent = session.title;
     ag('agentSkill').innerHTML = BUILTIN_AGENT_SKILLS.map(function (skill) { return '<option value="' + skill.id + '">' + skill.name + '</option>'; }).join('');
@@ -3814,7 +3840,10 @@
   ag('agentThreadsTab').addEventListener('click', function () { agentNav('threads'); });
   ag('agentFilesTab').addEventListener('click', function () { agentNav('files'); });
   ag('agentAttach').addEventListener('click', function () { agentNav('files'); ag('agentSearch').focus(); });
-  ag('agentSwitchPane').addEventListener('click', function () { agentNav('threads'); });
+  ag('agentSwitchPane').addEventListener('click', function () { toggleAgentPanel('threads'); });
+  ag('agentToggleFiles').addEventListener('click', function () { toggleAgentPanel('files'); });
+  ag('agentCollapseThreads').addEventListener('click', function () { if (agentPanels.threads) { toggleAgentPanel('threads'); } });
+  ag('agentCollapseFiles').addEventListener('click', function () { if (agentPanels.files) { toggleAgentPanel('files'); } });
   ag('agentHideNav').addEventListener('click', function () { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); });
   ag('agentView').addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (ag('agentNav').classList.contains('open') && body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); } else { setView('note', true); } } });
   ag('agentView').addEventListener('click', function (e) {

@@ -238,3 +238,25 @@ test('ambiguous multi-reference write is rejected instead of changing the first 
   assert.match(f.run('agentSession().messages.at(-1).text'),/AMBIGUOUS_TARGET/);
   assert.equal(f.c.CONTENT.reading_journal,'# 阅读\n我的理解'); assert.equal(f.c.CONTENT.b,'B');
 });
+
+test('conversation and file panels collapse independently with all four combinations', () => {
+  const f = fixture(); f.run('renderAgent()');
+  assert.equal(f.get('agentNav').classList.contains('hidden'), false);
+  f.run("toggleAgentPanel('threads')");
+  assert.equal(f.get('agentThreadPane').classList.contains('hidden'), true);
+  assert.equal(f.get('agentFilePane').classList.contains('hidden'), false);
+  assert.equal(f.get('agentNav').getAttribute('data-tab'), 'files');
+  f.run("toggleAgentPanel('files')"); assert.equal(f.get('agentNav').classList.contains('hidden'), true);
+  f.run("toggleAgentPanel('threads')");
+  assert.equal(f.get('agentNav').classList.contains('hidden'), false);
+  assert.equal(f.get('agentFilePane').classList.contains('hidden'), true);
+  assert.equal(f.get('agentSwitchPane').getAttribute('aria-pressed'), 'true');
+});
+test('attach restores a collapsed file panel without clearing chat draft', () => {
+  const f = fixture(); f.run("toggleAgentPanel('threads'); toggleAgentPanel('files')");
+  f.get('agentInput').value = '正在写的消息'; f.get('agentAttach').handlers.click();
+  assert.equal(f.get('agentNav').classList.contains('hidden'), false);
+  assert.equal(f.get('agentFilePane').classList.contains('hidden'), false);
+  assert.equal(f.get('agentThreadPane').classList.contains('hidden'), true);
+  assert.equal(f.get('agentInput').value, '正在写的消息');
+});
