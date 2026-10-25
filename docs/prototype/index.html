@@ -271,6 +271,26 @@
   [data-form="lg"] .sidebar { width: 33.333%; }
   [data-form="md"] .sidebar { width: 50%; }
 
+  /* ---------- 可拖拽分栏（仅 lg 三屏展开，2026-10-25 用户需求：仿微信） ---------- */
+  /* md / sm 固定等分不拖（用户明确 2 屏不需要）；lg 收起目录栏时也不拖（两栏固定 2/3+1/3） */
+  .splitter {
+    display: none; flex: none; width: 14px;
+    position: relative; z-index: 20; cursor: col-resize;
+    touch-action: none; background: transparent;
+  }
+  [data-form="lg"]:not([data-side="hidden"]) .splitter { display: block; }
+  /* 中间把手：4vp 竖条，悬浮/拖动时拉长并点亮品牌色 */
+  .splitter::after {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 4px; height: 40px; border-radius: var(--r-full);
+    background: var(--line-strong);
+    transition: height var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  }
+  .splitter:hover::after { height: 56px; background: var(--brand); }
+  .splitter.dragging::after { height: 64px; background: var(--brand); }
+  body.split-dragging { cursor: col-resize; user-select: none; }
+
   /* ---------- 侧栏收起（仅 md / lg，sm 用抽屉） ---------- */
   [data-side="hidden"] .sidebar { display: none; }
   /* md：把腾出来的那一栏给「预览」→ 编辑 | 预览 各占一整块屏，仍然不跨折痕 */
@@ -465,6 +485,10 @@
   }
   /* 单屏独占整块屏：分隔线没意义；「源模式」标签让位给分段控件 */
   [data-form="sm"] .preview-pane { border-left: none; }
+  /* md 未收起目录栏时，正文区可单栏切预览（2026-10-25）：preview 紧贴 sidebar，
+     左边框会与 sidebar 的 border-right 形成双线 —— 去掉；md 收起态（编辑|预览
+     同屏）两条线之间隔着真实边界，保留 */
+  [data-form="md"]:not([data-side="hidden"]) .preview-pane { border-left: none; }
   [data-form="sm"] .src-tag, [data-form="sm"] .pv-label { display: none; }
   .editor-wrap { position: relative; flex: 1; min-height: 0; background: var(--bg-card); }
   .editor-wrap pre, .editor-wrap textarea {
@@ -866,7 +890,11 @@
     <button data-t="light" class="on">浅色</button>
     <button data-t="dark" data-intro="v1.0">深色</button>
   </div>
-  <span class="hint">编辑区可直接输入，预览实时更新；单屏态用内容区右上角「编辑 / 预览」切换</span>
+  <div class="grp">
+    <span class="lbl">分享</span>
+    <button id="copyLinkBtn" title="把当前形态 / 视图 / 主题写进 URL 并复制，对方打开即复现同一画面">复制当前页面链接</button>
+  </div>
+  <span class="hint">编辑区可直接输入，预览实时更新；单屏 / 双屏态用内容区右上角「编辑 / 预览」切换；URL 实时同步形态 / 视图 / 主题，复制链接即可分享当前页面</span>
 </div>
 
 <div class="release-map">
@@ -937,6 +965,7 @@
               <button id="gotoTrash" data-intro="v0.2">回收站</button>
             </div>
           </aside>
+          <div class="splitter" id="splitterA" title="拖动调整目录栏宽度（双击恢复等分）"></div>
 
           <div class="editor-pane" id="editorPane">
             <div class="pane-head" data-intro="v0.2">
@@ -964,6 +993,7 @@
             <div class="md" id="md"></div>
             <div class="backlinks hidden" id="backlinksPanel"></div>
           </div>
+          <div class="splitter" id="splitterB" title="拖动调整编辑 / 预览宽度（双击恢复等分）"></div>
         </div>
 
         <!-- 同步视图 -->
@@ -1069,6 +1099,13 @@
             <div class="set-head">更新日志</div>
             <div class="chlog" id="recentChangelog"></div>
             <button class="pane-action" id="openHistoryBtn">查看完整版本记录 ›</button>
+          </div>
+
+          <div class="set-group">
+            <div class="set-head">布局（三屏分栏，v0.x 后置）</div>
+            <div class="set-row"><span>当前栏宽</span><code id="setSplit">目录 33.3% · 编辑 33.3% · 预览 33.3%</code></div>
+            <div class="set-row"><span>三屏展开时拖动两个分栏中间的把手改宽度（双击把手快速恢复）；拖后的宽度会记住，刷新不丢。</span></div>
+            <button id="resetSplitBtn">恢复等分栏宽</button>
           </div>
 
           <div class="set-group">
@@ -1203,19 +1240,28 @@
       而等分点是 354.5（双屏）/ 353.7、707.3（三屏）→ <b>第一处差 25vp</b>。
       后果：只要某栏右边界越过 379，它就横跨第一条折痕 —— 双屏的右栏、三屏的中栏与右栏<b>都横跨</b>。<br>
       <b>v0.2 决策（用户拍板）</b>：维持等分、<b>不做动态分栏、不做机型校准表</b> ——「按官方折痕差不多就行，不用搞太精细」。
-      折痕值<b>只用于标注</b>，不参与分栏计算。橙色虚线 = 折痕真实位置，标红 = 该栏被内容横跨。</li>
+      折痕值<b>只用于标注</b>，不参与分栏计算。橙色虚线 = 折痕真实位置，标红 = 该栏被内容横跨。<br>
+      <b>2026-10-25 补充</b>：等分仍是<b>默认值</b>，但 lg 三屏态开放了<b>手动拖拽</b>（见下方「分栏可以拖着改宽」）；md / sm 维持固定等分不拖。</li>
     <li><b>侧栏因此偏宽</b>：实测下双屏侧栏 354vp（709/2）、三屏侧栏 354vp（1061/3），比文件树需要的 240vp 宽。既然不做动态分栏，就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
     <li><b>目录栏可以整体收起</b>（双屏 / 三屏都可以）：收起点侧栏右上角的「收起 «」，<b>唤回点顶栏左上角的汉堡 ☰</b>（toggle，v0.1 首轮修的就是它）。收起后双屏变「编辑 | 预览」、三屏编辑区扩到 2/3。<br>
       ⚠️ 早先说「双屏收起仍然不跨折痕」也是错的 —— 等分边界 354.5 与折痕 379 不重合，双屏的右栏（收起后是预览栏）<b>同样横跨折痕</b>。
       这是物理约束，不是布局没调好：折痕位置硬件固定，要真正不跨折痕就得按 379/330/352 分栏（即动态分栏，已决策不做）。</li>
     <li><b>折痕位置已按真机反推</b>：设计稿里双屏折痕在 53.45%（379/709）、三屏在 35.72%（379/1061）与 66.82%（709/1061），
       —— 与早先「折痕 = 等分点」的假设解耦，两个位置现在是<b>分开画的两件事</b>：等分是布局，折痕是硬件。</li>
+    <li><b>分栏可以拖着改宽（仅 lg 三屏展开，2026-10-25 用户需求：仿微信）</b>：三栏展开时两个分栏中间各有一个 14vp 热区的把手，<b>拖着走实时改宽</b>。<br>
+      <b>松手时距折痕 16vp 内自动吸附</b>到折痕位置（35.72% / 66.82%）—— 既满足「拖动改宽」，又不破坏「栏边界压折痕」原则；
+      拖到折痕以外的位置不拦截，折痕线<b>标红警示</b>（用户主动选择即接受）。<b>每栏最小 18%</b>（约 190vp，目录树仍可用）。<br>
+      <b>双击把手恢复等分</b>（拖乱了的一键回家）。md / sm <b>没有</b>这个把手（用户明确 2 屏不需要，固定等分）；lg 收起目录栏（两栏态）也不拖。<br>
+      📌 需求登记在 <code>docs/requirements_backlog.md</code> D 节（后置，落码前待拍板：是否按形态持久化、设置页是否给「重置分栏」入口）。</li>
+    <li><b>URL 带着当前页面状态，可分享（2026-10-25）</b>：形态 / 视图 / 目录栏收起 / 编辑预览模式 / 主题都会实时写进地址栏 hash（<code>#f=lg&amp;v=note&amp;side=shown&amp;m=edit&amp;t=light</code>）。<br>
+      复制地址栏、或点控件区「<b>复制当前页面链接</b>」，对方打开即复现同一画面（含深色模式与单屏预览态）；手动改 hash / 浏览器前进后退同样即时生效。<br>
+      拖拽出来的栏宽<b>不进</b> URL —— 那是临时手感，不是要分享的状态。</li>
     <li><b>单屏态（外屏 380vp）用分段控件在「编辑 / 预览」之间切换</b>：只有一块屏，容不下两栏，编辑与预览<b>互相让位</b>。<br>
       开关放在<b>内容区顶部右侧</b>（pane-head 右端）而不是顶栏右上角 —— 顶栏在 380vp 下已经挂了汉堡 / 同步 / 设置三个图标，
       再挤一个 48vp 热区会打架；而且「编辑 / 预览」是<b>内容区的模式</b>，跟文件名并排放才读得懂。<br>
       两个 pane 的 pane-head <b>各挂一个同样的分段控件</b>：切到预览后开关还留在原处，不会跟着编辑区一起消失（这是最容易踩的坑）。
       切到预览时<b>收起软键盘</b>——真机上键盘会挡掉半屏。<br>
-      ⚠️ 双屏 / 三屏<b>不显示</b>这个开关：两栏 / 三栏同时可见，没有切换的必要。</li>
+      ⚠️ <b>双屏 / 三屏</b>：md 双屏正文区同样只有一栏位置，**同样显示**这个开关 —— 点「预览」由预览**抢占正文区**、目录栏不动（2026-10-25 用户拍板）；md **收起目录栏**后两栏同屏，开关隐藏；**lg 三栏同屏不加**（已有独立预览栏）。</li>
     <li><b>左滑是跟手的三档手感，不是三个摆设按钮</b>：向左拖（鼠标拖或触摸滑都一样）时行会跟着手指走 ——<br>
       ① <b>拖一半松手</b> → 吸附露出图标操作条（重命名 / 移动 / 删除，都是 44px 图标，不挤文件名）；<br>
       ② <b>一路滑到底</b> → 整条变红、只剩「🗑 松手删除」，松手<b>直接删除</b>，底部弹 5 秒「撤销」条兜底；<br>
@@ -2740,14 +2786,23 @@
   /* sideHidden：md / lg 下把目录栏收起来（sm 走抽屉，与此无关） */
   var sideHidden = false;
 
-  /* smMode：单屏态只有一块屏，编辑 / 预览二选一（md / lg 两栏同时可见，用不到） */
+  /* smMode：正文区「编辑 / 预览」单栏切换。
+     sm（2026-10-17）：一块屏只能放一栏；md（2026-10-25 补）：正文区同样只有一栏的
+     位置，预览抢占正文区、目录栏不动；lg 三栏同屏，用不到 */
   var smMode = 'edit';
 
+  /* smMode：正文区「编辑 / 预览」单栏切换。
+     sm：一块屏只能放一栏，两个 pane 互相让位（2026-10-17 既定设计）；
+     md：正文区在第二屏，同样只有一栏的位置 —— 目录栏不动，预览抢占正文区
+         （2026-10-25 补，用户要求设计双屏的切换入口；lg 三栏同屏无需切换） */
   function applySmMode() {
     var f = body.getAttribute('data-form');
     var editor = document.getElementById('editorPane');
     var preview = document.getElementById('previewPane');
     var segs = document.querySelectorAll('.seg');
+    /* seg 显示条件：sm 永远显示；md 仅在三栏同屏（未收起目录栏）时显示；
+       md 收起目录栏后 编辑|预览 各一屏同屏可见，无需切换；lg 已有独立预览栏 */
+    var showSeg = (f === 'sm') || (f === 'md' && !sideHidden);
     for (var i = 0; i < segs.length; i++) {
       var s = segs[i];
       /* 只处理模式切换控件（内部有带 data-m 的按钮）。新建对话框的「笔记/文件夹」
@@ -2755,7 +2810,7 @@
          lg 形态下这里把 #cfTypeSeg 加 hidden，而 openDialog 移除的是外层 #cfTypeRow 的
          hidden，两层不是同一个元素，按钮被藏住点不到。 */
       if (!s.querySelector('button[data-m]')) { continue; }
-      if (f === 'sm') { s.classList.remove('hidden'); } else { s.classList.add('hidden'); }
+      if (showSeg) { s.classList.remove('hidden'); } else { s.classList.add('hidden'); }
       var bs = s.querySelectorAll('button');
       for (var j = 0; j < bs.length; j++) {
         /* 跳过非模式切换的按钮（如新建对话框的「笔记/文件夹」切换，无 data-m）——
@@ -2765,14 +2820,16 @@
         else { bs[j].classList.remove('on'); }
       }
     }
-    if (f === 'sm') {
-      /* 一块屏只能放一栏：两个 pane 互相让位。切到预览时收起软键盘（真机同理） */
+    if (showSeg) {
+      /* 正文区只有一栏的位置：editor / preview 互相让位。
+         切到预览时收起软键盘（真机同理） */
       editor.style.display = (smMode === 'edit') ? 'flex' : 'none';
       preview.style.display = (smMode === 'preview') ? 'flex' : 'none';
       if (smMode === 'preview') { ta.blur(); }
     } else {
       editor.style.display = '';
     }
+    syncUrl();
   }
 
   function applyForm(f) {
@@ -2802,9 +2859,11 @@
       menu.style.display = sideHidden ? 'flex' : 'none';
     }
     applySmMode();
+    applySplit();
     document.getElementById('noteView').style.position = 'relative';
     drawHinges(f);
     fit();
+    syncUrl();
   }
 
   function setSideHidden(h) {
@@ -2840,23 +2899,29 @@
     });
   }
 
+  /* 各栏实际占的区间（百分比）：md 恒等分；lg 收起时 2/3+1/3；
+     lg 三栏展开时读 splitLg —— 分隔条拖到这里，折痕 crossed 跟着实时重算 */
+  function currentSpans(f) {
+    if (f === 'md') { return [[0, 50], [50, 100]]; }
+    if (f === 'lg') {
+      if (sideHidden) { return [[0, 66.666], [66.666, 100]]; }
+      return [[0, splitLg[0]], [splitLg[0], splitLg[1]], [splitLg[1], 100]];
+    }
+    return [];
+  }
+
   function drawHinges(f) {
     var wrap = document.getElementById('wrap');
     var old = wrap.querySelectorAll('.hinge, .hinge-note');
-    for (var i = 0; i < old.length; i++) { old[i].remove(); }
-    /* 折痕位置 = 由实测窗口宽反推（api_notes A6）：三块物理屏 379 / 330 / 352，合计 1061
+    for (var i = 0; i < old.length; i++) { old[i].remove(); }    /* 折痕位置 = 由实测窗口宽反推（api_notes A6）：三块物理屏 379 / 330 / 352，合计 1061
          md（双屏 709 = 379+330）折痕在 379 → 53.45%
          lg（三屏 1061）折痕在 379 / 709 → 35.72% / 66.82%
        ⚠️ 反推值，非接口直读 —— creaseRects 未真机采集（A2 ❓）
        ⚠️ 与下面的等分栏边界（50 / 33.33 / 66.67）不是一回事 —— 偏差就是 A6 登记的那 25vp */
     var pts = (f === 'lg') ? [35.72, 66.82] : (f === 'md' ? [53.45] : []);
-    /* 各栏实际占的区间（等分，v0.2 决策维持等分不做动态分栏）；
-       折痕落在区间内部（不是边界）就是被内容横跨 */
-    var spans = [];
-    if (f === 'md' && sideHidden) { spans = [[0, 50], [50, 100]]; }          // 编辑 | 预览
-    else if (f === 'lg' && sideHidden) { spans = [[0, 66.666], [66.666, 100]]; } // 编辑占两块屏
-    else if (f === 'md') { spans = [[0, 50], [50, 100]]; }
-    else if (f === 'lg') { spans = [[0, 33.333], [33.333, 66.666], [66.666, 100]]; }
+    /* 各栏实际占的区间：折痕落在区间内部（不是边界）就是被内容横跨。
+       md 恒等分；lg 收起时 2/3+1/3；lg 三栏展开时读 splitLg（拖拽分隔条实时变） */
+    var spans = currentSpans(f);
 
     function isCrossed(p) {
       for (var i = 0; i < spans.length; i++) {
@@ -2878,6 +2943,174 @@
       wrap.appendChild(tag);
     });
   }
+
+  /* ---------- 可拖拽分栏（仅 lg 三屏展开，2026-10-25 用户需求：仿微信） ---------- */
+  /* splitLg[0] = 目录栏右边界（%），splitLg[1] = 编辑区右边界（%）。
+     折痕（35.72 / 66.82）不强制对齐：松手 1.5% 内弱吸附；拖到跨折痕的位置时
+     drawHinges 会把折痕标红警示（用户主动选择，接受）。md / sm 不走这里。 */
+  var splitLg = [33.333, 66.666];
+  var SPLIT_MIN = 18;    /* 每栏最小占比（18% × 1061vp ≈ 190vp，目录树仍可用） */
+  var SPLIT_MAX = 82;
+  var SPLIT_SNAP = 1.5;  /* 吸附阈值 %（约 16vp） */
+  var SPLIT_STORE_KEY = 'xt2-proto-split';  /* 拖后宽度持久化（2026-10-25 用户拍板） */
+
+  function clampPair(a, b) {
+    a = Math.max(SPLIT_MIN, Math.min(SPLIT_MAX - SPLIT_MIN, a));
+    b = Math.max(a + SPLIT_MIN, Math.min(SPLIT_MAX, b));
+    return [a, b];
+  }
+  function snapPair(a, b) {
+    if (Math.abs(a - 35.72) <= SPLIT_SNAP) { a = 35.72; }
+    if (Math.abs(b - 66.82) <= SPLIT_SNAP) { b = 66.82; }
+    return clampPair(a, b);
+  }
+  /* 持久化：拖后宽度刷新不丢；localStorage 被禁（个别浏览器 file:// 场景）时静默降级 */
+  function saveSplit() {
+    try { localStorage.setItem(SPLIT_STORE_KEY, JSON.stringify(splitLg)); } catch (e) { /* 降级：不持久 */ }
+  }
+  function loadSplit() {
+    try {
+      var raw = localStorage.getItem(SPLIT_STORE_KEY);
+      if (!raw) { return; }
+      var arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length === 2 && typeof arr[0] === 'number' && typeof arr[1] === 'number') {
+        splitLg = clampPair(arr[0], arr[1]);
+      }
+    } catch (e) { /* 解析失败用默认等分 */ }
+  }
+  /* 重置：设置页入口 + 双击把手共用 */
+  function resetSplit() {
+    splitLg = [33.333, 66.666];
+    try { localStorage.removeItem(SPLIT_STORE_KEY); } catch (e) { /* 同上 */ }
+    applySplit();
+    if (body.getAttribute('data-form') === 'lg') { drawHinges('lg'); }
+  }
+
+  function applySplit() {
+    var f = body.getAttribute('data-form');
+    var sidebar = document.getElementById('sidebar');
+    var editor = document.getElementById('editorPane');
+    var preview = document.getElementById('previewPane');
+    if (f === 'lg' && !sideHidden) {
+      sidebar.style.width = splitLg[0] + '%';
+      editor.style.width = (splitLg[1] - splitLg[0]) + '%';
+      editor.style.flex = 'none';
+      preview.style.width = (100 - splitLg[1]) + '%';
+      preview.style.flex = 'none';
+    } else if (f !== 'sm') {
+      /* 回到 CSS 默认（md 50 / lg 收起 66.666）。
+         sm 跳过：抽屉宽度 300px 由 applyForm 管，这里清掉会打架 */
+      sidebar.style.width = '';
+      editor.style.width = ''; editor.style.flex = '';
+      preview.style.width = ''; preview.style.flex = '';
+    }
+    /* 设置页「当前栏宽」行同步（元素常驻 DOM，视图隐藏也能更新） */
+    var el = document.getElementById('setSplit');
+    if (el) {
+      el.textContent = (f === 'lg' && !sideHidden)
+        ? '目录 ' + splitLg[0].toFixed(1) + '% · 编辑 ' + (splitLg[1] - splitLg[0]).toFixed(1) + '% · 预览 ' + (100 - splitLg[1]).toFixed(1) + '%'
+        : '仅三屏展开可调（当前固定等分）';
+    }
+  }
+
+  (function bindSplitters() {
+    function noteViewRect() { return document.getElementById('noteView').getBoundingClientRect(); }
+    function pctOf(clientX) {
+      var r = noteViewRect();
+      return (clientX - r.left) / r.width * 100;
+    }
+    function draggingAllowed() {
+      return body.getAttribute('data-form') === 'lg' && !sideHidden;
+    }
+    var drag = null; /* { idx, startPct, base:[a,b] } */
+    var nodes = document.querySelectorAll('.splitter');
+    for (var i = 0; i < nodes.length; i++) {
+      (function (sp, idx) {
+        sp.addEventListener('pointerdown', function (e) {
+          if (!draggingAllowed()) { return; }
+          e.preventDefault();
+          sp.setPointerCapture(e.pointerId);
+          sp.classList.add('dragging');
+          body.classList.add('split-dragging');
+          drag = { idx: idx, startPct: pctOf(e.clientX), base: splitLg.slice() };
+        });
+        sp.addEventListener('pointermove', function (e) {
+          if (!drag || drag.idx !== idx) { return; }
+          var pair = splitLg.slice();
+          pair[drag.idx] = drag.base[drag.idx] + (pctOf(e.clientX) - drag.startPct);
+          splitLg = clampPair(pair[0], pair[1]);
+          applySplit();
+          drawHinges('lg'); /* 栏宽变了，折痕 crossed 标红跟着实时重算 */
+        });
+        function endDrag(e) {
+          if (!drag || drag.idx !== idx) { return; }
+          splitLg = snapPair(splitLg[0], splitLg[1]);
+          applySplit();
+          drawHinges('lg');
+          saveSplit();   /* 拖后宽度持久化（2026-10-25 用户拍板） */
+          sp.classList.remove('dragging');
+          body.classList.remove('split-dragging');
+          if (sp.hasPointerCapture(e.pointerId)) { sp.releasePointerCapture(e.pointerId); }
+          drag = null;
+        }
+        sp.addEventListener('pointerup', endDrag);
+        sp.addEventListener('pointercancel', endDrag);
+        /* 双击分隔条 = 恢复等分（拖乱了一键回家；与设置页「恢复等分栏宽」同一动作） */
+        sp.addEventListener('dblclick', function () {
+          if (!draggingAllowed()) { return; }
+          resetSplit();
+        });
+      })(nodes[i], i);
+    }
+    /* 设置页「恢复等分栏宽」入口（2026-10-25 用户拍板：重置放设置页） */
+    document.getElementById('resetSplitBtn').addEventListener('click', function () { resetSplit(); });
+  })();
+
+  /* ---------- URL 同步（分享具体页面用，2026-10-25） ---------- */
+  /* hash 携带 形态 / 视图 / 目录栏收起 / 单屏模式 / 主题。
+     复制链接 = 复现同一画面；对方打开带 hash 的链接直接落到对应页面。
+     file:// 与 http:// 均可用；replaceState 被禁（个别浏览器 file:// 场景）时
+     退化为直接赋 hash（会产生一条历史，可接受） */
+  function syncUrl() {
+    var hash = 'f=' + body.getAttribute('data-form')
+      + '&v=' + body.getAttribute('data-view')
+      + '&side=' + (sideHidden ? 'hidden' : 'shown')
+      + '&m=' + smMode
+      + '&t=' + body.getAttribute('data-theme');
+    try { history.replaceState(null, '', '#' + hash); }
+    catch (e) { location.hash = hash; }
+  }
+  function syncCtrlOn(attr, value) {
+    var all = document.querySelectorAll('[' + attr + ']');
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.toggle('on', all[i].getAttribute(attr) === value);
+    }
+  }
+  function initFromUrl() {
+    var params = {};
+    location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
+      var p = kv.split('=');
+      if (p[0]) { params[p[0]] = decodeURIComponent(p[1] || ''); }
+    });
+    /* 主题先落，后续渲染直接是对的观感 */
+    var t = (params.t === 'dark') ? 'dark' : 'light';
+    body.setAttribute('data-theme', t);
+    syncCtrlOn('data-t', t);
+    /* 目录栏收起态只对 md / lg 有意义；sm 走抽屉，URL 里的 side 忽略 */
+    sideHidden = (params.side === 'hidden');
+    /* 单屏 编辑 / 预览 模式（md / lg 用不到，带上无害） */
+    if (params.m === 'preview' || params.m === 'edit') { smMode = params.m; }
+    var f = FORMS[params.f] ? params.f : 'lg';
+    syncCtrlOn('data-f', f);
+    loadSplit();     /* 拖后的栏宽优先于默认等分（URL 不带栏宽，那是临时手感） */
+    applyForm(f);   /* 内含 applySmMode / applySplit / drawHinges，末尾 syncUrl 写回 */
+    var v = params.v || 'note';
+    syncCtrlOn('data-v', v);
+    setView(v);
+  }
+  /* 手动改地址栏 hash / 浏览器前进后退时同样应用（分享链接的常见打开方式）。
+     syncUrl 走 replaceState，不触发本事件，无循环风险 */
+  window.addEventListener('hashchange', function () { initFromUrl(); });
 
   var VIEW_TITLE = { vaults: '笔记库', sync: '导入 Git 仓库', settings: '设置与关于', history: '版本记录', trash: '回收站' };
 
@@ -2908,6 +3141,7 @@
         all[i].classList.toggle('on', all[i].getAttribute('data-v') === v);
       }
     }
+    syncUrl();
   }
 
   function setViewBtn(v) {
@@ -3006,8 +3240,34 @@
       for (var j = 0; j < all.length; j++) { all[j].classList.remove('on'); }
       this.classList.add('on');
       body.setAttribute('data-theme', t);
+      syncUrl();
     });
   }
+  /* 复制当前页面链接：hash 即状态，剪贴板不可用时退化成手动复制 */
+  document.getElementById('copyLinkBtn').addEventListener('click', function () {
+    var url = location.href.split('#')[0] + location.hash;
+    var btn = this;
+    function feedback(ok) {
+      btn.textContent = ok ? '已复制 ✓' : '复制失败，请手动复制地址栏';
+      setTimeout(function () { btn.textContent = '复制当前页面链接'; }, 1600);
+    }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = url;
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { /* 老浏览器兜底也失败 */ }
+      ta.remove();
+      feedback(ok);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () { feedback(true); }, fallback);
+    } else {
+      fallback();
+    }
+  });
   document.getElementById('backBtn').addEventListener('click', function () { setViewBtn(body.getAttribute('data-view') === 'history' ? 'settings' : 'note'); });
   document.getElementById('btnBack').addEventListener('click', function () {
     var all = document.querySelectorAll('[data-v]');
@@ -3118,8 +3378,7 @@
   renderVaultCards();
   renderTree();
   loadFile();
-  applyForm('lg');
-  setView('note');
+  initFromUrl();   /* 读 URL hash 恢复 形态/视图/目录栏/模式/主题，无参数时回落 lg+note */
   applyReleaseMark();
 })();
 </script>
