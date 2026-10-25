@@ -87,6 +87,8 @@
     --h-touch: 48px;
     --preview-image-max-ratio: .6; /* 原型起点，非 XT2 官方阈值 */
     --image-viewer-bg: rgba(0, 0, 0, .8);
+    --viewport-width: 1061px;
+    --viewport-height: 830px;
     --settings-content-width: 760px;
     --agent-nav-wide: 33.333%;
     --agent-nav-compact: 50%;
@@ -214,7 +216,7 @@
   .stage { display: flex; justify-content: center; }
   .device-wrap { position: relative; padding-top: var(--sp-8); transform-origin: top center; }
   .device {
-    position: relative; overflow: hidden;
+    position: relative; overflow: hidden; width: var(--viewport-width); height: var(--viewport-height);
     background: var(--bg-card); border: 1px solid var(--line-strong);
     border-radius: var(--r-control); box-shadow: var(--elev-3);
     display: flex; flex-direction: column;
@@ -222,10 +224,9 @@
   /* 宽度 = Mate XT2 真机实测窗口宽（vp）：外屏 380 / 双屏 709 / 三屏 1061
      （api_notes.md A3；原先的 360/660/1120 是估的，已作废）
      高度仍是示意值，未实测 —— 只改宽度，不动高度 */
-  [data-form="sm"] .device { width: 380px; height: 780px; border-radius: 28px; }
+  [data-form="sm"] .device { border-radius: 28px; }
   [data-form="md"] .device, [data-form="lg"] .device { border-radius: 20px; }
-  [data-form="md"] .device { width: 709px; height: 860px; }
-  [data-form="lg"] .device { width: 1061px; height: 830px; }
+  /* 尺寸由窗口预设与旋转状态提供；data-form 只表示按宽度算出的布局档位。 */
   .hinge-note {
     position: absolute; top: 0; transform: translateX(-50%);
     font-size: var(--fs-body3); color: var(--warning);
@@ -954,17 +955,37 @@
   .agent-config-check input { accent-color: var(--brand); }
   #settings-agent button { min-height: var(--h-touch); height: auto; white-space: normal; }
 
+
+  /* 矮窗口保持正文可滚动、输入与关闭入口可达。横向折痕未实测，不套用原纵向把手。 */
+  [data-rotated="true"] .splitter { display: none !important; }
+  [data-compact-height="true"] .agent-bar { padding: var(--sp-1) var(--sp-3); gap: var(--sp-2); }
+  [data-compact-height="true"] .agent-bar > strong { display: none; }
+  [data-compact-height="true"] .agent-notice { padding: var(--sp-1) var(--sp-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-compact-height="true"] .agent-chat-head { padding: var(--sp-1) var(--sp-3); }
+  [data-compact-height="true"] #agentScope, [data-compact-height="true"] #agentSettings, [data-compact-height="true"] .agent-chat-head label { display: none; }
+  [data-compact-height="true"] .agent-messages { padding: var(--sp-3); }
+  [data-compact-height="true"] .agent-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-1) var(--sp-2); padding: var(--sp-2); margin: 0 var(--sp-3); }
+  [data-compact-height="true"] .agent-compose > details, [data-compact-height="true"] .agent-compose > label, [data-compact-height="true"] .agent-compose-foot > span { display: none; }
+  [data-compact-height="true"] .agent-compose .agent-refs { grid-column: 1 / -1; max-height: var(--h-touch); }
+  [data-compact-height="true"] #agentInput { grid-column: 1; grid-row: 2; height: var(--h-touch); min-height: var(--h-touch); padding: var(--sp-2); }
+  [data-compact-height="true"] .agent-compose-foot { grid-column: 2; grid-row: 2; }
+  [data-compact-height="true"] .agent-status { margin: var(--sp-1) var(--sp-3); }
+  .confirm { max-height: calc(100% - var(--sp-8)); overflow-y: auto; }
+  [data-compact-height="true"] .quick-mask { padding: var(--sp-3); }
+  [data-compact-height="true"] .quick-box { max-height: 100%; }
+
 </style>
 </head>
 <body data-form="lg" data-view="note" data-theme="light">
 
 <div class="controls">
   <div class="grp">
-    <span class="lbl">形态</span>
+    <span class="lbl">窗口预设</span>
     <button data-f="sm">外屏合起 380vp</button>
     <button data-f="md">展开双屏 709vp</button>
     <button data-f="lg" class="on">全展开三屏 1061vp</button>
   </div>
+  <div class="grp"><button id="rotateViewport" aria-label="将预览窗口旋转90度" aria-pressed="false">旋转 90°</button><span id="viewportLabel" class="lbl">尺寸为布局示意</span></div>
   <div class="grp">
     <span class="lbl">视图</span>
     <button data-v="note" class="on">笔记</button>
@@ -1466,11 +1487,11 @@
     else if (version === 'v1.1') { setView('note', true); openQuick('content'); }
     else if (version === 'v1.2') {
       switchVault('local'); current = 'dataflow'; loadFile();
-      applyForm('lg'); setView('note', true); showBacklinks();
+      applyViewport('lg', viewportRotated); setView('note', true); showBacklinks();
     }
     else if (version === 'v1.3') {
       switchVault('local'); current = 'tob'; loadFile();
-      applyForm('lg'); setView('note', true);
+      applyViewport('lg', viewportRotated); setView('note', true);
       if (!ta.value.includes('![相册图片示例]')) { document.getElementById('insertImageBtn').click(); }
     }
     else { setView('note', true); }
@@ -2969,10 +2990,33 @@
     syncUrl();
   }
 
+  /* VIEWPORT_BEGIN: geometry presets, heights illustrative, not device measurements */
+  var viewportPreset = 'lg', viewportRotated = false;
+  var VIEWPORT_PRESETS = { sm: { width: 380, height: 780 }, md: { width: 709, height: 860 }, lg: { width: 1061, height: 830 } };
+  function viewportSpec(preset, rotated) {
+    var size = VIEWPORT_PRESETS[preset] || VIEWPORT_PRESETS.lg;
+    var width = rotated ? size.height : size.width, height = rotated ? size.width : size.height;
+    return { width: width, height: height, form: width < 600 ? 'sm' : width < 840 ? 'md' : 'lg', compact: height < 480 };
+  }
+  function viewportDescription() {
+    var size = viewportSpec(viewportPreset, viewportRotated);
+    return size.width + ' × ' + size.height + 'vp · ' + size.form + ' · 示意';
+  }
+  function applyViewport(preset, rotated) {
+    viewportPreset = VIEWPORT_PRESETS[preset] ? preset : 'lg'; viewportRotated = !!rotated;
+    var size = viewportSpec(viewportPreset, viewportRotated), device = document.getElementById('device');
+    device.style.setProperty('--viewport-width', size.width + 'px'); device.style.setProperty('--viewport-height', size.height + 'px');
+    body.setAttribute('data-rotated', String(viewportRotated)); body.setAttribute('data-compact-height', String(size.compact));
+    document.getElementById('rotateViewport').setAttribute('aria-pressed', String(viewportRotated));
+    document.getElementById('viewportLabel').textContent = viewportDescription();
+    applyForm(size.form);
+  }
+  /* VIEWPORT_END */
+
   function applyForm(f) {
     body.setAttribute('data-form', f);
     body.setAttribute('data-side', sideHidden ? 'hidden' : 'shown');
-    document.getElementById('stForm').textContent = FORMS[f];
+    document.getElementById('stForm').textContent = viewportDescription();
     updateSettings();
     var sidebar = document.getElementById('sidebar');
     var preview = document.getElementById('previewPane');
@@ -3050,7 +3094,8 @@
   function drawHinges(f) {
     var wrap = document.getElementById('wrap');
     var old = wrap.querySelectorAll('.hinge, .hinge-note');
-    for (var i = 0; i < old.length; i++) { old[i].remove(); }    /* 折痕位置 = 由实测窗口宽反推（api_notes A6）：三块物理屏 379 / 330 / 352，合计 1061
+    for (var i = 0; i < old.length; i++) { old[i].remove(); }
+    if (viewportRotated) { return; }    /* 折痕位置 = 由实测窗口宽反推（api_notes A6）：三块物理屏 379 / 330 / 352，合计 1061
          md（双屏 709 = 379+330）折痕在 379 → 53.45%
          lg（三屏 1061）折痕在 379 / 709 → 35.72% / 66.82%
        ⚠️ 反推值，非接口直读 —— creaseRects 未真机采集（A2 ❓）
@@ -3128,7 +3173,7 @@
     var sidebar = document.getElementById('sidebar');
     var editor = document.getElementById('editorPane');
     var preview = document.getElementById('previewPane');
-    if (f === 'lg' && !sideHidden) {
+    if (f === 'lg' && !sideHidden && !viewportRotated) {
       sidebar.style.width = splitLg[0] + '%';
       editor.style.width = (splitLg[1] - splitLg[0]) + '%';
       editor.style.flex = 'none';
@@ -3144,7 +3189,7 @@
     /* 设置页「当前栏宽」行同步（元素常驻 DOM，视图隐藏也能更新） */
     var el = document.getElementById('setSplit');
     if (el) {
-      el.textContent = (f === 'lg' && !sideHidden)
+      el.textContent = (f === 'lg' && !sideHidden && !viewportRotated)
         ? '目录 ' + splitLg[0].toFixed(1) + '% · 编辑 ' + (splitLg[1] - splitLg[0]).toFixed(1) + '% · 预览 ' + (100 - splitLg[1]).toFixed(1) + '%'
         : '仅三屏展开可调（当前固定等分）';
     }
@@ -3157,7 +3202,7 @@
       return (clientX - r.left) / r.width * 100;
     }
     function draggingAllowed() {
-      return body.getAttribute('data-form') === 'lg' && !sideHidden;
+      return body.getAttribute('data-form') === 'lg' && !sideHidden && !viewportRotated;
     }
     var drag = null; /* { idx, startPct, base:[a,b] } */
     var nodes = document.querySelectorAll('.splitter');
@@ -3209,7 +3254,7 @@
      file:// 与 http:// 均可用；replaceState 被禁（个别浏览器 file:// 场景）时
      退化为直接赋 hash（会产生一条历史，可接受） */
   function syncUrl() {
-    var hash = 'f=' + body.getAttribute('data-form')
+    var hash = 'f=' + viewportPreset + '&r=' + (viewportRotated ? '1' : '0')
       + '&v=' + body.getAttribute('data-view')
       + '&side=' + (sideHidden ? 'hidden' : 'shown')
       + '&m=' + smMode
@@ -3240,7 +3285,7 @@
     var f = FORMS[params.f] ? params.f : 'lg';
     syncCtrlOn('data-f', f);
     loadSplit();     /* 拖后的栏宽优先于默认等分（URL 不带栏宽，那是临时手感） */
-    applyForm(f);   /* 内含 applySmMode / applySplit / drawHinges，末尾 syncUrl 写回 */
+    applyViewport(f, params.r === '1');   /* 先恢复尺寸/旋转，再按宽度算布局 */
     var v = params.v || 'note';
     syncCtrlOn('data-v', v);
     setView(v);
@@ -3327,7 +3372,7 @@
 
   function updateSettings() {
     var f = body.getAttribute('data-form');
-    document.getElementById('setForm').textContent = FORMS[f];
+    document.getElementById('setForm').textContent = viewportDescription();
     document.getElementById('setBp').textContent = f;
     var v = vaultById(currentVault);
     document.getElementById('setVault').textContent = v ? v.dir : ('vaults/' + currentVault);
@@ -3360,9 +3405,10 @@
       var all = document.querySelectorAll('[data-f]');
       for (var j = 0; j < all.length; j++) { all[j].classList.remove('on'); }
       this.classList.add('on');
-      applyForm(f);
+      applyViewport(f, viewportRotated);
     });
   }
+  document.getElementById('rotateViewport').addEventListener('click', function () { applyViewport(viewportPreset, !viewportRotated); });
   var vbtns = document.querySelectorAll('[data-v]');
   for (var i = 0; i < vbtns.length; i++) {
     vbtns[i].addEventListener('click', function () {
