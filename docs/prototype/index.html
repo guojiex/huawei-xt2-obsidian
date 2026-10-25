@@ -1242,7 +1242,7 @@
         <!-- 设置 / 关于视图 -->
         <div class="sync hidden" id="settingsView" data-intro="v0.1">
 <div class="settings-tabs" role="tablist" aria-label="设置分类"><button id="settings-tab-general" role="tab" aria-controls="settings-general" aria-selected="true" tabindex="0" data-settings-tab="general">通用</button><button id="settings-tab-agent" role="tab" aria-controls="settings-agent" aria-selected="false" tabindex="-1" data-settings-tab="agent">Agent</button><button id="settings-tab-data" role="tab" aria-controls="settings-data" aria-selected="false" tabindex="-1" data-settings-tab="data">数据</button><button id="settings-tab-about" role="tab" aria-controls="settings-about" aria-selected="false" tabindex="-1" data-settings-tab="about">关于</button></div><section id="settings-general" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-general"><div class="set-group">
-            <div class="set-head">布局（三屏分栏，v0.x 后置）</div>
+            <div class="set-head">布局（三屏分栏，v1.0）</div>
             <div class="set-row"><span>当前栏宽</span><code id="setSplit">目录 33.3% · 编辑 33.3% · 预览 33.3%</code></div>
             <div class="set-row"><span>三屏展开时拖动两个分栏中间的把手改宽度（双击把手快速恢复）；拖后的宽度会记住，刷新不丢。</span></div>
             <button id="resetSplitBtn">恢复等分栏宽</button>
@@ -1439,8 +1439,8 @@
     <li><b>分栏可以拖着改宽（仅 lg 三屏展开，2026-10-25 用户需求：仿微信）</b>：三栏展开时两个分栏中间各有一个 14vp 热区的把手，<b>拖着走实时改宽</b>。<br>
       <b>松手时距折痕 16vp 内自动吸附</b>到折痕位置（35.72% / 66.82%）—— 既满足「拖动改宽」，又不破坏「栏边界压折痕」原则；
       拖到折痕以外的位置不拦截，折痕线<b>标红警示</b>（用户主动选择即接受）。<b>每栏最小 18%</b>（约 190vp，目录树仍可用）。<br>
-      <b>双击把手恢复等分</b>（拖乱了的一键回家）。md / sm <b>没有</b>这个把手（用户明确 2 屏不需要，固定等分）；lg 收起目录栏（两栏态）也不拖。<br>
-      📌 需求登记在 <code>docs/requirements_backlog.md</code> D 节（后置，落码前待拍板：是否按形态持久化、设置页是否给「重置分栏」入口）。</li>
+      <b>双击把手恢复等分</b>（拖乱了的一键回家）；设置页「布局」组也有「恢复等分栏宽」按钮，并显示当前栏宽。<b>拖后的宽度会记住</b>（刷新不丢；App 侧按 lg 单独记一份进 preferences）。md / sm <b>没有</b>这个把手（用户明确 2 屏不需要，固定等分）；lg 收起目录栏（两栏态）也不拖。<br>
+      📌 需求登记在 <code>docs/requirements_backlog.md</code> D 节，<b>已分配 v1.0</b>（§3-6，随 MVP 完结与三形态真机回归验收）；持久化与重置入口均已拍板落地。</li>
     <li><b>URL 带着当前页面状态，可分享（2026-10-25）</b>：形态 / 视图 / 目录栏收起 / 编辑预览模式 / 主题都会实时写进地址栏 hash（<code>#f=lg&amp;v=note&amp;side=shown&amp;m=edit&amp;t=light</code>）。<br>
       复制地址栏、或点控件区「<b>复制当前页面链接</b>」，对方打开即复现同一画面（含深色模式与单屏预览态）；手动改 hash / 浏览器前进后退同样即时生效。<br>
       拖拽出来的栏宽<b>不进</b> URL —— 那是临时手感，不是要分享的状态。</li>
