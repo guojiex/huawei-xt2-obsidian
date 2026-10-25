@@ -44,12 +44,35 @@ def outputs():
         files[item['id']] = parts[-1]
         content[item['id']] = bodies[item['path']]
         meta[item['id']] = f"样例 · {len(bodies[item['path']])} 字符"
+    vaults = [{'id': 'local', 'name': '本地笔记', 'type': 'local', 'dir': 'vaults/local', 'files': len(entries)}]
+    trees = {'local': tree}
+    for vault in manifest.get('prototype_vaults', []):
+        vid = vault['id']
+        assert vid not in trees and vid.isalnum(), vid
+        selected = vault['note_ids']
+        assert len(set(selected)) == len(selected) and set(selected) <= set(files)
+        rows, parents = [], set()
+        for item in entries:
+            if item['id'] not in selected:
+                continue
+            parts = Path(item['path']).parts
+            for depth in range(len(parts) - 1):
+                parent = '/'.join(parts[:depth + 1])
+                if parent not in parents:
+                    rows.append(['dir', parts[depth], True, depth])
+                    parents.add(parent)
+            note_id = vid + '_' + item['id']
+            assert note_id not in files
+            rows.append(['file', parts[-1], False, len(parts) - 1, note_id])
+            files[note_id], content[note_id], meta[note_id] = files[item['id']], content[item['id']], meta[item['id']]
+        trees[vid] = rows
+        vaults.append({'id': vid, 'name': vault['name'], 'type': 'local', 'dir': 'vaults/' + vid, 'files': len(selected)})
     assets = {rel: 'data:image/svg+xml;base64,' + base64.b64encode(bodies[rel].encode()).decode() for rel in manifest['assets']}
     block = '\n'.join([
         BEGIN,
-        '  var VAULTS = ' + quoted([{'id': 'local', 'name': '本地笔记', 'type': 'local', 'dir': 'vaults/local', 'files': len(entries)}]) + ';',
+        '  var VAULTS = ' + quoted(vaults) + ';',
         "  var currentVault = 'local';",
-        '  var TREES = ' + quoted({'local': tree}) + ';',
+        '  var TREES = ' + quoted(trees) + ';',
         '  var FILES = ' + quoted(files) + ';',
         '  var META = ' + quoted(meta) + ';',
         '  var CONTENT = ' + quoted(content) + ';',

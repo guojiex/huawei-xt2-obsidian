@@ -35,3 +35,46 @@ test('URL stores preset plus rotation independently of effective breakpoint',()=
   assert.match(html,/applyViewport\(f, params\.r === '1'\)/);
   assert.match(html,/if \(viewportRotated\) \{ return; \}/);
 });
+
+test('single-screen overflow menu reuses original actions and closes on selection, outside click or Escape', () => {
+  const nodes = new Map(), handlers = {}, actions = [];
+  const get = id => {
+    if (!nodes.has(id)) nodes.set(id, { open: false, handlers: {}, addEventListener(type, fn) { this.handlers[type] = fn; }, click() { actions.push(id); }, contains(target) { return target === this; } });
+    return nodes.get(id);
+  };
+  const c = vm.createContext({ document: { getElementById: get, addEventListener(type, fn) { handlers[type] = fn; } } });
+  const start = html.indexOf("  document.getElementById('toolbarMore').addEventListener");
+  vm.runInContext(html.slice(start, html.indexOf("  document.getElementById('quickInput').addEventListener", start)), c);
+  const more = get('toolbarMore');
+  for (const id of ['shareNoteBtn', 'syncBtn', 'settingsBtn']) {
+    more.open = true;
+    more.handlers.click.call(more, {target:{closest(){return {getAttribute(){return id;}};}}});
+    assert.equal(more.open, false);
+  }
+  assert.deepEqual(actions, ['shareNoteBtn', 'syncBtn', 'settingsBtn']);
+  more.open = true; handlers.click({target:more}); assert.equal(more.open, true);
+  handlers.click({target:{}}); assert.equal(more.open, false);
+  more.open = true; handlers.keydown({key:'Escape'}); assert.equal(more.open, false);
+});
+
+test('only the rotated single-screen preset enables navigation split despite retaining the md width breakpoint', () => {
+  const f = fixture(); f.run("applyViewport('sm', true)");
+  assert.equal(f.c.applied, 'md'); assert.equal(f.attrs['data-single-landscape'], 'true');
+  f.run("applyViewport('md', false)"); assert.equal(f.attrs['data-single-landscape'], 'false');
+  f.run("applyViewport('md', true)"); assert.equal(f.attrs['data-single-landscape'], 'false');
+  f.run("applyViewport('sm', false)"); assert.equal(f.attrs['data-single-landscape'], 'false');
+});
+
+test('single-screen note navigation pushes through layout state and the hide button closes it', () => {
+  const f = fixture(); f.c.drawer = false; f.c.sideHidden = false;
+  f.c.body.getAttribute = () => 'sm';
+  f.run(html.match(/function toggleDrawer\(open\) \{[\s\S]*?\n  \}/)[0]);
+  f.run(html.match(/function setSideHidden\(h\) \{[\s\S]*?\n  \}/)[0]);
+  f.run('toggleDrawer()');
+  assert.equal(f.attrs['data-note-nav'], 'open'); assert.equal(f.get('sidebar').inert, false);
+  f.run('setSideHidden(true)');
+  assert.equal(f.attrs['data-note-nav'], 'closed'); assert.equal(f.get('sidebar').inert, true);
+  f.run('toggleDrawer(true); toggleDrawer(false)');
+  assert.equal(f.attrs['data-note-nav'], 'closed');
+  assert.equal(f.get('sidebar').style.position, undefined);
+});

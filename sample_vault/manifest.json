@@ -46,5 +46,23 @@
   "assets": [
     "50_Assets/笔记流程.svg",
     "50_Assets/长图排版示例.svg"
+  ],
+  "prototype_vaults": [
+    {
+      "id": "reading",
+      "name": "阅读笔记",
+      "note_ids": [
+        "reading_journal",
+        "stream"
+      ]
+    },
+    {
+      "id": "projects",
+      "name": "项目笔记",
+      "note_ids": [
+        "todo",
+        "inbox"
+      ]
+    }
   ]
 }

@@ -17,7 +17,7 @@ function fixture({ storageFails = false } = {}) {
       nodes.set(id, { value: '', innerHTML: '', textContent: '', handlers: {}, scrollTop: 0,
         classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c), toggle: (c, force) => { if (force === undefined ? !classes.has(c) : force) classes.add(c); else classes.delete(c); } },
         addEventListener(type, fn) { this.handlers[type] = fn; },
-        setAttribute(k, v) { attrs[k] = v; }, getAttribute(k) { return attrs[k]; }, focus() {}, setSelectionRange(start,end) { this.selectionStart=start; this.selectionEnd=end; }, contains() { return false; }
+        setAttribute(k, v) { attrs[k] = v; }, removeAttribute(k) { delete attrs[k]; }, getAttribute(k) { return attrs[k]; }, focus() {}, select() {}, querySelectorAll() { return []; }, setSelectionRange(start,end) { this.selectionStart=start; this.selectionEnd=end; }, contains() { return false; }
       });
     }
     return nodes.get(id);
@@ -29,7 +29,7 @@ function fixture({ storageFails = false } = {}) {
     VAULTS: [{ id: 'local', name: '本地笔记', files: 1 }, { id: 'otherVault', name: '其他库', files: 1 }],
     body: { getAttribute() { return 'lg'; } }, ta: { value: '# 阅读\n我的理解', scrollTop: 0 },
     esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
-    renderTree() {}, updateVaultUI() {}, setView() {}
+    renderTree() {}, updateVaultUI() {}, setView() {}, applySplit() {}, drawHinges() {}
   });
   vm.runInContext(`function currentFileRows() { return TREES[currentVault].filter(r => r[0] === 'file').map(r => ({id:r[4],name:r[1],path:r[1]})); }
     function vaultById(id) { return VAULTS.find(v => v.id === id); }
@@ -250,7 +250,7 @@ test('conversation and file panels collapse independently with all four combinat
   f.run("toggleAgentPanel('threads')");
   assert.equal(f.get('agentNav').classList.contains('hidden'), false);
   assert.equal(f.get('agentFilePane').classList.contains('hidden'), true);
-  assert.equal(f.get('agentSwitchPane').getAttribute('aria-pressed'), 'true');
+  assert.equal(f.get('agentNav').getAttribute('data-show-threads'), 'true');
 });
 test('attach restores a collapsed file panel without clearing chat draft', () => {
   const f = fixture(); f.run("toggleAgentPanel('threads'); toggleAgentPanel('files')");
@@ -259,4 +259,307 @@ test('attach restores a collapsed file panel without clearing chat draft', () =>
   assert.equal(f.get('agentFilePane').classList.contains('hidden'), false);
   assert.equal(f.get('agentThreadPane').classList.contains('hidden'), true);
   assert.equal(f.get('agentInput').value, '正在写的消息');
+});
+
+for (const form of ['sm', 'md', 'lg']) test(`${form}: hamburger restores both collapsed panels and toggles the sidebar`, () => {
+  const f = fixture(); f.c.body.getAttribute = () => form;
+  f.run("agentNav('threads')"); f.get('agentCollapseThreads').handlers.click();
+  f.run("agentNav('files')"); f.get('agentCollapseFiles').handlers.click();
+  assert.equal(f.get('agentNav').classList.contains('hidden'), true);
+  f.run('toggleAgentNavigation()');
+  assert.equal(f.get('agentNav').classList.contains('hidden'), false);
+  assert.equal(f.get('agentThreadPane').classList.contains('hidden'), false);
+  assert.equal(f.get('agentFilePane').classList.contains('hidden'), false);
+  assert.equal(f.get('agentNav').classList.contains('open'), true);
+  f.run('toggleAgentNavigation()');
+  if (form === 'sm') {
+    assert.equal(f.get('agentNav').classList.contains('open'), false);
+    assert.equal(f.get('agentNav').inert, true);
+  } else { assert.equal(f.get('agentNav').classList.contains('hidden'), true); }
+});
+test('sm: hamburger reopens a dismissed drawer in one click', () => {
+  const f = fixture(); f.c.body.getAttribute = () => 'sm';
+  f.run("agentNav('threads')"); f.get('agentHideNav').handlers.click();
+  f.run('toggleAgentNavigation()');
+  assert.equal(f.get('agentNav').classList.contains('open'), true);
+  assert.equal(f.run('agentPanels.threads'), true);
+});
+test('dedicated toolbar buttons switch views without toggling Agent panels', () => {
+  const f = fixture(); const views = []; f.c.setView = v => views.push(v);
+  f.get('xiaoyiBtn').handlers.click(); f.get('noteModeBtn').handlers.click();
+  assert.deepEqual(views, ['agent', 'note']);
+  assert.equal(f.run('agentPanels.threads && agentPanels.files'), true);
+});
+
+test('shared hamburger routes to the current workspace without changing views', () => {
+  const f = fixture(); let view = 'agent', noteToggles = 0;
+  f.c.body.getAttribute = key => key === 'data-view' ? view : 'lg';
+  f.c.toggleDrawer = () => noteToggles++;
+  const handler = html.match(/document.getElementById\('menuBtn'\).addEventListener\('click', function \(\) \{[^\n]+/)[0];
+  f.run(handler);
+  f.get('menuBtn').handlers.click();
+  assert.equal(f.get('agentNav').classList.contains('hidden'), true);
+  f.get('menuBtn').handlers.click();
+  assert.equal(f.get('agentNav').classList.contains('hidden'), false);
+  assert.equal(noteToggles, 0);
+  view = 'note'; f.get('menuBtn').handlers.click();
+  assert.equal(noteToggles, 1);
+});
+
+test('shared settings button selects Agent settings only when entering from Agent', () => {
+  const f = fixture(); const views = [], tabs = []; let view = 'agent';
+  f.c.body.getAttribute = () => view;
+  f.c.setViewBtn = v => views.push(v); f.c.setSettingsTab = tab => tabs.push(tab);
+  const handler = html.match(/document.getElementById\('settingsBtn'\).addEventListener\('click', function \(\) \{[\s\S]*?\n  \}\);/)[0];
+  f.run(handler); f.get('settingsBtn').handlers.click();
+  assert.deepEqual(views, ['settings']); assert.deepEqual(tabs, ['agent']);
+  view = 'note'; f.get('settingsBtn').handlers.click();
+  assert.deepEqual(views, ['settings', 'settings']); assert.deepEqual(tabs, ['agent']);
+  assert.equal(html.includes('id="agentSettings"'), false);
+});
+
+test('generated prototype has three local vaults with distinct notes and isolated Agent drafts', () => {
+  const f = fixture();
+  f.run(html.split('/* SAMPLE_VAULT_BEGIN: generated by tools/build_sample_vault.py */')[1].split('/* SAMPLE_VAULT_END */')[0]);
+  f.c.renderVaultMenu = () => {};
+  f.run(html.match(/function switchVault\(id\) \{[\s\S]*?\n  \}/)[0]);
+  assert.deepEqual(Array.from(f.c.VAULTS, v => v.name), ['本地笔记', '阅读笔记', '项目笔记']);
+  const seen = new Set();
+  for (const vault of f.c.VAULTS) {
+    assert.equal(vault.type, 'local');
+    const ids = f.c.TREES[vault.id].filter(r => r[0] === 'file').map(r => r[4]);
+    assert.equal(ids.length, vault.files);
+    for (const id of ids) { assert.ok(!seen.has(id)); seen.add(id); assert.ok(f.c.CONTENT[id]); }
+  }
+  const change = id => { f.get('agentVault').value = id; f.get('agentVault').handlers.change.call(f.get('agentVault')); };
+  f.get('agentInput').value = '本地库草稿'; change('reading');
+  assert.equal(f.get('agentInput').value, '');
+  assert.equal(f.run('agentRefAllowed(currentVault, "reading_journal")'), false);
+  f.run('agentAddRef(currentVault, "reading_reading_journal")');
+  const readingDraft = f.get('agentInput').value;
+  change('projects'); assert.equal(f.get('agentInput').value, '');
+  assert.equal(f.run('agentRefAllowed(currentVault, "reading_reading_journal")'), false);
+  change('reading'); assert.equal(f.get('agentInput').value, readingDraft);
+  change('local'); assert.equal(f.get('agentInput').value, '本地库草稿');
+});
+
+test('rename updates the current list and toolbar while preserving draft, messages and other sessions', () => {
+  const f = fixture(); f.c.body.getAttribute = key => key === 'data-view' ? 'agent' : 'lg';
+  f.run('renderAgent()'); const messages = f.run('JSON.stringify(agentSession().messages)');
+  f.get('agentInput').value = '还没发出的草稿';
+  assert.equal(f.run('agentRenameSession({vault:"local",id:"reading"}, "  阅读中的反例  ")'), true);
+  assert.equal(f.get('appTitle').textContent, '阅读中的反例');
+  assert.match(f.get('agentThreads').innerHTML, /阅读中的反例/);
+  assert.equal(f.get('agentInput').value, '还没发出的草稿');
+  assert.equal(f.run('JSON.stringify(agentSession().messages)'), messages);
+  assert.equal(f.run('agentStores.local[1].title'), '下一轮阅读怎么安排');
+  f.run("switchVault('otherVault'); renderAgent(); switchVault('local'); renderAgent()");
+  assert.equal(f.run('agentSession().title'), '阅读中的反例');
+});
+test('rename rejects empty, missing and cross-vault targets and preserves an explicit new-chat title', () => {
+  const f = fixture(); f.run('renderAgent()');
+  for (const expr of [
+    'agentRenameSession({vault:"local",id:"reading"}, "  ")',
+    'agentRenameSession({vault:"local",id:"missing"}, "标题")',
+    'agentRenameSession({vault:"otherVault",id:"reading"}, "标题")'
+  ]) assert.equal(f.run(expr), false);
+  assert.equal(f.run('agentSession().title'), '从读懂到会用');
+  f.get('agentNew').handlers.click();
+  f.run('agentRenameSession({vault:currentVault,id:agentSession().id}, "新对话")');
+  f.get('agentInput').value = '请追问我'; f.run('agentSend()');
+  assert.equal(f.run('agentSession().title'), '新对话');
+});
+
+function attachConversationDialogs(f) {
+  f.c.cfMode = ''; f.c.cfTarget = ''; f.c.cfType = 'note';
+  f.run(html.match(/function updateHint\(\) \{[\s\S]*?\n  \}/)[0]);
+  f.run(html.match(/function openDialog\(mode, id\) \{[\s\S]*?\n  \}/)[0]);
+  for (const id of ['cfOk', 'cfCancel']) {
+    f.run(html.match(new RegExp("document.getElementById\\('" + id + "'\\).addEventListener\\('click', function \\(\\) \\{[\\s\\S]*?\\n  \\}\\);"))[0]);
+  }
+}
+function chatButton(attrs) {
+  return { getAttribute: key => attrs[key] || null, hasAttribute: key => key in attrs, closest() { return this; }, classList: { toggle() {} } };
+}
+test('single-click keeps list rows intact so double-click and F2 can open the rename dialog', () => {
+  const f = fixture(); attachConversationDialogs(f); f.run('renderAgent()');
+  const button = chatButton({'data-session': 'review'});
+  let replacements = 0, list = f.get('agentThreads').innerHTML;
+  Object.defineProperty(f.get('agentThreads'), 'innerHTML', { get: () => list, set: value => { list = value; replacements++; } });
+  f.get('agentThreads').querySelectorAll = () => [button];
+  f.get('agentView').handlers.click({target: button});
+  f.get('agentView').handlers.click({target: button});
+  assert.equal(replacements, 0);
+  assert.equal(f.run('agentSession().id'), 'review');
+  f.get('agentThreads').handlers.dblclick({target: button});
+  assert.equal(f.get('cfTitle').textContent, '重命名对话');
+  assert.equal(f.get('cfInput').value, '下一轮阅读怎么安排');
+  assert.equal(f.get('mask').classList.contains('hidden'), false);
+  f.get('cfInput').value = '  '; f.run('updateHint()');
+  assert.equal(f.get('cfOk').disabled, true); f.get('cfOk').handlers.click();
+  assert.equal(f.get('mask').classList.contains('hidden'), false);
+  f.get('cfInput').value = '改个标题'; f.get('cfCancel').handlers.click();
+  assert.equal(f.run('agentSession().title'), '下一轮阅读怎么安排');
+  let prevented = false;
+  f.get('agentThreads').handlers.keydown({target:button,key:'F2',preventDefault(){prevented=true;},stopPropagation(){}});
+  assert.equal(prevented, true);
+  f.get('cfInput').value = '我的阅读计划'; f.get('cfOk').handlers.click();
+  assert.equal(f.run('agentSession().title'), '我的阅读计划');
+});
+test('archive hides conversations, preserves drafts and messages, and restores them through Agent settings', () => {
+  const f = fixture(); f.c.body.getAttribute = key => key === 'data-view' ? 'agent' : 'lg'; f.run('renderAgent()');
+  const before = f.run('JSON.stringify(agentSession().messages)'); f.get('agentInput').value = '归档前的草稿';
+  f.get('agentView').handlers.click({target:chatButton({'data-archive-session':'reading'})});
+  assert.equal(f.run('agentSession().id'), 'review');
+  assert.doesNotMatch(f.get('agentThreads').innerHTML, /data-session="reading"/);
+  assert.equal(f.run('agentStores.local[0].draft'), '归档前的草稿');
+  assert.equal(f.run('JSON.stringify(agentStores.local[0].messages)'), before);
+  f.run("setSettingsTab('agent')");
+  assert.match(f.get('agentHistory').innerHTML, /已归档/);
+  assert.match(f.get('agentHistory').innerHTML, /本地笔记/);
+  f.get('agentHistory').handlers.click({target:chatButton({'data-restore-chat':'reading','data-chat-vault':'local'})});
+  assert.match(f.get('agentThreads').innerHTML, /data-session="reading"/);
+  assert.doesNotMatch(f.get('agentHistory').innerHTML, /data-restore-chat="reading"/);
+  f.get('agentView').handlers.click({target:chatButton({'data-session':'reading'})});
+  assert.equal(f.get('agentInput').value, '归档前的草稿');
+});
+test('archiving every conversation opens a fresh empty chat and never resurfaces archived samples', () => {
+  const f = fixture(); f.run('renderAgent()');
+  f.run('agentArchiveSession({vault:"local",id:"reading"}, true); agentArchiveSession({vault:"local",id:"review"}, true)');
+  assert.match(f.run('agentSession().id'), /^chat-/);
+  assert.equal(f.run('agentSession().messages.length'), 0);
+  assert.equal(f.run('agentStores.local.filter(s => s.archived).length'), 3);
+  assert.doesNotMatch(f.get('agentThreads').innerHTML, /data-session="(?:reading|review)"/);
+});
+test('settings deletion requires confirmation, leaves written notes intact, and does not reseed deleted chats', () => {
+  const f = fixture(); attachConversationDialogs(f); f.run("agentWrite('append',1)");
+  const note = f.c.CONTENT.reading_journal;
+  f.run('agentArchiveSession({vault:"local",id:"reading"}, true)');
+  const button = chatButton({'data-delete-chat':'reading','data-chat-vault':'local'});
+  f.get('agentHistory').handlers.click({target:button});
+  assert.match(f.get('cfTitle').textContent, /删除对话/);
+  assert.equal(f.run('agentStores.local.some(s => s.id === "reading")'), true);
+  f.get('cfCancel').handlers.click();
+  assert.equal(f.run('agentStores.local.some(s => s.id === "reading")'), true);
+  f.get('agentHistory').handlers.click({target:button}); f.get('cfOk').handlers.click();
+  assert.equal(f.run('agentStores.local.some(s => s.id === "reading")'), false);
+  assert.equal(f.c.CONTENT.reading_journal, note);
+  assert.equal(f.run('agentLastWrite'), null);
+  f.run('agentDeleteSession({vault:"local",id:"review"})');
+  assert.equal(f.run('agentStores.local.length'), 2);
+  assert.equal(f.run('agentStores.local.filter(s => !s.archived).length'), 1);
+  assert.equal(f.run('agentSession().messages.length'), 0);
+  assert.match(f.run('agentSession().id'), /^chat-/);
+  assert.equal(f.run('agentDeleteSession({vault:"local",id:"missing"})'), false);
+});
+test('history distinguishes identical session IDs in different libraries and its filter does not reset config drafts', () => {
+  const f = fixture(); f.run("renderAgent(); switchVault('otherVault'); renderAgent(); switchVault('local'); renderAgent()");
+  f.run('agentArchiveSession({vault:"otherVault",id:"reading"}, true)');
+  assert.equal(f.run('agentStores.local[0].archived'), undefined);
+  assert.match(f.get('agentHistory').innerHTML, /其他库/);
+  f.get('configSystemPrompt').value = '还没保存的配置';
+  f.get('agentHistoryFilter').value = 'all'; f.get('agentHistoryFilter').handlers.change();
+  assert.match(f.get('agentHistory').innerHTML, /本地笔记/);
+  assert.match(f.get('agentHistory').innerHTML, /其他库/);
+  f.run('agentDeleteSession({vault:"otherVault",id:"reading"})');
+  assert.equal(f.run('agentStores.local.some(s => s.id === "reading")'), true);
+  assert.equal(f.get('configSystemPrompt').value, '还没保存的配置');
+});
+
+test('Agent settings shows archived demo data on first visit and restored/deleted samples stay changed', () => {
+  const f = fixture();
+  f.run(html.split('/* SAMPLE_VAULT_BEGIN: generated by tools/build_sample_vault.py */')[1].split('/* SAMPLE_VAULT_END */')[0]);
+  f.run('VAULTS.forEach(v => agentInitSessions(v.id)); setSettingsTab("agent")');
+  const history = f.get('agentHistory').innerHTML;
+  for (const name of ['本地笔记', '阅读笔记', '项目笔记', '整理笔记的三个习惯', '读书时如何记录反例', '每周项目回顾怎么写']) assert.ok(history.includes(name), name);
+  assert.equal((history.match(/data-restore-chat=/g) || []).length, 3);
+  assert.equal((history.match(/data-delete-chat=/g) || []).length, 3);
+  assert.doesNotMatch(f.get('agentThreads').innerHTML, /archive-sample/);
+  f.run('agentArchiveSession({vault:"reading",id:"archive-sample"}, false); agentDeleteSession({vault:"projects",id:"archive-sample"}); setSettingsTab("general"); setSettingsTab("agent")');
+  assert.doesNotMatch(f.get('agentHistory').innerHTML, /读书时如何记录反例|每周项目回顾怎么写/);
+  f.get('agentHistoryFilter').value = 'all'; f.get('agentHistoryFilter').handlers.change();
+  assert.match(f.get('agentHistory').innerHTML, /读书时如何记录反例/);
+  assert.doesNotMatch(f.get('agentHistory').innerHTML, /每周项目回顾怎么写/);
+});
+
+test('sm push navigation disables the offscreen Agent list and preserves panels and draft when closed', () => {
+  const f = fixture(); f.c.body.getAttribute = key => key === 'data-form' ? 'sm' : 'agent';
+  f.run('renderAgent(); setAgentNavOpen(false)');
+  f.get('agentInput').value = '保留草稿';
+  assert.equal(f.get('agentNav').inert, true);
+  f.run('toggleAgentNavigation()');
+  assert.equal(f.get('agentNav').inert, false);
+  assert.equal(f.get('agentNav').getAttribute('aria-hidden'), 'false');
+  f.run('toggleAgentNavigation()');
+  assert.equal(f.get('agentNav').inert, true);
+  assert.equal(f.run('agentPanels.threads && agentPanels.files'), true);
+  assert.equal(f.get('agentInput').value, '保留草稿');
+  f.c.body.getAttribute = () => 'lg'; f.run('setAgentNavOpen(false)');
+  assert.equal(f.get('agentNav').inert, false);
+});
+
+function settingsNavigationFixture(form = 'sm', landscape = false) {
+  const f = fixture(), attrs = {'data-form':form,'data-view':'note','data-single-landscape':String(landscape)};
+  f.c.body.getAttribute = key => attrs[key]; f.c.body.setAttribute = (key,value) => {attrs[key]=value;};
+  f.c.document.querySelectorAll = () => [];
+  for (const name of ['closeQuick','closeImage','closeShare','updateAppTitle','syncUrl','updateSettings']) f.c[name] = () => {};
+  f.run(html.match(/function setView\(v, syncBtns\) \{[\s\S]*?\n  \}/)[0]);
+  f.run('function setViewBtn(v) { setView(v, true); }');
+  f.run(html.match(/document.getElementById\('backBtn'\).addEventListener\('click', function \(\) \{[\s\S]*?\n  \}\);/)[0]);
+  return {...f, attrs};
+}
+test('single-screen settings opens a vertical category list, drills into content and returns in two steps', () => {
+  const f = settingsNavigationFixture(); f.run('setView("settings", true)');
+  assert.equal(f.get('settingsView').getAttribute('data-settings-page'), 'list');
+  assert.equal(f.get('settingsNav').getAttribute('role'), 'navigation');
+  for (const tab of ['general','agent','data','about']) {
+    assert.equal(f.get('settings-'+tab).classList.contains('hidden'), true);
+    assert.equal(f.get('settings-tab-'+tab).getAttribute('tabindex'), '0');
+  }
+  f.get('configSystemPrompt').value = '未保存配置';
+  f.get('settings-tab-agent').handlers.click();
+  assert.equal(f.get('settingsView').getAttribute('data-settings-page'), 'detail');
+  assert.equal(f.get('settings-agent').classList.contains('hidden'), false);
+  assert.equal(f.get('appTitle').textContent, 'Agent');
+  f.get('backBtn').handlers.click();
+  assert.equal(f.attrs['data-view'], 'settings');
+  assert.equal(f.get('settingsView').getAttribute('data-settings-page'), 'list');
+  assert.equal(f.get('appTitle').textContent, '设置与关于');
+  assert.equal(f.get('configSystemPrompt').value, '未保存配置');
+  f.get('backBtn').handlers.click(); assert.equal(f.attrs['data-view'], 'note');
+});
+for (const form of ['md','lg']) test(`${form}: settings retains vertical tabs and one visible content panel while switching`, () => {
+  const f = settingsNavigationFixture(form); f.run('setView("settings")');
+  assert.equal(f.get('settingsNav').getAttribute('role'), 'tablist');
+  assert.equal(f.get('settingsNav').getAttribute('aria-orientation'), 'vertical');
+  assert.equal(f.get('settings-general').classList.contains('hidden'), false);
+  f.get('settings-tab-general').handlers.keydown({key:'ArrowDown',preventDefault(){}});
+  assert.equal(f.get('settings-agent').classList.contains('hidden'), false);
+  assert.equal(f.get('settings-general').classList.contains('hidden'), true);
+  assert.equal(f.get('settings-tab-agent').getAttribute('aria-selected'), 'true');
+  f.get('configSystemPrompt').value = '跨布局保留';
+  f.attrs['data-form'] = 'sm'; f.run('renderSettingsNavigation()');
+  assert.equal(f.get('settings-agent').classList.contains('hidden'), false);
+  assert.equal(f.get('appTitle').textContent, 'Agent');
+  f.attrs['data-form'] = form; f.run('renderSettingsNavigation()');
+  assert.equal(f.get('configSystemPrompt').value, '跨布局保留');
+});
+test('rotated single screen retains category/detail navigation and Agent shortcut preserves its return workspace', () => {
+  const f = settingsNavigationFixture('md', true); f.attrs['data-view'] = 'agent';
+  f.run('setView("settings"); setSettingsTab("agent")');
+  assert.equal(f.get('settingsNav').getAttribute('role'), 'navigation');
+  assert.equal(f.get('settingsView').getAttribute('data-settings-page'), 'detail');
+  f.get('backBtn').handlers.click(); assert.equal(f.get('settingsView').getAttribute('data-settings-page'), 'list');
+  f.get('backBtn').handlers.click(); assert.equal(f.attrs['data-view'], 'agent');
+});
+
+for (const form of ['md','lg']) test(`${form}: hamburger collapse keeps width state and disables the hidden animated Agent rail`, () => {
+  const f = fixture(); f.c.body.getAttribute = key => key === 'data-form' ? form : 'agent';
+  f.run('renderAgent(); toggleAgentNavigation()');
+  assert.equal(f.get('agentNav').classList.contains('hidden'), true);
+  assert.equal(f.get('agentNav').inert, true);
+  assert.equal(f.get('agentNav').getAttribute('aria-hidden'), 'true');
+  f.run('toggleAgentNavigation()');
+  assert.equal(f.get('agentNav').classList.contains('hidden'), false);
+  assert.equal(f.get('agentNav').inert, false);
 });

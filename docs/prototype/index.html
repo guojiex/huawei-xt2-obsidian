@@ -94,6 +94,9 @@
     --viewport-width: 1061px;
     --viewport-height: 830px;
     --settings-content-width: 760px;
+    --tab-indicator-height: 2px;
+    --pane-min-width: 240px;
+    --mobile-nav-width: 300px;
     --agent-nav-wide: 33.333%;
     --agent-nav-compact: 50%;
     --agent-library-width: 160px;
@@ -270,6 +273,17 @@
     font-size: var(--fs-s2); font-weight: 700; letter-spacing: .3px;
     flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .appbar-more { display: none; position: relative; flex: none; }
+  .appbar-more summary { list-style: none; }
+  .appbar-more summary::-webkit-details-marker { display: none; }
+  .appbar-menu { position: absolute; right: 0; top: 100%; z-index: 50; min-width: var(--agent-library-width); padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-menu); background: var(--bg-card); box-shadow: var(--elev-1); }
+  .appbar-menu button { display: flex; width: 100%; min-height: var(--h-touch); justify-content: flex-start; border: 0; border-radius: var(--r-control); background: transparent; white-space: nowrap; }
+  .appbar-menu button:hover { background: var(--fill-hover); }
+  .agent-mock-caption { display: none; }
+  [data-form="sm"] .appbar { gap: var(--sp-1); }
+  [data-form="sm"][data-view="note"] .appbar-more { display: block; }
+  [data-form="sm"][data-view="note"] #shareNoteBtn, [data-form="sm"][data-view="note"] #syncBtn, [data-form="sm"][data-view="note"] #settingsBtn, [data-form="sm"] #agentMockBadge { display: none; }
+  [data-form="sm"] .agent-mock-caption { display: inline; }
   .views { flex: 1; display: flex; min-height: 0; }
 
   /* 侧栏 */
@@ -314,6 +328,7 @@
   }
   .splitter:hover::after { height: 40px; background: var(--brand); }
   .splitter.dragging::after { height: 48px; background: var(--brand); }
+  [data-view="agent"][data-form="lg"] #agentNav:not(.hidden) + #agentSplitter { display: block; }
   body.split-dragging { cursor: col-resize; user-select: none; }
 
   /* ---------- 侧栏收起（仅 md / lg，sm 用抽屉） ---------- */
@@ -897,11 +912,9 @@
 
   /* 小艺工作区：lg 同时显示对话与文件；md/sm 共用导航槽。 */
   .agent-page { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-  .agent-bar { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .agent-bar strong { font-size: var(--fs-body1); flex: 1; }
-  .agent-bar label { font-size: var(--fs-body3); }
-  .agent-bar select { max-width: var(--agent-library-width); }
-  .agent-notice { padding: var(--sp-2) var(--sp-4); background: var(--brand-bg); color: var(--text-secondary); font-size: var(--fs-body3); }
+  .agent-mock-badge { flex: none; font-size: var(--fs-body3); color: var(--text-secondary); background: var(--brand-bg); border-radius: var(--r-chip); padding: var(--sp-1) var(--sp-2); margin-right: var(--sp-2); }
+  .agent-vault select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+  .agent-vault:focus-within { outline: var(--agent-focus-width) solid var(--brand); }
   .agent-layout { flex: 1; min-height: 0; display: flex; position: relative; }
   .agent-nav { flex: none; width: var(--agent-nav-wide); display: flex; position: relative; flex-direction: column; min-height: 0; background: var(--bg-page); border-right: 1px solid var(--line); }
   .agent-tabs { flex: none; display: flex; gap: var(--sp-1); padding: var(--sp-2); background: var(--bg-page); border-bottom: 1px solid var(--line); }
@@ -915,11 +928,16 @@
   .agent-files .tree { min-height: 0; }
   .agent-file-hint { padding: var(--sp-2) var(--sp-3); color: var(--text-tertiary); font-size: var(--fs-body3); }
   .agent-chat { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
-  .agent-chat-head { flex-wrap: wrap; padding: var(--sp-3) var(--sp-4); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); border-bottom: 1px solid var(--line); }
-  .agent-chat-head strong { font-size: var(--fs-body1); overflow-wrap: anywhere; }
   .agent-caption { font-size: var(--fs-body3); color: var(--text-secondary); line-height: 1.5; margin: var(--sp-2) 0; }
   .agent-page button { min-height: var(--h-touch); height: auto; white-space: normal; overflow-wrap: anywhere; }
-  .agent-thread { width: 100%; display: flex; align-items: center; gap: var(--sp-3); text-align: left; padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-1); border-radius: var(--r-control); background: transparent; border: none; font-size: var(--fs-body2); }
+  .agent-thread { width: 100%; min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: var(--sp-3); text-align: left; padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-1); border-radius: var(--r-control); background: transparent; border: none; font-size: var(--fs-body2); }
+  .agent-thread-row { display: flex; align-items: center; gap: var(--sp-1); }
+  .agent-thread-row .agent-archive { opacity: 0; }
+  .agent-thread-row:hover .agent-archive, .agent-thread-row:focus-within .agent-archive { opacity: 1; }
+  @media (hover: none) { .agent-thread-row .agent-archive { opacity: 1; } }
+  #agentHistory .agent-history-name { width: auto; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .agent-history-name small { display: block; color: var(--text-tertiary); font-size: var(--fs-caption); }
+  .agent-thread-row .agent-thread { flex: 1; width: 0; }
   .agent-thread svg { flex: none; color: var(--text-tertiary); }
   .agent-thread span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .agent-thread:hover { background: var(--fill-hover); }
@@ -952,13 +970,20 @@
   [data-form="lg"] #agentHideNav { display: none; }
   [data-form="lg"] .agent-nav[data-show-files="false"] .agent-threads { flex: 1; }
   [data-form="lg"] .agent-nav[data-show-threads="false"] .agent-files { border-top: none; }
-  .agent-bar button[aria-pressed="true"] { background: var(--brand-bg); color: var(--brand); }
   [data-form="md"] .agent-nav { width: var(--agent-nav-compact); }
   [data-form="md"] .agent-nav[data-tab="threads"] .agent-files, [data-form="sm"] .agent-nav[data-tab="threads"] .agent-files { display: none; }
   [data-form="md"] .agent-nav[data-tab="files"] .agent-threads, [data-form="sm"] .agent-nav[data-tab="files"] .agent-threads { display: none; }
-  [data-form="sm"] .agent-nav { position: absolute; inset: 0; z-index: 45; width: auto; }
-  [data-form="sm"] .agent-nav:not(.open) { display: none; }
-  [data-form="sm"] .agent-bar strong { flex-basis: 100%; }
+  /* 两个工作区的汉堡统一推入/回位；宽屏继续保留其分栏终态。 */
+  #noteView, .agent-layout { min-width: 0; overflow: hidden; }
+  #noteView .sidebar, .agent-nav { margin-left: 0; transition: margin-left var(--dur) var(--ease), visibility 0s; }
+  #noteView .sidebar { width: var(--navigation-width); }
+  [data-side="hidden"]:not([data-form="sm"]) #noteView .sidebar { display: flex; margin-left: calc(-1 * var(--navigation-width)); visibility: hidden; transition: margin-left var(--dur) var(--ease), visibility 0s var(--dur); }
+  #agentNav.hidden { display: flex !important; margin-left: calc(-1 * var(--navigation-width)); visibility: hidden; transition: margin-left var(--dur) var(--ease), visibility 0s var(--dur); }
+  #noteView > .editor-pane, #noteView > .preview-pane { transition: width var(--dur) var(--ease); }
+  body.split-dragging #noteView > .editor-pane, body.split-dragging #noteView > .preview-pane { transition: none; }
+  [data-form="sm"] #noteView .sidebar, [data-form="sm"] .agent-nav { width: var(--mobile-nav-width); margin-left: calc(-1 * var(--mobile-nav-width)); }
+  [data-form="sm"][data-note-nav="open"] #noteView .sidebar, [data-form="sm"] .agent-nav.open { margin-left: 0; }
+  [data-form="sm"] #noteView > .editor-pane, [data-form="sm"] #noteView > .preview-pane, [data-form="sm"] .agent-chat { flex: none; width: 100%; }
 
 
   /* 单篇分享设计：sm 底部面板，md/lg 面板保持在最右一栏。 */
@@ -984,12 +1009,20 @@
   .share-primary { width: 100%; margin-top: var(--sp-3); background: var(--brand); color: var(--on-brand); border: 0; border-radius: var(--r-button); }
 
 
-  #settingsView { padding: 0; overflow: hidden; flex-direction: column; }
+  #settingsView { padding: 0; overflow: hidden; flex-direction: row; }
   #settingsView:not(.hidden) { display: flex; }
-  .settings-tabs { flex: none; display: flex; overflow-x: auto; padding: var(--sp-2); gap: var(--sp-1); background: var(--bg-card); border-bottom: 1px solid var(--line); }
-  .settings-tabs button { flex: 1; min-width: 0; min-height: var(--h-touch); height: auto; white-space: nowrap; background: transparent; }
-  .settings-tabs button[aria-selected="true"] { background: var(--brand-bg); color: var(--brand); }
-  .settings-panel { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-5) max(var(--sp-5), calc((100% - var(--settings-content-width)) / 2)) var(--sp-8); }
+  .settings-tabs { flex: none; display: flex; flex-direction: column; min-height: 0; width: var(--agent-nav-wide); overflow-y: auto; padding: var(--sp-3); gap: var(--sp-1); background: var(--bg-page); border-right: 1px solid var(--line); }
+  .settings-tabs button { flex: none; display: flex; justify-content: space-between; gap: var(--sp-3); width: 100%; min-width: 0; min-height: var(--h-item); height: auto; padding: var(--sp-3); border: 0; border-radius: 0; text-align: left; background: transparent; color: var(--text-primary); font-weight: 500; }
+  .settings-tabs button:hover, .settings-tabs button:active { background: var(--fill-hover); transform: none; }
+  .settings-tabs button[aria-selected="true"] { color: var(--brand); background: var(--brand-bg); }
+  .settings-tabs button:focus-visible { outline: var(--tab-indicator-height) solid var(--brand); outline-offset: calc(-1 * var(--sp-1)); }
+  .settings-tabs .settings-arrow { flex: none; width: var(--sp-4); height: var(--sp-4); color: var(--text-tertiary); }
+  .settings-panel { flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: var(--sp-5) max(var(--sp-5), calc((100% - var(--settings-content-width)) / 2)) var(--sp-8); }
+  [data-form="md"] .settings-tabs { width: var(--agent-nav-compact); }
+  [data-form="sm"] #settingsView, [data-single-landscape="true"] #settingsView { flex-direction: column; }
+  [data-form="sm"] .settings-tabs, [data-single-landscape="true"] .settings-tabs { flex: 1; width: 100%; border-right: 0; gap: 0; padding: var(--sp-3) var(--sp-5); }
+  [data-form="sm"] .settings-tabs button, [data-single-landscape="true"] .settings-tabs button { border-radius: 0; border-bottom: 1px solid var(--line); }
+  [data-form="sm"] #settingsView[data-settings-page="detail"] .settings-tabs, [data-single-landscape="true"] #settingsView[data-settings-page="detail"] .settings-tabs { display: none; }
   #settings-agent .set-body { padding: var(--sp-4); }
   #settings-agent .set-body > :first-child { margin-top: 0; }
   #settings-agent .set-body > :last-child { margin-bottom: 0; }
@@ -1002,13 +1035,10 @@
   #settings-agent button { min-height: var(--h-touch); height: auto; white-space: normal; }
 
 
-  /* 矮窗口保持正文可滚动、输入与关闭入口可达。横向折痕未实测，不套用原纵向把手。 */
-  [data-rotated="true"] .splitter { display: none !important; }
-  [data-compact-height="true"] .agent-bar { padding: var(--sp-1) var(--sp-3); gap: var(--sp-2); }
-  [data-compact-height="true"] .agent-bar > strong { display: none; }
-  [data-compact-height="true"] .agent-notice { padding: var(--sp-1) var(--sp-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  [data-compact-height="true"] .agent-chat-head { padding: var(--sp-1) var(--sp-3); }
-  [data-compact-height="true"] #agentScope, [data-compact-height="true"] #agentSettings, [data-compact-height="true"] .agent-chat-head label { display: none; }
+  /* 矮窗口保持正文与输入可达；仅单屏横屏复用导航把手，其他旋转形态仍不画纵向把手。 */
+  [data-rotated="true"]:not([data-single-landscape="true"]) .splitter { display: none !important; }
+  [data-single-landscape="true"][data-view="note"]:not([data-side="hidden"]) #splitterA,
+  [data-single-landscape="true"][data-view="agent"] #agentNav:not(.hidden) + #agentSplitter { display: block; }
   [data-compact-height="true"] .agent-messages { padding: var(--sp-3); }
   [data-compact-height="true"] .agent-compose { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-1) var(--sp-2); padding: var(--sp-2); margin: 0 var(--sp-3); }
   [data-compact-height="true"] .agent-compose > details, [data-compact-height="true"] .agent-compose > label, [data-compact-height="true"] .agent-compose-foot > span { display: none; }
@@ -1088,18 +1118,24 @@
         <button class="icon-btn" id="menuBtn" title="文件树" data-intro="v0.1">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
+        <button class="icon-btn hidden" id="noteModeBtn" title="切换到笔记" aria-label="切换到笔记"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h12l4 4v14H4Z"/><path d="M14 3v6h6M8 13h8M8 17h6"/></svg></button>
+        <button class="icon-btn hidden" id="xiaoyiBtn" title="Agent 对话 · 本地 mock" data-intro="v0.7" aria-label="Agent 对话"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 4H6a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h2v3l4-3h6a3 3 0 0 0 3-3v-3"/><path d="m18 2 1.1 3.4L22.5 6.5l-3.4 1.1L18 11l-1.1-3.4L13.5 6.5l3.4-1.1Z"/></svg></button>
         <div class="title" id="appTitle">欢迎使用</div>
+        <span id="agentMockBadge" class="agent-mock-badge hidden" title="固定问法返回预设回复；工具仅修改本页样例，无网络；小艺、后台与系统通知尚未接入">本地 mock</span>
         <button class="icon-btn" id="searchBtn" title="快速切换 / 搜索" data-intro="v0.4" aria-label="快速切换 / 搜索">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
         </button>
         <button class="icon-btn" id="shareNoteBtn" data-intro="v0.8" title="分享当前笔记" aria-label="分享当前笔记"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V4l8 8-8 8v-5C8 15 4 17 2 21c0-7 4-12 12-12Z"/></svg></button>
-        <button class="icon-btn hidden" id="xiaoyiBtn" title="Agent 对话 · 本地 mock" data-intro="v0.7" aria-label="Agent 对话"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 4H6a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h2v3l4-3h6a3 3 0 0 0 3-3v-3"/><path d="m18 2 1.1 3.4L22.5 6.5l-3.4 1.1L18 11l-1.1-3.4L13.5 6.5l3.4-1.1Z"/></svg></button>
         <button class="icon-btn" id="syncBtn" title="同步" data-intro="v0.3">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4.4V9h-4.6"/></svg>
         </button>
         <button class="icon-btn" id="settingsBtn" title="设置与关于">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path fill="currentColor" stroke="none" d="M19.4 13a7.7 7.7 0 0 0 0-2l2-1.55a.5.5 0 0 0 .12-.63l-1.9-3.28a.5.5 0 0 0-.6-.22l-2.35.95a7.5 7.5 0 0 0-1.73-1l-.35-2.5a.5.5 0 0 0-.5-.42h-3.8a.5.5 0 0 0-.5.42l-.35 2.5a7.5 7.5 0 0 0-1.73 1l-2.35-.95a.5.5 0 0 0-.6.22L2.8 8.82a.5.5 0 0 0 .12.63L4.9 11a7.7 7.7 0 0 0 0 2l-1.98 1.55a.5.5 0 0 0-.12.63l1.9 3.28a.5.5 0 0 0 .6.22l2.35-.95c.53.43 1.11.77 1.73 1l.35 2.5a.5.5 0 0 0 .5.42h3.8a.5.5 0 0 0 .5-.42l.35-2.5a7.5 7.5 0 0 0 1.73-1l2.35.95a.5.5 0 0 0 .6-.22l1.9-3.28a.5.5 0 0 0-.12-.63zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"/></svg>
         </button>
+        <details class="appbar-more" id="toolbarMore">
+          <summary class="icon-btn" aria-label="更多操作" title="更多操作"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></summary>
+          <div class="appbar-menu"><button id="moreShareNoteBtn" data-toolbar-action="shareNoteBtn">分享笔记</button><button data-toolbar-action="syncBtn">同步</button><button data-toolbar-action="settingsBtn">设置与关于</button></div>
+        </details>
       </div>
 
       <div class="views">
@@ -1202,21 +1238,20 @@
 
         <!-- v0.2：删除兜底。原型只演示当前页面内的恢复交互，真机需持久化。 -->
         <div id="agentView" class="agent-page hidden" data-intro="v0.7">
-          <div class="agent-bar"><strong>Agent · 与笔记一起读</strong><label>知识库 <select id="agentVault" aria-label="对话所属知识库"></select></label><div class="agent-actions"><button id="agentSwitchPane" aria-label="显示或隐藏会话列表" aria-controls="agentThreadPane" aria-pressed="true">会话</button><button id="agentToggleFiles" aria-label="显示或隐藏文件列表" aria-controls="agentFilePane" aria-pressed="true">文件</button></div></div>
-          <div class="agent-notice">本地 mock · 固定问法返回对应回复；工具只修改本页样例，无网络。小艺接入、后台与系统通知仍后置。</div>
-          <div class="agent-layout">
+          <div class="agent-layout" id="agentLayout">
             <aside class="agent-nav" id="agentNav">
+              <div class="vault-switch agent-vault"><span class="vs-icon" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 7.5A1.9 1.9 0 0 1 5.5 5.6h3.1l1.8 2.2h6.9a1.9 1.9 0 0 1 1.9 1.9v8.1a1.9 1.9 0 0 1-1.9 1.9H5.5a1.9 1.9 0 0 1-1.9-1.9z"/></svg></span><span class="vname" aria-hidden="true"><span id="agentVaultName">本地笔记</span><span class="vsub" id="agentVaultSub"></span></span><span class="chev" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></svg></span><select id="agentVault" aria-label="对话所属知识库" title="仅使用当前知识库和本段对话中明确引用的笔记"></select></div>
               <div class="agent-tabs"><button id="agentThreadsTab" aria-pressed="true">对话</button><button id="agentFilesTab" aria-pressed="false">笔记</button><button id="agentHideNav">收起</button></div>
               <section class="agent-threads" id="agentThreadPane"><div class="side-head"><span>最近对话</span><button id="agentNew" class="side-mini" title="新对话" aria-label="新对话">＋</button><button id="agentCollapseThreads" class="side-mini" title="折叠会话列表" aria-label="折叠会话列表">‹</button></div><div id="agentThreads" class="agent-thread-list"></div></section>
               <section class="agent-files" id="agentFilePane"><div class="side-head"><span>笔记</span><span id="agentFileCount" class="agent-caption"></span><button id="agentCollapseFiles" class="side-mini" title="折叠文件列表" aria-label="折叠文件列表">‹</button></div><label class="agent-search"><input id="agentSearch" aria-label="查找当前库笔记" placeholder="搜索笔记"></label><div id="agentFiles" class="tree"></div><div class="agent-file-hint">先定位光标，再点击或拖入笔记</div></section>
             </aside>
+            <div class="splitter" id="agentSplitter" title="拖动调整左栏宽度（与笔记页共用 · 双击恢复等分）"></div>
             <section class="agent-chat" aria-label="Agent 对话">
-              <div class="agent-chat-head"><div><strong id="agentTitle">读书讨论</strong><p class="agent-caption" id="agentScope"></p></div><div class="agent-actions"><label class="agent-caption">Skill <select id="agentSkill" aria-label="本轮 Skill"></select></label><button id="agentSettings">Agent 设置</button><button id="agentAttach">＋ 引用笔记</button></div></div>
               <div id="agentMessages" class="agent-messages" role="log" aria-live="polite"></div>
               <div class="agent-compose" id="agentDrop" tabindex="0" aria-label="对话输入区，可拖入当前库笔记">
                 <div id="agentRefs" class="agent-refs"></div>
-                <details class="agent-caption"><summary>可体验的固定问法</summary><div id="agentExamples" class="agent-actions"></div></details><label class="agent-caption" for="agentInput">讨论内容</label><textarea id="agentInput" rows="3" placeholder="先参考 [[笔记 A]] 讨论这一点，再参考 [[笔记 B]] 比较另一点…"></textarea>
-                <div class="agent-compose-foot"><span class="agent-caption">引用插入光标处 · Enter 发送</span><button id="agentSend">发送</button></div>
+                <details class="agent-caption"><summary>可体验的固定问法<span class="agent-mock-caption" title="预设回复，无网络；工具只修改本页样例"> · 本地 mock</span></summary><div id="agentExamples" class="agent-actions"></div></details><label class="agent-caption" for="agentInput">讨论内容</label><textarea id="agentInput" rows="3" placeholder="先参考 [[笔记 A]] 讨论这一点，再参考 [[笔记 B]] 比较另一点…"></textarea>
+                <div class="agent-compose-foot"><div class="agent-actions"><button id="agentAttach" class="icon-btn" aria-label="引用笔记" title="引用笔记">＋</button><select id="agentSkill" aria-label="本轮 Skill"></select></div><button id="agentSend">发送</button></div>
               </div>
               <p id="agentStatus" class="agent-status" role="status"></p>
             </section>
@@ -1255,10 +1290,10 @@
 
         <!-- 设置 / 关于视图 -->
         <div class="sync hidden" id="settingsView" data-intro="v0.1">
-<div class="settings-tabs" role="tablist" aria-label="设置分类"><button id="settings-tab-general" role="tab" aria-controls="settings-general" aria-selected="true" tabindex="0" data-settings-tab="general">通用</button><button id="settings-tab-agent" role="tab" aria-controls="settings-agent" aria-selected="false" tabindex="-1" data-settings-tab="agent">Agent</button><button id="settings-tab-data" role="tab" aria-controls="settings-data" aria-selected="false" tabindex="-1" data-settings-tab="data">数据</button><button id="settings-tab-about" role="tab" aria-controls="settings-about" aria-selected="false" tabindex="-1" data-settings-tab="about">关于</button></div><section id="settings-general" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-general"><div class="set-group">
-            <div class="set-head">布局（三屏分栏，v1.0）</div>
+<div class="settings-tabs" id="settingsNav" role="tablist" aria-orientation="vertical" aria-label="设置分类"><button id="settings-tab-general" role="tab" aria-controls="settings-general" aria-selected="true" tabindex="0" data-settings-tab="general"><span>通用</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-agent" role="tab" aria-controls="settings-agent" aria-selected="false" tabindex="-1" data-settings-tab="agent"><span>Agent</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-data" role="tab" aria-controls="settings-data" aria-selected="false" tabindex="-1" data-settings-tab="data"><span>数据</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-about" role="tab" aria-controls="settings-about" aria-selected="false" tabindex="-1" data-settings-tab="about"><span>关于</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div><section id="settings-general" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-general"><div class="set-group">
+            <div class="set-head">布局（共用分栏，v0.7）</div>
             <div class="set-row"><span>当前栏宽</span><code id="setSplit">目录 33.3% · 编辑 33.3% · 预览 33.3%</code></div>
-            <div class="set-row"><span>三屏展开时，目录栏右侧把手（Navigation 官方拖动条）调目录宽，编辑 / 预览固定等分；收起目录栏后，编辑 / 预览中间的把手才可调。双击把手快速恢复；拖后的宽度会记住，刷新不丢。</span></div>
+            <div class="set-row"><span>三屏展开时，笔记与 Agent 左栏共用宽度和拖动条；笔记页编辑 / 预览固定等分；收起目录栏后，编辑 / 预览中间的把手才可调。双击把手快速恢复；拖后的宽度会记住，刷新不丢。</span></div>
             <button id="resetSplitBtn">恢复等分栏宽</button>
           </div><div class="set-group">
             <div class="set-head">诊断（真机校准用）</div>
@@ -1271,6 +1306,12 @@
               与折痕区域的实际返回值；把实测值回填到项目文档，再换成常量表替掉等分布局。
             </div>
           </div></section>          <section class="settings-panel hidden" id="settings-agent" role="tabpanel" aria-labelledby="settings-tab-agent">
+            <div class="set-group" data-intro="v0.7">
+              <div class="set-head">对话管理</div><div class="set-body">
+              <label class="agent-config-label">显示 <select id="agentHistoryFilter" aria-label="筛选对话"><option value="archived">已归档</option><option value="all">全部对话</option></select></label>
+              <div id="agentHistory"></div>
+              <p class="agent-caption">归档保留消息与草稿，可恢复到列表；删除仅移除这段对话，已写入的笔记保留。原型对话仅保留在本页，刷新恢复样例。</p>
+            </div></div>
             <div class="set-group" data-intro="v0.7">
               <div class="set-head">Agent · 本地 mock</div><div class="set-body">
               <p class="sub">配置在本浏览器保存，下一轮生效；固定 mock 回复不会因为修改提示词而变成真实模型回复。</p>
@@ -1555,12 +1596,12 @@
 
   /* ---------- 数据 ---------- */
   /* SAMPLE_VAULT_BEGIN: generated by tools/build_sample_vault.py */
-  var VAULTS = [{"id": "local", "name": "本地笔记", "type": "local", "dir": "vaults/local", "files": 10}];
+  var VAULTS = [{"id": "local", "name": "本地笔记", "type": "local", "dir": "vaults/local", "files": 10}, {"id": "reading", "name": "阅读笔记", "type": "local", "dir": "vaults/reading", "files": 2}, {"id": "projects", "name": "项目笔记", "type": "local", "dir": "vaults/projects", "files": 2}];
   var currentVault = 'local';
-  var TREES = {"local": [["dir", "00_开始", true, 0], ["file", "欢迎使用.md", false, 1, "welcome"], ["file", "快速上手.md", false, 1, "inbox"], ["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "stream"], ["file", "任务清单.md", false, 1, "todo"], ["dir", "20_样式", true, 0], ["file", "双链与嵌入.md", false, 1, "dataflow"], ["file", "属性与提示块.md", false, 1, "intimacy"], ["file", "公式与流程图.md", false, 1, "tob"], ["file", "样式支持清单.md", false, 1, "year2025"], ["dir", "30_小艺", true, 0], ["file", "可编辑练习.md", false, 1, "idea"], ["dir", "40_阅读", true, 0], ["file", "读书对话练习.md", false, 1, "reading_journal"]]};
-  var FILES = {"welcome": "欢迎使用.md", "inbox": "快速上手.md", "stream": "基础排版.md", "todo": "任务清单.md", "dataflow": "双链与嵌入.md", "intimacy": "属性与提示块.md", "tob": "公式与流程图.md", "year2025": "样式支持清单.md", "idea": "可编辑练习.md", "reading_journal": "读书对话练习.md"};
-  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 535 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符", "reading_journal": "样例 · 254 字符"};
-  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n", "reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n"};
+  var TREES = {"local": [["dir", "00_开始", true, 0], ["file", "欢迎使用.md", false, 1, "welcome"], ["file", "快速上手.md", false, 1, "inbox"], ["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "stream"], ["file", "任务清单.md", false, 1, "todo"], ["dir", "20_样式", true, 0], ["file", "双链与嵌入.md", false, 1, "dataflow"], ["file", "属性与提示块.md", false, 1, "intimacy"], ["file", "公式与流程图.md", false, 1, "tob"], ["file", "样式支持清单.md", false, 1, "year2025"], ["dir", "30_小艺", true, 0], ["file", "可编辑练习.md", false, 1, "idea"], ["dir", "40_阅读", true, 0], ["file", "读书对话练习.md", false, 1, "reading_journal"]], "reading": [["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "reading_stream"], ["dir", "40_阅读", true, 0], ["file", "读书对话练习.md", false, 1, "reading_reading_journal"]], "projects": [["dir", "00_开始", true, 0], ["file", "快速上手.md", false, 1, "projects_inbox"], ["dir", "10_写作", true, 0], ["file", "任务清单.md", false, 1, "projects_todo"]]};
+  var FILES = {"welcome": "欢迎使用.md", "inbox": "快速上手.md", "stream": "基础排版.md", "todo": "任务清单.md", "dataflow": "双链与嵌入.md", "intimacy": "属性与提示块.md", "tob": "公式与流程图.md", "year2025": "样式支持清单.md", "idea": "可编辑练习.md", "reading_journal": "读书对话练习.md", "reading_stream": "基础排版.md", "reading_reading_journal": "读书对话练习.md", "projects_inbox": "快速上手.md", "projects_todo": "任务清单.md"};
+  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 535 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符", "reading_journal": "样例 · 254 字符", "reading_stream": "样例 · 535 字符", "reading_reading_journal": "样例 · 254 字符", "projects_inbox": "样例 · 257 字符", "projects_todo": "样例 · 186 字符"};
+  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n", "reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n", "reading_stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "reading_reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n", "projects_inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "projects_todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n"};
   var SAMPLE_ASSETS = {"50_Assets/笔记流程.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwIiB2aWV3Qm94PSIwIDAgNjQwIDE2MCI+PHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAiIHJ4PSIxNiIgZmlsbD0iI0YxRjNGNSIvPjxnIGZpbGw9IiMwMDdERkYiPjxyZWN0IHg9IjI0IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iMjQwIiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iNDU2IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9nPjxnIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjI0IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+PHRleHQgeD0iMTA0IiB5PSI4OSI+6K6w5b2VPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iODkiPuaVtOeQhjwvdGV4dD48dGV4dCB4PSI1MzYiIHk9Ijg5Ij7lm57pob48L3RleHQ+PC9nPjxwYXRoIGQ9Ik0xOTIgODBoNDBtMTc2IDBoNDAiIHN0cm9rZT0iIzAwN0RGRiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PC9zdmc+Cg==", "50_Assets/长图排版示例.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwMCIgdmlld0JveD0iMCAwIDY0MCAxNjAwIj4KPHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAwIiByeD0iMjQiIGZpbGw9IiNGMUYzRjUiLz4KPGcgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjx0ZXh0IHg9IjMyMCIgeT0iOTAiIGZvbnQtc2l6ZT0iMzYiIGZpbGw9IiMyMDIxMjQiPumVv+WbvuaOkueJiOekuuS+izwvdGV4dD4KPGcgZmlsbD0iIzAwN0RGRiI+PHJlY3QgeD0iODAiIHk9IjE4MCIgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIyMDAiIHJ4PSIyNCIvPjxyZWN0IHg9IjgwIiB5PSI1MDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48cmVjdCB4PSI4MCIgeT0iODIwIiB3aWR0aD0iNDgwIiBoZWlnaHQ9IjIwMCIgcng9IjI0Ii8+PHJlY3QgeD0iODAiIHk9IjExNDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48L2c+CjxnIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjMyIj48dGV4dCB4PSIzMjAiIHk9IjI5MiI+MDEg6KeC5a+fPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iNjEyIj4wMiDorrDlvZU8L3RleHQ+PHRleHQgeD0iMzIwIiB5PSI5MzIiPjAzIOaVtOeQhjwvdGV4dD48dGV4dCB4PSIzMjAiIHk9IjEyNTIiPjA0IOWbnumhvjwvdGV4dD48L2c+CjxwYXRoIGQ9Ik0zMjAgNDAwdjgwbTAgMjQwdjgwbTAgMjQwdjgwIiBzdHJva2U9IiMwMDdERkYiIHN0cm9rZS13aWR0aD0iOCIvPgo8dGV4dCB4PSIzMjAiIHk9IjE0ODAiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiMyMDIxMjQiPuetieavlOWujOaVtOaYvuekuu+8jOS4jeijgeWJquWGheWuuTwvdGV4dD48L2c+Cjwvc3ZnPgo="};
   /* SAMPLE_VAULT_END */
 
@@ -2027,7 +2068,7 @@
     var view = body.getAttribute('data-view');
     var vault = vaultById(currentVault);
     var noteName = (FILES[current] || '').replace(/\.md$/, '');
-    document.getElementById('appTitle').textContent = VIEW_TITLE[view]
+    document.getElementById('appTitle').textContent = (view === 'agent' && agentStores && agentStores[currentVault] ? agentSession().title : '') || VIEW_TITLE[view]
       || (body.getAttribute('data-form') === 'sm' ? noteName : (sideHidden && vault && vault.name))
       || '曜石笔记';
   }
@@ -2037,6 +2078,7 @@
     var name = FILES[current] || '';
     ta.disabled = !name;
     document.getElementById('shareNoteBtn').disabled = !name;
+    document.getElementById('moreShareNoteBtn').disabled = !name;
     ta.placeholder = name ? '' : '从左侧创建或选择一篇笔记';
     document.getElementById('editName').textContent = name || '尚未选择笔记';
     document.getElementById('saveState').innerHTML = name ? '<span class="dot"></span> 已保存' : '等待创建笔记';
@@ -2123,6 +2165,20 @@
 
   function closeQuick() { document.getElementById('quickMask').classList.add('hidden'); }
   document.getElementById('searchBtn').addEventListener('click', function () { openQuick('name'); });
+  document.getElementById('toolbarMore').addEventListener('click', function (e) {
+    var action = e.target.closest('[data-toolbar-action]');
+    if (!action) { return; }
+    this.open = false;
+    document.getElementById(action.getAttribute('data-toolbar-action')).click();
+  });
+  document.addEventListener('click', function (e) {
+    var more = document.getElementById('toolbarMore');
+    if (!more.contains(e.target)) { more.open = false; }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { document.getElementById('toolbarMore').open = false; }
+  });
+
   document.getElementById('quickInput').addEventListener('input', renderQuick);
   document.getElementById('quickMask').addEventListener('click', function (e) { if (e.target.id === 'quickMask') { closeQuick(); } });
   document.getElementById('quickResults').addEventListener('click', function (e) {
@@ -2315,6 +2371,11 @@
 
   function updateHint() {
     var raw = document.getElementById('cfInput').value;
+    if (cfMode === 'agent-rename') {
+      document.getElementById('cfOk').disabled = !raw.trim();
+      document.getElementById('cfHint').textContent = raw.trim() ? '只修改对话名称，消息与草稿保留。' : '对话名称不能为空。';
+      return;
+    }
     if (cfMode === 'reset') {
       document.getElementById('cfOk').disabled = raw !== '重置';
       document.getElementById('cfHint').textContent = '请输入“重置”以确认，此操作无法撤销。';
@@ -2419,6 +2480,27 @@
     selRow.classList.add('hidden');
     pathEl.classList.add('hidden');
 
+    if (mode === 'agent-rename') {
+      document.getElementById('cfTitle').textContent = '重命名对话';
+      document.getElementById('cfDesc').textContent = '为这段对话起一个容易找到的名字。';
+      document.getElementById('cfDirRow').classList.add('hidden');
+      var renamed = (agentStores[id.vault] || []).find(function (session) { return session.id === id.id; });
+      if (!renamed || id.vault !== currentVault) { return; }
+      input.value = renamed.title; input.placeholder = '对话名称';
+      row.classList.remove('hidden'); okBtn.classList.add('primary'); okBtn.textContent = '保存';
+      updateHint(); document.getElementById('mask').classList.remove('hidden'); input.focus(); input.select();
+      return;
+    }
+    if (mode === 'agent-delete') {
+      var removed = ((agentStores || {})[id.vault] || []).find(function (session) { return session.id === id.id; });
+      if (!removed) { return; }
+      document.getElementById('cfTitle').textContent = '删除对话「' + removed.title + '」？';
+      document.getElementById('cfDesc').textContent = '删除后无法恢复这段对话的消息和草稿，已写入的笔记不会被删除或撤销。';
+      document.getElementById('cfDirRow').classList.add('hidden');
+      okBtn.classList.add('btn-danger'); okBtn.textContent = '删除对话';
+      document.getElementById('mask').classList.remove('hidden'); okBtn.focus();
+      return;
+    }
     if (mode === 'reset') {
       document.getElementById('cfTitle').textContent = '重置所有数据？';
       document.getElementById('cfDesc').textContent = 'App 会清除所有本地笔记库、草稿、回收站、最近打开、同步配置和访问令牌，且无法恢复。远端仓库不变。App 会关闭，重新打开恢复初始样例；原型仅刷新演示数据，不操作设备。';
@@ -2561,9 +2643,12 @@
       window.location.reload();
       return;
     }
+    if (cfMode === 'agent-rename' && !document.getElementById('cfInput').value.trim()) { return; }
     var id = cfTarget;
     document.getElementById('mask').classList.add('hidden');
-    if (cfMode === 'delete') { doDelete(id); }
+    if (cfMode === 'agent-delete') { agentDeleteSession(id); }
+    else if (cfMode === 'agent-rename') { agentRenameSession(id, document.getElementById('cfInput').value); }
+    else if (cfMode === 'delete') { doDelete(id); }
     else if (cfMode === 'create') { doCreate(); }
     else if (cfMode === 'note-new') { doCreateNote(); }
     else if (cfMode === 'rename') { doRename(id); }
@@ -3112,7 +3197,7 @@
     var segs = document.querySelectorAll('.seg');
     /* seg 显示条件：sm 永远显示；md 仅在三栏同屏（未收起目录栏）时显示；
        md 收起目录栏后 编辑|预览 各一屏同屏可见，无需切换；lg 已有独立预览栏 */
-    var showSeg = (f === 'sm') || (f === 'md' && !sideHidden);
+    var showSeg = (f === 'sm') || isSingleLandscape() || (f === 'md' && !sideHidden);
     for (var i = 0; i < segs.length; i++) {
       var s = segs[i];
       /* 只处理模式切换控件（内部有带 data-m 的按钮）。新建对话框的「笔记/文件夹」
@@ -3158,6 +3243,7 @@
     viewportPreset = VIEWPORT_PRESETS[preset] ? preset : 'lg'; viewportRotated = !!rotated;
     var size = viewportSpec(viewportPreset, viewportRotated), device = document.getElementById('device');
     device.style.setProperty('--viewport-width', size.width + 'px'); device.style.setProperty('--viewport-height', size.height + 'px');
+    body.setAttribute('data-single-landscape', String(viewportPreset === 'sm' && viewportRotated));
     body.setAttribute('data-rotated', String(viewportRotated)); body.setAttribute('data-compact-height', String(size.compact));
     document.getElementById('rotateViewport').setAttribute('aria-pressed', String(viewportRotated));
     document.getElementById('viewportLabel').textContent = viewportDescription();
@@ -3166,8 +3252,12 @@
   /* VIEWPORT_END */
 
   function applyForm(f) {
+    document.getElementById('toolbarMore').open = false;
+    if (body.getAttribute('data-view') === 'settings' && !settingsSinglePane() && (f === 'sm' || isSingleLandscape())) { settingsDetail = true; }
     body.setAttribute('data-form', f);
+    setAgentNavOpen(document.getElementById('agentNav').classList.contains('open'));
     updateAppTitle();
+    renderSettingsNavigation();
     body.setAttribute('data-side', sideHidden ? 'hidden' : 'shown');
     document.getElementById('stForm').textContent = viewportDescription();
     updateSettings();
@@ -3177,17 +3267,13 @@
 
     if (f === 'sm') {
       drawer = false;
-      sidebar.style.display = 'none';
-      sidebar.style.position = 'absolute';
-      sidebar.style.left = '0'; sidebar.style.top = '56px'; sidebar.style.bottom = '32px';
-      sidebar.style.zIndex = '30';
-      sidebar.style.width = '300px';
-      sidebar.style.boxShadow = '0 0 0 9999px rgba(0,0,0,0)';
+      body.setAttribute('data-note-nav', 'closed');
+      sidebar.style.display = 'flex'; sidebar.style.width = '';
+      sidebar.inert = true; sidebar.setAttribute('aria-hidden', 'true');
       menu.style.display = 'flex';
     } else {
-      sidebar.style.position = ''; sidebar.style.left = ''; sidebar.style.top = ''; sidebar.style.bottom = '';
-      sidebar.style.zIndex = ''; sidebar.style.width = ''; sidebar.style.boxShadow = '';
-      sidebar.style.display = sideHidden ? 'none' : 'flex';
+      sidebar.style.width = ''; sidebar.inert = false; sidebar.setAttribute('aria-hidden', 'false');
+      sidebar.style.display = 'flex'; sidebar.inert = sideHidden; sidebar.setAttribute('aria-hidden', String(sideHidden));
       /* md 收起目录 → 腾出的那一栏给预览，仍是「一栏一屏」不跨折痕；lg 原本就有预览 */
       preview.style.display = (f === 'lg' || (f === 'md' && sideHidden)) ? 'flex' : 'none';
       menu.style.display = 'flex';
@@ -3203,19 +3289,21 @@
   function setSideHidden(h) {
     sideHidden = h;
     var f = body.getAttribute('data-form');
-    if (f === 'sm') { drawer = true; }         // sm 态「展开」= 开抽屉
+    if (f === 'sm') { toggleDrawer(!h); return; }
     applyForm(f);
   }
 
   function toggleDrawer(open) {
     if (body.getAttribute('data-form') === 'sm') {
       drawer = (typeof open === 'boolean') ? open : !drawer;
-      document.getElementById('sidebar').style.display = drawer ? 'flex' : 'none';
+      body.setAttribute('data-note-nav', drawer ? 'open' : 'closed');
+      document.getElementById('sidebar').inert = !drawer;
+      document.getElementById('sidebar').setAttribute('aria-hidden', String(!drawer));
     } else {
       setSideHidden(!sideHidden);
     }
   }
-  document.getElementById('menuBtn').addEventListener('click', function () { toggleDrawer(); });
+  document.getElementById('menuBtn').addEventListener('click', function () { if (body.getAttribute('data-view') === 'agent') { toggleAgentNavigation(); } else { toggleDrawer(); } });
   document.getElementById('sideHideBtn').addEventListener('click', function () { setSideHidden(true); });
 
   /* 编辑 / 预览切换：两个 pane 的 pane-head 里各挂一个分段控件，切过去之后开关还在，不会消失。
@@ -3237,6 +3325,15 @@
      lg 展开时目录 = sideW，编辑|预览均分剩余（固定）—— 分隔条拖到这里，
      折痕 crossed 跟着实时重算 */
   function currentSpans(f) {
+    if (isSingleLandscape()) {
+      var navVisible = body.getAttribute('data-view') === 'agent' ? !document.getElementById('agentNav').classList.contains('hidden') : !sideHidden;
+      return navVisible ? [[0, sideW], [sideW, 100]] : [[0, 100]];
+    }
+    if (body.getAttribute('data-view') === 'agent' && f !== 'sm') {
+      if (document.getElementById('agentNav').classList.contains('hidden')) { return [[0, 100]]; }
+      var boundary = f === 'lg' ? sideW : 50;
+      return [[0, boundary], [boundary, 100]];
+    }
     if (f === 'md') { return [[0, 50], [50, 100]]; }
     if (f === 'lg') {
       if (sideHidden) { return [[0, editW], [editW, 100]]; }
@@ -3291,6 +3388,7 @@
      md / sm 不走这里（固定等分）。 */
   var sideW = 33.333;
   var editW = 66.666;
+  var PANE_MIN_WIDTH = parseFloat(getComputedStyle(body).getPropertyValue('--pane-min-width'));
   var SIDE_MIN = 22;    /* 目录栏范围 ≈ 官方 navBarWidthRange [233vp, 488vp]（1061vp 屏） */
   var SIDE_MAX = 46;
   var SPLIT_MIN = 18;   /* 收起态编辑栏最小占比（18% ≈ 190vp） */
@@ -3298,8 +3396,18 @@
   var SPLIT_SNAP = 1.5; /* 吸附阈值 %（约 16vp） */
   var SPLIT_STORE_KEY = 'xt2-proto-split';  /* 拖后宽度持久化（2026-10-25 用户拍板） */
 
-  function clampSide(v) { return Math.max(SIDE_MIN, Math.min(SIDE_MAX, v)); }
-  function clampEdit(v) { return Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, v)); }
+  function isSingleLandscape() { return body.getAttribute('data-single-landscape') === 'true'; }
+  function canResizeNavigation() { return isSingleLandscape() || (body.getAttribute('data-form') === 'lg' && !viewportRotated); }
+  function minimumPanePercent() { return PANE_MIN_WIDTH / viewportSpec(viewportPreset, viewportRotated).width * 100; }
+  function clampSide(v) {
+    var min = minimumPanePercent();
+    var contentPanes = isSingleLandscape() || body.getAttribute('data-view') === 'agent' ? 1 : 2;
+    return Math.max(SIDE_MIN, min, Math.min(SIDE_MAX, 100 - contentPanes * min, v));
+  }
+  function clampEdit(v) {
+    var min = minimumPanePercent();
+    return Math.max(SPLIT_MIN, min, Math.min(SPLIT_MAX, 100 - min, v));
+  }
   function snapEdit(v) {
     if (Math.abs(v - 66.82) <= SPLIT_SNAP) { v = 66.82; }
     return clampEdit(v);
@@ -3314,7 +3422,9 @@
       if (!raw) { return; }
       var o = JSON.parse(raw);
       if (o && typeof o.s === 'number' && typeof o.e === 'number') {
-        sideW = clampSide(o.s); editW = clampEdit(o.e);
+        /* 先恢复比例；applySplit 在新窗口几何生效后再校验实际最小宽度。 */
+        sideW = Math.max(SIDE_MIN, Math.min(SIDE_MAX, o.s));
+        editW = Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, o.e));
       }
     } catch (e) { /* 解析失败用默认等分 */ }
   }
@@ -3328,11 +3438,23 @@
 
   function applySplit() {
     var f = body.getAttribute('data-form');
+    if (canResizeNavigation()) { sideW = clampSide(sideW); editW = clampEdit(editW); }
     var sidebar = document.getElementById('sidebar');
     var editor = document.getElementById('editorPane');
     var preview = document.getElementById('previewPane');
     var spA = document.getElementById('splitterA'), spB = document.getElementById('splitterB');
-    if (f === 'lg' && !viewportRotated) {
+    document.getElementById('agentNav').style.width = canResizeNavigation() ? sideW + '%' : '';
+    document.getElementById('agentSplitter').style.left = sideW + '%';
+    var navWidth = canResizeNavigation() ? sideW + '%' : (f === 'sm' ? 'var(--mobile-nav-width)' : (f === 'md' ? '50%' : '33.333%'));
+    document.getElementById('noteView').style.setProperty('--navigation-width', navWidth);
+    document.getElementById('agentLayout').style.setProperty('--navigation-width', navWidth);
+    if (isSingleLandscape()) {
+      sidebar.style.width = sideHidden ? '' : sideW + '%';
+      var contentWidth = sideHidden ? 100 : 100 - sideW;
+      editor.style.width = contentWidth + '%'; editor.style.flex = 'none';
+      preview.style.width = contentWidth + '%'; preview.style.flex = 'none';
+      spA.style.left = sideW + '%'; spB.style.left = '';
+    } else if (f === 'lg' && !viewportRotated) {
       if (!sideHidden) {
         /* 展开态（三栏）：目录 = sideW（官方 dragBar 拖它）；
            编辑 | 预览 均分剩余空间、固定不动（内容区内部，无把手） */
@@ -3348,10 +3470,9 @@
         preview.style.width = (100 - editW) + '%'; preview.style.flex = 'none';
         spB.style.left = editW + '%';
       }
-    } else if (f !== 'sm') {
-      /* 回到 CSS 默认（md 50 / lg 收起 66.666）。
-         sm 跳过：抽屉宽度 300px 由 applyForm 管，这里清掉会打架 */
-      sidebar.style.width = '';
+    } else {
+      /* 退出拖动布局后清正文宽度；sm 抽屉宽度仍由 applyForm 管。 */
+      if (f !== 'sm') { sidebar.style.width = ''; }
       editor.style.width = ''; editor.style.flex = '';
       preview.style.width = ''; preview.style.flex = '';
       spA.style.left = '';
@@ -3360,49 +3481,54 @@
     /* 设置页「当前栏宽」行同步（元素常驻 DOM，视图隐藏也能更新） */
     var el = document.getElementById('setSplit');
     if (el) {
-      el.textContent = (f === 'lg' && !viewportRotated)
+      el.textContent = isSingleLandscape()
+        ? (sideHidden ? '单屏横屏 · 内容 100%' : '左栏 ' + sideW.toFixed(1) + '% · 内容 ' + (100 - sideW).toFixed(1) + '%')
+        : (f === 'lg' && !viewportRotated)
         ? (sideHidden
           ? '编辑 ' + editW.toFixed(1) + '% · 预览 ' + (100 - editW).toFixed(1) + '%'
           : '目录 ' + sideW.toFixed(1) + '% · 编辑 ' + ((100 - sideW) / 2).toFixed(1) + '% · 预览 ' + ((100 - sideW) / 2).toFixed(1) + '%')
-        : '仅三屏可调（当前固定等分）';
+        : '三屏或单屏横屏可调（当前使用默认布局）';
     }
   }
 
   (function bindSplitters() {
-    function noteViewRect() { return document.getElementById('noteView').getBoundingClientRect(); }
+    function workspaceRect() { return document.getElementById(body.getAttribute('data-view') === 'agent' ? 'agentLayout' : 'noteView').getBoundingClientRect(); }
     function pctOf(clientX) {
-      var r = noteViewRect();
+      var r = workspaceRect();
       return (clientX - r.left) / r.width * 100;
     }
-    /* 两根把手各管一摊、互不同时出现（显示条件见 CSS）：
-       A = 展开态目录栏宽（对应官方 navBarWidth，连续拖拽不吸附）
-       B = 收起态编辑栏宽（自绘，保留折痕吸附） */
-    function activeSplitter(idx) {
-      var f = body.getAttribute('data-form');
-      if (f !== 'lg' || viewportRotated) { return null; }
-      return (idx === 0) ? (sideHidden ? null : 'side') : (sideHidden ? 'edit' : null);
+    /* 每个工作区只显示当前可用把手（显示条件见 CSS）：
+       A / Agent = 共用左栏宽度，连续拖拽不吸附；B = 笔记收起态编辑宽度，保留折痕吸附。 */
+    function activeSplitter(sp) {
+      var f = body.getAttribute('data-form'), view = body.getAttribute('data-view');
+      if (!canResizeNavigation()) { return null; }
+      if (view === 'agent') { return sp.id === 'agentSplitter' && !document.getElementById('agentNav').classList.contains('hidden') ? 'side' : null; }
+      if (view !== 'note') { return null; }
+      if (sp.id === 'splitterA') { return sideHidden ? null : 'side'; }
+      if (sp.id === 'splitterB') { return sideHidden && !isSingleLandscape() ? 'edit' : null; }
+      return null;
     }
-    var drag = null; /* { idx, which, startPct, base } */
+    var drag = null; /* { node, which, startPct, base } */
     var nodes = document.querySelectorAll('.splitter');
     for (var i = 0; i < nodes.length; i++) {
-      (function (sp, idx) {
+      (function (sp) {
         sp.addEventListener('pointerdown', function (e) {
-          if (!activeSplitter(idx)) { return; }
+          if (!activeSplitter(sp)) { return; }
           e.preventDefault();
           sp.setPointerCapture(e.pointerId);
           sp.classList.add('dragging');
           body.classList.add('split-dragging');
-          drag = { idx: idx, which: activeSplitter(idx), startPct: pctOf(e.clientX), base: (idx === 0 ? sideW : editW) };
+          drag = { node: sp, which: activeSplitter(sp), startPct: pctOf(e.clientX), base: (activeSplitter(sp) === 'side' ? sideW : editW) };
         });
         sp.addEventListener('pointermove', function (e) {
-          if (!drag || drag.idx !== idx) { return; }
+          if (!drag || drag.node !== sp) { return; }
           var v = drag.base + (pctOf(e.clientX) - drag.startPct);
           if (drag.which === 'side') { sideW = clampSide(v); } else { editW = clampEdit(v); }
           applySplit();
           drawHinges('lg'); /* 栏宽变了，折痕 crossed 标红跟着实时重算 */
         });
         function endDrag(e) {
-          if (!drag || drag.idx !== idx) { return; }
+          if (!drag || drag.node !== sp) { return; }
           if (drag.which === 'edit') { editW = snapEdit(editW); } /* 收起态才吸附折痕 66.82；展开态官方行为=连续无吸附 */
           applySplit();
           drawHinges('lg');
@@ -3416,10 +3542,10 @@
         sp.addEventListener('pointercancel', endDrag);
         /* 双击分隔条 = 恢复等分（拖乱了一键回家；与设置页「恢复等分栏宽」同一动作） */
         sp.addEventListener('dblclick', function () {
-          if (!activeSplitter(idx)) { return; }
+          if (!activeSplitter(sp)) { return; }
           resetSplit();
         });
-      })(nodes[i], i);
+      })(nodes[i]);
     }
     /* 设置页「恢复等分栏宽」入口（2026-10-25 用户拍板：重置放设置页） */
     document.getElementById('resetSplitBtn').addEventListener('click', function () { resetSplit(); });
@@ -3474,6 +3600,9 @@
   var VIEW_TITLE = { agent: 'Agent 对话', vaults: '笔记库', sync: '导入 Git 仓库', settings: '设置与关于', history: '版本记录', trash: '回收站' };
 
   function setView(v, syncBtns) {
+    document.getElementById('toolbarMore').open = false;
+    var previousView = body.getAttribute('data-view');
+    if (v === 'settings' && previousView !== 'settings' && previousView !== 'history') { settingsReturnView = previousView === 'agent' ? 'agent' : 'note'; settingsDetail = false; }
     if (body.getAttribute('data-view') === 'agent' && agentStores[currentVault]) { agentSession().draft = ag('agentInput').value; }
     closeQuick();
     closeImage();
@@ -3483,8 +3612,12 @@
     updateAppTitle();
     document.getElementById('noteView').classList.toggle('hidden', v !== 'note');
     /* 次级页面（库管理 / 导入仓库 / 设置）顶栏左键换成返回箭头 —— 否则进去了出不来 */
-    document.getElementById('backBtn').classList.toggle('hidden', v === 'note');
-    document.getElementById('menuBtn').classList.toggle('hidden', v !== 'note');
+    document.getElementById('backBtn').classList.toggle('hidden', v === 'note' || v === 'agent');
+    document.getElementById('menuBtn').classList.toggle('hidden', v !== 'note' && v !== 'agent');
+    document.getElementById('menuBtn').setAttribute('aria-label', v === 'agent' ? '展开或收起对话与笔记列表' : '展开或收起文件树');
+    document.getElementById('menuBtn').setAttribute('title', v === 'agent' ? '对话与笔记列表' : '文件树');
+    document.getElementById('noteModeBtn').classList.toggle('hidden', v !== 'agent');
+    document.getElementById('agentMockBadge').classList.toggle('hidden', v !== 'agent');
     document.getElementById('searchBtn').classList.toggle('hidden', v !== 'note');
     document.getElementById('syncBtn').classList.toggle('hidden', v !== 'note');
     document.getElementById('xiaoyiBtn').classList.toggle('hidden', v !== 'note' || document.getElementById('releaseMark').value !== 'v0.7');
@@ -3496,8 +3629,9 @@
     document.getElementById('trashView').classList.toggle('hidden', v !== 'trash');
     document.getElementById('agentView').classList.toggle('hidden', v !== 'agent');
     if (v === 'agent') { renderAgent(); }
+    applySplit(); drawHinges(body.getAttribute('data-form'));
     if (v === 'vaults') { renderVaultCards(); }
-    if (v === 'settings') { updateSettings(); }
+    if (v === 'settings') { updateSettings(); renderSettingsNavigation(); }
     if (v === 'trash') { renderTrash(); }
     if (syncBtns) {
       var all = document.querySelectorAll('[data-v]');
@@ -3556,7 +3690,11 @@
     document.getElementById('setVault').textContent = v ? v.dir : ('vaults/' + currentVault);
   }
 
-  document.getElementById('settingsBtn').addEventListener('click', function () { setViewBtn('settings'); });
+  document.getElementById('settingsBtn').addEventListener('click', function () {
+    var fromAgent = body.getAttribute('data-view') === 'agent';
+    setViewBtn('settings');
+    if (fromAgent) { setSettingsTab('agent'); }
+  });
   document.getElementById('settingsEntry').addEventListener('click', function () { setViewBtn('settings'); });
   document.getElementById('setVer').textContent = '版本 ' + APP_VERSION + '（' + APP_BUILD + '）';
   document.getElementById('entryVer').textContent = 'v' + APP_VERSION;
@@ -3633,7 +3771,10 @@
       fallback();
     }
   });
-  document.getElementById('backBtn').addEventListener('click', function () { setViewBtn(body.getAttribute('data-view') === 'history' ? 'settings' : 'note'); });
+  document.getElementById('backBtn').addEventListener('click', function () {
+    if (body.getAttribute('data-view') === 'settings') { backFromSettings(); }
+    else { setViewBtn(body.getAttribute('data-view') === 'history' ? 'settings' : 'note'); }
+  });
   document.getElementById('btnBack').addEventListener('click', function () {
     var all = document.querySelectorAll('[data-v]');
     for (var j = 0; j < all.length; j++) { all[j].classList.remove('on'); }
@@ -3747,7 +3888,8 @@
   /* AGENT_CONFIG_BEGIN */
   var AGENT_TOOL_NAMES = ['QueryNotes', 'ReadNote', 'CreateNote', 'AppendNote', 'EditNote', 'UndoLastEdit'];
   var AGENT_CONFIG_KEY = 'yaoshi-agent-config-v1';
-  var settingsTab = 'general';
+  var settingsTab = 'general', settingsDetail = false, settingsReturnView = 'note';
+  var settingsLabels = { general: '通用', agent: 'Agent', data: '数据', about: '关于' };
   function agentDefaultConfig() {
     return { version: 1, revision: 1, systemPrompt: BUILTIN_AGENT_PROMPT.text, promptSource: 'builtin', defaultSkill: 'reading', skillOverrides: {}, enabledTools: AGENT_TOOL_NAMES.slice(), notify: false };
   }
@@ -3782,15 +3924,41 @@
       skillId: skill.id, skillPrompt: agentConfig.skillOverrides[skill.id] || skill.prompt, skillRevision: skill.revision,
       enabledTools: agentConfig.enabledTools.filter(function (name) { return name === 'UndoLastEdit' || skill.allowedTools.includes(name); }).slice() };
   }
-  function setSettingsTab(tab, focus) {
-    var tabs = ['general', 'agent', 'data', 'about']; if (!tabs.includes(tab)) { return; }
-    settingsTab = tab;
-    tabs.forEach(function (key) {
-      var selected = key === tab, button = document.getElementById('settings-tab-' + key);
-      document.getElementById('settings-' + key).classList.toggle('hidden', !selected);
-      button.setAttribute('aria-selected', String(selected)); button.setAttribute('tabindex', selected ? '0' : '-1');
+  function settingsSinglePane() {
+    return body.getAttribute('data-form') === 'sm' || body.getAttribute('data-single-landscape') === 'true';
+  }
+  function renderSettingsNavigation() {
+    var single = settingsSinglePane(), nav = document.getElementById('settingsNav');
+    document.getElementById('settingsView').setAttribute('data-settings-page', settingsDetail ? 'detail' : 'list');
+    nav.setAttribute('role', single ? 'navigation' : 'tablist');
+    if (single) { nav.removeAttribute('aria-orientation'); } else { nav.setAttribute('aria-orientation', 'vertical'); }
+    ['general', 'agent', 'data', 'about'].forEach(function (key) {
+      var selected = key === settingsTab, button = document.getElementById('settings-tab-' + key);
+      var panel = document.getElementById('settings-' + key);
+      panel.classList.toggle('hidden', !selected || (single && !settingsDetail));
+      panel.setAttribute('tabindex', '-1'); panel.setAttribute('role', single ? 'region' : 'tabpanel');
+      button.setAttribute('role', single ? 'button' : 'tab');
+      if (single) { button.removeAttribute('aria-selected'); button.setAttribute('aria-current', selected && settingsDetail ? 'page' : 'false'); }
+      else { button.removeAttribute('aria-current'); button.setAttribute('aria-selected', String(selected)); }
+      button.setAttribute('tabindex', single || selected ? '0' : '-1');
     });
-    if (focus) { document.getElementById('settings-tab-' + tab).focus(); }
+    if (body.getAttribute('data-view') === 'settings') {
+      document.getElementById('appTitle').textContent = single && settingsDetail ? settingsLabels[settingsTab] : '设置与关于';
+      document.getElementById('backBtn').setAttribute('aria-label', single && settingsDetail ? '返回设置分类' : '返回工作区');
+      document.getElementById('backBtn').setAttribute('title', single && settingsDetail ? '返回设置分类' : '返回工作区');
+    }
+  }
+  function setSettingsTab(tab, focus) {
+    if (!Object.prototype.hasOwnProperty.call(settingsLabels, tab)) { return; }
+    settingsTab = tab; settingsDetail = true; renderSettingsNavigation();
+    if (tab === 'agent') { renderAgentHistory(); }
+    if (focus) { document.getElementById(settingsSinglePane() ? 'settings-' + tab : 'settings-tab-' + tab).focus(); }
+  }
+  function backFromSettings() {
+    if (settingsSinglePane() && settingsDetail) {
+      settingsDetail = false; renderSettingsNavigation();
+      document.getElementById('settings-tab-' + settingsTab).focus();
+    } else { setViewBtn(settingsReturnView); }
   }
   function renderSkillEditor() {
     var skill = BUILTIN_AGENT_SKILLS.find(function (s) { return s.id === document.getElementById('configSkill').value; }) || BUILTIN_AGENT_SKILLS[0];
@@ -3811,8 +3979,12 @@
     var button = document.getElementById('settings-tab-' + key);
     button.addEventListener('click', function () { setSettingsTab(key); });
     button.addEventListener('keydown', function (e) {
-      var next = e.key === 'ArrowRight' ? (index + 1) % keys.length : e.key === 'ArrowLeft' ? (index + keys.length - 1) % keys.length : e.key === 'Home' ? 0 : e.key === 'End' ? keys.length - 1 : -1;
-      if (next >= 0) { e.preventDefault(); setSettingsTab(keys[next], true); }
+      var next = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? (index + 1) % keys.length : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? (index + keys.length - 1) % keys.length : e.key === 'Home' ? 0 : e.key === 'End' ? keys.length - 1 : -1;
+      if (next >= 0) {
+        e.preventDefault();
+        if (settingsSinglePane()) { document.getElementById('settings-tab-' + keys[next]).focus(); }
+        else { setSettingsTab(keys[next], true); }
+      }
     });
   });
   document.getElementById('configSavePrompt').addEventListener('click', function () {
@@ -3844,7 +4016,7 @@
   document.getElementById('configNotify').addEventListener('change', function () {
     var next = agentCopyConfig(); next.notify = this.checked; if (!persistAgentConfig(next)) { this.checked = agentConfig.notify; }
   });
-  renderAgentConfig(); setSettingsTab('general');
+  renderAgentConfig(); renderSettingsNavigation();
   /* AGENT_CONFIG_END */
 
 
@@ -3853,12 +4025,12 @@
   function ag(id) { return document.getElementById(id); }
   function agentEsc(value) { return esc(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function agentStatus(text) { ag('agentStatus').textContent = text; }
-  function agentSession() {
-    var store = agentStores[currentVault];
+  function agentInitSessions(vaultId) {
+    var store = agentStores[vaultId];
     if (!store) {
-      var row = currentFileRows().find(function (r) { return r.id === 'reading_journal'; });
+      var row = vaultId === currentVault ? currentFileRows().find(function (r) { return r.id === 'reading_journal'; }) : null;
       var refs = row ? [{ id: row.id, path: row.path, content: CONTENT[row.id] }] : [];
-      store = agentStores[currentVault] = [
+      store = agentStores[vaultId] = [
         { id: 'reading', title: '从读懂到会用', skillId: agentConfig.defaultSkill, draft: '', refs: [], messages: [
           { role: 'user', text: '这是我的读书笔记。我能复述概念，但遇到反例就说不清楚，你能追问我吗？', refs: refs },
           { role: 'assistant', text: '先试着合上笔记，用一个新的例子解释“熟悉不等于理解”。再找一个反例：什么表现说明你只是记住了定义？\n\n你回答后，我们再一起检查边界，把可用的结论沉淀成笔记。', refs: refs }
@@ -3867,9 +4039,54 @@
           { role: 'assistant', text: '可以带着一个问题开始：你这次最希望理解什么？把相关笔记拖进输入框，我们围绕它讨论。', refs: [] }
         ] }
       ];
-      agentActive[currentVault] = 'reading';
+      var vault = vaultById(vaultId);
+      var titles = { local: '整理笔记的三个习惯', reading: '读书时如何记录反例', projects: '每周项目回顾怎么写' };
+      store.push({ id: 'archive-sample', title: titles[vaultId] || vault.name + '回顾', archived: true, skillId: 'synthesis', draft: '下次继续补充一个具体例子。', refs: [], messages: [
+        { role: 'user', text: '把上次讨论的做法整理成几个行动要点。', refs: [] },
+        { role: 'assistant', text: '演示归档对话：先记下关键问题，再补一个具体例子，最后写出下一步行动。恢复后可以接着讨论；这段样例没有执行笔记写入。', refs: [] }
+      ] });
+      agentActive[vaultId] = 'reading';
     }
-    return store.find(function (s) { return s.id === agentActive[currentVault]; }) || store[0];
+    return store;
+  }
+  function agentSession() {
+    var store = agentInitSessions(currentVault);
+    var session = store.find(function (s) { return s.id === agentActive[currentVault] && !s.archived; }) || store.find(function (s) { return !s.archived; });
+    if (!session) { session = agentCreateSession(); store.unshift(session); }
+    agentActive[currentVault] = session.id;
+    return session;
+  }
+  function agentCreateSession() {
+    return { id: 'chat-' + (++agentSerial), title: '新对话', skillId: agentConfig.defaultSkill, messages: [], refs: [], draft: '' };
+  }
+  function renderAgentHistory() {
+    var archivedOnly = ag('agentHistoryFilter').value !== 'all', rows = [];
+    VAULTS.forEach(function (vault) {
+      ((agentStores || {})[vault.id] || []).forEach(function (session) {
+        if (archivedOnly && !session.archived) { return; }
+        rows.push('<div class="set-row"><span class="agent-history-name">' + agentEsc(session.title) + '<small>' + agentEsc(vault.name) + ' · ' + (session.archived ? '已归档' : '对话中') + '</small></span><div class="agent-actions">' + (session.archived ? '<button data-restore-chat="' + agentEsc(session.id) + '" data-chat-vault="' + agentEsc(vault.id) + '">恢复</button>' : '') + '<button class="btn-danger" data-delete-chat="' + agentEsc(session.id) + '" data-chat-vault="' + agentEsc(vault.id) + '">删除</button></div></div>');
+      });
+    });
+    ag('agentHistory').innerHTML = rows.join('') || '<p class="agent-caption">' + (archivedOnly ? '暂无已归档对话。' : '暂无对话。') + '</p>';
+  }
+  function agentArchiveSession(target, archived) {
+    var session = ((agentStores || {})[target.vault] || []).find(function (s) { return s.id === target.id; });
+    if (!session) { return false; }
+    if (body.getAttribute('data-view') === 'agent') { agentSession().draft = ag('agentInput').value; }
+    session.archived = archived;
+    if (target.vault === currentVault) { renderAgent(); }
+    renderAgentHistory();
+    return true;
+  }
+  function agentDeleteSession(target) {
+    var store = ((agentStores || {})[target.vault]) || [];
+    var index = store.findIndex(function (s) { return s.id === target.id; });
+    if (index < 0) { return false; }
+    var deleted = store.splice(index, 1)[0];
+    if (deleted.messages.some(function (message) { return message.result && message.result === agentLastWrite; })) { agentLastWrite = null; }
+    if (target.vault === currentVault) { renderAgent(); }
+    renderAgentHistory();
+    return true;
   }
   function agentRefAllowed(vault, id) {
     return vault === currentVault && currentFileRows().some(function (r) { return r.id === id; });
@@ -3902,7 +4119,7 @@
     input.value = input.value.slice(0, start) + token + input.value.slice(end);
     session.draft = input.value; session.refs = agentMessageParts(input.value, false).ids;
     renderAgentRefs(); renderAgentFiles(); agentStatus('已在光标处插入引用；可在前后继续写，或再次插入其他笔记。');
-    if (body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); }
+    if (body.getAttribute('data-form') === 'sm') { setAgentNavOpen(false); }
     input.focus(); input.setSelectionRange(start + token.length, start + token.length);
   }
   function renderAgentRefs() {
@@ -3944,16 +4161,37 @@
     nav.setAttribute('data-show-threads', String(agentPanels.threads));
     nav.setAttribute('data-show-files', String(agentPanels.files));
     nav.classList.toggle('hidden', !agentPanels.threads && !agentPanels.files);
+    setAgentNavOpen(nav.classList.contains('open'));
     ag('agentThreadPane').classList.toggle('hidden', !agentPanels.threads);
     ag('agentFilePane').classList.toggle('hidden', !agentPanels.files);
-    ag('agentSwitchPane').setAttribute('aria-pressed', String(agentPanels.threads));
-    ag('agentToggleFiles').setAttribute('aria-pressed', String(agentPanels.files));
     var active = nav.getAttribute('data-tab');
     if (!agentPanels[active]) { active = agentPanels.threads ? 'threads' : 'files'; nav.setAttribute('data-tab', active); }
     ag('agentThreadsTab').setAttribute('aria-pressed', String(active === 'threads'));
     ag('agentFilesTab').setAttribute('aria-pressed', String(active === 'files'));
+    applySplit();
+    if (body.getAttribute('data-view') === 'agent') { drawHinges(body.getAttribute('data-form')); }
+  }
+  function setAgentNavOpen(open) {
+    var nav = ag('agentNav');
+    nav.classList.toggle('open', open);
+    nav.inert = nav.classList.contains('hidden') || (body.getAttribute('data-form') === 'sm' && !open);
+    nav.setAttribute('aria-hidden', String(nav.inert));
+  }
+  function toggleAgentNavigation() {
+    var nav = ag('agentNav');
+    var visible = (agentPanels.threads || agentPanels.files) && (body.getAttribute('data-form') !== 'sm' || nav.classList.contains('open'));
+    if (visible) {
+      if (body.getAttribute('data-form') === 'sm') { setAgentNavOpen(false); ag('agentInput').focus(); return; }
+      agentPanels.threads = false; agentPanels.files = false;
+      setAgentNavOpen(false); updateAgentPanels(); ag('agentInput').focus();
+    } else {
+      if (!agentPanels.threads && !agentPanels.files) { agentPanels.threads = true; agentPanels.files = true; }
+      agentNav(agentPanels.threads ? 'threads' : 'files');
+    }
   }
   function toggleAgentPanel(panel) {
+    var nav = ag('agentNav'), form = body.getAttribute('data-form');
+    if (agentPanels[panel] && ((form === 'sm' && !nav.classList.contains('open')) || (form !== 'lg' && nav.getAttribute('data-tab') !== panel))) { agentNav(panel); return; }
     agentPanels[panel] = !agentPanels[panel];
     if (agentPanels[panel]) { agentNav(panel); }
     else { updateAgentPanels(); ag('agentInput').focus(); }
@@ -3961,24 +4199,38 @@
   function agentNav(tab) {
     agentPanels[tab] = true;
     ag('agentNav').setAttribute('data-tab', tab);
-    ag('agentNav').classList.add('open');
+    setAgentNavOpen(true);
     ag('agentThreadsTab').setAttribute('aria-pressed', String(tab === 'threads'));
     ag('agentFilesTab').setAttribute('aria-pressed', String(tab === 'files'));
     updateAgentPanels();
   }
-  function renderAgent() {
-    if (body.getAttribute('data-view') === 'agent') { ag('appTitle').textContent = 'Agent 对话'; }
+  function agentRenameSession(target, title) {
+    title = title.trim();
+    if (!title || target.vault !== currentVault) { return false; }
+    var session = (agentStores[target.vault] || []).find(function (s) { return s.id === target.id; });
+    if (!session) { return false; }
+    session.title = title; session.customTitle = true;
+    agentSession().draft = ag('agentInput').value; renderAgent();
+    return true;
+  }
+  function renderAgent(keepThreads) {
     var session = agentSession();
     updateAgentPanels();
     ag('agentVault').innerHTML = VAULTS.map(function (v) { return '<option value="' + agentEsc(v.id) + '"' + (v.id === currentVault ? ' selected' : '') + '>' + agentEsc(v.name) + '</option>'; }).join('');
-    ag('agentTitle').textContent = session.title;
+    var vault = vaultById(currentVault);
+    ag('agentVaultName').textContent = vault.name;
+    ag('agentVaultSub').textContent = (vault.type === 'git' ? 'Git 库' : '本地库') + ' · ' + vault.files + ' 篇';
+    if (body.getAttribute('data-view') === 'agent') { ag('appTitle').textContent = session.title; }
     ag('agentSkill').innerHTML = BUILTIN_AGENT_SKILLS.map(function (skill) { return '<option value="' + skill.id + '">' + skill.name + '</option>'; }).join('');
     ag('agentSkill').value = session.skillId || agentConfig.defaultSkill;
     ag('agentExamples').innerHTML = AGENT_MOCK_SCENARIOS.map(function (scene) { return '<button data-example="' + scene.id + '">' + agentEsc(scene.inputs[0]) + '</button>'; }).join('');
-    ag('agentScope').textContent = vaultById(currentVault).name + ' · 仅使用本库与本段对话中明确引用的笔记';
-    ag('agentThreads').innerHTML = agentStores[currentVault].map(function (s) {
-      return '<button class="agent-thread' + (s === session ? ' on' : '') + '" data-session="' + agentEsc(s.id) + '" title="' + agentEsc(s.title) + '"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3V6a2 2 0 0 1 2-2Z"/></svg><span>' + agentEsc(s.title) + '</span></button>';
-    }).join('');
+    if (!keepThreads) {
+      ag('agentThreads').innerHTML = agentStores[currentVault].filter(function (s) { return !s.archived; }).map(function (s) {
+      return '<div class="agent-thread-row"><button class="agent-thread' + (s === session ? ' on' : '') + '" data-session="' + agentEsc(s.id) + '" title="' + agentEsc(s.title) + ' · 双击或 F2 重命名"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3v-3H3V6a2 2 0 0 1 2-2Z"/></svg><span>' + agentEsc(s.title) + '</span></button>' + '<button class="icon-btn agent-archive" data-archive-session="' + agentEsc(s.id) + '" title="归档对话" aria-label="归档对话"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 9h16v12H4ZM3 3h18v6H3ZM9 13h6"/></svg></button>' + '</div>';
+      }).join('');
+    } else {
+      ag('agentThreads').querySelectorAll('[data-session]').forEach(function (button) { button.classList.toggle('on', button.getAttribute('data-session') === session.id); });
+    }
     ag('agentInput').value = session.draft;
     renderAgentFiles(); renderAgentRefs();
     ag('agentMessages').innerHTML = session.messages.map(function (m, i) {
@@ -4001,7 +4253,7 @@
       return { id: id, path: row.path, content: CONTENT[id] };
     });
     session.messages.push({ role: 'user', text: text, parts: parsed.parts, refs: refs });
-    if (session.title === '新对话') { session.title = text.slice(0, 18); }
+    if (session.title === '新对话' && !session.customTitle) { session.title = text.slice(0, 18); }
     if (!refs.length) { refs = (session.messages.slice(0, -1).reverse().find(function (m) { return m.refs.length; }) || {}).refs || []; }
     agentRunMock(text, refs, session, parsed.parts);
     session.draft = ''; session.refs = []; renderAgent(); agentStatus('已执行本地固定场景；真实小艺调用未接入。');
@@ -4048,42 +4300,61 @@
     } else { CONTENT[r.id] = r.before; }
     r.undone = true; r.status = '已撤销'; agentLastWrite = null; loadFile(); renderAgent(); agentStatus('已撤销最近一次笔记操作，对话保留。');
   }
+  VAULTS.forEach(function (vault) { agentInitSessions(vault.id); });
+  ag('noteModeBtn').addEventListener('click', function () { setView('note', true); });
   ag('xiaoyiBtn').addEventListener('click', function () { setView('agent', true); });
   ag('agentNav').setAttribute('data-tab', 'threads');
   ag('agentNew').addEventListener('click', function () {
-    agentSession(); var session = { id: 'chat-' + (++agentSerial), title: '新对话', skillId: agentConfig.defaultSkill, messages: [], refs: [], draft: '' };
+    agentSession().draft = ag('agentInput').value; var session = agentCreateSession();
     agentStores[currentVault].unshift(session); agentActive[currentVault] = session.id; renderAgent();
-    ag('agentNav').classList.remove('open'); ag('agentInput').focus(); agentStatus('新对话只属于当前知识库。');
+    setAgentNavOpen(false); ag('agentInput').focus(); agentStatus('新对话只属于当前知识库。');
   });
   ag('agentVault').addEventListener('change', function () {
     agentSession().draft = ag('agentInput').value; switchVault(this.value); renderAgent(); agentStatus('已切换知识库，对话、草稿和引用各自隔离。首期不支持跨库联合对话。');
   });
   ag('agentInput').addEventListener('input', function () { agentSession().draft = this.value; agentSession().refs = agentMessageParts(this.value, false).ids; renderAgentRefs(); renderAgentFiles(); });
   ag('agentInput').addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); try { agentSend(); } catch (err) { agentStatus(err.message); } } });
-  ag('agentSettings').addEventListener('click', function () { setView('settings', true); setSettingsTab('agent'); });
   ag('agentSkill').addEventListener('change', function () { agentSession().skillId = this.value; agentStatus('本轮 Skill 已选择，下一次发送生效。'); });
   ag('agentSend').addEventListener('click', function () { try { agentSend(); } catch (err) { agentStatus(err.message); } });
   ag('agentSearch').addEventListener('input', renderAgentFiles);
   ag('agentThreadsTab').addEventListener('click', function () { agentNav('threads'); });
   ag('agentFilesTab').addEventListener('click', function () { agentNav('files'); });
   ag('agentAttach').addEventListener('click', function () { agentNav('files'); ag('agentSearch').focus(); });
-  ag('agentSwitchPane').addEventListener('click', function () { toggleAgentPanel('threads'); });
-  ag('agentToggleFiles').addEventListener('click', function () { toggleAgentPanel('files'); });
   ag('agentCollapseThreads').addEventListener('click', function () { if (agentPanels.threads) { toggleAgentPanel('threads'); } });
   ag('agentCollapseFiles').addEventListener('click', function () { if (agentPanels.files) { toggleAgentPanel('files'); } });
-  ag('agentHideNav').addEventListener('click', function () { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); });
-  ag('agentView').addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (ag('agentNav').classList.contains('open') && body.getAttribute('data-form') === 'sm') { ag('agentNav').classList.remove('open'); ag('agentInput').focus(); } else { setView('note', true); } } });
+  ag('agentHideNav').addEventListener('click', function () { setAgentNavOpen(false); ag('agentInput').focus(); });
+  ag('agentView').addEventListener('keydown', function (e) { if (e.key === 'Escape') { if (ag('agentNav').classList.contains('open') && body.getAttribute('data-form') === 'sm') { setAgentNavOpen(false); ag('agentInput').focus(); } else { setView('note', true); } } });
   ag('agentView').addEventListener('click', function (e) {
     var target = e.target.closest('button, [data-add-ref], [data-agent-dir]'); if (!target) { return; }
     try {
       if (target.hasAttribute('data-example')) { var scene = AGENT_MOCK_SCENARIOS.find(function (s) { return s.id === target.getAttribute('data-example'); }); ag('agentInput').value = scene.inputs[0]; agentSession().draft = scene.inputs[0]; ag('agentInput').focus(); }
       if (target.hasAttribute('data-agent-dir')) { var row = (TREES[currentVault] || [])[Number(target.getAttribute('data-agent-dir'))]; if (row && row[0] === 'dir') { row[2] = !row[2]; renderAgentFiles(); renderTree(); } }
       if (target.hasAttribute('data-add-ref')) { agentAddRef(currentVault, target.getAttribute('data-add-ref')); }
-      if (target.hasAttribute('data-session')) { agentSession().draft = ag('agentInput').value; agentActive[currentVault] = target.getAttribute('data-session'); renderAgent(); ag('agentNav').classList.remove('open'); agentStatus(''); }
+      if (target.hasAttribute('data-archive-session')) { agentArchiveSession({ vault: currentVault, id: target.getAttribute('data-archive-session') }, true); }
+      if (target.hasAttribute('data-session')) { agentSession().draft = ag('agentInput').value; agentActive[currentVault] = target.getAttribute('data-session'); renderAgent(true); agentStatus(''); }
       if (target.hasAttribute('data-open-ref')) { var id = target.getAttribute('data-open-ref'); if (!agentRefAllowed(currentVault, id)) { throw new Error('笔记已移除或不属于当前库。'); } current = id; loadFile(); setView('note', true); }
       if (target.hasAttribute('data-write')) { agentWrite(target.getAttribute('data-write'), Number(target.getAttribute('data-message'))); }
       if (target.hasAttribute('data-undo')) { agentUndo(Number(target.getAttribute('data-undo'))); }
     } catch (err) { agentStatus(err.message); }
+  });
+  ag('agentThreads').addEventListener('dblclick', function (e) {
+    var row = e.target.closest('[data-session]');
+    if (row) { openDialog('agent-rename', { vault: currentVault, id: row.getAttribute('data-session') }); }
+  });
+  ag('agentThreads').addEventListener('keydown', function (e) {
+    var row = e.target.closest('[data-session]');
+    if (row && e.key === 'F2') { e.preventDefault(); e.stopPropagation(); openDialog('agent-rename', { vault: currentVault, id: row.getAttribute('data-session') }); }
+  });
+  ag('appTitle').addEventListener('dblclick', function () {
+    if (body.getAttribute('data-view') === 'agent') { openDialog('agent-rename', { vault: currentVault, id: agentSession().id }); }
+  });
+  ag('agentHistoryFilter').addEventListener('change', renderAgentHistory);
+  ag('agentHistory').addEventListener('click', function (e) {
+    var button = e.target.closest('[data-delete-chat], [data-restore-chat]');
+    if (!button) { return; }
+    var target = { vault: button.getAttribute('data-chat-vault'), id: button.getAttribute('data-delete-chat') || button.getAttribute('data-restore-chat') };
+    if (button.hasAttribute('data-delete-chat')) { openDialog('agent-delete', target); }
+    else { agentArchiveSession(target, false); }
   });
   ag('agentFiles').addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('[data-add-ref], [data-agent-dir]')) { e.preventDefault(); e.target.click(); } });
   ag('agentFiles').addEventListener('dragstart', function (e) {
