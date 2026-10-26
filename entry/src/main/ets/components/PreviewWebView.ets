@@ -24,6 +24,7 @@ const PREVIEW_TAG = 'PreviewWebView';
 class PreviewNativeProxy {
   readAssetHandler: (relPath: string) => string = () => '';
   imageViewerChangeHandler: (state: string) => void = () => {};
+  wikiLinkClickHandler: (targetB64: string) => void = (_targetB64: string) => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -31,6 +32,10 @@ class PreviewNativeProxy {
 
   onImageViewerChange(state: string): void {
     this.imageViewerChangeHandler(state);
+  }
+
+  onWikiLinkClick(targetB64: string): void {
+    this.wikiLinkClickHandler(targetB64);
   }
 }
 
@@ -78,6 +83,14 @@ class PreviewImpl {
 
   closeImageViewer(): void {
     this.enqueue('window.__mdpreview.closeImageViewer()');
+  }
+
+  watchWikiLinks(): void {
+    this.enqueue(`document.addEventListener('click',function(event){var node=event.target;
+      while(node&&node!==document){if(node.nodeType===1&&node.classList&&node.classList.contains('wiki-link')){
+      var href=node.getAttribute('href')||'';if(href.indexOf('#wikilink:')===0){event.preventDefault();
+      var api=window.__arkts;if(api&&typeof api.onWikiLinkClick==='function'){
+      api.onWikiLinkClick(href.substring(10));}}return;}node=node.parentElement;}} ,true)`);
   }
 
   private enqueue(script: string): void {
@@ -154,6 +167,7 @@ export struct PreviewWebView {
   onReadAsset: (relPath: string) => string = (relPath: string) => '';
   /** Web 加载错误 */
   onError: (msg: string) => void = (msg: string) => {};
+  onWikiLinkClick: (target: string) => void = (_target: string) => {};
   /** 父级通过这个句柄下发渲染内容 / 笔记目录 / 主题 */
   bridge: PreviewBridge = new PreviewBridge();
 
@@ -166,6 +180,9 @@ export struct PreviewWebView {
   aboutToAppear(): void {
     this.proxy.imageViewerChangeHandler = (state: string): void => {
       this.bridge.setImageViewerOpen(state === 'open');
+    };
+    this.proxy.wikiLinkClickHandler = (targetB64: string): void => {
+      this.handleWikiLinkClick(targetB64);
     };
     // JS 桥收的是 base64（避免引号/换行转义），这里解开再交给父级回调
     this.proxy.readAssetHandler = (relB64: string): string => {
@@ -194,6 +211,15 @@ export struct PreviewWebView {
     }
   }
 
+  private handleWikiLinkClick(targetB64: string): void {
+    try {
+      this.onWikiLinkClick(BridgeCodec.decode(targetB64));
+    } catch (error) {
+      const err = error as Error;
+      hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '双链目标解码失败: %{public}s', err.message);
+    }
+  }
+
   aboutToDisappear(): void {
     this.bridge.setImageViewerOpen(false);
   }
@@ -207,7 +233,7 @@ export struct PreviewWebView {
       return;
     }
     try {
-      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['readAsset', 'onImageViewerChange']);
+      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['readAsset', 'onImageViewerChange', 'onWikiLinkClick']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (error) {
@@ -236,6 +262,7 @@ export struct PreviewWebView {
           const impl = new PreviewImpl(this.controller);
           this.bridge.bind(impl);
           impl.markReady();
+          impl.watchWikiLinks();
           hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '预览页面就绪，桥接已建立');
         })
         .onConsole((event): boolean => {

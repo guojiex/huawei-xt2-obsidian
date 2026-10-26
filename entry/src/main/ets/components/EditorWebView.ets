@@ -121,6 +121,11 @@ class EditorImpl {
     }
   }
 
+  setLinkCandidatesResult(id: number, candidates: string): void {
+    const payload: string = BridgeCodec.encode(candidates);
+    this.enqueue(`window.__mdeditor.setLinkCandidatesResult(${id},'${payload}')`);
+  }
+
   private enqueue(script: string): void {
     if (this.readyFlag) {
       void this.controller.runJavaScript(script);
@@ -162,6 +167,10 @@ export class EditorBridge {
     this.impl?.setTheme(theme);
   }
 
+  setLinkCandidatesResult(id: number, candidates: string): void {
+    this.impl?.setLinkCandidatesResult(id, candidates);
+  }
+
   async setEditable(editable: boolean): Promise<void> {
     await this.impl?.setEditable(editable);
   }
@@ -183,6 +192,7 @@ export struct EditorWebView {
   onReady: () => void = () => {};
   /** Web 加载错误 */
   onError: (msg: string) => void = (msg: string) => {};
+  onLinkCompletion: (id: number, query: string) => void = (_id: number, _query: string) => {};
   /** 父级通过这个句柄下发内容 / 拉取内容（外部传入同一实例，ready 时内部 bind） */
   bridge: EditorBridge = new EditorBridge();
 
@@ -266,6 +276,8 @@ export struct EditorWebView {
       this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
     } else if (name === 'change') {
       this.onChange((msg['len'] as number) ?? 0);
+    } else if (name === 'linkCompletion') {
+      this.onLinkCompletion(msg['id'] as number, msg['query'] as string);
     }
   }
 

@@ -21,9 +21,15 @@ import { VaultRegistry } from './VaultRegistry';
 import { FileTree } from './FileTree';
 import { NoteDraftService } from './NoteDraftService';
 import { FullTextSearchService } from './FullTextSearchService';
+import { WikiLinkService, WikiLinkUpdateReport } from './WikiLinkService';
 
 const NOTE_DOMAIN: number = 0x0003;
 const NOTE_TAG: string = 'NoteService';
+
+export interface NotePathMutationResult {
+  path: string;
+  referenceUpdates: WikiLinkUpdateReport;
+}
 
 export class NoteService {
   /** 笔记扩展名（v0.2 只认这一个；`.markdown` 已在 FileTree 里被接受但不新建） */
@@ -118,6 +124,7 @@ export class NoteService {
       fileIo.closeSync(file);
     }
     FullTextSearchService.noteSaved(vaultId, target, '');
+    WikiLinkService.pathAdded(vaultId);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', target);
     return target;
   }
@@ -169,6 +176,7 @@ export class NoteService {
       return NoteService.runAtomicSave(abs, relPath, content);
     }).then((): void => {
       FullTextSearchService.noteSaved(vaultId, relPath, content);
+      WikiLinkService.noteSaved(vaultId, relPath, content);
     });
     // 链上吞掉 rejection：单个保存失败不能断掉后续保存的排队
     NoteService.saveChain = job.then((): void => {
@@ -372,6 +380,7 @@ export class NoteService {
       fileIo.unlinkSync(abs);
     }
     FullTextSearchService.noteRemoved(vaultId, relPath, stat.isDirectory());
+    WikiLinkService.pathRemoved(vaultId);
     await NoteDraftService.discardPath(registry, vaultId, relPath);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除 %{public}s', relPath);
   }
@@ -386,7 +395,7 @@ export class NoteService {
    * - renameSync 原子完成；返回实际落地的新相对路径（调用方据此更新 currentFilePath）。
    */
   static async renamePath(registry: VaultRegistry, vaultId: string, relPath: string,
-    newName: string, isDir: boolean): Promise<string> {
+    newName: string, isDir: boolean): Promise<NotePathMutationResult> {
     let base: string = sanitizeVaultName(newName);
     if (base.length === 0) {
       throw new Error('名称不能为空');
@@ -400,7 +409,7 @@ export class NoteService {
     const parent: string = FileTree.parentOf(relPath);
     const target: string = parent.length > 0 ? parent + '/' + base : base;
     if (target === relPath) {
-      return relPath;
+      return { path: relPath, referenceUpdates: { updatedPaths: [], failedPaths: [], scanFailed: false } };
     }
     const unique: string = isDir
       ? NoteService.uniqueDirPath(registry, vaultId, target)
@@ -423,8 +432,13 @@ export class NoteService {
       // 新路径草稿已先写好；下次启动会清理正式源文件已不存在的旧草稿。
     }
     FullTextSearchService.pathRetargeted(vaultId, relPath, unique, isDir);
+    WikiLinkService.pathRetargeted(vaultId);
+    const referenceUpdates: WikiLinkUpdateReport = await WikiLinkService.rewriteReferences(
+      registry, vaultId, relPath, unique, isDir, async (path: string, content: string): Promise<void> => {
+        await NoteService.saveNote(registry, vaultId, path, content);
+      });
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '重命名 %{public}s → %{public}s', relPath, unique);
-    return unique;
+    return { path: unique, referenceUpdates: referenceUpdates };
   }
 
   /**
@@ -435,14 +449,14 @@ export class NoteService {
    * - 返回实际落地的新相对路径（调用方据此更新 currentFilePath / revealPath）。
    */
   static async movePath(registry: VaultRegistry, vaultId: string, relPath: string,
-    destDir: string, isDir: boolean): Promise<string> {
+    destDir: string, isDir: boolean): Promise<NotePathMutationResult> {
     if (isDir && (destDir === relPath || destDir.startsWith(relPath + '/'))) {
       throw new Error('不能移动到自身内部');
     }
     const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
     const target: string = destDir.length > 0 ? destDir + '/' + name : name;
     if (target === relPath) {
-      return relPath;
+      return { path: relPath, referenceUpdates: { updatedPaths: [], failedPaths: [], scanFailed: false } };
     }
     // 补建目标目录（含中间层；已存在的段跳过）
     if (destDir.length > 0) {
@@ -476,7 +490,12 @@ export class NoteService {
       // 新路径草稿已先写好；下次启动会清理正式源文件已不存在的旧草稿。
     }
     FullTextSearchService.pathRetargeted(vaultId, relPath, unique, isDir);
+    WikiLinkService.pathRetargeted(vaultId);
+    const referenceUpdates: WikiLinkUpdateReport = await WikiLinkService.rewriteReferences(
+      registry, vaultId, relPath, unique, isDir, async (path: string, content: string): Promise<void> => {
+        await NoteService.saveNote(registry, vaultId, path, content);
+      });
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '移动 %{public}s → %{public}s', relPath, unique);
-    return unique;
+    return { path: unique, referenceUpdates: referenceUpdates };
   }
 }

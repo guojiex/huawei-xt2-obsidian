@@ -20,6 +20,7 @@
  */
 
 import { basicSetup } from 'codemirror'
+import { autocompletion } from '@codemirror/autocomplete'
 import { EditorView } from '@codemirror/view'
 import { Compartment, EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
@@ -49,7 +50,67 @@ interface MdEditorApi {
   focus(): void
   setTheme(theme: string): void
   setEditable(editable: boolean): void
+  setLinkCandidatesResult(id: number, b64: string): void
   onArktsReady(): void
+}
+
+interface WikiLinkCandidate {
+  path: string
+  insertTarget: string
+}
+
+const linkCompletionWaiters = new Map<number, (candidates: WikiLinkCandidate[]) => void>()
+let nextLinkCompletionId = 1
+
+function wikiLinkCompletion(context: any): Promise<any> | null {
+  const before = context.matchBefore(/\[\[[^\]\n]*/)
+  if (!before || before.text.includes('|') || before.text.includes('#') || before.text.includes('\\')) {
+    return null
+  }
+  if (before.from > 0) {
+    const previous = context.state.sliceDoc(before.from - 1, before.from)
+    if (previous === '!') {
+      return null
+    }
+  }
+  let slashCount = 0
+  for (let i = before.from - 1; i >= 0 && context.state.sliceDoc(i, i + 1) === '\\'; i--) {
+    slashCount++
+  }
+  if (slashCount % 2 === 1) {
+    return null
+  }
+  const id = nextLinkCompletionId++
+  const query = before.text.substring(2)
+  postToArkts({ type: 'event', name: 'linkCompletion', id: id, query: query })
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      linkCompletionWaiters.delete(id)
+      resolve(null)
+    }, 800)
+    linkCompletionWaiters.set(id, (candidates: WikiLinkCandidate[]) => {
+      window.clearTimeout(timer)
+      if (candidates.length === 0) {
+        resolve(null)
+        return
+      }
+      resolve({
+        from: before.from + 2,
+        options: candidates.map((candidate: WikiLinkCandidate) => ({
+          label: candidate.path,
+          apply: (view: EditorView, _completion: unknown, _from: number, to: number) => {
+            const closeEnd = view.state.sliceDoc(to, to + 2) === ']]' ? to + 2 : to
+            const start = before.from
+            const inserted = '[[' + candidate.insertTarget + ']]'
+            view.dispatch({
+              changes: { from: start, to: closeEnd, insert: inserted },
+              selection: { anchor: start + inserted.length }
+            })
+          }
+        }))
+      })
+    })
+  })
 }
 
 // ---------- base64（浏览器侧，处理 UTF-8） ----------
@@ -164,6 +225,7 @@ function extensionsFor(theme: string) {
     editableCompartment.of(EditorView.editable.of(isEditable)),
     readOnlyCompartment.of(EditorState.readOnly.of(!isEditable)),
     EditorView.lineWrapping,
+    autocompletion({ override: [wikiLinkCompletion], closeOnBlur: true }),
     // ⚠️ change 上报监听必须放进 extensionsFor 跟着每次 state 重建（2026-10-18 崩溃排查
     // 实证）：最初放在 ensureView 的 concat 里，setTheme 热切换用 extensionsFor 重建 state
     // 时把它丢了 → docChanged 无人监听 → change 事件从此绝迹、防抖自动保存/预览联动全失效。
@@ -246,6 +308,19 @@ const api: MdEditorApi = {
         editableCompartment.reconfigure(EditorView.editable.of(editable)),
         readOnlyCompartment.reconfigure(EditorState.readOnly.of(!editable))
       ] })
+    }
+  },
+
+  setLinkCandidatesResult(id: number, b64: string): void {
+    const waiter = linkCompletionWaiters.get(id)
+    if (!waiter) {
+      return
+    }
+    linkCompletionWaiters.delete(id)
+    try {
+      waiter(JSON.parse(b64decode(b64)) as WikiLinkCandidate[])
+    } catch (error) {
+      waiter([])
     }
   },
 

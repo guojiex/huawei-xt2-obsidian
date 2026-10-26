@@ -22,8 +22,10 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { NoteService } from '../model/NoteService';
+import { NotePathMutationResult, NoteService } from '../model/NoteService';
 import { FileTree } from '../model/FileTree';
+import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
+import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
 import { VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
@@ -143,6 +145,10 @@ struct Index {
    * 不存在三处各记一份然后不同步的可能。
    */
   @State currentFilePath: string = '';
+  @State backlinkPaths: string[] = [];
+  @State backlinksExpanded: boolean = false;
+  @State backlinksLoading: boolean = false;
+  @State backlinksFailed: boolean = false;
   /**
    * M0.5 spike：Web 编辑器（CodeMirror 6）的桥接句柄与「最近一次内容长度」。
    * bridge 由本页创建并传给 EditorWebView（对象引用共享，页面 ready 时内部 bind）。
@@ -344,6 +350,31 @@ struct Index {
   private refreshFileTree(): void {
     this.refreshCurrentVaultNoteCount();
     this.treeSeq++;
+    void this.refreshBacklinks();
+  }
+
+  private async refreshBacklinks(): Promise<void> {
+    const vaultId: string = this.currentVaultId;
+    const targetPath: string = this.currentFilePath;
+    this.backlinkPaths = [];
+    this.backlinksFailed = false;
+    if (vaultId.length === 0 || targetPath.length === 0) {
+      this.backlinksLoading = false;
+      return;
+    }
+    this.backlinksLoading = true;
+    try {
+      const paths: string[] = await WikiLinkService.backlinks(VaultRegistry.get(), vaultId, targetPath);
+      if (vaultId === this.currentVaultId && targetPath === this.currentFilePath) {
+        this.backlinkPaths = paths;
+        this.backlinksLoading = false;
+      }
+    } catch (error) {
+      if (vaultId === this.currentVaultId && targetPath === this.currentFilePath) {
+        this.backlinksLoading = false;
+        this.backlinksFailed = true;
+      }
+    }
   }
 
   /** 档位变化：抽屉语义只在 sm；切到 md/lg 强制收抽屉，防止回 sm 时意外打开 */
@@ -602,6 +633,7 @@ struct Index {
     this.previewBridge.resetDocument();
     this.previewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
     this.pushPreview(text, true);
+    void this.refreshBacklinks();
     return true;
   }
 
@@ -681,6 +713,7 @@ struct Index {
       this.lastSavedText = text;
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
         this.editorDirty = false;
+        void this.refreshBacklinks();
       }
       return true;
     } catch (error) {
@@ -711,7 +744,86 @@ struct Index {
       return;
     }
     this.lastPreviewText = text;
-    this.previewBridge.setContent(text);
+    if (this.currentVaultId.length > 0 && this.currentFilePath.length > 0) {
+      const files: string[] = WikiLinkService.files(VaultRegistry.get(), this.currentVaultId);
+      this.previewBridge.setContent(WikiLinkParser.renderForPreview(text, this.currentFilePath, files));
+    } else {
+      this.previewBridge.setContent(text);
+    }
+  }
+
+  private provideWikiLinkCompletions(id: number, query: string): void {
+    let candidates: WikiLinkCandidate[] = [];
+    if (this.currentVaultId.length > 0) {
+      candidates = WikiLinkParser.completionCandidates(query,
+        WikiLinkService.files(VaultRegistry.get(), this.currentVaultId));
+    }
+    this.editorBridge.setLinkCandidatesResult(id, JSON.stringify(candidates));
+  }
+
+  private async handleWikiLinkClick(target: string): Promise<void> {
+    const vaultId: string = this.currentVaultId;
+    const sourcePath: string = this.currentFilePath;
+    if (vaultId.length === 0 || sourcePath.length === 0) {
+      return;
+    }
+    const registry: VaultRegistry = VaultRegistry.get();
+    const resolution: WikiLinkResolution = WikiLinkParser.resolve(target, sourcePath,
+      WikiLinkService.files(registry, vaultId));
+    if (resolution.status === 'resolved') {
+      this.onSelectFile(resolution.path);
+      return;
+    }
+    if (resolution.status === 'ambiguous') {
+      promptAction.showToast({ message: '目标不唯一，请在链接中补全 .md 或 .markdown' });
+      return;
+    }
+    if (resolution.status === 'invalid') {
+      promptAction.showToast({ message: '链接路径无效' });
+      return;
+    }
+    const result = await this.getUIContext().getPromptAction().showDialog({
+      title: '目标笔记尚未创建',
+      message: '是否创建「' + resolution.path + '」？',
+      buttons: [
+        { text: '取消', color: $r('app.color.text_secondary') },
+        { text: '创建笔记', color: $r('app.color.brand') }
+      ]
+    });
+    if (result.index !== 1) {
+      return;
+    }
+    if (vaultId !== this.currentVaultId || sourcePath !== this.currentFilePath) {
+      promptAction.showToast({ message: '当前笔记已变化，请重新打开链接' });
+      return;
+    }
+    const latest: WikiLinkResolution = WikiLinkParser.resolve(target, sourcePath,
+      WikiLinkService.files(registry, vaultId));
+    if (latest.status === 'resolved') {
+      this.onSelectFile(latest.path);
+      return;
+    }
+    if (latest.status !== 'missing') {
+      promptAction.showToast({ message: latest.status === 'ambiguous'
+        ? '目标不唯一，请在链接中补全扩展名' : '链接路径无效' });
+      return;
+    }
+    try {
+      if (NoteService.normalizeRelPath(latest.path) !== latest.path) {
+        promptAction.showToast({ message: '链接路径包含不支持的文件名' });
+        return;
+      }
+      const createdPath: string = NoteService.createNote(registry, vaultId, latest.path);
+      this.revealPath = createdPath;
+      this.refreshFileTree();
+      if (this.breakpoint === Breakpoint.SM) {
+        this.drawerOpen = false;
+        this.smMode = 'edit';
+      }
+      await this.loadFile(createdPath);
+    } catch (error) {
+      this.toastRegistryError('创建链接目标失败', error);
+    }
   }
 
   /** 编辑器有改动：防抖 500ms 后从编辑器拉全量内容渲染预览 */
@@ -729,9 +841,9 @@ struct Index {
    * 从编辑器拉当前内容 → 推给预览。编辑器未就绪时退回 `lastSavedText`
    * （已加载内容的镜像），保证预览永远有东西可渲染而不是空白。
    */
-  private async updatePreviewFromEditor(): Promise<void> {
+  private async updatePreviewFromEditor(force: boolean = false): Promise<void> {
     if (!this.editorBridge.ready) {
-      this.pushPreview(this.lastSavedText);
+      this.pushPreview(this.lastSavedText, force);
       return;
     }
     let text: string = '';
@@ -742,7 +854,7 @@ struct Index {
       hilog.warn(DOMAIN, TAG, '预览拉取编辑器内容失败: %{public}s', err.message);
       return;
     }
-    this.pushPreview(text);
+    this.pushPreview(text, force);
   }
 
   /**
@@ -1068,12 +1180,26 @@ struct Index {
       return;
     }
     try {
-      const newRel: string = await NoteService.renamePath(VaultRegistry.get(),
+      if (!await this.flushSave()) {
+        return;
+      }
+      const previousCurrent: string = this.currentFilePath;
+      const mutation: NotePathMutationResult = await NoteService.renamePath(VaultRegistry.get(),
         this.currentVaultId, relPath, newName, isDir);
       this.ensureRecentOpenStore();
-      (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
-      this.retargetCurrent(relPath, newRel, isDir);
+      (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
+      this.retargetCurrent(relPath, mutation.path, isDir);
       this.refreshFileTree();
+      let reloaded: boolean = false;
+      if (this.currentFilePath !== previousCurrent ||
+        mutation.referenceUpdates.updatedPaths.indexOf(this.currentFilePath) >= 0) {
+        await this.readAndPush(this.currentFilePath);
+        reloaded = true;
+      }
+      if (!reloaded) {
+        await this.updatePreviewFromEditor(true);
+      }
+      this.showReferenceUpdateFailures(mutation.referenceUpdates);
     } catch (error) {
       this.toastRegistryError('重命名失败', error);
     }
@@ -1085,16 +1211,43 @@ struct Index {
       return;
     }
     try {
-      const newRel: string = await NoteService.movePath(VaultRegistry.get(),
+      if (!await this.flushSave()) {
+        return;
+      }
+      const previousCurrent: string = this.currentFilePath;
+      const mutation: NotePathMutationResult = await NoteService.movePath(VaultRegistry.get(),
         this.currentVaultId, relPath, destDir, isDir);
       this.ensureRecentOpenStore();
-      (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, newRel, isDir);
-      this.retargetCurrent(relPath, newRel, isDir);
-      this.revealPath = newRel;
+      (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
+      this.retargetCurrent(relPath, mutation.path, isDir);
+      this.revealPath = mutation.path;
       this.refreshFileTree();
+      let reloaded: boolean = false;
+      if (this.currentFilePath !== previousCurrent ||
+        mutation.referenceUpdates.updatedPaths.indexOf(this.currentFilePath) >= 0) {
+        await this.readAndPush(this.currentFilePath);
+        reloaded = true;
+      }
+      if (!reloaded) {
+        await this.updatePreviewFromEditor(true);
+      }
+      this.showReferenceUpdateFailures(mutation.referenceUpdates);
     } catch (error) {
       this.toastRegistryError('移动失败', error);
     }
+  }
+
+  private showReferenceUpdateFailures(report: WikiLinkUpdateReport): void {
+    if (!report.scanFailed && report.failedPaths.length === 0) {
+      return;
+    }
+    void this.getUIContext().getPromptAction().showDialog({
+      title: '目标已移动，双链需检查',
+      message: report.scanFailed
+        ? '无法读取当前库的 Markdown 文件列表，未能扫描双链；请检查与该目标相关的链接。'
+        : '以下笔记需要检查：\n' + report.failedPaths.join('\n'),
+      buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
+    });
   }
 
   /**
@@ -1834,6 +1987,9 @@ struct Index {
             this.scheduleSave();
             this.schedulePreviewUpdate();
           },
+          onLinkCompletion: (id: number, query: string): void => {
+            this.provideWikiLinkCompletions(id, query);
+          },
           onReady: (): void => {
             // 页面就绪后补一次内容加载：EditorWebView 的指令队列保证此前收到的
             // setContent 不丢。Web 容器因窗口尺寸变化重建时只重读，不先 flush 空 WebView，
@@ -1876,18 +2032,92 @@ struct Index {
   PreviewPane() {
     Column() {
       this.PaneHead({ title: '预览' })
+      this.BacklinkPanel()
       PreviewWebView({
         bridge: this.previewBridge,
         onReadAsset: (relPath: string): string => {
           return this.readVaultAsset(relPath);
         },
+        onWikiLinkClick: (target: string): void => {
+          void this.handleWikiLinkClick(target);
+        },
         onError: (msg: string): void => {
           hilog.error(DOMAIN, TAG, '预览 Web: %{public}s', msg);
         }
       })
+        .layoutWeight(1)
     }
     .width('100%')
     .height('100%')
+  }
+
+  @Builder
+  BacklinkPanel() {
+    Column() {
+      Row({ space: Space.s2 }) {
+        Text('反链')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .fontWeight(FontWeight.Medium)
+        Text(this.backlinkPaths.length.toString())
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+        Blank()
+        Text(this.backlinksExpanded ? '收起' : '展开')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.brand'))
+      }
+      .width('100%')
+      .height(Size.buttonH)
+      .padding({ left: Space.s4, right: Space.s4 })
+      .onClick((): void => {
+        this.backlinksExpanded = !this.backlinksExpanded;
+      })
+
+      if (this.backlinksExpanded) {
+        if (this.backlinksLoading) {
+          Text('正在读取反链…')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .padding({ left: Space.s4, right: Space.s4, bottom: Space.s3 })
+        } else if (this.backlinksFailed) {
+          Text('反链读取失败')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .padding({ left: Space.s4, right: Space.s4, bottom: Space.s3 })
+        } else if (this.backlinkPaths.length === 0) {
+          Text(this.currentFilePath.length === 0 ? '选择笔记后可查看反链' : '暂无来源笔记')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .padding({ left: Space.s4, right: Space.s4, bottom: Space.s3 })
+        } else {
+          Scroll() {
+            Column() {
+              ForEach(this.backlinkPaths, (path: string): void => {
+                Row() {
+                  Text(path)
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
+                .width('100%')
+                .height(Space.s8)
+                .padding({ left: Space.s4, right: Space.s4 })
+                .onClick((): void => {
+                  this.onSelectFile(path);
+                })
+              }, (path: string): string => path)
+            }
+            .width('100%')
+          }
+          .height(Size.itemH * 2)
+        }
+      }
+    }
+    .width('100%')
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
   }
 
   /** 库管理视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress，组件不自带（2.7c） */
