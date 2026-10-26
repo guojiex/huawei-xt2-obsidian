@@ -1287,3 +1287,23 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 ### N3 ❓ 小艺后台意图不等于自有 Agent loop 可后台常驻
 
 F4 仍为未充分核实的平台生命周期记录；不能据此声称支持持续模型请求、工具循环、流式回调或进程回收后的恢复。Worker/脱离 Web 的原生 Runner 也不提供系统运行许可。v0.7 mock 独立推进；v0.6 等待正式消息/工具协议、背景资格与通知路径核实，不因本组声明核对恢复实施。
+
+
+## O 组：本地文件分享与 ZIP 打包（2026-10-26 官方文档 / 本机 SDK 声明核对）
+
+来源：[核对记录](qa/2026-10-26_ShareKit与本地打包_API24.md)。本机 HarmonyOS SDK 为 API 26.0.0.105，工程 `compatibleSdkVersion` 为 6.1.1(24)；以下 API 起始版本均不高于 24。当前只确认文档与声明，不等于 API 24 / XT2 运行验收。
+
+### O1 ✅ 系统分享面板与 App 文件 URI 可用；授权生命周期待运行验证
+
+- `@kit.ShareKit` / `systemShare.SharedData` / `systemShare.ShareController` 在本机声明标注 since 4.1.0(11)；`ShareController.show(UIAbilityContext, options)` 返回 `Promise<void>`。官方文本、视频示例分别使用文本内容和 `fileUri.getUriFromPath(path)` 构造分享数据并调起面板，见[分享文本](https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/share-utd-text)与[分享视频](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides-V5/share-utd-video-V5)。
+- `SharedRecord.uri` 明确支持 App file URI 与 user file URI；`fileUri.getUriFromPath(path)` 的 SDK 声明 since 9。官方资料没有明确说明接收方临时授权何时授予、何时失效，也没有说明 `show()` 的 Promise 何时 resolve；需以系统面板正常交接和目标应用读取结果验证。
+- `@ohos.fileshare` 的持久化授权接口标注 since 11，且需要 `ohos.permission.FILE_ACCESS_PERSIST`。该持久化能力不等同于 Share Kit 单次交接授权；不得在未确认需求前额外申请持久化授权。
+
+### O2 ✅ 沙箱文件 / 目录压缩 API 可用于 API 24；目录结构以产物检查验收
+
+- 本机 `@ohos.zlib` 声明 `compressFile(inFile, outFile, options)` since 9，可将沙箱文件或目录压缩成文件；`compressFiles(inFiles, outFile, options)` since 12。API 24 可用前者打包准备好的临时目录。需以解压后文件集合、相对路径和中文 / 空格文件名测试确认实际产物。
+- `Options.keepTopLevelFolder` 标注 since 26，API 24 不能配置；实现不得引用此新选项。临时源目录和 zip 路径仍必须由 Context 属性取得并经统一路径解析层生成。
+
+### O3 ⚠️ 排版长图输出链路仍待核实
+
+Share Kit 接受图片文件 URI，但现有文档与 SDK 证据尚未确定如何将当前 ArkWeb Markdown 预览完整、分段地输出为图片，也没有确认长图像素 / 文件大小限制。不得据此把单张截图或静默裁切写成满足 v0.8 的长文分图能力；先核实输出链路并对产物做全文完整性检查。

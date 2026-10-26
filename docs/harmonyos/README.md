@@ -103,6 +103,7 @@ docs/harmonyos/
 
 | 日期 | 主题 | 问题数 | 存档 | 关键产出 |
 | --- | --- | --- | --- | --- |
+| 2026-10-26 | Share Kit / 本地 ZIP 官方文档与 SDK 声明核对（非新问答） | 3 组 API 边界 | [核对归档](qa/2026-10-26_ShareKit与本地打包_API24.md) | 结论见 [api_notes O1–O3](api_notes.md)：API 起始版本满足 API 24；接收授权生命周期及 Markdown 长图输出仍待验证 |
 | 2026-10-22 | **API 24/26 AtomicFile.startWrite 用法与失败处理** | 5 | [答复归档](qa/2026-10-22_API24_AtomicFile_startWrite_用法答复.md)；[提问原文](prompts/2026-10-21_API24_AtomicFile_startWrite_正确用法与失败处理.md) | 写入成功用 `finishWrite()`、失败用 `failWrite()`；答复称同步异常的 catch 也调用同一实例 `failWrite()`；不显式关闭返回流。13900020 通用含义已明确，具体触发原因仍未知，详见 [`api_notes.md`](api_notes.md) |
 | 2026-10-17 | 首批核实（三折叠 / Web 组件 / 文件存储 / HAR 发布 / 权限网络） | 20 | [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md) | 三折叠恒为 `phone`；折痕接口只返回**单个 Rect**；`FoldSplitContainer` **已否决**；原子写改用 `AtomicFile`；令牌存 `@kit.AssetStoreKit`；`runJavaScript` 长度未记载 → 大数据走 `WebMessagePort`；前台 clone/push 无需额外权限 |
 | 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
