@@ -633,15 +633,22 @@ ohpm publish yourlib.har
 > 2026-10-25 范围调整见 [v0.6 需求](../releases/v0.6/需求文档.md)：首期本地操作不调用 Web/git，F6 的冲突仅约束未来自动 commit；F-A/F-B 等接口置信度未因此改变。新的接入核实提示词见 [提问](prompts/2026-10-25_API24_小艺本地笔记操作接入核实.md)。
 
 > 来源：[`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md)（2026-10-17）
-> ⚠️ **本组所有结论均未附文档链接**，落码前必须在 DevEco 用 `@kit.*` 补全复核接口名与签名。
+> ~~本组所有结论均未附文档链接~~ → 2026-10-26：F1、F9–F11 已补官方文档核对，见 [对照归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。其他旧结论置信度保持原标记；落码前仍须复核对应 SDK 和目标设备。
 > **不要在别的文档里复制本组结论**，一律链接过来 —— 下面标 ⚠️ 的随时可能被推翻。
 
-### F1 应用内对话入口：`FunctionComponent` ⚠️
+### F1 应用内对话入口：`FunctionComponent` ✅ 文档明确 / ⚠️ XT2 运行与发布条件待验
 
-`@kit.AgentFrameworkKit` 提供 `FunctionComponent`（配 `FunctionController` 监听
-`agentDialogOpened` / `agentDialogClosed`），传 `agentId` 即可在 App 内拉起智能体对话面板。
-→ 这是「App 内嵌 AI 对话」的官方路径，**无需人工审核**（技能以 MCP / 插件形式发布到**自己**的智能体；
-要进小艺主对话入口才需审核）。
+[官方 API](https://developer.huawei.com/consumer/cn/doc/doccenter-references/api/hmaf-function-component) 明确：`FunctionComponent` 在 Phone / Tablet、Stage 模型自 HarmonyOS 6.0.0(API 20) 起可用；API 24 满足版本下限，但 XT2 真机可用性仍待验证。官方指南的示例由用户点击 `FunctionComponent` 打开智能体对话框。`FunctionController` 仅继承 `AgentController` 的方法，当前没有额外实现；公开参考列出支持查询及 `agentDialogOpened` / `agentDialogClosed` 事件，没有从普通 ArkUI Button 主动打开面板的方法。因此当前公开 API 不支持按原样从自绘按钮直接拉起面板。
+
+`FunctionOptions` / `BaseOptions` 提供按钮类型、标题、图标尺寸/颜色、背景色、阴影和初始 `queryText` 等样式/初始化项，没有自定义图标资源参数。社区问答的采纳答复与 AI 助手答复都同意上述边界。AI 答复提到的 Stack 覆盖方案没有官方文档依据；它不能证明自绘按钮可以调用启动 API，叠放后的视觉与触摸命中行为也未验证。该次答复附带的小艺版本号、地区、测试白名单等条件未在本次核对的官方指南/API 页面中找到，不作为已确认前置条件。详细对照见 [社区答复归档](qa/2026-10-26_小艺自绘按钮拉起答复_API24.md)。
+
+2026-10-26 Stack 覆盖 spike：API 26 模拟器构建成功，但启动接入 `FunctionComponent` 的 HAP 时触发 `SIGABRT`；Faultlogger 的 `LastFatalMessage` 为缺少 `com.huawei.hmsapp.hiai.hsp/agentKitHsp`，尚未进入 UI 触摸验证。该结果说明当前模拟器运行环境不具备此组件依赖，**不能判断遮罩视觉或点击命中是否可行**；临时接线和无效 `agentId` 已撤下，XT2 真机仍待测。
+
+官方指南另要求先创建智能体、关联应用，并确保设备已登录华为账号且联网。`FunctionOptions.queryText` 可设置初始查询文本。满足版本范围不等于本机 Agent 可用，仍需支持查询及设备验证。
+
+该组件用于拉起已上线的指定智能体面板。本文列出的控制器没有消息流、历史注入或工具调用回传接口，**不能据此认定已满足自有聊天工作区的 Provider 协议**；是否存在其他正式接口仍待核实。
+
+~~无需人工审核（技能发布到自己的智能体即可；仅主入口需审核）~~ → ⚠️ 2026-10-26 撤回无依据的泛化：本次文档未证明该免审核规则，发布与调试须按具体模式核实；端 A2A 已有明确前置，见 F10。
 
 ### F2 意图声明：`@InsightIntentEntry` 装饰器 ⚠️
 
@@ -708,6 +715,54 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 > 执行修改后向用户复述变更内容。
 
 高风险操作（删除整篇）**单独设意图**，并在智能体侧配置执行前向用户确认。
+
+---
+
+### F9 端 A2A：小艺调用 App 已有 Agent ✅ 文档明确 / ❓ 模型 Provider 未核实
+
+[端 A2A 入门](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/device-a2a-quickstart-0000002733266338) 面向已有可对话 Agent 的 HarmonyOS App；[应用内接入](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/agent2agent-inapp-0000002735604994) 要求实现 `AgentExtensionAbility`，用 `module.json5` 注册 `type: "agent"`，metadata 的 `ohos.extension.agent` 指向 `resources/base/profile/agent_config.json`。`AgentUIExtensionAbility` 仅自定义卡片按需实现。
+
+文档列出 `onCreate → onConnect → onAuth（可选）→ onData → onDisconnect → onDestroy`，通过 `AgentHostProxy` 接收 JSON 并以 `sendData` 回传结果。这里是**小艺客户端 → App Agent → 返回小艺**的通信方向；它不证明小艺给 App 提供可调用的模型推理、动态系统提示词或结构化工具规划能力。自有聊天工作区能否接小艺模型仍为 ❓。
+
+### F10 端 A2A 平台与调试前置 ✅ 文档明确 / ❓ 资格与豁免未核实
+
+[官方入门](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/device-a2a-quickstart-0000002733266338) 列出 App 已开发并在 AGC 发布、已有可对话 Agent、设备支持 API 24 及以上等前置。配置需关联应用、填写真实 agent Ability 名称、导入 AgentCard、保存并发布真机测试；当前华为账号需进入有效测试用户组。端 Agent 不支持云侧调试，错误排查使用 DevEco HiLog 查看 `onData` 与回包结果。
+
+这证明有测试白名单路径，不证明个人开发者自动获准、不用审核或未发布 App 可跳过前置。可选端插件权限也不能直接等同于本应用沙箱笔记读写权限或正文不出端保证。
+
+### F11 端 A2A 的 API 24 / 26 边界 ⚠️ 必须分开实现依据
+
+[端 A2A 入门](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/device-a2a-quickstart-0000002733266338) 称支持 API 24 及以上，并区分手工创建和 26.0.0 IDE 创建方式。但它链接的 [A2A ArkTS helper](https://developer.huawei.com/consumer/cn/doc/doccenter-references/api/hmaf-a2a-protocol) 将 `createA2AServer`、`Server`、`RequestContext` 等明确标为 **26.0.0 起始**，不能直接用于 API ≤24 的关键路径。
+
+不能由 helper 的版本反推 API 24 不支持端 A2A。API 24 的完整收发/鉴权与报文处理路径仍需逐项核对 SDK / 协议和最小编译，并在 API 24 / XT2 联调。本次未执行这些验证；A2A 任务状态与流式能力也不提供后台常驻资格，继续见 N 组。
+
+---
+
+### F12 单 Agent + 端插件可形成托管工具链 ✅ 文档明确 / ⚠️ 项目未联调
+
+[单 Agent 文档](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/llm-mode-gent-0000002762843985) 支持角色指令、插件参数和输出融合生成。[端插件实现](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/corresponding-code-implementation-of-plug-in-tools-0000002733287138) 明确通过 `InsightIntentExecutor` 的前台/后台执行方法接收工具名称、参数并返回结果。故意图框架可以承载模型调用的本地笔记工具，不能笼统认定“意图框架不能用”。这种托管链路的提示词/调度和对话由平台承担，不自动满足 App 自有 Agent loop 协议。
+
+[云工作流指南](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/workflow-mode-agent-base-0000002765293833) 适合固定流程，开放式对话与自主工具调用优先单 Agent。两者文档均未给出本项目自有原生聊天页主动调用模型的完整协议。端插件的后台执行不等于 App 的任意后台常驻，继续遵守 N 组。
+
+### F13 自有聊天页调用小艺模型：❓ 未找到完整公开协议
+
+来源与 SDK 核对范围见 [同日续查 S8–S13](qa/2026-10-26_小艺开放平台文档对照_API24.md)。[技术支持工程师发布的问题集](https://developer.huawei.com/consumer/cn/forum/topic/0207212692647212464) 对“无对话框获取输出”推荐端插件，并强调智能体必须已运行；其原始答复是被官方栏目收录的社区答复，不是模型 SDK 契约。
+
+结合本机 API 26 `AgentFrameworkKit` 的组件与 A2A 服务端导出，本次未找到完整覆盖历史、动态提示词、流式输出、结构化工具请求/结果回传的 App 主动调用小艺模型协议。**未找到不等于证明绝对不支持**；工作台内部 run 请求、平台界面资源和端插件回调不能替代公开 Provider 契约。模型接入选型须以实际协议为依据，不据此修改排期或发送笔记。
+
+### F14 Data Augmentation Kit 端侧问答不覆盖 XT2 phone ✅ 文档设备约束
+
+[官方简介的设备约束表](https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/dataaugmentation-introduction) 明确：RAG 和端侧问答模型支持 PC/2in1，智慧数据检索才包含 Phone；该 Kit 暂不支持模拟器。因此不能把这里的端侧问答模型作为 XT2 的已支持模型 Provider。此结论只针对该 Kit 的对应能力，不泛化成所有手机端侧模型都不支持。
+
+---
+
+### F15 端插件按名称/版本映射到本地意图执行器 ✅ 文档与 SDK 明确 / ⚠️ 项目未接线
+
+[官方端侧配置文档](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/plugin-to-terminal--configuration-0000002733447010) 要求创建 `entry/src/main/resources/base/profile/insight_intent.json`，`insightIntents` 数组内的 `intentName` / `intentVersion` 与平台工具名/版本完全一致；`srcEntry` 指向执行器，`uiAbility.ability` 指向对应 UIAbility，后台工具示例配置 `executeMode: ["background"]`。这里的配置式 `insightIntents` 不等于 F2 待核实的装饰器 `insightIntentsSrcEntry`。
+
+本机 API 26 SDK 的 `@ohos.app.ability.InsightIntentExecutor.d.ts` 声明 `onExecuteInUIAbilityBackgroundMode(name, param)` 自 API 11 支持，返回 `ExecuteResult` 或其 Promise。冷启动由 UIAbility `onCreate` 进入执行回调，不要求创建 window；热启动直接进入回调。这是 SDK 声明，不是本项目设备运行证据。
+
+2026-10-26 静态检查：仓库尚无上述插件意图配置、执行器或 FunctionComponent 平台入口接线。平台代码页提供的是 ai_plugin JSON / OpenAPI YAML 声明，不是 App 的完整 ArkTS 业务实现；六项草稿配置不等于已经能读写设备笔记。核对来源见 [当日归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。
 
 ---
 

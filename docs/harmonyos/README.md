@@ -104,6 +104,8 @@ docs/harmonyos/
 | 日期 | 主题 | 问题数 | 存档 | 关键产出 |
 | --- | --- | --- | --- | --- |
 | 2026-10-26 | Share Kit / 本地 ZIP 官方文档与 SDK 声明核对（非新问答） | 3 组 API 边界 | [核对归档](qa/2026-10-26_ShareKit与本地打包_API24.md) | 结论见 [api_notes O1–O3](api_notes.md)：API 起始版本满足 API 24；接收授权生命周期及 Markdown 长图输出仍待验证 |
+| 2026-10-26 | 小艺开放平台官方文档对照（非新问答） | 两份待问清单对照 | [核对归档](qa/2026-10-26_小艺开放平台文档对照_API24.md) | 结论见 [api_notes F1 / F9–F11](api_notes.md)：入口、通信方向、配置前置和版本边界；保留未解问题，不恢复实施排期 |
+| 2026-10-26 | 小艺自绘按钮拉起答复与官方 API 对照（社区答复） | 3 项入口问题 | [核对归档](qa/2026-10-26_小艺自绘按钮拉起答复_API24.md) | 结论见 [api_notes F1](api_notes.md)：两条答复对“无自绘按钮启动 API”结论一致；Stack 叠放是未验证建议，原按钮接线仍无公开依据 |
 | 2026-10-22 | **API 24/26 AtomicFile.startWrite 用法与失败处理** | 5 | [答复归档](qa/2026-10-22_API24_AtomicFile_startWrite_用法答复.md)；[提问原文](prompts/2026-10-21_API24_AtomicFile_startWrite_正确用法与失败处理.md) | 写入成功用 `finishWrite()`、失败用 `failWrite()`；答复称同步异常的 catch 也调用同一实例 `failWrite()`；不显式关闭返回流。13900020 通用含义已明确，具体触发原因仍未知，详见 [`api_notes.md`](api_notes.md) |
 | 2026-10-17 | 首批核实（三折叠 / Web 组件 / 文件存储 / HAR 发布 / 权限网络） | 20 | [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md) | 三折叠恒为 `phone`；折痕接口只返回**单个 Rect**；`FoldSplitContainer` **已否决**；原子写改用 `AtomicFile`；令牌存 `@kit.AssetStoreKit`；`runJavaScript` 长度未记载 → 大数据走 `WebMessagePort`；前台 clone/push 无需额外权限 |
 | 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
@@ -112,6 +114,10 @@ docs/harmonyos/
 | 2026-10-17 | **折痕接口追问**（带五态真机实测反馈） | 5 | [`qa/2026-10-17_折痕接口追问_实测反馈.md`](qa/2026-10-17_折痕接口追问_实测反馈.md) | 官方**无法定性**「两条中心相同 + 五态不变」，倾向系统侧实现限制；**`getLiveCreaseRegion()`（@since 20）为首选替代**（⚠️ 官方示例写错：是 `Display` **实例方法**，须 `getDefaultDisplaySync().getLiveCreaseRegion()`）；**断点方案 = 官方最佳实践**（印证 A3）；「左/右两屏 FS 都=1」**符合预期**（印证 A1）；无设备级常量；`FoldSplitContainer` 措辞修正为「三分栏语义 + 预设比例都不匹配」 |
 
 > **2026-10-25 下一轮待问**：[API 24 小艺本地操作接入核实](prompts/2026-10-25_API24_小艺本地笔记操作接入核实.md)。v0.6 因用户尚未开通能力暂缓，材料保留，待确认开通后恢复核实；本地操作仍不依赖 Web/git；F-A/F-B 等仍未确认，不代表本轮已获得官方支持。
+
+> **2026-10-26 核对增量**：上段 F-A 的接口存在性已补证据，后续不重复提问；其余缺口按 [本次归档](qa/2026-10-26_小艺开放平台文档对照_API24.md) 收敛。F-C 的历史优先级不再适用于首期无 Web/git 的本地操作；真实接入排期保持暂缓。
+
+> **同日续查**：单 Agent、云工作流、端插件、无面板数据交互答复和端侧问答设备限制已补入同一归档；正式结论见 [api_notes F12–F14](api_notes.md)。研究使用当前 API 26 SDK，未调整 API 24 兼容下限；平台托管工具链和自有聊天页模型 Provider 仍须区分。
 
 ### 仍未解决（下次提问优先从这里挑）
 
@@ -124,7 +130,7 @@ docs/harmonyos/
 | B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |
 | B-8 | 列表组件（List / ListItem 一类）在 **API 24** 是否提供**侧滑出操作区**的官方能力？接口名与用法是什么？ | 文件树左滑操作条怎么实现（自己写手势还是用官方能力） | ❓ 待问（**别凭记忆编接口名**） |
 | **F-C** | **后台意图执行（`UI_ABILITY_BACKGROUND`）时，同一 UIAbility 里已挂载的 ArkWeb 组件是否可用？能否跨 Web 边界调用页面内 JS？** | **直接决定「AI 改笔记」里 git commit 走哪条出路**（见 `api_notes.md` F6） | ❓ **待问（AI 功能的第一优先问题）** |
-| F-A | `@kit.AgentFrameworkKit` 的 `FunctionComponent` / `FunctionController` 在 **API 24** 是否存在？最低支持版本？ | App 内对话入口能不能做 | ❓ 待问（未附文档链接，必须复核） |
+| F-A | `@kit.AgentFrameworkKit` 的 `FunctionComponent` / `FunctionController` 在 **API 24** 是否存在？最低支持版本？ | App 内对话入口能不能做 | ✅ 文档已核实，见 [F1](api_notes.md)；自有消息/工具 Provider 与设备表现仍待验，不重复问接口存在性 |
 | F-B | `@InsightIntentEntry` 在 API 24 是否可用？`insight_intent.json` 的 `insightIntentsSrcEntry` **是否支持数组**？文件放哪个目录？ | 意图声明能不能写 | ❓ 待问（官方自己也不确定） |
 | F-D | 自建智能体 + 技能（MCP / 插件）发布到**自己智能体**的确切流程，是否真免人工审核 | AI 功能上架路径与周期 | ❓ 待问 |
 | F-E | 端侧意图是否需要额外权限声明？真机怎么调试意图调用？ | 落码前准备 | ❓ 待问 |
