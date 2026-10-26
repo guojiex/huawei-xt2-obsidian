@@ -1296,7 +1296,8 @@ F4 仍为未充分核实的平台生命周期记录；不能据此声称支持�
 ### O1 ✅ 系统分享面板与 App 文件 URI 可用；授权生命周期待运行验证
 
 - `@kit.ShareKit` / `systemShare.SharedData` / `systemShare.ShareController` 在本机声明标注 since 4.1.0(11)；`ShareController.show(UIAbilityContext, options)` 返回 `Promise<void>`。官方文本、视频示例分别使用文本内容和 `fileUri.getUriFromPath(path)` 构造分享数据并调起面板，见[分享文本](https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/share-utd-text)与[分享视频](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides-V5/share-utd-video-V5)。
-- `SharedRecord.uri` 明确支持 App file URI 与 user file URI；`fileUri.getUriFromPath(path)` 的 SDK 声明 since 9。官方资料没有明确说明接收方临时授权何时授予、何时失效，也没有说明 `show()` 的 Promise 何时 resolve；需以系统面板正常交接和目标应用读取结果验证。
+- `ShareController.on/off('dismiss', callback)` 标注 since 4.1.0(11)，用于监听分享面板关闭；`on/off('shareCompleted', callback)` 标注 since 5.1.0(18)，在用户完成分享时返回所用分享渠道，可用于统计。两者均不证明目标应用已读取文件或接收人已收到内容。
+- `SharedRecord.uri` 明确支持 App file URI 与 user file URI；`fileUri.getUriFromPath(path)` 的 SDK 声明 since 9。官方资料没有明确说明接收方临时授权何时授予、何时失效，`dismiss` / `shareCompleted` 与授权撤销或临时文件安全清理的关系，也没有说明 `show()` 的 Promise 何时 resolve；需以系统面板正常交接和目标应用读取结果验证。
 - `@ohos.fileshare` 的持久化授权接口标注 since 11，且需要 `ohos.permission.FILE_ACCESS_PERSIST`。该持久化能力不等同于 Share Kit 单次交接授权；不得在未确认需求前额外申请持久化授权。
 
 ### O2 ✅ 沙箱文件 / 目录压缩 API 可用于 API 24；目录结构以产物检查验收
