@@ -46,6 +46,8 @@ import {
   isSingleLandscapeWindow, navigationWidth
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
+import { FullTextSearchService } from '../model/FullTextSearchService';
+import { FullTextSearchResult } from '../model/SearchIndex';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -866,6 +868,7 @@ struct Index {
       const reg: VaultRegistry = VaultRegistry.get();
       const target: VaultEntry | undefined = this.vaults.find((v: VaultEntry): boolean => v.id === id);
       reg.remove(id);
+      FullTextSearchService.discardVault(id);
       // 移除 Git 库：令牌随库清理（只删本地副本与凭据，远端仓库不受影响）
       if (target !== undefined && target.type === 'git') {
         GitCredentialStore.removeToken(id);
@@ -1384,6 +1387,11 @@ struct Index {
         QuickSwitcher({
           filePaths: this.quickSwitchFiles,
           recentPaths: this.recentOpenPaths,
+          searchContent: (query: string,
+            onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> => {
+            return FullTextSearchService.search(
+              VaultRegistry.get(), this.currentVaultId, query, onProgress);
+          },
           onSelect: (relPath: string): void => {
             this.selectQuickSwitchFile(relPath);
           },

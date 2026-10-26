@@ -1,17 +1,109 @@
 /** v0.4 当前库文件名搜索与最近打开面板。 */
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { FullTextSearchResult } from '../model/SearchIndex';
 
 @Component
 export struct QuickSwitcher {
   @Prop filePaths: string[] = [];
   @Prop recentPaths: string[] = [];
+  searchContent: (query: string, onProgress: (completed: number, total: number) => void) =>
+    Promise<FullTextSearchResult[]> = (query: string,
+      onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> =>
+    Promise.resolve([]);
   onSelect: (relPath: string) => void = (relPath: string) => {};
   onClose: () => void = () => {};
   @State query: string = '';
+  @State searchMode: string = 'name';
+  @State fullTextResults: FullTextSearchResult[] = [];
+  @State fullTextSearching: boolean = false;
+  @State fullTextProgress: string = '';
+  @State fullTextError: string = '';
   @State boxLeft: number = 0;
   @State boxTop: number = 0;
   @State boxWidth: number = 0;
   @State boxHeight: number = 0;
+  private searchTimer: number = -1;
+  private searchRequestId: number = 0;
+
+  aboutToDisappear(): void {
+    if (this.searchTimer !== -1) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = -1;
+    }
+    this.searchRequestId++;
+  }
+
+  private setSearchMode(mode: string): void {
+    if (this.searchMode === mode) {
+      return;
+    }
+    this.searchMode = mode;
+    this.searchRequestId++;
+    this.fullTextResults = [];
+    this.fullTextError = '';
+    this.fullTextSearching = false;
+    if (mode === 'content') {
+      this.scheduleFullTextSearch();
+    } else if (this.searchTimer !== -1) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = -1;
+    }
+  }
+
+  private onQueryChanged(value: string): void {
+    this.query = value;
+    if (this.searchMode === 'content') {
+      this.scheduleFullTextSearch();
+    }
+  }
+
+  private scheduleFullTextSearch(): void {
+    if (this.searchTimer !== -1) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = -1;
+    }
+    this.searchRequestId++;
+    const requestId: number = this.searchRequestId;
+    const query: string = this.query.trim();
+    this.fullTextResults = [];
+    this.fullTextError = '';
+    this.fullTextProgress = '';
+    if (query.length === 0) {
+      this.fullTextSearching = false;
+      return;
+    }
+    this.fullTextSearching = true;
+    this.fullTextProgress = '正在搜索…';
+    this.searchTimer = setTimeout((): void => {
+      this.searchTimer = -1;
+      void this.runFullTextSearch(query, requestId);
+    }, 180);
+  }
+
+  private async runFullTextSearch(query: string, requestId: number): Promise<void> {
+    try {
+      const results: FullTextSearchResult[] = await this.searchContent(query,
+        (completed: number, total: number): void => {
+          if (requestId !== this.searchRequestId) {
+            return;
+          }
+          this.fullTextProgress = total > 0
+            ? '正在建立索引 ' + completed.toString() + ' / ' + total.toString()
+            : '正在搜索…';
+        });
+      if (requestId === this.searchRequestId) {
+        this.fullTextResults = results;
+        this.fullTextSearching = false;
+        this.fullTextProgress = '';
+      }
+    } catch (error) {
+      if (requestId === this.searchRequestId) {
+        this.fullTextSearching = false;
+        this.fullTextProgress = '';
+        this.fullTextError = (error as Error).message;
+      }
+    }
+  }
 
   // 外层 Row 横向铺满屏幕，左右空白的点击会落到 Row；按实测卡片区域区分内外点击。
   private updateBoxBounds(area: Area): void {
@@ -84,7 +176,10 @@ export struct QuickSwitcher {
 
       Row() {
         Column({ space: Space.s2 }) {
-          TextInput({ text: this.query, placeholder: '输入笔记名称或部分路径' })
+          TextInput({
+            text: this.query,
+            placeholder: this.searchMode === 'name' ? '搜索当前库的笔记文件名' : '搜索当前库的 Markdown 正文'
+          })
             .fontSize(FontSize.body1)
             .fontColor($r('app.color.text_primary'))
             .height(Size.touch)
@@ -93,22 +188,132 @@ export struct QuickSwitcher {
             .borderRadius(Radius.control)
             .backgroundColor($r('app.color.bg_secondary'))
             .onChange((value: string) => {
-              this.query = value;
+              this.onQueryChanged(value);
             })
 
+          Row({ space: Space.s2 }) {
+            Text('文件名 · v0.4')
+              .fontSize(FontSize.caption)
+              .fontColor(this.searchMode === 'name' ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+              .fontWeight(this.searchMode === 'name' ? FontWeight.Medium : FontWeight.Normal)
+              .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              .borderRadius(Radius.control)
+              .backgroundColor(this.searchMode === 'name' ? $r('app.color.bg_secondary') : Color.Transparent)
+              .onClick(() => {
+                this.setSearchMode('name');
+              })
+            Text('正文 · v1.1')
+              .fontSize(FontSize.caption)
+              .fontColor(this.searchMode === 'content' ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+              .fontWeight(this.searchMode === 'content' ? FontWeight.Medium : FontWeight.Normal)
+              .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              .borderRadius(Radius.control)
+              .backgroundColor(this.searchMode === 'content' ? $r('app.color.bg_secondary') : Color.Transparent)
+              .onClick(() => {
+                this.setSearchMode('content');
+              })
+          }
+          .width('100%')
+
           Row() {
-            Text(this.query.trim().length === 0 ? '最近打开' : '搜索结果')
+            Text(this.searchMode === 'name'
+              ? (this.query.trim().length === 0 ? '最近打开' : '搜索结果')
+              : (this.query.trim().length === 0 ? '正文搜索' : '匹配笔记'))
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_secondary'))
             Blank()
-            Text(this.visiblePaths().length.toString())
+            Text((this.searchMode === 'name'
+              ? this.visiblePaths().length : this.fullTextResults.length).toString())
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_tertiary'))
           }
           .width('100%')
           .padding({ top: Space.s3, bottom: Space.s1 })
 
-          if (this.visiblePaths().length === 0) {
+          if (this.searchMode === 'content' && this.fullTextSearching) {
+            Column() {
+              Text(this.fullTextProgress)
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else if (this.searchMode === 'content' && this.fullTextError.length > 0) {
+            Column() {
+              Text(this.fullTextError)
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else if (this.searchMode === 'content' && this.query.trim().length === 0) {
+            Column() {
+              Text(this.filePaths.length === 0 ? '当前库还没有 Markdown 笔记' : '输入关键词搜索当前库正文')
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else if (this.searchMode === 'content' && this.fullTextResults.length === 0) {
+            Column() {
+              Text(this.filePaths.length === 0 ? '当前库还没有 Markdown 笔记' : '当前库没有匹配结果')
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
+          } else if (this.searchMode === 'content') {
+            List({ space: Space.s1 }) {
+              ForEach(this.fullTextResults, (result: FullTextSearchResult) => {
+                ListItem() {
+                  Column({ space: Space.s1 }) {
+                    Row() {
+                      Column({ space: Space.s1 }) {
+                        Text(this.fileName(result.path))
+                          .fontSize(FontSize.body1)
+                          .fontColor($r('app.color.text_primary'))
+                          .maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        Text(result.path)
+                          .fontSize(FontSize.caption)
+                          .fontColor($r('app.color.text_tertiary'))
+                          .maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      }
+                      .alignItems(HorizontalAlign.Start)
+                      .layoutWeight(1)
+                      Text('打开')
+                        .fontSize(FontSize.body3)
+                        .fontColor($r('app.color.brand'))
+                    }
+                    Text(result.excerpt)
+                      .width('100%')
+                      .fontSize(FontSize.caption)
+                      .fontColor($r('app.color.text_secondary'))
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                  .borderRadius(Radius.control)
+                  .backgroundColor($r('app.color.bg_card'))
+                  .onClick(() => {
+                    this.onSelect(result.path);
+                  })
+                }
+              }, (result: FullTextSearchResult) => result.path)
+            }
+            .layoutWeight(1)
+            .width('100%')
+          } else if (this.visiblePaths().length === 0) {
             Column() {
               Text(this.query.trim().length > 0
                 ? '没有匹配的笔记' : (this.filePaths.length === 0 ? '当前库还没有 Markdown 笔记' : '还没有最近打开的笔记'))

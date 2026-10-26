@@ -19,6 +19,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { VaultRegistry } from './VaultRegistry';
+import { FullTextSearchService } from './FullTextSearchService';
 
 const TRASH_DOMAIN: number = 0x0005;
 const TRASH_TAG: string = 'TrashService';
@@ -77,6 +78,7 @@ export class TrashService {
     const src: string = registry.absoluteIn(vaultId, relPath);
     const dst: string = registry.absoluteInTrash(vaultId, target);
     fileIo.renameSync(src, dst);
+    FullTextSearchService.noteRemoved(vaultId, relPath, false);
     hilog.info(TRASH_DOMAIN, TRASH_TAG, '移入回收站 %{public}s → %{public}s', relPath, target);
     return target;
   }
@@ -118,6 +120,7 @@ export class TrashService {
     const src: string = registry.absoluteInTrash(vaultId, trashRel);
     const dst: string = registry.absoluteIn(vaultId, trashRel);
     fileIo.renameSync(src, dst);
+    FullTextSearchService.noteRestored(registry, vaultId, trashRel);
     hilog.info(TRASH_DOMAIN, TRASH_TAG, '恢复 %{public}s', trashRel);
     return trashRel;
   }

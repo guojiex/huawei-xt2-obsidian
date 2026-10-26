@@ -20,6 +20,7 @@ import { sanitizeVaultName } from './Vault';
 import { VaultRegistry } from './VaultRegistry';
 import { FileTree } from './FileTree';
 import { NoteDraftService } from './NoteDraftService';
+import { FullTextSearchService } from './FullTextSearchService';
 
 const NOTE_DOMAIN: number = 0x0003;
 const NOTE_TAG: string = 'NoteService';
@@ -116,6 +117,7 @@ export class NoteService {
     } finally {
       fileIo.closeSync(file);
     }
+    FullTextSearchService.noteSaved(vaultId, target, '');
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', target);
     return target;
   }
@@ -165,6 +167,8 @@ export class NoteService {
     const abs: string = registry.absoluteIn(vaultId, relPath);
     const job: Promise<void> = NoteService.saveChain.then((): Promise<void> => {
       return NoteService.runAtomicSave(abs, relPath, content);
+    }).then((): void => {
+      FullTextSearchService.noteSaved(vaultId, relPath, content);
     });
     // 链上吞掉 rejection：单个保存失败不能断掉后续保存的排队
     NoteService.saveChain = job.then((): void => {
@@ -367,6 +371,7 @@ export class NoteService {
     } else {
       fileIo.unlinkSync(abs);
     }
+    FullTextSearchService.noteRemoved(vaultId, relPath, stat.isDirectory());
     await NoteDraftService.discardPath(registry, vaultId, relPath);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除 %{public}s', relPath);
   }
@@ -417,6 +422,7 @@ export class NoteService {
     } catch (error) {
       // 新路径草稿已先写好；下次启动会清理正式源文件已不存在的旧草稿。
     }
+    FullTextSearchService.pathRetargeted(vaultId, relPath, unique, isDir);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '重命名 %{public}s → %{public}s', relPath, unique);
     return unique;
   }
@@ -469,6 +475,7 @@ export class NoteService {
     } catch (error) {
       // 新路径草稿已先写好；下次启动会清理正式源文件已不存在的旧草稿。
     }
+    FullTextSearchService.pathRetargeted(vaultId, relPath, unique, isDir);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '移动 %{public}s → %{public}s', relPath, unique);
     return unique;
   }
