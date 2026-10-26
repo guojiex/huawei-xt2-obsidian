@@ -5,7 +5,7 @@
   {"id":"query","inputs":["查找阅读笔记"],"reply":"已按文件名查找当前库中的阅读笔记。","tools":[{"name":"QueryNotes","query":"读"}]},
   {"id":"read","inputs":["读取引用笔记"],"reply":"以下是执行器实际读取的内容，不是固定伪造的笔记正文。","tools":[{"name":"ReadNote"}]},
   {"id":"append","inputs":["把这轮结论追加到笔记"],"reply":"已将这段演示结论追加到第一篇明确引用的笔记，详情与撤销见结果卡。","tools":[{"name":"ReadNote"},{"name":"AppendNote","text":"阅读后的自检：用自己的话解释，再举一个例子和一个反例。"}]},
-  {"id":"create","inputs":["新建读书小结"],"reply":"已创建原创演示读书小结，实际文件名和撤销见结果卡。","tools":[{"name":"CreateNote","text":"# 读书小结\n\n用自己的话解释概念，用具体例子检查理解，用反例检查边界。\n"}]},
+  {"id":"create","inputs":["新建读书小结"],"reply":"已创建原创演示读书小结，实际文件名和撤销见结果卡。","tools":[{"name":"CreateNote","path":"读书对话沉淀.md","text":"# 读书小结\n\n用自己的话解释概念，用具体例子检查理解，用反例检查边界。\n"}]},
   {"id":"edit","inputs":["把熟悉改成理解"],"reply":"已执行这条固定演示的唯一原文替换。","tools":[{"name":"ReadNote"},{"name":"EditNote","anchor":"熟悉不等于理解","text":"熟悉只是起点，理解还需要例子与反例"}]},
   {"id":"undo","inputs":["撤销上次修改"],"reply":"已撤销最近一次笔记操作，对话记录保留。","tools":[{"name":"UndoLastEdit"}]}
 ]
