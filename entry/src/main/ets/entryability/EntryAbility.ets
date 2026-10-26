@@ -46,9 +46,9 @@ export default class EntryAbility extends UIAbility {
       // loadContent 前补算初始断点：windowSizeChange 只在尺寸变化时触发，
       // 首帧等不到事件，不补算会出现「初始 sm、展开后才正确」的一帧错档。
       const props: window.WindowProperties = this.mainWindow.getWindowProperties();
-      this.applyBreakpoint(px2vp(props.windowRect.width));
+      this.applyWindowSize(props.windowRect.width, props.windowRect.height);
       this.mainWindow.on('windowSizeChange', (size: window.Size) => {
-        this.applyBreakpoint(px2vp(size.width));
+        this.applyWindowSize(size.width, size.height);
       });
     } catch (error) {
       const err = error as BusinessError;
@@ -125,6 +125,12 @@ export default class EntryAbility extends UIAbility {
     // 折痕只落 px，换算放到页面侧（UI 上下文）——官方提醒 px2vp 依赖窗口像素密度，
     // 在 UIAbility 早期生命周期换算可能异常
     AppStorage.setOrCreate('creasePx', this.collectCreasePx());
+  }
+
+  /** 同一窗口尺寸事件同时更新宽高，布局依据当前窗口，不假设设备折痕坐标。 */
+  private applyWindowSize(widthPx: number, heightPx: number): void {
+    this.applyBreakpoint(px2vp(widthPx));
+    AppStorage.setOrCreate('windowHeightVp', px2vp(heightPx));
   }
 
   /**

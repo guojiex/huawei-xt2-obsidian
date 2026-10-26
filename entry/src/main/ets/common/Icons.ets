@@ -39,10 +39,13 @@ const P_PLUS: string = 'M12 5v14M5 12h14';
 const P_RENAME: string = 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4';
 const P_MOVE: string = 'M4 12h16M9 7l-5 5 5 5M15 7l5 5-5 5';
 const P_TRASH: string = 'M4 7h16M10 4h4M6 7l1 14h10l1-14M10 11v6M14 11v6';
+const P_ARCHIVE: string = 'M3 5h18v4H3zM5 9v10h14V9M9 13h6';
 // 同步（refresh）：3/4 圆环 + 箭头（纯折线逼近，无弧线）
 const P_SYNC: string = 'M20 12L17.66 17.66L12 20L6.34 17.66L4 12L6.34 6.34L12 4M12 4L15.5 5.5M12 4L13.5 8.5';
 // 设置（sliders）：三条横线 + 三个竖向旋钮（纯直线）
 const P_SETTINGS: string = 'M4 7h16M12 4v6M4 12h14M8 9v6M4 17h18M14 14v6';
+const P_MESSAGE: string = 'M4 4h16v12H9l-5 4zM8 8h8M8 12h5';
+const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 
 /** 名字 → 路径；未知名字返回空串（画不出东西，但不会崩） */
 function pathOf(name: string): string {
@@ -72,10 +75,16 @@ function pathOf(name: string): string {
     return P_MOVE;
   } else if (name === 'trash') {
     return P_TRASH;
+  } else if (name === 'archive') {
+    return P_ARCHIVE;
   } else if (name === 'sync') {
     return P_SYNC;
   } else if (name === 'settings') {
     return P_SETTINGS;
+  } else if (name === 'message') {
+    return P_MESSAGE;
+  } else if (name === 'more') {
+    return P_MORE;
   }
   return '';
 }

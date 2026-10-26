@@ -37,8 +37,15 @@ import { RecentOpenStore } from '../model/RecentOpenStore';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import { PreviewWebView, PreviewBridge } from '../components/PreviewWebView';
+import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
+import { SplitLayoutStore } from '../model/SplitLayoutStore';
+import {
+  DEFAULT_CONTENT_RATIO, clampContentRatio, clampNavigationWidth,
+  isSingleLandscapeWindow, navigationWidth
+} from '../model/PaneLayout';
+import { SplitHandle } from '../components/SplitHandle';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -48,15 +55,18 @@ interface PaneHeadParam {
   title: string;
 }
 
-/** 状态栏形态标签（与原型 FORMS 一致） */
-function formLabelOf(bp: string): string {
+/** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
+function formLabelOf(bp: string, widthVp: number, heightVp: number): string {
+  if (isSingleLandscapeWindow(widthVp, heightVp)) {
+    return '单屏横向窗口';
+  }
   if (bp === Breakpoint.SM) {
-    return '外屏合起';
+    return '窄窗口';
   }
   if (bp === Breakpoint.MD) {
-    return '展开双屏';
+    return '中宽窗口';
   }
-  return '三屏展开';
+  return '宽窗口';
 }
 
 /** 单屏态分段控件的单个按钮 */
@@ -79,6 +89,8 @@ struct Index {
   @StorageProp('breakpoint') @Watch('onBreakpointChanged') breakpoint: string = Breakpoint.SM;
   /** 窗口宽度 vp（状态栏显示用） */
   @StorageProp('windowWidthVp') windowWidthVp: number = 0;
+  /** 窗口当前高度 vp，Agent 矮窗口输入区按真实尺寸收敛。 */
+  @StorageProp('windowHeightVp') windowHeightVp: number = 0;
   /** display.getFoldStatus() 读数（调试用，-1 = 没取到；api_notes A1） */
   @StorageProp('foldStatus') foldStatus: number = -1;
   /**
@@ -103,6 +115,22 @@ struct Index {
   @State sidebarCollapsed: boolean = false;
   /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
   @State topView: string = 'note';
+  @State vaultManagerReturnView: string = 'note';
+  @State settingsReturnView: string = 'note';
+  @State settingsCategory: string = 'general';
+  @State settingsDetail: boolean = false;
+  @State agentTitle: string = '新对话';
+  @State agentHamburgerSeq: number = 0;
+  @State agentRenameSeq: number = 0;
+  @State moreMenuOpen: boolean = false;
+  @State navigationRatio: number = -1;
+  @State contentRatio: number = DEFAULT_CONTENT_RATIO;
+  @State sidebarProgress: number = 1;
+  @State drawerProgress: number = 0;
+  @State splitDragging: boolean = false;
+  private splitLayoutStore: SplitLayoutStore | null = null;
+  private navigationDragStart: number = 0;
+  private contentDragStart: number = 0;
   /**
    * 当前打开文件的**库内相对路径**（如 `docs/架构.md`）。
    *
@@ -157,6 +185,7 @@ struct Index {
    */
   private saveTimer: number = -1;
   private lastSavedText: string = '';
+  @State editorDirty: boolean = false;
 
   /**
    * M3 预览（3.1/3.2）：marked 渲染器跑在 PreviewWebView 里，本页做「编辑 → 预览」联动。
@@ -183,6 +212,110 @@ struct Index {
   aboutToAppear(): void {
     this.refreshFromRegistry();
     this.ensureRecentOpenStore();
+    this.ensureSplitLayoutStore();
+    const splitState = (this.splitLayoutStore as SplitLayoutStore).load();
+    this.navigationRatio = splitState.navigationRatio;
+    this.contentRatio = splitState.contentRatio;
+  }
+
+  private ensureSplitLayoutStore(): void {
+    if (this.splitLayoutStore === null) {
+      this.splitLayoutStore = new SplitLayoutStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private isSingleLandscape(): boolean {
+    return isSingleLandscapeWindow(this.windowWidthVp, this.windowHeightVp);
+  }
+
+  private isSingleScreenLayout(): boolean {
+    return this.breakpoint === Breakpoint.SM || this.isSingleLandscape();
+  }
+
+  private noteNavigationWidth(): number {
+    const splitters: number = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape() ? 2 : 1;
+    const contentPanes: number = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape() ? 2 : 1;
+    return navigationWidth(this.windowWidthVp, this.navigationRatio, contentPanes, splitters);
+  }
+
+  private agentNavigationWidth(): number {
+    return navigationWidth(this.windowWidthVp, this.navigationRatio, 1, 1);
+  }
+
+  private noteContentWidth(): number {
+    const navWidth: number = this.noteNavigationWidth() * this.sidebarProgress;
+    const navHandleWidth: number = this.breakpoint === Breakpoint.LG || this.isSingleLandscape()
+      ? Space.s4 * this.sidebarProgress : 0;
+    const contentHandleWidth: number = this.breakpoint === Breakpoint.LG ? Space.s4 : 0;
+    return Math.max(0, this.windowWidthVp - navWidth - navHandleWidth - contentHandleWidth);
+  }
+
+  private noteContentRatio(): number {
+    return clampContentRatio(this.contentRatio, this.noteContentWidth());
+  }
+
+  private startNavigationDrag(agent: boolean): void {
+    this.splitDragging = true;
+    this.navigationDragStart = agent ? this.agentNavigationWidth() : this.noteNavigationWidth();
+  }
+
+  private updateNavigationDrag(offsetX: number, agent: boolean): void {
+    if (this.windowWidthVp <= 0 || (!agent && this.sidebarCollapsed)) {
+      return;
+    }
+    const panes: number = !agent && this.breakpoint === Breakpoint.LG ? 2 : 1;
+    const splitters: number = !agent && this.breakpoint === Breakpoint.LG ? 2 : 1;
+    const width: number = clampNavigationWidth(
+      this.navigationDragStart + offsetX, this.windowWidthVp, panes, splitters);
+    this.navigationRatio = width / this.windowWidthVp;
+  }
+
+  private startContentDrag(): void {
+    const width: number = this.noteContentWidth();
+    this.contentDragStart = Math.max(0, width) * this.noteContentRatio();
+  }
+
+  private updateContentDrag(offsetX: number): void {
+    const width: number = this.noteContentWidth();
+    this.contentRatio = clampContentRatio((this.contentDragStart + offsetX) / Math.max(1, width), width);
+  }
+
+  private endSplitDrag(): void {
+    this.splitDragging = false;
+    this.saveSplitLayout();
+  }
+
+  private saveSplitLayout(): void {
+    this.ensureSplitLayoutStore();
+    (this.splitLayoutStore as SplitLayoutStore).save({
+      navigationRatio: this.navigationRatio,
+      contentRatio: this.contentRatio
+    });
+  }
+
+  private resetSplitLayout(): void {
+    this.navigationRatio = -1;
+    this.contentRatio = DEFAULT_CONTENT_RATIO;
+    this.ensureSplitLayoutStore();
+    (this.splitLayoutStore as SplitLayoutStore).reset();
+  }
+
+  private setSidebarCollapsed(collapsed: boolean): void {
+    this.sidebarCollapsed = collapsed;
+    this.sidebarProgress = collapsed ? 0 : 1;
+  }
+
+  private setDrawerOpen(open: boolean): void {
+    this.drawerOpen = open;
+    this.drawerProgress = open ? 1 : 0;
+  }
+
+  private closeNoteNavigation(): void {
+    if (this.breakpoint === Breakpoint.SM) {
+      this.setDrawerOpen(false);
+    } else if (this.isSingleLandscape()) {
+      this.setSidebarCollapsed(true);
+    }
   }
 
   private ensureRecentOpenStore(): void {
@@ -213,10 +346,11 @@ struct Index {
 
   /** 档位变化：抽屉语义只在 sm；切到 md/lg 强制收抽屉，防止回 sm 时意外打开 */
   private onBreakpointChanged(): void {
+    this.moreMenuOpen = false;
     if (this.breakpoint !== Breakpoint.SM) {
-      this.drawerOpen = false;
+      this.setDrawerOpen(false);
     }
-    if (this.currentFilePath.length > 0) {
+    if (this.topView === 'note' && this.currentFilePath.length > 0) {
       void this.refreshAfterBreakpointChange(this.currentFilePath, this.currentVaultId);
     }
   }
@@ -240,16 +374,20 @@ struct Index {
    * 都不是则返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
+    if (this.moreMenuOpen) {
+      this.moreMenuOpen = false;
+      return true;
+    }
     if (this.quickSwitchOpen) {
       this.quickSwitchOpen = false;
       return true;
     }
     if (this.drawerOpen) {
-      this.drawerOpen = false;
+      this.setDrawerOpen(false);
       return true;
     }
     if (this.topView !== 'note') {
-      this.topView = this.topView === 'history' ? 'settings' : 'note';
+      this.leaveSecondaryView();
       return true;
     }
     if (this.previewBridge.closeImageViewer()) {
@@ -264,7 +402,70 @@ struct Index {
 
   /** 页面隐藏（应用退到后台）：立刻落盘，兜底「杀进程重进内容还在」（2.3） */
   onPageHide(): void {
-    void this.flushSave();
+    if (this.topView === 'note') {
+      void this.flushSave();
+    }
+  }
+
+  private leaveSecondaryView(): void {
+    if (this.topView === 'history') {
+      this.topView = 'settings';
+    } else if (this.topView === 'settings') {
+      if (this.isSingleScreenLayout() && this.settingsDetail) {
+        this.settingsDetail = false;
+        return;
+      }
+      this.topView = this.settingsReturnView;
+    } else if (this.topView === 'vaults') {
+      this.topView = this.vaultManagerReturnView;
+    } else {
+      this.topView = 'note';
+    }
+  }
+
+  private async openVaultManager(fromView: string): Promise<void> {
+    if (fromView === 'note' && !await this.flushSave()) {
+      return;
+    }
+    this.vaultManagerReturnView = fromView;
+    this.topView = 'vaults';
+  }
+
+  private async openAgent(): Promise<void> {
+    if (this.topView !== 'note' || !await this.flushSave()) {
+      return;
+    }
+    this.moreMenuOpen = false;
+    this.topView = 'agent';
+  }
+
+  private openSettings(fromView: string, initialTab: string): void {
+    this.moreMenuOpen = false;
+    this.settingsReturnView = fromView;
+    this.settingsCategory = initialTab;
+    this.settingsDetail = this.isSingleScreenLayout() && fromView === 'agent';
+    this.topView = 'settings';
+  }
+
+  private openAgentNote(path: string): void {
+    void this.loadAgentNote(path);
+  }
+
+  private async loadAgentNote(path: string): Promise<void> {
+    const vaultId: string = this.currentVaultId;
+    const text: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, path);
+    if (text === null) {
+      promptAction.showToast({ message: '打开笔记失败' });
+      return;
+    }
+    // Agent 页打开期间 Web 编辑器已卸载；不能 flush 它持有的旧内容覆盖 Agent 写入。
+    this.currentFilePath = path;
+    this.lastSavedText = text;
+    this.editorDirty = false;
+    this.topView = 'note';
+    await this.readAndPush(path);
+    this.ensureRecentOpenStore();
+    (this.recentOpenStore as RecentOpenStore).record(vaultId, path);
   }
 
   /**
@@ -331,7 +532,15 @@ struct Index {
     if (this.topView === 'history') {
       return '版本记录';
     }
-    return this.topView === 'agent' ? 'Agent 对话' : '设置';
+    if (this.topView === 'agent') {
+      return this.agentTitle;
+    }
+    if (this.topView === 'settings' && this.isSingleScreenLayout() && this.settingsDetail) {
+      return this.settingsCategory === 'general' ? '通用' :
+        this.settingsCategory === 'agent' ? 'Agent' :
+        this.settingsCategory === 'data' ? '数据' : '关于';
+    }
+    return '设置';
   }
 
   /**
@@ -341,8 +550,11 @@ struct Index {
    */
   private onSelectFile(relPath: string): void {
     hilog.info(DOMAIN, TAG, '选中文件 %{public}s', relPath);
-    if (this.breakpoint === Breakpoint.SM) {
-      this.drawerOpen = false;
+    if (this.isSingleScreenLayout()) {
+      this.setDrawerOpen(false);
+      if (this.isSingleLandscape()) {
+        this.setSidebarCollapsed(true);
+      }
       this.smMode = 'edit';
     }
     void this.loadFile(relPath);
@@ -382,6 +594,7 @@ struct Index {
       }
     }
     this.lastSavedText = text;
+    this.editorDirty = false;
     await this.editorBridge.setContent(text);
     // M3 联动：文件加载后预览同步本页内容 + 告知笔记目录（相对图片引用的解析基准）
     this.previewBridge.resetDocument();
@@ -456,11 +669,17 @@ struct Index {
       return false;
     }
     if (text === this.lastSavedText) {
+      if (path === this.currentFilePath && vaultId === this.currentVaultId) {
+        this.editorDirty = false;
+      }
       return true;
     }
     try {
       await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text);
       this.lastSavedText = text;
+      if (path === this.currentFilePath && vaultId === this.currentVaultId) {
+        this.editorDirty = false;
+      }
       return true;
     } catch (error) {
       this.toastRegistryError('保存失败', error);
@@ -541,7 +760,8 @@ struct Index {
 
   /** 状态栏右侧读数：形态 · vp · FS:N（有折痕时追加 · C:x,y，px 在此换算成 vp） */
   private statusRightText(): string {
-    let s: string = formLabelOf(this.breakpoint) + ' · ' + Math.round(this.windowWidthVp) + 'vp' +
+    let s: string = formLabelOf(this.breakpoint, this.windowWidthVp, this.windowHeightVp) +
+      ' · ' + Math.round(this.windowWidthVp) + '×' + Math.round(this.windowHeightVp) + 'vp' +
       ' · FS:' + this.foldStatus;
     if (this.creasePx !== '-') {
       s += ' · C:' + this.creaseVpText();
@@ -560,12 +780,18 @@ struct Index {
     return out;
   }
 
-  /** 顶栏汉堡：sm = 抽屉开关；md/lg = 收起/唤回切换（toggle） */
+  /** 顶栏汉堡只控制当前工作区侧栏；工作区切换由旁边的独立图标处理。 */
   private onHamburger(): void {
+    if (this.topView === 'agent') {
+      this.agentHamburgerSeq++;
+      return;
+    }
     if (this.breakpoint === Breakpoint.SM) {
-      this.drawerOpen = !this.drawerOpen;
+      this.setDrawerOpen(!this.drawerOpen);
+    } else if (this.isSingleLandscape()) {
+      this.setSidebarCollapsed(!this.sidebarCollapsed);
     } else {
-      this.sidebarCollapsed = !this.sidebarCollapsed;
+      this.setSidebarCollapsed(!this.sidebarCollapsed);
     }
   }
 
@@ -580,9 +806,10 @@ struct Index {
       if (id === this.currentVaultId) {
         return;
       }
+      const editorMounted: boolean = this.topView === 'note';
       const previousVaultId: string = this.currentVaultId;
       const previousPath: string = this.currentFilePath;
-      if (!await this.flushSave(previousPath, previousVaultId)) {
+      if (editorMounted && !await this.flushSave(previousPath, previousVaultId)) {
         return;
       }
       VaultRegistry.get().setCurrent(id);
@@ -593,7 +820,9 @@ struct Index {
       this.recentOpenPaths = [];
       this.drawerOpen = false;
       this.smMode = 'edit';
-      await this.readAndPush('');
+      if (editorMounted) {
+        await this.readAndPush('');
+      }
     } catch (error) {
       this.toastRegistryError('切换库失败', error);
     }
@@ -1092,7 +1321,7 @@ struct Index {
     .backgroundColor($r('app.color.bg_secondary'))
   }
 
-  /** 栏头：宽屏显示标题；sm 隐去标题，只保留编辑/预览切换。⚠️ $$ 按引用传参：按值传参时
+  /** 栏头：单屏显示编辑/预览切换，sm 隐去标题。⚠️ $$ 按引用传参：按值传参时
    *  @Builder 不随状态刷新（实测：编辑区标题永远停在「源模式」，currentFilePath 变了不动） */
   @Builder
   PaneHead($$: PaneHeadParam) {
@@ -1103,7 +1332,7 @@ struct Index {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
-      if (this.breakpoint === Breakpoint.SM) {
+      if (this.isSingleScreenLayout()) {
         this.SegToggle()
       }
     }
@@ -1130,6 +1359,10 @@ struct Index {
             ReleaseHistoryView()
           } else if (this.topView === 'settings') {
             this.SettingsPane()
+          } else if (this.topView === 'agent') {
+            this.AgentPane()
+          } else if (this.isSingleLandscape()) {
+            this.SingleLandscapeContent()
           } else if (this.breakpoint === Breakpoint.SM) {
             this.SmContent()
           } else {
@@ -1222,7 +1455,7 @@ struct Index {
   @Builder
   Appbar() {
     Row() {
-      if (this.topView !== 'note') {
+      if (this.topView !== 'note' && this.topView !== 'agent') {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
         this.IconButton('back', $r('app.color.text_primary'), (): void => {
           this.leaveSecondaryView();
@@ -1231,6 +1464,16 @@ struct Index {
         this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
           this.onHamburger();
         })
+        if (this.topView === 'note') {
+          this.IconButton('message', $r('app.color.text_secondary'), (): void => {
+            void this.openAgent();
+          })
+        } else {
+          this.IconButton('doc', $r('app.color.text_secondary'), (): void => {
+            this.moreMenuOpen = false;
+            this.topView = 'note';
+          })
+        }
       }
       // 笔记视图标题随形态与目录栏显隐变化；次级视图固定显示页面名。
       Text(this.appBarTitle())
@@ -1241,17 +1484,29 @@ struct Index {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ left: Space.s2, right: Space.s2 })
+        .gesture(TapGesture({ count: 2 }).onAction((): void => {
+          if (this.topView === 'agent') {
+            this.agentRenameSeq++;
+          }
+        }))
       if (this.topView === 'note') {
-        // 设计稿顶栏右上 = 快切、同步、设置图标
+        // 单屏保留搜索与更多；分享、同步、设置移入更多菜单。
         this.IconButton('search', $r('app.color.text_secondary'), (): void => {
           this.openQuickSwitcher();
         })
-        this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
-          // 同步（Git 同步是 v0.3 能力）：跳独立「导入仓库」页
-          router.pushUrl({ url: 'pages/SyncPage' });
-        })
+        if (this.breakpoint === Breakpoint.SM) {
+          this.MoreMenuButton()
+        } else {
+          this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
+            router.pushUrl({ url: 'pages/SyncPage' });
+          })
+          this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
+            this.openSettings('note', 'general');
+          })
+        }
+      } else if (this.topView === 'agent') {
         this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
-          this.topView = 'settings';
+          this.openSettings('agent', 'agent');
         })
       }
     }
@@ -1263,203 +1518,287 @@ struct Index {
     .backgroundColor($r('app.color.bg_card'))
   }
 
-  /**
-   * sm：单栏内容（编辑 / 预览二选一）+ 抽屉侧栏覆盖层（Stack，汉堡开关，点遮罩关闭）。
-   * ⚠️ 编辑器**常驻**（Visibility 切换而非 if 卸载，同 git 容器的常驻铁律精神）：
-   * 卸载会销毁 Web 实例 —— 800ms 防抖窗口内未落盘的编辑、光标、撤销栈全丢。
-   * 预览是纯展示，可随用随挂（内容由 pushPreview 保证一致）。
-   */
+  @Builder
+  MoreMenuButton() {
+    Row() {
+      Icon('more', 22, $r('app.color.text_secondary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(Radius.icon)
+    .onClick(() => { this.moreMenuOpen = !this.moreMenuOpen; })
+    .bindPopup(this.moreMenuOpen, {
+      builder: this.MoreMenu(),
+      placement: Placement.BottomRight,
+      enableArrow: false,
+      offset: { x: 0, y: Space.s2 },
+      mask: false,
+      autoCancel: true,
+      popupColor: Color.Transparent,
+      onWillDismiss: (action: DismissPopupAction): void => {
+        action.dismiss();
+        this.moreMenuOpen = false;
+      }
+    })
+  }
+
+  @Builder
+  MoreMenu() {
+    Column() {
+      Row() {
+        Text('分享笔记')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .onClick(() => {
+        this.moreMenuOpen = false;
+        promptAction.showToast({ message: '分享功能将在 v0.8 提供' });
+      })
+      Row() {
+        Text('同步')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .onClick(() => {
+        this.moreMenuOpen = false;
+        router.pushUrl({ url: 'pages/SyncPage' });
+      })
+      Row() {
+        Text('设置')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .onClick(() => {
+        this.openSettings('note', 'general');
+      })
+    }
+    .width(Size.sidebarW)
+    .padding(Space.s2)
+    .borderRadius(Radius.menu)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+    .shadow({ radius: 30, color: '#2E000000', offsetX: 0, offsetY: 10 })
+  }
+
+  @Builder
+  NoteNavigation(asDrawer: boolean) {
+    VaultSidebar({
+      asDrawer: asDrawer,
+      compact: this.isSingleLandscape(),
+      vaults: this.vaults,
+      currentVaultId: this.currentVaultId,
+      noteCount: this.currentVaultNoteCount,
+      currentFilePath: this.currentFilePath,
+      refreshSeq: this.treeSeq,
+      revealPath: this.revealPath,
+      onCollapse: (): void => { this.setSidebarCollapsed(true); },
+      onSwitchVault: (id: string): void => {
+        this.closeNoteNavigation();
+        this.doSwitchVault(id);
+      },
+      onManageVaults: (): void => {
+        this.closeNoteNavigation();
+        void this.openVaultManager('note');
+      },
+      onImportGit: (): void => {
+        this.closeNoteNavigation();
+        router.pushUrl({ url: 'pages/SyncPage' });
+      },
+      onCreateNote: (): void => {
+        this.closeNoteNavigation();
+        this.openCreateNoteDialog();
+      },
+      onCreateInDir: (dirRelPath: string): void => {
+        this.closeNoteNavigation();
+        this.openCreateNoteDialog(dirRelPath);
+      },
+      onRenamePath: (relPath: string, isDir: boolean): void => {
+        this.closeNoteNavigation();
+        this.openRenamePathDialog(relPath, isDir);
+      },
+      onMovePath: (relPath: string, isDir: boolean): void => {
+        this.closeNoteNavigation();
+        this.openMovePathDialog(relPath, isDir);
+      },
+      onDeletePath: (relPath: string, isDir: boolean): void => {
+        this.closeNoteNavigation();
+        this.openDeletePathDialog(relPath, isDir);
+      },
+      onSwipeDelete: (relPath: string): void => {
+        this.closeNoteNavigation();
+        void this.doTrashFile(relPath);
+      },
+      onOpenTrash: (): void => {
+        this.closeNoteNavigation();
+        this.topView = 'trash';
+      },
+      onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); }
+    })
+  }
+
+  /** Single-screen note navigation pushes the full-width editor/preview rail. */
   @Builder
   SmContent() {
-    Stack({ alignContent: Alignment.Start }) {
+    Row() {
       Column() {
-        this.EditorPane(false)
+        this.NoteNavigation(true)
+      }
+      .width(Size.drawerW)
+      .height('100%')
+      .margin({ left: -Size.drawerW * (1 - this.drawerProgress) })
+      .enabled(this.drawerOpen)
+      .animation({ duration: Motion.durBase, curve: Curve.EaseInOut })
+
+      Stack({ alignContent: Alignment.Start }) {
+        Column() {
+          this.EditorPane(false)
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
+        if (this.smMode === 'preview') {
+          this.PreviewPane()
+        }
       }
       .width('100%')
       .height('100%')
-      .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
-      if (this.smMode === 'preview') {
-        this.PreviewPane()
+      .translate({ x: Size.drawerW * this.drawerProgress })
+      .animation({ duration: Motion.durBase, curve: Curve.EaseInOut })
+    }
+    .width('100%')
+    .height('100%')
+    .clip(true)
+  }
+
+  @Builder
+  SingleLandscapeContent() {
+    Row() {
+      Column() {
+        this.NoteNavigation(false)
       }
-      if (this.drawerOpen) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor($r('app.color.mask'))
-          .onClick(() => {
-            this.drawerOpen = false;
-          })
-        VaultSidebar({
-          asDrawer: true,
-          vaults: this.vaults,
-          currentVaultId: this.currentVaultId,
-          noteCount: this.currentVaultNoteCount,
-          currentFilePath: this.currentFilePath,
-          refreshSeq: this.treeSeq,
-          revealPath: this.revealPath,
-          onSwitchVault: (id: string): void => {
-            this.doSwitchVault(id);
-          },
-          onManageVaults: (): void => {
-            this.drawerOpen = false;
-            this.topView = 'vaults';
-          },
-          onImportGit: (): void => {
-            // 原型 vault-menu 的「导入 Git 仓库…」→ 独立「导入仓库」页（Git 同步属 v0.3）
-            this.drawerOpen = false;
-            router.pushUrl({ url: 'pages/SyncPage' });
-          },
-          onCreateNote: (): void => {
-            this.drawerOpen = false;
-            this.openCreateNoteDialog();
-          },
-          onCreateInDir: (dirRelPath: string): void => {
-            // 抽屉形态先关抽屉：对话框是窗口级弹层，但抽屉+遮罩叠着容易误触
-            this.drawerOpen = false;
-            this.openCreateNoteDialog(dirRelPath);
-          },
-          onRenamePath: (relPath: string, isDir: boolean): void => {
-            this.drawerOpen = false;
-            this.openRenamePathDialog(relPath, isDir);
-          },
-          onMovePath: (relPath: string, isDir: boolean): void => {
-            this.drawerOpen = false;
-            this.openMovePathDialog(relPath, isDir);
-          },
-          onDeletePath: (relPath: string, isDir: boolean): void => {
-            this.drawerOpen = false;
-            this.openDeletePathDialog(relPath, isDir);
-          },
-          onSwipeDelete: (relPath: string): void => {
-            this.drawerOpen = false;
-            void this.doTrashFile(relPath);
-          },
-          onOpenTrash: (): void => {
-            this.drawerOpen = false;
-            this.topView = 'trash';
-          },
-          onSelectFile: (relPath: string): void => {
-            this.onSelectFile(relPath);
-          }
-        })
-          .width(Size.drawerW)
-          .height('100%')
+      .width(this.noteNavigationWidth())
+      .height('100%')
+      .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
+      .enabled(!this.sidebarCollapsed)
+      .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+
+      SplitHandle({
+        dragStarted: (): void => { this.startNavigationDrag(false); },
+        dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
+        dragEnded: (): void => { this.endSplitDrag(); },
+        resetRequested: (): void => { this.resetSplitLayout(); }
+      })
+        .width(Space.s4 * this.sidebarProgress)
+        .enabled(!this.sidebarCollapsed)
+        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+
+      Stack({ alignContent: Alignment.Start }) {
+        Column() {
+          this.EditorPane(false)
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
+        if (this.smMode === 'preview') {
+          this.PreviewPane()
+        }
       }
+      .width(Math.max(0, this.windowWidthVp - this.noteNavigationWidth() * this.sidebarProgress -
+        Space.s4 * this.sidebarProgress))
+      .height('100%')
+      .clip(true)
     }
     .width('100%')
     .height('100%')
   }
 
-  /** md/lg：Row 等分（layoutWeight 精确等分，栏边界压折痕） */
+  /** md/lg：物理双屏保留等屏布局，lg 使用共享导航和内容分隔条。 */
   @Builder
   WideContent() {
     Row() {
-      if (!this.sidebarCollapsed) {
-        // 侧栏（嵌入形态）
+      if (this.breakpoint === Breakpoint.MD) {
         Column() {
-          VaultSidebar({
-            asDrawer: false,
-            vaults: this.vaults,
-            currentVaultId: this.currentVaultId,
-            noteCount: this.currentVaultNoteCount,
-            currentFilePath: this.currentFilePath,
-            refreshSeq: this.treeSeq,
-            revealPath: this.revealPath,
-            onCollapse: (): void => {
-              this.sidebarCollapsed = true;
-            },
-            onSwitchVault: (id: string): void => {
-              this.doSwitchVault(id);
-            },
-            onManageVaults: (): void => {
-              this.topView = 'vaults';
-            },
-            onImportGit: (): void => {
-              // 原型 vault-menu 的「导入 Git 仓库…」→ 独立「导入仓库」页（Git 同步属 v0.3）
-              router.pushUrl({ url: 'pages/SyncPage' });
-            },
-            onCreateNote: (): void => {
-              this.openCreateNoteDialog();
-            },
-            onCreateInDir: (dirRelPath: string): void => {
-              this.openCreateNoteDialog(dirRelPath);
-            },
-            onRenamePath: (relPath: string, isDir: boolean): void => {
-              this.openRenamePathDialog(relPath, isDir);
-            },
-            onMovePath: (relPath: string, isDir: boolean): void => {
-              this.openMovePathDialog(relPath, isDir);
-            },
-            onDeletePath: (relPath: string, isDir: boolean): void => {
-              this.openDeletePathDialog(relPath, isDir);
-            },
-            onSwipeDelete: (relPath: string): void => {
-              void this.doTrashFile(relPath);
-            },
-            onOpenTrash: (): void => {
-              this.topView = 'trash';
-            },
-            onSelectFile: (relPath: string): void => {
-              this.onSelectFile(relPath);
-            }
-          })
+          this.NoteNavigation(false)
         }
-        .layoutWeight(1)
+        .width('50%')
         .height('100%')
-        .border({ width: { right: 1 }, color: $r('app.color.line') })
+        .margin({ left: -this.windowWidthVp * 0.5 * (1 - this.sidebarProgress) })
+        .enabled(!this.sidebarCollapsed)
+        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
 
-        if (this.breakpoint === Breakpoint.MD) {
-          // md 展开：侧栏 | 编辑 各 50%（预览隐藏，原型 applyForm）
-          Column() {
-            this.EditorPane(false)
-          }
-          .layoutWeight(1)
-          .height('100%')
-        } else {
-          // lg 展开：侧栏 | 编辑 | 预览 各 1/3
-          Column() {
-            this.EditorPane(false)
-          }
-          .layoutWeight(1)
-          .height('100%')
-          Column() {
-            this.PreviewPane()
-          }
-          .layoutWeight(1)
-          .height('100%')
-          .border({ width: { left: 1 }, color: $r('app.color.line') })
-        }
-      } else if (this.breakpoint === Breakpoint.MD) {
-        // md 收起：腾出的那一栏给预览 → 编辑 | 预览 各一整块屏
         Column() {
           this.EditorPane(false)
         }
-        .layoutWeight(1)
+        .width(this.windowWidthVp * 0.5)
         .height('100%')
+
         Column() {
           this.PreviewPane()
         }
-        .layoutWeight(1)
+        .width(this.windowWidthVp * 0.5 * (1 - this.sidebarProgress))
         .height('100%')
-        .border({ width: { left: 1 }, color: $r('app.color.line') })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
       } else {
-        // lg 收起：编辑扩 2/3 —— 会跨越第一条折痕，这是物理限制非 bug；
-        // 编辑区内渲染红色虚线折痕警示 + 预览 1/3
         Column() {
-          this.EditorPane(true)
+          this.NoteNavigation(false)
         }
-        .layoutWeight(2)
+        .width(this.noteNavigationWidth())
         .height('100%')
+        .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
+        .enabled(!this.sidebarCollapsed)
+        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+
+        SplitHandle({
+          dragStarted: (): void => { this.startNavigationDrag(false); },
+          dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
+          dragEnded: (): void => { this.endSplitDrag(); },
+          resetRequested: (): void => { this.resetSplitLayout(); }
+        })
+          .width(Space.s4 * this.sidebarProgress)
+          .enabled(!this.sidebarCollapsed)
+          .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+
+        Column() {
+          this.EditorPane(false)
+        }
+        .width(this.noteContentWidth() * this.noteContentRatio())
+        .height('100%')
+        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+
+        SplitHandle({
+          dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
+          dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
+          dragEnded: (): void => { this.endSplitDrag(); },
+          resetRequested: (): void => { this.resetSplitLayout(); }
+        })
+          .width(Space.s4)
+          .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+
         Column() {
           this.PreviewPane()
         }
-        .layoutWeight(1)
+        .width(this.noteContentWidth() * (1 - this.noteContentRatio()))
         .height('100%')
         .border({ width: { left: 1 }, color: $r('app.color.line') })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
       }
     }
     .width('100%')
     .height('100%')
+    .clip(true)
   }
 
   /**
@@ -1480,6 +1819,7 @@ struct Index {
           bridge: this.editorBridge,
           onChange: (len: number): void => {
             // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
+            this.editorDirty = true;
             if (len !== this.editorLen) {
               this.editorLen = len;
             }
@@ -1568,8 +1908,50 @@ struct Index {
   SettingsPane() {
     SettingsView({
       breakpoint: this.breakpoint,
+      singleScreenLayout: this.isSingleScreenLayout(),
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
       currentVaultId: this.currentVaultId,
-      onOpenHistory: (): void => { this.topView = 'history'; }
+      vaults: this.vaults,
+      selectedCategory: this.settingsCategory,
+      showCategoryList: this.isSingleScreenLayout() && !this.settingsDetail,
+      onSelectCategory: (category: string): void => {
+        this.settingsCategory = category;
+        if (this.isSingleScreenLayout()) {
+          this.settingsDetail = true;
+        }
+      },
+      onOpenHistory: (): void => { this.topView = 'history'; },
+      onResetSplit: (): void => { this.resetSplitLayout(); }
+    })
+  }
+
+  @Builder
+  AgentPane() {
+    AgentWorkspace({
+      vaultId: this.currentVaultId,
+      vaults: this.vaults,
+      noteCount: this.currentVaultNoteCount,
+      breakpoint: this.breakpoint,
+      singleLandscape: this.isSingleLandscape(),
+      navToggleSeq: this.agentHamburgerSeq,
+      renameCurrentSeq: this.agentRenameSeq,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      navigationWidthVp: this.agentNavigationWidth(),
+      splitDragging: this.splitDragging,
+      refreshSeq: this.treeSeq,
+      onTitleChanged: (title: string): void => { this.agentTitle = title; },
+      isUnsaved: (path: string): boolean => path === this.currentFilePath && this.editorDirty,
+      onOpenNote: (path: string): void => { this.openAgentNote(path); },
+      onSwitchVault: (id: string): void => { this.doSwitchVault(id); },
+      onManageVaults: (): void => { void this.openVaultManager('agent'); },
+      onImportGit: (): void => { router.pushUrl({ url: 'pages/SyncPage' }); },
+      onNavigationDragStart: (): void => { this.startNavigationDrag(true); },
+      onNavigationDrag: (offsetX: number): void => { this.updateNavigationDrag(offsetX, true); },
+      onSplitDragEnd: (): void => { this.endSplitDrag(); },
+      onSplitReset: (): void => { this.resetSplitLayout(); },
+      onNotesChanged: (): void => { this.refreshFileTree(); }
     })
   }
 

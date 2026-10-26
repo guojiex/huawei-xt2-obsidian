@@ -23,9 +23,11 @@ import { FileTree, ExpandStore, TreeNode } from '../model/FileTree';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { unifiedDataChannel } from '@kit.ArkData';
 
 const TREE_DOMAIN: number = 0x0002;
 const TREE_TAG: string = 'FileTreeView';
+const NOTE_REF_MIME: string = 'application/x-yaoshi-note-ref';
 
 @Component
 export struct FileTreeView {
@@ -37,8 +39,12 @@ export struct FileTreeView {
   @Prop @Watch('onRefresh') refreshSeq: number = 0;
   /** 需要展开到可见的目标路径（父级新建笔记后置位） */
   @Prop @Watch('onReveal') revealPath: string = '';
+  /** Agent 引用模式：沿用同一棵树，但隐藏改名/移动/删除动作。 */
+  @Prop referenceOnly: boolean = false;
   /** 选中文件回调（把相对路径交给父级，由父级决定编辑器要做什么） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
+  /** 仅引用模式下点击文件行；不打开编辑器。 */
+  onReferenceNote: (relPath: string, vaultId: string) => void = (relPath: string, vaultId: string) => {};
   /**
    * 「在这个目录下新建笔记」回调（目录行尾的 + 按钮，2026-10-18 方案 A 用户拍板）。
    * 为什么要有它：侧栏底部「新建笔记」永远从根开始，想在目录里建必须手打完整路径；
@@ -275,6 +281,25 @@ export struct FileTreeView {
               }
               Icon(n.isDir ? 'folder' : 'doc', 18,
                 n.isDir ? $r('app.color.brand') : $r('app.color.text_secondary'))
+            if (this.referenceOnly && !n.isDir) {
+              Column() {
+                Text(n.name)
+                  .fontSize(FontSize.body2)
+                  .fontColor($r('app.color.text_primary'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%')
+                Text(n.relPath)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_tertiary'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .width('100%')
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+              .justifyContent(FlexAlign.Center)
+            } else {
               Text(n.name)
                 .fontSize(FontSize.body2)
                 .fontWeight(n.isDir ? FontWeight.Medium : FontWeight.Normal)
@@ -283,6 +308,7 @@ export struct FileTreeView {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
+            }
             }
             .layoutWeight(1)
             .height(Size.itemH)
@@ -297,7 +323,7 @@ export struct FileTreeView {
             // 塞进去的按钮也会变透明、点不动。放在外层行下，它自己吃点击，
             // 不会误触展开/折叠（ArkUI 点击不向祖先行冒泡，最近的处理者消费）。
             // （目录行尾的常驻 trash 按钮已移进 1.6 左滑操作条，见下方 swipeAction）
-            if (n.isDir) {
+            if (n.isDir && !this.referenceOnly) {
               Row() {
                 Icon('plus', 16, $r('app.color.text_secondary'))
               }
@@ -313,7 +339,7 @@ export struct FileTreeView {
             }
           }
           .width('100%')
-          .height(Size.itemH)
+          .height(this.referenceOnly && !n.isDir ? Size.itemH + Space.s2 : Size.itemH)
           .alignItems(VerticalAlign.Center)
           .borderRadius(Radius.control)
           .backgroundColor(!n.isDir && n.relPath === this.currentFilePath
@@ -325,6 +351,8 @@ export struct FileTreeView {
           .onClick(() => {
             if (n.isDir) {
               this.toggleDir(n.relPath);
+            } else if (this.referenceOnly) {
+              this.onReferenceNote(n.relPath, this.vaultId);
             } else if (n.relPath !== this.currentFilePath) {
               this.onSelectFile(n.relPath);
             }
@@ -332,6 +360,14 @@ export struct FileTreeView {
         }
         .width('100%')
         .padding({ right: Space.s2 })
+        .draggable(this.referenceOnly && !n.isDir)
+        .onDragStart((event: DragEvent): DragItemInfo => {
+          const payload: string = JSON.stringify({ vaultId: this.vaultId, path: n.relPath });
+          const record: unifiedDataChannel.UnifiedRecord =
+            new unifiedDataChannel.UnifiedRecord(NOTE_REF_MIME, payload);
+          event.setData(new unifiedDataChannel.UnifiedData(record));
+          return { extraInfo: '当前知识库笔记引用' };
+        })
         // 左滑三档（1.6）：ListItem.swipeAction（API 24，list_item.d.ts:563 已核实）。
         // - 轻扫拖出操作条（SwipeBar：重命名 / 移动 / 删除）；
         // - 滑过操作条 + swipeDelExtra 再松手 → onAction（第三档）：
@@ -340,11 +376,13 @@ export struct FileTreeView {
         .swipeAction({
           end: {
             builder: (): void => {
-              this.SwipeBar(n);
+              if (!this.referenceOnly) {
+                this.SwipeBar(n);
+              }
             },
-            actionAreaDistance: Size.swipeDelExtra,
+            actionAreaDistance: this.referenceOnly ? 0 : Size.swipeDelExtra,
             onAction: (): void => {
-              if (!n.isDir) {
+              if (!this.referenceOnly && !n.isDir) {
                 hilog.info(TREE_DOMAIN, TREE_TAG, '滑到底删除：%{public}s', n.relPath);
                 this.onSwipeDelete(n.relPath);
               }

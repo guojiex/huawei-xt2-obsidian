@@ -19,8 +19,12 @@ import { Space, Radius, FontSize, Size } from '../common/Tokens';
 export struct VaultSidebar {
   /** 抽屉形态（sm 覆盖层）：不显示「收起 «」——抽屉关掉即可，无收起语义 */
   asDrawer: boolean = false;
-  /** 库列表（与 Index @State 双向绑定，切库/CRUD 后刷新） */
-  @Link vaults: VaultEntry[];
+  /** 矮窗口压缩库选择器留白并隐藏操作提示，给文件树保留可见高度。 */
+  @Prop compact: boolean = false;
+  /** 库列表（由 Index 单向传入；本组件只显示并发出选择回调） */
+  @Prop vaults: VaultEntry[] = [];
+  /** Agent 笔记区复用库选择器和文件树，但不显示管理笔记的动作。 */
+  @Prop referenceOnly: boolean = false;
   /** 当前库 id（显示名 = 目录名 = id） */
   @Prop currentVaultId: string = '';
   /** 当前库内有效 Markdown 笔记数 */
@@ -61,6 +65,8 @@ export struct VaultSidebar {
   onCreateNote: () => void = () => {};
   /** 选中文件回调（向父级传递，由父级决定编辑器行为） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
+  onReferenceNote: (relPath: string, vaultId: string) => void =
+    (relPath: string, vaultId: string) => {};
   /**
    * 「在该目录下新建笔记」回调（文件树目录行尾的 + 按钮，2026-10-18 方案 A）。
    * 侧栏自身只透传，对话框与消毒逻辑都在父级（Index）—— 与 onCreateNote 同一条链路，
@@ -224,8 +230,16 @@ export struct VaultSidebar {
         }
         // 此时 100% = 外包层的 content 盒 → 刚好放下，不再溢出侧栏
         .width('100%')
-        .padding(Space.s3)
-        .margin({ top: Space.s3, bottom: Space.s2 })
+        .padding({
+          top: this.compact ? Space.s2 : Space.s3,
+          bottom: this.compact ? Space.s2 : Space.s3,
+          left: Space.s3,
+          right: Space.s3
+        })
+        .margin({
+          top: this.compact ? Space.s1 : Space.s3,
+          bottom: this.compact ? Space.s1 : Space.s2
+        })
         .borderRadius(Radius.card)
         .backgroundColor($r('app.color.bg_card'))
         .border({ width: 1, color: $r('app.color.line') })
@@ -263,44 +277,43 @@ export struct VaultSidebar {
       .width('100%')
       .padding({ left: Space.s3, right: Space.s3 })
 
-      // 目录头：标签 + 头部「＋」(vault 根目录新建) + 收起入口
-      // 2026-10-18 用户拍板：头部 ＋ 替代原底部「新建笔记」按钮（与文件夹行尾 ＋ 重复）
-      Row() {
-        Text('目录')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
-        Blank()
-        // 头部「＋」：在 vault 根目录新建（笔记 / 文件夹由对话框类型切换决定），不继承上次目录
+      if (!this.referenceOnly) {
+        // 目录头：标签 + 头部「＋」(vault 根目录新建) + 收起入口
         Row() {
-          Icon('plus', 16, $r('app.color.text_tertiary'))
-        }
-        .height(Size.touch)
-        .width(Size.touch)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .borderRadius(Radius.icon)
-        .onClick(() => {
-          this.onCreateNote();
-        })
-        if (!this.asDrawer) {
-          // 热区补足 48（v0.1 遗留缺陷：原热区约 16vp）
-          Row({ space: Space.s1 }) {
-            Text('收起')
-              .fontSize(FontSize.body3)
-              .fontColor($r('app.color.text_tertiary'))
-            Icon('collapse', 12, $r('app.color.text_tertiary'))
+          Text('目录')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_tertiary'))
+          Blank()
+          Row() {
+            Icon('plus', 16, $r('app.color.text_tertiary'))
           }
           .height(Size.touch)
-          .padding({ left: Space.s2, right: Space.s2 })
-          .borderRadius(Radius.icon)
+          .width(Size.touch)
+          .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
           .onClick(() => {
-            this.onCollapse();
+            this.onCreateNote();
           })
+          if (!this.asDrawer) {
+            Row({ space: Space.s1 }) {
+              Text('收起')
+                .fontSize(FontSize.body3)
+                .fontColor($r('app.color.text_tertiary'))
+              Icon('collapse', 12, $r('app.color.text_tertiary'))
+            }
+            .height(Size.touch)
+            .padding({ left: Space.s2, right: Space.s2 })
+            .borderRadius(Radius.icon)
+            .alignItems(VerticalAlign.Center)
+            .onClick(() => {
+              this.onCollapse();
+            })
+          }
         }
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s2 })
       }
-      .width('100%')
-      .padding({ left: Space.s4, right: Space.s2 })
 
       // 真实文件树（v0.2 M1 需求 1.1–1.5）。
       // 当前文件由父级持有并在两处之间传递：折叠父目录不会连带清掉它（需求 1.4）。
@@ -309,8 +322,12 @@ export struct VaultSidebar {
         currentFilePath: this.currentFilePath,
         refreshSeq: this.refreshSeq,
         revealPath: this.revealPath,
+        referenceOnly: this.referenceOnly,
         onSelectFile: (relPath: string): void => {
           this.onSelectFile(relPath);
+        },
+        onReferenceNote: (relPath: string, vaultId: string): void => {
+          this.onReferenceNote(relPath, vaultId);
         },
         onCreateInDir: (dirRelPath: string): void => {
           this.onCreateInDir(dirRelPath);
@@ -331,46 +348,45 @@ export struct VaultSidebar {
         .layoutWeight(1)
         .width('100%')
 
-      // 左滑提示（原型 .sw-hint）：caption / tertiary / 右对齐，padding 4·16·12
-      Text('← 左滑显示操作；滑到底移入回收站，可撤销')
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_tertiary'))
-        .width('100%')
-        .textAlign(TextAlign.RIGHT)
-        .padding({ top: Space.s1, left: Space.s4, right: Space.s4, bottom: Space.s3 })
+      if (!this.referenceOnly && !this.compact) {
+        Text('← 左滑显示操作；滑到底移入回收站，可撤销')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .textAlign(TextAlign.RIGHT)
+          .padding({ top: Space.s1, left: Space.s4, right: Space.s4, bottom: Space.s3 })
 
-      // 底部（原型 side-foot）：「管理库 / 回收站」两个等宽按钮。
-      // （「新建」已移到目录树头部 ＋，2026-10-18 用户拍板；回收站是 1.8 的视图入口）
-      Row({ space: Space.s2 }) {
-        Text('管理库')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(Size.buttonH)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .backgroundColor($r('app.color.bg_card'))
-          .border({ width: 1, color: $r('app.color.line') })
-          .borderRadius(Radius.control)
-          .onClick(() => {
-            this.onManageVaults();
-          })
-        Text('回收站')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(Size.buttonH)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .backgroundColor($r('app.color.bg_card'))
-          .border({ width: 1, color: $r('app.color.line') })
-          .borderRadius(Radius.control)
-          .onClick(() => {
-            this.onOpenTrash();
-          })
+        Row({ space: Space.s2 }) {
+          Text('管理库')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_primary'))
+            .height(Size.buttonH)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .backgroundColor($r('app.color.bg_card'))
+            .border({ width: 1, color: $r('app.color.line') })
+            .borderRadius(Radius.control)
+            .onClick(() => {
+              this.onManageVaults();
+            })
+          Text('回收站')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_primary'))
+            .height(Size.buttonH)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .backgroundColor($r('app.color.bg_card'))
+            .border({ width: 1, color: $r('app.color.line') })
+            .borderRadius(Radius.control)
+            .onClick(() => {
+              this.onOpenTrash();
+            })
+        }
+        .width('100%')
+        .padding(Space.s3)
+        .border({ width: { top: 1 }, color: $r('app.color.line') })
+        .backgroundColor($r('app.color.bg_card'))
       }
-      .width('100%')
-      .padding(Space.s3)
-      .border({ width: { top: 1 }, color: $r('app.color.line') })
-      .backgroundColor($r('app.color.bg_card'))
     }
     .width('100%')
     .height('100%')
