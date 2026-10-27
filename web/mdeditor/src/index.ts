@@ -47,6 +47,7 @@ interface MdEditorApi {
   /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
   requestContent(reqId: number): void
+  insertText(b64: string): void
   focus(): void
   setTheme(theme: string): void
   setEditable(editable: boolean): void
@@ -283,6 +284,16 @@ const api: MdEditorApi = {
     const b64 = b64encode(v.state.doc.toString())
     console.log('[mdeditor] requestContent id=' + reqId + ' len=' + v.state.doc.length)
     postToArkts({ type: 'event', name: 'content', id: reqId, b64: b64 })
+  },
+
+  insertText(b64: string): void {
+    const v = ensureView()
+    const inserted = b64decode(b64)
+    const selection = v.state.selection.main
+    v.dispatch({
+      changes: { from: selection.from, to: selection.to, insert: inserted },
+      selection: { anchor: selection.from + inserted.length }
+    })
   },
 
   focus(): void {
