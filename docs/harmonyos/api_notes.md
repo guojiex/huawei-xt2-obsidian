@@ -545,7 +545,7 @@ callback?: Function)`，列出的编码为 `utf8`、`gb18030`、`gbk`、`gb2312`
 `Uint8Array` 后仍复现；这是该 API 26 模拟器的运行时证据，不外推至 API 24 运行时或 XT2。HTTP fixture 的
 `info/refs` 与 `git-upload-pack` 均返回 200；clone 未通过。设备、构建与逐轮页面结果见 [v0.3 §6](../releases/v0.3/需求文档.md)，
 需向鸿蒙核实二进制 chunk 的官方调用方式及该日志错误码的含义，见[2026-10-22 提示词](prompts/2026-10-22_API26_AtomicFile_clone_.git_config.md)。
-**2026-10-27 API 26 图片导入复验补充**：在 `Huawei_TripleFold_v05Clean` API 26 arm64 模拟器中，经系统 Photo Picker 选中图片后，应用已完成 Picker 资产查询、源 URI 打开和大小读取；随后对 `AtomicFile` 返回的 `WriteStream` 写入 `Uint8Array` 时回报 `13900020: Invalid argument`，应用调用 `failWrite()`，没有插入 Markdown 引用。随后再次以 UI 捕获到相同分阶段错误提示，编辑器/预览仍为空；故失败可重复。临时验收笔记被移入回收站，未验证附件目录内容。此结果将失败阶段收敛至二进制块写入调用/回调路径，不证明运行时具体原因，也不外推至 API 24 / XT2。详见 [v1.3 §6](../releases/v1.3/需求文档.md#2026-10-27-图片导入-api26-复验)。
+**2026-10-27 API 26 图片导入复验补充**：在 `Huawei_TripleFold_v05Clean` API 26 arm64 模拟器中，经系统 Photo Picker 选中图片后，应用已完成 Picker 资产查询、源 URI 打开和大小读取；随后对 `AtomicFile` 返回的 `WriteStream` 写入 `Uint8Array` 时回报 `13900020: Invalid argument`，应用调用 `failWrite()`，没有插入 Markdown 引用。最初以测试截图复验后，用户补入 JPEG 再次选择并完成，UI 即时捕获同一分阶段错误；故错误不局限于原测试截图，二进制 AtomicFile 写入失败可重复。对应临时笔记均被移入回收站；未验证附件目录内容。此结果将失败阶段收敛至二进制块写入调用/回调路径，不证明运行时具体原因，也不外推至 API 24 / XT2。详见 [v1.3 §6](../releases/v1.3/需求文档.md#2026-10-27-图片导入-api26-复验)。
 
 ### C2 目录遍历 ✅
 
