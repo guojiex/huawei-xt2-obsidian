@@ -14,8 +14,21 @@
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { BridgeCodec } from '../common/BridgeCodec';
+import { FontSize } from '../common/Tokens';
+
+export interface PreviewCaptureResult {
+  scrollHeight: number;
+  viewportHeight: number;
+  viewportWidth: number;
+  scrollTop: number;
+}
+
+interface CaptureWaiter {
+  resolve: (result: PreviewCaptureResult) => void;
+  reject: (error: Error) => void;
+  timerId: number;
+}
 
 const PREVIEW_DOMAIN = 0x0000;
 const PREVIEW_TAG = 'PreviewWebView';
@@ -24,6 +37,7 @@ const PREVIEW_TAG = 'PreviewWebView';
 class PreviewNativeProxy {
   readAssetHandler: (relPath: string) => string = () => '';
   imageViewerChangeHandler: (state: string) => void = () => {};
+  shareCaptureHandler: (payload: string) => void = (payload: string) => {};
   wikiLinkClickHandler: (targetB64: string) => void = (_targetB64: string) => {};
 
   readAsset(relB64: string): string {
@@ -32,6 +46,10 @@ class PreviewNativeProxy {
 
   onImageViewerChange(state: string): void {
     this.imageViewerChangeHandler(state);
+  }
+
+  onShareCaptureResult(payload: string): void {
+    this.shareCaptureHandler(payload);
   }
 
   onWikiLinkClick(targetB64: string): void {
@@ -85,12 +103,25 @@ class PreviewImpl {
     this.enqueue('window.__mdpreview.closeImageViewer()');
   }
 
+  requestShareCaptureMetrics(id: number): void {
+    this.enqueue(`window.__mdpreview.requestShareCaptureMetrics(${id})`);
+  }
+
+  setShareCaptureScrollTop(id: number, top: number): void {
+    this.enqueue(`window.__mdpreview.setShareCaptureScrollTop(${id},${top})`);
+  }
+
+  /** Install a fixed click delegate; link targets travel through the existing JS proxy. */
   watchWikiLinks(): void {
     this.enqueue(`document.addEventListener('click',function(event){var node=event.target;
       while(node&&node!==document){if(node.nodeType===1&&node.classList&&node.classList.contains('wiki-link')){
       var href=node.getAttribute('href')||'';if(href.indexOf('#wikilink:')===0){event.preventDefault();
       var api=window.__arkts;if(api&&typeof api.onWikiLinkClick==='function'){
       api.onWikiLinkClick(href.substring(10));}}return;}node=node.parentElement;}} ,true)`);
+  }
+
+  prepareShareCapturePages(id: number, pageCount: number): void {
+    this.enqueue(`window.__mdpreview.prepareShareCapturePages(${id},${pageCount})`);
   }
 
   private enqueue(script: string): void {
@@ -109,6 +140,8 @@ export class PreviewBridge {
   private hasContent: boolean = false;
   private noteDir: string = '';
   private theme: string = 'light';
+  private captureWaiters: Map<number, CaptureWaiter> = new Map<number, CaptureWaiter>();
+  private nextCaptureId: number = 1;
 
   bind(impl: PreviewImpl): void {
     this.impl = impl;
@@ -153,6 +186,83 @@ export class PreviewBridge {
     this.imageViewerOpen = false;
     this.impl?.resetDocument();
   }
+
+  requestShareCaptureMetrics(): Promise<PreviewCaptureResult> {
+    return this.requestCapture((id: number): void => {
+      this.impl?.requestShareCaptureMetrics(id);
+    });
+  }
+
+  setShareCaptureScrollTop(top: number): Promise<PreviewCaptureResult> {
+    return this.requestCapture((id: number): void => {
+      this.impl?.setShareCaptureScrollTop(id, top);
+    });
+  }
+
+  prepareShareCapturePages(pageCount: number): Promise<PreviewCaptureResult> {
+    return this.requestCapture((id: number): void => {
+      this.impl?.prepareShareCapturePages(id, pageCount);
+    });
+  }
+
+  cancelShareCaptureRequests(message: string): void {
+    this.captureWaiters.forEach((waiter: CaptureWaiter): void => {
+      clearTimeout(waiter.timerId);
+      waiter.reject(new Error(message));
+    });
+    this.captureWaiters.clear();
+  }
+
+  handleShareCaptureResult(payload: string): void {
+    let result: Record<string, string | number>;
+    try {
+      result = JSON.parse(payload) as Record<string, string | number>;
+    } catch (error) {
+      return;
+    }
+    const id: number = result['id'] as number;
+    const waiter: CaptureWaiter | undefined = this.captureWaiters.get(id);
+    if (waiter === undefined) {
+      return;
+    }
+    clearTimeout(waiter.timerId);
+    this.captureWaiters.delete(id);
+    const errorText: string = (result['error'] as string) ?? '';
+    if (errorText.length > 0) {
+      waiter.reject(new Error(errorText));
+      return;
+    }
+    waiter.resolve({
+      scrollHeight: result['scrollHeight'] as number,
+      viewportHeight: result['viewportHeight'] as number,
+      viewportWidth: result['viewportWidth'] as number,
+      scrollTop: result['scrollTop'] as number
+    });
+  }
+
+  private requestCapture(send: (id: number) => void): Promise<PreviewCaptureResult> {
+    const currentId: number = this.nextCaptureId;
+    this.nextCaptureId++;
+    return new Promise<PreviewCaptureResult>((resolve: (result: PreviewCaptureResult) => void,
+      reject: (error: Error) => void): void => {
+      if (this.impl === undefined) {
+        reject(new Error('分享预览尚未就绪'));
+        return;
+      }
+      const timerId: number = setTimeout((): void => {
+        this.captureWaiters.delete(currentId);
+        reject(new Error('等待分享预览渲染超时，请重试'));
+      }, 5000);
+      this.captureWaiters.set(currentId, { resolve: resolve, reject: reject, timerId: timerId });
+      try {
+        send(currentId);
+      } catch (error) {
+        clearTimeout(timerId);
+        this.captureWaiters.delete(currentId);
+        reject(error as Error);
+      }
+    });
+  }
 }
 
 /**
@@ -161,13 +271,20 @@ export class PreviewBridge {
  */
 @Component
 export struct PreviewWebView {
-  /** 外部主题：'light' / 'dark'（跟随系统颜色模式，见 aboutToAppear） */
-  @Prop theme: string = 'light';
+  /** 由 EntryAbility 跟随系统颜色模式写入。 */
+  @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
+  @State private pageReady: boolean = false;
+  @State private loadFailed: boolean = false;
   /** 读库内图片 → data URI（找不到/读失败返回空串，Web 侧显示「图片不存在」） */
   onReadAsset: (relPath: string) => string = (relPath: string) => '';
   /** Web 加载错误 */
   onError: (msg: string) => void = (msg: string) => {};
+  /** 双链点击回调，参数为目标文本。 */
   onWikiLinkClick: (target: string) => void = (_target: string) => {};
+  /** Web 页面桥接就绪。 */
+  onReady: () => void = () => {};
+  /** Web 组件标识，供分享图片分页截图定位。 */
+  componentId: string = 'note-preview-web';
   /** 父级通过这个句柄下发渲染内容 / 笔记目录 / 主题 */
   bridge: PreviewBridge = new PreviewBridge();
 
@@ -180,6 +297,9 @@ export struct PreviewWebView {
   aboutToAppear(): void {
     this.proxy.imageViewerChangeHandler = (state: string): void => {
       this.bridge.setImageViewerOpen(state === 'open');
+    };
+    this.proxy.shareCaptureHandler = (payload: string): void => {
+      this.bridge.handleShareCaptureResult(payload);
     };
     this.proxy.wikiLinkClickHandler = (targetB64: string): void => {
       this.handleWikiLinkClick(targetB64);
@@ -196,19 +316,11 @@ export struct PreviewWebView {
         return '';
       }
     };
-    // 跟随系统深浅色：Web 内读不到 App 的 token，显式传下去
-    try {
-      const ctx = getContext(this) as common.UIAbilityContext;
-      const mode = ctx.config?.colorMode;
-      if (mode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK) {
-        this.theme = 'dark';
-      } else {
-        this.theme = 'light';
-      }
-    } catch (error) {
-      const err = error as Error;
-      this.onError('读取颜色模式失败: ' + err.message);
-    }
+    this.bridge.setTheme(this.theme);
+  }
+
+  onThemeChanged(): void {
+    this.bridge.setTheme(this.theme);
   }
 
   private handleWikiLinkClick(targetB64: string): void {
@@ -233,7 +345,8 @@ export struct PreviewWebView {
       return;
     }
     try {
-      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['readAsset', 'onImageViewerChange', 'onWikiLinkClick']);
+      this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
+        ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (error) {
@@ -263,6 +376,9 @@ export struct PreviewWebView {
           this.bridge.bind(impl);
           impl.markReady();
           impl.watchWikiLinks();
+          this.pageReady = true;
+          this.loadFailed = false;
+          this.onReady();
           hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '预览页面就绪，桥接已建立');
         })
         .onConsole((event): boolean => {
@@ -271,11 +387,25 @@ export struct PreviewWebView {
           return true;
         })
         .onErrorReceive((event) => {
+          this.loadFailed = true;
           this.onError('预览加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
         })
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
+        .id(this.componentId)
+
+      if (!this.pageReady) {
+        Column() {
+          Text(this.loadFailed ? '预览加载失败' : '正在加载预览…')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('app.color.bg_card'))
+      }
     }
     .width('100%')
     .height('100%')

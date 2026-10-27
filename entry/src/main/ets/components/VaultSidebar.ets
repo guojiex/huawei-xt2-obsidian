@@ -52,6 +52,8 @@ export struct VaultSidebar {
   onSwitchVault: (id: string) => void = (id: string) => {};
   /** 「管理库」回调（父级切换到库管理视图） */
   onManageVaults: () => void = () => {};
+  /** 从当前库下拉菜单分享整个知识库。 */
+  onShareVault: () => void = () => {};
   /**
    * 「导入 Git 仓库…」回调（原型 vault-menu 第二个动作项，走「导入仓库」页）。
    * Git 同步是 v0.3 能力，此处只做导航跳转。
@@ -77,6 +79,7 @@ export struct VaultSidebar {
   onRenamePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onMovePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onDeletePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onSharePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onSwipeDelete: (relPath: string) => void = (relPath: string) => {};
   /** 「回收站」回调（side-foot 第二按钮，1.8 回收站视图入口） */
   onOpenTrash: () => void = () => {};
@@ -168,6 +171,21 @@ export struct VaultSidebar {
       .onClick(() => {
         this.menuOpen = false;
         this.onImportGit();
+      })
+
+      Row() {
+        Text('分享知识库…')
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .borderRadius(Radius.control)
+      .onClick(() => {
+        this.menuOpen = false;
+        this.onShareVault();
       })
     }
     // 与库切换卡片同宽（原型 left:0; right:0），实测宽由卡片 onAreaChange 回填
@@ -340,6 +358,9 @@ export struct VaultSidebar {
         },
         onDeletePath: (relPath: string, isDir: boolean): void => {
           this.onDeletePath(relPath, isDir);
+        },
+        onSharePath: (relPath: string, isDir: boolean): void => {
+          this.onSharePath(relPath, isDir);
         },
         onSwipeDelete: (relPath: string): void => {
           this.onSwipeDelete(relPath);

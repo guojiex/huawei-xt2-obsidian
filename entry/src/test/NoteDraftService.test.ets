@@ -365,9 +365,9 @@ export default function noteDraftServiceTest() {
         writeTestText(registry.absoluteIn(firstVaultId, sourcePath), baseText);
         await NoteDraftService.persist(registry, firstVaultId, sourcePath, baseText, draftText);
 
-        const movedDir: string = await NoteService.movePath(registry, firstVaultId,
+        const movedDir = await NoteService.movePath(registry, firstVaultId,
           'move_source', 'archive', true);
-        const movedPath: string = movedDir + '/child.md';
+        const movedPath: string = movedDir.path + '/child.md';
         const moved = await NoteDraftService.recover(registry, firstVaultId, movedPath, baseText);
         expect(moved.recovered).assertTrue();
         expect(moved.content).assertEqual(draftText);

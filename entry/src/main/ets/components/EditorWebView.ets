@@ -10,8 +10,8 @@
  */
 import { webview } from '@kit.ArkWeb';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { BridgeCodec } from '../common/BridgeCodec';
+import { FontSize } from '../common/Tokens';
 
 const EDITOR_DOMAIN = 0x0000;
 const EDITOR_TAG = 'EditorWebView';
@@ -103,8 +103,18 @@ class EditorImpl {
     }
   }
 
+  insertText(text: string): void {
+    const payload = BridgeCodec.encode(text);
+    this.enqueue(`window.__mdeditor.insertText('${payload}')`);
+  }
+
   focus(): void {
     this.enqueue('window.__mdeditor.focus()');
+  }
+
+  setLinkCandidatesResult(id: number, candidates: string): void {
+    const payload: string = BridgeCodec.encode(candidates);
+    this.enqueue(`window.__mdeditor.setLinkCandidatesResult(${id},'${payload}')`);
   }
 
   setTheme(theme: string): void {
@@ -119,11 +129,6 @@ class EditorImpl {
     } else {
       this.pending.push(script);
     }
-  }
-
-  setLinkCandidatesResult(id: number, candidates: string): void {
-    const payload: string = BridgeCodec.encode(candidates);
-    this.enqueue(`window.__mdeditor.setLinkCandidatesResult(${id},'${payload}')`);
   }
 
   private enqueue(script: string): void {
@@ -159,16 +164,20 @@ export class EditorBridge {
     return await this.impl.getContent();
   }
 
+  insertText(text: string): void {
+    this.impl?.insertText(text);
+  }
+
   focus(): void {
     this.impl?.focus();
   }
 
-  setTheme(theme: string): void {
-    this.impl?.setTheme(theme);
-  }
-
   setLinkCandidatesResult(id: number, candidates: string): void {
     this.impl?.setLinkCandidatesResult(id, candidates);
+  }
+
+  setTheme(theme: string): void {
+    this.impl?.setTheme(theme);
   }
 
   async setEditable(editable: boolean): Promise<void> {
@@ -184,14 +193,17 @@ export class EditorBridge {
  */
 @Component
 export struct EditorWebView {
-  /** 外部主题：'light' / 'dark'（跟随系统颜色模式，见 aboutToAppear） */
-  @Prop theme: string = 'light';
+  /** 由 EntryAbility 跟随系统颜色模式写入。 */
+  @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
+  @State private pageReady: boolean = false;
+  @State private loadFailed: boolean = false;
   /** 内容变化通知（debounce 300ms，只报长度；要内容请调 bridge.getContent()） */
   onChange: (len: number) => void = (len: number) => {};
   /** 页面就绪（首帧可交互） */
   onReady: () => void = () => {};
   /** Web 加载错误 */
   onError: (msg: string) => void = (msg: string) => {};
+  /** Web 编辑器请求双链候选，父级返回当前库的少量匹配项。 */
   onLinkCompletion: (id: number, query: string) => void = (_id: number, _query: string) => {};
   /** 父级通过这个句柄下发内容 / 拉取内容（外部传入同一实例，ready 时内部 bind） */
   bridge: EditorBridge = new EditorBridge();
@@ -207,19 +219,10 @@ export struct EditorWebView {
     this.proxy.handler = (msg: string): void => {
       this.handleMessage(msg);
     };
-    // 跟随系统深浅色：Web 内读不到 App 的 token，这里把主题显式传下去
-    try {
-      const ctx = getContext(this) as common.UIAbilityContext;
-      const mode = ctx.config?.colorMode;
-      if (mode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK) {
-        this.theme = 'dark';
-      } else {
-        this.theme = 'light';
-      }
-    } catch (error) {
-      const err = error as Error;
-      this.onError('读取颜色模式失败: ' + err.message);
-    }
+  }
+
+  onThemeChanged(): void {
+    this.impl?.setTheme(this.theme);
   }
 
   /**
@@ -269,6 +272,8 @@ export struct EditorWebView {
       this.bridge.bind(impl);
       impl.markReady();
       impl.setTheme(this.theme);
+      this.pageReady = true;
+      this.loadFailed = false;
       hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'Web 编辑器页面就绪，桥接已建立');
       this.onReady();
     } else if (name === 'content') {
@@ -282,7 +287,7 @@ export struct EditorWebView {
   }
 
   build() {
-    Column() {
+    Stack() {
       Web({ src: $rawfile('mdeditor/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
         .onControllerAttached(() => {
           // ⚠️ 注册时机（2026-10-18 SDK 实证 + 官方生命周期文档）：
@@ -316,12 +321,25 @@ export struct EditorWebView {
           return true;
         })
         .onErrorReceive((event) => {
+          this.loadFailed = true;
           this.onError('Web 加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
         })
         .width('100%')
         .height('100%')
         .backgroundColor(this.theme === 'dark'
           ? $r('app.color.bg_card') : $r('app.color.bg_card'))
+
+      if (!this.pageReady) {
+        Column() {
+          Text(this.loadFailed ? '编辑器加载失败' : '正在加载编辑器…')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('app.color.bg_card'))
+      }
     }
     .width('100%')
     .height('100%')

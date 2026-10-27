@@ -31,5 +31,6 @@ export default function abilityTest() {
       expect(a).assertContain(b);
       expect(a).assertEqual(a);
     })
+
   })
 }

@@ -481,6 +481,11 @@ nativePort.onMessageEvent((result: WebMessage) => {
 
 官方专门能力：**`fileIo.AtomicFile`（API 15+，我们的 API 24 可用）**
 
+**2026-10-27 二进制能力限制（⚠️ 用户转贴的领域专家答复）**：官方支持回复明确称“当前 WriteStream 调用父类接口 write 不支持二进制为领域规格”，可走新增需求流程。原文及需求草稿见 [答复归档](qa/2026-10-27_WriteStream_二进制写入规格答复.md)。因此不能根据父类 `Writable.write` 的 `Uint8Array` 类型声明认定 `AtomicFile` 返回流支持二进制，也不再将更换 encoding 作为有依据的修复方向。该答复解释了既有 `WriteStream.write(Uint8Array)` 路径为何不受支持；未附 API 版本范围、修复计划或其他替代接口，也未逐项解释旧 hilog 与错误码。API 24 / XT2 运行行为仍待设备验证；此前“根因未知”是 2026-10-22 当时记录，不表示继续尝试 encoding。字符串保存结论不受此二进制限制推翻。
+
+**2026-10-27 新 clone 受控替代写入**：本机 API 26 SDK 的 `ets/api/@ohos.file.fs.d.ts` 声明 `openSync(path, mode?)`、`writeSync(fd, buffer: ArrayBuffer | string, options?)` 与 `closeSync(file)` 均为 `@since 9`；`writeSync` 返回实际写入字节数。新 clone 可在未登记的专属导入目录内用 `OpenMode.WRITE_ONLY | CREATE | TRUNC` + `ArrayBuffer` 写入，循环处理短写并关闭 fd。此路径没有 AtomicFile 的失败回滚保证，只能用于本次新导入数据，不能用于已有库文件。该结论来自本机 API 26 SDK 的版本注解，API 24 / XT2 运行行为仍待设备验收。SDK 的 `renameSync(oldPath, newPath)` 同为 `@since 9`，但声明没有承诺覆盖/原子性；项目只在确认正式目标不存在后用于新目录改名，不据此保护旧文件。
+
+
 ⚠️ **🔴 崩溃实证（2026-10-18 真机级定位，重要）**：`stream.close()` 后再 `finishWrite()` 会
 **SIGSEGV cppcrash**（栈：`musl free ← napi_delete_reference ← libfs.z.so`）。`close()` 已释放
 native 侧写句柄，`finishWrite()` 再清理同一引用 = **double free**。**AtomicFile 全程不要调 `close()`**。
@@ -531,6 +536,13 @@ try {
 触发条件，也不证明错误来自临时文件或某一内部操作。API 26 模拟器根因仍未知；不外推至 API 24
 运行时或 XT2。
 
+### C2 目录删除与 `rmdirSync` ⚠️（SDK 声明核实，未作设备故障实验）
+
+- 本机 HarmonyOS SDK 的 `ets/api/@ohos.file.fs.d.ts` 声明 `rmdirSync(path: string)`（since 9，低于 API 24），无递归参数；API 文本明确说明同步删除目录及其子目录和文件，异常列表包含 13900032 “Directory not empty”。
+- ~~因此它只用于删除空目录，不能当作递归删库接口。~~ 该句是此前对无递归参数及异常列表的过度推断，与 SDK 方法说明冲突；本项目仍用 `listFileSync` + `statSync` 显式逐层删除，便于把清理目标限制在本次导入目录。
+- 需要删除目录树时，先用 `listFileSync` 枚举子项、`statSync().isDirectory()` 区分目录与文件，递归删除子项，再对空目录调用 `rmdirSync`；文件用 `unlinkSync`。路径仍须来自统一解析器或基于已解析目录的子项遍历。
+- 以上是本机 SDK 声明核实，不代表 API 24 设备运行验收；本项目不通过模拟器强杀或写入中断验证删除恢复。
+
 **2026-10-22 API 26 模拟器 clone 复测补充（⚠️ 具体根因未确认）**：Huawei_TripleFold 模拟器
 （系统识别型号 `emulator`，HarmonyOS 7.0.0.107、API 26、arm64-v8a）上，独立
 `filesDir/atomicfile_probe_20261022/probe.md` 字符串写入通过；非空 Git clone 仍在 `.git/config` 写入时返回
@@ -545,7 +557,10 @@ callback?: Function)`，列出的编码为 `utf8`、`gb18030`、`gbk`、`gb2312`
 `Uint8Array` 后仍复现；这是该 API 26 模拟器的运行时证据，不外推至 API 24 运行时或 XT2。HTTP fixture 的
 `info/refs` 与 `git-upload-pack` 均返回 200；clone 未通过。设备、构建与逐轮页面结果见 [v0.3 §6](../releases/v0.3/需求文档.md)，
 需向鸿蒙核实二进制 chunk 的官方调用方式及该日志错误码的含义，见[2026-10-22 提示词](prompts/2026-10-22_API26_AtomicFile_clone_.git_config.md)。
-**2026-10-27 API 26 图片导入复验补充**：在 `Huawei_TripleFold_v05Clean` API 26 arm64 模拟器中，经系统 Photo Picker 选中图片后，应用已完成 Picker 资产查询、源 URI 打开和大小读取；随后对 `AtomicFile` 返回的 `WriteStream` 写入 `Uint8Array` 时回报 `13900020: Invalid argument`，应用调用 `failWrite()`，没有插入 Markdown 引用。最初以测试截图复验后，用户补入 JPEG 再次选择并完成，UI 即时捕获同一分阶段错误；随后将调用第二参数从 `undefined` 临时改为 `'utf8'`，重建并替换安装，再次对该 JPEG 导入仍得到同一 `Invalid argument`。因此“显式传 `undefined` 是唯一直接原因”的假设未获支持；根因仍未知。对应临时笔记均被移入回收站；未验证附件目录内容。此结果不外推至 API 24 / XT2。详见 [v1.3 §6](../releases/v1.3/需求文档.md#2026-10-27-图片导入-api26-复验)。
+
+**2026-10-27 API 26 图片导入复验补充**：在 `Huawei_TripleFold_v05Clean` API 26 arm64 模拟器中，经系统 Photo Picker 选中图片后，应用已完成 Picker 资产查询、源 URI 打开和大小读取；随后对 `AtomicFile` 返回的 `WriteStream` 写入 `Uint8Array` 时回报 `13900020: Invalid argument`，应用调用 `failWrite()`，没有插入 Markdown 引用。最初以测试截图复验后，用户补入 JPEG 再次选择并完成，UI 即时捕获同一分阶段错误；随后将调用第二参数从 `undefined` 临时改为 `'utf8'`，重建并替换安装，再次对该 JPEG 导入仍得到同一 `Invalid argument`；本轮改用 `'utf-8'` 复验，构建、安装后再次选择同一图片，仍得到相同错误。编码参数取省略占位、`'utf8'` 或 `'utf-8'` 均未解决失败，根因仍未知。前述临时笔记已移入回收站；本轮使用既有样例笔记且正文未变化。附件目录内容未核验。此结果不外推至 API 24 / XT2。详见 [v1.3 §6](../releases/v1.3/需求文档.md#2026-10-27-图片导入-api26-复验)。
+
+**同日 SDK 参数复核**：本轮查看 `Writable.write(chunk?: string | Uint8Array, encoding?: string, callback?: Function)` 声明和编码说明后，代码去掉了显式 `'utf8'`，以 `undefined` 保留第三参数回调。Hypium 任务与 HAP 构建通过；API26 替换安装后再次从 Picker 选图并点“完成”，但测试笔记没有出现 Markdown 图片引用，且笔记恢复后的编辑器未确认光标焦点，故无法区分图片复制是否完成与引用插入是否因无光标而未执行。此轮不是写入成功证据，也不能确认修复了 `Invalid argument`；应在不接受输入法协议的前提下安排能明确建立编辑器光标的后续复验。API 24 / XT2 仍待设备验证。
 
 ### C2 目录遍历 ✅
 
@@ -629,19 +644,22 @@ ohpm publish yourlib.har
 
 ---
 
-## F 组：小艺智能体与端侧意图（Insight Intent）
+## F 组：小艺托管 Agent、FunctionComponent 与端插件（Insight Intent 执行器）
 
 > 2026-10-25 范围调整见 [v0.6 需求](../releases/v0.6/需求文档.md)：首期本地操作不调用 Web/git，F6 的冲突仅约束未来自动 commit；F-A/F-B 等接口置信度未因此改变。新的接入核实提示词见 [提问](prompts/2026-10-25_API24_小艺本地笔记操作接入核实.md)。
 
 > 来源：[`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md)（2026-10-17）
 > ~~本组所有结论均未附文档链接~~ → 2026-10-26：F1、F9–F11 已补官方文档核对，见 [对照归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。其他旧结论置信度保持原标记；落码前仍须复核对应 SDK 和目标设备。
+> **2026-10-27 路线结论**：采用平台单 Agent + `FunctionComponent` 入口 + 端插件；端插件在 App 内由 Insight Intent 执行器承接。F2–F8 中与旧方案有关的问法保留作历史记录，不能覆盖 F15 的配置式插件路径；能力、项目绑定和设备验收分别判断，见 F1/F15/F16。
 > **不要在别的文档里复制本组结论**，一律链接过来 —— 下面标 ⚠️ 的随时可能被推翻。
 
-### F1 应用内对话入口：`FunctionComponent` ✅ 文档明确 / ⚠️ XT2 运行与发布条件待验
+### F1 应用内对话入口：`FunctionComponent` ✅ 官方入口明确 / ⚠️ 目标设备与资格待验
 
-[官方 API](https://developer.huawei.com/consumer/cn/doc/doccenter-references/api/hmaf-function-component) 明确：`FunctionComponent` 在 Phone / Tablet、Stage 模型自 HarmonyOS 6.0.0(API 20) 起可用；API 24 满足版本下限，但 XT2 真机可用性仍待验证。官方指南的示例由用户点击 `FunctionComponent` 打开智能体对话框。`FunctionController` 仅继承 `AgentController` 的方法，当前没有额外实现；公开参考列出支持查询及 `agentDialogOpened` / `agentDialogClosed` 事件，没有从普通 ArkUI Button 主动打开面板的方法。因此当前公开 API 不支持按原样从自绘按钮直接拉起面板。
+[官方 API](https://developer.huawei.com/consumer/cn/doc/doccenter-references/api/hmaf-function-component) 标明 `FunctionComponent` 支持 Phone / Tablet、Stage 模型，起始于 HarmonyOS 6.0.0(API 20)。本工程 `targetSdkVersion=26.0.0`、`compatibleSdkVersion=6.1.1(24)`，版本范围满足该起始版本，但不证明 XT2 / 当前系统可运行。
 
-`FunctionOptions` / `BaseOptions` 提供按钮类型、标题、图标尺寸/颜色、背景色、阴影和初始 `queryText` 等样式/初始化项，没有自定义图标资源参数。社区问答的采纳答复与 AI 助手答复都同意上述边界。AI 答复提到的 Stack 覆盖方案没有官方文档依据；它不能证明自绘按钮可以调用启动 API，叠放后的视觉与触摸命中行为也未验证。该次答复附带的小艺版本号、地区、测试白名单等条件未在本次核对的官方指南/API 页面中找到，不作为已确认前置条件。详细对照见 [社区答复归档](qa/2026-10-26_小艺自绘按钮拉起答复_API24.md)。
+[通过 Function 组件拉起智能体](https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/hmaf-function) 明确组件分图标和按钮：不传标题显示图标，传标题显示按钮；按钮可配置功能描述。指南要求创建智能体、关联应用、设备登录华为账号并联网；组件需传 `agentId`、`onError`，可设初始 `queryText`，并可用 `isAgentSupport` 检查、监听对话框打开/关闭事件。`FunctionController` 没有普通 ArkUI Button 可调用的公开 `open` / `launch` 方法，因此支持路径是把 `FunctionComponent` 本身放在入口位置，由用户点击该组件启动；不能由普通自绘 Button 程序化拉起，也不能假定能保留自定义图标。标题可用“Agent 对话”，但系统组件的最终外观须在目标设备确认。
+
+2026-10-27 客服答复同样建议以 Function 组件作为应用入口，详见[客服与官方文档核对归档](qa/2026-10-27_客服智能体与Skill接入建议_API24.md)。这解决了“是否有受支持的接入路线”，没有验证 AGC 关联状态、Agent 发布/测试资格或 XT2 运行。此前社区答复与 Stack 覆盖 spike 仍是历史证据：公开自绘按钮启动 API 仍不存在；模拟器因缺少 `agentKitHsp` 启动失败，不证明目标真机也缺少该系统 HSP，也不能证明遮罩方案可行。详见[旧答复归档](qa/2026-10-26_小艺自绘按钮拉起答复_API24.md)。
 
 2026-10-26 Stack 覆盖 spike：API 26 模拟器构建成功，但启动接入 `FunctionComponent` 的 HAP 时触发 `SIGABRT`；Faultlogger 的 `LastFatalMessage` 为缺少 `com.huawei.hmsapp.hiai.hsp/agentKitHsp`，尚未进入 UI 触摸验证。该结果说明当前模拟器运行环境不具备此组件依赖，**不能判断遮罩视觉或点击命中是否可行**；临时接线和无效 `agentId` 已撤下，XT2 真机仍待测。
 
@@ -650,6 +668,14 @@ ohpm publish yourlib.har
 该组件用于拉起已上线的指定智能体面板。本文列出的控制器没有消息流、历史注入或工具调用回传接口，**不能据此认定已满足自有聊天工作区的 Provider 协议**；是否存在其他正式接口仍待核实。
 
 ~~无需人工审核（技能发布到自己的智能体即可；仅主入口需审核）~~ → ⚠️ 2026-10-26 撤回无依据的泛化：本次文档未证明该免审核规则，发布与调试须按具体模式核实；端 A2A 已有明确前置，见 F10。
+
+### F16 客服推荐的 Agent / Skill 路线 ✅ 路径明确 / ⚠️ 项目闭环待验
+
+2026-10-27 客服回复与官方文档核对见[归档](qa/2026-10-27_客服智能体与Skill接入建议_API24.md)。官方[快速开始](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/quickstart-0000002762985731)列出单 Agent 的模型、插件和关联应用能力；结合 F1、F12、F15，当前需求可走“平台托管单 Agent + `FunctionComponent` 入口 + 端插件调用本地执行器”。客服建议的 AGC 创建/签名、关联、真机调试和上架步骤是路线指导，不等于项目已完成绑定、审核资格或发布。
+
+✅ [Skill 插件指南](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/skill-plugin-0000002592771624)明确 Skill 可添加云、端或 MCP 插件；端插件用于构建设备侧应用交互通路。该文档没有给出从本 App 直接拉起 Skill 的完整接口/生命周期，因此 Skill 记作备选编排形式，当前不替代单 Agent + FunctionComponent 路线。端插件仍需 App 执行器、授权范围、AtomicFile 写保护与撤销逻辑；端插件支持设备侧执行，不代表平台模型聊天全离线。
+
+2026-10-27 平台 Agent“曜石笔记助手”已创建为单 Agent 草稿；预览普通问答可返回，询问本地库访问时也明确回答无法访问。当前角色指令为空、插件数为 0；六项“曜石笔记”插件草稿尚未绑定该 Agent，AGC 应用关联状态未核实。因此现有验证只证明平台预览可对话，不证明端插件执行或 App 接入。API 24 / XT2、AgentKit 系统依赖、真机调试与审核/发布仍待验；不自动恢复 v0.6 排期。
 
 ### F2 意图声明：`@InsightIntentEntry` 装饰器 ⚠️
 
@@ -1269,6 +1295,17 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - API 26 TripleFold 模拟器实测：sm、md、lg 左右空白均能关闭；md/lg 卡片与屏幕边缘之间的空白也能关闭。搜索框点击后保持焦点且弹层不误关。API 24 设备和 XT2 运行时仍待验。
 - 输入框聚焦时模拟器第一次系统 Back 只清除焦点、弹层仍在，第二次 Back 才关闭。尝试在输入框处理 Back 未改变该现象；目前尚未确定是输入焦点处理还是 IME 消费，API 24 / XT2 需实测，不宣称该状态下单次返回关闭。
 
+### L-11 v0.7 分栏手势与单屏横向窗口识别（API 24 SDK 声明）⚠️
+
+- 本机 API 24 SDK 的 `ets/component/gesture.d.ts` 声明 `PanGesture`、`onActionStart` / `onActionUpdate` / `onActionEnd` 与 `GestureEvent.offsetX` 均 since 7；`offsetX` 单位为 vp，且相对手指按下位置，可用于分隔条拖动。
+- 原生通过现有 `windowSizeChange` 的宽高 vp 判断紧凑横向窗口：宽度落入 md 范围、窗口高度低于 md 下限且宽大于高。此判断只使用窗口几何，不读 `foldStatus`，也不复用原型预设值；它是项目布局规则，不是系统提供的物理屏幕类型。
+- 该几何规则及手势仅经 API 24 声明和本机构建核实；真实 XT2 的横向窗口读数、触控手感与旋转继承仍待设备验证。宽度小于所有栏最小值总和时无法同时满足 240vp，此时仅作窄窗口退让，设备目标尺寸不应进入该分支。
+
+### L-12 会话重命名的双击与 F2 输入（SDK 声明 + API 26 模拟器）⚠️
+
+- 当前本机 HarmonyOS SDK 的 `ets/component/gesture.d.ts` 声明 `TapGesture` since 7、连续点击参数 `count` since 11；`ets/component/common.d.ts` 声明 `onKeyEvent` since 7；`ets/api/@ohos.multimodalInput.keyCode.d.ts` 声明 `KEYCODE_F2 = 2091` since 9。均早于工程兼容上限 API 24，未使用更新接口。
+- API 26 TripleFold lg 实测：双击会话标题打开改名；键盘路径需先 Tab 将焦点移至会话行，再发送 F2。该结果只证明当前模拟器交互，不证明 API 24/XT2 的焦点行为。
+
 ---
 
 ## 落地决策表
@@ -1364,3 +1401,43 @@ F4 仍为未充分核实的平台生命周期记录；不能据此声称支持�
 ### O3 ⚠️ 排版长图输出链路仍待核实
 
 Share Kit 接受图片文件 URI，但现有文档与 SDK 证据尚未确定如何将当前 ArkWeb Markdown 预览完整、分段地输出为图片，也没有确认长图像素 / 文件大小限制。不得据此把单张截图或静默裁切写成满足 v0.8 的长文分图能力；先核实输出链路并对产物做全文完整性检查。
+
+
+## P 组：系统主题变更通知（2026-10-27 本机 SDK 声明核对）
+
+### P1 ✅ ApplicationContext 系统配置回调含颜色模式更新
+
+本机 API 26 SDK 的 `ets/api/application/ApplicationContext.d.ts` 声明 `onSystemConfigurationUpdated(callback)` 与 `offSystemConfigurationUpdated(callback?)` 均为 Stage API `@since 24`，并要求主线程调用；其 callback 类型位于 `@ohos.app.ability.systemConfiguration.UpdatedCallback`，其中 `onColorModeUpdated(colorMode)` 明确描述为系统颜色模式更新时调用，同样 `@since 24`。`Configuration.colorMode` 与颜色模式枚举声明为 `@since 9`。因此可用于工程 API 24 上限；本声明核对不等于 API 24 / XT2 运行验收。
+
+本版将系统回调映射到 AppStorage，再由编辑器与预览 WebView 显式同步主题。模拟器系统主题切换和 XT2 仍待正常 UI 验收；禁止把 SDK 声明当作设备实测。
+
+
+## Q 组：v1.3 相册 Picker 图片读取（API 起始版本核对）
+
+### Q1 ⚠️ Picker URI 的授权范围与 SDK 声明存在不同表述
+
+本机 API 26 `@ohos.file.photoAccessHelper.d.ts` 声明 `PhotoViewPicker`、`PhotoSelectOptions`、`PhotoSelectResult.photoUris` 和 `PhotoAsset.displayName` 均早于 API 24；其中 `photoUris` 注释明确要求通过 `PhotoAccessHelper.getAssets()` 的临时授权使用。`getAssets()` 的通用声明带 `ohos.permission.READ_IMAGEVIDEO` 标注，但华为 Media Library 文档说明，通过 Photo Picker 访问用户明确选择的媒体可不申请图库读取权限。实现仅用 Picker URI 查询所选 `PhotoAsset`，不枚举相册，也不新增 `READ_IMAGEVIDEO`；原始 URI 不直接交给文件 API。官方 FAQ 有直接 `openSync(photoUris[0])` 的示例，与当前 SDK 对 `photoUris` 的限定不一致，因此以 SDK 声明为准。
+
+`PhotoAsset.uri` 为媒体 URI；`fileIo.openSync(path, READ_ONLY)` 接受 URI，二者 API 起始版本均不高于 API 24。当前 `NoteImageService` 在 `getAssets()` 返回所选资产后打开资产 URI，再以 `fileIo.copyFile(sourceFd, uniqueTargetPath)` 复制到库内；源、目标大小核对成功后才插入 Markdown。该复制方式已在 API 26 模拟器跑通，API 24 / XT2 仍待验。Picker URI 授权与元数据查询的上述声明/文档差异仍按 Q1 保留。
+
+**2026-10-27 API 26 运行复验**：`copyFile` 复制到唯一命名附件后，检查目标文件大小与源 fd 相同；第一次交互因包内编辑器 rawfile 过期而未插入 Markdown，重新打包 `web/mdeditor` 并安装后，第二次交互成功插入相对引用并在预览显示 JPEG。确认插入失败时源代码已有 `insertText`、但 rawfile 未更新；这不是 `copyFile` 失败。当前图片导入不走 `AtomicFile`；半成品清理是复制失败后的尽力删除，并不具有 AtomicFile 回滚保证。API24 / XT2 尚未实测。
+
+来源：[Photo Picker 访问图片/视频](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides-v5/component-guidelines-photoviewpicker-V5)、[图库图片选择常见问题](https://developer.huawei.com/consumer/cn/doc/doccenter-dev-faq/media-library-kit-faqs-0004)、[图片 Picker 预览 FAQ](https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/video-thumbnail-system)。
+
+## R 组：应用反馈能力核实（2026-10-27）
+
+### R1 ❓ Feedback Kit 独立通用 SDK 未获证实
+
+用户转交答复的提供方已撤回其独立 Kit 说法；本机 SDK 中反馈相关占位文件无可调用签名，不能作为接入依据。自建反馈后台也不能默认与华为运营反馈后台互通。来源与边界见 [核实记录](qa/2026-10-27_应用反馈能力核实_API24.md)。
+
+### R2 ✅ commentManager 是评分评论，声明起始 API20
+
+本机 SDK 明确提供 showCommentDialog，但它不是普通问题反馈表单或工单接口；未登录与频率限制等情况有专用错误码。声明可用于 API24 不等于本应用运行验证。签名与官方链接见同一核实记录。
+
+### R3 ✅ FunctionalButton.onFeedback 仅适用元服务
+
+SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前普通 App 接线。用户最终选择邮箱方案，原生邮件能力须另行核实；本轮未做设备验证。证据见同一核实记录。
+
+### R4 ✅ 邮件拉起接口存在；⚠️ mailto 设备匹配待验
+
+本机 SDK 的 UIAbilityContext.startAbility Promise 签名自 API9，wantConstant 有 ACTION_SEND_TO_DATA；可作为邮件草稿方案的基础。startAbilityByType Promise 签名自 API11，必需 type/wantParam/abilityStartCallback 三参数，用户转交的两参数例子不能照抄。邮件预填与无客户端处理仍须正常设备验证；不据拉起结果宣称邮件发送/送达，不提供后台静默发送承诺。来源与实施边界见 [邮件反馈核实](qa/2026-10-27_邮件反馈拉起方式_API24.md)。

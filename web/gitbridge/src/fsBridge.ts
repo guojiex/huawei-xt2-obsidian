@@ -51,6 +51,7 @@ export class BridgeFs {
   private queue: FsOp[] = []
   private writeIndex = new Map<string, FsOp>()
   private pendingBytes = 0
+  lastReadError = ''
 
   constructor(gitDir: string) {
     this.gitDir = gitDir.replace(/\/+$/, '')
@@ -82,12 +83,17 @@ export class BridgeFs {
     const rel = this.rel(filepath)
     let data = this.mem.get(rel)
     if (data === undefined) {
-      const res = await this.call<{ dataB64: string }>({
-        op: 'read',
-        pathB64: b64FromText(rel),
-      })
-      data = bytesFromB64(res.dataB64)
-      this.mem.set(rel, data)
+      try {
+        const res = await this.call<{ dataB64: string }>({
+          op: 'read',
+          pathB64: b64FromText(rel),
+        })
+        data = bytesFromB64(res.dataB64)
+        this.mem.set(rel, data)
+      } catch (error) {
+        this.lastReadError = `readFile ${rel}: ${(error as Error).message ?? String(error)}`
+        throw error
+      }
     }
     const enc = typeof opts === 'string' ? opts : opts?.encoding
     if (enc) {
@@ -251,6 +257,7 @@ export class BridgeFs {
   /** 把缓冲的写入一次性提交到 ArkTS，提交后释放内存缓存 */
   async flush(): Promise<void> {
     if (this.queue.length === 0) {
+      this.clearCaches()
       return
     }
     const ops = this.queue
@@ -259,6 +266,10 @@ export class BridgeFs {
     this.pendingBytes = 0
     await this.call<{ ok: boolean }>({ op: 'batch', ops })
     // 释放缓存，控制内存；后续读取会重新过桥
+    this.clearCaches()
+  }
+
+  clearCaches(): void {
     this.mem.clear()
     this.types.clear()
     this.dirs.clear()

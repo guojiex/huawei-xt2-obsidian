@@ -7,10 +7,12 @@ import {
 } from './AgentModels';
 import { AgentRules } from './AgentRules';
 import { AGENT_MOCK_SCENARIOS } from './AgentDefaults';
+import { AgentOperationStorage, AgentOperationStatus, AgentStoredOperation } from './AgentOperationStorage';
 
 interface StoredOperation {
   signature: string;
   result: AgentWriteResult;
+  record: AgentStoredOperation;
 }
 
 export class AgentRuntime {
@@ -19,12 +21,90 @@ export class AgentRuntime {
   private static operations: Map<string, StoredOperation> = new Map<string, StoredOperation>();
   private static operationOrderByVault: Map<string, string[]> = new Map<string, string[]>();
   private static latestOperationByVault: Map<string, string> = new Map<string, string>();
+  private static operationsLoadedByVault: Map<string, boolean> = new Map<string, boolean>();
+  private static operationStorage: AgentOperationStorage | null = null;
+  private static registry: VaultRegistry | null = null;
   private static runningSessions: Set<string> = new Set<string>();
   private static runningVaults: Set<string> = new Set<string>();
+  private static deletingVaults: Set<string> = new Set<string>();
 
   static newRunId(): string {
     AgentRuntime.serial++;
     return Date.now().toString() + '-' + AgentRuntime.serial.toString();
+  }
+
+  static initialize(registry: VaultRegistry): void {
+    if (AgentRuntime.operationStorage === null) {
+      AgentRuntime.registry = registry;
+      AgentRuntime.operationStorage = new AgentOperationStorage(registry);
+    }
+  }
+
+  static isVaultRunning(vaultId: string): boolean {
+    return AgentRuntime.runningVaults.has(vaultId);
+  }
+
+  static isVaultBusy(vaultId: string): boolean {
+    return AgentRuntime.runningVaults.has(vaultId) || AgentRuntime.deletingVaults.has(vaultId);
+  }
+
+  static isVaultDeleting(vaultId: string): boolean {
+    return AgentRuntime.deletingVaults.has(vaultId);
+  }
+
+  static async deleteVaultWithCleanup(vaultId: string, cleanup: () => Promise<void>,
+    removeVault: () => void): Promise<boolean> {
+    if (AgentRuntime.isVaultBusy(vaultId)) {
+      return false;
+    }
+    AgentRuntime.deletingVaults.add(vaultId);
+    try {
+      await cleanup();
+      removeVault();
+      return true;
+    } finally {
+      AgentRuntime.deletingVaults.delete(vaultId);
+    }
+  }
+
+  static forgetVault(vaultId: string, registry: VaultRegistry): void {
+    if (AgentRuntime.registry !== registry) {
+      return;
+    }
+    const key: string = registry.vaultKeyOf(vaultId);
+    AgentRuntime.operationsLoadedByVault.delete(key);
+    AgentRuntime.operationOrderByVault.delete(vaultId);
+    AgentRuntime.latestOperationByVault.delete(vaultId);
+    const removeIds: string[] = [];
+    AgentRuntime.operations.forEach((stored: StoredOperation, operationId: string): void => {
+      if (stored.result.vaultId === vaultId) {
+        removeIds.push(operationId);
+      }
+    });
+    for (let i = 0; i < removeIds.length; i++) {
+      AgentRuntime.operations.delete(removeIds[i]);
+    }
+  }
+
+  static forgetConversation(vaultId: string, conversationId: string): void {
+    const removeIds: string[] = [];
+    AgentRuntime.operations.forEach((stored: StoredOperation, operationId: string): void => {
+      if (stored.record.conversationId === conversationId && stored.result.vaultId === vaultId) {
+        removeIds.push(operationId);
+      }
+    });
+    for (let i = 0; i < removeIds.length; i++) {
+      AgentRuntime.operations.delete(removeIds[i]);
+    }
+    const order: string[] = AgentRuntime.operationOrderByVault.get(vaultId) ?? [];
+    const remaining: string[] = [];
+    for (let i = 0; i < order.length; i++) {
+      if (removeIds.indexOf(order[i]) < 0) {
+        remaining.push(order[i]);
+      }
+    }
+    AgentRuntime.operationOrderByVault.set(vaultId, remaining);
+    AgentRuntime.refreshLatestOperation(vaultId);
   }
 
   static captureReferences(vaultId: string, parts: AgentMessagePart[], registry: VaultRegistry,
@@ -78,8 +158,13 @@ export class AgentRuntime {
   static async run(vaultId: string, session: AgentSession, runId: string, rawText: string, parts: AgentMessagePart[],
     references: AgentNoteSnapshot[], config: AgentRunConfig, registry: VaultRegistry,
     isUnsaved: (path: string) => boolean): Promise<AgentMessage> {
+    if (AgentRuntime.deletingVaults.has(vaultId)) {
+      throw new Error('当前知识库正在删除，暂不能开始 Agent 运行。');
+    }
+    await AgentRuntime.ensureOperationsLoaded(vaultId, registry);
     const runKey: string = vaultId + ':' + session.id;
-    if (AgentRuntime.runningSessions.has(runKey) || AgentRuntime.runningVaults.has(vaultId)) {
+    if (AgentRuntime.deletingVaults.has(vaultId) || AgentRuntime.runningSessions.has(runKey) ||
+      AgentRuntime.runningVaults.has(vaultId)) {
       throw new Error('当前知识库已有一轮运行，请等待完成后再发送。');
     }
     for (let i = 0; i < session.messages.length; i++) {
@@ -89,7 +174,12 @@ export class AgentRuntime {
     }
     AgentRuntime.runningSessions.add(runKey);
     AgentRuntime.runningVaults.add(vaultId);
+    const operationStorage: AgentOperationStorage | null = AgentRuntime.storageFor(registry);
+    let runStatus: string = 'completed';
     try {
+      if (operationStorage !== null) {
+        await operationStorage.beginRun(vaultId, session.id, runId, config, references);
+      }
       const userMessage: AgentMessage = {
         id: 'user-' + runId,
         role: 'user',
@@ -147,7 +237,7 @@ export class AgentRuntime {
           AgentRuntime.assertToolAllowed(step.name, config);
           event.operationId = AgentRuntime.operationId(vaultId, runId, i);
           const result: string = await AgentRuntime.executeStep(vaultId, session, assistant, step,
-            references, config, registry, readPaths, isUnsaved, event.operationId);
+            references, config, registry, readPaths, isUnsaved, event.operationId, runId);
           event.status = 'completed';
           event.result = result;
         } catch (error) {
@@ -160,7 +250,18 @@ export class AgentRuntime {
       }
       AgentRuntime.setAssistantText(assistant, scenario.reply);
       return assistant;
+    } catch (error) {
+      runStatus = 'failed';
+      const err = error as Error;
+      throw new Error(err.message);
     } finally {
+      if (operationStorage !== null) {
+        try {
+          await operationStorage.finishRun(vaultId, session.id, runId, runStatus);
+        } catch (error) {
+          // A failed final state update leaves the durable run and operation records for reconciliation.
+        }
+      }
       AgentRuntime.runningSessions.delete(runKey);
       AgentRuntime.runningVaults.delete(vaultId);
     }
@@ -178,8 +279,9 @@ export class AgentRuntime {
 
   private static async undoOperation(vaultId: string, session: AgentSession, opId: string,
     registry: VaultRegistry, isUnsaved: (path: string) => boolean): Promise<AgentWriteResult> {
+    await AgentRuntime.ensureOperationsLoaded(vaultId, registry);
     const stored: StoredOperation | undefined = AgentRuntime.operations.get(opId);
-    if (stored === undefined || stored.result.vaultId !== vaultId) {
+    if (stored === undefined || stored.result.vaultId !== vaultId || stored.record.status !== 'applied') {
       throw new Error('NOTHING_TO_UNDO：最近一次操作已撤销或不属于当前知识库。');
     }
     const result: AgentWriteResult = stored.result;
@@ -196,12 +298,32 @@ export class AgentRuntime {
     if (current === null || current !== result.after) {
       throw new Error('UNDO_CONFLICT：笔记已有后续修改，未覆盖当前内容。');
     }
-    if (result.created) {
-      await NoteService.deletePath(registry, vaultId, result.path);
-    } else {
-      await NoteService.saveNote(registry, vaultId, result.path, result.before);
+    stored.record.status = 'undoing';
+    try {
+      await AgentRuntime.persistOperation(vaultId, stored.record, registry);
+    } catch (error) {
+      stored.record.status = 'applied';
+      const err = error as Error;
+      throw new Error(err.message);
+    }
+    try {
+      if (result.created) {
+        await NoteService.deletePath(registry, vaultId, result.path);
+      } else {
+        await NoteService.saveNote(registry, vaultId, result.path, result.before);
+      }
+    } catch (error) {
+      stored.record.status = 'applied';
+      try {
+        await AgentRuntime.persistOperation(vaultId, stored.record, registry);
+      } catch (persistError) {
+        // The on-disk undoing record will be reconciled against the note before future undo.
+      }
+      const err = error as Error;
+      throw new Error(err.message);
     }
     result.undone = true;
+    stored.record.status = 'undone';
     AgentRuntime.refreshLatestOperation(vaultId);
     for (let i = session.messages.length - 1; i >= 0; i--) {
       if (session.messages[i].writeResult !== null &&
@@ -209,6 +331,11 @@ export class AgentRuntime {
         (session.messages[i].writeResult as AgentWriteResult).undone = true;
         break;
       }
+    }
+    try {
+      await AgentRuntime.persistOperation(vaultId, stored.record, registry);
+    } catch (error) {
+      // The durable undoing record is reconciled against the restored file on next launch.
     }
     return result;
   }
@@ -228,13 +355,21 @@ export class AgentRuntime {
     if (result.vaultId !== vaultId) {
       throw new Error('OUT_OF_SCOPE：该写入不属于当前知识库。');
     }
-    return AgentRuntime.undoOperation(vaultId, session, result.operationId, registry, isUnsaved);
+    if (AgentRuntime.isVaultBusy(vaultId)) {
+      throw new Error('当前知识库已有一轮运行，请等待完成后再撤销。');
+    }
+    AgentRuntime.runningVaults.add(vaultId);
+    try {
+      return await AgentRuntime.undoOperation(vaultId, session, result.operationId, registry, isUnsaved);
+    } finally {
+      AgentRuntime.runningVaults.delete(vaultId);
+    }
   }
 
   private static async executeStep(vaultId: string, session: AgentSession, assistant: AgentMessage,
     step: AgentToolStep, references: AgentNoteSnapshot[], config: AgentRunConfig,
     registry: VaultRegistry, readPaths: Set<string>, isUnsaved: (path: string) => boolean,
-    operationId: string): Promise<string> {
+    operationId: string, runId: string): Promise<string> {
     if (step.name === 'QueryNotes') {
       const query: string = step.query ?? '';
       const paths: string[] = AgentRuntime.listMarkdownPaths(registry, vaultId);
@@ -291,7 +426,7 @@ export class AgentRuntime {
         (step.anchor ?? '') + '|' + (step.text ?? '');
       const replay: boolean = AgentRuntime.operations.has(operationId);
       const result: AgentWriteResult = await AgentRuntime.writeExisting(operationId, signature,
-        vaultId, snapshot.path, current, after, registry);
+        vaultId, session.id, runId, step.name, snapshot.path, current, after, registry, isUnsaved);
       assistant.writeResult = result;
       return replay ? '相同操作已执行过，没有重复写入。实际路径：' + result.path
         : '已写入 ' + result.path + '。';
@@ -302,26 +437,33 @@ export class AgentRuntime {
         throw new Error('INVALID_PATH：固定场景没有提供有效的库内目标路径。');
       }
       const text: string = step.text ?? '';
-      const signature: string = 'CreateNote|' + vaultId + '|' + requestedPath + '|' + text;
+      const actualPath: string = NoteService.previewCreatePath(registry, vaultId, requestedPath);
+      const signature: string = 'CreateNote|' + vaultId + '|' + actualPath + '|' + text;
       const existing: StoredOperation | undefined = AgentRuntime.operations.get(operationId);
       if (existing !== undefined) {
         if (existing.signature !== signature) {
           throw new Error('OPERATION_REPLAY_MISMATCH：相同 operationId 对应了不同参数。');
         }
+        if (existing.record.status !== 'applied' && existing.record.status !== 'undone') {
+          throw new Error('OPERATION_REPLAY_UNRESOLVED：该操作状态需先核对，未重复写入。');
+        }
         assistant.writeResult = existing.result;
         return '已登记相同 operationId；未重复创建或写入。实际路径：' + existing.result.path;
       }
-      const actualPath: string = NoteService.createNote(registry, vaultId, requestedPath);
+      const record: AgentStoredOperation = AgentRuntime.operationRecord(vaultId, session.id, runId,
+        operationId, step.name, signature, actualPath, '', text, true, registry);
+      await AgentRuntime.beginOperation(vaultId, record, registry);
       try {
-        await NoteService.saveNote(registry, vaultId, actualPath, text);
+        await NoteService.createNoteWithContent(registry, vaultId, actualPath, text);
       } catch (error) {
-        if (NoteService.exists(registry, vaultId, actualPath) &&
-          NoteService.tryReadNote(registry, vaultId, actualPath) === '') {
-          try {
-            await NoteService.deletePath(registry, vaultId, actualPath);
-          } catch (cleanupError) {
-            // 保留原始写入错误；空文件不会被报告为成功。
-          }
+        record.status = 'aborted';
+        AgentRuntime.recordOperation(operationId, signature, {
+          operationId, vaultId, path: actualPath, before: '', after: text, created: true, undone: false
+        }, record);
+        try {
+          await AgentRuntime.markOperation(vaultId, record, 'aborted', registry);
+        } catch (persistError) {
+          // Prepared intent is reconciled against the target on the next launch.
         }
         const err: Error = error as Error;
         throw err;
@@ -335,7 +477,13 @@ export class AgentRuntime {
         created: true,
         undone: false
       };
-      AgentRuntime.recordOperation(operationId, signature, result);
+      record.status = 'applied';
+      AgentRuntime.recordOperation(operationId, signature, result, record);
+      try {
+        await AgentRuntime.markOperation(vaultId, record, 'applied', registry);
+      } catch (persistError) {
+        // The prepared intent contains hashes and is enough to recover the successful write.
+      }
       assistant.writeResult = result;
       return '已创建 ' + actualPath + '。';
     }
@@ -346,23 +494,65 @@ export class AgentRuntime {
     throw new Error('UNKNOWN_TOOL：不支持的本地工具。');
   }
 
-  private static async writeExisting(operationId: string, signature: string, vaultId: string, path: string,
-    before: string, after: string, registry: VaultRegistry): Promise<AgentWriteResult> {
+  private static async writeExisting(operationId: string, signature: string, vaultId: string,
+    conversationId: string, runId: string, toolName: string, path: string,
+    before: string, after: string, registry: VaultRegistry,
+    isUnsaved: (path: string) => boolean): Promise<AgentWriteResult> {
     const existing: StoredOperation | undefined = AgentRuntime.operations.get(operationId);
     if (existing !== undefined) {
       if (existing.signature !== signature) {
         throw new Error('OPERATION_REPLAY_MISMATCH：相同 operationId 对应了不同参数。');
       }
+      if (existing.record.status !== 'applied' && existing.record.status !== 'undone') {
+        throw new Error('OPERATION_REPLAY_UNRESOLVED：该操作状态需先核对，未重复写入。');
+      }
       return existing.result;
     }
-    await NoteService.saveNote(registry, vaultId, path, after);
+    const record: AgentStoredOperation = AgentRuntime.operationRecord(vaultId, conversationId, runId,
+      operationId, toolName, signature, path, before, after, false, registry);
+    await AgentRuntime.beginOperation(vaultId, record, registry);
+    const latest: string | null = NoteService.tryReadNote(registry, vaultId, path);
+    if (isUnsaved(path) || latest === null || latest !== before) {
+      record.status = 'aborted';
+      AgentRuntime.recordOperation(operationId, signature, {
+        operationId, vaultId, path, before, after, created: false, undone: false
+      }, record);
+      try {
+        await AgentRuntime.markOperation(vaultId, record, 'aborted', registry);
+      } catch (persistError) {
+        // The unchanged or externally changed file is checked again on next launch.
+      }
+      throw new Error('STALE_CONTENT：写入准备期间笔记发生变化或出现未保存编辑，未覆盖新内容。');
+    }
+    try {
+      await NoteService.saveNote(registry, vaultId, path, after);
+    } catch (error) {
+      record.status = 'aborted';
+      AgentRuntime.recordOperation(operationId, signature, {
+        operationId, vaultId, path, before, after, created: false, undone: false
+      }, record);
+      try {
+        await AgentRuntime.markOperation(vaultId, record, 'aborted', registry);
+      } catch (persistError) {
+        // The prepared intent is reconciled against the unchanged file on the next launch.
+      }
+      const err = error as Error;
+      throw new Error(err.message);
+    }
     const result: AgentWriteResult = { operationId, vaultId, path, before, after, created: false, undone: false };
-    AgentRuntime.recordOperation(operationId, signature, result);
+    record.status = 'applied';
+    AgentRuntime.recordOperation(operationId, signature, result, record);
+    try {
+      await AgentRuntime.markOperation(vaultId, record, 'applied', registry);
+    } catch (persistError) {
+      // The prepared intent is reconciled against the completed file write on the next launch.
+    }
     return result;
   }
 
-  private static recordOperation(operationId: string, signature: string, result: AgentWriteResult): void {
-    AgentRuntime.operations.set(operationId, { signature, result });
+  private static recordOperation(operationId: string, signature: string, result: AgentWriteResult,
+    record: AgentStoredOperation): void {
+    AgentRuntime.operations.set(operationId, { signature, result, record });
     const order: string[] = AgentRuntime.operationOrderByVault.get(result.vaultId) ?? [];
     if (order.indexOf(operationId) < 0) {
       order.push(operationId);
@@ -371,11 +561,123 @@ export class AgentRuntime {
     AgentRuntime.latestOperationByVault.set(result.vaultId, operationId);
   }
 
+  private static operationRecord(vaultId: string, conversationId: string, runId: string, operationId: string,
+    toolName: string, signature: string, path: string, before: string, after: string, created: boolean,
+    registry: VaultRegistry): AgentStoredOperation {
+    const vaultKey: string = AgentRuntime.storageFor(registry) === null ? vaultId : registry.vaultKeyOf(vaultId);
+    return {
+      schemaVersion: 1,
+      vaultKey,
+      conversationId,
+      runId,
+      operationId,
+      toolName,
+      signature,
+      path,
+      before,
+      after,
+      baseHash: AgentOperationStorage.hashText(before),
+      resultHash: AgentOperationStorage.hashText(after),
+      created,
+      status: 'prepared',
+      createdAt: Date.now()
+    };
+  }
+
+  private static async beginOperation(vaultId: string, record: AgentStoredOperation,
+    registry: VaultRegistry): Promise<void> {
+    const storage: AgentOperationStorage | null = AgentRuntime.storageFor(registry);
+    if (storage !== null) {
+      await storage.beginOperation(vaultId, record);
+    }
+  }
+
+  private static async markOperation(vaultId: string, record: AgentStoredOperation,
+    status: AgentOperationStatus, registry: VaultRegistry): Promise<void> {
+    record.status = status;
+    await AgentRuntime.persistOperation(vaultId, record, registry);
+  }
+
+  private static async persistOperation(vaultId: string, record: AgentStoredOperation,
+    registry: VaultRegistry): Promise<void> {
+    const storage: AgentOperationStorage | null = AgentRuntime.storageFor(registry);
+    if (storage !== null) {
+      await storage.saveOperation(vaultId, record);
+    }
+  }
+
+  private static async ensureOperationsLoaded(vaultId: string, registry: VaultRegistry): Promise<void> {
+    const storage: AgentOperationStorage | null = AgentRuntime.storageFor(registry);
+    if (storage === null) {
+      return;
+    }
+    const key: string = registry.vaultKeyOf(vaultId);
+    if (AgentRuntime.operationsLoadedByVault.has(key)) {
+      return;
+    }
+    const records: AgentStoredOperation[] = storage.loadVaultOperations(vaultId);
+    AgentRuntime.operationsLoadedByVault.set(key, true);
+    records.sort((a: AgentStoredOperation, b: AgentStoredOperation): number => {
+      return a.createdAt - b.createdAt;
+    });
+    for (let i = 0; i < records.length; i++) {
+      const record: AgentStoredOperation = records[i];
+      try {
+        if (NoteService.normalizeRelPath(record.path) !== record.path) {
+          record.status = 'conflict';
+        } else if (record.status === 'prepared' || record.status === 'undoing') {
+          const exists: boolean = NoteService.exists(registry, vaultId, record.path);
+          const current: string | null = exists ? NoteService.tryReadNote(registry, vaultId, record.path) : null;
+          record.status = current === null && exists ? 'conflict' :
+            AgentOperationStorage.reconcileStatus(record, exists, current ?? '');
+        }
+        if (record.status === 'prepared' || record.status === 'undoing') {
+          record.status = 'conflict';
+        }
+        if (record.status === 'applied' || record.status === 'undone' || record.status === 'aborted' ||
+          record.status === 'conflict') {
+          try {
+            await storage.saveOperation(vaultId, record);
+          } catch (error) {
+            // The current process uses the reconciled in-memory state; the original record remains on disk.
+          }
+        }
+        const result: AgentWriteResult = {
+          operationId: record.operationId,
+          vaultId,
+          path: record.path,
+          before: record.before,
+          after: record.after,
+          created: record.created,
+          undone: record.status === 'undone'
+        };
+        AgentRuntime.recordOperation(record.operationId, record.signature, result, record);
+      } catch (error) {
+        // Malformed paths remain unresolved; never replay or apply them automatically.
+        record.status = 'conflict';
+        const result: AgentWriteResult = {
+          operationId: record.operationId,
+          vaultId,
+          path: record.path,
+          before: record.before,
+          after: record.after,
+          created: record.created,
+          undone: false
+        };
+        AgentRuntime.recordOperation(record.operationId, record.signature, result, record);
+      }
+    }
+  }
+
+  private static storageFor(registry: VaultRegistry): AgentOperationStorage | null {
+    return AgentRuntime.registry === registry ? AgentRuntime.operationStorage : null;
+  }
+
   private static latestActiveOperation(vaultId: string): string | undefined {
     const order: string[] = AgentRuntime.operationOrderByVault.get(vaultId) ?? [];
     for (let i = order.length - 1; i >= 0; i--) {
       const stored: StoredOperation | undefined = AgentRuntime.operations.get(order[i]);
-      if (stored !== undefined && !stored.result.undone) {
+      if (stored !== undefined && stored.record.status === 'applied' && !stored.result.undone) {
         return order[i];
       }
     }

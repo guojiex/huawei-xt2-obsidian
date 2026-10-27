@@ -14,7 +14,7 @@
  *  - 后续版本才有的设置项在底部灰显占位。
  * 视觉：token 化 + 内容页限宽 760vp 居中（需求 4.9）。
  */
-import { bundleManager, common } from '@kit.AbilityKit';
+import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { ResetDataDialog } from './ResetDataDialog';
@@ -23,11 +23,13 @@ import { RECENT_CHANGELOG } from '../model/ChangelogData';
 import { ChangelogList } from './ChangelogList';
 import { AgentConfigStore } from '../model/AgentConfigStore';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
+import { AgentRuntime } from '../model/AgentRuntime';
 import { BUILTIN_AGENT_PROMPT } from '../model/AgentDefaults';
 import { AgentSession, AgentSkillDefault } from '../model/AgentModels';
 import { VaultEntry } from '../model/Vault';
 import { Icon } from '../common/Icons';
 import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
+import { FEEDBACK_EMAIL } from '../model/AppConfig';
 
 @Component
 export struct SettingsView {
@@ -58,11 +60,26 @@ export struct SettingsView {
   @State sessionFilter: string = 'archived';
   @State managedSessions: AgentSession[] = [];
   @State sessionMessage: string = '';
+  @State feedbackError: string = '';
   private resetDialog: CustomDialogController | null = null;
   private deleteSessionDialog: CustomDialogController | null = null;
 
   private normalizedCategory(category: string): string {
-    return category === 'agent' || category === 'data' || category === 'about' ? category : 'general';
+    return category === 'data' || category === 'feedback' || category === 'about' ? category : 'general';
+  }
+
+  private async openFeedbackEmail(): Promise<void> {
+    this.feedbackError = '';
+    const subject: string = encodeURIComponent('曜石笔记 · 问题与建议');
+    const want: Want = {
+      action: 'ohos.want.action.sendToData',
+      uri: 'mailto:' + FEEDBACK_EMAIL + '?subject=' + subject
+    };
+    try {
+      await (getContext(this) as common.UIAbilityContext).startAbility(want);
+    } catch (error) {
+      this.feedbackError = '未能打开邮件应用，请使用下方邮箱地址手动反馈';
+    }
   }
 
   private onSelectedCategoryChanged(): void {
@@ -150,10 +167,15 @@ export struct SettingsView {
   }
 
   private restoreSystemPrompt(): void {
-    AgentConfigStore.restoreSystemPrompt();
-    this.systemPromptDraft = BUILTIN_AGENT_PROMPT;
-    this.configRevision++;
-    this.agentMessage = '已恢复内置系统提示词；笔记、对话和工具开关未改变。';
+    try {
+      AgentConfigStore.restoreSystemPrompt();
+      this.systemPromptDraft = BUILTIN_AGENT_PROMPT;
+      this.configRevision++;
+      this.agentMessage = '已恢复内置系统提示词；笔记、对话和工具开关未改变。';
+    } catch (error) {
+      const err = error as Error;
+      this.agentMessage = err.message;
+    }
   }
 
   private saveSkillPrompt(index: number): void {
@@ -176,12 +198,17 @@ export struct SettingsView {
     if (index < 0 || index >= skills.length) {
       return;
     }
-    AgentConfigStore.restoreSkillPrompt(skills[index].id);
-    const prompts: string[] = this.skillPrompts.slice();
-    prompts[index] = skills[index].prompt;
-    this.skillPrompts = prompts;
-    this.configRevision++;
-    this.agentMessage = '已恢复「' + skills[index].name + '」的内置提示词；其他设置与笔记未改变。';
+    try {
+      AgentConfigStore.restoreSkillPrompt(skills[index].id);
+      const prompts: string[] = this.skillPrompts.slice();
+      prompts[index] = skills[index].prompt;
+      this.skillPrompts = prompts;
+      this.configRevision++;
+      this.agentMessage = '已恢复「' + skills[index].name + '」的内置提示词；其他设置与笔记未改变。';
+    } catch (error) {
+      const err = error as Error;
+      this.agentMessage = err.message;
+    }
   }
 
   private setToolEnabled(index: number, enabled: boolean): void {
@@ -189,12 +216,17 @@ export struct SettingsView {
     if (index < 0 || index >= names.length) {
       return;
     }
-    AgentConfigStore.setToolEnabled(names[index], enabled);
-    const values: boolean[] = this.toolEnabled.slice();
-    values[index] = enabled;
-    this.toolEnabled = values;
-    this.configRevision++;
-    this.agentMessage = '工具开关已更新；只影响新一轮，Skill 权限限制仍然生效。';
+    try {
+      AgentConfigStore.setToolEnabled(names[index], enabled);
+      const values: boolean[] = this.toolEnabled.slice();
+      values[index] = enabled;
+      this.toolEnabled = values;
+      this.configRevision++;
+      this.agentMessage = '工具开关已更新；只影响新一轮，Skill 权限限制仍然生效。';
+    } catch (error) {
+      const err = error as Error;
+      this.agentMessage = err.message;
+    }
   }
 
   private refreshManagedSessions(): void {
@@ -229,26 +261,39 @@ export struct SettingsView {
       builder: DeleteAgentSessionDialog({
         title: session.title,
         vaultName: this.vaultName(session.vaultId),
-        onConfirm: (): void => { this.deleteSession(session); }
+        onConfirm: (): void => { void this.deleteSession(session); }
       })
     });
     this.deleteSessionDialog.open();
   }
 
-  private deleteSession(session: AgentSession): void {
-    if (!AgentMemoryStore.remove(session.vaultId, session.id)) {
-      this.sessionMessage = '这段对话已不存在。';
-      this.refreshManagedSessions();
+  private async deleteSession(session: AgentSession): Promise<void> {
+    if (AgentRuntime.isVaultBusy(session.vaultId)) {
+      this.sessionMessage = '该库的 Agent 正在运行或删除；稍后再删除对话。';
       return;
     }
-    this.sessionMessage = '对话已删除；笔记与已完成的笔记操作未改变。';
-    this.refreshManagedSessions();
+    try {
+      if (!await AgentMemoryStore.remove(session.vaultId, session.id)) {
+        this.sessionMessage = '这段对话已不存在。';
+        this.refreshManagedSessions();
+        return;
+      }
+      AgentRuntime.forgetConversation(session.vaultId, session.id);
+      this.sessionMessage = '对话已删除；笔记与已完成的笔记操作未改变。';
+      this.refreshManagedSessions();
+    } catch (error) {
+      this.sessionMessage = '对话删除失败；原记录已保留。';
+    }
   }
 
-  private restoreSession(session: AgentSession): void {
-    if (AgentMemoryStore.restore(session.vaultId, session.id)) {
-      this.sessionMessage = '对话已恢复到“' + this.vaultName(session.vaultId) + '”。';
-      this.refreshManagedSessions();
+  private async restoreSession(session: AgentSession): Promise<void> {
+    try {
+      if (await AgentMemoryStore.restore(session.vaultId, session.id)) {
+        this.sessionMessage = '对话已恢复到“' + this.vaultName(session.vaultId) + '”。';
+        this.refreshManagedSessions();
+      }
+    } catch (error) {
+      this.sessionMessage = '对话恢复失败；原归档状态已保留。';
     }
   }
 
@@ -305,8 +350,8 @@ export struct SettingsView {
         Scroll() {
           Column({ space: Space.s1 }) {
             this.CategoryRow('general', '通用', true)
-            this.CategoryRow('agent', 'Agent', true)
             this.CategoryRow('data', '数据', true)
+            this.CategoryRow('feedback', '问题与建议', true)
             this.CategoryRow('about', '关于', true)
           }
           .width('100%')
@@ -322,8 +367,8 @@ export struct SettingsView {
           Scroll() {
             Column({ space: Space.s1 }) {
               this.CategoryRow('general', '通用', false)
-              this.CategoryRow('agent', 'Agent', false)
               this.CategoryRow('data', '数据', false)
+              this.CategoryRow('feedback', '问题与建议', false)
               this.CategoryRow('about', '关于', false)
             }
             .width('100%')
@@ -376,10 +421,10 @@ export struct SettingsView {
       Column({ space: Space.s4 }) {
         if (this.selectedTab === 'general') {
           this.GeneralTab()
-        } else if (this.selectedTab === 'agent') {
-          this.AgentTab()
         } else if (this.selectedTab === 'data') {
           this.DataTab()
+        } else if (this.selectedTab === 'feedback') {
+          this.FeedbackTab()
         } else {
           this.AboutTab()
         }
@@ -460,7 +505,7 @@ export struct SettingsView {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      Text('配置暂存于内存，刷新应用后恢复内置默认。保存只影响下一轮；已经运行的轮次使用启动时快照。')
+      Text('配置保存在本机；更改只影响下一轮，已经运行的轮次使用启动时快照。')
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
@@ -572,7 +617,7 @@ export struct SettingsView {
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      Text('默认显示已归档对话，可切换查看全部并按所属知识库恢复或删除。当前会话仍保存在运行内存中。')
+      Text('对话、草稿、运行记录和撤销数据保存在本机。可切换查看全部对话，并按所属知识库恢复或删除已归档对话。')
         .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
@@ -628,7 +673,7 @@ export struct SettingsView {
               .fontColor($r('app.color.brand'))
               .height(Size.touch)
               .padding({ left: Space.s2, right: Space.s2 })
-              .onClick(() => { this.restoreSession(session); })
+              .onClick(() => { void this.restoreSession(session); })
           }
           Text('删除')
             .fontSize(FontSize.caption)
@@ -665,7 +710,7 @@ export struct SettingsView {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      Text('对话、草稿、Agent 设置、工具结果和撤销记录目前只在内存中，刷新应用后清空。笔记仍由原有知识库服务管理。')
+      Text('Agent 对话、未发送草稿、运行记录和撤销数据保存在此设备的应用私有空间。删除知识库时会一并清除此库的 Agent 数据；笔记仍由知识库管理。')
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
@@ -772,6 +817,46 @@ export struct SettingsView {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  FeedbackTab() {
+    Column({ space: Space.s3 }) {
+      Text('问题与建议')
+        .fontSize(FontSize.body2)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+      Text('请通过邮件描述你遇到的问题或改进建议。邮件由你检查并确认发送，不会自动附带笔记或诊断信息。')
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      Button('发送反馈邮件')
+        .width('100%')
+        .height(Size.touch)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.on_brand'))
+        .backgroundColor($r('app.color.brand'))
+        .borderRadius(Radius.button)
+        .onClick((): void => { void this.openFeedbackEmail(); })
+      Text(FEEDBACK_EMAIL)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.brand'))
+        .width('100%')
+        .padding({ top: Space.s2, bottom: Space.s2 })
+      if (this.feedbackError.length > 0) {
+        Text(this.feedbackError)
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.danger'))
+          .width('100%')
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding(Space.s4)
+    .borderRadius(Radius.card)
+    .border({ width: 1, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
   }
 
 }

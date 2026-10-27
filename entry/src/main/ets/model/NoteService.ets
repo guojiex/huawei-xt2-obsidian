@@ -97,6 +97,22 @@ export class NoteService {
     return candidate;
   }
 
+  /** 预计算一个尚未占用的笔记路径，供 Agent 先持久化操作意图再执行写入。 */
+  static previewCreatePath(registry: VaultRegistry, vaultId: string, relPath: string): string {
+    return NoteService.uniqueRelPath(registry, vaultId, relPath);
+  }
+
+  /** 在已确认未占用的精确路径写入新笔记正文，避免空文件先于 Agent 操作账落盘。 */
+  static async createNoteWithContent(registry: VaultRegistry, vaultId: string, relPath: string,
+    content: string): Promise<void> {
+    if (NoteService.exists(registry, vaultId, relPath)) {
+      throw new Error('CREATE_CONFLICT：目标笔记路径已被占用，未覆盖现有文件。');
+    }
+    NoteService.ensureParentDirectories(registry, vaultId, relPath);
+    await NoteService.saveNote(registry, vaultId, relPath, content);
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', relPath);
+  }
+
   /**
    * 新建笔记：逐级补建父目录 → 写空文件 → 返回实际落地的相对路径。
    * 失败一律抛错且**不留半状态**：父目录建成功了但文件写失败，只会留下空目录，
@@ -104,15 +120,7 @@ export class NoteService {
    */
   static createNote(registry: VaultRegistry, vaultId: string, relPath: string): string {
     const target: string = NoteService.uniqueRelPath(registry, vaultId, relPath);
-
-    const segs: string[] = target.split('/');
-    for (let i = 1; i < segs.length; i++) {
-      const dirRel: string = segs.slice(0, i).join('/');
-      const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
-      if (!fileIo.accessSync(dirAbs)) {
-        fileIo.mkdirSync(dirAbs);
-      }
-    }
+    NoteService.ensureParentDirectories(registry, vaultId, target);
 
     // API 24 的 openSync 返回 **File 对象**（不是 fd number，早期版本才是 number）；
     // closeSync 两个都收，writeSync 只收 fd → 从 file.fd 取。
@@ -127,6 +135,17 @@ export class NoteService {
     WikiLinkService.pathAdded(vaultId);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', target);
     return target;
+  }
+
+  private static ensureParentDirectories(registry: VaultRegistry, vaultId: string, relPath: string): void {
+    const segs: string[] = relPath.split('/');
+    for (let i = 1; i < segs.length; i++) {
+      const dirRel: string = segs.slice(0, i).join('/');
+      const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
+      if (!fileIo.accessSync(dirAbs)) {
+        fileIo.mkdirSync(dirAbs);
+      }
+    }
   }
 
   /**

@@ -237,7 +237,7 @@ export struct DeleteVaultDialog {
         .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
-      Text('该目录下的所有笔记会被永久删除，且无法恢复。')
+      Text('将永久删除该库的全部笔记，以及该库的 Agent 对话（含归档和未发送草稿）、运行记录及撤销数据；不会删除远端 Git 仓库。此操作无法撤销。正在运行的 Agent 会阻止删除。')
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_secondary'))
         .margin({ top: Space.s2, bottom: Space.s3 })

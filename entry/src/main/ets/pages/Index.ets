@@ -22,6 +22,8 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { AgentMemoryStore } from '../model/AgentMemoryStore';
+import { AgentRuntime } from '../model/AgentRuntime';
 import { NotePathMutationResult, NoteService } from '../model/NoteService';
 import { FileTree } from '../model/FileTree';
 import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
@@ -38,7 +40,7 @@ import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
-import { PreviewWebView, PreviewBridge } from '../components/PreviewWebView';
+import { PreviewWebView, PreviewBridge, PreviewCaptureResult } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
@@ -48,8 +50,19 @@ import {
   isSingleLandscapeWindow, navigationWidth
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
+import { ShareNoteDialog, ShareFormatOption } from '../components/ShareNoteDialog';
+import { ShareImagePreviewDialog, ShareImagePreviewPage } from '../components/ShareImagePreviewDialog';
+import { NoteShareService } from '../model/NoteShareService';
+import { NoteImageShareService } from '../model/NoteImageShareService';
+import { NoteImageService } from '../model/NoteImageService';
+import { ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
+import { ShareLinkService, ShareLinkScope } from '../model/ShareLinkService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { FullTextSearchResult } from '../model/SearchIndex';
+import { systemShare } from '@kit.ShareKit';
+import { uniformTypeDescriptor } from '@kit.ArkData';
+import { fileUri } from '@kit.CoreFileKit';
+import { photoAccessHelper } from '@kit.MediaLibraryKit';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -57,6 +70,7 @@ const TAG: string = 'Index';
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
   title: string;
+  showImageAction?: boolean;
 }
 
 /** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
@@ -194,6 +208,7 @@ struct Index {
   private saveTimer: number = -1;
   private lastSavedText: string = '';
   @State editorDirty: boolean = false;
+  @State imagePickerBusy: boolean = false;
 
   /**
    * M3 预览（3.1/3.2）：marked 渲染器跑在 PreviewWebView 里，本页做「编辑 → 预览」联动。
@@ -216,6 +231,19 @@ struct Index {
   /** 重命名 / 移动对话框 controller（1.6 左滑操作条） */
   private renamePathCtl: CustomDialogController | null = null;
   private movePathCtl: CustomDialogController | null = null;
+  private shareNoteCtl: CustomDialogController | null = null;
+  private shareImagePreviewCtl: CustomDialogController | null = null;
+  private shareCaptureBridge: PreviewBridge = new PreviewBridge();
+  private readonly shareCaptureComponentId: string = 'note-image-share-capture';
+  private shareCaptureReadyResolver: (() => void) | null = null;
+  private shareCaptureReadyRejecter: ((error: Error) => void) | null = null;
+  private shareCaptureReadyTimer: number = -1;
+  private shareCaptureCancelled: boolean = false;
+  private shareImagePreviewSessionId: string = '';
+  private shareImagePreviewTitle: string = '';
+  @State shareCaptureActive: boolean = false;
+  @State shareCaptureStatus: string = '正在准备分享图片…';
+  @State shareImagePreviewPages: ShareImagePreviewPage[] = [];
 
   aboutToAppear(): void {
     this.refreshFromRegistry();
@@ -872,6 +900,56 @@ struct Index {
     }
   }
 
+  /** Select one Gallery image, copy it into the current vault, and insert its relative Markdown path. */
+  private async pickImageForCurrentNote(): Promise<void> {
+    if (this.imagePickerBusy) {
+      return;
+    }
+    if (this.currentVaultId.length === 0 || this.currentFilePath.length === 0) {
+      promptAction.showToast({ message: '请先打开一篇笔记' });
+      return;
+    }
+    if (!this.editorBridge.ready) {
+      promptAction.showToast({ message: '编辑器尚未就绪，请稍后重试' });
+      return;
+    }
+
+    this.imagePickerBusy = true;
+    const vaultId: string = this.currentVaultId;
+    const notePath: string = this.currentFilePath;
+    const registry: VaultRegistry = VaultRegistry.get();
+    try {
+      const options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
+      options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+      options.maxSelectNumber = 1;
+      options.isPhotoTakingSupported = false;
+      const picker: photoAccessHelper.PhotoViewPicker = new photoAccessHelper.PhotoViewPicker();
+      const result: photoAccessHelper.PhotoSelectResult = await picker.select(options);
+      const uri: string = NoteImageService.selectedUri(result.photoUris);
+      if (uri.length === 0) {
+        return;
+      }
+      if (vaultId !== this.currentVaultId || notePath !== this.currentFilePath) {
+        promptAction.showToast({ message: '当前笔记已变化，未导入图片' });
+        return;
+      }
+
+      const imported = await NoteImageService.importPickedImage(registry, registry.abilityContext(),
+        vaultId, notePath, uri);
+      if (vaultId !== this.currentVaultId || notePath !== this.currentFilePath) {
+        NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
+        promptAction.showToast({ message: '笔记已切换，图片未插入' });
+        return;
+      }
+      this.editorBridge.insertText(imported.markdownReference);
+    } catch (error) {
+      const err = error as BusinessError;
+      promptAction.showToast({ message: err.message.length > 0 ? '图片导入失败：' + err.message : '图片导入失败' });
+    } finally {
+      this.imagePickerBusy = false;
+    }
+  }
+
   /** 状态栏右侧读数：形态 · vp · FS:N（有折痕时追加 · C:x,y，px 在此换算成 vp） */
   private statusRightText(): string {
     let s: string = formLabelOf(this.breakpoint, this.windowWidthVp, this.windowHeightVp) +
@@ -975,18 +1053,34 @@ struct Index {
     }
   }
 
-  private doDeleteVault(id: string): void {
+  private async doDeleteVault(id: string): Promise<void> {
     try {
       const reg: VaultRegistry = VaultRegistry.get();
       const target: VaultEntry | undefined = this.vaults.find((v: VaultEntry): boolean => v.id === id);
-      reg.remove(id);
-      FullTextSearchService.discardVault(id);
-      // 移除 Git 库：令牌随库清理（只删本地副本与凭据，远端仓库不受影响）
-      if (target !== undefined && target.type === 'git') {
-        GitCredentialStore.removeToken(id);
+      const vaultKey: string = reg.vaultKeyOf(id);
+      const removed: boolean = await AgentRuntime.deleteVaultWithCleanup(id,
+        async (): Promise<void> => {
+          await AgentMemoryStore.removeVaultData(id);
+        },
+        (): void => {
+          AgentRuntime.forgetVault(id, reg);
+          reg.remove(id);
+          FullTextSearchService.discardVault(id);
+          // 移除 Git 库：令牌随库清理（只删本地副本与凭据，远端仓库不受影响）
+          if (target !== undefined && target.type === 'git') {
+            GitCredentialStore.removeToken(id);
+          }
+          this.refreshFromRegistry();
+        });
+      if (!removed) {
+        promptAction.showToast({ message: '该库的 Agent 正在运行或删除；稍后再试。' });
       }
-      this.refreshFromRegistry();
     } catch (error) {
+      try {
+        await AgentMemoryStore.flushVault(id);
+      } catch (persistError) {
+        // Keep the deletion error visible; a later user edit can retry the conversation save.
+      }
       this.toastRegistryError('删除失败', error);
     }
   }
@@ -1065,7 +1159,7 @@ struct Index {
         await this.flushSave();
         this.currentFilePath = '';
       }
-      NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
+      await NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
       this.revealPath = '';
       this.refreshFileTree();
     } catch (error) {
@@ -1284,6 +1378,360 @@ struct Index {
     this.createDialogCtl.open();
   }
 
+  private openShareNoteDialog(): void {
+    if (this.topView !== 'note' || this.currentFilePath.length === 0) {
+      promptAction.showToast({ message: '请先打开一篇笔记' });
+      return;
+    }
+    this.openShareDialog('note', this.currentFilePath);
+  }
+
+  private openSharePath(relPath: string, isDir: boolean): void {
+    if (this.topView !== 'note' || !isDir) {
+      return;
+    }
+    this.openShareDialog('folder', relPath);
+  }
+
+  private openShareVault(): void {
+    if (this.topView !== 'note' || this.currentVaultId.length === 0) {
+      promptAction.showToast({ message: '当前没有可分享的知识库' });
+      return;
+    }
+    this.openShareDialog('vault', '');
+  }
+
+  private openShareDialog(scope: ShareLinkScope, path: string): void {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const entries: VaultEntry[] = registry.list();
+    let vault: VaultEntry | null = null;
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].id === this.currentVaultId) {
+        vault = entries[i];
+        break;
+      }
+    }
+    if (vault === null) {
+      promptAction.showToast({ message: '当前知识库不存在' });
+      return;
+    }
+    if (scope === 'note' && !this.editorBridge.ready) {
+      promptAction.showToast({ message: '编辑器尚未就绪，暂时无法分享' });
+      return;
+    }
+    let title: string = '分享笔记';
+    let itemName: string = this.currentFileName();
+    let description: string = '范围：当前编辑中的笔记及其引用的库内图片，不包含链接到的其他笔记。';
+    let itemSummary: string = '';
+    if (scope === 'folder') {
+      title = '分享文件夹';
+      itemName = path;
+      description = '范围：递归包含此文件夹下的文件，并补齐这些笔记引用的库内图片。';
+    } else if (scope === 'vault') {
+      title = '分享知识库';
+      itemName = this.currentVaultId;
+      description = '范围：当前知识库中的文件；隐藏项、回收站、缓存、草稿、凭据及内部状态不会打包。';
+    }
+
+    const options: ShareFormatOption[] = [];
+    if (scope === 'note') {
+      options.push({ value: 'image', label: '排版图片', detail: '覆盖全文与本地图片；长文会分图并显示页数。' });
+      options.push({ value: 'file', label: 'Markdown / ZIP', detail: '无本地图片分享 Markdown；有本地图片时自动打包 ZIP。' });
+    } else {
+      const count = ShareArchiveService.countScope(registry, this.currentVaultId, path);
+      itemSummary = '范围内 ' + count.noteCount.toString() + ' 篇 Markdown、' +
+        count.fileCount.toString() + ' 个文件；打包时会补齐外部引用图片。';
+      options.push({ value: 'zip', label: 'ZIP 文件', detail: '在本地生成，保留目录结构，不上传托管服务。' });
+    }
+
+    let notice: string = '';
+    if (vault.type === 'git') {
+      try {
+        const link: ShareLinkScope = scope;
+        const targetPath: string = scope === 'note' ? this.currentFilePath : path;
+        const linkResult = ShareLinkService.build(vault, link, targetPath);
+        options.push({ value: 'link', label: '远端网页链接', detail: '来自已配置的 Git 远端和跟踪分支。' });
+        notice = linkResult.accessNotice;
+      } catch (error) {
+        const err = error as Error;
+        notice = err.message + '；仍可分享本地文件。';
+      }
+    }
+
+    this.shareNoteCtl = new CustomDialogController({
+      builder: ShareNoteDialog({
+        title: title,
+        itemName: itemName,
+        scopeDescription: description,
+        itemSummary: itemSummary,
+        notice: notice,
+        options: options,
+        onConfirm: (format: string): void => { void this.prepareShare(scope, path, format, itemName, vault as VaultEntry); }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.shareNoteCtl.open();
+  }
+
+  private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
+    vault: VaultEntry): Promise<void> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    try {
+      if (format === 'link') {
+        const link: ShareLinkScope = scope;
+        const targetPath: string = scope === 'note' ? this.currentFilePath : path;
+        const result = ShareLinkService.build(vault, link, targetPath);
+        await this.shareLink(result.url, itemName, registry);
+        return;
+      }
+      if (format === 'image' && scope === 'note') {
+        await this.prepareNoteImageShare(this.currentVaultId, path, itemName);
+        return;
+      }
+      if (scope === 'note') {
+        const markdown: string = await this.editorBridge.getContent();
+        const prepared = await NoteShareService.prepareNote(registry, this.currentVaultId, path, markdown);
+        await this.shareFile(prepared.filePath, prepared.fileName, uniformTypeDescriptor.UniformDataType.FILE,
+          registry);
+        return;
+      }
+      let snapshot: ShareSnapshot | null = null;
+      if (this.editorBridge.ready && this.currentFilePath.length > 0 &&
+        (scope === 'vault' || this.currentFilePath.startsWith(path + '/') || this.currentFilePath === path)) {
+        snapshot = { path: this.currentFilePath, markdown: await this.editorBridge.getContent() };
+      }
+      const prepared = await ShareArchiveService.prepareZip(registry, this.currentVaultId, path, snapshot);
+      await this.shareFile(prepared.filePath, prepared.fileName, uniformTypeDescriptor.UniformDataType.FILE,
+        registry);
+    } catch (error) {
+      if (this.shareCaptureCancelled) {
+        return;
+      }
+      const err = error as Error;
+      const message: string = err.message.length > 0 ? err.message : '系统分享面板无法打开，请重试';
+      void this.getUIContext().getPromptAction().showDialog({
+        title: '分享失败',
+        message: message,
+        buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
+      });
+    }
+  }
+
+  private async shareFile(filePath: string, title: string, utd: string, registry: VaultRegistry): Promise<void> {
+    const shared = new systemShare.SharedData({
+      utd: utd,
+      uri: fileUri.getUriFromPath(filePath),
+      title: title
+    });
+    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+  }
+
+  private async shareLink(url: string, title: string, registry: VaultRegistry): Promise<void> {
+    const shared = new systemShare.SharedData({
+      utd: uniformTypeDescriptor.UniformDataType.HYPERLINK,
+      content: url,
+      title: title,
+      label: 'HYPERLINK'
+    });
+    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+  }
+
+  private waitForShareCaptureReady(): Promise<void> {
+    return new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {
+      this.shareCaptureReadyResolver = resolve;
+      this.shareCaptureReadyRejecter = reject;
+      this.shareCaptureReadyTimer = setTimeout((): void => {
+        this.rejectShareCaptureReady(new Error('分享预览加载超时，请重试'));
+      }, 10000);
+    });
+  }
+
+  private resolveShareCaptureReady(): void {
+    if (this.shareCaptureReadyResolver === null) {
+      return;
+    }
+    clearTimeout(this.shareCaptureReadyTimer);
+    this.shareCaptureReadyTimer = -1;
+    const resolve: () => void = this.shareCaptureReadyResolver;
+    this.shareCaptureReadyResolver = null;
+    this.shareCaptureReadyRejecter = null;
+    resolve();
+  }
+
+  private rejectShareCaptureReady(error: Error): void {
+    if (this.shareCaptureReadyRejecter === null) {
+      return;
+    }
+    clearTimeout(this.shareCaptureReadyTimer);
+    this.shareCaptureReadyTimer = -1;
+    const reject: (error: Error) => void = this.shareCaptureReadyRejecter;
+    this.shareCaptureReadyResolver = null;
+    this.shareCaptureReadyRejecter = null;
+    reject(error);
+  }
+
+  private cancelShareImageCapture(): void {
+    this.shareCaptureCancelled = true;
+    this.shareCaptureActive = false;
+    this.shareCaptureBridge.cancelShareCaptureRequests('分享图片生成已取消');
+    this.rejectShareCaptureReady(new Error('分享图片生成已取消'));
+  }
+
+  private async prepareNoteImageShare(vaultId: string, notePath: string, itemName: string): Promise<void> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const markdown: string = await this.editorBridge.getContent();
+    const bridge: PreviewBridge = new PreviewBridge();
+    bridge.setNoteDir(NoteShareService.parentOf(notePath));
+    bridge.setContent(markdown);
+    this.shareCaptureBridge = bridge;
+    this.shareCaptureCancelled = false;
+    this.shareCaptureStatus = '正在渲染笔记…';
+    this.shareCaptureActive = true;
+    let sessionId: string = '';
+    try {
+      const ready: Promise<void> = this.waitForShareCaptureReady();
+      await ready;
+      const initial: PreviewCaptureResult = await bridge.requestShareCaptureMetrics();
+      const pageTops: number[] = NoteImageShareService.pageTops(initial.scrollHeight, initial.viewportHeight);
+      const paged: PreviewCaptureResult = await bridge.prepareShareCapturePages(pageTops.length);
+      if (paged.viewportHeight <= 0 || paged.viewportWidth <= 0 ||
+        paged.scrollHeight < pageTops.length * paged.viewportHeight) {
+        throw new Error('分享预览分页尺寸不足，无法覆盖全文');
+      }
+      sessionId = NoteImageShareService.createSession(registry);
+      const pages: ShareImagePreviewPage[] = [];
+      for (let i = 0; i < pageTops.length; i++) {
+        if (this.shareCaptureCancelled) {
+          throw new Error('分享图片生成已取消');
+        }
+        this.shareCaptureStatus = '正在生成图片 ' + (i + 1).toString() + ' / ' + pageTops.length.toString();
+        const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(pageTops[i]);
+        if (Math.abs(positioned.scrollTop - pageTops[i]) > 1) {
+          throw new Error('分享预览无法滚动到第 ' + (i + 1).toString() + ' 张图片的位置');
+        }
+        const pixelMap = await this.getUIContext().getComponentSnapshot().get(this.shareCaptureComponentId,
+          { waitUntilRenderFinished: true });
+        const imageInfo = await pixelMap.getImageInfo();
+        const remainingHeight: number = Math.min(initial.viewportHeight, initial.scrollHeight - pageTops[i]);
+        const cropHeight: number = Math.max(1,
+          Math.min(imageInfo.size.height, Math.round(imageInfo.size.height * remainingHeight / initial.viewportHeight)));
+        if (cropHeight < imageInfo.size.height) {
+          await pixelMap.crop({
+            x: 0,
+            y: 0,
+            size: { width: imageInfo.size.width, height: cropHeight }
+          });
+        }
+        const croppedInfo = await pixelMap.getImageInfo();
+        const filePath: string = NoteImageShareService.pagePath(registry, sessionId, i);
+        await NoteImageShareService.writeJpeg(filePath, pixelMap);
+        pages.push({
+          uri: fileUri.getUriFromPath(filePath),
+          aspectRatio: croppedInfo.size.width / croppedInfo.size.height,
+          pageNumber: i + 1
+        });
+      }
+      if (this.shareCaptureCancelled) {
+        throw new Error('分享图片生成已取消');
+      }
+      this.shareCaptureActive = false;
+      this.shareImagePreviewSessionId = sessionId;
+      this.shareImagePreviewTitle = itemName;
+      this.shareImagePreviewPages = pages;
+      this.openShareImagePreview(itemName, pages);
+    } catch (error) {
+      this.shareCaptureActive = false;
+      bridge.cancelShareCaptureRequests('分享图片生成已结束');
+      if (sessionId.length > 0) {
+        try {
+          NoteShareService.removeTree(registry, sessionId);
+        } catch (cleanupError) {
+          // The cache directory is private to this failed preparation and expires after 24 hours.
+        }
+      }
+      if (!this.shareCaptureCancelled) {
+        const err = error as Error;
+        throw new Error(err.message);
+      }
+    } finally {
+      if (this.shareCaptureReadyTimer >= 0) {
+        clearTimeout(this.shareCaptureReadyTimer);
+        this.shareCaptureReadyTimer = -1;
+      }
+      this.shareCaptureReadyResolver = null;
+      this.shareCaptureReadyRejecter = null;
+    }
+  }
+
+  private openShareImagePreview(itemName: string, pages: ShareImagePreviewPage[]): void {
+    this.shareImagePreviewCtl = new CustomDialogController({
+      builder: ShareImagePreviewDialog({
+        itemName: itemName,
+        pages: pages,
+        onConfirm: (): void => {
+          const sharePages: ShareImagePreviewPage[] = this.shareImagePreviewPages.slice();
+          const title: string = this.shareImagePreviewTitle;
+          this.shareImagePreviewSessionId = '';
+          this.shareImagePreviewPages = [];
+          void this.shareImagePages(sharePages, title, VaultRegistry.get());
+        },
+        onCancel: (): void => {
+          this.cleanupShareImagePreview();
+        }
+      }),
+      autoCancel: false,
+      customStyle: true
+    });
+    this.shareImagePreviewCtl.open();
+  }
+
+  private cleanupShareImagePreview(): void {
+    const sessionId: string = this.shareImagePreviewSessionId;
+    this.shareImagePreviewSessionId = '';
+    this.shareImagePreviewPages = [];
+    if (sessionId.length === 0) {
+      return;
+    }
+    try {
+      NoteShareService.removeTree(VaultRegistry.get(), sessionId);
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, '分享预览临时文件清理失败');
+    }
+  }
+
+  private async shareImagePages(pages: ShareImagePreviewPage[], title: string, registry: VaultRegistry): Promise<void> {
+    if (pages.length === 0 || pages.length > NoteImageShareService.MAX_PAGES) {
+      promptAction.showToast({ message: '分享图片数量无效，请重新生成' });
+      return;
+    }
+    const first: ShareImagePreviewPage = pages[0];
+    const shared = new systemShare.SharedData({
+      utd: uniformTypeDescriptor.UniformDataType.JPEG,
+      uri: first.uri,
+      title: title,
+      label: 'IMAGE'
+    });
+    for (let i = 1; i < pages.length; i++) {
+      shared.addRecord({
+        utd: uniformTypeDescriptor.UniformDataType.JPEG,
+        uri: pages[i].uri,
+        title: title + ' · ' + pages[i].pageNumber.toString(),
+        label: 'IMAGE'
+      });
+    }
+    try {
+      await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+    } catch (error) {
+      const err = error as Error;
+      void this.getUIContext().getPromptAction().showDialog({
+        title: '分享失败',
+        message: err.message.length > 0 ? err.message : '系统分享面板无法打开，请重试',
+        buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
+      });
+    }
+  }
+
   /**
    * 打开新建（笔记 / 文件夹）对话框。
    * @param initialDir 预选目录：目录行 + 按钮入口传点击的目录；空串 = 目录树头部「＋」入口，
@@ -1430,7 +1878,7 @@ struct Index {
       builder: DeleteVaultDialog({
         vaultId: id,
         onConfirm: (): void => {
-          this.doDeleteVault(id);
+          void this.doDeleteVault(id);
         }
       }),
       autoCancel: true,
@@ -1488,6 +1936,17 @@ struct Index {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
+      if ($$.showImageAction === true && this.currentFilePath.length > 0) {
+        Button(this.imagePickerBusy ? '导入中' : '插入图片')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor(Color.Transparent)
+          .padding({ left: Space.s2, right: Space.s2 })
+          .enabled(!this.imagePickerBusy && this.editorBridge.ready)
+          .onClick((): void => {
+            void this.pickImageForCurrentNote();
+          })
+      }
       if (this.isSingleScreenLayout()) {
         this.SegToggle()
       }
@@ -1555,6 +2014,9 @@ struct Index {
           .width('100%')
           .height('100%')
       }
+      if (this.shareCaptureActive) {
+        this.ShareImageCaptureLayer()
+      }
     }
     .width('100%')
     .height('100%')
@@ -1603,6 +2065,48 @@ struct Index {
         this.doRestoreFromTrash(relPath);
       }
     })
+  }
+
+  @Builder
+  ShareImageCaptureLayer() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      PreviewWebView({
+        bridge: this.shareCaptureBridge,
+        componentId: this.shareCaptureComponentId,
+        onReadAsset: (relPath: string): string => {
+          return this.readVaultAsset(relPath);
+        },
+        onReady: (): void => {
+          this.resolveShareCaptureReady();
+        },
+        onError: (msg: string): void => {
+          hilog.error(DOMAIN, TAG, '分享预览加载错误: %{public}s', msg);
+          this.rejectShareCaptureReady(new Error('分享预览加载失败，请重试'));
+        }
+      })
+        .width('100%')
+        .height('100%')
+      Row({ space: Space.s3 }) {
+        Text(this.shareCaptureStatus)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Text('取消')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.brand'))
+          .onClick((): void => {
+            this.cancelShareImageCapture();
+          })
+      }
+      .width('100%')
+      .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
+      .backgroundColor($r('app.color.bg_card'))
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.bg_page'))
   }
 
   /**
@@ -1658,6 +2162,9 @@ struct Index {
         if (this.breakpoint === Breakpoint.SM) {
           this.MoreMenuButton()
         } else {
+          this.IconButton('share', $r('app.color.text_secondary'), (): void => {
+            this.openShareNoteDialog();
+          })
           this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
             router.pushUrl({ url: 'pages/SyncPage' });
           })
@@ -1718,7 +2225,7 @@ struct Index {
       .padding({ left: Space.s3, right: Space.s3 })
       .onClick(() => {
         this.moreMenuOpen = false;
-        promptAction.showToast({ message: '分享功能将在 v0.8 提供' });
+        this.openShareNoteDialog();
       })
       Row() {
         Text('同步')
@@ -1774,6 +2281,10 @@ struct Index {
         this.closeNoteNavigation();
         void this.openVaultManager('note');
       },
+      onShareVault: (): void => {
+        this.closeNoteNavigation();
+        this.openShareVault();
+      },
       onImportGit: (): void => {
         this.closeNoteNavigation();
         router.pushUrl({ url: 'pages/SyncPage' });
@@ -1797,6 +2308,10 @@ struct Index {
       onDeletePath: (relPath: string, isDir: boolean): void => {
         this.closeNoteNavigation();
         this.openDeletePathDialog(relPath, isDir);
+      },
+      onSharePath: (relPath: string, isDir: boolean): void => {
+        this.closeNoteNavigation();
+        this.openSharePath(relPath, isDir);
       },
       onSwipeDelete: (relPath: string): void => {
         this.closeNoteNavigation();
@@ -1971,7 +2486,10 @@ struct Index {
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      this.PaneHead({ title: this.currentFilePath.length > 0 ? this.currentFileName() : '尚未选择笔记' })
+      this.PaneHead({
+        title: this.currentFilePath.length > 0 ? this.currentFileName() : '尚未选择笔记',
+        showImageAction: true
+      })
 
       Stack() {
         // M0.5 spike：CodeMirror 6 跑在 Web 组件里（web/mdeditor → rawfile/mdeditor/index.html）。

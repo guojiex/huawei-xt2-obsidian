@@ -4,7 +4,7 @@
  * 设计依据（plan.md R3 / R5 / R7）：
  * - 注册表存 preferences 单 key JSON（mvp_design.md §4.5「MVP 存 preferences，app.db 是 v2 的事」），
  *   自带落盘，本版本无需 AtomicFile；
- * - 删库用 fileIo.rmdirSync（T002 已核对 API 24 递归语义：「删除目录及其所有子目录和文件」）；
+ * - 删库先递归移除子项，最后对空目录调用 fileIo.rmdirSync；
  * - 改名/删除遵循「文件系统操作成功后才改注册表」——失败即回滚到未动状态，禁止半状态；
  * - 消毒与重名规则收口在 model 层（Vault.sanitizeVaultName + 本类 uniqueVaultId），
  *   新建/改名/对话框共用同一套逻辑，避免两处漂移。
@@ -35,6 +35,7 @@ interface VaultRegistryRaw {
 /** 单个库条目的原始（未校验）形态。 */
 interface VaultEntryRaw {
   id?: Object;
+  vaultKey?: Object;
   type?: Object;
   createdAt?: Object;
   remote?: Object;
@@ -45,6 +46,7 @@ interface VaultEntryRaw {
 
 export class VaultRegistry {
   private static instance: VaultRegistry | null = null;
+  private static readonly GIT_IMPORTING_SUFFIX: string = '__importing';
 
   /** preferences 实例名（单一真源，plan.md Data Model）。 */
   private readonly PREF_NAME: string = 'vault_registry';
@@ -57,6 +59,7 @@ export class VaultRegistry {
   private state: VaultRegistryState = { vaults: [], currentVaultId: '' };
   private initialized: boolean = false;
   private sampleInstallPending: boolean = false;
+  private vaultKeySerial: number = 0;
 
   private constructor(context: common.UIAbilityContext) {
     this.context = context;
@@ -109,6 +112,7 @@ export class VaultRegistry {
       this.sampleInstallPending = !fileIo.accessSync(this.resolver.vaultDir(DEFAULT_VAULT_ID));
       this.createDefaultVault();
     }
+    this.recoverGitImportResidues();
     this.initialized = true;
   }
 
@@ -124,7 +128,7 @@ export class VaultRegistry {
     const copy: VaultEntry[] = [];
     for (let i = 0; i < this.state.vaults.length; i++) {
       const v: VaultEntry = this.state.vaults[i];
-      const item: VaultEntry = { id: v.id, type: v.type, createdAt: v.createdAt };
+      const item: VaultEntry = { id: v.id, vaultKey: v.vaultKey, type: v.type, createdAt: v.createdAt };
       if (v.remote !== undefined) {
         item.remote = v.remote;
       }
@@ -157,6 +161,15 @@ export class VaultRegistry {
     return this.findEntry(this.state.currentVaultId);
   }
 
+  /** 稳定的库身份，用于库改名后继续定位库外 Agent 私有数据。 */
+  vaultKeyOf(id: string): string {
+    const entry: VaultEntry | null = this.findEntry(id);
+    if (entry === null) {
+      throw new Error('库不存在: ' + id);
+    }
+    return entry.vaultKey;
+  }
+
   /** 切换当前库（切库后上下文归零是允许的，spec.md FR-012）。 */
   setCurrent(id: string): void {
     if (this.findEntry(id) === null) {
@@ -185,7 +198,7 @@ export class VaultRegistry {
       // mkdir 失败会抛错 → 不入表，无半状态
       fileIo.mkdirSync(dirPath);
     }
-    const entry: VaultEntry = { id: id, type: 'local', createdAt: Date.now() };
+    const entry: VaultEntry = { id: id, vaultKey: this.newVaultKey(), type: 'local', createdAt: Date.now() };
     this.state.vaults.push(entry);
     this.persist();
     return entry;
@@ -199,10 +212,13 @@ export class VaultRegistry {
    */
   registerGit(id: string, remote: string, branch: string, authUsername: string): VaultEntry {
     const dirPath: string = this.resolver.vaultDir(id);
+    if (this.findEntry(id) !== null) {
+      throw new Error('库已登记，拒绝重复登记: ' + id);
+    }
     if (!fileIo.accessSync(dirPath)) {
       throw new Error('库目录不存在，拒绝登记: ' + id);
     }
-    const entry: VaultEntry = { id: id, type: 'git', createdAt: Date.now() };
+    const entry: VaultEntry = { id: id, vaultKey: this.newVaultKey(), type: 'git', createdAt: Date.now() };
     if (remote.length > 0) {
       entry.remote = remote;
     }
@@ -213,8 +229,74 @@ export class VaultRegistry {
       entry.authUsername = authUsername;
     }
     this.state.vaults.push(entry);
-    this.persist();
+    try {
+      this.persist(true);
+    } catch (error) {
+      const err = error as BusinessError;
+      this.state.vaults.pop();
+      this.persist();
+      throw new Error(err.message);
+    }
     return entry;
+  }
+
+  /** 在 clone 开始前登记恢复意图；标记目录与库内容分离，不进入 Git 工作树。 */
+  beginGitImport(finalId: string, importingId: string): void {
+    this.recoverGitImportResidues();
+    if (!importingId.startsWith(finalId + VaultRegistry.GIT_IMPORTING_SUFFIX)) {
+      throw new Error('导入临时库 id 不匹配: ' + importingId);
+    }
+    if (this.idTaken(finalId, '') || this.idTaken(importingId, '')) {
+      throw new Error('导入目标已存在，拒绝覆盖');
+    }
+    this.ensureVaultsRoot();
+    const markerRoot: string = this.resolver.gitImportMarkersRoot();
+    if (!fileIo.accessSync(markerRoot)) {
+      fileIo.mkdirSync(markerRoot);
+    }
+    const markerDir: string = this.resolver.gitImportMarkerDir(finalId);
+    if (fileIo.accessSync(markerDir)) {
+      throw new Error('导入恢复标记已存在: ' + finalId);
+    }
+    fileIo.mkdirSync(markerDir);
+    try {
+      fileIo.mkdirSync(this.resolver.gitImportTempMarkerDir(finalId, importingId));
+    } catch (error) {
+      const err = error as BusinessError;
+      fileIo.rmdirSync(markerDir);
+      throw new Error(err.message);
+    }
+  }
+
+  /** 失败时仅删除由本次导入标记拥有且尚未登记的目录。清理失败时保留标记供重启恢复。 */
+  cleanupGitImport(finalId: string, importingId: string): void {
+    const markerDir: string = this.resolver.gitImportMarkerDir(finalId);
+    if (!fileIo.accessSync(markerDir)) {
+      return;
+    }
+    if (!importingId.startsWith(finalId + VaultRegistry.GIT_IMPORTING_SUFFIX)) {
+      throw new Error('导入临时库 id 不匹配，拒绝清理: ' + importingId);
+    }
+    if (this.findEntry(importingId) === null) {
+      this.removePathTreeIfExists(this.resolver.vaultDir(importingId));
+    }
+    if (this.findEntry(finalId) === null) {
+      this.removePathTreeIfExists(this.resolver.vaultDir(finalId));
+    }
+    this.removeImportMarker(finalId, importingId);
+  }
+
+  /** 登记成功后移除恢复标记；清理异常留给下一次启动重试，不撤销已持久化的库。 */
+  finishGitImport(finalId: string, importingId: string): void {
+    if (this.findEntry(finalId) === null) {
+      throw new Error('Git 导入尚未登记: ' + finalId);
+    }
+    try {
+      this.removeImportMarker(finalId, importingId);
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.warn(REG_DOMAIN, REG_TAG, 'Git 导入标记清理失败，将在下次启动重试: %{public}s', err.message);
+    }
   }
 
   /**
@@ -256,7 +338,7 @@ export class VaultRegistry {
   }
 
   /**
-   * 删除本地库（不可逆，FR-011）：rmdirSync 递归删除目录 → 出表 → 当前库回落列表第一个。
+   * 删除本地库（不可逆，FR-011）：先递归删除目录内容，再出表 → 当前库回落列表第一个。
    * 顺序：先删目录，成功后才改注册表——失败即抛错且注册表未动（禁半状态）。
    */
   remove(id: string): void {
@@ -265,8 +347,7 @@ export class VaultRegistry {
       throw new Error('库不存在: ' + id);
     }
     const dirPath: string = this.resolver.vaultDir(id);
-    // rmdirSync 递归语义已于 T002 核对（官方文档：删除目录及其所有子目录和文件）
-    fileIo.rmdirSync(dirPath);
+    this.removeVaultTree(id, '');
     const kept: VaultEntry[] = [];
     for (let i = 0; i < this.state.vaults.length; i++) {
       if (this.state.vaults[i].id !== id) {
@@ -279,6 +360,32 @@ export class VaultRegistry {
       this.state.currentVaultId = this.state.vaults.length > 0 ? this.state.vaults[0].id : '';
     }
     this.persist();
+  }
+
+  private removeVaultTree(vaultId: string, relativePath: string): void {
+    const path: string = relativePath.length === 0
+      ? this.resolver.vaultDir(vaultId)
+      : this.resolver.resolve(vaultId, relativePath);
+    this.removePathTree(path);
+  }
+
+  private removePathTreeIfExists(path: string): void {
+    if (fileIo.accessSync(path)) {
+      this.removePathTree(path);
+    }
+  }
+
+  private removePathTree(path: string): void {
+    const stat: fileIo.Stat = fileIo.statSync(path);
+    if (!stat.isDirectory()) {
+      fileIo.unlinkSync(path);
+      return;
+    }
+    const names: string[] = fileIo.listFileSync(path);
+    for (let i = 0; i < names.length; i++) {
+      this.removePathTree(path + '/' + names[i]);
+    }
+    fileIo.rmdirSync(path);
   }
 
   /**
@@ -307,6 +414,10 @@ export class VaultRegistry {
 
   draftsRoot(): string {
     return this.resolver.draftsRoot();
+  }
+
+  sharePath(relativePath: string): string {
+    return this.resolver.resolveShare(relativePath);
   }
 
   draftsRootRecoveryFile(): string {
@@ -350,6 +461,42 @@ export class VaultRegistry {
     return this.resolver.vaultsRoot();
   }
 
+  agentConversationsDirOf(vaultId: string): string {
+    return this.resolver.agentConversationsDir(this.vaultKeyOf(vaultId));
+  }
+
+  agentConversationDirOf(vaultId: string, conversationId: string): string {
+    return this.resolver.agentConversationDir(this.vaultKeyOf(vaultId), conversationId);
+  }
+
+  agentConversationFileOf(vaultId: string, conversationId: string): string {
+    return this.resolver.agentConversationFile(this.vaultKeyOf(vaultId), conversationId);
+  }
+
+  agentVaultDirOf(vaultId: string): string {
+    return this.resolver.agentVaultDir(this.vaultKeyOf(vaultId));
+  }
+
+  agentRunDirOf(vaultId: string, conversationId: string, runId: string): string {
+    return this.resolver.agentRunDir(this.vaultKeyOf(vaultId), conversationId, runId);
+  }
+
+  agentRunsDirOf(vaultId: string, conversationId: string): string {
+    return this.resolver.agentRunsDir(this.vaultKeyOf(vaultId), conversationId);
+  }
+
+  agentRunStateFileOf(vaultId: string, conversationId: string, runId: string): string {
+    return this.resolver.agentRunStateFile(this.vaultKeyOf(vaultId), conversationId, runId);
+  }
+
+  agentRunOperationsDirOf(vaultId: string, conversationId: string, runId: string): string {
+    return this.resolver.agentRunOperationsDir(this.vaultKeyOf(vaultId), conversationId, runId);
+  }
+
+  agentOperationFileOf(vaultId: string, conversationId: string, runId: string, operationId: string): string {
+    return this.resolver.agentOperationFile(this.vaultKeyOf(vaultId), conversationId, runId, operationId);
+  }
+
   private idTaken(id: string, excludeId: string): boolean {
     if (id.length > 0 && id === excludeId) {
       return false;
@@ -360,7 +507,8 @@ export class VaultRegistry {
       }
     }
     try {
-      return fileIo.accessSync(this.resolver.vaultDir(id));
+      return fileIo.accessSync(this.resolver.vaultDir(id)) ||
+        fileIo.accessSync(this.resolver.gitImportMarkerDir(id));
     } catch (error) {
       return false;
     }
@@ -390,6 +538,7 @@ export class VaultRegistry {
         return null;
       }
       const vaults: VaultEntry[] = [];
+      const usedVaultKeys: Map<string, boolean> = new Map<string, boolean>();
       for (let i = 0; i < rawVaults.length; i++) {
         const item = rawVaults[i] as VaultEntryRaw;
         if (typeof item !== 'object' || item === null) {
@@ -400,7 +549,13 @@ export class VaultRegistry {
           continue;
         }
         // 校验通过后拷入严格模型，不直接引用解析产物
-        const entry: VaultEntry = { id: item.id, type: item.type, createdAt: item.createdAt };
+        let vaultKey: string = typeof item.vaultKey === 'string' && this.isSafeVaultKey(item.vaultKey) ?
+          item.vaultKey : '';
+        if (vaultKey.length === 0 || usedVaultKeys.has(vaultKey)) {
+          vaultKey = this.newVaultKey(usedVaultKeys);
+        }
+        usedVaultKeys.set(vaultKey, true);
+        const entry: VaultEntry = { id: item.id, vaultKey: vaultKey, type: item.type, createdAt: item.createdAt };
         if (typeof item.remote === 'string') {
           entry.remote = item.remote;
         }
@@ -463,7 +618,7 @@ export class VaultRegistry {
       if (!fileIo.accessSync(dirPath)) {
         fileIo.mkdirSync(dirPath);
       }
-      this.state.vaults.push({ id: DEFAULT_VAULT_ID, type: 'local', createdAt: Date.now() });
+      this.state.vaults.push({ id: DEFAULT_VAULT_ID, vaultKey: this.newVaultKey(), type: 'local', createdAt: Date.now() });
       this.state.currentVaultId = DEFAULT_VAULT_ID;
       this.persist();
     } catch (error) {
@@ -473,9 +628,12 @@ export class VaultRegistry {
   }
 
   /** 注册表落盘（preferences putSync + flushSync，API 14+ 已于 T002 核对）。 */
-  private persist(): void {
+  private persist(mustSucceed: boolean = false): void {
     if (this.store === null) {
       hilog.error(REG_DOMAIN, REG_TAG, 'preferences 实例不可用，注册表未持久化');
+      if (mustSucceed) {
+        throw new Error('preferences 实例不可用，注册表未持久化');
+      }
       return;
     }
     try {
@@ -484,6 +642,91 @@ export class VaultRegistry {
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(REG_DOMAIN, REG_TAG, '注册表持久化失败: %{public}s', JSON.stringify(err));
+      if (mustSucceed) {
+        throw new Error(err.message);
+      }
     }
+  }
+
+  recoverGitImportResidues(): void {
+    const markerRoot: string = this.resolver.gitImportMarkersRoot();
+    if (!fileIo.accessSync(markerRoot)) {
+      return;
+    }
+    const finalIds: string[] = fileIo.listFileSync(markerRoot);
+    for (let i = 0; i < finalIds.length; i++) {
+      const finalId: string = finalIds[i];
+      try {
+        const markerDir: string = this.resolver.gitImportMarkerDir(finalId);
+        const importingIds: string[] = fileIo.listFileSync(markerDir);
+        let safeToFinish: boolean = true;
+        for (let j = 0; j < importingIds.length; j++) {
+          const importingId: string = importingIds[j];
+          if (!importingId.startsWith(finalId + VaultRegistry.GIT_IMPORTING_SUFFIX)) {
+            safeToFinish = false;
+            continue;
+          }
+          if (this.findEntry(importingId) === null) {
+            this.removePathTreeIfExists(this.resolver.vaultDir(importingId));
+          }
+          fileIo.rmdirSync(this.resolver.gitImportTempMarkerDir(finalId, importingId));
+        }
+        if (!safeToFinish) {
+          continue;
+        }
+        if (this.findEntry(finalId) === null) {
+          this.removePathTreeIfExists(this.resolver.vaultDir(finalId));
+        }
+        fileIo.rmdirSync(markerDir);
+      } catch (error) {
+        const err = error as BusinessError;
+        hilog.warn(REG_DOMAIN, REG_TAG, 'Git 导入残留恢复失败，将保留标记供重试: %{public}s', err.message);
+      }
+    }
+  }
+
+  private removeImportMarker(finalId: string, importingId: string): void {
+    const tempMarker: string = this.resolver.gitImportTempMarkerDir(finalId, importingId);
+    if (fileIo.accessSync(tempMarker)) {
+      fileIo.rmdirSync(tempMarker);
+    }
+    const markerDir: string = this.resolver.gitImportMarkerDir(finalId);
+    if (fileIo.accessSync(markerDir) && fileIo.listFileSync(markerDir).length === 0) {
+      fileIo.rmdirSync(markerDir);
+    }
+  }
+
+  private newVaultKey(usedKeys?: Map<string, boolean>): string {
+    let candidate: string = '';
+    do {
+      this.vaultKeySerial++;
+      candidate = 'vault-' + Date.now().toString() + '-' + this.vaultKeySerial.toString();
+    } while (this.vaultKeyTaken(candidate) || (usedKeys !== undefined && usedKeys.has(candidate)));
+    return candidate;
+  }
+
+  private vaultKeyTaken(key: string): boolean {
+    for (let i = 0; i < this.state.vaults.length; i++) {
+      if (this.state.vaults[i].vaultKey === key) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isSafeVaultKey(value: string): boolean {
+    if (value.length === 0) {
+      return false;
+    }
+    for (let i = 0; i < value.length; i++) {
+      const code: number = value.charCodeAt(i);
+      const ch: string = value.charAt(i);
+      const alphaNumeric: boolean = (code >= 48 && code <= 57) || (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122);
+      if (!alphaNumeric && ch !== '-' && ch !== '_') {
+        return false;
+      }
+    }
+    return true;
   }
 }

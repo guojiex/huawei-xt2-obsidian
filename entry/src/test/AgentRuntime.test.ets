@@ -123,6 +123,36 @@ export default function agentRuntimeTest() {
         expect(files.size).assertEqual(0);
       });
 
+    it('keeps a vault when private-data cleanup fails and permits a later retry', 0,
+      async (): Promise<void> => {
+        let cleanupCalls: number = 0;
+        let removeCalls: number = 0;
+        let failed: boolean = false;
+        try {
+          await AgentRuntime.deleteVaultWithCleanup('vault-delete-test', async (): Promise<void> => {
+            cleanupCalls++;
+            throw new Error('模拟私有数据清理失败');
+          }, (): void => {
+            removeCalls++;
+          });
+        } catch (error) {
+          failed = true;
+        }
+        expect(failed).assertTrue();
+        expect(cleanupCalls).assertEqual(1);
+        expect(removeCalls).assertEqual(0);
+
+        const removed: boolean = await AgentRuntime.deleteVaultWithCleanup('vault-delete-test',
+          async (): Promise<void> => {
+            cleanupCalls++;
+          }, (): void => {
+            removeCalls++;
+          });
+        expect(removed).assertTrue();
+        expect(cleanupCalls).assertEqual(2);
+        expect(removeCalls).assertEqual(1);
+      });
+
     afterAll((): void => {
       mock.ignoreMock(NoteService as Object, 'exists');
       mock.ignoreMock(NoteService as Object, 'tryReadNote');
@@ -185,7 +215,7 @@ export default function agentRuntimeTest() {
       expect(files.size).assertEqual(0);
     });
 
-    it('executes a fixed create once and removes the empty file after a failed save', 0,
+    it('executes a fixed create once and leaves no partial file after a failed atomic save', 0,
       async (): Promise<void> => {
         const vaultId: string = 'vault-create-' + fixtureSerial.toString();
         const session: AgentSession = makeSession(vaultId);
@@ -327,6 +357,46 @@ export default function agentRuntimeTest() {
         expect(AgentRuntime.fixedQuestions().indexOf('新建读书小结') >= 0).assertTrue();
         expect(AgentRuntime.fixedQuestions().indexOf('随便写一句') < 0).assertTrue();
         AgentConfigStore.setToolEnabled('CreateNote', true);
+      });
+
+    it('serializes vault deletion, keeps other vaults independent, and releases the lock on cleanup failure', 0,
+      async (): Promise<void> => {
+        let duplicateRemoved: boolean = false;
+        let otherRemoved: boolean = false;
+        const deleted: boolean = await AgentRuntime.deleteVaultWithCleanup('delete-lock-a',
+          async (): Promise<void> => {
+            expect(AgentRuntime.isVaultDeleting('delete-lock-a')).assertTrue();
+            const duplicate: boolean = await AgentRuntime.deleteVaultWithCleanup('delete-lock-a',
+              async (): Promise<void> => {},
+              (): void => { duplicateRemoved = true; });
+            expect(duplicate).assertFalse();
+            const other: boolean = await AgentRuntime.deleteVaultWithCleanup('delete-lock-b',
+              async (): Promise<void> => {},
+              (): void => { otherRemoved = true; });
+            expect(other).assertTrue();
+          },
+          (): void => {});
+        expect(deleted).assertTrue();
+        expect(AgentRuntime.isVaultDeleting('delete-lock-a')).assertFalse();
+        expect(duplicateRemoved).assertFalse();
+        expect(otherRemoved).assertTrue();
+
+        let removeAfterFailure: boolean = false;
+        let failed: boolean = false;
+        try {
+          await AgentRuntime.deleteVaultWithCleanup('delete-lock-a',
+            async (): Promise<void> => { throw new Error('mock cleanup failure'); },
+            (): void => { removeAfterFailure = true; });
+        } catch (error) {
+          failed = true;
+        }
+        expect(failed).assertTrue();
+        expect(AgentRuntime.isVaultDeleting('delete-lock-a')).assertFalse();
+        expect(removeAfterFailure).assertFalse();
+        const retried: boolean = await AgentRuntime.deleteVaultWithCleanup('delete-lock-a',
+          async (): Promise<void> => {},
+          (): void => {});
+        expect(retried).assertTrue();
       });
   });
 }

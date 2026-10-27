@@ -7,6 +7,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -63,6 +65,9 @@ function fsCall(msg) {
       return { dataB64: b64FromBytes(buf) }
     }
     case 'write': {
+      if (process.env.SMOKE_FAIL_WRITE_PATH === rel) {
+        throw new Error(`injected write failure: ${rel}`)
+      }
       const abs = resolveSafe(rel)
       ensureParent(abs)
       fs.writeFileSync(abs, bytesFromB64(msg.dataB64))
@@ -196,6 +201,15 @@ if (!result) {
 }
 
 if (!result.ok) {
+  if (process.env.SMOKE_EXPECT_FAILURE === '1') {
+    fs.rmSync(vaultDir, { recursive: true, force: true })
+    if (fs.existsSync(vaultDir)) {
+      console.error('失败导入清理未移除隔离目录')
+      process.exit(1)
+    }
+    console.log(`预期失败已清理隔离目录：${result.message.split('\n')[0]}`)
+    process.exit(0)
+  }
   console.error(`clone 失败：${result.message}`)
   process.exit(1)
 }
@@ -206,5 +220,55 @@ const gitDirExists = fs.existsSync(path.join(vaultDir, '.git'))
 console.log(`.git 目录：${gitDirExists ? '存在' : '缺失'}`)
 if (!gitDirExists) {
   process.exit(1)
+}
+
+const git = (args) => {
+  const result = spawnSync('git', ['-C', vaultDir, ...args], { encoding: 'utf8' })
+  if (result.status !== 0) {
+    throw new Error(`git ${args.join(' ')} failed: ${result.stderr}`)
+  }
+  return result.stdout.trim()
+}
+
+const status = git(['status', '--porcelain'])
+if (status.length > 0) {
+  throw new Error(`reopened clone is dirty:\n${status}`)
+}
+git(['fsck', '--full'])
+console.log(`重新打开后 Git 状态干净，HEAD ${git(['rev-parse', 'HEAD'])}`)
+
+if (process.env.SMOKE_EXPECT_DIR) {
+  const expectedRoot = path.resolve(process.env.SMOKE_EXPECT_DIR)
+  const walk = (root) => fs.readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name === '.git') return []
+    const abs = path.join(root, entry.name)
+    const rel = path.relative(expectedRoot, abs).split(path.sep).join('/')
+    return entry.isDirectory() ? walk(abs) : [rel]
+  }).sort()
+  const actualRoot = vaultDir
+  const actualFiles = fs.readdirSync(actualRoot, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name === '.git') return []
+    const abs = path.join(actualRoot, entry.name)
+    const collect = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((child) => {
+      const childAbs = path.join(dir, child.name)
+      const rel = path.relative(actualRoot, childAbs).split(path.sep).join('/')
+      return child.isDirectory() ? collect(childAbs) : [rel]
+    })
+    return entry.isDirectory() ? collect(abs) : [entry.name]
+  }).sort()
+  const expectedFiles = walk(expectedRoot)
+  if (JSON.stringify(actualFiles) !== JSON.stringify(expectedFiles)) {
+    throw new Error(`file list differs; expected ${expectedFiles.join(', ')}; got ${actualFiles.join(', ')}`)
+  }
+  for (const rel of expectedFiles) {
+    const expected = fs.readFileSync(path.join(expectedRoot, rel))
+    const actual = fs.readFileSync(path.join(actualRoot, rel))
+    const expectedHash = createHash('sha256').update(expected).digest('hex')
+    const actualHash = createHash('sha256').update(actual).digest('hex')
+    if (!expected.equals(actual)) {
+      throw new Error(`byte mismatch for ${rel}: ${expectedHash} != ${actualHash}`)
+    }
+    console.log(`SHA-256 ${rel}: ${actualHash}`)
+  }
 }
 console.log('smoke 通过')

@@ -60,6 +60,8 @@ export struct FileTreeView {
   onRenamePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onMovePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onDeletePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  /** 文件 / 文件夹分享回调，入口放在左滑操作菜单。 */
+  onSharePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   /**
    * 「滑到底直接删除」回调（1.6 第三档 → 1.7）：越过操作条 + DEL_EXTRA 后松手触发。
    * 只有文件行接（原型同款：目录不给滑到底删除，误删一棵子树的代价不该这么轻）；
@@ -214,6 +216,19 @@ export struct FileTreeView {
   @Builder
   SwipeBar(n: TreeNode) {
     Row() {
+      if (n.isDir) {
+        Row() {
+          Icon('share', 18, $r('app.color.text_secondary'))
+        }
+        .width(Size.touch)
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor($r('app.color.bg_card'))
+        .onClick(() => {
+          this.onSharePath(n.relPath, true);
+        })
+      }
       Row() {
         Icon('rename', 18, $r('app.color.text_secondary'))
       }

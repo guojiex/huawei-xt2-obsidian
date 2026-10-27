@@ -11,12 +11,18 @@ import { FsOpMsg, FsReadResult, FsReaddirResult, FsStatResult, OkResult } from '
  */
 export class GitFsBackend {
   private root: string;
+  private allowImportBinaryWrites: boolean;
   private base64: util.Base64Helper = new util.Base64Helper();
   private encoder: util.TextEncoder = new util.TextEncoder();
   private decoder: util.TextDecoder = new util.TextDecoder();
 
-  constructor(root: string) {
+  constructor(root: string, allowImportBinaryWrites: boolean = false) {
+    const rootName: string = root.substring(root.lastIndexOf('/') + 1);
+    if (allowImportBinaryWrites && !rootName.endsWith('__importing')) {
+      throw new Error('EACCES: binary import writes require an __importing root');
+    }
     this.root = root;
+    this.allowImportBinaryWrites = allowImportBinaryWrites;
   }
 
   /** vault 根（供外部创建/检查） */
@@ -46,10 +52,16 @@ export class GitFsBackend {
   }
 
   private decodeBytes(b64: string): Uint8Array {
+    if (b64.length === 0) {
+      return new Uint8Array(0);
+    }
     return this.base64.decodeSync(b64);
   }
 
   private encodeBytes(bytes: Uint8Array): string {
+    if (bytes.length === 0) {
+      return '';
+    }
     return this.base64.encodeToStringSync(bytes);
   }
 
@@ -60,23 +72,89 @@ export class GitFsBackend {
     try {
       const stat = fs.statSync(abs);
       const buf = new ArrayBuffer(stat.size);
-      fs.readSync(file.fd, buf);
+      let readTotal: number = 0;
+      while (readTotal < stat.size) {
+        const chunk: ArrayBuffer = new ArrayBuffer(stat.size - readTotal);
+        const read: number = fs.readSync(file.fd, chunk);
+        if (read <= 0 || read > chunk.byteLength) {
+          throw new Error(`short read for ${rel}: ${readTotal}/${stat.size} bytes`);
+        }
+        new Uint8Array(buf).set(new Uint8Array(chunk, 0, read), readTotal);
+        readTotal += read;
+      }
       return { dataB64: this.encodeBytes(new Uint8Array(buf)) };
     } finally {
       fs.closeSync(file);
     }
   }
 
-  /** 写文件：所有 Git 元数据、对象与工作区文件统一通过 AtomicFile 落盘。 */
+  /**
+   * 新 clone 在未登记的导入目录内逐字节写入；其他 root 仅接受可无损 UTF-8 往返的文本，仍走 AtomicFile。
+   */
   async write(rel: string, dataB64: string): Promise<OkResult> {
     const abs = this.abs(rel);
-    this.ensureParent(abs);
     const bytes = this.decodeBytes(dataB64);
-    await this.writeAtomic(abs, rel, bytes);
+    if (this.allowImportBinaryWrites) {
+      this.ensureParent(abs);
+      this.writeImportBytes(abs, rel, bytes);
+    } else {
+      const text: string | undefined = this.decodeExactUtf8(bytes);
+      if (text === undefined) {
+        throw new Error(`EUNSUPPORTED: refusing non-UTF-8 Git write outside an isolated import: ${rel}`);
+      }
+      this.ensureParent(abs);
+      await this.writeAtomic(abs, rel, text);
+    }
     return { ok: true };
   }
 
-  private writeAtomic(abs: string, rel: string, bytes: Uint8Array): Promise<void> {
+  /** 普通二进制写入只允许用于本次新 clone 的隔离目录；失败由 SyncPage 清理整个导入目录。 */
+  private writeImportBytes(abs: string, rel: string, bytes: Uint8Array): void {
+    const file: fs.File = fs.openSync(abs, fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC);
+    let failure: Error | Object | undefined = undefined;
+    try {
+      const buffer: ArrayBuffer = new ArrayBuffer(bytes.length);
+      new Uint8Array(buffer).set(bytes);
+      let writtenTotal: number = 0;
+      while (writtenTotal < bytes.length) {
+        const remaining: ArrayBuffer = buffer.slice(writtenTotal);
+        const written: number = fs.writeSync(file.fd, remaining);
+        if (written !== Math.floor(written) || written <= 0 || written > remaining.byteLength) {
+          throw new Error(`invalid writeSync byte count ${written} for ${remaining.byteLength} bytes`);
+        }
+        writtenTotal += written;
+      }
+    } catch (error) {
+      failure = error as Error;
+    }
+    try {
+      fs.closeSync(file);
+    } catch (closeError) {
+      if (failure === undefined) {
+        failure = closeError as Error;
+      }
+    }
+    if (failure !== undefined) {
+      throw this.toWriteError('binary import write', rel, failure, 'GitFsBackend');
+    }
+  }
+
+  /** 只允许无损 UTF-8 往返的内容走既有 AtomicFile 字符串写入路径。 */
+  private decodeExactUtf8(bytes: Uint8Array): string | undefined {
+    const text: string = this.decoder.decodeToString(bytes);
+    const encoded: Uint8Array = this.encoder.encodeInto(text);
+    if (encoded.length !== bytes.length) {
+      return undefined;
+    }
+    for (let i: number = 0; i < bytes.length; i++) {
+      if (encoded[i] !== bytes[i]) {
+        return undefined;
+      }
+    }
+    return text;
+  }
+
+  private writeAtomic(abs: string, rel: string, content: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       const atomicFile = new fs.AtomicFile(abs);
       let settled = false;
@@ -94,7 +172,7 @@ export class GitFsBackend {
         } catch (cleanupError) {
           // Keep the original write error.
         }
-        reject(this.toWriteError(stage, rel, error));
+        reject(this.toWriteError(stage, rel, error, 'AtomicFile'));
       };
       const commit = (): void => {
         if (settled) {
@@ -123,11 +201,11 @@ export class GitFsBackend {
       timerId = setTimeout((): void => {
         fail('write', new Error('write callback timed out'));
       }, 3000);
-      if (bytes.length === 0) {
+      if (content.length === 0) {
         commit();
       } else {
         try {
-          stream.write(bytes, 'utf8', (error?: BusinessError): void => {
+          stream.write(content, 'utf-8', (error?: BusinessError): void => {
             if (error !== undefined && error !== null) {
               fail('write', error);
               return;
@@ -141,12 +219,12 @@ export class GitFsBackend {
     });
   }
 
-  private toWriteError(stage: string, rel: string, error: Error | Object): Error {
+  private toWriteError(stage: string, rel: string, error: Error | Object, writer: string): Error {
     const businessError = error as BusinessError;
     const message = businessError.code !== undefined
       ? `${businessError.code}: ${businessError.message}`
       : error instanceof Error ? error.message : String(error);
-    return new Error(`AtomicFile ${stage} failed for ${rel}: ${message}`);
+    return new Error(`${writer} ${stage} failed for ${rel}: ${message}`);
   }
 
   private ensureParent(abs: string): void {
@@ -210,26 +288,32 @@ export class GitFsBackend {
 
   /** 批量执行（clone 时的落盘主力，避免逐次跨桥） */
   async batch(ops: FsOpMsg[]): Promise<OkResult> {
-    for (const op of ops) {
+    for (let i: number = 0; i < ops.length; i++) {
+      const op: FsOpMsg = ops[i];
       const rel = this.decodePath(op.pathB64);
-      switch (op.op) {
-        case 'write':
-          await this.write(rel, op.dataB64 ?? '');
-          break;
-        case 'mkdir':
-          this.mkdir(rel);
-          break;
-        case 'unlink':
-          this.unlink(rel);
-          break;
-        case 'rmdir':
-          this.rmdir(rel);
-          break;
-        case 'rename':
-          this.rename(rel, this.decodePath(op.newPathB64 ?? ''));
-          break;
-        default:
-          throw new Error('ENOSYS: unsupported op ' + op.op);
+      try {
+        switch (op.op) {
+          case 'write':
+            await this.write(rel, op.dataB64 ?? '');
+            break;
+          case 'mkdir':
+            this.mkdir(rel);
+            break;
+          case 'unlink':
+            this.unlink(rel);
+            break;
+          case 'rmdir':
+            this.rmdir(rel);
+            break;
+          case 'rename':
+            this.rename(rel, this.decodePath(op.newPathB64 ?? ''));
+            break;
+          default:
+            throw new Error('ENOSYS: unsupported op ' + op.op);
+        }
+      } catch (error) {
+        const err = error as Error;
+        throw new Error(`Git FS batch op ${i} ${op.op} ${rel}: ${err.message ?? String(error)}`);
       }
     }
     return { ok: true };

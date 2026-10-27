@@ -37,7 +37,7 @@ function repoNameFromUrl(url: string): string {
  *
  * 流程（对应 mvp_design §4.5 生命周期「导入仓库」）：
  * 1. 从地址推导库名 → uniqueVaultId 定正式 id；
- * 2. clone 到 `vaults/<正式id>__importing` 临时目录（失败即删，不留半初始化目录）；
+ * 2. 先写入恢复标记，再 clone 到 `vaults/<正式id>__importing` 临时目录；
  * 3. 成功 → rename 到正式 id → 登记 VaultRegistry（type='git'）→ 令牌入 Asset Store Kit →
  *    自动切为当前库 → 返回主页（Index.onPageShow 检测到外部切库后重置上下文）。
  */
@@ -125,9 +125,10 @@ struct SyncPage {
     this.progressText = '准备中…';
     this.appendLog('开始导入 ' + this.repoUrl.trim() + ' → vaults/' + finalId);
     try {
+      reg.beginGitImport(finalId, tempId);
       // 临时目录即本次 clone 的 fs root；gitDir 标签与 root 一致（JS 侧只做前缀剥离）
       const tempDir: string = reg.vaultDirOf(tempId);
-      await this.bridgeCtrl.init(tempDir, tempDir, this.token, this.username);
+      await this.bridgeCtrl.init(tempDir, tempDir, this.token, this.username, true);
       await this.bridgeCtrl.clone(this.repoUrl.trim(), this.branch.trim(), this.token, this.username);
     } catch (error) {
       const err = error as BusinessError;
@@ -135,7 +136,7 @@ struct SyncPage {
     }
   }
 
-  /** clone 结果（成功/失败共用）：成功走 rename → 登记 → 存令牌 → 切库 → 返回；失败清临时目录。 */
+  /** clone 结果（成功/失败共用）：验证成功后 rename → 登记 → 存令牌 → 切库；失败清本次标记目录。 */
   private onCloneDone(ok: boolean, message: string): void {
     this.busy = false;
     if (!ok) {
@@ -148,22 +149,13 @@ struct SyncPage {
     const tempDir: string = reg.vaultDirOf(this.pendingTempId);
     const finalDir: string = reg.vaultDirOf(this.pendingFinalId);
     try {
-      // 先 rename 再登记（文件系统操作成功后才改注册表，禁半状态）；
-      // 登记失败则把目录改回临时名回滚，避免"目录在注册表外"的孤儿半状态
-      fileIo.renameSync(tempDir, finalDir);
-      let entry: VaultEntry;
-      try {
-        entry = reg.registerGit(this.pendingFinalId, this.repoUrl.trim(), this.branch.trim(), this.username.trim());
-      } catch (regError) {
-        try {
-          fileIo.renameSync(finalDir, tempDir);
-        } catch (rollbackError) {
-          const rb = rollbackError as BusinessError;
-          this.appendLog('回滚失败，目录保留在 vaults/' + this.pendingFinalId + '（未登记）：' + rb.message);
-        }
-        const re = regError as BusinessError;
-        throw new Error(re.message ?? 'registerGit 登记失败');
+      // 目标 id 在导入开始时已确认空闲；此 rename 仅发布本次新目录，不承担既有文件的原子替换保证。
+      if (fileIo.accessSync(finalDir)) {
+        throw new Error('正式库目录已存在，拒绝覆盖: ' + this.pendingFinalId);
       }
+      fileIo.renameSync(tempDir, finalDir);
+      const entry: VaultEntry = reg.registerGit(this.pendingFinalId, this.repoUrl.trim(), this.branch.trim(), this.username.trim());
+      reg.finishGitImport(this.pendingFinalId, this.pendingTempId);
       // 令牌只进 Asset Store Kit；存失败不判导入失败（下次同步重填即可）
       if (this.token.length > 0) {
         try {
@@ -184,24 +176,21 @@ struct SyncPage {
       const err = error as BusinessError;
       this.progressText = '失败';
       this.appendLog('登记库失败：' + err.message);
+      this.cleanupTempDir();
     }
   }
 
-  /** 删除导入中的临时目录（clone 失败 / 中断时调用，防半初始化残留）。 */
+  /** 删除本次导入拥有的临时/未登记正式目录；清理失败时保留恢复标记供下次启动重试。 */
   private cleanupTempDir(): void {
-    if (this.pendingTempId.length === 0) {
+    if (this.pendingTempId.length === 0 || this.pendingFinalId.length === 0) {
       return;
     }
     try {
-      const dir: string = VaultRegistry.get().vaultDirOf(this.pendingTempId);
-      if (fileIo.accessSync(dir)) {
-        // rmdirSync 递归语义已核对（api_notes T002：删除目录及其所有子目录和文件）
-        fileIo.rmdirSync(dir);
-      }
-      this.appendLog('已清理临时目录 vaults/' + this.pendingTempId);
+      VaultRegistry.get().cleanupGitImport(this.pendingFinalId, this.pendingTempId);
+      this.appendLog('已清理本次导入目录');
     } catch (error) {
       const err = error as BusinessError;
-      this.appendLog('临时目录清理失败（vaults/' + this.pendingTempId + '，可手动删除）：' + err.message);
+      this.appendLog('导入目录清理失败（恢复标记保留供下次启动重试）：' + err.message);
     }
     this.pendingTempId = '';
     this.pendingFinalId = '';

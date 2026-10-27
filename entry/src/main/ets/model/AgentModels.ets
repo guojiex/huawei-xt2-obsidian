@@ -76,6 +76,7 @@ export interface AgentSession {
   skillId: string;
   draft: string;
   messages: AgentMessage[];
+  updatedAt?: number;
 }
 
 export interface AgentRunConfig {

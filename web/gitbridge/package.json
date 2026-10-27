@@ -7,7 +7,8 @@
   "description": "运行在 Web 组件内的 isomorphic-git 桥接层，供 ArkTS 侧调用",
   "scripts": {
     "build": "node build.mjs",
-    "smoke": "node test/node_smoke.mjs"
+    "smoke": "node test/node_smoke.mjs",
+    "smoke:fixture": "node test/local_clone_fixture.mjs"
   },
   "dependencies": {
     "buffer": "^6.0.3",

@@ -10,6 +10,8 @@
 export interface VaultEntry {
   /** 目录名 = 显示名（不分离） */
   id: string;
+  /** 改名不变、复制成新库时重新生成的私有数据归属标识。 */
+  vaultKey: string;
   /** 'local' | 'git'（v0.3 起导入的仓库为 'git'） */
   type: string;
   /** 创建时间戳（ms） */

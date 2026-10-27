@@ -166,37 +166,45 @@ export struct AgentWorkspace {
     this.renameDialog = new CustomDialogController({
       builder: RenameAgentSessionDialog({
         initialTitle: session.title,
-        onConfirm: (title: string): void => { this.renameSession(session.id, title); }
+        onConfirm: (title: string): void => { void this.renameSession(session.id, title); }
       })
     });
     this.renameDialog.open();
   }
 
-  private renameSession(sessionId: string, title: string): void {
-    if (!AgentMemoryStore.rename(this.vaultId, sessionId, title)) {
-      this.statusText = '对话名称不能为空。';
-      return;
+  private async renameSession(sessionId: string, title: string): Promise<void> {
+    try {
+      if (!await AgentMemoryStore.rename(this.vaultId, sessionId, title)) {
+        this.statusText = '对话名称不能为空。';
+        return;
+      }
+      this.sessions = AgentMemoryStore.recent(this.vaultId);
+      const session: AgentSession | null = AgentMemoryStore.get(this.vaultId, sessionId);
+      if (session !== null && session.id === this.sessionId) {
+        this.onTitleChanged(session.title);
+      }
+      this.statusText = '对话已重命名。';
+    } catch (error) {
+      this.statusText = '对话名称保存失败；原名称已恢复。';
     }
-    this.sessions = AgentMemoryStore.recent(this.vaultId);
-    const session: AgentSession | null = AgentMemoryStore.get(this.vaultId, sessionId);
-    if (session !== null && session.id === this.sessionId) {
-      this.onTitleChanged(session.title);
-    }
-    this.statusText = '对话已重命名。';
   }
 
-  private archiveSession(sessionId: string): void {
+  private async archiveSession(sessionId: string): Promise<void> {
     if (sessionId === this.sessionId) {
-      this.session().draft = this.draft;
+      AgentMemoryStore.setDraft(this.vaultId, sessionId, this.draft);
     }
-    if (!AgentMemoryStore.archive(this.vaultId, sessionId)) {
-      return;
+    try {
+      if (!await AgentMemoryStore.archive(this.vaultId, sessionId)) {
+        return;
+      }
+      this.sessions = AgentMemoryStore.recent(this.vaultId);
+      if (sessionId === this.sessionId) {
+        this.loadSession(AgentMemoryStore.active(this.vaultId));
+      }
+      this.statusText = '对话已归档；笔记内容未改变。';
+    } catch (error) {
+      this.statusText = '对话归档保存失败；原状态已恢复。';
     }
-    this.sessions = AgentMemoryStore.recent(this.vaultId);
-    if (sessionId === this.sessionId) {
-      this.loadSession(AgentMemoryStore.active(this.vaultId));
-    }
-    this.statusText = '对话已归档；笔记内容未改变。';
   }
 
   private savePanelMode(): void {
@@ -299,7 +307,7 @@ export struct AgentWorkspace {
     }
     const inserted: string = AgentRules.insertReference(text, start, end, path);
     this.draft = inserted;
-    session.draft = inserted;
+    AgentMemoryStore.setDraft(this.vaultId, session.id, inserted);
     const nextCaret: number = start + path.length + 4;
     this.selectionStart = nextCaret;
     this.selectionEnd = nextCaret;
@@ -334,14 +342,14 @@ export struct AgentWorkspace {
     const session: AgentSession = AgentMemoryStore.create(this.vaultId);
     this.sessions = AgentMemoryStore.recent(this.vaultId);
     this.loadSession(session);
-    this.statusText = '新对话只属于当前知识库；刷新应用后会清空。';
+    this.statusText = '新对话已保存在当前知识库的本机空间。';
     this.drawerOpen = false;
     this.drawerProgress = 0;
   }
 
   private switchSession(sessionId: string): void {
     const current: AgentSession = this.session();
-    current.draft = this.draft;
+    AgentMemoryStore.setDraft(this.vaultId, current.id, this.draft);
     const selected: AgentSession | null = AgentMemoryStore.activate(this.vaultId, sessionId);
     if (selected !== null) {
       this.loadSession(selected);
@@ -365,21 +373,23 @@ export struct AgentWorkspace {
       const references: AgentNoteSnapshot[] = AgentRuntime.captureReferences(
         this.vaultId, parts, VaultRegistry.get(), this.isUnsaved);
       const config: AgentRunConfig = AgentConfigStore.snapshot(session.skillId);
-      session.draft = rawText;
+      AgentMemoryStore.setDraft(this.vaultId, session.id, rawText);
+      await AgentMemoryStore.persist(this.vaultId, session);
       this.running = true;
       this.statusText = '正在执行本地固定场景…';
       const assistant: AgentMessage = await AgentRuntime.run(this.vaultId, session, AgentRuntime.newRunId(), rawText,
         parts, references, config, VaultRegistry.get(), this.isUnsaved);
+      await AgentMemoryStore.persist(this.vaultId, session);
       this.messages = session.messages.slice();
       this.sessions = AgentMemoryStore.recent(this.vaultId);
       const failed: boolean = assistant.toolEvents.some((event) => event.status === 'failed');
       if (!failed) {
-        session.draft = '';
+        AgentMemoryStore.setDraft(this.vaultId, session.id, '');
         this.draft = '';
         this.selectionStart = 0;
         this.selectionEnd = 0;
       } else {
-        session.draft = rawText;
+        AgentMemoryStore.setDraft(this.vaultId, session.id, rawText);
         this.draft = rawText;
       }
       this.statusText = failed ? '本地工具未全部完成；输入仍保留，可检查结果后处理。' :
@@ -402,6 +412,7 @@ export struct AgentWorkspace {
       const step: AgentToolStep = { name: 'UndoLastEdit' };
       const result: AgentWriteResult = await AgentRuntime.executeManualStep(
         this.vaultId, session, message, step, config, VaultRegistry.get(), this.isUnsaved);
+      await AgentMemoryStore.persist(this.vaultId, session);
       this.messages = session.messages.slice();
       this.statusText = '已撤销 ' + result.path + '；对话和历史结果保留。';
       this.onNotesChanged();
@@ -413,7 +424,7 @@ export struct AgentWorkspace {
 
   private chooseSkill(skillId: string): void {
     const session: AgentSession = this.session();
-    session.skillId = skillId;
+    AgentMemoryStore.setSkill(this.vaultId, session.id, skillId);
     this.skillId = skillId;
     this.statusText = '本段对话下一轮使用该 Skill；当前运行继续使用已冻结的配置快照。';
   }
@@ -635,7 +646,7 @@ export struct AgentWorkspace {
               .height(Size.touch)
               .justifyContent(FlexAlign.Center)
               .borderRadius(Radius.icon)
-              .onClick(() => { this.archiveSession(session.id); })
+              .onClick(() => { void this.archiveSession(session.id); })
             }
             .width('100%')
             .height(Size.touch)
@@ -760,7 +771,7 @@ export struct AgentWorkspace {
                 .backgroundColor($r('app.color.bg_card'))
                 .onClick(() => {
                   this.draft = question;
-                  this.session().draft = question;
+                  AgentMemoryStore.setDraft(this.vaultId, this.sessionId, question);
                   this.statusText = '已填入固定问法；确认后点击发送。';
                 })
             }, (question: string, index: number) => index.toString())
@@ -797,7 +808,7 @@ export struct AgentWorkspace {
           .border({ width: 1, color: this.dropActive ? $r('app.color.brand') : $r('app.color.line') })
           .onChange((value: string): void => {
             this.draft = value;
-            this.session().draft = value;
+            AgentMemoryStore.setDraft(this.vaultId, this.sessionId, value);
             const caret: CaretOffset = this.inputController.getCaretOffset();
             this.selectionStart = caret.index;
             this.selectionEnd = caret.index;
@@ -827,7 +838,7 @@ export struct AgentWorkspace {
         }
         .width('100%')
         .padding({ left: Space.s2, right: Space.s2, bottom: Space.s2 })
-        Text('本地固定 mock · 刷新后会清空会话、草稿、配置与撤销记录。输入法候选期间不会自动发送。')
+        Text('本地固定 mock · 会话、草稿、配置和笔记操作记录保存在本机。输入法候选期间不会自动发送。')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')

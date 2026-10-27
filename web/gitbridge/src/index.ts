@@ -88,9 +88,12 @@ const GitBridge = {
         },
       })
       await fs.flush()
+      await this.verifyCloneOnDisk()
       emitEvent('cloneResult', { ok: true, message: 'clone 完成' })
     } catch (e) {
-      emitEvent('cloneResult', { ok: false, message: fail(e) })
+      const readError = fs?.lastReadError || ''
+      const details = readError.length > 0 ? `\n${readError}` : ''
+      emitEvent('cloneResult', { ok: false, message: fail(e) + details })
     }
   },
 
@@ -98,6 +101,24 @@ const GitBridge = {
   async flush(): Promise<void> {
     if (fs) {
       await fs.flush()
+    }
+  },
+
+  /** Clone 只有从磁盘重新读取后仍是干净仓库，才向 ArkTS 报成功并允许登记。 */
+  async verifyCloneOnDisk(): Promise<void> {
+    if (!fs) {
+      throw new Error('EINIT: GitBridge 未初始化')
+    }
+    await git.resolveRef({ fs: fs as any, dir: gitDir, ref: 'HEAD' })
+    const matrix = await git.statusMatrix({ fs: fs as any, dir: gitDir })
+    let dirtyCount = 0
+    for (const entry of matrix) {
+      if (entry[1] !== 1 || entry[2] !== 1 || entry[3] !== 1) {
+        dirtyCount++
+      }
+    }
+    if (dirtyCount > 0) {
+      throw new Error(`EVERIFY: clone checkout is not clean (${dirtyCount} path(s))`)
     }
   },
 }

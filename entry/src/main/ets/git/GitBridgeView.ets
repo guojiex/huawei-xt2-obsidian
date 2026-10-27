@@ -37,8 +37,9 @@ class GitBridgeImpl {
   }
 
   /** （重）绑定 fs root 并把配置下发给 JS 侧。root = 沙箱绝对目录，gitDir = JS 侧 dir 标签。 */
-  async init(root: string, gitDir: string, token: string, username: string): Promise<void> {
-    const backend = new GitFsBackend(root);
+  async init(root: string, gitDir: string, token: string, username: string,
+    allowImportBinaryWrites: boolean = false): Promise<void> {
+    const backend = new GitFsBackend(root, allowImportBinaryWrites);
     backend.ensureRoot();
     this.fsBackend = backend;
     const payload = this.toB64(JSON.stringify({
@@ -119,8 +120,9 @@ export class GitBridgeController {
     return this.readyFlag;
   }
 
-  async init(root: string, gitDir: string, token: string, username: string): Promise<void> {
-    await this.impl?.init(root, gitDir, token, username);
+  async init(root: string, gitDir: string, token: string, username: string,
+    allowImportBinaryWrites: boolean = false): Promise<void> {
+    await this.impl?.init(root, gitDir, token, username, allowImportBinaryWrites);
   }
 
   async clone(url: string, branch: string, token: string, username: string): Promise<void> {

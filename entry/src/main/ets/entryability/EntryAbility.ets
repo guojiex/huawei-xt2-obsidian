@@ -3,7 +3,11 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { display, window } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { breakpointFromWidthVp } from '../model/Breakpoint';
+import { appThemeForColorMode } from '../common/AppTheme';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { AgentMemoryStore } from '../model/AgentMemoryStore';
+import { AgentConfigStore } from '../model/AgentConfigStore';
+import { AgentRuntime } from '../model/AgentRuntime';
 import { NoteDraftService } from '../model/NoteDraftService';
 import { SampleVaultInstaller } from '../model/SampleVaultInstaller';
 
@@ -16,8 +20,18 @@ const TAG = 'EntryAbility';
  */
 const FOLD_TAG = 'FoldCalibration';
 
+interface ColorModeObserver {
+  onColorModeUpdated: (colorMode: ConfigurationConstant.ColorMode) => void;
+}
+
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
+  private colorModeObserverRegistered: boolean = false;
+  private readonly colorModeObserver: ColorModeObserver = {
+    onColorModeUpdated: (colorMode: ConfigurationConstant.ColorMode): void => {
+      this.publishAppTheme(colorMode);
+    }
+  };
   /** 上一次断点档位，用于判断档位切换才打校准日志（避免同档位重复刷屏）。 */
   private lastBreakpoint: string = '';
 
@@ -35,12 +49,31 @@ export default class EntryAbility extends UIAbility {
 
     // 库注册表单例初始化：必须先于 loadContent，页面侧才能直接 VaultRegistry.get()
     const registry: VaultRegistry = VaultRegistry.initialize(this.context);
+    AgentConfigStore.initialize(this.context);
+    AgentMemoryStore.initialize(registry);
+    AgentRuntime.initialize(registry);
     NoteDraftService.cleanupOrphans(registry);
 
     // ===== 断点系统（T007）=====
     // 断点只由窗口宽度（vp）计算：window.on('windowSizeChange') + px2vp() 是官方推荐的
     // 统一断点机制（api_notes.md A3 ✅）。
     // 不用 getFoldDisplayMode() 做形态分支：该接口不返回全部形态值（api_notes.md A3）。
+    const appContext = this.context.getApplicationContext();
+    try {
+      appContext.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '设置跟随系统主题失败: %{public}s', JSON.stringify(err));
+    }
+    try {
+      appContext.onSystemConfigurationUpdated(this.colorModeObserver);
+      this.colorModeObserverRegistered = true;
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '系统主题监听注册失败: %{public}s', JSON.stringify(err));
+    }
+    this.publishAppTheme(this.context.config?.colorMode);
+
     try {
       this.mainWindow = windowStage.getMainWindowSync();
       // loadContent 前补算初始断点：windowSizeChange 只在尺寸变化时触发，
@@ -70,11 +103,6 @@ export default class EntryAbility extends UIAbility {
       });
     });
 
-    try {
-      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-    } catch (err) {
-      hilog.error(DOMAIN, TAG, 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
-    }
   }
 
   onWindowStageDestroy(): void {
@@ -96,6 +124,15 @@ export default class EntryAbility extends UIAbility {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, 'foldStatusChange 注销失败: %{public}s', JSON.stringify(err));
     }
+    if (this.colorModeObserverRegistered) {
+      try {
+        this.context.getApplicationContext().offSystemConfigurationUpdated(this.colorModeObserver);
+        this.colorModeObserverRegistered = false;
+      } catch (error) {
+        const err = error as BusinessError;
+        hilog.error(DOMAIN, TAG, '系统主题监听注销失败: %{public}s', JSON.stringify(err));
+      }
+    }
   }
 
   onForeground(): void {
@@ -106,6 +143,9 @@ export default class EntryAbility extends UIAbility {
   onBackground(): void {
     // Ability has back to background
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onBackground');
+    void AgentMemoryStore.flushPending().catch((): void => {
+      hilog.error(DOMAIN, TAG, 'Agent 草稿后台保存失败；保留原会话文件');
+    });
   }
 
   /**
@@ -125,6 +165,10 @@ export default class EntryAbility extends UIAbility {
     // 折痕只落 px，换算放到页面侧（UI 上下文）——官方提醒 px2vp 依赖窗口像素密度，
     // 在 UIAbility 早期生命周期换算可能异常
     AppStorage.setOrCreate('creasePx', this.collectCreasePx());
+  }
+
+  private publishAppTheme(colorMode: ConfigurationConstant.ColorMode | undefined): void {
+    AppStorage.setOrCreate('appTheme', appThemeForColorMode(colorMode));
   }
 
   /** 同一窗口尺寸事件同时更新宽高，布局依据当前窗口，不假设设备折痕坐标。 */
