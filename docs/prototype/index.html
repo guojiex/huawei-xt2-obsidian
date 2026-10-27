@@ -187,7 +187,16 @@
     border: 1px solid var(--line); border-radius: var(--r-control);
     box-shadow: var(--elev-1);
   }
-  .grp { display: flex; align-items: center; gap: var(--sp-2); }
+  .grp { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+  .demo-tools { width: 100%; border-top: 1px solid var(--line); padding-top: var(--sp-2); }
+  .demo-tools summary { cursor: pointer; color: var(--text-secondary); font-size: var(--fs-body2); padding: var(--sp-2) 0; }
+  .demo-tools-body { display: flex; flex-wrap: wrap; gap: var(--sp-3) var(--sp-5); padding: var(--sp-2) 0; }
+  .demo-tools-body > .hint { flex-basis: 100%; }
+  button:focus-visible, summary:focus-visible, a:focus-visible, select:focus-visible { outline: var(--tab-indicator-height) solid var(--brand); outline-offset: var(--sp-1); }
+  .diagnostics > summary { cursor: pointer; min-height: var(--h-touch); display: flex; align-items: center; justify-content: space-between; }
+  .diagnostics > summary::after { content: '展开'; color: var(--brand); }
+  .diagnostics[open] > summary::after { content: '收起'; }
+  .diagnostics-note { margin: 0; padding: var(--sp-3) var(--sp-4); color: var(--text-secondary); font-size: var(--fs-body3); line-height: 1.6; }
   .grp > span.lbl { color: var(--text-tertiary); font-size: var(--fs-body3); margin-right: var(--sp-1); }
   .hint { color: var(--text-tertiary); font-size: var(--fs-body3); }
 
@@ -284,6 +293,7 @@
   [data-form="sm"][data-view="note"] .appbar-more { display: block; }
   [data-form="sm"][data-view="note"] #shareNoteBtn, [data-form="sm"][data-view="note"] #syncBtn, [data-form="sm"][data-view="note"] #settingsBtn, [data-form="sm"] #agentMockBadge { display: none; }
   [data-form="sm"] .agent-mock-caption { display: inline; }
+  body:not([data-vault-type="git"]) #syncBtn, body:not([data-vault-type="git"]) [data-toolbar-action="syncBtn"] { display: none; }
   .views { flex: 1; display: flex; min-height: 0; }
 
   /* 侧栏 */
@@ -413,7 +423,7 @@
   /* 左滑操作条：包裹层负责裁剪，node 左移露出右侧按钮（触控热区 48vp） */
   .node-wrap.swiped .swipe, .node-wrap.will-del .swipe { visibility: visible; }
   .node-wrap[data-kind="file"].swiped .node { transform: translateX(-144px); }
-  .node-wrap[data-kind="dir"].swiped .node { transform: translateX(-96px); }
+  .node-wrap[data-kind="dir"].swiped .node { transform: translateX(-192px); }
   .swipe {
     position: absolute; top: 0; right: 0; height: 100%; z-index: 0;
     visibility: hidden;   /* 只在滑开时出现，避免圆角处透出按钮底色 */
@@ -459,7 +469,7 @@
     flex: none; padding: var(--sp-3); border-top: 1px solid var(--line);
     display: flex; gap: var(--sp-2); background: var(--bg-card);
   }
-  .side-foot button { flex: 1; min-width: 0; font-size: var(--fs-body3); }
+  .side-foot button { flex: 1; min-width: 0; min-height: var(--h-touch); height: auto; padding: var(--sp-2); white-space: normal; font-size: var(--fs-body3); }
 
   /* 目录行行内「+」：在该文件夹下新建笔记（仅目录行有，文件行没有） */
   .node .row-plus {
@@ -512,6 +522,11 @@
     margin-left: auto; flex: none; display: inline-flex; gap: 2px; padding: 2px;
     border-radius: var(--r-full); background: var(--bg-secondary);
   }
+  .note-layoutbar { display: none; position: absolute; top: 0; left: 0; right: 0; height: var(--h-touch); padding: 0 var(--sp-4); align-items: center; justify-content: space-between; gap: var(--sp-3); background: var(--bg-card); border-bottom: 1px solid var(--line); font-size: var(--fs-body3); color: var(--text-secondary); }
+  [data-form="md"][data-side="hidden"]:not([data-single-landscape="true"]) #noteView { padding-top: var(--h-touch); }
+  [data-form="md"][data-side="hidden"]:not([data-single-landscape="true"]) .note-layoutbar { display: flex; }
+  [data-form="lg"]:not([data-single-landscape="true"]) #noteView { padding-top: var(--h-touch); }
+  [data-form="lg"]:not([data-single-landscape="true"]) .note-layoutbar { display: flex; }
   .seg button {
     border: none; background: transparent; cursor: pointer; font-family: inherit;
     font-size: var(--fs-body3); color: var(--text-secondary);
@@ -530,6 +545,29 @@
      同屏）两条线之间隔着真实边界，保留 */
   [data-form="md"]:not([data-side="hidden"]) .preview-pane { border-left: none; }
   [data-form="sm"] #editName, [data-form="sm"] .src-tag, [data-form="sm"] .pv-label { display: none; }
+  .format-dock { position: absolute; z-index: 3; bottom: var(--sp-5); left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: calc(var(--h-touch) * 4 + var(--sp-4)); max-width: calc(100% - var(--sp-4)); padding: var(--sp-1) var(--sp-2); border: 1px solid var(--line); border-radius: var(--r-full); background: var(--bg-card); box-shadow: var(--elev-3); }
+  .format-dock button { min-width: 0; height: var(--h-touch); padding: 0; border: 0; border-radius: var(--r-full); background: transparent; color: var(--text-primary); font-size: var(--fs-s3); cursor: pointer; }
+  .format-dock button:hover { background: var(--brand-bg); color: var(--brand); }
+  .format-dock button:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+  #editorPane .editor-wrap pre, #editorPane .editor-wrap textarea { padding-bottom: calc(var(--h-touch) + var(--sp-8) + var(--sp-5)); }
+  .format-trigger { font-size: var(--fs-s3); font-weight: 600; color: var(--text-primary); }
+  #formatMask { --format-gap: var(--sp-2); }
+  body:not([data-form="sm"]) .format-panel { position: absolute; left: var(--format-left); bottom: var(--format-bottom); max-width: calc(100% - var(--sp-4)); max-height: var(--format-height); }
+  .format-panel { width: min(100%, var(--share-width)); max-height: calc(100% - var(--sp-4)); overflow-y: auto; padding: var(--sp-5); border-radius: var(--r-menu); background: var(--bg-card); box-shadow: var(--elev-3); }
+  .format-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-4); }
+  .format-head strong { font-size: var(--fs-s3); }
+  .format-head button { border: 0; background: transparent; color: var(--brand); min-height: var(--h-touch); }
+  .format-group + .format-group { margin-top: var(--sp-4); padding-top: var(--sp-4); border-top: 1px solid var(--line); }
+  .format-group h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-body3); font-weight: 500; color: var(--text-tertiary); }
+  .format-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
+  .format-grid button { min-width: 0; min-height: var(--h-touch); height: auto; padding: var(--sp-2) var(--sp-1); border: 0; border-radius: var(--r-control); background: var(--bg-secondary); color: var(--text-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-1); }
+  .format-grid button > span:first-child { font-size: var(--fs-s3); line-height: 1; font-weight: 500; }
+  .format-grid button small { font-size: var(--fs-caption); color: var(--text-secondary); }
+  .format-grid button:hover { background: var(--brand-bg); color: var(--brand); }
+  .format-grid button[aria-pressed="true"] { background: var(--brand-bg); color: var(--brand); }
+  .format-panel :focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+  [data-form="sm"] #formatMask { align-items: flex-end; padding: 0; }
+  [data-form="sm"] .format-panel { width: 100%; border-radius: var(--r-menu) var(--r-menu) 0 0; }
   .editor-wrap { position: relative; flex: 1; min-height: 0; background: var(--bg-card); }
   .editor-wrap pre, .editor-wrap textarea {
     margin: 0; padding: var(--sp-4) var(--sp-5); border: none; outline: none;
@@ -616,6 +654,8 @@
     border-radius: var(--r-full); font-size: var(--fs-caption);
   }
   .pane-action { flex: none; margin-left: auto; min-width: 0; height: var(--h-touch); padding: 0 var(--sp-2); border: 0; background: transparent; color: var(--brand); font-size: var(--fs-body3); }
+  #followEditorBtn[aria-pressed="false"] { color: var(--text-tertiary); }
+  #followEditorBtn + .pane-action { margin-left: 0; }
   .pane-action + .seg { margin-left: 0; }
   .backlinks { flex: none; max-height: 180px; overflow: auto; border-top: 1px solid var(--line); padding: var(--sp-3) var(--sp-5); background: var(--bg-secondary); }
   .backlinks b { display: block; margin-bottom: var(--sp-2); }
@@ -639,7 +679,7 @@
   .release-map { max-width: 1180px; margin: 0 auto var(--sp-4); padding: var(--sp-3) var(--sp-4); background: var(--bg-card); border: 1px solid var(--line); border-radius: var(--r-control); }
   .release-map .top { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
   .release-map strong { font-size: var(--fs-body2); }
-  .release-map select { border: 1px solid var(--line-strong); background: var(--bg-card); color: var(--text-primary); border-radius: var(--r-control); padding: var(--sp-2); font: inherit; }
+  .release-map select { max-width: 100%; min-width: 0; border: 1px solid var(--line-strong); background: var(--bg-card); color: var(--text-primary); border-radius: var(--r-control); padding: var(--sp-2); font: inherit; }
   .release-map p { margin: var(--sp-2) 0 0; color: var(--text-secondary); font-size: var(--fs-body3); }
   .release-map a { color: var(--brand); }
   .version-annotated { position: relative; outline: 2px solid var(--brand); outline-offset: -2px; }
@@ -826,6 +866,9 @@
     color: var(--text-tertiary); border-top: 1px solid var(--line); background: var(--bg-page);
   }
   .set-foot a { color: inherit; }
+  .feedback-email-link { display: inline-flex; align-items: center; min-height: var(--h-touch); color: var(--brand); }
+  .feedback-body { padding: var(--sp-4); }
+  .feedback-body p { margin: 0 0 var(--sp-3); line-height: 1.6; color: var(--text-secondary); font-size: var(--fs-body2); }
   /* 更新日志：新版本在上，只列用户可感知的变更 */
   .chlog { padding: var(--sp-2) var(--sp-4); }
   .chlog-item { padding: var(--sp-2) 0; border-bottom: 1px solid var(--line); }
@@ -910,7 +953,7 @@
     background: var(--bg-secondary); padding: 1px 6px; border-radius: var(--r-chip);
   }
 
-  /* 小艺工作区：lg 同时显示对话与文件；md/sm 共用导航槽。 */
+  /* v0.7 独立本地 mock 工作区：lg 同时显示对话与文件；md/sm 共用导航槽。 */
   .agent-page { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
   .agent-mock-badge { flex: none; font-size: var(--fs-body3); color: var(--text-secondary); background: var(--brand-bg); border-radius: var(--r-chip); padding: var(--sp-1) var(--sp-2); margin-right: var(--sp-2); }
   .agent-vault select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
@@ -1081,12 +1124,14 @@
     <button data-t="light" class="on">浅色</button>
     <button data-t="dark" data-intro="v1.0">深色</button>
   </div>
+  <details class="demo-tools"><summary>演示与分享选项</summary><div class="demo-tools-body">
   <div class="grp">
     <span class="lbl">原型链接</span>
     <button id="copyLinkBtn" title="把当前形态 / 视图 / 主题写进 URL 并复制，对方打开即复现同一画面">复制当前页面链接</button>
   </div>
   <div class="grp"><span class="lbl">分享场景</span><button id="demoLocalShare">本地笔记 / 配图</button><button id="demoGitShare">Git 笔记 / 知识库</button></div>
   <span class="hint">编辑区可直接输入，预览实时更新；单屏 / 双屏态用内容区右上角「编辑 / 预览」切换；URL 实时同步形态 / 视图 / 主题，复制链接即可分享当前页面</span>
+  </div></details>
 </div>
 
 <div class="release-map">
@@ -1097,14 +1142,14 @@
       <option value="v0.2">v0.2 · 编辑、预览与回收站</option>
       <option value="v0.4">v0.4 · 文件名快切与最近打开</option>
       <option value="v0.5">v0.5 · 共享样例库与渲染基线</option>
-      <option value="v0.7">v0.7 · Agent 工作区与本地 mock（优先）</option>
+      <option value="v0.7" selected>v0.7 · 笔记界面与编辑体验</option>
       <option value="v0.8">v0.8 · 笔记、文件夹与知识库分享</option>
       <option value="v1.0">v1.0 · 深色、性能与恢复验收</option>
       <option value="v1.1">v1.1 · 当前库全文搜索</option>
       <option value="v1.2">v1.2 · 双链与反链</option>
       <option value="v1.3">v1.3 · 图片、公式与 Mermaid</option>
       <optgroup label="外部依赖 · 暂缓，不参与当前执行">
-        <option value="v0.6" selected>v0.6 · Agent 对话 · 托管面板（接入待开通）</option>
+        <option value="v0.6">v0.6 · 小艺托管面板（待联调）</option>
         <option value="v0.3">v0.3 · Git（等待鸿蒙回复）</option>
       </optgroup>
     </select>
@@ -1148,6 +1193,9 @@
       <div class="views">
         <!-- 笔记视图 -->
         <div class="views" id="noteView" style="flex:1;min-height:0">
+          <div class="note-layoutbar" aria-label="正文布局">
+            <span>正文布局</span><span class="seg hidden" id="modeSegShared" role="group" aria-label="选择正文布局"><button data-m="edit">编辑</button><button data-m="preview">预览</button><button data-m="split" class="on">双栏</button></span>
+          </div>
           <aside class="sidebar" id="sidebar">
             <div class="vault-switch" id="vaultSwitch" data-intro="v0.1">
               <span class="vs-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 7.5A1.9 1.9 0 0 1 5.5 5.6h3.1l1.8 2.2h6.9a1.9 1.9 0 0 1 1.9 1.9v8.1a1.9 1.9 0 0 1-1.9 1.9H5.5a1.9 1.9 0 0 1-1.9-1.9z"/></svg></span>
@@ -1165,7 +1213,7 @@
             <div class="sw-hint">← 左滑显示操作；滑到底移入回收站，可撤销</div>
             <div class="side-foot">
               <button id="gotoVaults">管理库</button>
-              <button id="shareVaultBtn" class="hidden">分享知识库</button>
+          <button id="shareVaultBtn" data-intro="v0.8">分享知识库</button>
               <button id="gotoTrash" data-intro="v0.2">回收站</button>
             </div>
           </aside>
@@ -1183,18 +1231,25 @@
             <div class="editor-wrap">
               <pre id="hl" aria-hidden="true"></pre>
               <textarea id="src" spellcheck="false"></textarea>
+              <div class="format-dock" id="formatDock" role="group" aria-label="写作工具" data-intro="v0.7">
+                <button class="format-trigger" id="formatBtn" title="标题与更多格式" aria-label="文字与段落格式" aria-haspopup="dialog" aria-expanded="false">Aa</button>
+                <button type="button" data-markdown="bold" title="粗体" aria-label="粗体"><b>B</b></button>
+                <button type="button" data-markdown="italic" title="斜体" aria-label="斜体"><i>I</i></button>
+                <button type="button" data-markdown="task" title="任务列表" aria-label="任务列表"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="2"/><path d="m4.5 8 1.5 1.5 3-4M13 8h8M13 16h8M3 16h6"/></svg></button>
+              </div>
             </div>
           </div>
 
           <div class="preview-pane" id="previewPane">
             <div class="pane-head" data-intro="v0.2">
               <span class="pv-label">预览</span>
+              <button class="pane-action" id="followEditorBtn" data-intro="v0.7" aria-pressed="true" title="编辑与预览同屏时，按源码段落跟随；手动滚动预览可暂停">跟随编辑：开</button>
               <button class="pane-action" id="backlinksBtn" data-intro="v1.2" title="查看当前笔记的反链">反链</button>
               <span class="seg hidden" id="modeSegPreview">
                 <button data-m="edit" class="on">编辑</button><button data-m="preview">预览</button>
               </span>
             </div>
-            <div class="md" id="md"></div>
+            <div class="md" id="md" tabindex="0" aria-label="笔记预览，可独立滚动"></div>
             <div class="backlinks hidden" id="backlinksPanel"></div>
           </div>
           <div class="splitter" id="splitterB" title="拖动调整编辑 / 预览宽度（收起目录栏时才出现 · 双击恢复等分）"></div>
@@ -1265,13 +1320,13 @@
           </div>
         </div>
         <div class="sync hidden" id="trashView" data-intro="v0.2">
-          <div class="sub">当前库的已删除笔记可恢复。原型仅在本页面内存中保留；真机实现须在重启后仍能恢复。</div>
+          <div class="sub">这里可恢复当前库删除的笔记；文件夹删除无法恢复。原型数据仅在本页保留。</div>
           <div id="trashItems"></div>
         </div>
 
         <!-- 库管理视图 -->
         <div class="sync hidden" id="vaultsView" data-intro="v0.1">
-          <div class="sub">每个库是 vaults/ 下的一个独立目录，各自独立同步</div>
+          <div class="sub">分别管理工作、阅读和个人笔记，切换笔记库不会混合内容</div>
           <div class="vcards" id="vcards"></div>
           <div class="add-row">
             <div class="add-box" id="newLocal">+ 新建本地笔记库</div>
@@ -1297,22 +1352,19 @@
 
         <!-- 设置 / 关于视图 -->
         <div class="sync hidden" id="settingsView" data-intro="v0.1">
-<div class="settings-tabs" id="settingsNav" role="tablist" aria-orientation="vertical" aria-label="设置分类"><button id="settings-tab-general" role="tab" aria-controls="settings-general" aria-selected="true" tabindex="0" data-settings-tab="general"><span>通用</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-agent" role="tab" aria-controls="settings-agent" aria-selected="false" tabindex="-1" data-settings-tab="agent"><span>Agent</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-data" role="tab" aria-controls="settings-data" aria-selected="false" tabindex="-1" data-settings-tab="data"><span>数据</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-about" role="tab" aria-controls="settings-about" aria-selected="false" tabindex="-1" data-settings-tab="about"><span>关于</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div><section id="settings-general" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-general"><div class="set-group">
-            <div class="set-head">布局（共用分栏，v0.7）</div>
+<div class="settings-tabs" id="settingsNav" role="tablist" aria-orientation="vertical" aria-label="设置分类"><button id="settings-tab-general" role="tab" aria-controls="settings-general" aria-selected="true" tabindex="0" data-settings-tab="general"><span>通用</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-agent" role="tab" aria-controls="settings-agent" aria-selected="false" tabindex="-1" data-settings-tab="agent"><span>Agent</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-data" role="tab" aria-controls="settings-data" aria-selected="false" tabindex="-1" data-settings-tab="data"><span>数据</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-feedback" role="tab" aria-controls="settings-feedback" aria-selected="false" tabindex="-1" data-settings-tab="feedback"><span>问题与建议</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><button id="settings-tab-about" role="tab" aria-controls="settings-about" aria-selected="false" tabindex="-1" data-settings-tab="about"><span>关于</span><svg class="settings-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div><section id="settings-general" class="settings-panel" role="tabpanel" aria-labelledby="settings-tab-general"><div class="set-group">
+            <div class="set-head">阅读与编辑布局</div>
             <div class="set-row"><span>当前栏宽</span><code id="setSplit">目录 33.3% · 编辑 33.3% · 预览 33.3%</code></div>
-            <div class="set-row"><span>三屏展开时，笔记与 Agent 左栏共用宽度和拖动条；笔记页编辑 / 预览固定等分；收起目录栏后，编辑 / 预览中间的把手才可调。双击把手快速恢复；拖后的宽度会记住，刷新不丢。</span></div>
+            <div class="set-row"><span>拖动目录旁的分隔条调整宽度；收起目录后，可调整编辑与预览的比例。双击把手恢复默认，栏宽会自动记住。</span></div>
             <button id="resetSplitBtn">恢复等分栏宽</button>
-          </div><div class="set-group">
-            <div class="set-head">诊断（真机校准用）</div>
+          </div><details class="set-group diagnostics">
+            <summary class="set-head">诊断信息</summary>
             <div class="set-row"><span>当前形态</span><b id="setForm">三屏展开 · 1061vp</b></div>
             <div class="set-row"><span>断点档位</span><code id="setBp">lg</code></div>
             <div class="set-row"><span>库目录</span><code id="setVault">vaults/local</code></div>
             <div class="set-row"><span>折痕校准</span><span class="set-val">v0.1 只采集不参与布局</span></div>
-            <div class="last" style="margin-top:10px">
-              真机跑起来后，<code>FoldCalibration</code> 日志会打印 <code>getFoldStatus()</code>
-              与折痕区域的实际返回值；把实测值回填到项目文档，再换成常量表替掉等分布局。
-            </div>
-          </div></section>          <section class="settings-panel hidden" id="settings-agent" role="tabpanel" aria-labelledby="settings-tab-agent">
+            <p class="diagnostics-note">用于设备验收。折痕仅作标注，不参与栏宽计算；布局随窗口尺寸调整。</p>
+          </details></section>          <section class="settings-panel hidden" id="settings-agent" role="tabpanel" aria-labelledby="settings-tab-agent">
             <div class="set-group" data-intro="v0.7">
               <div class="set-head">对话管理</div><div class="set-body">
               <label class="agent-config-label">显示 <select id="agentHistoryFilter" aria-label="筛选对话"><option value="archived">已归档</option><option value="all">全部对话</option></select></label>
@@ -1352,7 +1404,16 @@
             <div class="set-head">数据管理</div>
             <div class="set-row"><span>清除本地数据，重新打开后恢复初始样例库。无法撤销。</span></div>
             <div class="set-actions"><button id="resetDataBtn" class="btn-danger">重置所有数据</button></div>
-          </div></section><section id="settings-about" class="settings-panel hidden" role="tabpanel" aria-labelledby="settings-tab-about"><p class="sub">版本取自包配置，版本记录来自 changelog.json。</p><div class="set-group">
+          </div></section><section id="settings-feedback" class="settings-panel hidden" role="tabpanel" aria-labelledby="settings-tab-feedback" data-intro="v0.7" tabindex="-1">
+          <p class="sub">遇到问题或有建议，欢迎告诉我们。</p>
+          <div class="set-group"><div class="set-head">问题与建议</div><div class="feedback-body">
+            <p>请描述操作步骤、实际结果和期望结果，帮助我们了解问题。</p>
+            <p>反馈邮箱：<span id="feedbackEmailAddress"></span></p>
+            <a id="feedbackEmailLink" class="feedback-email-link">发送反馈邮件 ›</a>
+            <p>将在邮件应用中创建邮件，由你编辑并确认发送。若未打开，可使用上方邮箱地址手动发送。</p>
+            <p>不会自动附带笔记、对话或日志；添加截图前请检查私人信息。</p>
+          </div></div>
+        </section><section id="settings-about" class="settings-panel hidden" role="tabpanel" aria-labelledby="settings-tab-about"><p class="sub">在这里查看应用版本与更新记录。</p><div class="set-group">
             <div class="set-head">关于</div>
             <div class="hero">
               <div class="hero-icon">曜</div>
@@ -1424,7 +1485,7 @@
           <div class="share-head"><button id="shareBack" class="hidden" aria-label="返回分享方式">‹</button><strong id="shareTitle">分享笔记</strong><button id="shareClose" aria-label="关闭分享">关闭</button></div>
           <p id="shareSubtitle" class="share-caption"></p>
           <div id="shareBody"></div>
-          <p class="share-caption">v0.8 交互设计 · App 待实施；微信 / 飞书发送为演示，不会实际上传或发送内容。</p>
+          <p class="share-caption">v0.8 交互设计 · 本原型不调用系统分享；微信 / 飞书仅为去向示意，不会实际上传或发送内容。</p>
         </section>
       </div>
       <!-- 小艺系统面板仅为流程示意，不复刻系统外观或调用平台。 -->
@@ -1438,6 +1499,14 @@
           <div class="agent-actions"><button id="celiaRead">演示读取</button><button id="celiaAppend">演示追加一句</button><button id="celiaUndo" disabled>撤销演示追加</button></div>
           <p class="share-caption">上方仅操作本页样例。真实对话在小艺中输入；不会自动上传整篇正文。初始问题与笔记定位信息的正式传递方式仍待联调。</p>
           <details><summary>查看不可用状态</summary><p class="share-caption">小艺暂不可用，请稍后重试。当前笔记仍可继续编辑。</p><p class="share-caption">打开失败时留在笔记页，保留正文、光标与滚动位置，不切入本地 mock。</p></details>
+        </section>
+      </div>
+      <div class="share-mask hidden" id="formatMask">
+        <section class="format-panel" role="dialog" aria-modal="true" aria-labelledby="formatTitle" tabindex="-1">
+          <div class="format-head"><strong id="formatTitle">文字与段落</strong><button id="formatClose" aria-label="关闭格式面板">完成</button></div>
+          <section class="format-group"><h3>段落</h3><div class="format-grid"><button type="button" data-markdown="heading" data-level="0" aria-label="正文"><span aria-hidden="true">Aa</span><small>正文</small></button><button type="button" data-markdown="heading" data-level="1" aria-label="一级标题"><span aria-hidden="true">H1</span><small>一级标题</small></button><button type="button" data-markdown="heading" data-level="2" aria-label="二级标题"><span aria-hidden="true">H2</span><small>二级标题</small></button><button type="button" data-markdown="heading" data-level="3" aria-label="三级标题"><span aria-hidden="true">H3</span><small>三级标题</small></button><button type="button" data-markdown="heading" data-level="4" aria-label="四级标题"><span aria-hidden="true">H4</span><small>四级标题</small></button><button type="button" data-markdown="heading" data-level="5" aria-label="五级标题"><span aria-hidden="true">H5</span><small>五级标题</small></button><button type="button" data-markdown="heading" data-level="6" aria-label="六级标题"><span aria-hidden="true">H6</span><small>六级标题</small></button></div></section>
+<section class="format-group"><h3>文字</h3><div class="format-grid"><button type="button" data-markdown="bold" aria-label="粗体"><span aria-hidden="true"><b>B</b></span><small>粗体</small></button><button type="button" data-markdown="italic" aria-label="斜体"><span aria-hidden="true"><i>I</i></span><small>斜体</small></button><button type="button" data-markdown="code" aria-label="代码"><span aria-hidden="true">&lt;/&gt;</span><small>代码</small></button><button type="button" data-markdown="link" aria-label="链接"><span aria-hidden="true">↗</span><small>链接</small></button></div></section>
+<section class="format-group"><h3>列表与引用</h3><div class="format-grid"><button type="button" data-markdown="bullet" aria-label="无序列表"><span aria-hidden="true">≡</span><small>无序列表</small></button><button type="button" data-markdown="ordered" aria-label="有序列表"><span aria-hidden="true">1.</span><small>有序列表</small></button><button type="button" data-markdown="task" aria-label="任务列表"><span aria-hidden="true">☑</span><small>任务列表</small></button><button type="button" data-markdown="quote" aria-label="引用"><span aria-hidden="true">❞</span><small>引用</small></button></div></section>
         </section>
       </div>
       <div class="image-mask hidden" id="imageMask" role="dialog" aria-modal="true" aria-label="完整图片">
@@ -1506,7 +1575,7 @@
       折痕值<b>只用于标注</b>，不参与分栏计算。橙色虚线 = 折痕真实位置，标红 = 该栏被内容横跨。<br>
       <b>2026-10-25 补充</b>：等分仍是<b>默认值</b>，但 lg 三屏态开放了<b>手动拖拽</b>（见下方「分栏可以拖着改宽」）；md / sm 维持固定等分不拖。</li>
     <li><b>侧栏因此偏宽</b>：实测下双屏侧栏 354vp（709/2）、三屏侧栏 354vp（1061/3），比文件树需要的 240vp 宽。既然不做动态分栏，就把多出来的宽度用起来 —— 宽屏时每条笔记多显示一行「修改时间 · 字数」，后续还能放摘要或最近打开列表。</li>
-    <li><b>目录栏可以整体收起</b>（双屏 / 三屏都可以）：收起点侧栏右上角的「收起 «」，<b>唤回点顶栏左上角的汉堡 ☰</b>（toggle，v0.1 首轮修的就是它）。收起后双屏变「编辑 | 预览」、三屏编辑区扩到 2/3。<br>
+    <li><b>目录栏可以整体收起</b>（双屏 / 三屏都可以）：收起点侧栏右上角的「收起 «」，<b>唤回点顶栏左上角的汉堡 ☰</b>（toggle，v0.1 首轮修的就是它）。收起后双屏可选「编辑 / 预览 / 双栏」，三屏保持既有分栏。<br>
       ⚠️ 早先说「双屏收起仍然不跨折痕」也是错的 —— 等分边界 354.5 与折痕 379 不重合，双屏的右栏（收起后是预览栏）<b>同样横跨折痕</b>。
       这是物理约束，不是布局没调好：折痕位置硬件固定，要真正不跨折痕就得按 379/330/352 分栏（即动态分栏，已决策不做）。</li>
     <li><b>折痕位置已按真机反推</b>：设计稿里双屏折痕在 53.45%（379/709）、三屏在 35.72%（379/1061）与 66.82%（709/1061），
@@ -1524,7 +1593,7 @@
       再挤一个 48vp 热区会打架；「编辑 / 预览」是<b>内容区的模式</b>，单屏笔记名统一由顶栏显示。<br>
       两个 pane 的 pane-head <b>各挂一个同样的分段控件</b>：切到预览后开关还留在原处，不会跟着编辑区一起消失（这是最容易踩的坑）。
       切到预览时<b>收起软键盘</b>——真机上键盘会挡掉半屏。<br>
-      ⚠️ <b>双屏 / 三屏</b>：md 双屏正文区同样只有一栏位置，**同样显示**这个开关 —— 点「预览」由预览**抢占正文区**、目录栏不动（2026-10-25 用户拍板）；md **收起目录栏**后两栏同屏，开关隐藏；**lg 三栏同屏不加**（已有独立预览栏）。</li>
+      ⚠️ <b>双屏 / 三屏</b>：md 双屏正文区同样只有一栏位置，**同样显示**这个开关 —— 点「预览」由预览**抢占正文区**、目录栏不动（2026-10-25 用户拍板）；md **收起目录栏**后保留「编辑 / 预览 / 双栏」选择；lg 使用同一组共用布局选择，不在两栏重复显示。</li>
     <li><b>左滑是跟手的三档手感，不是三个摆设按钮</b>：向左拖（鼠标拖或触摸滑都一样）时行会跟着手指走 ——<br>
       ① <b>拖一半松手</b> → 吸附露出图标操作条（重命名 / 移动 / 删除，都是 44px 图标，不挤文件名）；<br>
       ② <b>一路滑到底</b> → 整条变红、只剩「🗑 松手删除」，松手<b>直接删除</b>，底部弹 5 秒「撤销」条兜底；<br>
@@ -1544,14 +1613,14 @@
     <li><b>「设置与关于」从顶栏齿轮进入</b>（库管理页底部也有入口）：这里放<b>版本号、一行开源/仓库信息、更新日志</b>，以及<b>当前形态 / 断点 / 库目录</b>的诊断信息——真机校准时要对着这些值看日志。<b>包名行已删</b>（2026-10-21 拍板：那是开发期对 hdc 日志/签名用的诊断值，用户不需要；要查去工程配置或 hdc）。开源信息压成关于组底部一行小字（应用 MIT + 打包 isomorphic-git / CodeMirror 等 MIT 组件，保留最低成本版权声明）。更新日志只列<b>用户可感知</b>的变更，最新在上。版本号<b>由应用包信息读出，不在代码里写死常量</b>（写死必然与 <code>app.json5</code> 漂移）。后续版本才有的设置项在底部灰显占位。</li>
     <li><b>三栏常驻是 XT2 的主场</b>：文件树 / 编辑 / 预览同屏，编辑时右侧实时渲染 —— 这是方案 A（CodeMirror + Web）想换来的东西，编辑区里的语法着色就是对标高亮效果。</li>
     <li><b>编辑区着色为示意</b>：真实效果取决于 M0.5 的 WebView spike（中文输入法、光标、滚动、折叠 resize 四项）。spike 不过就降级 TextArea，着色消失。</li>
-    <li><b>Agent 对话（v0.6，2026-10-26）</b>：笔记页按钮拉起平台托管面板，在小艺中聊天，端插件调用本地笔记工具；返回笔记查看结果与撤销。面板为流程示意，未连接平台，外观与尺寸待设备验证；v0.7 本地 mock 独立保留。</li>
-    <li><b>Agent 对话工作区（v0.7）</b>：选择 v0.7 后查看该版 UI，进入库内多轮对话；三屏左侧上下显示对话与笔记列表，右侧两屏聊天，拖入或点击引用笔记。明确写入直接执行，消息内查看改动与撤销。回复为原创预设演示，小艺能力仍未开通，接入开发仍在外部依赖队列。</li>
-    <li><b>图片限高与完整查看</b>：预览图片先按可视预览区的 60% 高度等比缩放，不裁剪；点击图片或按回车可看完整长图，关闭或 Esc 回到原笔记。60% 是原型起点，App 渲染器尚未同步实现。</li>
+    <li><b>Agent 对话（v0.6，2026-10-26）</b>：笔记页按钮拉起平台托管面板，在小艺中聊天，端插件调用本地笔记工具；返回笔记查看结果与撤销。面板为流程示意，未连接平台，外观与尺寸待设备验证；本地 mock 仅保留为历史稿，不属于当前交付。</li>
+    <li><b>Agent 对话工作区（历史设计，已延期）</b>：旧稿保留，当前 v0.7 不提供进入入口；历史交互为库内多轮对话；三屏左侧上下显示对话与笔记列表，右侧两屏聊天，拖入或点击引用笔记。明确写入直接执行，消息内查看改动与撤销。回复为原创预设演示，小艺能力仍未开通，接入开发仍在外部依赖队列。</li>
+    <li><b>图片限高与完整查看</b>：预览图片先按可视预览区的 60% 高度等比缩放，不裁剪；点击图片或按回车可看完整长图，关闭或 Esc 回到原笔记。60% 是原型起点；App 已有 API26 验收记录，XT2 待验。</li>
     <li><b>单屏顶栏沿用现状</b>：紧凑单行标题和 48px 热区搜索图标，不新增常驻搜索框或单独缩小字号。</li>
     <li><b>按版本看交互</b>：v0.4 是当前库文件名快切与最近打开；v1.1 增加当前库正文搜索。设计稿用内存样本演示，增量索引仍须按需求文档在真机实现。</li>
     <li><b>[[双链]] 是 v1.2 示意</b>：当前原型可演示跳转、未创建目标和反链；自动补全、同名消歧与重命名更新引用仍按 v1.2 需求验收。<code>#标签</code> 只是着色样本，未分配版本功能。</li>
     <li><b>搜索与双链只在当前库内生效</b>：切库后重新显示该库结果；跨库检索仍留在需求池。</li>
-    <li><b>内容分享（2026-10-25，已分配 v0.8）</b>：顶栏分享按钮 → 图片预览 / Markdown 文件；引用本地图片时改为 ZIP，包含本篇与配图。Git 库另有笔记网页链接；目录底部及库管理卡片的「分享知识库」打开仓库首页链接面板。微信 / 飞书为系统分享去向示意，不真实发送；小红书等社媒适配后置。控件区的两个「分享场景」按钮可直接查看本地配图与 Git 示例。后续范围扩展为文件夹与整库 ZIP，Git 可选 ZIP 或链接；这些新增选择交互待补，完整承诺见 v0.8 需求文档。</li>
+    <li><b>内容分享（2026-10-25，已分配 v0.8）</b>：笔记顶栏可选图片 / Markdown / ZIP；文件夹操作条与库级入口提供 ZIP，Git 笔记、文件夹和知识库均可选远端链接。选择页预览范围、路径和本地未推送内容边界；原型不生成文件，也不调用系统分享。微信 / 飞书仅为去向示意；小红书等社媒适配后置。控件区的「分享场景」按钮可查看本地与 Git 示例，完整承诺见 v0.8 需求文档。</li>
     <li><b>Git 双向同步归 v0.3</b>：现有代码只有部分 clone 桥接；commit / push、安全令牌存储与真机验收仍待完成。此页的同步操作只是交互演示。</li>
   </ul>
 </div>
@@ -1563,15 +1632,15 @@
     'v0.1': ['三形态骨架、库切换与返回入口', '开发中，已有部分真机记录'],
     'v0.2': ['文件树、编辑/预览、保存、左滑与回收站', '开发中，中文输入等仍待真机验收'],
     'v0.3': ['Git 库导入、安全凭据、commit/push', 'pending，后置；已有部分 clone 桥接代码'],
-    'v0.4': ['当前库文件名快切与最近打开', '规划中'],
+    'v0.4': ['当前库文件名快切与最近打开', '已有实现及部分验证；设备验收未齐，未发布'],
     'v0.5': ['共享样例库与渲染基线', '样例同源，App 设备验收待完成'],
-    'v0.7': ['本地 Agent 对话、Tools/Skills 与配置', '本地优先；原型 mock 可体验，App 待实施'],
+    'v0.7': ['笔记导航、设置、分栏、反馈与格式/滚动跟随', '共用界面部分已验；格式栏/跟随原生待实现，Agent 旧稿已延期'],
     'v0.6': ['笔记页按钮拉起小艺托管面板，端插件操作笔记', '流程示意可体验；真实平台、外观与设备联调待验'],
-    'v0.8': ['单篇图片 / MD / ZIP、文件夹与整库 ZIP、Git ZIP / 链接选择', '规划中；单篇原型已有，文件夹与整库 ZIP 交互待补'],
-    'v1.0': ['完整深色体验、性能、空状态与 MVP 回归', '规划中'],
-    'v1.1': ['当前库正文搜索与增量索引', '规划中'],
-    'v1.2': ['双链跳转、未创建链接与反链', '规划中'],
-    'v1.3': ['相册图片、公式与 Mermaid 预览', '规划中']
+    'v0.8': ['单篇图片 / MD / ZIP、文件夹与整库 ZIP、Git ZIP / 链接选择', '三种范围均可演示；原生已有部分验收，目标应用交接待验'],
+    'v1.0': ['完整深色体验、性能、空状态与 MVP 回归', '已有实现及部分验证；设备验收未齐，未发布'],
+    'v1.1': ['当前库正文搜索与增量索引', '已有实现及部分验证；设备验收未齐，未发布'],
+    'v1.2': ['双链跳转、未创建链接与反链', '已有实现及部分验证；设备验收未齐，未发布'],
+    'v1.3': ['相册图片、公式与 Mermaid 预览', '已有实现及部分验证；设备验收未齐，未发布']
   };
 
   function applyReleaseMark() {
@@ -1580,7 +1649,7 @@
     for (var i = 0; i < nodes.length; i++) {
       nodes[i].classList.toggle('version-annotated', nodes[i].getAttribute('data-intro') === version);
     }
-    document.getElementById('xiaoyiBtn').classList.toggle('hidden', version !== 'v0.7' || body.getAttribute('data-view') !== 'note');
+    document.getElementById('xiaoyiBtn').classList.toggle('hidden', true);
     document.getElementById('celiaBtn').classList.toggle('hidden', version !== 'v0.6' || body.getAttribute('data-view') !== 'note');
     var info = RELEASES[version];
     document.getElementById('releaseDetail').innerHTML = '<b>' + version + '</b> · ' + info[0]
@@ -1595,7 +1664,7 @@
     else if (version === 'v0.5' || version === 'v0.7') {
       if (body.getAttribute('data-view') === 'agent') { setView('note', true); }
       switchVault('local'); current = version === 'v0.5' ? 'welcome' : 'reading_journal'; loadFile(); setView('note', true);
-      if (version === 'v0.7') { setView('agent', true); }
+      /* v0.7 当前仅展示笔记体验；Agent 旧稿保留，不作为当前入口。 */
     }
     else if (version === 'v0.6') { switchVault('local'); current = 'idea'; loadFile(); setView('note', true); }
     else if (version === 'v0.8') { document.getElementById('demoLocalShare').click(); }
@@ -1622,8 +1691,8 @@
   var currentVault = 'local';
   var TREES = {"local": [["dir", "00_开始", true, 0], ["file", "欢迎使用.md", false, 1, "welcome"], ["file", "快速上手.md", false, 1, "inbox"], ["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "stream"], ["file", "任务清单.md", false, 1, "todo"], ["dir", "20_样式", true, 0], ["file", "双链与嵌入.md", false, 1, "dataflow"], ["file", "属性与提示块.md", false, 1, "intimacy"], ["file", "公式与流程图.md", false, 1, "tob"], ["file", "样式支持清单.md", false, 1, "year2025"], ["dir", "30_小艺", true, 0], ["file", "可编辑练习.md", false, 1, "idea"], ["dir", "40_阅读", true, 0], ["file", "读书对话练习.md", false, 1, "reading_journal"]], "reading": [["dir", "10_写作", true, 0], ["file", "基础排版.md", false, 1, "reading_stream"], ["dir", "40_阅读", true, 0], ["file", "读书对话练习.md", false, 1, "reading_reading_journal"]], "projects": [["dir", "00_开始", true, 0], ["file", "快速上手.md", false, 1, "projects_inbox"], ["dir", "10_写作", true, 0], ["file", "任务清单.md", false, 1, "projects_todo"]]};
   var FILES = {"welcome": "欢迎使用.md", "inbox": "快速上手.md", "stream": "基础排版.md", "todo": "任务清单.md", "dataflow": "双链与嵌入.md", "intimacy": "属性与提示块.md", "tob": "公式与流程图.md", "year2025": "样式支持清单.md", "idea": "可编辑练习.md", "reading_journal": "读书对话练习.md", "reading_stream": "基础排版.md", "reading_reading_journal": "读书对话练习.md", "projects_inbox": "快速上手.md", "projects_todo": "任务清单.md"};
-  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 535 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 238 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符", "reading_journal": "样例 · 254 字符", "reading_stream": "样例 · 535 字符", "reading_reading_journal": "样例 · 254 字符", "projects_inbox": "样例 · 257 字符", "projects_todo": "样例 · 186 字符"};
-  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式和 Mermaid 是目标样式样本，当前 App 尚未接入对应渲染库。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n在完整支持前，源码必须保留，其他正文不应受到影响。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n", "reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n", "reading_stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "reading_reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n", "projects_inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "projects_todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n"};
+  var META = {"welcome": "样例 · 313 字符", "inbox": "样例 · 257 字符", "stream": "样例 · 535 字符", "todo": "样例 · 186 字符", "dataflow": "样例 · 304 字符", "intimacy": "样例 · 317 字符", "tob": "样例 · 242 字符", "year2025": "样例 · 363 字符", "idea": "样例 · 232 字符", "reading_journal": "样例 · 254 字符", "reading_stream": "样例 · 535 字符", "reading_reading_journal": "样例 · 254 字符", "projects_inbox": "样例 · 257 字符", "projects_todo": "样例 · 186 字符"};
+  var CONTENT = {"welcome": "# 欢迎使用曜石笔记\n\n这是随应用附带的公开样例库。所有文字都可编辑或删除，重启不会恢复成模板。\n\n## 从这里开始\n\n1. 在文件树打开“快速上手”。\n2. 在编辑区写一句自己的话，再切换到预览。\n3. 打开“样式支持清单”，区分现在能渲染的语法与后续目标。\n\n> 原型、安装样例和样式回归共用同一份 Markdown。没有配置 Git 也能使用本地笔记。\n\n- [快速上手](快速上手.md)\n- [基础排版](../10_写作/基础排版.md)\n- [样式支持清单](../20_样式/样式支持清单.md)\n- [小艺练习](../30_小艺/可编辑练习.md)\n\n小艺练习是接入后的验收素材，当前不表示已经连接小艺。\n", "inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n", "dataflow": "# 双链与嵌入\n\n下面是 Obsidian 库里实际使用的语法类型。App 的完整解析与跳转尚待实现；这里先保存回归样本。\n\n## 双链\n\n[[10_写作/基础排版|基础排版]]\n\n[[10_写作/基础排版#二级标题|跳到标题]]\n\n## 嵌入\n\n![[50_Assets/笔记流程.svg]]\n\n![[10_写作/任务清单]]\n\n## 标签\n\n#样例 #写作/练习\n\n标签聚合、笔记嵌入与反链面板属于后续能力，纯文本出现不等于已支持。\n\n## 插件查询样本\n\n```dataview\nLIST FROM \"10_写作\"\n```\n\nDataview 属于插件运行能力，本应用当前不执行这个查询，仅展示源码。\n", "intimacy": "---\ntitle: 属性与提示块\ntype: note\nstatus: evergreen\ntags:\n  - 样例\naliases:\n  - 元数据示例\n---\n\n# 属性与提示块\n\n这篇提供 frontmatter、callout、高亮和注释的目标样本，当前 App 不保证把这些扩展语法专门渲染。\n\n> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n> [!warning] 边界\n> 不要把原型示意当作已完成的 App 功能。\n\n> [!tip]- 可折叠提示\n> 收起与展开行为仍需后续渲染器支持。\n\n==这段是高亮目标样本。==\n\n%% 这是 Obsidian 注释；目标是不在阅读视图中显示。 %%\n", "tob": "# 公式与流程图\n\n公式与 Mermaid 由本地预览库渲染，源码仍保留为普通 Markdown 文本。\n\n## 行内公式\n\n平均值为 $\\bar{x}=\\frac{1}{n}\\sum_{i=1}^{n}x_i$。\n\n## 块级公式\n\n$$\nE = mc^2\n$$\n\n## Mermaid\n\n```mermaid\nflowchart LR\n  A[记录] --> B[整理]\n  B --> C[回顾]\n  C --> A\n```\n\n非法公式或图表显示局部错误提示，不影响其他正文。\n", "year2025": "# 样式支持清单\n\n## 基础 Markdown\n\n标题、段落、列表、表格、引用、代码块、任务列表和标准图片已有 App 渲染路径，仍需用本样例在实际设备回归。代码块展示不等于语法着色。\n\n## 后续扩展目标\n\n| 样式 | 目标 |\n| --- | --- |\n| YAML frontmatter | 与正文分开显示属性 |\n| 双链与标题链接 | 正确解析路径、别名和跳转 |\n| callout | 合并为提示块，支持类型和折叠状态 |\n| 公式 | 行内与块级公式渲染 |\n| Mermaid | 本地渲染流程图，错误不影响正文 |\n| 嵌入 | 本地图片与笔记引用按库解析 |\n| 高亮、标签、注释 | 按 Obsidian 语义展示 |\n\n这些是样式目标，不是当前已全部支持的承诺。当前能力以版本验收记录为准。\n", "idea": "# 可编辑练习\n\n这是小艺接入后的练习笔记，当前不表示平台已接通。\n\n## 今日计划\n\n阅读一篇文章，写下三条收获。\n\n## 待追加记录\n\n今天完成了第一次整理。\n\n## 练习步骤\n\n1. 读取本篇，复述“今日计划”。\n2. 在末尾追加“明天继续复习”。\n3. 把原文中唯一的“写下三条收获”改为“写下两条收获”。\n4. 撤销上一步修改，确认没有覆盖之后的新编辑。\n\n如果文中锚点重复、原文已变化或参数指向库外，应拒绝修改并说明原因。整篇删除不属于首期小艺操作。\n", "reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n", "reading_stream": "# 基础排版\n\n## 二级标题\n\n正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。\n\n### 三级标题\n\n- 先记录事实\n- 再整理观点\n  - 为观点补充一个例子\n\n1. 阅读\n2. 实践\n3. 回顾\n\n> 这是一段引用。引用用来区分来源与自己的想法。\n\n| 项目 | 状态 | 说明 |\n| --- | --- | --- |\n| 本地笔记 | 可用 | 不需要远端仓库 |\n| 扩展语法 | 待完善 | 以样式清单为准 |\n\n```typescript\nconst note = { title: '观察日记', saved: true };\nconsole.log(note.title);\n```\n\n---\n\n#### 四级标题\n\n##### 五级标题\n\n###### 六级标题\n\n![本地配图](../50_Assets/笔记流程.svg)\n\n## 长图阅读\n\n下面是用来检查预览限高的原创长图。设计稿中图片等比缩小，点击可查看完整长图；App 已支持同样交互，设备验证范围与结果见 v0.2 §6。\n\n![长图排版示例](../50_Assets/长图排版示例.svg)\n\n图片后面的正文仍应容易找到，不能被一张长图挤到很远的位置。\n", "reading_reading_journal": "---\ntitle: 读书对话练习\ntags:\n  - 样例\n  - 阅读\n---\n\n# 读书对话练习\n\n这是一篇原创演示笔记，不摘录用户私人记录，也不对应真实书籍原文。\n\n## 本轮阅读问题\n\n重读时觉得熟悉，是否就说明自己已经理解？\n\n## 我的回答\n\n熟悉不等于理解。我需要合上材料，用自己的话解释，再举一个新例子。\n\n## 还没想清楚\n\n如果我能复述定义，却不能解释反例，下一轮该怎么练习？\n\n## 下一轮行动\n\n先从记忆写下解释，再用反例检查边界。讨论形成的结论可以追加到这里，或另存为概念笔记。\n", "projects_inbox": "# 快速上手\n\n## 写下第一篇笔记\n\n点击目录头部的 **＋** 在根目录创建笔记，也可以点击目录行尾的 **＋** 在指定目录里创建。\n\n编辑后会自动保存。切换笔记前，应用会先保存当前内容。\n\n## 三种形态\n\n| 形态 | 主要布局 |\n| --- | --- |\n| 单屏 | 文件树抽屉，编辑与预览切换 |\n| 双屏 | 文件树与编辑区 |\n| 三屏 | 文件树、编辑区、预览区 |\n\n用顶栏放大镜按文件名快速打开笔记；空输入显示最近打开。\n\n这套样例不是你的私人笔记副本。新建的其他本地库仍然是空库。\n", "projects_todo": "# 任务清单\n\n- [x] 打开样例库\n- [ ] 写一条今天的观察\n- [ ] 试一次文件名搜索\n- [ ] 查看预览并保存\n\n## 项目记录\n\n| 日期 | 下一步 |\n| --- | --- |\n| 今天 | 完成一条可执行的小任务 |\n| 明天 | 回顾记录，更新清单 |\n\n任务框目前用于 Markdown 预览；是否可直接点击修改，以 App 实际能力为准。\n"};
   var SAMPLE_ASSETS = {"50_Assets/笔记流程.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwIiB2aWV3Qm94PSIwIDAgNjQwIDE2MCI+PHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAiIHJ4PSIxNiIgZmlsbD0iI0YxRjNGNSIvPjxnIGZpbGw9IiMwMDdERkYiPjxyZWN0IHg9IjI0IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iMjQwIiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PHJlY3QgeD0iNDU2IiB5PSI0OCIgd2lkdGg9IjE2MCIgaGVpZ2h0PSI2NCIgcng9IjEyIi8+PC9nPjxnIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjI0IiBmb250LWZhbWlseT0ic2Fucy1zZXJpZiI+PHRleHQgeD0iMTA0IiB5PSI4OSI+6K6w5b2VPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iODkiPuaVtOeQhjwvdGV4dD48dGV4dCB4PSI1MzYiIHk9Ijg5Ij7lm57pob48L3RleHQ+PC9nPjxwYXRoIGQ9Ik0xOTIgODBoNDBtMTc2IDBoNDAiIHN0cm9rZT0iIzAwN0RGRiIgc3Ryb2tlLXdpZHRoPSI0Ii8+PC9zdmc+Cg==", "50_Assets/长图排版示例.svg": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NDAiIGhlaWdodD0iMTYwMCIgdmlld0JveD0iMCAwIDY0MCAxNjAwIj4KPHJlY3Qgd2lkdGg9IjY0MCIgaGVpZ2h0PSIxNjAwIiByeD0iMjQiIGZpbGw9IiNGMUYzRjUiLz4KPGcgZm9udC1mYW1pbHk9InNhbnMtc2VyaWYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPjx0ZXh0IHg9IjMyMCIgeT0iOTAiIGZvbnQtc2l6ZT0iMzYiIGZpbGw9IiMyMDIxMjQiPumVv+WbvuaOkueJiOekuuS+izwvdGV4dD4KPGcgZmlsbD0iIzAwN0RGRiI+PHJlY3QgeD0iODAiIHk9IjE4MCIgd2lkdGg9IjQ4MCIgaGVpZ2h0PSIyMDAiIHJ4PSIyNCIvPjxyZWN0IHg9IjgwIiB5PSI1MDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48cmVjdCB4PSI4MCIgeT0iODIwIiB3aWR0aD0iNDgwIiBoZWlnaHQ9IjIwMCIgcng9IjI0Ii8+PHJlY3QgeD0iODAiIHk9IjExNDAiIHdpZHRoPSI0ODAiIGhlaWdodD0iMjAwIiByeD0iMjQiLz48L2c+CjxnIGZpbGw9IndoaXRlIiBmb250LXNpemU9IjMyIj48dGV4dCB4PSIzMjAiIHk9IjI5MiI+MDEg6KeC5a+fPC90ZXh0Pjx0ZXh0IHg9IjMyMCIgeT0iNjEyIj4wMiDorrDlvZU8L3RleHQ+PHRleHQgeD0iMzIwIiB5PSI5MzIiPjAzIOaVtOeQhjwvdGV4dD48dGV4dCB4PSIzMjAiIHk9IjEyNTIiPjA0IOWbnumhvjwvdGV4dD48L2c+CjxwYXRoIGQ9Ik0zMjAgNDAwdjgwbTAgMjQwdjgwbTAgMjQwdjgwIiBzdHJva2U9IiMwMDdERkYiIHN0cm9rZS13aWR0aD0iOCIvPgo8dGV4dCB4PSIzMjAiIHk9IjE0ODAiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiMyMDIxMjQiPuetieavlOWujOaVtOaYvuekuu+8jOS4jeijgeWJquWGheWuuTwvdGV4dD48L2c+Cjwvc3ZnPgo="};
   /* SAMPLE_VAULT_END */
 
@@ -1692,43 +1761,90 @@
     }
   });
 
-  /* ---------- 单篇分享：仅 UI 演示，正文取当前编辑内容 ---------- */
+  /* ---------- 分享交互：仅 UI 演示，正文取当前编辑内容 ---------- */
   var shareState = null, shareReturnFocus = null;
   function closeShare() {
     document.getElementById('shareMask').classList.add('hidden');
     if (shareReturnFocus) { shareReturnFocus.focus(); shareReturnFocus = null; }
   }
-  function openShare(scope, vaultId) {
-    if (scope === 'note' && !FILES[current]) { return; }
+  function collectShareRows(vaultId, scope, path, noteId) {
+    var rows = fileRowsForVault(vaultId);
+    if (scope === 'note') { return rows.filter(function (row) { return row.id === noteId; }); }
+    if (scope === 'folder') {
+      var prefix = path + '/';
+      return rows.filter(function (row) { return row.path.indexOf(prefix) === 0; });
+    }
+    return rows;
+  }
+  function folderPathForRow(vaultId, rowIndex) {
+    var rows = TREES[vaultId] || [], dirs = [];
+    for (var i = 0; i <= rowIndex && i < rows.length; i++) {
+      var row = rows[i];
+      if (row[0] === 'dir') {
+        dirs.length = row[3];
+        dirs[row[3]] = row[1];
+        if (i === rowIndex) { return dirs.slice(0, row[3]).concat(row[1]).join('/'); }
+      }
+    }
+    return '';
+  }
+  function buildPrototypeShareLink(vault, scope, path) {
+    if (!vault || vault.type !== 'git' || !vault.remote) { return ''; }
+    var remote = String(vault.remote).replace(/^https?:\/\//i, '').replace(/\.git$/i, '').replace(/\/$/, '');
+    if (!/^(github\.com|gitee\.com)\/[^/]+\/[^/]+$/i.test(remote)) { return ''; }
+    var base = 'https://' + remote;
+    if (scope === 'vault') { return base; }
+    if (!vault.branch || !path) { return ''; }
+    var encodedPath = path.split('/').map(encodeURIComponent).join('/');
+    return base + '/' + (scope === 'folder' ? 'tree' : 'blob') + '/' + encodeURIComponent(vault.branch) + '/' + encodedPath;
+  }
+  function openShare(scope, vaultId, path) {
+    var id = vaultId || currentVault;
+    var v = vaultById(id);
+    if (!v || (scope === 'note' && !FILES[current])) { return; }
     shareReturnFocus = document.activeElement;
-    var v = vaultById(vaultId || currentVault);
-    var file = currentFileRows().find(function (f) { return f.id === current; });
+    var file = currentFileRows().find(function (row) { return row.id === current; });
     var text = ta.value;
     var images = [];
     text.replace(/!\[[^\]]*\]\(([^)]+)\)|!\[\[([^\]]+)\]\]/g, function (_, md, wiki) {
-      var path = (md || wiki).split('|')[0].replace(/^<|>$/g, '').trim();
-      if (!/^(https?:|data:|\/\/)/i.test(path) && /\.(png|jpe?g|gif|webp|svg|bmp)(?:[?#].*)?$/i.test(path) && images.indexOf(path) < 0) { images.push(path); }
+      var image = (md || wiki).split('|')[0].replace(/^<|>$/g, '').trim();
+      if (!/^(https?:|data:|\/\/)/i.test(image) && /\.(png|jpe?g|gif|webp|svg|bmp)(?:[?#].*)?$/i.test(image) && images.indexOf(image) < 0) { images.push(image); }
       return _;
     });
-    var remote = v.type === 'git' ? String(v.remote || '').replace(/\.git$/, '').replace(/\/$/, '') : '';
-    if (remote && !/^https?:\/\//.test(remote)) { remote = 'https://' + remote; }
-    var link = scope === 'vault' ? remote : (remote && file ? remote + '/blob/' + encodeURIComponent(v.branch || 'main') + '/' + file.path.split('/').map(encodeURIComponent).join('/') : '');
-    // 导入示例没有真实远端文件清单，链接页明确按未验证示意展示。
-    shareState = { scope: scope, vault: v, name: scope === 'vault' ? v.name : FILES[current], text: text, images: images, link: link };
+    var targetPath = scope === 'note' ? (file ? file.path : '') : (path || '');
+    var rows = collectShareRows(id, scope, targetPath, current);
+    var notes = rows.filter(function (row) { return /\.(md|markdown)$/i.test(row.name); }).length;
+    shareState = {
+      scope: scope, vault: v, path: targetPath,
+      name: scope === 'vault' ? v.name : (scope === 'folder' ? targetPath.split('/').pop() : FILES[current]),
+      text: text, images: images, rows: rows, noteCount: notes,
+      link: buildPrototypeShareLink(v, scope, targetPath)
+    };
     document.getElementById('shareMask').classList.remove('hidden');
-    renderShare(scope === 'vault' ? 'link' : 'formats');
+    renderShare('formats');
     document.querySelector('.share-box').focus();
   }
   function renderShare(step) {
     var s = shareState;
-    document.getElementById('shareTitle').textContent = s.scope === 'vault' ? '分享知识库' : ({ formats: '分享笔记', image: '图片预览', file: '文件预览', link: '分享笔记链接', targets: '选择分享去向' }[step]);
-    document.getElementById('shareSubtitle').textContent = s.name + ' · ' + (s.scope === 'vault' ? '仓库首页链接' : '仅当前一篇笔记');
-    document.getElementById('shareBack').classList.toggle('hidden', step === 'formats' || (s.scope === 'vault' && step === 'link'));
+    var scopeTitle = s.scope === 'vault' ? '分享知识库' : (s.scope === 'folder' ? '分享文件夹' : '分享笔记');
+    var stepTitles = { formats: scopeTitle, image: '图片预览', file: '文件预览', archive: 'ZIP 文件预览', link: '远端网页链接', targets: '选择分享去向' };
+    document.getElementById('shareTitle').textContent = stepTitles[step];
+    document.getElementById('shareSubtitle').textContent = s.name + ' · ' + (s.scope === 'note' ? '当前笔记' : (s.scope === 'folder' ? '文件夹及子目录' : '整个知识库'));
+    document.getElementById('shareBack').classList.toggle('hidden', step === 'formats');
     var box = document.getElementById('shareBody');
     if (step === 'formats') {
-      box.innerHTML = '<button class="share-option" data-share-step="image"><b>图片</b><span>分享排版长图<small>保留图文排版，发送前预览</small></span>›</button>'
-        + '<button class="share-option" data-share-step="file"><b>' + (s.images.length ? 'ZIP' : 'MD') + '</b><span>' + (s.images.length ? '笔记与本地图片' : 'Markdown 原文件') + '<small>' + (s.images.length ? '1 篇笔记 + ' + s.images.length + ' 张配图，解压后阅读' : '发送 .md 文件，方便继续编辑') + '</small></span>›</button>'
-        + (s.vault.type === 'git' ? '<button class="share-option" data-share-step="link"><b>链接</b><span>远端笔记网页<small>接收人打开仓库中的这一篇笔记</small></span>›</button>' : '<p class="share-caption">本地笔记保存在设备上，可分享图片或文件。</p>');
+      if (s.scope === 'note') {
+        box.innerHTML = '<button class="share-option" data-share-step="image"><b>图片</b><span>分享排版长图<small>保留图文排版，发送前预览</small></span>›</button>'
+          + '<button class="share-option" data-share-step="file"><b>' + (s.images.length ? 'ZIP' : 'MD') + '</b><span>' + (s.images.length ? '笔记与本地图片' : 'Markdown 原文件') + '<small>' + (s.images.length ? '1 篇笔记 + ' + s.images.length + ' 张配图，解压后阅读' : '发送 .md 文件，方便继续编辑') + '</small></span>›</button>';
+      } else {
+        var scopeSummary = s.noteCount + ' 篇 Markdown · ' + s.rows.length + ' 个文件；引用的库内图片会一并补齐';
+        box.innerHTML = '<button class="share-option" data-share-step="archive"><b>ZIP</b><span>' + (s.scope === 'folder' ? '文件夹内容与配图' : '知识库内容与附件') + '<small>' + scopeSummary + '</small></span>›</button>';
+      }
+      if (s.vault.type === 'git' && s.link) {
+        var linkLabel = s.scope === 'vault' ? '仓库首页' : (s.scope === 'folder' ? '远端文件夹网页' : '远端笔记网页');
+        box.innerHTML += '<button class="share-option" data-share-step="link"><b>链接</b><span>' + linkLabel + '<small>来自远端分支；本地未推送内容不在链接中</small></span>›</button>';
+      }
+      if (s.scope === 'note' && s.vault.type !== 'git') { box.innerHTML += '<p class="share-caption">本地笔记保存在设备上，可分享图片或文件。</p>'; }
     } else if (step === 'image') {
       box.innerHTML = '<div class="share-paper md" id="sharePaper"></div><p class="share-caption">长图预览，可滚动检查全文；按当前编辑内容生成。</p><button class="share-primary" data-share-step="targets">分享图片</button>';
       document.getElementById('sharePaper').innerHTML = renderMarkdown(s.text);
@@ -1738,9 +1854,13 @@
       var zip = s.images.length > 0;
       s.format = zip ? 'ZIP 文件' : 'Markdown 文件';
       box.innerHTML = '<h3>' + esc(s.name.replace(/\.md$/, '') + (zip ? '.zip' : '.md')) + '</h3><div class="share-paper"><strong>文件内容</strong><p>' + esc(s.name) + '</p>' + s.images.map(function (path, i) { return '<p>' + esc('images/' + (i + 1) + '_' + path.split('/').pop()) + '</p>'; }).join('') + '</div><p class="share-caption">' + (zip ? '仅包含本篇与引用的本地图片；包内调整相对路径。不会打包其他笔记，网络图片保留链接。' : '保留 Markdown 源码；网络图片保留链接。') + '</p><button class="share-primary" data-share-step="targets">分享' + (zip ? ' ZIP' : ' Markdown') + '</button>';
+    } else if (step === 'archive') {
+      s.format = 'ZIP 文件';
+      box.innerHTML = '<h3>' + esc(s.name + '.zip') + '</h3><div class="share-paper"><strong>预览范围 · ' + s.noteCount + ' 篇 Markdown</strong>' + s.rows.map(function (row) { return '<p>' + esc(row.path) + '</p>'; }).join('') + '</div><p class="share-caption">保留目录关系；补齐当前库内引用图片。排除 .git、回收站、草稿与应用内部状态。' + (s.vault.type === 'git' ? ' ZIP 来自设备当前文件，不会上传；本地未推送内容也会进入 ZIP。' : '') + '</p><button class="share-primary" data-share-step="targets">分享 ZIP</button>';
     } else if (step === 'link') {
       s.format = '链接';
-      box.innerHTML = '<input class="share-link" id="shareLinkValue" aria-label="远端链接示意" readonly><p class="share-caption">' + (s.scope === 'vault' ? '打开仓库首页，不导出整个知识库。' : '打开远端笔记；尚未推送的修改不会包含在链接中。仅支持已存在远端的笔记。') + ' 私有仓库需要接收人有访问权限。</p><p class="share-caption">原型按示例仓库拼接链接，尚未验证远端页面。</p><button class="share-primary" data-share-step="targets">分享链接</button>';
+      var linkDesc = s.scope === 'vault' ? '打开仓库首页，不导出整个知识库。' : (s.scope === 'folder' ? '打开远端分支中的文件夹页面。' : '打开远端分支中的笔记页面。');
+      box.innerHTML = '<input class="share-link" id="shareLinkValue" aria-label="远端链接示意" readonly><p class="share-caption">' + linkDesc + ' 本地未推送内容不会出现在链接中；私有仓库需要接收人拥有访问权限。</p><p class="share-caption">原型链接按仓库元数据拼接，未验证远端目标存在。</p><button class="share-primary" data-share-step="targets">分享链接</button>';
       document.getElementById('shareLinkValue').value = s.link;
     } else {
       box.innerHTML = '<h3>' + esc(s.format) + '</h3><p class="share-caption">系统分享面板示意</p><div class="share-targets"><button data-share-target="微信">微信</button><button data-share-target="飞书">飞书</button></div><p id="shareResult" class="share-caption" role="status">选择去向预览交接反馈。</p>';
@@ -1851,7 +1971,8 @@
         if (!row) { return; }
         var tgt = kind === 'dir' ? ('d:' + wrap.getAttribute('data-idx')) : row[4];
         var act = this.getAttribute('data-act');
-        if (act === 'rename') { openDialog(kind === 'dir' ? 'dir-rename' : 'note-rename', tgt); }
+        if (act === 'share' && kind === 'dir') { openShare('folder', currentVault, folderPathForRow(currentVault, parseInt(wrap.getAttribute('data-idx'), 10))); }
+        else if (act === 'rename') { openDialog(kind === 'dir' ? 'dir-rename' : 'note-rename', tgt); }
         else if (act === 'move') { openDialog(kind === 'dir' ? 'dir-move' : 'note-move', tgt); }
         else { openDialog('note-del', tgt); }
       });
@@ -1867,7 +1988,7 @@
        3) 一路滑到底     → 整条变红，「松手删除」→ 直接删除 + 5 秒撤销条
      目录不给「滑到底删除」：误删目录 = 整个子树消失                       */
   var drag = null, moved = false;
-  var SW_W = { file: 144, dir: 96 };   // 操作条宽度 = 按钮数 × 48vp 热区（与 CSS 的 translateX 一致）
+  var SW_W = { file: 144, dir: 192 };
   var DEL_EXTRA = 36;                   // 越过操作条再滑这么多 → 进入删除区
   var DAMP = 0.5;                       // 越界后的阻尼，防止误触（同时让"滑到底"不至于要拖满一屏）
 
@@ -2059,6 +2180,7 @@
   var IA = ' width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
   var ICON_RENAME = '<svg' + IA + '><path d="M15.4 4.6l4 4L8.6 19.4H4.6v-4z"/><path d="M13.4 6.6l4 4"/></svg>';
   var ICON_MOVE = '<svg' + IA + '><path d="M3.6 6.6a1.9 1.9 0 011.9-1.9h3.2l1.9 2.2h6.8a1.9 1.9 0 011.9 1.9v.6"/><path d="M3.6 8.8h16.8v7.6a2.4 2.4 0 01-2.4 2.4H6a2.4 2.4 0 01-2.4-2.4z"/><path d="M9.4 13.2h7.4M14 10.6l2.8 2.6L14 15.8"/></svg>';
+  var ICON_SHARE = '<svg' + IA + '><path d="M14 9V4l8 8-8 8v-5C8 15 4 17 2 21c0-7 4-12 12-12Z"/></svg>';
   var ICON_TRASH = '<svg' + IA + '><path d="M4.6 7.2h14.8"/><path d="M9.6 7.2V5.4a1.4 1.4 0 011.4-1.4h2a1.4 1.4 0 011.4 1.4v1.8"/><path d="M6.6 7.2l.8 11a2 2 0 002 1.9h5.2a2 2 0 002-1.9l.8-11"/></svg>';
   var ICON_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>';
 
@@ -2073,7 +2195,7 @@
       : '<span class="caret"></span>';
     var icon = kind === 'dir' ? (open ? ICON_DIR_OPEN : ICON_DIR) : ICON_FILE;
     var attrs = kind === 'dir'
-      ? ' data-dir="' + idx + '" title="点击展开 / 折叠 · 左滑重命名或移动"'
+      ? ' data-dir="' + idx + '" title="点击展开 / 折叠 · 左滑分享、重命名、移动"'
       : (id ? ' data-id="' + id + '" title="点击打开 · 左滑出操作 · 滑到底直接删除"' : '');
     if (forAgent) {
       attrs = kind === 'dir' ? ' data-agent-dir="' + idx + '" tabindex="0" role="button" aria-expanded="' + String(open) + '" title="展开 / 折叠目录"' : ' data-add-ref="' + agentEsc(id) + '" data-drag-note="' + agentEsc(id) + '" draggable="true" tabindex="0" role="button" title="点击引用，或拖到输入框"';
@@ -2085,10 +2207,11 @@
         + ICON_PLUS + '</button>'
       : '';
     /* 目录不给「删除」：误删一个目录 = 整个子树消失 */
-    /* 行内按钮：rename / move / del。目录也有 del —— 2026-10-18 方案 A 补：
+    /* 行内按钮：folder share + rename / move / del。目录也有 del —— 2026-10-18 方案 A 补：
        原先 kind === 'dir' 时删按钮被去掉，建了文件夹却删不掉。目录删除走子树
        splice（doDeleteNote 里按 nodeRange 整段移除）。 */
-    var acts = '<button class="sw-btn" data-act="rename" title="重命名">' + ICON_RENAME + '</button>'
+    var acts = (kind === 'dir' ? '<button class="sw-btn" data-act="share" title="分享文件夹">' + ICON_SHARE + '</button>' : '')
+      + '<button class="sw-btn" data-act="rename" title="重命名">' + ICON_RENAME + '</button>'
       + '<button class="sw-btn" data-act="move" title="移动">' + ICON_MOVE + '</button>'
       + '<button class="sw-btn danger" data-act="del" title="删除">'
         + ICON_TRASH + '<span class="sw-txt">松手删除</span></button>';
@@ -2160,6 +2283,8 @@
   }
 
   function loadFile() {
+    cancelAnimationFrame(followFrame);
+    previewFollowing = true;
     ta.value = CONTENT[current] || '';
     var name = FILES[current] || '';
     ta.disabled = !name;
@@ -2180,8 +2305,8 @@
     if (!document.getElementById('backlinksPanel').classList.contains('hidden')) { renderBacklinks(); }
   }
 
-  function currentFileRows() {
-    var rows = TREES[currentVault] || [], dirs = [], out = [];
+  function fileRowsForVault(vaultId) {
+    var rows = TREES[vaultId] || [], dirs = [], out = [];
     for (var i = 0; i < rows.length; i++) {
       var row = rows[i];
       if (row[0] === 'dir') { dirs[row[3]] = row[1]; dirs.length = row[3] + 1; }
@@ -2191,6 +2316,7 @@
     }
     return out;
   }
+  function currentFileRows() { return fileRowsForVault(currentVault); }
 
   function fuzzyName(name, query) {
     var n = name.toLocaleLowerCase(), q = query.toLocaleLowerCase(), at = 0;
@@ -2314,6 +2440,115 @@
     else { panel.classList.add('hidden'); }
   });
 
+  /* ---------- Markdown 格式栏：仅修改当前编辑文本 ---------- */
+  function applyMarkdownFormat(kind, level) {
+    if (!current) { showToast('请先创建或打开一篇笔记', '', null); return; }
+    var start = ta.selectionStart, end = ta.selectionEnd, value = ta.value;
+    var selected = value.slice(start, end), replacement, selectionStart, selectionEnd;
+    var inline = { bold: ['**', '**', '粗体文字'], italic: ['*', '*', '斜体文字'], code: ['`', '`', '代码'], link: ['[', '](https://example.com)', '链接文字'] };
+    if (inline[kind]) {
+      var spec = inline[kind], text = selected || spec[2];
+      replacement = spec[0] + text + spec[1];
+      selectionStart = start + spec[0].length;
+      selectionEnd = selectionStart + text.length;
+      if (selected && (kind === 'bold' || kind === 'italic' || kind === 'code')) {
+        var marker = spec[0], count = marker.length;
+        var before = (value.slice(0, start).match(kind === 'code' ? /`+$/ : /\*+$/) || [''])[0].length;
+        var after = (value.slice(end).match(kind === 'code' ? /^`+/ : /^\*+/) || [''])[0].length;
+        var around = Math.min(before, after);
+        var wrapped = selected.match(kind === 'code' ? /^(`+)([\s\S]*?)(`+)$/ : /^(\*+)([\s\S]*?)(\*+)$/);
+        var inside = wrapped ? Math.min(wrapped[1].length, wrapped[3].length) : 0;
+        var removeAround = kind === 'italic' ? around % 2 === 1 : around >= count;
+        var removeInside = kind === 'italic' ? inside % 2 === 1 : inside >= count;
+        if (removeAround) {
+          start -= count; end += count; replacement = selected;
+          selectionStart = start; selectionEnd = start + selected.length;
+        } else if (removeInside) {
+          replacement = selected.slice(count, -count);
+          selectionStart = start; selectionEnd = start + replacement.length;
+        }
+      }
+    } else {
+      start = start === 0 ? 0 : value.lastIndexOf('\n', start - 1) + 1;
+      var lineEnd = value.indexOf('\n', end > start && value[end - 1] === '\n' ? end - 1 : end);
+      end = lineEnd < 0 ? value.length : lineEnd;
+      var lines = value.slice(start, end).split('\n');
+      replacement = lines.map(function (line, index) {
+        if (kind === 'heading') { return (level ? '#'.repeat(level) + ' ' : '') + (line.replace(/^#{1,6} +/, '') || (level ? '标题' : '')); }
+        var prefix = kind === 'bullet' ? '- ' : kind === 'ordered' ? (index + 1) + '. ' : kind === 'task' ? '- [ ] ' : '> ';
+        return prefix + (line || (kind === 'quote' ? '引用文字' : '列表项'));
+      }).join('\n');
+      selectionStart = start; selectionEnd = start + replacement.length;
+    }
+    var scroll = ta.scrollTop;
+    ta.setRangeText(replacement, start, end, 'select');
+    ta.focus(); ta.setSelectionRange(selectionStart, selectionEnd); ta.scrollTop = scroll;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  var formatPositionFrame = 0;
+  function positionFormatPanel() {
+    var mask = document.getElementById('formatMask');
+    if (mask.classList.contains('hidden')) { return; }
+    if (body.getAttribute('data-form') !== 'sm') {
+      var panel = mask.querySelector('.format-panel');
+      var bounds = mask.getBoundingClientRect();
+      var anchor = document.getElementById('formatBtn').getBoundingClientRect();
+      var scaleX = bounds.width / mask.clientWidth, scaleY = bounds.height / mask.clientHeight;
+      var gap = parseFloat(getComputedStyle(mask).getPropertyValue('--format-gap'));
+      var anchorTop = (anchor.top - bounds.top) / scaleY;
+      var anchorCenter = ((anchor.left + anchor.right) / 2 - bounds.left) / scaleX;
+      var left = Math.max(gap, Math.min(anchorCenter - panel.offsetWidth / 2, mask.clientWidth - panel.offsetWidth - gap));
+      panel.style.setProperty('--format-left', left + 'px');
+      panel.style.setProperty('--format-bottom', (mask.clientHeight - anchorTop + gap) + 'px');
+      panel.style.setProperty('--format-height', Math.max(0, anchorTop - gap * 2) + 'px');
+    }
+    formatPositionFrame = requestAnimationFrame(positionFormatPanel);
+  }
+  function closeFormatPanel(restoreFocus) {
+    var mask = document.getElementById('formatMask');
+    if (mask.classList.contains('hidden')) { return; }
+    mask.classList.add('hidden');
+    cancelAnimationFrame(formatPositionFrame);
+    document.getElementById('noteView').inert = false;
+    document.querySelector('.appbar').inert = false;
+    document.getElementById('formatBtn').setAttribute('aria-expanded', 'false');
+    if (restoreFocus) { ta.focus(); }
+  }
+  document.getElementById('formatBtn').addEventListener('click', function () {
+    if (!current) { showToast('请先创建或打开一篇笔记', '', null); return; }
+    var lineStart = ta.selectionStart === 0 ? 0 : ta.value.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+    var heading = ta.value.slice(lineStart).match(/^(#{1,6}) /);
+    document.querySelectorAll('#formatMask [data-level]').forEach(function (button) {
+      button.setAttribute('aria-pressed', String(Number(button.getAttribute('data-level')) === (heading ? heading[1].length : 0)));
+    });
+    document.getElementById('formatMask').classList.remove('hidden');
+    cancelAnimationFrame(formatPositionFrame);
+    positionFormatPanel();
+    document.getElementById('noteView').inert = true;
+    document.querySelector('.appbar').inert = true;
+    this.setAttribute('aria-expanded', 'true');
+    document.getElementById('formatClose').focus();
+  });
+  document.getElementById('formatDock').addEventListener('mousedown', function (e) { e.preventDefault(); });
+  document.getElementById('formatDock').addEventListener('click', function (e) {
+    var button = e.target.closest('[data-markdown]');
+    if (button) { applyMarkdownFormat(button.getAttribute('data-markdown')); }
+  });
+  document.getElementById('formatClose').addEventListener('click', function () { closeFormatPanel(true); });
+  document.getElementById('formatMask').addEventListener('click', function (e) {
+    if (e.target === this) { closeFormatPanel(true); return; }
+    var button = e.target.closest('[data-markdown]');
+    if (button) { closeFormatPanel(false); applyMarkdownFormat(button.getAttribute('data-markdown'), Number(button.getAttribute('data-level'))); }
+  });
+  document.getElementById('formatMask').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.stopPropagation(); closeFormatPanel(true); }
+    if (e.key === 'Tab') {
+      var buttons = Array.from(this.querySelectorAll('button')), first = buttons[0], last = buttons[buttons.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  });
+
   document.getElementById('insertImageBtn').addEventListener('click', function () {
     if (!current) { showToast('请先创建或打开一篇笔记', '', null); return; }
     var sample = '\n\n![相册图片示例](assets/示例图片.png)\n\n$$ E = mc^2 $$\n\n```mermaid\ngraph LR\n  笔记 --> 预览\n```\n';
@@ -2328,8 +2563,8 @@
   function updateVaultUI() {
     updateAppTitle();
     var v = vaultById(currentVault);
+    body.setAttribute('data-vault-type', v ? v.type : '');
     if (!v) { return; }
-    document.getElementById('shareVaultBtn').classList.toggle('hidden', v.type !== 'git');
     document.getElementById('curVaultName').textContent = v.name;
     document.getElementById('curVaultSub').textContent = (v.type === 'git' ? 'Git 库' : '本地库') + ' · ' + v.files + ' 篇';
     document.getElementById('stVault').textContent = (v.type === 'git')
@@ -3119,7 +3354,7 @@
       h = h.replace(/(^|\s)(#[^\s#,，。]+)/g, '$1<span class="hl-tag">$2</span>');
       h = h.replace(/^(\s*)([-*+]|\d+\.)\s/g, '$1<span class="hl-mark">$2</span> ');
       return h;
-    }).join('\n');
+    }).map(function (line, index) { return '<span data-editor-line="' + index + '">' + (line || '&#8203;') + '</span>'; }).join('\n');
     return out + '\n';
   }
 
@@ -3132,9 +3367,13 @@
     var codeBuf = [];
     var para = [];
     var tbl = [];
+    var paraStart = 0, tableStart = 0, codeStart = 0;
+    function sourceRange(start, end) {
+      return ' data-source-start="' + start + '" data-source-end="' + end + '"';
+    }
 
     function flushPara() {
-      if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; }
+      if (para.length) { out.push('<p' + sourceRange(paraStart, paraStart + para.length) + '>' + inline(para.join(' ')) + '</p>'); para = []; }
     }
     function flushList() {
       if (listType) { out.push('</' + listType + '>'); listType = null; }
@@ -3142,7 +3381,7 @@
     function flushTable() {
       if (tbl.length) {
         var head = tbl[0], body_ = tbl.slice(2);
-        var h = '<table><thead><tr>' + head.map(function (c) { return '<th>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+        var h = '<table' + sourceRange(tableStart, tableStart + tbl.length) + '><thead><tr>' + head.map(function (c) { return '<th>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
         body_.forEach(function (r) {
           h += '<tr>' + r.map(function (c) { return '<td>' + inline(c) + '</td>'; }).join('') + '</tr>';
         });
@@ -3156,16 +3395,17 @@
       if (/^\s*```/.test(line)) {
         if (inCode) {
           out.push(codeLang === 'mermaid'
-            ? '<div class="mermaid-preview" data-intro="v1.3">Mermaid 图表预览 · v1.3 设计示意<pre>' + esc(codeBuf.join('\n')) + '</pre></div>'
-            : '<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
+            ? '<div' + sourceRange(codeStart, i + 1) + ' class="mermaid-preview" data-intro="v1.3">Mermaid 图表预览 · v1.3 设计示意<pre>' + esc(codeBuf.join('\n')) + '</pre></div>'
+            : '<pre' + sourceRange(codeStart, i + 1) + '><code>' + esc(codeBuf.join('\n')) + '</code></pre>');
           codeBuf = []; inCode = false; codeLang = '';
-        } else { flushPara(); flushList(); flushTable(); inCode = true; codeLang = line.trim().slice(3).trim(); }
+        } else { flushPara(); flushList(); flushTable(); inCode = true; codeStart = i; codeLang = line.trim().slice(3).trim(); }
         continue;
       }
       if (inCode) { codeBuf.push(line); continue; }
 
       if (/^\s*\|.*\|\s*$/.test(line)) {
         flushPara(); flushList();
+        if (!tbl.length) { tableStart = i; }
         tbl.push(line.trim().replace(/^\||\|$/g, '').split('|').map(function (s) { return s.trim(); }));
         continue;
       } else { flushTable(); }
@@ -3174,22 +3414,22 @@
 
       if (/^\s*\$\$.+\$\$\s*$/.test(line)) {
         flushPara(); flushList();
-        out.push('<div class="math-preview" data-intro="v1.3">公式预览 · v1.3 设计示意：' + esc(line.trim().slice(2, -2).trim()) + '</div>');
+        out.push('<div' + sourceRange(i, i + 1) + ' class="math-preview" data-intro="v1.3">公式预览 · v1.3 设计示意：' + esc(line.trim().slice(2, -2).trim()) + '</div>');
         continue;
       }
 
       if (/^\s*#{1,6}\s/.test(line)) {
         flushPara(); flushList();
         var lv = line.match(/^#+/)[0].length;
-        out.push('<h' + lv + '>' + inline(line.replace(/^#+\s/, '')) + '</h' + lv + '>');
+        out.push('<h' + lv + sourceRange(i, i + 1) + '>' + inline(line.replace(/^#+\s/, '')) + '</h' + lv + '>');
         continue;
       }
       if (/^\s*>\s?/.test(line)) {
         flushPara(); flushList();
-        out.push('<blockquote>' + inline(line.replace(/^\s*>\s?/, '')) + '</blockquote>');
+        out.push('<blockquote' + sourceRange(i, i + 1) + '>' + inline(line.replace(/^\s*>\s?/, '')) + '</blockquote>');
         continue;
       }
-      if (/^\s*---+\s*$/.test(line)) { flushPara(); flushList(); out.push('<hr>'); continue; }
+      if (/^\s*---+\s*$/.test(line)) { flushPara(); flushList(); out.push('<hr' + sourceRange(i, i + 1) + '>'); continue; }
 
       var m = line.match(/^\s*([-*+])\s+(.*)$/);
       var om = line.match(/^\s*(\d+)\.\s+(.*)$/);
@@ -3200,21 +3440,22 @@
         var task = bodyHtml.match(/^\[( |x|X)\]\s?/);
         if (task) {
           bodyHtml = '<input type="checkbox" disabled' + (task[1].toLowerCase() === 'x' ? ' checked' : '') + '> ' + bodyHtml.replace(/^\[( |x|X)\]\s?/, '');
-          out.push('<li class="todo">' + bodyHtml + '</li>');
-        } else { out.push('<li>' + bodyHtml + '</li>'); }
+          out.push('<li' + sourceRange(i, i + 1) + ' class="todo">' + bodyHtml + '</li>');
+        } else { out.push('<li' + sourceRange(i, i + 1) + '>' + bodyHtml + '</li>'); }
         continue;
       }
       if (om) {
         flushPara();
         if (listType !== 'ol') { flushList(); out.push('<ol>'); listType = 'ol'; }
-        out.push('<li>' + inline(om[2]) + '</li>');
+        out.push('<li' + sourceRange(i, i + 1) + '>' + inline(om[2]) + '</li>');
         continue;
       }
       flushList();
+      if (!para.length) { paraStart = i; }
       para.push(line);
     }
     flushPara(); flushList(); flushTable();
-    if (inCode && codeBuf.length) { out.push('<pre><code>' + esc(codeBuf.join('\n')) + '</code></pre>'); }
+    if (inCode && codeBuf.length) { out.push('<pre' + sourceRange(codeStart, lines.length) + '><code>' + esc(codeBuf.join('\n')) + '</code></pre>'); }
     return out.join('');
   }
 
@@ -3248,9 +3489,110 @@
     updateHint();
   });
 
+  /* 源码行 → 预览块：只在渲染或布局变化时测量，滚动帧复用映射。 */
+  var followEnabled = true, previewFollowing = true, followFrame = 0;
+  var followGeometryDirty = true, followWasVisible = false;
+  var editorLinePositions = [], previewBlockPositions = [];
+  var followButton = document.getElementById('followEditorBtn');
+  try { followEnabled = localStorage.getItem('xt2-follow-editor') !== 'false'; } catch (e) { /* 无本地存储时使用默认值 */ }
+  function updateFollowButton() {
+    followButton.setAttribute('aria-pressed', String(followEnabled));
+    followButton.textContent = '跟随编辑：' + (followEnabled ? '开' : '关');
+  }
+  function followPanesVisible() {
+    return body.getAttribute('data-view') === 'note' && ta.clientWidth > 0 && ta.clientHeight > 0 && mdEl.clientWidth > 0 && mdEl.clientHeight > 0;
+  }
+  function measureFollowGeometry() {
+    var editorBounds = hl.getBoundingClientRect(), previewBounds = mdEl.getBoundingClientRect();
+    var editorScale = editorBounds.height / hl.clientHeight, previewScale = previewBounds.height / mdEl.clientHeight;
+    editorLinePositions = Array.from(hl.querySelectorAll('[data-editor-line]')).map(function (el) {
+      return (el.getBoundingClientRect().top - editorBounds.top) / editorScale + hl.scrollTop;
+    });
+    previewBlockPositions = Array.from(mdEl.querySelectorAll('[data-source-start]')).map(function (el) {
+      var rect = el.getBoundingClientRect();
+      return { start: Number(el.dataset.sourceStart), end: Number(el.dataset.sourceEnd), top: (rect.top - previewBounds.top) / previewScale + mdEl.scrollTop, height: rect.height / previewScale };
+    });
+    followGeometryDirty = false;
+  }
+  function previewPositionForLine(line, blocks) {
+    if (!blocks.length) { return 0; }
+    var block = blocks[0];
+    for (var i = 1; i < blocks.length; i++) {
+      if (line < blocks[i].start) {
+        if (line >= block.end && blocks[i].start - line < line - block.end) { block = blocks[i]; }
+        break;
+      }
+      block = blocks[i];
+    }
+    var progress = Math.max(0, Math.min(1, (line - block.start) / Math.max(1, block.end - block.start)));
+    return block.top + progress * block.height;
+  }
+  function syncPreviewFollow() {
+    followFrame = 0;
+    var visible = followPanesVisible();
+    if (visible && !followWasVisible) { previewFollowing = true; followGeometryDirty = true; }
+    followWasVisible = visible;
+    if (!visible || !followEnabled || !current) { return; }
+    if (followGeometryDirty) { measureFollowGeometry(); }
+    if (!previewFollowing || !editorLinePositions.length) { return; }
+    var sourceTop = ta.scrollTop + parseFloat(getComputedStyle(ta).paddingTop);
+    var low = 0, high = editorLinePositions.length - 1;
+    while (low < high) {
+      var mid = Math.ceil((low + high) / 2);
+      if (editorLinePositions[mid] <= sourceTop) { low = mid; } else { high = mid - 1; }
+    }
+    var nextTop = editorLinePositions[low + 1] || editorLinePositions[low] + parseFloat(getComputedStyle(ta).lineHeight);
+    var line = low + Math.max(0, Math.min(1, (sourceTop - editorLinePositions[low]) / Math.max(1, nextTop - editorLinePositions[low])));
+    var target = previewPositionForLine(line, previewBlockPositions) - parseFloat(getComputedStyle(mdEl).paddingTop);
+    if (ta.scrollTop <= 0) { target = 0; }
+    else if (ta.scrollHeight > ta.clientHeight && ta.scrollTop >= ta.scrollHeight - ta.clientHeight - 1) { target = mdEl.scrollHeight - mdEl.clientHeight; }
+    mdEl.scrollTop = Math.max(0, Math.min(target, mdEl.scrollHeight - mdEl.clientHeight));
+  }
+  function schedulePreviewFollow() {
+    cancelAnimationFrame(followFrame);
+    followFrame = requestAnimationFrame(syncPreviewFollow);
+  }
+  function invalidateFollowGeometry() { followGeometryDirty = true; schedulePreviewFollow(); }
+  function resumePreviewFollow(e) {
+    if (e.type === 'keydown' && !/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(e.key)) { return; }
+    previewFollowing = true;
+    if (e.type !== 'pointerdown') { schedulePreviewFollow(); }
+  }
+  function pausePreviewFollow(e) {
+    if (e.type === 'keydown' && !/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(e.key)) { return; }
+    previewFollowing = false;
+    cancelAnimationFrame(followFrame);
+  }
+  ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach(function (type) {
+    ta.addEventListener(type, resumePreviewFollow, { passive: true });
+    mdEl.addEventListener(type, pausePreviewFollow, { passive: true });
+  });
+  followButton.addEventListener('click', function () {
+    followEnabled = !followEnabled;
+    previewFollowing = true;
+    updateFollowButton();
+    try { localStorage.setItem('xt2-follow-editor', String(followEnabled)); } catch (e) { /* 仅保留本次开关状态 */ }
+    cancelAnimationFrame(followFrame);
+    if (followEnabled) { invalidateFollowGeometry(); }
+  });
+  var followLayoutObserver = new ResizeObserver(invalidateFollowGeometry);
+  followLayoutObserver.observe(ta); followLayoutObserver.observe(mdEl);
+  var followBlocksObserver = new ResizeObserver(invalidateFollowGeometry);
+  function observeFollowBlocks() {
+    followBlocksObserver.disconnect();
+    mdEl.querySelectorAll('[data-source-start]').forEach(function (el) { followBlocksObserver.observe(el); });
+  }
+  mdEl.addEventListener('load', invalidateFollowGeometry, true);
+  if (document.fonts) { document.fonts.ready.then(invalidateFollowGeometry); }
+  updateFollowButton();
+
   function render() {
     hl.innerHTML = highlight(ta.value);
+    var previewScroll = mdEl.scrollTop;
     mdEl.innerHTML = renderMarkdown(ta.value);
+    mdEl.scrollTop = previewScroll;
+    observeFollowBlocks();
+    invalidateFollowGeometry();
     updateImageBounds();
     applyReleaseMark();
     var n = ta.value.replace(/\s/g, '').length;
@@ -3259,7 +3601,7 @@
   }
 
   ta.addEventListener('input', function () { if (current) { CONTENT[current] = ta.value; } render(); });
-  ta.addEventListener('scroll', function () { hl.scrollTop = ta.scrollTop; });
+  ta.addEventListener('scroll', function () { hl.scrollTop = ta.scrollTop; schedulePreviewFollow(); });
 
   /* ---------- 形态 / 视图 / 主题 ---------- */
   var FORMS = { sm: '外屏合起 · 380vp', md: '展开双屏 · 709vp', lg: '三屏展开 · 1061vp' };
@@ -3269,21 +3611,23 @@
 
   /* smMode：正文区「编辑 / 预览」单栏切换。
      sm（2026-10-17）：一块屏只能放一栏；md（2026-10-25 补）：正文区同样只有一栏的
-     位置，预览抢占正文区、目录栏不动；lg 三栏同屏，用不到 */
+     位置，预览抢占正文区、目录栏不动；lg 使用共用布局切换 */
   var smMode = 'edit';
 
   /* smMode：正文区「编辑 / 预览」单栏切换。
      sm：一块屏只能放一栏，两个 pane 互相让位（2026-10-17 既定设计）；
      md：正文区在第二屏，同样只有一栏的位置 —— 目录栏不动，预览抢占正文区
-         （2026-10-25 补，用户要求设计双屏的切换入口；lg 三栏同屏无需切换） */
+         （2026-10-25 补，用户要求设计双屏的切换入口；lg 使用共用布局切换） */
   function applySmMode() {
     var f = body.getAttribute('data-form');
     var editor = document.getElementById('editorPane');
     var preview = document.getElementById('previewPane');
     var segs = document.querySelectorAll('.seg');
     /* seg 显示条件：sm 永远显示；md 仅在三栏同屏（未收起目录栏）时显示；
-       md 收起目录栏后 编辑|预览 各一屏同屏可见，无需切换；lg 已有独立预览栏 */
-    var showSeg = (f === 'sm') || isSingleLandscape() || (f === 'md' && !sideHidden);
+       md 收起目录栏后可选编辑 / 预览 / 双栏；lg 无论目录收展均可选正文布局 */
+    var dualLayout = (f === 'lg' || (f === 'md' && sideHidden)) && !isSingleLandscape();
+    var activeMode = dualLayout ? (body.getAttribute('data-dual-mode') || 'split') : smMode;
+    var showSeg = f === 'sm' || f === 'md' || f === 'lg';
     for (var i = 0; i < segs.length; i++) {
       var s = segs[i];
       /* 只处理模式切换控件（内部有带 data-m 的按钮）。新建对话框的「笔记/文件夹」
@@ -3291,22 +3635,24 @@
          lg 形态下这里把 #cfTypeSeg 加 hidden，而 openDialog 移除的是外层 #cfTypeRow 的
          hidden，两层不是同一个元素，按钮被藏住点不到。 */
       if (!s.querySelector('button[data-m]')) { continue; }
-      if (showSeg) { s.classList.remove('hidden'); } else { s.classList.add('hidden'); }
+      var showThisSeg = s.id === 'modeSegShared' ? dualLayout : showSeg && !dualLayout;
+      if (showThisSeg) { s.classList.remove('hidden'); } else { s.classList.add('hidden'); }
       var bs = s.querySelectorAll('button');
       for (var j = 0; j < bs.length; j++) {
         /* 跳过非模式切换的按钮（如新建对话框的「笔记/文件夹」切换，无 data-m）——
            否则它的选中态会被这里清掉或误亮（undefined === undefined 陷阱） */
         if (!bs[j].hasAttribute('data-m')) { continue; }
-        if (bs[j].getAttribute('data-m') === smMode) { bs[j].classList.add('on'); }
+        bs[j].style.display = bs[j].getAttribute('data-m') === 'split' && !dualLayout ? 'none' : '';
+        if (bs[j].getAttribute('data-m') === activeMode) { bs[j].classList.add('on'); }
         else { bs[j].classList.remove('on'); }
       }
     }
     if (showSeg) {
       /* 正文区只有一栏的位置：editor / preview 互相让位。
          切到预览时收起软键盘（真机同理） */
-      editor.style.display = (smMode === 'edit') ? 'flex' : 'none';
-      preview.style.display = (smMode === 'preview') ? 'flex' : 'none';
-      if (smMode === 'preview') { ta.blur(); }
+      editor.style.display = (activeMode === 'edit' || activeMode === 'split') ? 'flex' : 'none';
+      preview.style.display = (activeMode === 'preview' || activeMode === 'split') ? 'flex' : 'none';
+      if (activeMode === 'preview') { ta.blur(); }
     } else {
       editor.style.display = '';
     }
@@ -3401,9 +3747,12 @@
     modeSegs[si].addEventListener('click', function (e) {
       var b = e.target.closest('button');
       if (!b || !b.hasAttribute('data-m')) { return; }
-      smMode = b.getAttribute('data-m');
+      if ((body.getAttribute('data-form') === 'lg' || (body.getAttribute('data-form') === 'md' && sideHidden)) && !isSingleLandscape()) {
+        body.setAttribute('data-dual-mode', b.getAttribute('data-m'));
+      } else { smMode = b.getAttribute('data-m'); }
       applySmMode();
-      render();
+      applySplit();
+      drawHinges(body.getAttribute('data-form'));
     });
   }
 
@@ -3420,8 +3769,9 @@
       var boundary = f === 'lg' ? sideW : 50;
       return [[0, boundary], [boundary, 100]];
     }
-    if (f === 'md') { return [[0, 50], [50, 100]]; }
+    if (f === 'md') { return sideHidden && body.getAttribute('data-dual-mode') && body.getAttribute('data-dual-mode') !== 'split' ? [[0, 100]] : [[0, 50], [50, 100]]; }
     if (f === 'lg') {
+      if (body.getAttribute('data-dual-mode') && body.getAttribute('data-dual-mode') !== 'split') { return sideHidden ? [[0, 100]] : [[0, sideW], [sideW, 100]]; }
       if (sideHidden) { return [[0, editW], [editW, 100]]; }
       var mid = (100 + sideW) / 2;
       return [[0, sideW], [sideW, mid], [mid, 100]];
@@ -3487,7 +3837,7 @@
   function minimumPanePercent() { return PANE_MIN_WIDTH / viewportSpec(viewportPreset, viewportRotated).width * 100; }
   function clampSide(v) {
     var min = minimumPanePercent();
-    var contentPanes = isSingleLandscape() || body.getAttribute('data-view') === 'agent' ? 1 : 2;
+    var contentPanes = isSingleLandscape() || body.getAttribute('data-view') === 'agent' || (body.getAttribute('data-dual-mode') && body.getAttribute('data-dual-mode') !== 'split') ? 1 : 2;
     return Math.max(SIDE_MIN, min, Math.min(SIDE_MAX, 100 - contentPanes * min, v));
   }
   function clampEdit(v) {
@@ -3564,6 +3914,12 @@
       spA.style.left = '';
       spB.style.left = '';
     }
+    var singleContent = (f === 'lg' || (f === 'md' && sideHidden)) && !isSingleLandscape() && body.getAttribute('data-dual-mode') && body.getAttribute('data-dual-mode') !== 'split';
+    if (singleContent) {
+      var fullWidth = sideHidden ? 100 : 100 - (viewportRotated ? 33.333 : sideW);
+      editor.style.width = fullWidth + '%'; preview.style.width = fullWidth + '%';
+    }
+    spB.style.display = singleContent ? 'none' : '';
     /* 设置页「当前栏宽」行同步（元素常驻 DOM，视图隐藏也能更新） */
     var el = document.getElementById('setSplit');
     if (el) {
@@ -3647,6 +4003,7 @@
       + '&v=' + body.getAttribute('data-view')
       + '&side=' + (sideHidden ? 'hidden' : 'shown')
       + '&m=' + smMode
+      + '&d=' + (body.getAttribute('data-dual-mode') || 'split')
       + '&t=' + body.getAttribute('data-theme');
     try { history.replaceState(null, '', '#' + hash); }
     catch (e) { location.hash = hash; }
@@ -3671,6 +4028,7 @@
     sideHidden = (params.side === 'hidden');
     /* 单屏 编辑 / 预览 模式（md / lg 用不到，带上无害） */
     if (params.m === 'preview' || params.m === 'edit') { smMode = params.m; }
+    body.setAttribute('data-dual-mode', params.d === 'edit' || params.d === 'preview' ? params.d : 'split');
     var f = FORMS[params.f] ? params.f : 'lg';
     syncCtrlOn('data-f', f);
     loadSplit();     /* 拖后的栏宽优先于默认等分（URL 不带栏宽，那是临时手感） */
@@ -3694,6 +4052,7 @@
     closeImage();
     closeShare();
     closeCelia();
+    closeFormatPanel(false);
     document.getElementById('celiaBtn').classList.toggle('hidden', v !== 'note' || document.getElementById('releaseMark').value !== 'v0.6');
     document.getElementById('shareNoteBtn').classList.toggle('hidden', v !== 'note');
     body.setAttribute('data-view', v);
@@ -3708,7 +4067,7 @@
     document.getElementById('agentMockBadge').classList.toggle('hidden', v !== 'agent');
     document.getElementById('searchBtn').classList.toggle('hidden', v !== 'note');
     document.getElementById('syncBtn').classList.toggle('hidden', v !== 'note');
-    document.getElementById('xiaoyiBtn').classList.toggle('hidden', v !== 'note' || document.getElementById('releaseMark').value !== 'v0.7');
+    document.getElementById('xiaoyiBtn').classList.toggle('hidden', true);
     document.getElementById('settingsBtn').classList.toggle('hidden', v === 'settings' || v === 'history');
     document.getElementById('syncView').classList.toggle('hidden', v !== 'sync');
     document.getElementById('vaultsView').classList.toggle('hidden', v !== 'vaults');
@@ -3789,6 +4148,15 @@
   renderReleaseNotes(RECENT_RELEASE_HISTORY, 'recentChangelog');
   renderReleaseNotes(RELEASE_HISTORY, 'allChangelog');
   document.getElementById('openHistoryBtn').addEventListener('click', function () { setSettingsTab('about'); setViewBtn('history'); });
+
+  /* APP_CONFIG_BEGIN */
+  var APP_CONFIG = {"feedbackEmail": "1036479561@qq.com"};
+  /* APP_CONFIG_END */
+  /* FEEDBACK_BEGIN */
+  document.getElementById('feedbackEmailAddress').textContent = APP_CONFIG.feedbackEmail;
+  document.getElementById('feedbackEmailLink').href = 'mailto:' + APP_CONFIG.feedbackEmail
+    + '?subject=' + encodeURIComponent('曜石笔记 · 问题与建议');
+  /* FEEDBACK_END */
 
   function fit() {
     var wrap = document.getElementById('wrap');
@@ -3977,7 +4345,7 @@
   var AGENT_TOOL_NAMES = ['QueryNotes', 'ReadNote', 'CreateNote', 'AppendNote', 'EditNote', 'UndoLastEdit'];
   var AGENT_CONFIG_KEY = 'yaoshi-agent-config-v1';
   var settingsTab = 'general', settingsDetail = false, settingsReturnView = 'note';
-  var settingsLabels = { general: '通用', agent: 'Agent', data: '数据', about: '关于' };
+  var settingsLabels = { general: '通用', agent: 'Agent', data: '数据', feedback: '问题与建议', about: '关于' };
   function agentDefaultConfig() {
     return { version: 1, revision: 1, systemPrompt: BUILTIN_AGENT_PROMPT.text, promptSource: 'builtin', defaultSkill: 'reading', skillOverrides: {}, enabledTools: AGENT_TOOL_NAMES.slice(), notify: false };
   }
@@ -4017,18 +4385,21 @@
   }
   function renderSettingsNavigation() {
     var single = settingsSinglePane(), nav = document.getElementById('settingsNav');
+    if (settingsTab === 'agent' && settingsReturnView !== 'agent') { settingsTab = 'general'; }
     document.getElementById('settingsView').setAttribute('data-settings-page', settingsDetail ? 'detail' : 'list');
     nav.setAttribute('role', single ? 'navigation' : 'tablist');
     if (single) { nav.removeAttribute('aria-orientation'); } else { nav.setAttribute('aria-orientation', 'vertical'); }
-    ['general', 'agent', 'data', 'about'].forEach(function (key) {
+    ['general', 'agent', 'data', 'feedback', 'about'].forEach(function (key) {
       var selected = key === settingsTab, button = document.getElementById('settings-tab-' + key);
       var panel = document.getElementById('settings-' + key);
+      var available = key !== 'agent' || settingsReturnView === 'agent';
+      button.classList.toggle('hidden', !available);
       panel.classList.toggle('hidden', !selected || (single && !settingsDetail));
       panel.setAttribute('tabindex', '-1'); panel.setAttribute('role', single ? 'region' : 'tabpanel');
       button.setAttribute('role', single ? 'button' : 'tab');
       if (single) { button.removeAttribute('aria-selected'); button.setAttribute('aria-current', selected && settingsDetail ? 'page' : 'false'); }
       else { button.removeAttribute('aria-current'); button.setAttribute('aria-selected', String(selected)); }
-      button.setAttribute('tabindex', single || selected ? '0' : '-1');
+      button.setAttribute('tabindex', available && (single || selected) ? '0' : '-1');
     });
     if (body.getAttribute('data-view') === 'settings') {
       document.getElementById('appTitle').textContent = single && settingsDetail ? settingsLabels[settingsTab] : '设置与关于';
@@ -4037,7 +4408,7 @@
     }
   }
   function setSettingsTab(tab, focus) {
-    if (!Object.prototype.hasOwnProperty.call(settingsLabels, tab)) { return; }
+    if (!Object.prototype.hasOwnProperty.call(settingsLabels, tab) || (tab === 'agent' && settingsReturnView !== 'agent')) { return; }
     settingsTab = tab; settingsDetail = true; renderSettingsNavigation();
     if (tab === 'agent') { renderAgentHistory(); }
     if (focus) { document.getElementById(settingsSinglePane() ? 'settings-' + tab : 'settings-tab-' + tab).focus(); }
@@ -4063,10 +4434,12 @@
       return '<label class="agent-config-check"><input type="checkbox" data-config-tool="' + name + '"' + (agentConfig.enabledTools.includes(name) ? ' checked' : '') + (name === 'UndoLastEdit' ? ' disabled' : '') + '>' + name + (name === 'UndoLastEdit' ? ' · 保留恢复入口' : '') + '</label>';
     }).join(''); renderSkillEditor();
   }
-  ['general', 'agent', 'data', 'about'].forEach(function (key, index, keys) {
+  ['general', 'agent', 'data', 'feedback', 'about'].forEach(function (key, index, keys) {
     var button = document.getElementById('settings-tab-' + key);
     button.addEventListener('click', function () { setSettingsTab(key); });
     button.addEventListener('keydown', function (e) {
+      var keys = ['general', 'agent', 'data', 'feedback', 'about'].filter(function (item) { return item !== 'agent' || settingsReturnView === 'agent'; });
+      var index = keys.indexOf(key);
       var next = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? (index + 1) % keys.length : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? (index + keys.length - 1) % keys.length : e.key === 'Home' ? 0 : e.key === 'End' ? keys.length - 1 : -1;
       if (next >= 0) {
         e.preventDefault();
