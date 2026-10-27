@@ -16,6 +16,7 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '../..')
 const outDir = path.join(repoRoot, 'entry/src/main/resources/rawfile/mdpreview')
 const tmpFile = path.join(here, '.bundle.tmp.js')
+const katexDist = path.join(here, 'node_modules/katex/dist')
 
 await build({
   entryPoints: [path.join(here, 'src/index.ts')],
@@ -38,6 +39,7 @@ fs.unlinkSync(tmpFile)
 
 // 内联脚本里出现 </script 会提前闭合标签
 const safe = code.replace(/<\/script/gi, '<\\/script')
+const katexCss = fs.readFileSync(path.join(katexDist, 'katex.min.css'), 'utf8')
 
 const html = `<!doctype html>
 <html data-theme="light">
@@ -103,6 +105,14 @@ const html = `<!doctype html>
     overflow: auto; margin: 0 0 12px;
   }
   #content pre code { background: none; padding: 0; font-size: 12px; line-height: 1.7; }
+  #content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  #content .math-error, #content .mermaid-error {
+    color: var(--text-secondary); border-left: 3px solid var(--brand);
+    background: var(--bg-secondary); padding: 8px 12px; border-radius: var(--r-chip);
+  }
+  #content .mermaid-block { overflow-x: auto; margin: 0 0 12px; }
+  #content .mermaid-source { display: none; }
+  #content .mermaid-block svg { max-width: 100%; height: auto; }
   #content table {
     border-collapse: separate; border-spacing: 0; margin: 0 0 12px;
     font-size: 12px; border: 1px solid var(--line);
@@ -140,6 +150,9 @@ const html = `<!doctype html>
   #content input[type="checkbox"] { accent-color: var(--brand); width: 15px; height: 15px; vertical-align: -2px; margin-right: 6px; }
   #content .empty { color: var(--text-tertiary); font-size: 14px; text-align: center; margin-top: 40px; }
 </style>
+<style>
+${katexCss}
+</style>
 </head>
 <body>
 <div id="content"></div>
@@ -157,6 +170,7 @@ ${safe}
 `
 
 fs.mkdirSync(outDir, { recursive: true })
+fs.cpSync(path.join(katexDist, 'fonts'), path.join(outDir, 'fonts'), { recursive: true })
 const outFile = path.join(outDir, 'index.html')
 fs.writeFileSync(outFile, html, 'utf8')
 console.log(`written ${outFile} (${(Buffer.byteLength(html, 'utf8') / 1024).toFixed(0)} KB)`)

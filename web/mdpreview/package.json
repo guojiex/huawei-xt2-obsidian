@@ -9,7 +9,9 @@
     "build": "node build.mjs"
   },
   "dependencies": {
-    "marked": "^15.0.0"
+    "katex": "^0.19.1",
+    "marked": "^15.0.0",
+    "mermaid": "^12.2.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"

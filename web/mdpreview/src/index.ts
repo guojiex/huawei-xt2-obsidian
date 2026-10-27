@@ -15,7 +15,7 @@
  */
 
 import { marked } from 'marked'
-import { resolveVaultImagePath } from './renderer.mjs'
+import { renderMermaidSvg, resolveVaultImagePath, shareCaptureBottomPadding } from './renderer.mjs'
 
 declare global {
   interface Window {
@@ -23,6 +23,7 @@ declare global {
     __arkts?: {
       readAsset?: (relB64: string) => string
       onImageViewerChange?: (state: string) => void
+      onShareCaptureResult?: (payload: string) => void
     }
   }
 }
@@ -34,6 +35,9 @@ interface MdPreviewApi {
   setTheme(theme: string): void
   resetDocument(): void
   closeImageViewer(): void
+  requestShareCaptureMetrics(id: number): void
+  prepareShareCapturePages(id: number, pageCount: number): void
+  setShareCaptureScrollTop(id: number, top: number): void
 }
 
 // ---------- base64（浏览器侧，处理 UTF-8，与 mdeditor 同款） ----------
@@ -57,6 +61,8 @@ function b64decode(b64: string): string {
 
 /** 当前笔记所在目录（库内相对，'' = 根目录）—— 相对图片引用的解析基准 */
 let noteDir = ''
+let mermaidRender: Promise<void> = Promise.resolve()
+let mermaidRenderGeneration = 0
 
 /**
  * 渲染后处理 <img>：本地相对引用 → __arkts.readAsset 换成 data URI。
@@ -68,7 +74,7 @@ function localizeImages(root: HTMLElement): void {
   for (let i = 0; i < imgs.length; i++) {
     const img = imgs[i] as HTMLImageElement
     const src = img.getAttribute('src') ?? ''
-    if (src.length === 0 || /^(https?:|data:|blob:)/i.test(src)) {
+    if (src.length === 0 || src.startsWith('//') || /^(https?:|data:|blob:)/i.test(src)) {
       continue
     }
     const rel = resolveVaultImagePath(noteDir, src)
@@ -78,6 +84,7 @@ function localizeImages(root: HTMLElement): void {
         const dataUri = arkts.readAsset(b64encode(rel))
         if (dataUri.length > 0) {
           img.src = dataUri
+          img.dataset.shareLocal = 'true'
           img.classList.add('preview-local-image')
           img.tabIndex = 0
           img.setAttribute('role', 'button')
@@ -188,6 +195,77 @@ const contentResizeObserver = new ResizeObserver(updateImageBounds)
 contentResizeObserver.observe(document.getElementById('content') as HTMLElement)
 window.addEventListener('resize', updateImageBounds)
 
+function shareCaptureMetrics(): { scrollHeight: number; viewportHeight: number; viewportWidth: number; scrollTop: number } {
+  const content = document.getElementById('content') as HTMLElement
+  return {
+    scrollHeight: content.scrollHeight,
+    viewportHeight: content.clientHeight,
+    viewportWidth: content.clientWidth,
+    scrollTop: content.scrollTop
+  }
+}
+
+function sendShareCaptureResult(id: number, errorText: string = ''): void {
+  const arkts = window.__arkts
+  if (!arkts || typeof arkts.onShareCaptureResult !== 'function') {
+    return
+  }
+  const metrics = shareCaptureMetrics()
+  arkts.onShareCaptureResult(JSON.stringify({
+    id: id,
+    error: errorText,
+    scrollHeight: metrics.scrollHeight,
+    viewportHeight: metrics.viewportHeight,
+    viewportWidth: metrics.viewportWidth,
+    scrollTop: metrics.scrollTop
+  }))
+}
+
+async function waitForLocalImages(root: HTMLElement): Promise<void> {
+  const images = root.querySelectorAll<HTMLImageElement>('img[data-share-local="true"]')
+  for (let i = 0; i < images.length; i++) {
+    const image = images[i]
+    await image.decode()
+    if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
+      throw new Error('本地图片解码失败，无法生成完整分享图片')
+    }
+  }
+}
+
+function nextRenderedFrame(): Promise<void> {
+  return new Promise<void>((resolve: () => void): void => {
+    requestAnimationFrame((): void => {
+      requestAnimationFrame((): void => resolve())
+    })
+  })
+}
+
+async function renderMermaidBlocks(root: HTMLElement, generation: number): Promise<void> {
+  const blocks = root.querySelectorAll('.mermaid-block')
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i] as HTMLElement
+    const source = block.querySelector('.mermaid-source')?.textContent ?? ''
+    try {
+      const svg = await renderMermaidSvg(source)
+      if (generation !== mermaidRenderGeneration || !block.isConnected) {
+        return
+      }
+      block.innerHTML = svg
+      block.setAttribute('role', 'img')
+      block.setAttribute('aria-label', 'Mermaid 图表')
+    } catch (error) {
+      if (generation !== mermaidRenderGeneration || !block.isConnected) {
+        return
+      }
+      const fallback = document.createElement('div')
+      fallback.className = 'mermaid-error'
+      fallback.setAttribute('role', 'status')
+      fallback.textContent = 'Mermaid 图语法错误，原代码保留在笔记中。'
+      block.replaceChildren(fallback)
+    }
+  }
+}
+
 marked.setOptions({ gfm: true, breaks: false })
 
 const api: MdPreviewApi = {
@@ -195,12 +273,16 @@ const api: MdPreviewApi = {
     const text = b64decode(b64)
     const el = document.getElementById('content') as HTMLElement
     if (text.trim().length === 0) {
+      mermaidRenderGeneration++
+      mermaidRender = Promise.resolve()
       el.innerHTML = '<div class="empty">空笔记</div>'
       updateImageBounds()
       console.log('[mdpreview] setContent: empty')
       return
     }
     el.innerHTML = marked.parse(text) as string
+    const generation = ++mermaidRenderGeneration
+    mermaidRender = renderMermaidBlocks(el, generation)
     localizeImages(el)
     updateImageBounds()
     console.log('[mdpreview] setContent len=' + text.length)
@@ -220,6 +302,53 @@ const api: MdPreviewApi = {
 
   closeImageViewer(): void {
     closeImageViewer()
+  },
+
+  async requestShareCaptureMetrics(id: number): Promise<void> {
+    try {
+      await mermaidRender
+      await waitForLocalImages(document.getElementById('content') as HTMLElement)
+      await nextRenderedFrame()
+      sendShareCaptureResult(id)
+    } catch (error) {
+      sendShareCaptureResult(id, String(error))
+    }
+  },
+
+  async prepareShareCapturePages(id: number, pageCount: number): Promise<void> {
+    try {
+      const content = document.getElementById('content') as HTMLElement
+      const metrics = shareCaptureMetrics()
+      if (!Number.isInteger(pageCount) || pageCount < 1 || metrics.viewportHeight <= 0) {
+        throw new Error('分享图片分页参数无效')
+      }
+      const targetHeight = pageCount * metrics.viewportHeight
+      const currentPadding = Number.parseFloat(getComputedStyle(content).paddingBottom) || 0
+      content.style.paddingBottom = `${shareCaptureBottomPadding(metrics.scrollHeight,
+        metrics.viewportHeight, pageCount, currentPadding)}px`
+      content.scrollTop = 0
+      await nextRenderedFrame()
+      if (content.scrollHeight < targetHeight) {
+        throw new Error('分享预览高度不足，无法完整分页')
+      }
+      sendShareCaptureResult(id)
+    } catch (error) {
+      sendShareCaptureResult(id, String(error))
+    }
+  },
+
+  async setShareCaptureScrollTop(id: number, top: number): Promise<void> {
+    try {
+      const content = document.getElementById('content') as HTMLElement
+      if (!Number.isFinite(top) || top < 0) {
+        throw new Error('分享图片滚动位置无效')
+      }
+      content.scrollTop = top
+      await nextRenderedFrame()
+      sendShareCaptureResult(id)
+    } catch (error) {
+      sendShareCaptureResult(id, String(error))
+    }
   }
 }
 
