@@ -232,3 +232,16 @@ test('hidden or different-note panes never receive follow scrolling',()=>{
  assert.equal(f.get('rightScroll').scrollTop,17);
  f.run("referenceEnabled=true;reference='reading_reading_journal';$('rightScroll').scrollTop=23;syncPreviewFollow()");assert.equal(f.get('rightScroll').scrollTop,23);
 });
+
+test('root and folder new-entry controls create nested notes and retain empty folders',()=>{
+ const f=fixture();assert(html.includes('id="newAtRoot"'));assert(html.includes('data-create-in-folder='));f.get('newAtRoot').onclick();assert(f.get('newEntryDialog').open);assert.equal(f.get('newEntryFolder').value,'');
+ f.get('newFolderKind').onclick();f.get('newEntryName').value='新建文件夹/子目录';f.get('confirmNewEntry').onclick();assert.equal(f.run("demoFolders.some(item=>item.vault===activeVault&&item.path==='新建文件夹/子目录')"),true);assert(f.get('notes').innerHTML.includes('data-create-in-folder="新建文件夹/子目录"'));
+ f.run("openNewEntry('新建文件夹/子目录','note')");assert.equal(f.get('newEntryFolder').value,'新建文件夹/子目录');f.get('newEntryName').value='更深/文件夹内笔记.md';f.get('confirmNewEntry').onclick();assert.equal(f.run('note(current).title'),'文件夹内笔记');assert.equal(f.run('note(current).folder'),'新建文件夹/子目录/更深');assert.equal(f.get('newEntryDialog').open,false);
+});
+
+test('new-entry paths retain duplicate suffixing and reject traversal or trailing slash',()=>{
+ const f=fixture();f.run("openNewEntry('','folder')");f.get('newEntryName').value='10_写作';f.get('confirmNewEntry').onclick();assert.equal(f.run("folderPathsForVault().includes('10_写作-2')"),true);assert.equal(f.get('newEntryDialog').open,false);
+ f.run("openNewEntry('','folder')");f.get('newEntryName').value='../越界';f.get('confirmNewEntry').onclick();assert.match(f.get('newEntryError').textContent,/有效名称/);assert(f.get('newEntryDialog').open);
+ f.get('newEntryName').value='只要目录/';f.get('confirmNewEntry').onclick();assert.match(f.get('newEntryError').textContent,/不能以 \/ 结尾/);assert(f.get('newEntryDialog').open);
+ const existing=f.run('currentNotes()[0]');f.run("openNewEntry(note(currentNotes()[0].id).folder,'note')");f.get('newEntryName').value=existing.title+'.md';f.get('confirmNewEntry').onclick();assert.equal(f.run('note(current).title'),existing.title+'-2');assert.equal(f.get('newEntryDialog').open,false);
+});
