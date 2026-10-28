@@ -46,6 +46,7 @@ const P_SYNC: string = 'M20 12L17.66 17.66L12 20L6.34 17.66L4 12L6.34 6.34L12 4M
 const P_SETTINGS: string = 'M4 7h16M12 4v6M4 12h14M8 9v6M4 17h18M14 14v6';
 const P_MESSAGE: string = 'M4 4h16v12H9l-5 4zM8 8h8M8 12h5';
 const P_SHARE: string = 'M12 15V3M8 7l4-4 4 4M5 11v8h14v-8';
+const P_IMAGE: string = 'M3 4h18v16H3zM4 17l5-5 4 4 3-3 4 4';
 const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 const P_SWAP: string = 'M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4';
 const P_COLUMNS: string = 'M3 5h8v14H3zM13 5h8v14h-8z';
@@ -89,6 +90,8 @@ function pathOf(name: string): string {
     return P_MESSAGE;
   } else if (name === 'share') {
     return P_SHARE;
+  } else if (name === 'image') {
+    return P_IMAGE;
   } else if (name === 'more') {
     return P_MORE;
   } else if (name === 'swap') {

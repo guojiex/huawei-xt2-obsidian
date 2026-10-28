@@ -168,6 +168,8 @@ struct Index {
   @State focused: boolean = false;
   @State paneMoreOpen: boolean = false;
   @State paneMorePane: string = 'left';
+  @State leftPaneWidthVp: number = 0;
+  @State rightPaneWidthVp: number = 0;
   @State leftComposing: boolean = false;
   @State rightComposing: boolean = false;
   @State rightEditorDirty: boolean = false;
@@ -745,6 +747,16 @@ struct Index {
     }
   }
 
+  private recordPaneWidth(pane: string, widthVp: number): void {
+    if (pane === 'right') {
+      if (Math.abs(this.rightPaneWidthVp - widthVp) >= 1) {
+        this.rightPaneWidthVp = widthVp;
+      }
+    } else if (Math.abs(this.leftPaneWidthVp - widthVp) >= 1) {
+      this.leftPaneWidthVp = widthVp;
+    }
+  }
+
   /** Same-note editing has one active caret; the other editor stays read-only and mirrors content. */
   private async refreshSharedEditability(): Promise<void> {
     const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
@@ -857,6 +869,14 @@ struct Index {
     }
     return this.editorBridge.ready && (this.leftComposing || (this.smMode === 'edit' &&
       (!sharedNote || (!this.rightComposing && this.activePane === 'left'))));
+  }
+
+  private isImagePickerBusy(pane: string): boolean {
+    return pane === 'right' ? this.rightImagePickerBusy : this.imagePickerBusy;
+  }
+
+  private paneFilePath(pane: string): string {
+    return pane === 'right' ? this.rightFilePath : this.currentFilePath;
   }
 
   private applyEditorFormat(kind: string, pane: string): void {
@@ -2630,7 +2650,7 @@ struct Index {
     })
   }
 
-  /** 与 v2 一致：每栏固定显示模式切换、选择笔记和栏内更多操作。 */
+  /** 与 v2 一致：每栏显示模式切换、选择笔记和栏内更多操作。 */
   @Builder
   PaneHead($$: PaneHeadParam) {
     Row({ space: Space.s1 }) {
@@ -2642,14 +2662,6 @@ struct Index {
       .borderRadius(Radius.full)
       .backgroundColor($r('app.color.bg_secondary'))
 
-      if (($$.pane === 'right' ? this.rightEditing : this.smMode === 'edit') &&
-        ($$.pane === 'right' ? this.rightFilePath : this.currentFilePath).length > 0) {
-        Text(($$.pane === 'right' ? this.rightImagePickerBusy : this.imagePickerBusy) ? '导入中…' : '＋ 图片')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
-          .onClick((): void => { void this.pickImageForCurrentNote($$.pane); })
-      }
       Text('选择笔记')
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.brand'))
@@ -2669,8 +2681,8 @@ struct Index {
   }
 
   @Builder
-  PaneTitle(path: string) {
-    Text(path.length > 0 ? path : '未选择笔记')
+  PaneTitle($$: PaneHeadParam) {
+    Text(this.paneFilePath($$.pane).length > 0 ? this.paneFilePath($$.pane) : '未选择笔记')
       .fontSize(FontSize.caption)
       .fontColor($r('app.color.text_tertiary'))
       .maxLines(1)
@@ -3439,6 +3451,21 @@ struct Index {
   }
 
   @Builder
+  ImageFormatAction(pane: string) {
+    Row() {
+      Icon('image', 18, this.isImagePickerBusy(pane)
+        ? $r('app.color.text_tertiary') : $r('app.color.text_primary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.icon)
+    .enabled(this.isPaneEditable(pane) && !this.isImagePickerBusy(pane))
+    .onClick((): void => { void this.pickImageForCurrentNote(pane); })
+  }
+
+  @Builder
   FormatOption(label: string, kind: string) {
     Row() {
       Text(label)
@@ -3546,8 +3573,13 @@ struct Index {
           }
         })
         this.FormatAction('B', 'bold', pane)
-        this.FormatAction('I', 'italic', pane)
+        if ((pane === 'right' ? this.rightPaneWidthVp : this.leftPaneWidthVp) >= 280) {
+          this.FormatAction('I', 'italic', pane)
+        }
         this.FormatAction('☐', 'task', pane)
+        if (this.paneFilePath(pane).length > 0) {
+          this.ImageFormatAction(pane)
+        }
       }
       .padding(Space.s1)
       .alignItems(VerticalAlign.Center)
@@ -3561,13 +3593,18 @@ struct Index {
     .height(Size.touch + Space.s5)
     .padding({ bottom: Space.s5 })
     .alignItems(VerticalAlign.Bottom)
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      if (typeof newArea.width === 'number') {
+        this.recordPaneWidth(pane, newArea.width);
+      }
+    })
   }
 
   @Builder
   RightWorkspacePane() {
     Column() {
       this.PaneHead({ pane: 'right' })
-      this.PaneTitle(this.rightFilePath)
+      this.PaneTitle({ pane: 'right' })
       if (!this.rightEditing && this.backlinksExpanded && this.backlinksPane === 'right') {
         this.BacklinkPanel()
       }
@@ -3638,7 +3675,7 @@ struct Index {
   EditorPane(showHingeWarning: boolean) {
     Column() {
       this.PaneHead({ pane: 'left' })
-      this.PaneTitle(this.currentFilePath)
+      this.PaneTitle({ pane: 'left' })
 
       Stack({ alignContent: Alignment.Bottom }) {
         Stack() {
@@ -3713,7 +3750,7 @@ struct Index {
   PreviewPane() {
     Column() {
       this.PaneHead({ pane: 'left' })
-      this.PaneTitle(this.currentFilePath)
+      this.PaneTitle({ pane: 'left' })
       if (this.backlinksExpanded && this.backlinksPane === 'left') {
         this.BacklinkPanel()
       }
