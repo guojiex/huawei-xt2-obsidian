@@ -211,52 +211,59 @@ export struct FileTreeView {
   }
 
   /**
-   * 左滑操作条（1.6 三档，照原型 .swipe）：三个 48vp 热区按钮
-   * 重命名 / 移动 / 删除（danger 红底白图标），普通按钮 bg_card 底。
-   * 目录与文件同款（原型 acts 对两种行都渲染三个按钮）。
+   * 左滑操作条（1.6 三档）：笔记按 v2 原型显示「改名 / 移动 / 删除」文字按钮，
+   * 普通操作为浅蓝底蓝字，删除为红底白字。目录保留原有分享入口。
    */
   @Builder
   SwipeBar(n: TreeNode) {
     Row() {
       if (n.isDir) {
         Row() {
-          Icon('share', 18, $r('app.color.text_secondary'))
+          Text('分享')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.brand'))
         }
         .width(Size.touch)
         .height('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .backgroundColor($r('app.color.bg_card'))
+        .backgroundColor($r('app.color.brand_bg'))
         .onClick(() => {
           this.onSharePath(n.relPath, true);
         })
       }
       Row() {
-        Icon('rename', 18, $r('app.color.text_secondary'))
+        Text('改名')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.brand'))
       }
       .width(Size.touch)
       .height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .backgroundColor($r('app.color.bg_card'))
+      .backgroundColor($r('app.color.brand_bg'))
       .onClick(() => {
         hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-重命名：%{public}s', n.relPath);
         this.onRenamePath(n.relPath, n.isDir);
       })
       Row() {
-        Icon('move', 18, $r('app.color.text_secondary'))
+        Text('移动')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.brand'))
       }
       .width(Size.touch)
       .height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
-      .backgroundColor($r('app.color.bg_card'))
+      .backgroundColor($r('app.color.brand_bg'))
       .onClick(() => {
         hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-移动：%{public}s', n.relPath);
         this.onMovePath(n.relPath, n.isDir);
       })
       Row() {
-        Icon('trash', 18, $r('app.color.on_brand'))
+        Text('删除')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.on_brand'))
       }
       .width(Size.touch)
       .height('100%')
