@@ -1743,6 +1743,14 @@ struct Index {
       this.agentHamburgerSeq++;
       return;
     }
+    if (this.focused) {
+      this.toggleFocus();
+      if (this.breakpoint === Breakpoint.MD && this.activePane === 'right') {
+        this.setActivePane('left');
+      }
+      this.setSidebarCollapsed(false);
+      return;
+    }
     if (this.breakpoint === Breakpoint.SM) {
       this.setDrawerOpen(!this.drawerOpen);
     } else {
