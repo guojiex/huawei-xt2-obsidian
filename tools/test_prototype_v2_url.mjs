@@ -245,3 +245,35 @@ test('new-entry paths retain duplicate suffixing and reject traversal or trailin
  f.get('newEntryName').value='只要目录/';f.get('confirmNewEntry').onclick();assert.match(f.get('newEntryError').textContent,/不能以 \/ 结尾/);assert(f.get('newEntryDialog').open);
  const existing=f.run('currentNotes()[0]');f.run("openNewEntry(note(currentNotes()[0].id).folder,'note')");f.get('newEntryName').value=existing.title+'.md';f.get('confirmNewEntry').onclick();assert.equal(f.run('note(current).title'),existing.title+'-2');assert.equal(f.get('newEntryDialog').open,false);
 });
+
+test('folder swipe operations expose sharing, rename, move and confirmed permanent delete without a swipe-delete action',()=>{
+ const f=fixture();f.run("switchVault('local');addDemoFolder(activeVault,'10_写作/子目录');notes.push({id:'folder-child',vault:activeVault,folder:'10_写作/子目录',title:'子笔记',text:'',deleted:false});renderTree()");
+ const tree=f.get('notes').innerHTML;for(const action of ['share','rename','move','delete'])assert(tree.includes('data-folder-action="'+action+'"'));
+ const folderStart=tree.indexOf('data-folder-wrap="local/10_写作"');assert(tree.indexOf('</div></div></div><div class="tree-children"',folderStart)>folderStart);
+ assert(tree.includes('Shift+F10'));assert(html.includes('id="deleteFolderDialog"'));assert(html.includes('id="confirmDeleteFolder"'));
+ assert.match(code,/function bindFolderSwipe\([\s\S]*?Math\.max\(-drag\.width/);assert(!code.split('\n').find(line=>line.startsWith('function bindFolderSwipe(')).includes('deleteFile('));
+ f.run("openDeleteFolder('10_写作')");assert(f.get('deleteFolderDialog').open);assert.match(f.get('deleteFolderSummary').textContent,/3 篇笔记/);f.get('cancelDeleteFolder').onclick();assert(f.run("folderPathsForVault().includes('10_写作')"));
+ f.run("openDeleteFolder('10_写作')");f.get('confirmDeleteFolder').onclick();assert(!f.get('deleteFolderDialog').open);assert(!f.run("folderPathsForVault().some(path=>path==='10_写作'||path.startsWith('10_写作/'))"));assert(!f.run("currentNotes().some(n=>n.folder==='10_写作'||n.folder.startsWith('10_写作/'))"));assert.equal(f.run('deletedUndo'),null);
+});
+
+test('folder rename and move retarget the full active subtree, preserve collapse state and suffix collisions',()=>{
+ const f=fixture();f.run("switchVault('local');addDemoFolder(activeVault,'10_写作/子目录');notes.push({id:'folder-child',vault:activeVault,folder:'10_写作/子目录',title:'子笔记',text:'',deleted:false});folderState['local/10_写作']=false;folderState['local/10_写作/子目录']=false;addDemoFolder(activeVault,'写作');openFolderAction('rename','10_写作')");
+ assert.equal(f.get('fileActionDialog').open,true);assert.equal(f.get('renameInput').value,'10_写作');f.get('renameInput').value='写作';f.get('confirmFileAction').onclick();assert.equal(f.run("folderPathsForVault().includes('写作-2')"),true);assert.equal(f.run("note('stream').folder"),'写作-2');assert.equal(f.run("note('folder-child').folder"),'写作-2/子目录');assert.equal(f.run("folderState['local/写作-2']"),false);assert.equal(f.run("folderState['local/写作-2/子目录']"),false);
+ f.run("addDemoFolder(activeVault,'20_样式/写作-2');openFolderAction('move','写作-2')");const options=f.get('moveSelect').innerHTML;assert(options.includes('根目录'));assert(!options.includes('写作-2/子目录'));f.get('moveSelect').value='写作-2/子目录';f.get('confirmFileAction').onclick();assert.match(f.get('fileActionError').textContent,/自身或子文件夹/);assert(f.get('fileActionDialog').open);
+ f.get('moveSelect').value='20_样式';f.get('confirmFileAction').onclick();assert.equal(f.run("folderPathsForVault().includes('20_样式/写作-2-2')"),true);assert.equal(f.run("note('stream').folder"),'20_样式/写作-2-2');assert.equal(f.run("note('folder-child').folder"),'20_样式/写作-2-2/子目录');assert.equal(f.run("folderState['local/20_样式/写作-2-2/子目录']"),false);
+});
+
+test('folder sharing stays scoped to the invoked folder and restores that sample target from its URL',()=>{
+ const f=fixture();f.run("switchVault('local');addDemoFolder(activeVault,'10_写作/子目录');notes.push({id:'folder-child',vault:activeVault,folder:'10_写作/子目录',title:'子笔记',text:'',deleted:false});openFolderShare('10_写作')");
+ assert(f.get('shareDialog').open);assert.equal(f.get('shareScope').value,'folder');assert.equal(f.run('shareSnapshot.rows.length'),3);assert.equal(f.run('shareSnapshot.title'),'10_写作');assert(new URL(f.href()).searchParams.get('shareFolder')==='10_写作');
+ f.get('shareScope').value='vault';f.get('shareScope').onchange();f.get('shareScope').value='folder';f.get('shareScope').onchange();assert.equal(f.run('shareSnapshot.rows.length'),3);const restored=fixture(f.href());assert(restored.get('shareDialog').open);assert.equal(restored.run('shareFolderPath'),'10_写作');assert.equal(restored.run('shareSnapshot.rows.length'),2);assert(restored.run("shareSnapshot.rows.every(row=>row.folder==='10_写作'||row.folder.startsWith('10_写作/'))"));
+});
+
+test('Escape closes swipe actions and returns focus to the file or folder row',()=>{
+ for(const type of ['file','folder']){
+  const f=fixture(),action={},actions={inert:false,contains:element=>element===action},front={style:{},classList:{remove(){}}},trigger={focus(){this.focused=true;}};
+  const wrap={classList:{toggle(){},remove(){}},querySelector(selector){if(selector==='.file-actions,.folder-actions')return actions;if(selector==='.file-front,.folder-front')return front;if(selector==='[data-note],[data-folder]')return trigger;return null;}};
+  f.get('notes').querySelectorAll=()=>[wrap];f.run('document').activeElement=action;f.event('document','keydown',{key:'Escape'});
+  assert.equal(actions.inert,true);assert.equal(trigger.focused,true,`${type} trigger regains focus`);
+ }
+});
