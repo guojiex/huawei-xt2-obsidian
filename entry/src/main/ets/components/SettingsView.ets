@@ -30,6 +30,7 @@ import { VaultEntry } from '../model/Vault';
 import { Icon } from '../common/Icons';
 import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
 import { FEEDBACK_EMAIL } from '../model/AppConfig';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 @Component
 export struct SettingsView {
@@ -68,6 +69,31 @@ export struct SettingsView {
 
   private normalizedCategory(category: string): string {
     return category === 'data' || category === 'feedback' || category === 'about' ? category : 'general';
+  }
+
+  private onCategoryKey(category: string, event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    const categories: string[] = ['general', 'data', 'feedback', 'about'];
+    let index: number = categories.indexOf(category);
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_UP) {
+      index = (index + categories.length - 1) % categories.length;
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_DOWN) {
+      index = (index + 1) % categories.length;
+    } else if (event.keyCode === KeyCode.KEYCODE_MOVE_HOME) {
+      index = 0;
+    } else if (event.keyCode === KeyCode.KEYCODE_MOVE_END) {
+      index = categories.length - 1;
+    } else if (event.keyCode === KeyCode.KEYCODE_ENTER ||
+      event.keyCode === KeyCode.KEYCODE_SPACE || event.keyCode === KeyCode.KEYCODE_DPAD_CENTER) {
+      this.selectCategory(category);
+      return true;
+    } else {
+      return false;
+    }
+    this.getUIContext().getFocusController().requestFocus('settings-category-' + categories[index]);
+    return true;
   }
 
   private async openFeedbackEmail(): Promise<void> {
@@ -416,6 +442,8 @@ export struct SettingsView {
     .backgroundColor(!this.singleScreenLayout && this.selectedTab === category
       ? $r('app.color.brand_bg') : $r('app.color.bg_card'))
     .focusable(true)
+    .id('settings-category-' + category)
+    .onKeyEvent((event: KeyEvent): boolean => { return this.onCategoryKey(category, event); })
     .onClick(() => { this.selectCategory(category); })
   }
 
