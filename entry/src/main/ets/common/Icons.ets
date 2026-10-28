@@ -39,6 +39,7 @@ const P_PLUS: string = 'M12 5v14M5 12h14';
 const P_RENAME: string = 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4';
 const P_MOVE: string = 'M4 12h16M9 7l-5 5 5 5M15 7l5 5-5 5';
 const P_TRASH: string = 'M4 7h16M10 4h4M6 7l1 14h10l1-14M10 11v6M14 11v6';
+const P_RESTORE: string = 'M9 5L4 10L9 15M4 10H13L17 12L20 16V19';
 const P_ARCHIVE: string = 'M3 5h18v4H3zM5 9v10h14V9M9 13h6';
 // 同步（refresh）：3/4 圆环 + 箭头（纯折线逼近，无弧线）
 const P_SYNC: string = 'M20 12L17.66 17.66L12 20L6.34 17.66L4 12L6.34 6.34L12 4M12 4L15.5 5.5M12 4L13.5 8.5';
@@ -47,6 +48,7 @@ const P_SETTINGS: string = 'M4 7h16M12 4v6M4 12h14M8 9v6M4 17h18M14 14v6';
 const P_MESSAGE: string = 'M4 4h16v12H9l-5 4zM8 8h8M8 12h5';
 const P_SHARE: string = 'M12 15V3M8 7l4-4 4 4M5 11v8h14v-8';
 const P_IMAGE: string = 'M3 4h18v16H3zM4 17l5-5 4 4 3-3 4 4';
+const P_TASK: string = 'M3 5h6v6H3zM4.5 8l1.5 1.5L10 5.5M13 8h8M13 16h8M3 16h6';
 const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 const P_SWAP: string = 'M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4';
 const P_COLUMNS: string = 'M3 5h8v14H3zM13 5h8v14h-8z';
@@ -80,6 +82,8 @@ function pathOf(name: string): string {
     return P_MOVE;
   } else if (name === 'trash') {
     return P_TRASH;
+  } else if (name === 'restore') {
+    return P_RESTORE;
   } else if (name === 'archive') {
     return P_ARCHIVE;
   } else if (name === 'sync') {
@@ -92,6 +96,8 @@ function pathOf(name: string): string {
     return P_SHARE;
   } else if (name === 'image') {
     return P_IMAGE;
+  } else if (name === 'task') {
+    return P_TASK;
   } else if (name === 'more') {
     return P_MORE;
   } else if (name === 'swap') {

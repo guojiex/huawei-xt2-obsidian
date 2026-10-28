@@ -58,6 +58,7 @@ export class Size {
   static readonly sidebarW: number = 240;  // 侧栏最小宽（宽屏按等分，见 Index）
   static readonly drawerW: number = 300;
   static readonly paneMinW: number = 240;
+  static readonly formatMenuW: number = 360;  // Aa 浮层宽度（v2 --format-width）
   /** 触控热区下限：图标按钮视觉 24，热区必须 ≥48（v0.1 遗留缺陷，4.x 修正） */
   static readonly touch: number = 48;
   /** 目录树每级缩进（1.5）—— 原实现 32/48/64/80 级差 16 太窄 */

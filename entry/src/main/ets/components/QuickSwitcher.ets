@@ -152,6 +152,19 @@ export struct QuickSwitcher {
     return slash >= 0 ? path.substring(slash + 1) : path;
   }
 
+  /** 快切主标题按 v2 隐藏扩展名，完整路径仍用于区分同名文件。 */
+  private displayName(path: string): string {
+    const name: string = this.fileName(path);
+    const lowerName: string = name.toLowerCase();
+    if (lowerName.endsWith('.markdown')) {
+      return name.substring(0, name.length - '.markdown'.length);
+    }
+    if (lowerName.endsWith('.md')) {
+      return name.substring(0, name.length - '.md'.length);
+    }
+    return name;
+  }
+
   private isDuplicate(path: string): boolean {
     const name: string = this.fileName(path);
     let count: number = 0;
@@ -176,9 +189,27 @@ export struct QuickSwitcher {
 
       Row() {
         Column({ space: Space.s2 }) {
+          Row() {
+            Text('快切与搜索')
+              .fontSize(FontSize.s3)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+            Text('×')
+              .fontSize(FontSize.s1)
+              .fontColor($r('app.color.text_secondary'))
+              .width(Size.touch)
+              .height(Size.touch)
+              .textAlign(TextAlign.Center)
+              .focusable(true)
+              .onClick(() => { this.onClose(); })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+
           TextInput({
             text: this.query,
-            placeholder: this.searchMode === 'name' ? '搜索当前库的笔记文件名' : '搜索当前库的 Markdown 正文'
+            placeholder: '搜索文件名、路径或正文'
           })
             .fontSize(FontSize.body1)
             .fontColor($r('app.color.text_primary'))
@@ -192,7 +223,7 @@ export struct QuickSwitcher {
             })
 
           Row({ space: Space.s2 }) {
-            Text('文件名 · v0.4')
+            Text('文件名与路径')
               .fontSize(FontSize.caption)
               .fontColor(this.searchMode === 'name' ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
               .fontWeight(this.searchMode === 'name' ? FontWeight.Medium : FontWeight.Normal)
@@ -202,7 +233,7 @@ export struct QuickSwitcher {
               .onClick(() => {
                 this.setSearchMode('name');
               })
-            Text('正文 · v1.1')
+            Text('正文')
               .fontSize(FontSize.caption)
               .fontColor(this.searchMode === 'content' ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
               .fontWeight(this.searchMode === 'content' ? FontWeight.Medium : FontWeight.Normal)
@@ -277,7 +308,7 @@ export struct QuickSwitcher {
                   Column({ space: Space.s1 }) {
                     Row() {
                       Column({ space: Space.s1 }) {
-                        Text(this.fileName(result.path))
+                        Text(this.displayName(result.path))
                           .fontSize(FontSize.body1)
                           .fontColor($r('app.color.text_primary'))
                           .maxLines(1)
@@ -330,7 +361,7 @@ export struct QuickSwitcher {
                 ListItem() {
                   Row() {
                     Column() {
-                      Text(this.fileName(path))
+                      Text(this.displayName(path))
                         .fontSize(FontSize.body1)
                         .fontColor($r('app.color.text_primary'))
                         .maxLines(1)

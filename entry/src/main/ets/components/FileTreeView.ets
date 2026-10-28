@@ -24,6 +24,7 @@ import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { unifiedDataChannel } from '@kit.ArkData';
+import { TrashView } from './TrashView';
 
 const TREE_DOMAIN: number = 0x0002;
 const TREE_TAG: string = 'FileTreeView';
@@ -37,10 +38,14 @@ export struct FileTreeView {
   @Prop currentFilePath: string = '';
   /** 重扫信号：父级 +1 → onRefresh → reload */
   @Prop @Watch('onRefresh') refreshSeq: number = 0;
+  /** 回收站重扫信号，与文件树扫描状态分开。 */
+  @Prop trashRefreshSeq: number = 0;
   /** 需要展开到可见的目标路径（父级新建笔记后置位） */
   @Prop @Watch('onReveal') revealPath: string = '';
   /** Agent 引用模式：沿用同一棵树，但隐藏改名/移动/删除动作。 */
   @Prop referenceOnly: boolean = false;
+  /** 单屏工作区不显示跨栏打开入口。 */
+  @Prop hideOtherPane: boolean = false;
   /** 选中文件回调（把相对路径交给父级，由父级决定编辑器要做什么） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
   /** 从行尾按钮在另一栏打开笔记。 */
@@ -70,6 +75,8 @@ export struct FileTreeView {
    * 走 TrashService 移入回收站 + 5 秒撤销条，**不弹确认框**（原型 deleteWithUndo 同语义）。
    */
   onSwipeDelete: (relPath: string) => void = (relPath: string) => {};
+  /** 从内嵌回收站恢复笔记，由父级复用现有 TrashService 处理。 */
+  onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
@@ -151,6 +158,21 @@ export struct FileTreeView {
     return this.expanded.indexOf(relPath) >= 0;
   }
 
+  /** v2 的文件树主标题隐藏 Markdown 扩展名，文件操作仍使用完整相对路径。 */
+  private displayName(node: TreeNode): string {
+    if (node.isDir) {
+      return node.name;
+    }
+    const lowerName: string = node.name.toLowerCase();
+    if (lowerName.endsWith('.markdown')) {
+      return node.name.substring(0, node.name.length - '.markdown'.length);
+    }
+    if (lowerName.endsWith('.md')) {
+      return node.name.substring(0, node.name.length - '.md'.length);
+    }
+    return node.name;
+  }
+
   /** 展开/折叠：换整个数组触发刷新，并立刻落盘（需求 1.3） */
   private toggleDir(relPath: string): void {
     const next: string[] = [];
@@ -188,6 +210,21 @@ export struct FileTreeView {
         this.EmptyHint()
       } else {
         this.TreeList()
+      }
+      if (!this.referenceOnly) {
+        Text('左滑文件可操作 · 拖动行尾图标到任一栏')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .padding({ top: Space.s2, left: Space.s2, right: Space.s2, bottom: Space.s1 })
+
+        TrashView({
+          vaultId: this.vaultId,
+          refreshSeq: this.trashRefreshSeq,
+          onRestore: (relPath: string): void => { this.onRestoreTrash(relPath); }
+        })
       }
     }
     .layoutWeight(1)
@@ -307,7 +344,7 @@ export struct FileTreeView {
                 n.isDir ? $r('app.color.brand') : $r('app.color.text_secondary'))
             if (this.referenceOnly && !n.isDir) {
               Column() {
-                Text(n.name)
+                Text(this.displayName(n))
                   .fontSize(FontSize.body2)
                   .fontColor($r('app.color.text_primary'))
                   .maxLines(1)
@@ -324,7 +361,7 @@ export struct FileTreeView {
               .alignItems(HorizontalAlign.Start)
               .justifyContent(FlexAlign.Center)
             } else {
-              Text(n.name)
+              Text(this.displayName(n))
                 .fontSize(FontSize.body2)
                 .fontWeight(n.isDir ? FontWeight.Medium : FontWeight.Normal)
                 .fontColor(!n.isDir && n.relPath === this.currentFilePath
@@ -360,7 +397,7 @@ export struct FileTreeView {
               hilog.info(TREE_DOMAIN, TREE_TAG, '行内新建：目录 %{public}s', n.relPath);
               this.onCreateInDir(n.relPath);
               })
-            } else if (!n.isDir && !this.referenceOnly) {
+            } else if (!n.isDir && !this.referenceOnly && !this.hideOtherPane) {
               Row() {
                 Icon('swap', 16, $r('app.color.text_secondary'))
               }

@@ -47,10 +47,12 @@ export struct VaultSidebar {
    * 否则建在多层子目录里的笔记建完看不见，用户会以为没建成。
    */
   @Prop refreshSeq: number = 0;
+  @Prop trashRefreshSeq: number = 0;
   @Prop revealPath: string = '';
   /** 下拉菜单开关（瞬态） */
   @State menuOpen: boolean = false;
   @State sidebarTab: string = 'files';
+  @State collapsedChapterKeys: string[] = [];
   /**
    * 弹层宽（vp）：原型 .vault-menu 是 left:0; right:0 于 .vault-switch —— **与卡片同宽**，
    * 不是固定值。侧栏宽随断点等分变化，故在卡片上 onAreaChange 实测回填。
@@ -62,6 +64,8 @@ export struct VaultSidebar {
   onSwitchVault: (id: string) => void = (id: string) => {};
   /** 「管理库」回调（父级切换到库管理视图） */
   onManageVaults: () => void = () => {};
+  /** 打开当前库快切与全文搜索。 */
+  onOpenSearch: () => void = () => {};
   /** 从当前库下拉菜单分享整个知识库。 */
   onShareVault: () => void = () => {};
   /**
@@ -94,8 +98,90 @@ export struct VaultSidebar {
   onDeletePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onSharePath: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onSwipeDelete: (relPath: string) => void = (relPath: string) => {};
-  /** 「回收站」回调（side-foot 第二按钮，1.8 回收站视图入口） */
-  onOpenTrash: () => void = () => {};
+  /** 回收站恢复回调，执行与原撤销条一致的恢复服务。 */
+  onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
+
+  private chapterKey(chapter: ChapterEntry): string {
+    return this.currentVaultId + ':' + this.currentFilePath + ':' + chapter.offset.toString();
+  }
+
+  private chapterTitleText(): string {
+    if (this.currentFilePath.length === 0) {
+      return '未选择笔记 · 0 个章节';
+    }
+    const slash: number = this.currentFilePath.lastIndexOf('/');
+    let title: string = this.currentFilePath.substring(slash + 1);
+    if (title.endsWith('.md')) {
+      title = title.substring(0, title.length - 3);
+    }
+    return title + ' · ' + this.chapters.length.toString() + ' 个章节';
+  }
+
+  private hasChapterChildren(index: number): boolean {
+    return index >= 0 && index + 1 < this.chapters.length &&
+      this.chapters[index + 1].level > this.chapters[index].level;
+  }
+
+  private isChapterCollapsed(chapter: ChapterEntry): boolean {
+    return this.collapsedChapterKeys.indexOf(this.chapterKey(chapter)) >= 0;
+  }
+
+  private isChapterHidden(index: number): boolean {
+    let parentLevel: number = this.chapters[index].level;
+    for (let i: number = index - 1; i >= 0; i--) {
+      const candidate: ChapterEntry = this.chapters[i];
+      if (candidate.level < parentLevel) {
+        if (this.isChapterCollapsed(candidate)) {
+          return true;
+        }
+        parentLevel = candidate.level;
+      }
+    }
+    return false;
+  }
+
+  private chapterDepth(index: number): number {
+    let parentLevel: number = this.chapters[index].level;
+    let depth: number = 0;
+    for (let i: number = index - 1; i >= 0; i--) {
+      const candidate: ChapterEntry = this.chapters[i];
+      if (candidate.level < parentLevel) {
+        depth++;
+        parentLevel = candidate.level;
+      }
+    }
+    return depth;
+  }
+
+  private visibleChapterEntries(): ChapterEntry[] {
+    const visible: ChapterEntry[] = [];
+    for (let i: number = 0; i < this.chapters.length; i++) {
+      if (!this.isChapterHidden(i)) {
+        visible.push(this.chapters[i]);
+      }
+    }
+    return visible;
+  }
+
+  private toggleChapter(chapter: ChapterEntry): void {
+    if (!this.hasChapterChildren(chapter.index)) {
+      return;
+    }
+    const key: string = this.chapterKey(chapter);
+    const next: string[] = [];
+    let found: boolean = false;
+    for (let i: number = 0; i < this.collapsedChapterKeys.length; i++) {
+      if (this.collapsedChapterKeys[i] === key) {
+        found = true;
+      } else {
+        next.push(this.collapsedChapterKeys[i]);
+      }
+    }
+    if (!found) {
+      next.push(key);
+    }
+    this.collapsedChapterKeys = next;
+  }
 
   /**
    * 库类型徽标（照原型 .vbadge）：全圆胶囊（--r-full）、fs-caption、Medium；
@@ -253,8 +339,13 @@ export struct VaultSidebar {
         }
       }
       .width('100%')
-      .padding({ left: Space.s2, right: Space.s2 })
-      .margin({ bottom: this.compact ? Space.s2 : Space.s6 })
+      .padding({
+        left: this.compact ? Space.s2 : Space.s6,
+        right: this.compact ? Space.s2 : Space.s6,
+        top: this.compact ? Space.s2 : Space.s6,
+        bottom: this.compact ? 0 : Space.s2
+      })
+      .margin({ bottom: this.compact ? Space.s1 : Space.s6 })
 
       // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset（原型 --sp-3 = 12）。
       // ⚠️ inset 不能写在卡片自己的 margin 上再配 width('100%')：ArkUI 的百分比取父级
@@ -343,12 +434,23 @@ export struct VaultSidebar {
       .padding({ left: Space.s3, right: Space.s3 })
 
       if (!this.referenceOnly) {
-        // 目录头：标签 + 头部「＋」(vault 根目录新建) + 收起入口
+        // 目录头：文件数、搜索与根目录新建；宽屏收起由顶栏汉堡统一控制。
         Row() {
-          Text('目录')
-            .fontSize(FontSize.body3)
+          Text('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
+            .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_tertiary'))
-          Blank()
+            .layoutWeight(1)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Row() {
+            Icon('search', 18, $r('app.color.text_secondary'))
+          }
+          .height(Size.touch)
+          .width(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
+          .onClick((): void => { this.onOpenSearch(); })
           Row() {
             Icon('plus', 16, $r('app.color.text_tertiary'))
           }
@@ -360,58 +462,68 @@ export struct VaultSidebar {
           .onClick(() => {
             this.onCreateNote();
           })
-          if (!this.asDrawer) {
-            Row({ space: Space.s1 }) {
-              Text('收起')
-                .fontSize(FontSize.body3)
-                .fontColor($r('app.color.text_tertiary'))
-              Icon('collapse', 12, $r('app.color.text_tertiary'))
-            }
-            .height(Size.touch)
-            .padding({ left: Space.s2, right: Space.s2 })
-            .borderRadius(Radius.icon)
-            .alignItems(VerticalAlign.Center)
-            .onClick(() => {
-              this.onCollapse();
-            })
-          }
         }
         .width('100%')
         .padding({ left: Space.s4, right: Space.s2 })
       }
 
       if (!this.referenceOnly) {
-        Row() {
-          Row() {
-            Text('文件')
-              .fontSize(FontSize.body3)
-              .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-              .width('100%')
-              .textAlign(TextAlign.Center)
+        Row({ space: Space.s2 }) {
+          Column() {
+            Row() {
+              Text('文件')
+                .fontSize(FontSize.body2)
+                .fontWeight(this.sidebarTab === 'files' ? 600 : FontWeight.Normal)
+                .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                .textAlign(TextAlign.Center)
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            Row()
+              .width(Space.s5)
+              .height(Space.s1 / 2)
+              .borderRadius(Radius.full)
+              .backgroundColor(this.sidebarTab === 'files'
+                ? $r('app.color.brand') : Color.Transparent)
           }
-          .layoutWeight(1)
           .height(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .border({ width: { bottom: 2 }, color: this.sidebarTab === 'files'
-            ? $r('app.color.brand') : $r('app.color.line') })
+          .justifyContent(FlexAlign.End)
+          .alignItems(HorizontalAlign.Center)
+          .padding({ left: Space.s3, right: Space.s3 })
+          .focusable(true)
           .onClick((): void => { this.sidebarTab = 'files'; })
 
-          Row() {
-            Text('章节')
-              .fontSize(FontSize.body3)
-              .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-              .width('100%')
-              .textAlign(TextAlign.Center)
+          Column() {
+            Row() {
+              Text('章节')
+                .fontSize(FontSize.body2)
+                .fontWeight(this.sidebarTab === 'chapters' ? 600 : FontWeight.Normal)
+                .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                .textAlign(TextAlign.Center)
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            Row()
+              .width(Space.s5)
+              .height(Space.s1 / 2)
+              .borderRadius(Radius.full)
+              .backgroundColor(this.sidebarTab === 'chapters'
+                ? $r('app.color.brand') : Color.Transparent)
           }
-          .layoutWeight(1)
           .height(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .border({ width: { bottom: 2 }, color: this.sidebarTab === 'chapters'
-            ? $r('app.color.brand') : $r('app.color.line') })
+          .justifyContent(FlexAlign.End)
+          .alignItems(HorizontalAlign.Center)
+          .padding({ left: Space.s3, right: Space.s3 })
+          .focusable(true)
           .onClick((): void => { this.sidebarTab = 'chapters'; })
         }
         .width('100%')
-        .padding({ left: Space.s3, right: Space.s3 })
+        .padding({ left: Space.s2, right: Space.s2 })
+        .border({ width: { bottom: 1 }, color: $r('app.color.line') })
       }
 
       Stack() {
@@ -420,8 +532,10 @@ export struct VaultSidebar {
           vaultId: this.currentVaultId,
           currentFilePath: this.currentFilePath,
           refreshSeq: this.refreshSeq,
+          trashRefreshSeq: this.trashRefreshSeq,
           revealPath: this.revealPath,
           referenceOnly: this.referenceOnly,
+          hideOtherPane: this.asDrawer || this.compact,
           onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
           onOpenOtherPane: (relPath: string): void => { this.onOpenOtherPane(relPath); },
           onReferenceNote: (relPath: string, vaultId: string): void => {
@@ -432,59 +546,86 @@ export struct VaultSidebar {
           onMovePath: (relPath: string, isDir: boolean): void => { this.onMovePath(relPath, isDir); },
           onDeletePath: (relPath: string, isDir: boolean): void => { this.onDeletePath(relPath, isDir); },
           onSharePath: (relPath: string, isDir: boolean): void => { this.onSharePath(relPath, isDir); },
-          onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); }
+          onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); },
+          onRestoreTrash: (relPath: string): void => { this.onRestoreTrash(relPath); }
         })
           .width('100%')
           .height('100%')
           .visibility(this.referenceOnly || this.sidebarTab === 'files' ? Visibility.Visible : Visibility.Hidden)
 
         Column() {
-          Text(this.currentFilePath.length > 0 ? this.currentFilePath : '未选择笔记')
+          Text(this.chapterTitleText())
             .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .fontColor($r('app.color.text_primary'))
             .width('100%')
-            .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s2 })
+            .padding({ left: Space.s3, right: Space.s3, top: Space.s4, bottom: Space.s2 })
           if (this.chapters.length > 0) {
             List() {
-              ForEach(this.chapters, (chapter: ChapterEntry) => {
+              ForEach(this.visibleChapterEntries(), (chapter: ChapterEntry) => {
                 ListItem() {
-                  Row({ space: Space.s2 }) {
-                    Text('H' + chapter.level.toString())
-                      .fontSize(FontSize.caption)
-                      .fontColor($r('app.color.text_tertiary'))
-                      .width(Space.s6)
+                  Row({ space: Space.s1 }) {
+                    if (this.hasChapterChildren(chapter.index)) {
+                      Row() {
+                        Icon(this.isChapterCollapsed(chapter) ? 'chevronRight' : 'chevronDown',
+                          Space.s4, $r('app.color.text_secondary'))
+                      }
+                      .width(Space.s8)
+                      .height(Size.touch)
+                      .justifyContent(FlexAlign.Center)
+                      .alignItems(VerticalAlign.Center)
+                      .focusable(true)
+                      .onClick((): void => { this.toggleChapter(chapter); })
+                    } else {
+                      Column()
+                        .width(Space.s8)
+                        .height(Size.touch)
+                    }
                     Text(chapter.title)
-                      .fontSize(chapter.level <= 2 ? FontSize.body2 : FontSize.body3)
+                      .fontSize(chapter.level === 1 ? FontSize.s2 :
+                        chapter.level === 2 ? FontSize.body1 :
+                        chapter.level <= 4 ? FontSize.body2 : FontSize.caption)
+                      .fontWeight(chapter.level <= 3 || chapter.level === 5
+                        ? FontWeight.Bold : FontWeight.Normal)
                       .fontColor(chapter.index === this.selectedChapterIndex
                         ? $r('app.color.brand') : $r('app.color.text_primary'))
-                      .maxLines(2)
+                      .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .padding({ left: Space.s2, right: Space.s2 })
                       .layoutWeight(1)
+                      .height(Size.touch)
+                      .onClick((): void => { this.onSelectChapter(chapter.index); })
                   }
                   .width('100%')
-                  .height(Size.touch)
-                  .padding({ left: Space.s2 + (chapter.level - 1) * Space.s3, right: Space.s3 })
+                  .padding({ left: this.chapterDepth(chapter.index) * Space.s4,
+                    right: Space.s2 })
                   .backgroundColor(chapter.index === this.selectedChapterIndex
-                    ? $r('app.color.brand_bg') : $r('app.color.bg_navigation'))
-                  .borderRadius(Radius.control)
-                  .onClick((): void => { this.onSelectChapter(chapter.index); })
+                    ? $r('app.color.brand_bg') : Color.Transparent)
+                  .borderRadius(Radius.icon)
                 }
                 .width('100%')
+              }, (chapter: ChapterEntry): string => {
+                const foldState: string = this.hasChapterChildren(chapter.index)
+                  ? (this.isChapterCollapsed(chapter) ? 'collapsed' : 'expanded') : 'leaf';
+                const selectedState: string = chapter.index === this.selectedChapterIndex
+                  ? 'selected' : 'normal';
+                return this.chapterKey(chapter) + ':' + foldState + ':' + selectedState;
               })
             }
             .layoutWeight(1)
             .width('100%')
           } else {
             Column() {
-              Text(this.currentFilePath.length > 0 ? '当前笔记没有章节' : '先打开一篇笔记')
-                .fontSize(FontSize.body3)
-                .fontColor($r('app.color.text_tertiary'))
+              Text(this.currentFilePath.length > 0
+                ? '这篇笔记还没有标题。编辑时插入标题，即可在这里导航。'
+                : '先打开一篇笔记')
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+                .padding(Space.s3)
             }
-            .layoutWeight(1)
-            .width('100%')
-            .justifyContent(FlexAlign.Center)
+              .width('100%')
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
           }
         }
         .width('100%')
@@ -494,30 +635,6 @@ export struct VaultSidebar {
       .layoutWeight(1)
       .width('100%')
 
-      if (!this.referenceOnly && !this.compact) {
-        Text('← 左滑显示操作；滑到底移入回收站，可撤销')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-          .textAlign(TextAlign.RIGHT)
-          .padding({ top: Space.s1, left: Space.s4, right: Space.s4, bottom: Space.s3 })
-
-        Row({ space: Space.s3 }) {
-          Icon('trash', 18, $r('app.color.text_secondary'))
-          Text('回收站')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_secondary'))
-            .layoutWeight(1)
-        }
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .borderRadius(Radius.icon)
-        .onClick(() => { this.onOpenTrash(); })
-        .width('100%')
-        .margin({ top: Space.s3 })
-        .border({ width: { top: 1 }, color: $r('app.color.line') })
-        .backgroundColor(Color.Transparent)
-      }
     }
     .width('100%')
     .height('100%')

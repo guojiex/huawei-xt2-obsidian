@@ -34,7 +34,6 @@ import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } from '../components/NoteDialogs';
-import { TrashView } from '../components/TrashView';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
@@ -63,6 +62,7 @@ import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
 import { fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -118,7 +118,7 @@ struct Index {
   /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
   @State vaults: VaultEntry[] = [];
   /** 当前库 id */
-  @State currentVaultId: string = '';
+  @State @Watch('onFormatContextChanged') currentVaultId: string = '';
   /** 当前库内 Markdown 笔记数量（随注册表和文件树刷新） */
   @State currentVaultNoteCount: number = 0;
   /** v0.4 快切面板及当前库候选/最近打开项 */
@@ -131,7 +131,7 @@ struct Index {
   /** md/lg 侧栏收起态（瞬态 @State） */
   @State sidebarCollapsed: boolean = false;
   /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
-  @State topView: string = 'note';
+  @State @Watch('onFormatContextChanged') topView: string = 'note';
   @State vaultManagerReturnView: string = 'note';
   @State settingsReturnView: string = 'note';
   @State settingsCategory: string = 'general';
@@ -142,6 +142,18 @@ struct Index {
   @State moreMenuOpen: boolean = false;
   @State formatMenuOpen: boolean = false;
   @State formatMenuPane: string = 'left';
+  @State formatPopupPlacement: Placement = Placement.Top;
+  @State formatPopupOffsetX: number = 0;
+  @State formatPopupOffsetY: number = -Space.s2;
+  @State formatMenuWidth: number = Size.formatMenuW;
+  @State formatMenuMaxHeight: number = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
+  private leftFormatPaneArea: number[] = [0, 0, 0, 0];
+  private rightFormatPaneArea: number[] = [0, 0, 0, 0];
+  private leftFormatAnchorArea: number[] = [0, 0, 0, 0];
+  private rightFormatAnchorArea: number[] = [0, 0, 0, 0];
+  private formatWindowArea: number[] = [0, 0, 0, 0];
+  private formatMenuSourceVaultId: string = '';
+  private formatMenuSourcePath: string = '';
   @State navigationRatio: number = -1;
   @State contentRatio: number = DEFAULT_CONTENT_RATIO;
   @State sidebarProgress: number = 1;
@@ -159,13 +171,13 @@ struct Index {
    * 放在总装页还有一个额外好处：侧栏选中态、编辑区标题、以后的预览来源共用同一份状态，
    * 不存在三处各记一份然后不同步的可能。
    */
-  @State currentFilePath: string = '';
+  @State @Watch('onFormatContextChanged') currentFilePath: string = '';
   /** v2 的第二栏单独记住笔记；同篇双编辑仍通过现有 NoteService 保存到同一文件。 */
-  @State rightFilePath: string = '';
-  @State rightEditing: boolean = false;
-  @State activePane: string = 'left';
-  @State referenceVisible: boolean = true;
-  @State focused: boolean = false;
+  @State @Watch('onFormatContextChanged') rightFilePath: string = '';
+  @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
+  @State @Watch('onFormatContextChanged') activePane: string = 'left';
+  @State @Watch('onFormatContextChanged') referenceVisible: boolean = true;
+  @State @Watch('onFormatContextChanged') focused: boolean = false;
   @State paneMoreOpen: boolean = false;
   @State paneMorePane: string = 'left';
   @State leftPaneWidthVp: number = 0;
@@ -220,7 +232,7 @@ struct Index {
   /** 单屏态「编辑 / 预览」二选一（v0.2 §3.4-3.3）。
    * 只有一块屏放不下两栏；md/lg 两栏同时可见，这个状态不参与布局。
    */
-  @State smMode: string = 'edit';
+  @State @Watch('onFormatContextChanged') smMode: string = 'edit';
 
   /**
    * M2 自动保存（2.3）：编辑器 onChange → 防抖落盘。
@@ -289,16 +301,22 @@ struct Index {
     return isSingleLandscapeWindow(this.windowWidthVp, this.windowHeightVp);
   }
 
+  private workspaceGutter(): number {
+    if (this.breakpoint === Breakpoint.SM || (this.windowHeightVp > 0 && this.windowHeightVp < 480)) {
+      return Space.s2;
+    }
+    return this.breakpoint === Breakpoint.MD ? Space.s3 : Space.s5;
+  }
+
   private isSingleScreenLayout(): boolean {
     return this.breakpoint === Breakpoint.SM || this.isSingleLandscape();
   }
 
   private noteNavigationWidth(): number {
-    const splitters: number = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape() ? 2 : 1;
     const contentPanes: number = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape() ? 2 : 1;
     const ratio: number = this.navigationRatio < 0 && this.breakpoint === Breakpoint.MD
       ? 0.38 : this.navigationRatio;
-    return navigationWidth(this.windowWidthVp, ratio, contentPanes, splitters);
+    return navigationWidth(this.windowWidthVp, ratio, contentPanes, 0);
   }
 
   private agentNavigationWidth(): number {
@@ -307,10 +325,7 @@ struct Index {
 
   private noteContentWidth(): number {
     const navWidth: number = this.noteNavigationWidth() * this.sidebarProgress;
-    const navHandleWidth: number = this.breakpoint !== Breakpoint.SM
-      ? Space.s4 * this.sidebarProgress : 0;
-    const contentHandleWidth: number = this.breakpoint === Breakpoint.LG ? Space.s4 : 0;
-    return Math.max(0, this.windowWidthVp - navWidth - navHandleWidth - contentHandleWidth);
+    return Math.max(0, this.windowWidthVp - navWidth);
   }
 
   private noteContentRatio(): number {
@@ -437,6 +452,7 @@ struct Index {
   /** 档位变化：抽屉语义只在 sm；切到 md/lg 强制收抽屉，防止回 sm 时意外打开 */
   private onBreakpointChanged(): void {
     this.moreMenuOpen = false;
+    this.closeFormatMenu();
     if (this.breakpoint !== Breakpoint.SM) {
       this.setDrawerOpen(false);
     }
@@ -868,6 +884,144 @@ struct Index {
     return pane === 'right' ? this.rightFilePath : this.currentFilePath;
   }
 
+  private recordFormatArea(target: number[], area: Area): void {
+    const x: number = typeof area.globalPosition.x === 'number' ? area.globalPosition.x : 0;
+    const y: number = typeof area.globalPosition.y === 'number' ? area.globalPosition.y : 0;
+    const width: number = typeof area.width === 'number' ? area.width : 0;
+    const height: number = typeof area.height === 'number' ? area.height : 0;
+    target[0] = x;
+    target[1] = y;
+    target[2] = width;
+    target[3] = height;
+  }
+
+  private onFormatContextChanged(): void {
+    if (this.formatMenuOpen) {
+      this.updateFormatPopupLayout(this.formatMenuPane);
+    }
+  }
+
+  private recordFormatPaneArea(pane: string, area: Area): void {
+    this.recordFormatArea(pane === 'right' ? this.rightFormatPaneArea : this.leftFormatPaneArea, area);
+    if (this.formatMenuOpen && this.formatMenuPane === pane) {
+      this.updateFormatPopupLayout(pane);
+    }
+  }
+
+  private recordFormatAnchorArea(pane: string, area: Area): void {
+    this.recordFormatArea(pane === 'right' ? this.rightFormatAnchorArea : this.leftFormatAnchorArea, area);
+    if (this.formatMenuOpen && this.formatMenuPane === pane) {
+      this.updateFormatPopupLayout(pane);
+    }
+  }
+
+  private recordFormatWindowArea(area: Area): void {
+    this.recordFormatArea(this.formatWindowArea, area);
+    if (this.formatMenuOpen) {
+      this.updateFormatPopupLayout(this.formatMenuPane);
+    }
+  }
+
+  private closeFormatMenu(restoreEditor: boolean = false): void {
+    const pane: string = this.formatMenuPane;
+    this.formatMenuOpen = false;
+    if (restoreEditor) {
+      const bridge: EditorBridge = pane === 'right' ? this.rightEditorBridge : this.editorBridge;
+      bridge.focus();
+    }
+  }
+
+  private toggleFormatMenu(pane: string): void {
+    if (this.formatMenuOpen && this.formatMenuPane === pane) {
+      this.closeFormatMenu();
+      return;
+    }
+    if (!this.isPaneEditable(pane)) {
+      return;
+    }
+    this.setActivePane(pane);
+    this.formatMenuPane = pane;
+    this.formatMenuSourceVaultId = this.currentVaultId;
+    this.formatMenuSourcePath = this.paneFilePath(pane);
+    this.formatMenuWidth = Size.formatMenuW;
+    this.formatMenuMaxHeight = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
+    this.formatMenuOpen = true;
+    this.updateFormatPopupLayout(pane);
+  }
+
+  private onFormatMenuKey(pane: string, event: KeyEvent): void {
+    if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      this.closeFormatMenu(true);
+    }
+  }
+
+  private updateFormatPopupLayout(pane: string): void {
+    if (!this.formatMenuOpen || pane !== this.formatMenuPane) {
+      return;
+    }
+    if (this.topView !== 'note' || this.activePane !== pane ||
+      this.currentVaultId !== this.formatMenuSourceVaultId ||
+      this.paneFilePath(pane) !== this.formatMenuSourcePath || !this.isPaneEditable(pane) ||
+      (pane === 'right' && (this.breakpoint === Breakpoint.SM || this.focused || !this.isReferenceShown()))) {
+      this.closeFormatMenu();
+      return;
+    }
+
+    const paneArea: number[] = pane === 'right' ? this.rightFormatPaneArea : this.leftFormatPaneArea;
+    const anchorArea: number[] = pane === 'right' ? this.rightFormatAnchorArea : this.leftFormatAnchorArea;
+    const paneX: number = paneArea[0];
+    const paneY: number = paneArea[1];
+    const paneWidth: number = paneArea[2];
+    const paneHeight: number = paneArea[3];
+    const anchorX: number = anchorArea[0];
+    const anchorY: number = anchorArea[1];
+    const anchorWidth: number = anchorArea[2];
+    const anchorHeight: number = anchorArea[3];
+    if (paneWidth <= 0 || paneHeight <= 0 || anchorWidth <= 0 || anchorHeight <= 0) {
+      return;
+    }
+
+    const windowWidth: number = this.formatWindowArea[2];
+    const windowHeight: number = this.formatWindowArea[3];
+    const visibleLeft: number = Math.max(paneX, windowWidth > 0 ? this.formatWindowArea[0] : paneX);
+    const visibleTop: number = Math.max(paneY, windowHeight > 0 ? this.formatWindowArea[1] : paneY);
+    const visibleRight: number = Math.min(paneX + paneWidth,
+      windowWidth > 0 ? this.formatWindowArea[0] + windowWidth : paneX + paneWidth);
+    const visibleBottom: number = Math.min(paneY + paneHeight,
+      windowHeight > 0 ? this.formatWindowArea[1] + windowHeight : paneY + paneHeight);
+    if (anchorX + anchorWidth <= visibleLeft || anchorX >= visibleRight ||
+      anchorY + anchorHeight <= visibleTop || anchorY >= visibleBottom) {
+      this.closeFormatMenu();
+      return;
+    }
+
+    const gap: number = Space.s2;
+    const width: number = Math.min(Size.formatMenuW, visibleRight - visibleLeft - gap * 2);
+    const above: number = Math.max(0, anchorY - visibleTop - gap * 2);
+    const below: number = Math.max(0, visibleBottom - anchorY - anchorHeight - gap * 2);
+    const naturalHeight: number = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
+    const showAbove: boolean = above >= naturalHeight || above >= below;
+    const availableHeight: number = showAbove ? above : below;
+    if (width <= 0 || availableHeight <= 0) {
+      this.closeFormatMenu();
+      return;
+    }
+
+    const centerX: number = anchorX + anchorWidth / 2;
+    const minLeft: number = visibleLeft + gap;
+    const maxLeft: number = visibleRight - gap - width;
+    const left: number = Math.max(minLeft, Math.min(centerX - width / 2, maxLeft));
+    this.formatPopupPlacement = showAbove ? Placement.Top : Placement.Bottom;
+    this.formatPopupOffsetX = left + width / 2 - centerX;
+    this.formatPopupOffsetY = showAbove ? -gap : gap;
+    if (Math.abs(this.formatMenuWidth - width) >= 0.5) {
+      this.formatMenuWidth = width;
+    }
+    if (Math.abs(this.formatMenuMaxHeight - availableHeight) >= 0.5) {
+      this.formatMenuMaxHeight = availableHeight;
+    }
+  }
+
   private applyEditorFormat(kind: string, pane: string): void {
     if (!this.isPaneEditable(pane)) {
       return;
@@ -887,21 +1041,13 @@ struct Index {
     if (this.topView === 'vaults') {
       return '笔记库';
     }
-    if (this.topView === 'trash') {
-      return '回收站';
-    }
     if (this.topView === 'history') {
       return '版本记录';
     }
     if (this.topView === 'agent') {
       return this.agentTitle;
     }
-    if (this.topView === 'settings' && this.isSingleScreenLayout() && this.settingsDetail) {
-      return this.settingsCategory === 'general' ? '通用' :
-        this.settingsCategory === 'agent' ? 'Agent' :
-        this.settingsCategory === 'data' ? '数据' : '关于';
-    }
-    return '设置';
+    return '设置与关于';
   }
 
   /**
@@ -2536,19 +2682,31 @@ struct Index {
     .onClick(onTap)
   }
 
+  private isPaneModeSelected(pane: string, label: string): boolean {
+    const editing: boolean = pane === 'right' ? this.rightEditing : this.smMode === 'edit';
+    return label === '编辑' ? editing : !editing;
+  }
+
   @Builder
-  PaneModeButton(pane: string, label: string, selected: boolean) {
+  PaneModeButton(pane: string, label: string) {
     Row() {
       Text(label)
         .fontSize(FontSize.body2)
-        .fontWeight(selected ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(selected ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
+        .fontWeight(this.isPaneModeSelected(pane, label) ? FontWeight.Medium : FontWeight.Normal)
+        .fontColor(this.isPaneModeSelected(pane, label)
+          ? $r('app.color.brand') : $r('app.color.text_secondary'))
     }
-    .height(Size.touch - Space.s2)
+    .height(Space.s8)
     .padding({ left: Space.s3, right: Space.s3 })
     .justifyContent(FlexAlign.Center)
     .borderRadius(Radius.full)
-    .backgroundColor(selected ? $r('app.color.bg_card') : Color.Transparent)
+    .backgroundColor(this.isPaneModeSelected(pane, label)
+      ? $r('app.color.brand_bg') : Color.Transparent)
+    .border({
+      width: 1,
+      color: this.isPaneModeSelected(pane, label) ? $r('app.color.brand') : Color.Transparent
+    })
+    .focusable(true)
     .onClick((): void => {
       this.setActivePane(pane);
       const editing: boolean = label === '编辑';
@@ -2572,19 +2730,22 @@ struct Index {
   @Builder
   PaneMoreMenu(pane: string) {
     Column() {
-      Row() {
-        Text('在另一栏预览')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+      if (this.paneFilePath(pane).length > 0) {
+        Row() {
+          Text('在另一栏预览')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .focusable(true)
+        .onClick((): void => {
+          this.paneMoreOpen = false;
+          this.previewActiveNoteInOtherPane(pane);
+        })
       }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .onClick((): void => {
-        this.paneMoreOpen = false;
-        this.previewActiveNoteInOtherPane(pane);
-      })
       Row() {
         Text(this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
           .fontSize(FontSize.body2)
@@ -2643,13 +2804,14 @@ struct Index {
   @Builder
   PaneHead($$: PaneHeadParam) {
     Row({ space: Space.s1 }) {
-      Row({ space: 2 }) {
-        this.PaneModeButton($$.pane, '编辑', $$.pane === 'right' ? this.rightEditing : this.smMode === 'edit')
-        this.PaneModeButton($$.pane, '预览', $$.pane === 'right' ? !this.rightEditing : this.smMode === 'preview')
+      Row({ space: Space.s1 }) {
+        this.PaneModeButton($$.pane, '编辑')
+        this.PaneModeButton($$.pane, '预览')
       }
-      .padding(2)
+      .padding(Space.s1)
       .borderRadius(Radius.full)
-      .backgroundColor($r('app.color.bg_secondary'))
+      .backgroundColor($r('app.color.bg_card'))
+      .border({ width: 1, color: $r('app.color.line') })
 
       if (this.breakpoint !== Breakpoint.SM) {
         this.PaneMoreButton($$.pane)
@@ -2657,7 +2819,7 @@ struct Index {
     }
     .width('100%')
     .height(Size.touch)
-    .padding({ left: Space.s3, right: Space.s2 })
+    .padding({ left: this.workspaceGutter(), right: this.workspaceGutter() })
     .alignItems(VerticalAlign.Center)
     .border({ width: { bottom: 2 }, color: this.activePane === $$.pane
       ? $r('app.color.brand') : $r('app.color.line') })
@@ -2677,6 +2839,24 @@ struct Index {
   }
 
   @Builder
+  EmptyPane() {
+    Column({ space: Space.s2 }) {
+      Icon('doc', 28, $r('app.color.text_tertiary'))
+      Text('未选择笔记')
+        .fontSize(FontSize.body1)
+        .fontColor($r('app.color.text_secondary'))
+      Text('先打开一篇笔记')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_tertiary'))
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor($r('app.color.bg_card'))
+  }
+
+  @Builder
   NoteWorkspaceShell() {
     Stack({ alignContent: Alignment.Bottom }) {
       if (this.breakpoint === Breakpoint.SM) {
@@ -2691,6 +2871,8 @@ struct Index {
         }
         .width('100%')
         .height('100%')
+        .backgroundColor($r('app.color.bg_card'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
         .visibility(this.drawerOpen ? Visibility.Hidden : Visibility.Visible)
 
         Column() {
@@ -2698,6 +2880,8 @@ struct Index {
         }
           .width('100%')
           .height('100%')
+          .backgroundColor($r('app.color.bg_navigation'))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
           .visibility(this.drawerOpen ? Visibility.Visible : Visibility.Hidden)
       } else {
         Row() {
@@ -2706,6 +2890,8 @@ struct Index {
           }
           .width(this.sidebarCollapsed || this.focused ? 0 : this.noteNavigationWidth())
           .height('100%')
+          .backgroundColor($r('app.color.bg_navigation'))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
           .visibility(this.sidebarCollapsed || this.focused ? Visibility.Hidden : Visibility.Visible)
 
           if (!this.sidebarCollapsed && !this.focused) {
@@ -2716,6 +2902,7 @@ struct Index {
               resetRequested: (): void => { this.resetSplitLayout(); }
             })
               .width(Space.s4)
+              .margin({ left: -Space.s2, right: -Space.s2 })
               .enabled(!this.focused)
           }
 
@@ -2730,6 +2917,8 @@ struct Index {
           }
           .layoutWeight(1)
           .height('100%')
+          .backgroundColor($r('app.color.bg_card'))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
         }
         .width('100%')
         .height('100%')
@@ -2742,6 +2931,7 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -2815,6 +3005,7 @@ struct Index {
             resetRequested: (): void => { this.resetSplitLayout(); }
           })
             .width(Space.s4)
+            .margin({ left: -Space.s2, right: -Space.s2 })
         }
 
         Column() {
@@ -2845,8 +3036,6 @@ struct Index {
           Stack({ alignContent: Alignment.Bottom }) {
             if (this.topView === 'vaults') {
               this.ManagerView()
-            } else if (this.topView === 'trash') {
-              this.TrashPane()
             } else if (this.topView === 'history') {
               ReleaseHistoryView()
             } else if (this.topView === 'settings') {
@@ -2860,7 +3049,6 @@ struct Index {
           }
           .layoutWeight(1)
           .width('100%')
-          this.Statusbar()
         }
         .width('100%')
         .height('100%')
@@ -2891,6 +3079,12 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .backgroundColor($r('app.color.bg_page'))
+    // 页面底色延伸到系统底部手势安全区；交互控件仍按原窗口安全区排版。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      this.recordFormatWindowArea(newArea);
+    })
   }
 
   /**
@@ -2924,18 +3118,6 @@ struct Index {
     // 原型 --elev-3 的单层近似（与 VaultMenu 同款）
     .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
     .margin({ bottom: Space.s6 })
-  }
-
-  /** 回收站视图（1.8）：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级） */
-  @Builder
-  TrashPane() {
-    TrashView({
-      vaultId: this.currentVaultId,
-      refreshSeq: this.trashSeq,
-      onRestore: (relPath: string): void => {
-        this.doRestoreFromTrash(relPath);
-      }
-    })
   }
 
   @Builder
@@ -3023,20 +3205,12 @@ struct Index {
         }))
       if (this.topView === 'note') {
         if (this.breakpoint === Breakpoint.SM) {
-          this.IconButton('swap', $r('app.color.text_secondary'), (): void => {
-            this.toggleActivePane();
-          })
           this.MoreMenuButton()
         } else {
           this.IconButton('columns', this.isReferenceShown()
             ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
             this.toggleReference();
           })
-          if (this.breakpoint === Breakpoint.MD && !this.sidebarCollapsed && !this.focused) {
-            this.IconButton('swap', $r('app.color.text_secondary'), (): void => {
-              this.toggleActivePane();
-            })
-          }
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
           })
@@ -3055,9 +3229,9 @@ struct Index {
       }
     }
     .width('100%')
-    .height(this.breakpoint === Breakpoint.SM ? Size.appbarH : Size.appbarWideH)
-    .padding({ left: this.breakpoint === Breakpoint.SM ? Space.s2 : Space.s5,
-      right: this.breakpoint === Breakpoint.SM ? Space.s2 : Space.s5 })
+    .height(this.breakpoint === Breakpoint.SM || (this.windowHeightVp > 0 && this.windowHeightVp < 480)
+      ? Size.appbarH : Size.appbarWideH)
+    .padding({ left: this.workspaceGutter(), right: this.workspaceGutter() })
     .alignItems(VerticalAlign.Center)
     .border({ width: { bottom: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
@@ -3092,19 +3266,6 @@ struct Index {
   MoreMenu() {
     Column() {
       Row() {
-        Text('搜索与最近打开')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .onClick(() => {
-        this.moreMenuOpen = false;
-        this.openQuickSwitcher();
-      })
-      Row() {
         Text('分享笔记')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_primary'))
@@ -3118,32 +3279,6 @@ struct Index {
         this.openShareNoteDialog();
       })
       Row() {
-        Text(this.focused ? '退出专注' : '进入专注')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .onClick(() => {
-        this.toggleFocus();
-      })
-      Row() {
-        Text(this.isReferenceShown() ? '收起双栏' : '打开双栏')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .enabled(!this.focused)
-      .onClick((): void => {
-        this.moreMenuOpen = false;
-        this.toggleReference();
-      })
-      Row() {
         Text('设置与关于')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_primary'))
@@ -3153,8 +3288,29 @@ struct Index {
       .height(Size.touch)
       .padding({ left: Space.s3, right: Space.s3 })
       .onClick(() => {
+        this.moreMenuOpen = false;
         this.openSettings('note', 'general');
       })
+      if (this.currentFilePath.length > 0 && this.rightFilePath.length > 0 &&
+        this.currentFilePath !== this.rightFilePath) {
+        Row() {
+          Text('切换到 ' + (this.activePane === 'left'
+            ? this.rightFilePath.substring(this.rightFilePath.lastIndexOf('/') + 1)
+            : this.currentFilePath.substring(this.currentFilePath.lastIndexOf('/') + 1)))
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .onClick((): void => {
+          this.moreMenuOpen = false;
+          this.toggleActivePane();
+        })
+      }
     }
     .width(Size.sidebarW)
     .padding(Space.s2)
@@ -3176,6 +3332,7 @@ struct Index {
       chapters: this.chapterEntries,
       selectedChapterIndex: this.selectedChapterIndex,
       refreshSeq: this.treeSeq,
+      trashRefreshSeq: this.trashSeq,
       revealPath: this.revealPath,
       onCollapse: (): void => {
         if (asDrawer) {
@@ -3191,6 +3348,10 @@ struct Index {
       onManageVaults: (): void => {
         this.closeNoteNavigation();
         void this.openVaultManager('note');
+      },
+      onOpenSearch: (): void => {
+        this.closeNoteNavigation();
+        this.openQuickSwitcher();
       },
       onShareVault: (): void => {
         this.closeNoteNavigation();
@@ -3228,9 +3389,8 @@ struct Index {
         this.closeNoteNavigation();
         void this.doTrashFile(relPath);
       },
-      onOpenTrash: (): void => {
-        this.closeNoteNavigation();
-        this.topView = 'trash';
+      onRestoreTrash: (relPath: string): void => {
+        this.doRestoreFromTrash(relPath);
       },
       onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
       onSelectChapter: (index: number): void => { this.selectChapter(index); },
@@ -3294,6 +3454,8 @@ struct Index {
         resetRequested: (): void => { this.resetSplitLayout(); }
       })
         .width(Space.s4 * this.sidebarProgress)
+        .margin({ left: -Space.s2 * this.sidebarProgress,
+          right: -Space.s2 * this.sidebarProgress })
         .enabled(!this.sidebarCollapsed)
         .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
 
@@ -3311,8 +3473,7 @@ struct Index {
         .height('100%')
         .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
       }
-      .width(Math.max(0, this.windowWidthVp - this.noteNavigationWidth() * this.sidebarProgress -
-        Space.s4 * this.sidebarProgress))
+      .width(Math.max(0, this.windowWidthVp - this.noteNavigationWidth() * this.sidebarProgress))
       .height('100%')
       .clip(true)
     }
@@ -3363,6 +3524,8 @@ struct Index {
           resetRequested: (): void => { this.resetSplitLayout(); }
         })
           .width(Space.s4 * this.sidebarProgress)
+          .margin({ left: -Space.s2 * this.sidebarProgress,
+            right: -Space.s2 * this.sidebarProgress })
           .enabled(!this.sidebarCollapsed)
           .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
 
@@ -3380,6 +3543,7 @@ struct Index {
           resetRequested: (): void => { this.resetSplitLayout(); }
         })
           .width(Space.s4)
+          .margin({ left: -Space.s2, right: -Space.s2 })
           .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
 
         Column() {
@@ -3421,9 +3585,15 @@ struct Index {
   @Builder
   FormatAction(label: string, kind: string, pane: string) {
     Row() {
-      Text(label)
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.text_primary'))
+      if (kind === 'task') {
+        Icon('task', 20, $r('app.color.text_primary'))
+      } else {
+        Text(label)
+          .fontSize(FontSize.body2)
+          .fontWeight(kind === 'bold' ? FontWeight.Bold : FontWeight.Normal)
+          .fontStyle(kind === 'italic' ? FontStyle.Italic : FontStyle.Normal)
+          .fontColor($r('app.color.text_primary'))
+      }
     }
     .width(Size.touch)
     .height(Size.touch)
@@ -3473,51 +3643,68 @@ struct Index {
 
   @Builder
   FormatMenu() {
-    Column({ space: Space.s2 }) {
-      Text('文字与段落')
-        .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_secondary'))
-        .padding({ bottom: Space.s1 })
-      Row({ space: Space.s1 }) {
-        this.FormatOption('正文', 'paragraph')
-        this.FormatOption('H1', 'h1')
-        this.FormatOption('H2', 'h2')
+    Scroll() {
+      Column({ space: Space.s2 }) {
+        Row() {
+          Text('文字与段落')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_secondary'))
+            .layoutWeight(1)
+          Text('×')
+            .fontSize(FontSize.s2)
+            .fontColor($r('app.color.text_secondary'))
+            .width(Size.touch)
+            .height(Size.touch)
+            .textAlign(TextAlign.Center)
+            .focusable(true)
+            .onClick((): void => { this.closeFormatMenu(true); })
+        }
+        .width('100%')
+        Row({ space: Space.s1 }) {
+          this.FormatOption('正文', 'paragraph')
+          this.FormatOption('H1', 'h1')
+          this.FormatOption('H2', 'h2')
+        }
+        .width('100%')
+        Row({ space: Space.s1 }) {
+          this.FormatOption('H3', 'h3')
+          this.FormatOption('H4', 'h4')
+          this.FormatOption('H5', 'h5')
+        }
+        .width('100%')
+        Row({ space: Space.s1 }) {
+          this.FormatOption('H6', 'h6')
+          this.FormatOption('粗体', 'bold')
+          this.FormatOption('斜体', 'italic')
+        }
+        .width('100%')
+        Row({ space: Space.s1 }) {
+          this.FormatOption('行内代码', 'inlineCode')
+          this.FormatOption('代码块', 'code')
+          this.FormatOption('链接', 'link')
+        }
+        .width('100%')
+        Row({ space: Space.s1 }) {
+          this.FormatOption('无序列表', 'list')
+          this.FormatOption('有序列表', 'ordered')
+          this.FormatOption('待办', 'task')
+        }
+        .width('100%')
+        Row({ space: Space.s1 }) {
+          this.FormatOption('引用', 'quote')
+        }
+        .width('100%')
       }
       .width('100%')
-      Row({ space: Space.s1 }) {
-        this.FormatOption('H3', 'h3')
-        this.FormatOption('H4', 'h4')
-        this.FormatOption('H5', 'h5')
-      }
-      .width('100%')
-      Row({ space: Space.s1 }) {
-        this.FormatOption('H6', 'h6')
-        this.FormatOption('粗体', 'bold')
-        this.FormatOption('斜体', 'italic')
-      }
-      .width('100%')
-      Row({ space: Space.s1 }) {
-        this.FormatOption('行内代码', 'inlineCode')
-        this.FormatOption('代码块', 'code')
-        this.FormatOption('链接', 'link')
-      }
-      .width('100%')
-      Row({ space: Space.s1 }) {
-        this.FormatOption('无序列表', 'list')
-        this.FormatOption('有序列表', 'ordered')
-        this.FormatOption('待办', 'task')
-      }
-      .width('100%')
-      Row({ space: Space.s1 }) {
-        this.FormatOption('引用', 'quote')
-      }
-      .width('100%')
+      .padding(Space.s3)
     }
-    .width(Size.paneMinW)
-    .padding(Space.s3)
+    .width(this.formatMenuWidth)
+    .constraintSize({ maxHeight: this.formatMenuMaxHeight })
+    .scrollBar(BarState.Auto)
     .borderRadius(Radius.card)
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
+    .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(this.formatMenuPane, event); })
   }
 
   @Builder
@@ -3536,18 +3723,17 @@ struct Index {
         .borderRadius(Radius.full)
         .enabled(this.isPaneEditable(pane))
         .onClick((): void => {
-          if (this.formatMenuPane === pane) {
-            this.formatMenuOpen = !this.formatMenuOpen;
-          } else {
-            this.formatMenuPane = pane;
-            this.formatMenuOpen = true;
-          }
+          this.toggleFormatMenu(pane);
         })
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          this.recordFormatAnchorArea(pane, newArea);
+        })
+        .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
         .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
           builder: this.FormatMenu(),
-          placement: Placement.Top,
+          placement: this.formatPopupPlacement,
           enableArrow: false,
-          offset: { x: 0, y: -Space.s2 },
+          offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
           mask: false,
           autoCancel: true,
           popupColor: Color.Transparent,
@@ -3632,11 +3818,14 @@ struct Index {
             .width('100%')
             .height('100%')
             .visibility(this.rightEditing ? Visibility.Hidden : Visibility.Visible)
+          if (this.rightFilePath.length === 0) {
+            this.EmptyPane()
+          }
         }
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
-        if (this.rightEditing) {
+        if (this.rightEditing && this.rightFilePath.length > 0) {
           this.FormatToolbar('right')
         }
       }
@@ -3646,6 +3835,9 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_card'))
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      this.recordFormatPaneArea('right', newArea);
+    })
     .onClick((): void => { this.setActivePane('right'); })
   }
 
@@ -3710,11 +3902,14 @@ struct Index {
             .position({ x: '50%', y: Space.s3 })
             .translate({ x: Space.s1 })
         }
+        if (this.currentFilePath.length === 0) {
+          this.EmptyPane()
+        }
         }
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
-        if (this.smMode === 'edit') {
+        if (this.smMode === 'edit' && this.currentFilePath.length > 0) {
           this.FormatToolbar('left')
         }
       }
@@ -3723,6 +3918,9 @@ struct Index {
     }
     .width('100%')
     .height('100%')
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      this.recordFormatPaneArea('left', newArea);
+    })
   }
 
   /**
@@ -3738,20 +3936,27 @@ struct Index {
       if (this.backlinksExpanded && this.backlinksPane === 'left') {
         this.BacklinkPanel()
       }
-      PreviewWebView({
-        bridge: this.previewBridge,
-        onReadAsset: (relPath: string): string => {
-          return this.readVaultAsset(relPath);
-        },
-        onWikiLinkClick: (target: string): void => {
-          void this.handleWikiLinkClick(target);
-        },
-        onError: (msg: string): void => {
-          hilog.error(DOMAIN, TAG, '预览 Web: %{public}s', msg);
+      Stack() {
+        PreviewWebView({
+          bridge: this.previewBridge,
+          onReadAsset: (relPath: string): string => {
+            return this.readVaultAsset(relPath);
+          },
+          onWikiLinkClick: (target: string): void => {
+            void this.handleWikiLinkClick(target);
+          },
+          onError: (msg: string): void => {
+            hilog.error(DOMAIN, TAG, '预览 Web: %{public}s', msg);
+          }
+        })
+          .width('100%')
+          .height('100%')
+        if (this.currentFilePath.length === 0) {
+          this.EmptyPane()
         }
-      })
-        .layoutWeight(1)
-        .width('100%')
+      }
+      .layoutWeight(1)
+      .width('100%')
     }
     .width('100%')
     .height('100%')

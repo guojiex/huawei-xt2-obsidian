@@ -31,11 +31,23 @@ export struct ShareNoteDialog {
 
   build() {
     Column({ space: Space.s3 }) {
-      Text(this.title)
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
+      Row() {
+        Text(this.title)
+          .fontSize(FontSize.s3)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+        Text('×')
+          .fontSize(FontSize.s1)
+          .fontColor($r('app.color.text_secondary'))
+          .width(Size.touch)
+          .height(Size.touch)
+          .textAlign(TextAlign.Center)
+          .focusable(true)
+          .onClick(() => { this.controller?.close(); })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
       Text(this.itemName)
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_primary'))
@@ -84,13 +96,8 @@ export struct ShareNoteDialog {
           .width('100%')
       }
       Row({ space: Space.s2 }) {
-        Button('取消')
-          .layoutWeight(1)
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          .onClick(() => { this.controller?.close(); })
         Button('准备分享')
-          .layoutWeight(1)
+          .width('100%')
           .height(Size.touch)
           .fontSize(FontSize.body2)
           .enabled(this.selectedFormat.length > 0)

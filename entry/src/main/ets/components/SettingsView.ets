@@ -40,6 +40,7 @@ export struct SettingsView {
   @Prop windowHeightVp: number = 0;
   /** 当前库 id（诊断区显示库目录） */
   @Prop currentVaultId: string = '';
+  @StorageProp('appTheme') appTheme: string = 'light';
   @Prop vaults: VaultEntry[] = [];
   @Prop @Watch('onSelectedCategoryChanged') selectedCategory: string = 'general';
   @Prop showCategoryList: boolean = false;
@@ -61,6 +62,7 @@ export struct SettingsView {
   @State managedSessions: AgentSession[] = [];
   @State sessionMessage: string = '';
   @State feedbackError: string = '';
+  @State diagnosticsExpanded: boolean = false;
   private resetDialog: CustomDialogController | null = null;
   private deleteSessionDialog: CustomDialogController | null = null;
 
@@ -352,13 +354,14 @@ export struct SettingsView {
             this.CategoryRow('general', '通用', true)
             this.CategoryRow('data', '数据', true)
             this.CategoryRow('feedback', '问题与建议', true)
-            this.CategoryRow('about', '关于', true)
+            this.CategoryRow('about', '关于与版本记录', true)
           }
           .width('100%')
           .padding({ left: Space.s3, right: Space.s3, top: Space.s3, bottom: Space.s3 })
         }
         .width('100%')
         .height('100%')
+        .align(Alignment.Top)
         .scrollBar(BarState.Off)
       } else if (this.singleScreenLayout) {
         this.CategoryContent()
@@ -369,13 +372,14 @@ export struct SettingsView {
               this.CategoryRow('general', '通用', false)
               this.CategoryRow('data', '数据', false)
               this.CategoryRow('feedback', '问题与建议', false)
-              this.CategoryRow('about', '关于', false)
+              this.CategoryRow('about', '关于与版本记录', false)
             }
             .width('100%')
             .padding({ left: Space.s3, right: Space.s3, top: Space.s3, bottom: Space.s3 })
           }
           .width(Size.sidebarW)
           .height('100%')
+          .align(Alignment.Top)
           .scrollBar(BarState.Off)
           .border({ width: { right: 1 }, color: $r('app.color.line') })
 
@@ -452,20 +456,28 @@ export struct SettingsView {
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
-      Text('应用内 Agent 当前使用确定性本地 mock；不连接小艺、网络模型或外部工具。')
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
       Column({ space: Space.s2 }) {
-        Text('布局（共用分栏，v0.7）')
+        Text('外观')
           .fontSize(FontSize.body3)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
-        Text('笔记与 Agent 共用左栏宽度；笔记编辑与预览可独立调整。拖动后的宽度会保存。')
+        this.InfoRow('显示主题', this.appTheme === 'dark' ? '深色（跟随系统）' : '浅色（跟随系统）')
+      }
+      .width('100%')
+      .padding(Space.s4)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      Column({ space: Space.s2 }) {
+        Text('阅读与编辑布局')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+        Text('拖动导航和正文分隔条调整栏宽；编辑与预览比例会自动保存。')
           .fontSize(FontSize.body3)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
-        Text('恢复默认分栏')
+        Text('恢复等分栏宽')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
           .height(Size.touch)
@@ -476,15 +488,27 @@ export struct SettingsView {
       .padding(Space.s4)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
       Column() {
-        Text('诊断信息')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-          .margin({ bottom: Space.s2 })
-        this.InfoRow('当前形态', this.formLabel())
-        this.InfoRow('断点', this.breakpoint)
-        this.InfoRow('库目录', this.vaultDir())
+        Row() {
+          Text('诊断信息')
+            .fontSize(FontSize.body3)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+          Text(this.diagnosticsExpanded ? '⌃' : '⌄')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_tertiary'))
+        }
+        .width('100%')
+        .height(Size.touch)
+        .focusable(true)
+        .onClick((): void => { this.diagnosticsExpanded = !this.diagnosticsExpanded; })
+        if (this.diagnosticsExpanded) {
+          this.InfoRow('当前形态', this.formLabel())
+          this.InfoRow('断点', this.breakpoint)
+          this.InfoRow('库目录', this.vaultDir())
+        }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -705,51 +729,60 @@ export struct SettingsView {
   @Builder
   DataTab() {
     Column({ space: Space.s3 }) {
-      Text('数据管理')
+      Text('数据')
         .fontSize(FontSize.body2)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      Text('Agent 对话、未发送草稿、运行记录和撤销数据保存在此设备的应用私有空间。删除知识库时会一并清除此库的 Agent 数据；笔记仍由知识库管理。')
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      Text('清除所有本地数据，重新打开后恢复首次安装的样例笔记库。此操作无法撤销。')
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      Button(this.resetting ? '正在重置…' : '重置所有数据')
-        .width('100%')
-        .height(Size.touch)
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.danger'))
-        .backgroundColor($r('app.color.danger_bg'))
-        .borderRadius(Radius.button)
-        .enabled(!this.resetting)
-        .onClick(() => { this.confirmReset(); })
-      if (this.resetError.length > 0) {
-        Text(this.resetError)
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.danger'))
+      Column({ space: Space.s3 }) {
+        Text('数据管理')
+          .fontSize(FontSize.body2)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
           .width('100%')
+        Text('清除本地数据后，重新打开应用会恢复首次安装的样例笔记库。此操作无法撤销。')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+        Text('远端 Git 仓库不会被修改；重置前请先确认已保存需要保留的本地内容。')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+        Button(this.resetting ? '正在重置…' : '重置所有数据…')
+          .width('100%')
+          .height(Size.touch)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.danger'))
+          .backgroundColor($r('app.color.danger_bg'))
+          .borderRadius(Radius.button)
+          .enabled(!this.resetting)
+          .onClick(() => { this.confirmReset(); })
+        if (this.resetError.length > 0) {
+          Text(this.resetError)
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.danger'))
+            .width('100%')
+        }
       }
+      .width('100%')
+      .padding(Space.s4)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
     }
     .width('100%')
-    .padding(Space.s4)
-    .borderRadius(Radius.card)
-    .border({ width: 1, color: $r('app.color.line') })
-    .backgroundColor($r('app.color.bg_card'))
+    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
   AboutTab() {
     Column({ space: Space.s4 }) {
+      Text('关于与版本记录')
+        .fontSize(FontSize.body2)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
       Column() {
-        Text('关于')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
         Row() {
           Text('曜')
             .fontSize(FontSize.s2)
@@ -827,36 +860,44 @@ export struct SettingsView {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      Text('请通过邮件描述你遇到的问题或改进建议。邮件由你检查并确认发送，不会自动附带笔记或诊断信息。')
+      Text('请通过邮件描述你遇到的问题或改进建议。邮件由你检查并确认发送，不会自动附带笔记、对话、日志或诊断信息。')
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
-      Button('发送反馈邮件')
-        .width('100%')
-        .height(Size.touch)
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.on_brand'))
-        .backgroundColor($r('app.color.brand'))
-        .borderRadius(Radius.button)
-        .onClick((): void => { void this.openFeedbackEmail(); })
-      Text(FEEDBACK_EMAIL)
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.brand'))
-        .width('100%')
-        .padding({ top: Space.s2, bottom: Space.s2 })
-      if (this.feedbackError.length > 0) {
-        Text(this.feedbackError)
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.danger'))
+      Column({ space: Space.s3 }) {
+        Text('问题与建议')
+          .fontSize(FontSize.body2)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
           .width('100%')
+        Button('发送反馈邮件')
+          .width('100%')
+          .height(Size.touch)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.on_brand'))
+          .backgroundColor($r('app.color.brand'))
+          .borderRadius(Radius.button)
+          .onClick((): void => { void this.openFeedbackEmail(); })
+        Text(FEEDBACK_EMAIL)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.brand'))
+          .width('100%')
+          .padding({ top: Space.s2, bottom: Space.s2 })
+        if (this.feedbackError.length > 0) {
+          Text(this.feedbackError)
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.danger'))
+            .width('100%')
+        }
       }
+      .width('100%')
+      .padding(Space.s4)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding(Space.s4)
-    .borderRadius(Radius.card)
-    .border({ width: 1, color: $r('app.color.line') })
-    .backgroundColor($r('app.color.bg_card'))
   }
 
 }
