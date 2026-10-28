@@ -60,6 +60,14 @@ test('wide sidebar toggles and rotation keep active note and hidden navigation i
  const f=fixture();const before=f.run('current');f.get('menu').onclick();assert.equal(f.get('navSidebar').inert,true);f.get('menu').onclick();assert.equal(f.get('navSidebar').inert,false);f.run("setViewport('phone')");f.get('menu').onclick();f.get('rotateViewport').onclick();assert.equal(f.run('current'),before);assert.equal(f.get('noteWorkspace').inert,false);assert.equal(f.get('navSidebar').inert,f.get('window').classList.contains('nav-hidden'));
 });
 
+test('entering the two-pane width collapses navigation when both panes are enabled',()=>{
+ const f=fixture();assert.equal(f.run('viewport'),'wide');assert.equal(f.get('window').classList.contains('nav-hidden'),false);f.get('rotateViewport').onclick();assert.equal(f.run('viewport'),'double');assert.equal(f.get('window').classList.contains('nav-hidden'),true);assert.equal(f.run('referenceShown()'),true);f.get('rotateViewport').onclick();assert.equal(f.run('viewport'),'wide');f.get('menu').onclick();assert.equal(f.get('window').classList.contains('nav-hidden'),false);f.get('double').onclick();assert.equal(f.run('viewport'),'double');assert.equal(f.get('window').classList.contains('nav-hidden'),true);assert.equal(f.run('referenceShown()'),true);
+});
+
+test('double layout defaults to two panes and honors an explicit navigation URL state',()=>{
+ const closed=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=double&dual=1');assert.equal(closed.run('viewport'),'double');assert.equal(closed.get('window').classList.contains('nav-hidden'),true);assert.equal(closed.run('referenceShown()'),true);const open=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=double&dual=1&nav=1');assert.equal(open.get('window').classList.contains('nav-hidden'),false);assert.equal(open.run('referenceShown()'),false);
+});
+
 test('frontmatter stays editable but is hidden in both previews and share image',()=>{
  const f=fixture();f.run("openInPane('reading_reading_journal','left');openInPane('reading_reading_journal','right')");const source=f.get('editor').value;assert(source.startsWith('---\n'));for(const id of ['article','reference']){assert(!f.get(id).innerHTML.includes('title:'));assert(!f.get(id).innerHTML.includes('tags:'));assert(f.get(id).innerHTML.includes('读书对话练习</h1>'));}f.get('shareBtn').onclick();f.get('shareImage').onclick();assert(!f.get('sharePreview').innerHTML.includes('title:'));assert.equal(f.get('editor').value,source);const headings=JSON.parse(f.run('JSON.stringify(headingsFor(note(current).text))'));assert.equal(headings[0].offset,source.indexOf('# 读书对话练习'));assert.equal(headings[1].offset,source.indexOf('## 本轮阅读问题'));
 });
