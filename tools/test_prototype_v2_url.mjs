@@ -109,6 +109,14 @@ test('hamburger exits focus and reveals navigation',()=>{
  assert(!f.run('focused'));assert(!f.get('window').classList.contains('focus'));assert(!f.get('window').classList.contains('nav-hidden'));
 });
 
+test('double-screen focus hamburger aligns navigation with the visible left pane',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=double&vault=reading&focus=1&nav=0&side=chapters&active=right&left=reading_stream&right=reading_reading_journal');
+ assert(f.run('focused'));assert.equal(f.run('activePane'),'right');
+ f.get('menu').onclick();
+ assert(!f.run('focused'));assert(!f.get('window').classList.contains('nav-hidden'));
+ assert.equal(f.run('activePane'),'left');assert.equal(f.run('activeNoteId()'),'reading_stream');
+});
+
 test('trash is a collapsed bottom folder; delete updates entries without auto-expanding and restore works',()=>{
  const f=fixture();assert.equal(f.get('trashFolder').open,false);assert(f.get('trashList').innerHTML.includes('回收站为空'));f.run("deleteFile('reading_stream')");assert.equal(f.get('trashFolder').open,false);assert(f.get('trashList').innerHTML.includes('基础排版'));assert.equal(f.get('trashCount').textContent,'1');f.get('openTrash').onkeydown({key:'ArrowRight',preventDefault(){}});assert.equal(f.get('trashFolder').open,true);assert(!f.get('trashDialog').open);f.run("trashFolderState[activeVault]=true;restoreFile('reading_stream')");assert(f.get('trashList').innerHTML.includes('回收站为空'));assert.equal(f.get('trashCount').textContent,'');assert.equal(f.get('trashFolder').open,false);f.get('openTrash').onkeydown({key:'ArrowLeft',preventDefault(){}});assert.equal(f.get('trashFolder').open,false);
 });
