@@ -30,8 +30,18 @@
       "status": "pending",
       "title": "Git 同步暂缓",
       "changes": [
-        "同步页已接入多库注册表和令牌安全存储；完整 clone 验收与回写仍未完成。",
-        "等待鸿蒙回复，优先推进共享样例与本地体验；小艺另待能力开通。"
+        "同步页已接入多库注册表和令牌安全存储；完整 clone 验收与 commit/push 回写仍未完成。",
+        "Git 同步继续按 v0.3 外部依赖暂缓；小艺状态单列于 v0.6。"
+      ]
+    },
+    {
+      "version": "0.6.0",
+      "date": "2026-10-28",
+      "status": "pending",
+      "title": "小艺本地笔记操作暂缓",
+      "changes": [
+        "FunctionComponent + 单 Agent + 端插件路线已明确；App 侧 ListVaults 映射和白名单投影已实现。",
+        "其余端插件工具、Agent/AGC 绑定与 API 24 / XT2 真实调用仍待验；本条记录外部依赖状态，不表示已接入。"
       ]
     },
     {
