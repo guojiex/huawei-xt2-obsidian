@@ -830,17 +830,6 @@ struct Index {
     this.paneMoreOpen = false;
   }
 
-  private choosePaneNote(pane: string): void {
-    this.setActivePane(pane);
-    if (pane === 'right') {
-      this.referenceVisible = true;
-      if (this.breakpoint === Breakpoint.MD) {
-        this.setSidebarCollapsed(true);
-      }
-    }
-    this.openQuickSwitcher();
-  }
-
   private previewActiveNoteInOtherPane(pane: string): void {
     const sourcePath: string = pane === 'left' ? this.currentFilePath : this.rightFilePath;
     if (sourcePath.length === 0) {
@@ -2650,7 +2639,7 @@ struct Index {
     })
   }
 
-  /** 与 v2 一致：每栏显示模式切换、选择笔记和栏内更多操作。 */
+  /** 与 v2 一致：每栏显示模式切换和栏内更多操作。 */
   @Builder
   PaneHead($$: PaneHeadParam) {
     Row({ space: Space.s1 }) {
@@ -2662,11 +2651,6 @@ struct Index {
       .borderRadius(Radius.full)
       .backgroundColor($r('app.color.bg_secondary'))
 
-      Text('选择笔记')
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.brand'))
-        .maxLines(1)
-        .onClick((): void => { this.choosePaneNote($$.pane); })
       if (this.breakpoint !== Breakpoint.SM) {
         this.PaneMoreButton($$.pane)
       }
