@@ -1,0 +1,16 @@
+{
+  "insightIntents": [
+    {
+      "intentName": "ListVaults",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": {
+        "ability": "EntryAbility",
+        "executeMode": [
+          "background"
+        ]
+      }
+    }
+  ]
+}
