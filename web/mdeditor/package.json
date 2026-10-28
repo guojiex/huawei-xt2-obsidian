@@ -6,7 +6,8 @@
   "type": "module",
   "description": "运行在 Web 组件内的 CodeMirror 6 Markdown 编辑器（M0.5 spike）",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.7.1",
