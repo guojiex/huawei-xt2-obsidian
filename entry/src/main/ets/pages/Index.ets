@@ -186,6 +186,8 @@ struct Index {
   @State rightComposing: boolean = false;
   @State rightEditorDirty: boolean = false;
   @State rightEditorLen: number = 0;
+  @State leftCodeBlockActive: boolean = false;
+  @State rightCodeBlockActive: boolean = false;
   @State rightImagePickerBusy: boolean = false;
   @State chapterEntries: ChapterEntry[] = [];
   @State selectedChapterIndex: number = -1;
@@ -3624,7 +3626,9 @@ struct Index {
     Row() {
       Text(label)
         .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_primary'))
+        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
+          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
+          ? $r('app.color.brand') : $r('app.color.text_primary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
@@ -3634,7 +3638,12 @@ struct Index {
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .borderRadius(Radius.icon)
-    .backgroundColor($r('app.color.bg_secondary'))
+    .backgroundColor(kind === 'code' && (this.formatMenuPane === 'right'
+      ? this.rightCodeBlockActive : this.leftCodeBlockActive)
+      ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
+    .border({ width: 1, color: kind === 'code' && (this.formatMenuPane === 'right'
+      ? this.rightCodeBlockActive : this.leftCodeBlockActive)
+      ? $r('app.color.brand') : Color.Transparent })
     .onClick((): void => {
       this.formatMenuOpen = false;
       this.applyEditorFormat(kind, this.formatMenuPane);
@@ -3794,6 +3803,9 @@ struct Index {
             onCompositionChange: (composing: boolean): void => {
               this.onRightCompositionChange(composing);
             },
+            onCodeBlockStateChange: (active: boolean): void => {
+              this.rightCodeBlockActive = active;
+            },
             onLinkCompletion: (id: number, query: string): void => {
               this.provideRightWikiLinkCompletions(id, query);
             },
@@ -3874,6 +3886,9 @@ struct Index {
           },
           onCompositionChange: (composing: boolean): void => {
             this.onLeftCompositionChange(composing);
+          },
+          onCodeBlockStateChange: (active: boolean): void => {
+            this.leftCodeBlockActive = active;
           },
           onLinkCompletion: (id: number, query: string): void => {
             this.provideWikiLinkCompletions(id, query);

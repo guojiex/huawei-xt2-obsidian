@@ -231,6 +231,8 @@ export struct EditorWebView {
   onChange: (len: number) => void = (len: number) => {};
   /** 输入法组合输入开始 / 结束；组合期间禁止向该编辑器下发另一栏内容。 */
   onCompositionChange: (composing: boolean) => void = (composing: boolean) => {};
+  /** 当前光标 / 选区是否位于同一个围栏代码块。 */
+  onCodeBlockStateChange: (active: boolean) => void = (active: boolean) => {};
   /** 页面就绪（首帧可交互） */
   onReady: () => void = () => {};
   /** Web 加载错误 */
@@ -315,6 +317,8 @@ export struct EditorWebView {
       this.onChange((msg['len'] as number) ?? 0);
     } else if (name === 'composition') {
       this.onCompositionChange((msg['composing'] as boolean) ?? false);
+    } else if (name === 'codeBlockState') {
+      this.onCodeBlockStateChange((msg['active'] as boolean) ?? false);
     } else if (name === 'linkCompletion') {
       this.onLinkCompletion(msg['id'] as number, msg['query'] as string);
     }

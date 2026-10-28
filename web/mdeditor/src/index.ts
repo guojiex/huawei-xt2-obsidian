@@ -24,7 +24,7 @@ import { autocompletion } from '@codemirror/autocomplete'
 import { EditorView } from '@codemirror/view'
 import { Compartment, EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { syntaxHighlighting, defaultHighlightStyle, syntaxTree } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 
 declare global {
@@ -218,9 +218,180 @@ let view: EditorView | null = null
 let changeTimer: number | undefined = undefined
 let isComposing = false
 let applyingContent = false
+let documentLineEnding = '\n'
 const editableCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 let isEditable = true
+
+interface FencedCodeBlock {
+  from: number
+  bodyFrom: number
+  closeLineFrom: number
+  removeTo: number
+  closed: boolean
+  closeLineEnding: string
+}
+
+function enclosingFencedCodeNode(state: EditorState, position: number, bias: -1 | 1) {
+  const safePosition = Math.max(0, Math.min(position, state.doc.length))
+  let node = syntaxTree(state).resolveInner(safePosition, bias)
+  while (node) {
+    if (node.name === 'FencedCode') {
+      return node
+    }
+    node = node.parent
+  }
+  return null
+}
+
+function selectedFencedCodeNode(state: EditorState) {
+  const selection = state.selection.main
+  if (selection.empty) {
+    return enclosingFencedCodeNode(state, selection.from, 1) ??
+      (selection.from > 0 ? enclosingFencedCodeNode(state, selection.from - 1, 1) : null)
+  }
+  const first = enclosingFencedCodeNode(state, selection.from, 1)
+  const last = enclosingFencedCodeNode(state, selection.to - 1, -1)
+  return first && last && first.from === last.from && first.to === last.to ? first : null
+}
+
+function lineEndingAfter(state: EditorState, lineEnd: number): { text: string, end: number } {
+  const next = state.doc.sliceString(lineEnd, lineEnd + 2)
+  if (next.startsWith('\r\n')) {
+    return { text: '\r\n', end: lineEnd + 2 }
+  }
+  if (next.startsWith('\n')) {
+    return {
+      text: state.doc.sliceString(lineEnd - 1, lineEnd) === '\r' ? '\r\n' : '\n',
+      end: lineEnd + 1
+    }
+  }
+  return { text: '', end: lineEnd }
+}
+
+function selectedFencedCodeBlock(state: EditorState): FencedCodeBlock | null {
+  const node = selectedFencedCodeNode(state)
+  if (!node) {
+    return null
+  }
+  let openingMark: typeof node | null = null
+  let closingMark: typeof node | null = null
+  let child = node.firstChild
+  while (child) {
+    if (child.name === 'CodeMark') {
+      if (openingMark === null) {
+        openingMark = child
+      } else {
+        closingMark = child
+      }
+    }
+    child = child.nextSibling
+  }
+  if (openingMark === null) {
+    return null
+  }
+  const openingLine = state.doc.lineAt(openingMark.from)
+  const openingPrefix = state.doc.sliceString(openingLine.from, openingMark.from)
+  if (!/^ {0,3}$/.test(openingPrefix)) {
+    return null
+  }
+  const bodyFrom = lineEndingAfter(state, openingLine.to).end
+  if (closingMark === null) {
+    return {
+      from: openingLine.from,
+      bodyFrom: bodyFrom,
+      closeLineFrom: state.doc.length,
+      removeTo: bodyFrom,
+      closed: false,
+      closeLineEnding: ''
+    }
+  }
+  const closingLine = state.doc.lineAt(closingMark.from)
+  const closingPrefix = state.doc.sliceString(closingLine.from, closingMark.from)
+  if (!/^ {0,3}$/.test(closingPrefix)) {
+    return null
+  }
+  const closeEnding = lineEndingAfter(state, closingLine.to)
+  return {
+    from: openingLine.from,
+    bodyFrom: bodyFrom,
+    closeLineFrom: closingLine.from,
+    removeTo: closeEnding.end,
+    closed: true,
+    closeLineEnding: closeEnding.text
+  }
+}
+
+let reportedCodeBlockState = false
+
+function reportCodeBlockSelection(state: EditorState): void {
+  const active = selectedFencedCodeBlock(state) !== null
+  if (active === reportedCodeBlockState) {
+    return
+  }
+  reportedCodeBlockState = active
+  postToArkts({ type: 'event', name: 'codeBlockState', active: active })
+}
+
+function preferredLineEnding(): string {
+  return '\n'
+}
+
+function serializeEditorText(text: string): string {
+  return documentLineEnding === '\r\n' ? text.replace(/\n/g, '\r\n') : text
+}
+
+function applyCodeBlockFormat(): void {
+  if (!view || !isEditable) {
+    return
+  }
+  const state = view.state
+  const selection = state.selection.main
+  const block = selectedFencedCodeBlock(state)
+  if (block) {
+    const bodyEnd = block.closed ? block.closeLineFrom : state.doc.length
+    const rawBody = state.sliceDoc(block.bodyFrom, bodyEnd)
+    const content = block.closed
+      ? (rawBody.endsWith('\r\n') ? rawBody.slice(0, -2) :
+        rawBody.endsWith('\n') ? rawBody.slice(0, -1) : rawBody)
+      : rawBody
+    const replacement = block.closed ? content + block.closeLineEnding : content
+    const replaceTo = block.closed ? block.removeTo : block.bodyFrom
+    view.dispatch({
+      changes: { from: block.from, to: replaceTo, insert: replacement },
+      selection: { anchor: block.from, head: block.from + content.length },
+      scrollIntoView: true,
+      userEvent: 'input'
+    })
+    view.focus()
+    return
+  }
+
+  const selected = state.sliceDoc(selection.from, selection.to)
+  const content = selected || '代码'
+  const lineEnding = preferredLineEnding()
+  const runs = content.match(/`+/g) ?? []
+  let fenceLength = 2
+  for (const run of runs) {
+    fenceLength = Math.max(fenceLength, run.length)
+  }
+  const fence = '`'.repeat(fenceLength + 1)
+  const prefix = selection.from > 0 && state.sliceDoc(selection.from - 1, selection.from) !== '\n'
+    ? lineEnding : ''
+  const suffix = selection.to < state.doc.length && state.sliceDoc(selection.to, selection.to + 1) !== '\n'
+    ? lineEnding : ''
+  const opening = fence + lineEnding
+  const closingBreak = content.endsWith('\n') ? '' : lineEnding
+  const replacement = prefix + opening + content + closingBreak + fence + suffix
+  const contentStart = selection.from + prefix.length + opening.length
+  view.dispatch({
+    changes: { from: selection.from, to: selection.to, insert: replacement },
+    selection: { anchor: contentStart, head: contentStart + content.length },
+    scrollIntoView: true,
+    userEvent: 'input'
+  })
+  view.focus()
+}
 
 function extensionsFor(theme: string) {
   return [
@@ -236,6 +407,9 @@ function extensionsFor(theme: string) {
     // 实证）：最初放在 ensureView 的 concat 里，setTheme 热切换用 extensionsFor 重建 state
     // 时把它丢了 → docChanged 无人监听 → change 事件从此绝迹、防抖自动保存/预览联动全失效。
     EditorView.updateListener.of((update) => {
+      if (update.selectionSet || update.docChanged) {
+        reportCodeBlockSelection(update.state)
+      }
       if (!update.docChanged || applyingContent) {
         return
       }
@@ -292,6 +466,10 @@ function applyMarkdownFormat(kind: string): void {
   if (!view || !isEditable) {
     return
   }
+  if (kind === 'code') {
+    applyCodeBlockFormat()
+    return
+  }
   const state = view.state
   const value = state.doc.toString()
   const selection = state.selection.main
@@ -332,11 +510,7 @@ function applyMarkdownFormat(kind: string): void {
       quote: '> '
     }
     let prefix = prefixes[kind]
-    if (kind === 'code') {
-      replacement = '```\n' + (selected || '代码') + '\n```'
-      selectionStart = start + 4
-      selectionEnd = selectionStart + (selected || '代码').length
-    } else if (prefix) {
+    if (prefix) {
       replacement = (selected || (kind === 'quote' ? '引用文字' : '列表项'))
         .split('\n').map((line: string, index: number): string =>
           (kind === 'ordered' ? (index + 1).toString() + '. ' : prefix) + line).join('\n')
@@ -364,7 +538,9 @@ function applyMarkdownFormat(kind: string): void {
 
 const api: MdEditorApi = {
   setContent(b64: string): void {
-    const text = b64decode(b64)
+    const sourceText = b64decode(b64)
+    documentLineEnding = sourceText.includes('\r\n') ? '\r\n' : '\n'
+    const text = sourceText.replace(/\r\n/g, '\n')
     // 诊断：证明 ArkTS→JS 内容下发成功（经 onConsole 进 hilog，tag=EditorWebView）
     console.log('[mdeditor] setContent len=' + text.length)
     const v = ensureView()
@@ -383,13 +559,13 @@ const api: MdEditorApi = {
 
   getContent(): string {
     const v = ensureView()
-    return b64encode(v.state.doc.toString())
+    return b64encode(serializeEditorText(v.state.doc.toString()))
   },
 
   /** ArkTS 侧内容拉取入口：把全量内容 base64 后经 content 事件回传（不走 runJavaScript 返回值） */
   requestContent(reqId: number): void {
     const v = ensureView()
-    const b64 = b64encode(v.state.doc.toString())
+    const b64 = b64encode(serializeEditorText(v.state.doc.toString()))
     console.log('[mdeditor] requestContent id=' + reqId + ' len=' + v.state.doc.length)
     postToArkts({ type: 'event', name: 'content', id: reqId, b64: b64 })
   },
