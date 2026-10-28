@@ -208,7 +208,7 @@ export struct VaultSidebar {
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
     // 原型 --elev-3 的单层近似（两层 CSS 阴影 ArkUI 只能合一层）
-    .shadow({ radius: 30, color: '#2E000000', offsetX: 0, offsetY: 10 })
+    .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
   }
 
   private vaultTypeLabel(): string {
@@ -222,6 +222,40 @@ export struct VaultSidebar {
 
   build() {
     Column() {
+      Row({ space: Space.s3 }) {
+        Row() {
+          Text('曜')
+            .fontSize(FontSize.s3)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.on_brand'))
+        }
+        .width(Space.s8)
+        .height(Space.s8)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .borderRadius(Radius.control)
+        .backgroundColor($r('app.color.brand'))
+
+        Text('曜石笔记')
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+
+        if (this.asDrawer) {
+          Text('×')
+            .fontSize(FontSize.s1)
+            .fontColor($r('app.color.text_secondary'))
+            .width(Size.touch)
+            .height(Size.touch)
+            .textAlign(TextAlign.Center)
+            .onClick((): void => { this.onCollapse(); })
+        }
+      }
+      .width('100%')
+      .padding({ left: Space.s2, right: Space.s2 })
+      .margin({ bottom: this.compact ? Space.s2 : Space.s6 })
+
       // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset（原型 --sp-3 = 12）。
       // ⚠️ inset 不能写在卡片自己的 margin 上再配 width('100%')：ArkUI 的百分比取父级
       // 内容盒的 100%，margin 加在盒外 → 卡片实际占宽 = 侧栏宽 + 2×margin，右缘越过
@@ -275,7 +309,7 @@ export struct VaultSidebar {
         .backgroundColor($r('app.color.bg_card'))
         .border({ width: 1, color: $r('app.color.line') })
         // 原型 --elev-1 的单层近似
-        .shadow({ radius: 8, color: '#0F000000', offsetX: 0, offsetY: 2 })
+        .shadow({ radius: 8, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 2 })
         .alignItems(VerticalAlign.Center)
         .onClick(() => {
           this.menuOpen = !this.menuOpen;
@@ -433,7 +467,7 @@ export struct VaultSidebar {
                   .height(Size.touch)
                   .padding({ left: Space.s2 + (chapter.level - 1) * Space.s3, right: Space.s3 })
                   .backgroundColor(chapter.index === this.selectedChapterIndex
-                    ? $r('app.color.brand_bg') : $r('app.color.bg_page'))
+                    ? $r('app.color.brand_bg') : $r('app.color.bg_navigation'))
                   .borderRadius(Radius.control)
                   .onClick((): void => { this.onSelectChapter(chapter.index); })
                 }
@@ -468,40 +502,25 @@ export struct VaultSidebar {
           .textAlign(TextAlign.RIGHT)
           .padding({ top: Space.s1, left: Space.s4, right: Space.s4, bottom: Space.s3 })
 
-        Row({ space: Space.s2 }) {
-          Text('管理库')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_primary'))
-            .height(Size.buttonH)
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .backgroundColor($r('app.color.bg_card'))
-            .border({ width: 1, color: $r('app.color.line') })
-            .borderRadius(Radius.control)
-            .onClick(() => {
-              this.onManageVaults();
-            })
+        Row({ space: Space.s3 }) {
+          Icon('trash', 18, $r('app.color.text_secondary'))
           Text('回收站')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_primary'))
-            .height(Size.buttonH)
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_secondary'))
             .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .backgroundColor($r('app.color.bg_card'))
-            .border({ width: 1, color: $r('app.color.line') })
-            .borderRadius(Radius.control)
-            .onClick(() => {
-              this.onOpenTrash();
-            })
         }
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .borderRadius(Radius.icon)
+        .onClick(() => { this.onOpenTrash(); })
         .width('100%')
-        .padding(Space.s3)
+        .margin({ top: Space.s3 })
         .border({ width: { top: 1 }, color: $r('app.color.line') })
-        .backgroundColor($r('app.color.bg_card'))
+        .backgroundColor(Color.Transparent)
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.bg_page'))
+    .backgroundColor($r('app.color.bg_navigation'))
   }
 }

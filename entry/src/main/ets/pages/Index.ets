@@ -69,8 +69,7 @@ const TAG: string = 'Index';
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
-  title: string;
-  showImageAction?: boolean;
+  pane: string;
 }
 
 /** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
@@ -165,9 +164,14 @@ struct Index {
   @State rightFilePath: string = '';
   @State rightEditing: boolean = false;
   @State activePane: string = 'left';
+  @State referenceVisible: boolean = true;
+  @State focused: boolean = false;
+  @State paneMoreOpen: boolean = false;
+  @State paneMorePane: string = 'left';
   @State leftComposing: boolean = false;
   @State rightComposing: boolean = false;
   @State rightEditorDirty: boolean = false;
+  @State rightEditorLen: number = 0;
   @State rightImagePickerBusy: boolean = false;
   @State chapterEntries: ChapterEntry[] = [];
   @State selectedChapterIndex: number = -1;
@@ -179,6 +183,7 @@ struct Index {
   private rightLastPreviewText: string = '';
   @State backlinkPaths: string[] = [];
   @State backlinksExpanded: boolean = false;
+  @State backlinksPane: string = 'left';
   @State backlinksLoading: boolean = false;
   @State backlinksFailed: boolean = false;
   /**
@@ -289,7 +294,9 @@ struct Index {
   private noteNavigationWidth(): number {
     const splitters: number = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape() ? 2 : 1;
     const contentPanes: number = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape() ? 2 : 1;
-    return navigationWidth(this.windowWidthVp, this.navigationRatio, contentPanes, splitters);
+    const ratio: number = this.navigationRatio < 0 && this.breakpoint === Breakpoint.MD
+      ? 0.38 : this.navigationRatio;
+    return navigationWidth(this.windowWidthVp, ratio, contentPanes, splitters);
   }
 
   private agentNavigationWidth(): number {
@@ -298,7 +305,7 @@ struct Index {
 
   private noteContentWidth(): number {
     const navWidth: number = this.noteNavigationWidth() * this.sidebarProgress;
-    const navHandleWidth: number = this.breakpoint === Breakpoint.LG || this.isSingleLandscape()
+    const navHandleWidth: number = this.breakpoint !== Breakpoint.SM
       ? Space.s4 * this.sidebarProgress : 0;
     const contentHandleWidth: number = this.breakpoint === Breakpoint.LG ? Space.s4 : 0;
     return Math.max(0, this.windowWidthVp - navWidth - navHandleWidth - contentHandleWidth);
@@ -402,7 +409,8 @@ struct Index {
 
   private async refreshBacklinks(): Promise<void> {
     const vaultId: string = this.currentVaultId;
-    const targetPath: string = this.currentFilePath;
+    const targetPath: string = this.activeFilePath();
+    const targetPane: string = this.activePane;
     this.backlinkPaths = [];
     this.backlinksFailed = false;
     if (vaultId.length === 0 || targetPath.length === 0) {
@@ -412,12 +420,12 @@ struct Index {
     this.backlinksLoading = true;
     try {
       const paths: string[] = await WikiLinkService.backlinks(VaultRegistry.get(), vaultId, targetPath);
-      if (vaultId === this.currentVaultId && targetPath === this.currentFilePath) {
+      if (vaultId === this.currentVaultId && targetPane === this.activePane && targetPath === this.activeFilePath()) {
         this.backlinkPaths = paths;
         this.backlinksLoading = false;
       }
     } catch (error) {
-      if (vaultId === this.currentVaultId && targetPath === this.currentFilePath) {
+      if (vaultId === this.currentVaultId && targetPane === this.activePane && targetPath === this.activeFilePath()) {
         this.backlinksLoading = false;
         this.backlinksFailed = true;
       }
@@ -731,6 +739,7 @@ struct Index {
     this.activePane = pane === 'right' ? 'right' : 'left';
     void this.refreshSharedEditability();
     void this.refreshActiveChaptersFromBridge();
+    void this.refreshBacklinks();
     if (this.activePane === 'right' && this.rightFilePath.length === 0 && this.currentFilePath.length > 0) {
       void this.loadRightFile(this.currentFilePath);
     }
@@ -764,7 +773,80 @@ struct Index {
   }
 
   private toggleActivePane(): void {
-    this.setActivePane(this.activePane === 'left' ? 'right' : 'left');
+    const nextPane: string = this.activePane === 'left' ? 'right' : 'left';
+    if (nextPane === 'right') {
+      this.referenceVisible = true;
+      if (this.breakpoint === Breakpoint.MD) {
+        this.setSidebarCollapsed(true);
+      }
+    }
+    this.setActivePane(nextPane);
+  }
+
+  private toggleReference(): void {
+    if (this.focused) {
+      return;
+    }
+    const show: boolean = !this.isReferenceShown();
+    this.referenceVisible = show;
+    if (show && this.breakpoint === Breakpoint.MD) {
+      this.setSidebarCollapsed(true);
+    }
+    if (show && this.breakpoint === Breakpoint.SM) {
+      this.setActivePane('right');
+    } else if (!show && this.activePane === 'right') {
+      this.setActivePane('left');
+    }
+  }
+
+  private isReferenceShown(): boolean {
+    if (!this.referenceVisible || this.focused) {
+      return false;
+    }
+    if (this.breakpoint === Breakpoint.SM) {
+      return this.activePane === 'right';
+    }
+    if (this.breakpoint === Breakpoint.MD) {
+      return this.sidebarCollapsed;
+    }
+    return true;
+  }
+
+  private toggleFocus(): void {
+    this.focused = !this.focused;
+    this.moreMenuOpen = false;
+    this.paneMoreOpen = false;
+  }
+
+  private choosePaneNote(pane: string): void {
+    this.setActivePane(pane);
+    if (pane === 'right') {
+      this.referenceVisible = true;
+      if (this.breakpoint === Breakpoint.MD) {
+        this.setSidebarCollapsed(true);
+      }
+    }
+    this.openQuickSwitcher();
+  }
+
+  private previewActiveNoteInOtherPane(pane: string): void {
+    const sourcePath: string = pane === 'left' ? this.currentFilePath : this.rightFilePath;
+    if (sourcePath.length === 0) {
+      return;
+    }
+    if (pane === 'left') {
+      this.rightEditing = false;
+      this.referenceVisible = true;
+      if (this.breakpoint === Breakpoint.MD) {
+        this.setSidebarCollapsed(true);
+      }
+      this.setActivePane('right');
+      void this.loadRightFile(sourcePath);
+    } else {
+      this.smMode = 'preview';
+      this.setActivePane('left');
+      void this.loadFile(sourcePath);
+    }
   }
 
   private isPaneEditable(pane: string): boolean {
@@ -787,8 +869,11 @@ struct Index {
 
   private appBarTitle(): string {
     if (this.topView === 'note') {
-      return this.breakpoint === Breakpoint.SM || this.sidebarCollapsed
-        ? this.currentVaultName() : '曜石笔记';
+      if (this.breakpoint === Breakpoint.SM && this.drawerOpen) {
+        return '';
+      }
+      return this.breakpoint === Breakpoint.SM || this.sidebarCollapsed || this.focused
+        ? this.currentVaultName() : '';
     }
     if (this.topView === 'vaults') {
       return '笔记库';
@@ -880,6 +965,7 @@ struct Index {
     }
     this.lastSavedText = text;
     this.editorDirty = false;
+    this.editorLen = text.length;
     await this.editorBridge.setContent(text);
     if (relPath.length > 0 && relPath === this.rightFilePath) {
       this.rightLastSavedText = text;
@@ -914,6 +1000,7 @@ struct Index {
     }
     this.rightLastSavedText = text;
     this.rightEditorDirty = false;
+    this.rightEditorLen = text.length;
     await this.rightEditorBridge.setContent(text);
     this.rightPreviewBridge.resetDocument();
     this.rightPreviewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
@@ -1473,7 +1560,7 @@ struct Index {
     return out;
   }
 
-  /** 顶栏汉堡只控制当前工作区侧栏；工作区切换由旁边的独立图标处理。 */
+  /** 顶栏汉堡只控制当前工作区导航。 */
   private onHamburger(): void {
     if (this.topView === 'agent') {
       this.agentHamburgerSeq++;
@@ -1481,9 +1568,10 @@ struct Index {
     }
     if (this.breakpoint === Breakpoint.SM) {
       this.setDrawerOpen(!this.drawerOpen);
-    } else if (this.isSingleLandscape()) {
-      this.setSidebarCollapsed(!this.sidebarCollapsed);
     } else {
+      if (this.breakpoint === Breakpoint.MD && this.sidebarCollapsed && this.activePane === 'right') {
+        this.setActivePane('left');
+      }
       this.setSidebarCollapsed(!this.sidebarCollapsed);
     }
   }
@@ -2439,101 +2527,349 @@ struct Index {
     .onClick(onTap)
   }
 
-  /** 单屏态「编辑 / 预览」分段控件（SegmentedButton 观感） */
   @Builder
-  SegToggle() {
-    Row({ space: 2 }) {
-      Text('编辑')
-        .segItem(this.smMode === 'edit')
-        .onClick(() => {
-          this.smMode = 'edit';
-          void this.refreshSharedEditability();
-        })
-      Text('预览')
-        .segItem(this.smMode === 'preview')
-        .onClick(() => {
-          this.smMode = 'preview';
-          void this.refreshSharedEditability();
-          // 切到预览立刻拉一次编辑器当前内容：Web 侧 change 事件有 300ms 防抖，
-          // 点击前刚敲的字可能还没报上来，直接 getContent 才是最新
-          void this.updatePreviewFromEditor();
-        })
+  PaneModeButton(pane: string, label: string, selected: boolean) {
+    Row() {
+      Text(label)
+        .fontSize(FontSize.body2)
+        .fontWeight(selected ? FontWeight.Medium : FontWeight.Normal)
+        .fontColor(selected ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
     }
-    .padding(2)
+    .height(Size.touch - Space.s2)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .justifyContent(FlexAlign.Center)
     .borderRadius(Radius.full)
-    .backgroundColor($r('app.color.bg_secondary'))
+    .backgroundColor(selected ? $r('app.color.bg_card') : Color.Transparent)
+    .onClick((): void => {
+      this.setActivePane(pane);
+      const editing: boolean = label === '编辑';
+      if (pane === 'right') {
+        this.rightEditing = editing;
+        if (editing) {
+          void this.syncLeftContentToRight();
+        } else {
+          void this.syncRightContentToLeft();
+        }
+      } else {
+        this.smMode = editing ? 'edit' : 'preview';
+        if (!editing) {
+          void this.updatePreviewFromEditor();
+        }
+      }
+      void this.refreshSharedEditability();
+    })
   }
 
-  /** 栏头：单屏显示编辑/预览切换，sm 隐去标题。⚠️ $$ 按引用传参：按值传参时
-   *  @Builder 不随状态刷新（实测：编辑区标题永远停在「源模式」，currentFilePath 变了不动） */
+  @Builder
+  PaneMoreMenu(pane: string) {
+    Column() {
+      Row() {
+        Text('在另一栏预览')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .onClick((): void => {
+        this.paneMoreOpen = false;
+        this.previewActiveNoteInOtherPane(pane);
+      })
+      Row() {
+        Text(this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .onClick((): void => {
+        this.paneMoreOpen = false;
+        this.setActivePane(pane);
+        const samePaneExpanded: boolean = this.backlinksExpanded && this.backlinksPane === pane;
+        this.backlinksPane = pane;
+        this.backlinksExpanded = !samePaneExpanded;
+        void this.refreshBacklinks();
+      })
+    }
+    .width(Size.sidebarW)
+    .padding(Space.s2)
+    .borderRadius(Radius.menu)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+    .shadow({ radius: 20, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 8 })
+  }
+
+  @Builder
+  PaneMoreButton(pane: string) {
+    Row() {
+      Icon('more', 20, $r('app.color.text_secondary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(Radius.icon)
+    .onClick((): void => {
+      this.paneMorePane = pane;
+      this.paneMoreOpen = !this.paneMoreOpen;
+    })
+    .bindPopup(this.paneMoreOpen && this.paneMorePane === pane, {
+      builder: this.PaneMoreMenu(pane),
+      placement: Placement.BottomRight,
+      enableArrow: false,
+      offset: { x: 0, y: Space.s1 },
+      mask: false,
+      autoCancel: true,
+      popupColor: Color.Transparent,
+      onWillDismiss: (action: DismissPopupAction): void => {
+        action.dismiss();
+        this.paneMoreOpen = false;
+      }
+    })
+  }
+
+  /** 与 v2 一致：每栏固定显示模式切换、选择笔记和栏内更多操作。 */
   @Builder
   PaneHead($$: PaneHeadParam) {
-    Row() {
-      Text(this.breakpoint === Breakpoint.SM ? '' : $$.title)
-        .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_tertiary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-      if ($$.showImageAction === true && this.currentFilePath.length > 0) {
-        Button(this.imagePickerBusy ? '导入中' : '插入图片')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_primary'))
-          .backgroundColor(Color.Transparent)
-          .padding({ left: Space.s2, right: Space.s2 })
-          .enabled(!this.imagePickerBusy && this.editorBridge.ready)
-          .onClick((): void => {
-            void this.pickImageForCurrentNote();
-          })
+    Row({ space: Space.s1 }) {
+      Row({ space: 2 }) {
+        this.PaneModeButton($$.pane, '编辑', $$.pane === 'right' ? this.rightEditing : this.smMode === 'edit')
+        this.PaneModeButton($$.pane, '预览', $$.pane === 'right' ? !this.rightEditing : this.smMode === 'preview')
       }
-      if (this.isSingleScreenLayout()) {
-        this.SegToggle()
+      .padding(2)
+      .borderRadius(Radius.full)
+      .backgroundColor($r('app.color.bg_secondary'))
+
+      if (($$.pane === 'right' ? this.rightEditing : this.smMode === 'edit') &&
+        ($$.pane === 'right' ? this.rightFilePath : this.currentFilePath).length > 0) {
+        Text(($$.pane === 'right' ? this.rightImagePickerBusy : this.imagePickerBusy) ? '导入中…' : '＋ 图片')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .onClick((): void => { void this.pickImageForCurrentNote($$.pane); })
+      }
+      Text('选择笔记')
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.brand'))
+        .maxLines(1)
+        .onClick((): void => { this.choosePaneNote($$.pane); })
+      if (this.breakpoint !== Breakpoint.SM) {
+        this.PaneMoreButton($$.pane)
       }
     }
     .width('100%')
-    .height(Size.paneHeadH)
-    .padding({ left: Space.s4, right: Space.s2 })
+    .height(Size.touch)
+    .padding({ left: Space.s3, right: Space.s2 })
     .alignItems(VerticalAlign.Center)
-    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+    .border({ width: { bottom: 2 }, color: this.activePane === $$.pane
+      ? $r('app.color.brand') : $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
+  }
+
+  @Builder
+  PaneTitle(path: string) {
+    Text(path.length > 0 ? path : '未选择笔记')
+      .fontSize(FontSize.caption)
+      .fontColor($r('app.color.text_tertiary'))
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .width('100%')
+      .padding({ left: Space.s4, right: Space.s4, top: Space.s1, bottom: Space.s1 })
+      .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+  }
+
+  @Builder
+  NoteWorkspaceShell() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      if (this.breakpoint === Breakpoint.SM) {
+        Column() {
+          this.Appbar()
+          Column() {
+            this.NoteBody()
+          }
+          .layoutWeight(1)
+          .width('100%')
+          this.Statusbar()
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.drawerOpen ? Visibility.Hidden : Visibility.Visible)
+
+        Column() {
+          this.NoteNavigation(true)
+        }
+          .width('100%')
+          .height('100%')
+          .visibility(this.drawerOpen ? Visibility.Visible : Visibility.Hidden)
+      } else {
+        Row() {
+          Column() {
+            this.NoteNavigation(false)
+          }
+          .width(this.sidebarCollapsed || this.focused ? 0 : this.noteNavigationWidth())
+          .height('100%')
+          .visibility(this.sidebarCollapsed || this.focused ? Visibility.Hidden : Visibility.Visible)
+
+          if (!this.sidebarCollapsed && !this.focused) {
+            SplitHandle({
+              dragStarted: (): void => { this.startNavigationDrag(false); },
+              dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
+              dragEnded: (): void => { this.endSplitDrag(); },
+              resetRequested: (): void => { this.resetSplitLayout(); }
+            })
+              .width(Space.s4)
+              .enabled(!this.focused)
+          }
+
+          Column() {
+            this.Appbar()
+            Column() {
+              this.NoteBody()
+            }
+            .layoutWeight(1)
+            .width('100%')
+            this.Statusbar()
+          }
+          .layoutWeight(1)
+          .height('100%')
+        }
+        .width('100%')
+        .height('100%')
+      }
+
+      if (this.undoVisible) {
+        this.UndoBar()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.bg_page'))
+  }
+
+  @Builder
+  NoteBody() {
+    if (this.breakpoint === Breakpoint.SM) {
+      Stack({ alignContent: Alignment.Start }) {
+        Column() {
+          this.LeftWorkspacePane(false)
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
+
+        Column() {
+          this.RightWorkspacePane()
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
+      }
+      .width('100%')
+      .height('100%')
+    } else if (this.focused) {
+      Stack({ alignContent: Alignment.Start }) {
+        Column() {
+          this.LeftWorkspacePane(false)
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
+
+        Column() {
+          this.RightWorkspacePane()
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
+      }
+      .width('100%')
+      .height('100%')
+    } else if (this.breakpoint === Breakpoint.MD) {
+      Row() {
+        Column() {
+          this.LeftWorkspacePane(false)
+        }
+        .width(this.sidebarCollapsed && this.referenceVisible ? '50%' : '100%')
+        .height('100%')
+
+        Column() {
+          this.RightWorkspacePane()
+        }
+        .width(this.sidebarCollapsed && this.referenceVisible ? '50%' : 0)
+        .height('100%')
+        .visibility(this.sidebarCollapsed && this.referenceVisible ? Visibility.Visible : Visibility.Hidden)
+      }
+      .width('100%')
+      .height('100%')
+    } else {
+      Row() {
+        Column() {
+          this.LeftWorkspacePane(false)
+        }
+        .width(this.referenceVisible ? this.noteContentWidth() * this.noteContentRatio() : '100%')
+        .height('100%')
+
+        if (this.referenceVisible) {
+          SplitHandle({
+            dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
+            dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
+            dragEnded: (): void => { this.endSplitDrag(); },
+            resetRequested: (): void => { this.resetSplitLayout(); }
+          })
+            .width(Space.s4)
+        }
+
+        Column() {
+          this.RightWorkspacePane()
+        }
+        .width(this.referenceVisible ? this.noteContentWidth() * (1 - this.noteContentRatio()) : 0)
+        .height('100%')
+        .visibility(this.referenceVisible ? Visibility.Visible : Visibility.Hidden)
+      }
+      .width('100%')
+      .height('100%')
+    }
   }
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
-        this.Appbar()
-        // alignContent = Bottom：给撤销条（自动宽高的子节点）一个「底部居中」的落点；
-        // 其余视图都显式铺满 100%×100%，对齐方式对它们没有影响。
-        Stack({ alignContent: Alignment.Bottom }) {
-          if (this.topView === 'vaults') {
-            this.ManagerView()
-          } else if (this.topView === 'trash') {
-            this.TrashPane()
-          } else if (this.topView === 'history') {
-            ReleaseHistoryView()
-          } else if (this.topView === 'settings') {
-            this.SettingsPane()
-          } else if (this.topView === 'agent') {
-            this.AgentPane()
-          } else if (this.isSingleLandscape()) {
-            this.SingleLandscapeContent()
-          } else if (this.breakpoint === Breakpoint.SM) {
-            this.SmContent()
-          } else {
-            this.WideContent()
-          }
-          // 5 秒撤销条（1.7）：覆盖在内容之上，底部居中、离底 --sp-6（原型 .undo-bar）
-          if (this.undoVisible) {
-            this.UndoBar()
-          }
-        }
-        .layoutWeight(1)
-        .width('100%')
-        this.Statusbar()
+        this.NoteWorkspaceShell()
       }
-      .width('100%')
-      .height('100%')
-      .backgroundColor($r('app.color.bg_page'))
+        .width('100%')
+        .height('100%')
+        .visibility(this.topView === 'note' ? Visibility.Visible : Visibility.Hidden)
+
+      if (this.topView !== 'note') {
+        Column() {
+          this.Appbar()
+          // 次级页面覆盖在工作区上方，工作区 Web 编辑器保持挂载。
+          Stack({ alignContent: Alignment.Bottom }) {
+            if (this.topView === 'vaults') {
+              this.ManagerView()
+            } else if (this.topView === 'trash') {
+              this.TrashPane()
+            } else if (this.topView === 'history') {
+              ReleaseHistoryView()
+            } else if (this.topView === 'settings') {
+              this.SettingsPane()
+            } else if (this.topView === 'agent') {
+              this.AgentPane()
+            }
+            if (this.undoVisible) {
+              this.UndoBar()
+            }
+          }
+          .layoutWeight(1)
+          .width('100%')
+          this.Statusbar()
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.bg_page'))
+      }
       if (this.quickSwitchOpen && this.topView === 'note') {
         QuickSwitcher({
           filePaths: this.quickSwitchFiles,
@@ -2590,7 +2926,7 @@ struct Index {
     .borderRadius(Radius.snack)
     .backgroundColor($r('app.color.snack_bg'))
     // 原型 --elev-3 的单层近似（与 VaultMenu 同款）
-    .shadow({ radius: 30, color: '#2E000000', offsetX: 0, offsetY: 10 })
+    .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
     .margin({ bottom: Space.s6 })
   }
 
@@ -2675,11 +3011,11 @@ struct Index {
           })
         }
       }
-      // 笔记视图标题随形态与目录栏显隐变化；次级视图固定显示页面名。
+      // v2 的顶栏只显示当前库名；目录可见时留出标题空间但不重复显示库名。
       Text(this.appBarTitle())
-        .fontSize(FontSize.s2)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
+        .fontSize(this.topView === 'note' ? FontSize.caption : FontSize.body1)
+        .fontWeight(this.topView === 'note' ? FontWeight.Normal : FontWeight.Medium)
+        .fontColor(this.topView === 'note' ? $r('app.color.text_tertiary') : $r('app.color.text_primary'))
         .layoutWeight(1)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2690,10 +3026,32 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
-        this.IconButton('swap', $r('app.color.text_secondary'), (): void => {
-          this.toggleActivePane();
-        })
-        this.MoreMenuButton()
+        if (this.breakpoint === Breakpoint.SM) {
+          this.IconButton('swap', $r('app.color.text_secondary'), (): void => {
+            this.toggleActivePane();
+          })
+          this.MoreMenuButton()
+        } else {
+          this.IconButton('columns', this.isReferenceShown()
+            ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
+            this.toggleReference();
+          })
+          if (this.breakpoint === Breakpoint.MD && !this.sidebarCollapsed && !this.focused) {
+            this.IconButton('swap', $r('app.color.text_secondary'), (): void => {
+              this.toggleActivePane();
+            })
+          }
+          this.IconButton('share', $r('app.color.text_secondary'), (): void => {
+            this.openShareNoteDialog();
+          })
+          this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
+            this.openSettings('note', 'general');
+          })
+          this.IconButton('focus', this.focused
+            ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
+            this.toggleFocus();
+          })
+        }
       } else if (this.topView === 'agent') {
         this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
           this.openSettings('agent', 'agent');
@@ -2701,8 +3059,9 @@ struct Index {
       }
     }
     .width('100%')
-    .height(Size.appbarH)
-    .padding({ left: Space.s1, right: Space.s2 })
+    .height(this.breakpoint === Breakpoint.SM ? Size.appbarH : Size.appbarWideH)
+    .padding({ left: this.breakpoint === Breakpoint.SM ? Space.s2 : Space.s5,
+      right: this.breakpoint === Breakpoint.SM ? Space.s2 : Space.s5 })
     .alignItems(VerticalAlign.Center)
     .border({ width: { bottom: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
@@ -2763,7 +3122,7 @@ struct Index {
         this.openShareNoteDialog();
       })
       Row() {
-        Text('同步')
+        Text(this.focused ? '退出专注' : '进入专注')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
@@ -2772,11 +3131,24 @@ struct Index {
       .height(Size.touch)
       .padding({ left: Space.s3, right: Space.s3 })
       .onClick(() => {
-        this.moreMenuOpen = false;
-        router.pushUrl({ url: 'pages/SyncPage' });
+        this.toggleFocus();
       })
       Row() {
-        Text('设置')
+        Text(this.isReferenceShown() ? '收起双栏' : '打开双栏')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .enabled(!this.focused)
+      .onClick((): void => {
+        this.moreMenuOpen = false;
+        this.toggleReference();
+      })
+      Row() {
+        Text('设置与关于')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
@@ -2793,7 +3165,7 @@ struct Index {
     .borderRadius(Radius.menu)
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 30, color: '#2E000000', offsetX: 0, offsetY: 10 })
+    .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
   }
 
   @Builder
@@ -2809,7 +3181,13 @@ struct Index {
       selectedChapterIndex: this.selectedChapterIndex,
       refreshSeq: this.treeSeq,
       revealPath: this.revealPath,
-      onCollapse: (): void => { this.setSidebarCollapsed(true); },
+      onCollapse: (): void => {
+        if (asDrawer) {
+          this.setDrawerOpen(false);
+        } else {
+          this.setSidebarCollapsed(true);
+        }
+      },
       onSwitchVault: (id: string): void => {
         this.closeNoteNavigation();
         this.doSwitchVault(id);
@@ -3056,7 +3434,6 @@ struct Index {
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
     .borderRadius(Radius.icon)
-    .backgroundColor($r('app.color.bg_secondary'))
     .enabled(this.isPaneEditable(pane))
     .onClick((): void => { this.applyEditorFormat(kind, pane); })
   }
@@ -3134,144 +3511,116 @@ struct Index {
 
   @Builder
   FormatToolbar(pane: string) {
-    Row({ space: Space.s1 }) {
-      Row() {
-        Text('Aa')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
+    Row() {
+      Blank()
+      Row({ space: Space.s1 }) {
+        Row() {
+          Text('Aa')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+        }
+        .width(Size.touch)
+        .height(Size.touch)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(Radius.full)
+        .enabled(this.isPaneEditable(pane))
+        .onClick((): void => {
+          if (this.formatMenuPane === pane) {
+            this.formatMenuOpen = !this.formatMenuOpen;
+          } else {
+            this.formatMenuPane = pane;
+            this.formatMenuOpen = true;
+          }
+        })
+        .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
+          builder: this.FormatMenu(),
+          placement: Placement.Top,
+          enableArrow: false,
+          offset: { x: 0, y: -Space.s2 },
+          mask: false,
+          autoCancel: true,
+          popupColor: Color.Transparent,
+          onWillDismiss: (action: DismissPopupAction): void => {
+            action.dismiss();
+            this.formatMenuOpen = false;
+          }
+        })
+        this.FormatAction('B', 'bold', pane)
+        this.FormatAction('I', 'italic', pane)
+        this.FormatAction('☐', 'task', pane)
       }
-      .width(Size.touch)
-      .height(Size.touch)
-      .justifyContent(FlexAlign.Center)
-      .borderRadius(Radius.icon)
-      .backgroundColor($r('app.color.bg_secondary'))
-      .enabled(this.isPaneEditable(pane))
-      .onClick((): void => {
-        if (this.formatMenuPane === pane) {
-          this.formatMenuOpen = !this.formatMenuOpen;
-        } else {
-          this.formatMenuPane = pane;
-          this.formatMenuOpen = true;
-        }
-      })
-      .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
-        builder: this.FormatMenu(),
-        placement: Placement.TopLeft,
-        enableArrow: false,
-        offset: { x: 0, y: -Space.s2 },
-        mask: false,
-        autoCancel: true,
-        popupColor: Color.Transparent,
-        onWillDismiss: (action: DismissPopupAction): void => {
-          action.dismiss();
-          this.formatMenuOpen = false;
-        }
-      })
-      this.FormatAction('B', 'bold', pane)
-      this.FormatAction('I', 'italic', pane)
-      this.FormatAction('☐', 'task', pane)
+      .padding(Space.s1)
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(Radius.full)
+      .backgroundColor($r('app.color.bg_card'))
+      .border({ width: 1, color: $r('app.color.line') })
+      .shadow({ radius: 20, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 8 })
+      Blank()
     }
     .width('100%')
-    .height(Size.touch)
-    .padding({ left: Space.s2, right: Space.s2 })
-    .alignItems(VerticalAlign.Center)
-    .border({ width: { top: 1 }, color: $r('app.color.line') })
-    .backgroundColor($r('app.color.bg_card'))
+    .height(Size.touch + Space.s5)
+    .padding({ bottom: Space.s5 })
+    .alignItems(VerticalAlign.Bottom)
   }
 
   @Builder
   RightWorkspacePane() {
     Column() {
-      Row({ space: Space.s1 }) {
-        Text(this.rightFilePath.length > 0 ? this.rightFilePath : '尚未选择笔记')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-          .onClick((): void => { this.setActivePane('right'); })
-        Text('编辑')
-          .fontSize(FontSize.body3)
-          .fontColor(this.rightEditing ? $r('app.color.brand') : $r('app.color.text_secondary'))
-          .padding({ left: Space.s2, right: Space.s2 })
-          .onClick((): void => {
-            this.setActivePane('right');
-            this.rightEditing = true;
-          void this.refreshSharedEditability();
-            void this.syncLeftContentToRight();
-          })
-        Text('预览')
-          .fontSize(FontSize.body3)
-          .fontColor(!this.rightEditing ? $r('app.color.brand') : $r('app.color.text_secondary'))
-          .padding({ left: Space.s2, right: Space.s2 })
-          .onClick((): void => {
-            this.setActivePane('right');
-            this.rightEditing = false;
-          void this.refreshSharedEditability();
-            void this.syncRightContentToLeft();
-          })
-        if (this.rightEditing) {
-          Text('图片')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
-            .padding({ left: Space.s1, right: Space.s2 })
-            .enabled(this.rightFilePath.length > 0 && !this.rightImagePickerBusy)
-            .onClick((): void => { void this.pickImageForCurrentNote('right'); })
-        }
+      this.PaneHead({ pane: 'right' })
+      this.PaneTitle(this.rightFilePath)
+      if (!this.rightEditing && this.backlinksExpanded && this.backlinksPane === 'right') {
+        this.BacklinkPanel()
       }
-      .width('100%')
-      .height(Size.paneHeadH)
-      .padding({ left: Space.s4, right: Space.s2 })
-      .alignItems(VerticalAlign.Center)
-      .border({ width: { top: 2, bottom: 1 }, color: this.activePane === 'right'
-        ? $r('app.color.brand') : $r('app.color.line') })
-      .backgroundColor($r('app.color.bg_card'))
-
-      Stack() {
-        EditorWebView({
-          bridge: this.rightEditorBridge,
-          onChange: (_len: number): void => {
-            this.rightEditorDirty = true;
-            this.scheduleRightSave();
-            void this.syncRightContentToLeft();
-            if (this.activePane === 'right') {
-              void this.refreshActiveChaptersFromBridge();
+      Stack({ alignContent: Alignment.Bottom }) {
+        Stack() {
+          EditorWebView({
+            bridge: this.rightEditorBridge,
+            onChange: (len: number): void => {
+              this.rightEditorDirty = true;
+              this.rightEditorLen = len;
+              this.scheduleRightSave();
+              void this.syncRightContentToLeft();
+              if (this.activePane === 'right') {
+                void this.refreshActiveChaptersFromBridge();
+              }
+            },
+            onCompositionChange: (composing: boolean): void => {
+              this.onRightCompositionChange(composing);
+            },
+            onLinkCompletion: (id: number, query: string): void => {
+              this.provideRightWikiLinkCompletions(id, query);
+            },
+            onReady: (): void => {
+              void this.readRightAndPush(this.rightFilePath);
+            },
+            onError: (msg: string): void => {
+              hilog.error(DOMAIN, TAG, '右栏编辑器 Web: %{public}s', msg);
             }
-          },
-          onCompositionChange: (composing: boolean): void => {
-            this.onRightCompositionChange(composing);
-          },
-          onLinkCompletion: (id: number, query: string): void => {
-            this.provideRightWikiLinkCompletions(id, query);
-          },
-          onReady: (): void => {
-            void this.readRightAndPush(this.rightFilePath);
-          },
-          onError: (msg: string): void => {
-            hilog.error(DOMAIN, TAG, '右栏编辑器 Web: %{public}s', msg);
-          }
-        })
-          .width('100%')
-          .height('100%')
-          .visibility(this.rightEditing ? Visibility.Visible : Visibility.Hidden)
-        PreviewWebView({
-          bridge: this.rightPreviewBridge,
-          onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
-          onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
-          onError: (msg: string): void => {
-            hilog.error(DOMAIN, TAG, '右栏预览 Web: %{public}s', msg);
-          }
-        })
-          .width('100%')
-          .height('100%')
-          .visibility(this.rightEditing ? Visibility.Hidden : Visibility.Visible)
+          })
+            .width('100%')
+            .height('100%')
+            .visibility(this.rightEditing ? Visibility.Visible : Visibility.Hidden)
+          PreviewWebView({
+            bridge: this.rightPreviewBridge,
+            onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
+            onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
+            onError: (msg: string): void => {
+              hilog.error(DOMAIN, TAG, '右栏预览 Web: %{public}s', msg);
+            }
+          })
+            .width('100%')
+            .height('100%')
+            .visibility(this.rightEditing ? Visibility.Hidden : Visibility.Visible)
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.bg_card'))
+        if (this.rightEditing) {
+          this.FormatToolbar('right')
+        }
       }
       .layoutWeight(1)
       .width('100%')
-      .backgroundColor($r('app.color.bg_card'))
-      if (this.rightEditing) {
-        this.FormatToolbar('right')
-      }
     }
     .width('100%')
     .height('100%')
@@ -3288,12 +3637,11 @@ struct Index {
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      this.PaneHead({
-        title: this.currentFilePath.length > 0 ? this.currentFilePath : '尚未选择笔记',
-        showImageAction: true
-      })
+      this.PaneHead({ pane: 'left' })
+      this.PaneTitle(this.currentFilePath)
 
-      Stack() {
+      Stack({ alignContent: Alignment.Bottom }) {
+        Stack() {
         // M0.5 spike：CodeMirror 6 跑在 Web 组件里（web/mdeditor → rawfile/mdeditor/index.html）。
         // 内容由本页在「选中文件 / 切库」时读好下发；组件本身不碰文件 IO（硬约束 14）。
         EditorWebView({
@@ -3341,13 +3689,16 @@ struct Index {
             .position({ x: '50%', y: Space.s3 })
             .translate({ x: Space.s1 })
         }
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.bg_card'))
+        if (this.smMode === 'edit') {
+          this.FormatToolbar('left')
+        }
       }
       .layoutWeight(1)
       .width('100%')
-      .backgroundColor($r('app.color.bg_card'))
-      if (this.smMode === 'edit') {
-        this.FormatToolbar('left')
-      }
     }
     .width('100%')
     .height('100%')
@@ -3361,8 +3712,11 @@ struct Index {
   @Builder
   PreviewPane() {
     Column() {
-      this.PaneHead({ title: '预览' })
-      this.BacklinkPanel()
+      this.PaneHead({ pane: 'left' })
+      this.PaneTitle(this.currentFilePath)
+      if (this.backlinksExpanded && this.backlinksPane === 'left') {
+        this.BacklinkPanel()
+      }
       PreviewWebView({
         bridge: this.previewBridge,
         onReadAsset: (relPath: string): string => {
@@ -3376,6 +3730,7 @@ struct Index {
         }
       })
         .layoutWeight(1)
+        .width('100%')
     }
     .width('100%')
     .height('100%')
@@ -3400,9 +3755,7 @@ struct Index {
       .width('100%')
       .height(Size.buttonH)
       .padding({ left: Space.s4, right: Space.s4 })
-      .onClick((): void => {
-        this.backlinksExpanded = !this.backlinksExpanded;
-      })
+      .onClick((): void => { this.backlinksExpanded = false; })
 
       if (this.backlinksExpanded) {
         if (this.backlinksLoading) {
@@ -3416,7 +3769,7 @@ struct Index {
             .fontColor($r('app.color.text_secondary'))
             .padding({ left: Space.s4, right: Space.s4, bottom: Space.s3 })
         } else if (this.backlinkPaths.length === 0) {
-          Text(this.currentFilePath.length === 0 ? '选择笔记后可查看反链' : '暂无来源笔记')
+          Text(this.activeFilePath().length === 0 ? '选择笔记后可查看反链' : '暂无来源笔记')
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_tertiary'))
             .padding({ left: Space.s4, right: Space.s4, bottom: Space.s3 })
@@ -3527,14 +3880,14 @@ struct Index {
   @Builder
   Statusbar() {
     Row() {
-      // TEMP-MARKER：验证选中链路用，验证完删掉的第三行
-      Text(this.currentVaultName() + ' | ' + this.currentFilePath)
-        .fontSize(FontSize.body3)
+      Text((this.activePane === 'right' ? this.rightEditorDirty : this.editorDirty)
+        ? '正在保存更改…' : '更改已保存在本地')
+        .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)
       Blank()
-      Text(this.statusRightText())
-        .fontSize(FontSize.body3)
+      Text((this.activePane === 'right' ? this.rightEditorLen : Math.max(0, this.editorLen)).toString() + ' 字')
+        .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })

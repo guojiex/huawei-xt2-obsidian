@@ -434,6 +434,6 @@ export struct FileTreeView {
     .width('100%')
     .padding({ left: Space.s4 })
     .scrollBar(BarState.Auto)
-    .backgroundColor($r('app.color.bg_page'))
+    .backgroundColor($r('app.color.bg_navigation'))
   }
 }

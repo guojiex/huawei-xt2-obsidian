@@ -26,7 +26,7 @@ export class Space {
 /** 圆角：按场景取值（4.3）—— 同类控件圆角必须一致 */
 export class Radius {
   static readonly chip: number = 4;      // 徽标 / 小标签
-  static readonly icon: number = 8;      // 图标按钮
+  static readonly icon: number = 10;     // 图标按钮
   static readonly control: number = 12;  // 列表项 / 输入框 / 网格
   static readonly card: number = 16;     // 卡片 / 弹窗
   static readonly button: number = 20;   // 按钮 / 菜单
@@ -38,7 +38,7 @@ export class Radius {
 
 /** 字号阶梯（4.5）—— 三档形态下保持一致，不随断点跳号 */
 export class FontSize {
-  static readonly caption: number = 11;
+  static readonly caption: number = 12;
   static readonly body3: number = 12;
   static readonly body2: number = 14;
   static readonly body1: number = 16;    // 正文
@@ -50,6 +50,7 @@ export class FontSize {
 /** 尺寸 */
 export class Size {
   static readonly appbarH: number = 56;    // 顶栏（4.5）
+  static readonly appbarWideH: number = 72;
   static readonly paneHeadH: number = 40;  // 栏头
   static readonly itemH: number = 56;      // 列表项（HdsListItem 观感，4.6）
   static readonly buttonH: number = 40;

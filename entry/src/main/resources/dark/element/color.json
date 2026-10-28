@@ -17,10 +17,12 @@
     { "name": "hl_code", "value": "#4EC5A5" },
 
     { "name": "bg_page", "value": "#121214" },
+    { "name": "bg_navigation", "value": "#1C1C1F" },
     { "name": "bg_card", "value": "#1C1C1F" },
     { "name": "bg_secondary", "value": "#1C1C1F" },
     { "name": "bg_tertiary", "value": "#26262A" },
     { "name": "bg_sunken", "value": "#0FFFFFFF" },
+    { "name": "float_shadow", "value": "#52000000" },
 
     { "name": "line", "value": "#1AFFFFFF" },
     { "name": "line_strong", "value": "#2EFFFFFF" },
