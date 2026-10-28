@@ -1,6 +1,6 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#FFFFFF" },
+    { "name": "start_window_background", "value": "#E9EDF2" },
 
     { "name": "brand", "value": "#007DFF" },
     { "name": "brand_press", "value": "#0062CC" },
@@ -8,10 +8,10 @@
     { "name": "brand_bg_solid", "value": "#EAF3FF" },
     { "name": "on_brand", "value": "#FFFFFF" },
 
-    { "name": "success", "value": "#00A870" },
+    { "name": "success", "value": "#35916D" },
     { "name": "success_bg", "value": "#1F00A870" },
     { "name": "warning", "value": "#FF8800" },
-    { "name": "danger", "value": "#FA2C2C" },
+    { "name": "danger", "value": "#CF4048" },
     { "name": "danger_press", "value": "#D81F1F" },
     { "name": "danger_bg", "value": "#1AFA2C2C" },
     { "name": "hl_code", "value": "#0B8C63" },
@@ -35,7 +35,7 @@
     { "name": "fill_hover", "value": "#0A000000" },
     { "name": "fill_press", "value": "#14000000" },
 
-    { "name": "mask", "value": "#59000000" },
+    { "name": "mask", "value": "#66172638" },
     { "name": "snack_bg", "value": "#2E3033" },
     { "name": "snack_text", "value": "#EAFFFFFF" },
     { "name": "snack_action", "value": "#7FB2FF" }

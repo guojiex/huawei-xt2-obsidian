@@ -1,41 +1,41 @@
 {
   "color": [
-    { "name": "start_window_background", "value": "#121214" },
+    { "name": "start_window_background", "value": "#10151D" },
 
-    { "name": "brand", "value": "#4EA1FF" },
+    { "name": "brand", "value": "#71B3FF" },
     { "name": "brand_press", "value": "#6FB4FF" },
-    { "name": "brand_bg", "value": "#294EA1FF" },
+    { "name": "brand_bg", "value": "#263951" },
     { "name": "brand_bg_solid", "value": "#16293F" },
-    { "name": "on_brand", "value": "#FFFFFF" },
+    { "name": "on_brand", "value": "#1D232B" },
 
-    { "name": "success", "value": "#2BC48A" },
+    { "name": "success", "value": "#75C7A0" },
     { "name": "success_bg", "value": "#292BC48A" },
     { "name": "warning", "value": "#FFA433" },
-    { "name": "danger", "value": "#FF6B6B" },
+    { "name": "danger", "value": "#CF4048" },
     { "name": "danger_press", "value": "#E84C4C" },
     { "name": "danger_bg", "value": "#24FF6B6B" },
     { "name": "hl_code", "value": "#4EC5A5" },
 
-    { "name": "bg_page", "value": "#121214" },
-    { "name": "bg_navigation", "value": "#1C1C1F" },
-    { "name": "bg_card", "value": "#1C1C1F" },
-    { "name": "bg_secondary", "value": "#1C1C1F" },
+    { "name": "bg_page", "value": "#10151D" },
+    { "name": "bg_navigation", "value": "#171D25" },
+    { "name": "bg_card", "value": "#1D232B" },
+    { "name": "bg_secondary", "value": "#171D25" },
     { "name": "bg_tertiary", "value": "#26262A" },
     { "name": "bg_sunken", "value": "#0FFFFFFF" },
-    { "name": "float_shadow", "value": "#52000000" },
+    { "name": "float_shadow", "value": "#33000000" },
 
-    { "name": "line", "value": "#1AFFFFFF" },
+    { "name": "line", "value": "#303741" },
     { "name": "line_strong", "value": "#2EFFFFFF" },
 
-    { "name": "text_primary", "value": "#EBFFFFFF" },
-    { "name": "text_secondary", "value": "#99FFFFFF" },
-    { "name": "text_tertiary", "value": "#66FFFFFF" },
+    { "name": "text_primary", "value": "#E4E8EF" },
+    { "name": "text_secondary", "value": "#9BA5B3" },
+    { "name": "text_tertiary", "value": "#9BA5B3" },
     { "name": "text_disabled", "value": "#42FFFFFF" },
 
     { "name": "fill_hover", "value": "#0FFFFFFF" },
     { "name": "fill_press", "value": "#1AFFFFFF" },
 
-    { "name": "mask", "value": "#8C000000" },
+    { "name": "mask", "value": "#66172638" },
     { "name": "snack_bg", "value": "#33333A" },
     { "name": "snack_text", "value": "#EBFFFFFF" },
     { "name": "snack_action", "value": "#7FB2FF" }

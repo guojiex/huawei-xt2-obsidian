@@ -20,17 +20,19 @@ export class Space {
   static readonly s5: number = 20;
   static readonly s6: number = 24;
   static readonly s8: number = 32;
+  static readonly s10: number = 40;
   static readonly s12: number = 48;
+  static readonly s16: number = 64;
 }
 
 /** 圆角：按场景取值（4.3）—— 同类控件圆角必须一致 */
 export class Radius {
   static readonly chip: number = 4;      // 徽标 / 小标签
   static readonly icon: number = 10;     // 图标按钮
-  static readonly control: number = 12;  // 列表项 / 输入框 / 网格
+  static readonly control: number = 10;  // v2 --small-r
   static readonly card: number = 16;     // 卡片 / 弹窗
   static readonly button: number = 20;   // 按钮 / 菜单
-  static readonly menu: number = 20;
+  static readonly menu: number = 16;    // v2 --r
   static readonly dialog: number = 16;
   static readonly snack: number = 18;    // SnackBar
   static readonly full: number = 999;    // 全圆（头像 / 圆形按钮）
@@ -42,7 +44,7 @@ export class FontSize {
   static readonly body3: number = 12;
   static readonly body2: number = 14;
   static readonly body1: number = 16;    // 正文
-  static readonly s3: number = 18;
+  static readonly s3: number = 20;       // v2 --large
   static readonly s2: number = 20;       // 顶栏标题
   static readonly s1: number = 24;
 }
@@ -51,9 +53,9 @@ export class FontSize {
 export class Size {
   static readonly appbarH: number = 56;    // 顶栏（4.5）
   static readonly appbarWideH: number = 72;
-  static readonly paneHeadH: number = 40;  // 栏头
-  static readonly itemH: number = 56;      // 列表项（HdsListItem 观感，4.6）
-  static readonly buttonH: number = 40;
+  static readonly paneHeadH: number = 48;  // v2 --s12
+  static readonly itemH: number = 48;      // v2 --touch
+  static readonly buttonH: number = 48;    // v2 默认触控高度
   static readonly statusbarH: number = 28;
   static readonly sidebarW: number = 240;  // 侧栏最小宽（宽屏按等分，见 Index）
   static readonly drawerW: number = 300;
@@ -79,11 +81,11 @@ export class Size {
 /** 动效（4.10）—— 与系统观感一致 */
 export class Motion {
   static readonly durFast: number = 120;
-  static readonly durBase: number = 200;
+  static readonly durBase: number = 180;   // v2 --ease
   static readonly durSlow: number = 300;
   /** 撤销条（1.7）：滑到底删除后的后悔药显示时长（原型 showToast 5 秒） */
   static readonly snack: number = 5000;
 }
 
-/** 正文行高（4.5：正文 16fp + 行高 1.65） */
-export const LINE_HEIGHT_BODY: number = 1.65;
+/** 正文行高（v2 --leading：1.85） */
+export const LINE_HEIGHT_BODY: number = 1.85; // v2 --leading

@@ -16,6 +16,11 @@ const repoRoot = path.resolve(here, '../..')
 const outDir = path.join(repoRoot, 'entry/src/main/resources/rawfile/mdpreview')
 const tmpFile = path.join(here, '.bundle.tmp.js')
 const katexDist = path.join(here, 'node_modules/katex/dist')
+const prototypeHtml = fs.readFileSync(path.join(repoRoot, 'docs/prototype/v2/index.html'), 'utf8')
+const sharedTokens = prototypeHtml.match(/:root\{[^\r\n]*\}\s*\[data-theme=dark\]\{[^\r\n]*\}/)?.[0]
+if (!sharedTokens) {
+  throw new Error('Unable to read shared v2 tokens from docs/prototype/v2/index.html')
+}
 
 await build({
   entryPoints: [path.join(here, 'src/index.ts')],
@@ -47,107 +52,86 @@ const html = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>mdpreview</title>
 <style>
-  /* token 与 docs/prototype/v2/index.html :root 同源（改值两边同步） */
+  /* v2 共享 token 从 prototype 源码注入；渲染器专属值留在此处。 */
+  ${sharedTokens}
   :root {
-    --brand: #007DFF;
-    --bg-card: #FFFFFF;
-    --bg-secondary: #F1F3F5;
-    --line: rgba(0, 0, 0, .08);
-    --text-primary: rgba(0, 0, 0, .90);
-    --text-secondary: rgba(0, 0, 0, .60);
-    --text-tertiary: rgba(0, 0, 0, .40);
-    --r-chip: 8px;
-    --r-control: 12px;
-    --sp-3: 12px;
-    --sp-4: 16px;
-    --h-touch: 48px;
     --preview-image-max-ratio: .6;
     --image-viewer-bg: rgba(0, 0, 0, .8);
   }
-  [data-theme="dark"] {
-    --brand: #4EA1FF;
-    --bg-card: #1C1C1F;
-    --bg-secondary: #1C1C1F;
-    --line: rgba(255, 255, 255, .10);
-    --text-primary: rgba(255, 255, 255, .92);
-    --text-secondary: rgba(255, 255, 255, .60);
-    --text-tertiary: rgba(255, 255, 255, .40);
-  }
-  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg-card); }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--paper); }
   #content {
     height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    box-sizing: border-box; padding: 20px 20px 48px;
-    font-size: 16px; line-height: 1.65; color: var(--text-primary);
-    font-family: system-ui, sans-serif;
+    box-sizing: border-box; padding: var(--s6) var(--s10) var(--s16);
+    font-size: var(--body); line-height: var(--leading); color: var(--ink);
+    font-family: var(--font);
     word-break: break-word;
   }
-  #content h1 { font-size: 24px; margin: 0 0 16px; font-weight: 700; letter-spacing: .3px; line-height: 1.3; }
-  #content h2 { font-size: 20px; margin: 24px 0 12px; font-weight: 700; line-height: 1.35; }
-  #content h3 { font-size: 18px; margin: 20px 0 8px; font-weight: 600; }
-  #content h4, #content h5, #content h6 { font-size: 16px; margin: 16px 0 8px; font-weight: 600; }
-  #content p { margin: 0 0 12px; }
-  #content ul, #content ol { margin: 0 0 12px; padding-left: 20px; }
-  #content li { margin: 4px 0; }
-  #content li::marker { color: var(--text-tertiary); }
-  #content li:has(> input[type="checkbox"]) { list-style: none; margin-left: -20px; }
+  #content h1 { font-size: var(--heading); margin: var(--s3) 0 var(--s4); font-weight: 650; letter-spacing: -.035em; line-height: 1.35; }
+  #content h2 { font-size: var(--large); margin: var(--s8) 0 var(--s3); font-weight: 600; line-height: 1.35; }
+  #content h3, #content h4, #content h5, #content h6 { font-size: var(--body); margin: var(--s5) 0 var(--s2); font-weight: 600; }
+  #content p { margin: 0 0 var(--s5); }
+  #content ul, #content ol { margin: 0 0 var(--s5); padding-left: var(--s6); }
+  #content li { padding-left: var(--s1); margin-bottom: var(--s2); }
+  #content li::marker { color: var(--muted); }
+  #content li:has(> input[type="checkbox"]) { list-style: none; margin-left: calc(-1 * var(--s6)); }
   #content blockquote {
-    margin: 0 0 12px; padding: 12px 16px;
-    border-left: 3px solid var(--brand); border-radius: var(--r-control);
-    background: var(--bg-secondary); color: var(--text-secondary); font-size: 14px;
+    margin: var(--s6) 0; padding: var(--s4) var(--s5);
+    border-left: var(--focus) solid var(--blue); border-radius: 0 var(--small-r) var(--small-r) 0;
+    background: var(--blue-soft); color: var(--ink); font-size: var(--small);
   }
   #content code {
-    background: var(--bg-secondary); padding: 1px 6px; border-radius: var(--r-chip);
-    font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace;
+    background: var(--nav); padding: var(--s1); border-radius: var(--s1);
+    font-size: var(--small); font-family: var(--mono);
   }
   #content pre {
-    background: var(--bg-secondary); padding: 16px; border-radius: var(--r-control);
-    overflow: auto; margin: 0 0 12px;
+    background: var(--nav); padding: var(--s4); border-radius: var(--small-r);
+    overflow: auto; margin: 0 0 var(--s5);
   }
-  #content pre code { background: none; padding: 0; font-size: 12px; line-height: 1.7; }
-  #content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  #content pre code { background: none; padding: 0; }
+  #content .katex-display { overflow-x: auto; overflow-y: hidden; padding: var(--s1) 0; }
   #content .math-error, #content .mermaid-error {
-    color: var(--text-secondary); border-left: 3px solid var(--brand);
-    background: var(--bg-secondary); padding: 8px 12px; border-radius: var(--r-chip);
+    color: var(--muted); border-left: var(--focus) solid var(--blue);
+    background: var(--blue-soft); padding: var(--s2) var(--s3); border-radius: var(--small-r);
   }
-  #content .mermaid-block { overflow-x: auto; margin: 0 0 12px; }
+  #content .mermaid-block { overflow-x: auto; margin: 0 0 var(--s5); }
   #content .mermaid-source { display: none; }
   #content .mermaid-block svg { max-width: 100%; height: auto; }
   #content table {
-    border-collapse: separate; border-spacing: 0; margin: 0 0 12px;
-    font-size: 12px; border: 1px solid var(--line);
-    border-radius: var(--r-control); overflow: hidden; width: 100%;
+    border-collapse: separate; border-spacing: 0; margin: 0 0 var(--s5);
+    font-size: var(--caption); border: var(--stroke) solid var(--line);
+    border-radius: var(--small-r); overflow: hidden; width: 100%;
   }
   #content th, #content td {
-    border-bottom: 1px solid var(--line); border-right: 1px solid var(--line);
-    padding: 6px 12px; text-align: left;
+    border-bottom: var(--stroke) solid var(--line); border-right: var(--stroke) solid var(--line);
+    padding: var(--s2) var(--s3); text-align: left;
   }
   #content th:last-child, #content td:last-child { border-right: none; }
   #content tbody tr:last-child td { border-bottom: none; }
-  #content th { background: var(--bg-secondary); font-weight: 600; color: var(--text-primary); }
-  #content hr { border: none; border-top: 1px solid var(--line); margin: 24px 0; }
-  #content img { max-width: 100%; border-radius: var(--r-chip); }
+  #content th { background: var(--nav); font-weight: 600; color: var(--ink); }
+  #content hr { border: none; border-top: var(--stroke) solid var(--line); margin: var(--s8) 0; }
+  #content img { max-width: 100%; border-radius: var(--small-r); }
   #content img.preview-local-image {
     display: block; max-height: var(--preview-image-max-height, none);
     width: auto; height: auto; object-fit: contain; cursor: zoom-in;
   }
-  #content img.preview-local-image:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+  #content img.preview-local-image:focus-visible { outline: var(--focus) solid var(--blue); outline-offset: var(--s1); }
   .image-viewer {
     position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
-    gap: var(--sp-3); padding: var(--sp-4); box-sizing: border-box;
+    gap: var(--s3); padding: var(--s4); box-sizing: border-box;
     background: var(--image-viewer-bg);
   }
   .image-viewer.hidden { display: none; }
   .image-viewer-toolbar { display: flex; justify-content: flex-end; flex: none; }
   #image-viewer-close {
-    min-height: var(--h-touch); padding: 0 var(--sp-3); border: 1px solid var(--line);
-    border-radius: var(--r-control); background: var(--bg-card); color: var(--text-primary);
+    min-height: var(--touch); padding: 0 var(--s3); border: var(--stroke) solid var(--line);
+    border-radius: var(--small-r); background: var(--paper); color: var(--ink);
     font: inherit;
   }
   .image-viewer-scroll { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
   #image-viewer-full { display: block; max-width: 100%; width: auto; height: auto; margin: 0 auto; }
-  #content a { color: var(--brand); text-decoration: none; }
-  #content input[type="checkbox"] { accent-color: var(--brand); width: 15px; height: 15px; vertical-align: -2px; margin-right: 6px; }
-  #content .empty { color: var(--text-tertiary); font-size: 14px; text-align: center; margin-top: 40px; }
+  #content a { color: var(--blue); text-decoration: none; }
+  #content input[type="checkbox"] { accent-color: var(--blue); width: 15px; height: 15px; vertical-align: -2px; margin-right: var(--s1); }
+  #content .empty { color: var(--muted); font-size: var(--small); text-align: center; margin-top: var(--s10); }
 </style>
 <style>
 ${katexCss}

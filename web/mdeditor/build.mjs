@@ -14,6 +14,11 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '../..')
 const outDir = path.join(repoRoot, 'entry/src/main/resources/rawfile/mdeditor')
 const tmpFile = path.join(here, '.bundle.tmp.js')
+const prototypeHtml = fs.readFileSync(path.join(repoRoot, 'docs/prototype/v2/index.html'), 'utf8')
+const sharedTokens = prototypeHtml.match(/:root\{[^\r\n]*\}\s*\[data-theme=dark\]\{[^\r\n]*\}/)?.[0]
+if (!sharedTokens) {
+  throw new Error('Unable to read shared v2 tokens from docs/prototype/v2/index.html')
+}
 
 await build({
   entryPoints: [path.join(here, 'src/index.ts')],
@@ -38,13 +43,14 @@ fs.unlinkSync(tmpFile)
 const safe = code.replace(/<\/script/gi, '<\\/script')
 
 const html = `<!doctype html>
-<html>
+<html data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>mdeditor</title>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #FFFFFF; }
+  ${sharedTokens}
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--paper); }
   #editor { height: 100%; }
   /* 关键：让 contenteditable 区域在触屏上正常滚动/长按，不吃系统手势 */
   #editor .cm-scroller { overflow-y: auto; -webkit-overflow-scrolling: touch; }

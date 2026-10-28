@@ -181,32 +181,29 @@ function announceReady(): void {
 announceReady()
 
 // ---------- 主题 ----------
-// 浅色：底色走 App 的 bg_card(#FFFFFF)、文字 text_primary(#E6000000)，与侧栏同源；
-// Harmony 色值是 ARGB，CSS 的 8 位 hex 则是 RRGGBBAA，因此半透明色在这里显式写 rgba。
-// 深色：oneDark 变体，底色对齐 bg_card(#1C1C1F)。字号/行高与 Tokens.ets 的
-// FontSize.body2(14) / LINE_HEIGHT_BODY(1.65) 保持一致 —— Web 内不能引 token，两边手工同步。
+// 颜色、字号、行高和字体直接使用 build.mjs 注入的 v2 CSS token。
 const LIGHT_THEME = EditorView.theme(
   {
-    '&': { backgroundColor: '#FFFFFF', color: 'rgba(0, 0, 0, 0.9)', fontSize: '14px' },
-    '.cm-content': { fontFamily: 'system-ui, sans-serif', lineHeight: '1.65', padding: '8px 0' },
-    '.cm-gutters': { backgroundColor: '#FFFFFF', border: 'none', color: 'rgba(0, 0, 0, 0.4)' },
+    '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
+    '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
+    '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
     '.cm-activeLine': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(0, 125, 255, 0.12)' },
-    '.cm-cursor': { borderLeftColor: '#007DFF' }
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--blue-soft)' },
+    '.cm-cursor': { borderLeftColor: 'var(--blue)' }
   },
   { dark: false }
 )
 
 const DARK_THEME = EditorView.theme(
   {
-    '&': { backgroundColor: '#1C1C1F', color: 'rgba(255, 255, 255, 0.92)', fontSize: '14px' },
-    '.cm-content': { fontFamily: 'system-ui, sans-serif', lineHeight: '1.65', padding: '8px 0' },
-    '.cm-gutters': { backgroundColor: '#1C1C1F', border: 'none', color: 'rgba(255, 255, 255, 0.6)' },
+    '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
+    '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
+    '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
     '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'rgba(78, 161, 255, 0.2)' },
-    '.cm-cursor': { borderLeftColor: '#4EA1FF' }
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--blue-soft)' },
+    '.cm-cursor': { borderLeftColor: 'var(--blue)' }
   },
   { dark: true }
 )
@@ -601,6 +598,7 @@ const api: MdEditorApi = {
 
   setTheme(theme: string): void {
     themeMode = theme === 'dark' ? 'dark' : 'light'
+    document.documentElement.setAttribute('data-theme', themeMode)
     if (view) {
       // 热切换主题：整组 extensions 重建
       view.setState(EditorState.create({
