@@ -33,6 +33,18 @@ test('share format and page, format panel, and non-destructive file action can b
  const h=fixture();h.run("setEditing(true,false);openFormat('left');syncUrl()");assert(fixture(h.href()).get('formatDialog').open);
  const i=fixture();i.run("openFileAction('rename','reading_stream');syncUrl()");const j=fixture(i.href());assert(j.get('fileActionDialog').open);assert.equal(j.run("note('reading_stream').title"),'基础排版');
 });
+test('Git share design state exposes scope-specific remote link previews without a fake URL',()=>{
+ const f=fixture();f.get('gitShareDemo').checked=true;f.get('gitShareDemo').onchange();f.get('shareBtn').onclick();
+ for(const [scope,label]of [['note','远端笔记网页链接'],['folder','远端文件夹网页链接'],['vault','仓库首页链接']]){
+  f.get('shareScope').value=scope;f.get('shareScope').onchange();assert(!f.get('shareRemoteLink').classList.contains('hidden'));assert.equal(f.get('shareRemoteLinkLabel').textContent,label);
+  if(scope==='note')assert(!f.get('shareImage').classList.contains('hidden'));else assert(f.get('shareImage').classList.contains('hidden'));
+  f.get('shareRemoteLink').onclick();assert.equal(f.run('shareStage'),'link');assert.match(f.get('sharePreview').innerHTML,/私有仓库.*访问权限/);assert.match(f.get('sharePreview').innerHTML,/未推送的本地修改不会出现在链接中/);assert(!f.get('sharePreview').innerHTML.includes('https://'));
+  f.get('shareBack').onclick();
+ }
+ f.run('syncUrl()');const g=fixture(f.href());assert(g.get('shareDialog').open);assert.equal(g.run('gitShareDemo'),true);assert.equal(g.run('shareStage'),'formats');assert(!g.get('shareRemoteLink').classList.contains('hidden'));
+ const h=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&gitShareDemo=1&panel=share&scope=vault&stage=link');assert.equal(h.run('shareStage'),'link');assert(h.get('sharePreview').innerHTML.includes('仓库首页链接'));assert.equal(new URL(h.href()).searchParams.get('gitShareDemo'),'1');
+ g.get('gitShareDemo').checked=false;g.get('gitShareDemo').onchange();assert(g.get('shareRemoteLink').classList.contains('hidden'));assert.equal(g.run('shareStage'),'formats');
+});
 test('URL overrides other browser width preferences and keeps collapsed folders and scroll position',()=>{
  const f=fixture();f.run("folderState['reading/10_写作']=false;$('writingScroll').scrollTop=120;syncUrl()");const storage=new Map([['xt2-prototype-v2-widths',JSON.stringify({nav:.7,content:.2})]]);const g=fixture(f.href(),storage);assert.equal(g.run('widths.nav'),.3333);assert.equal(g.run("folderState['reading/10_写作']"),false);assert.equal(g.get('writingScroll').scrollTop,120);
 });
