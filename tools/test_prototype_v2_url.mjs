@@ -8,7 +8,7 @@ const markupIds=new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g),match=>match
 function fixture(href='file:///repo/docs/prototype/v2/index.html',storage=new Map()){
  const nodes=new Map(),events={document:{},window:{}},pending=[];
  const listen=(area,key,fn)=>(events[area][key]??=[]).push(fn);
- const get=id=>{if(!nodes.has(id))nodes.set(id,{clientWidth:1200,clientHeight:300,scrollHeight:1000,scrollTop:0,innerHTML:'',value:'',textContent:'',dataset:{},attrs:{},style:{setProperty(k,v){this[k]=v},removeProperty(k){delete this[k]}},classList:{values:new Set(),contains(k){return this.values.has(k)},add(...keys){keys.forEach(k=>this.values.add(k))},remove(...keys){keys.forEach(k=>this.values.delete(k))},toggle(k,on=!this.values.has(k)){on?this.values.add(k):this.values.delete(k);return on}},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){return[]},listeners:{},addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)},dispatch(type,event){for(const fn of this.listeners[type]||[])fn(event)},getBoundingClientRect(){return this.rect||(/^(formatBtn|rightFormatBtn)$/.test(id)?{left:100,right:148,top:700,bottom:748,width:48,height:48}:id==='formatDialog'?{left:0,right:360,top:0,bottom:400,width:360,height:400}:{left:0,right:1200,top:0,bottom:800,width:1200,height:800})},focus(){this.focused=true},select(){this.selected=true},contains(){return false},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=start;this.selectionEnd=start+text.length},show(){this.open=true},showModal(){this.open=true},close(){this.open=false}});return nodes.get(id);};
+ const get=id=>{if(!nodes.has(id))nodes.set(id,{clientWidth:1200,clientHeight:300,scrollHeight:1000,scrollTop:0,innerHTML:'',value:'',textContent:'',dataset:{},attrs:{},style:{setProperty(k,v){this[k]=v},removeProperty(k){delete this[k]}},classList:{values:new Set(),contains(k){return this.values.has(k)},add(...keys){keys.forEach(k=>this.values.add(k))},remove(...keys){keys.forEach(k=>this.values.delete(k))},toggle(k,on=!this.values.has(k)){on?this.values.add(k):this.values.delete(k);return on}},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){return[]},listeners:{},addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)},dispatch(type,event){for(const fn of this.listeners[type]||[])fn(event)},getBoundingClientRect(){return this.rect||(/^(formatBtn|rightFormatBtn)$/.test(id)?{left:100,right:148,top:700,bottom:748,width:48,height:48}:id==='formatDialog'?{left:0,right:360,top:0,bottom:400,width:360,height:400}:{left:0,right:1200,top:0,bottom:800,width:1200,height:800})},focus(){this.focused=true},select(){this.selected=true},contains(){return false},removeAttribute(k){delete this.attrs[k];if(k==='src')this.src=''},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=start;this.selectionEnd=start+text.length},show(){this.open=true},showModal(){this.open=true},close(){this.open=false}});return nodes.get(id);};
  let location=new URL(href),index=0;const history=[location.href];
  const win={innerWidth:1320,innerHeight:1000,get location(){return location},history:{pushState(_,__,href){location=new URL(href);history.splice(++index);history.push(location.href)},replaceState(_,__,href){location=new URL(href);history[index]=location.href}},addEventListener(k,fn){listen('window',k,fn)}};
  const context=vm.createContext({URL,URLSearchParams,window:win,document:{getElementById:get,querySelectorAll(){return[]},body:{dataset:{}},addEventListener(k,fn){listen('document',k,fn)}},queueMicrotask:fn=>pending.push(fn),setTimeout:fn=>{pending.push(fn);return 1},clearTimeout(){},ResizeObserver:class{observe(){}},getComputedStyle:()=>({getPropertyValue:k=>k==='--pane-min'?'240px':k==='--format-width'?'360px':k==='--s2'?'8px':'16px'}),localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}});
@@ -39,7 +39,7 @@ test('URL overrides other browser width preferences and keeps collapsed folders 
 
 test('reported phone link renders relative sample images when switched from edit to preview',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&rotate=0&theme=light&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&rm=preview&dual=1&focus=0&side=files&nav=0&nw=0.2582&cw=0.5000&view=notes&settings=general&detail=0&history=0&panel=none&scroll_editor=1135');
- const source=f.get('editor').value;assert(source.includes('![长图排版示例](../50_Assets/长图排版示例.svg)'));assert(f.run('editing'));f.get('previewTab').onclick();assert(!f.run('editing'));assert.match(f.get('article').innerHTML,/<img src="data:image\/svg\+xml;base64,[^"]+" alt="长图排版示例">/);assert(!f.get('article').innerHTML.includes('![长图排版示例]'));assert.equal(f.get('editor').value,source);
+ const source=f.get('editor').value;assert(source.includes('![长图排版示例](../50_Assets/长图排版示例.svg)'));assert(f.run('editing'));f.get('previewTab').onclick();assert(!f.run('editing'));assert.match(f.get('article').innerHTML,/<img[^>]*src="data:image\/svg\+xml;base64,[^"]+"[^>]*alt="长图排版示例">/);assert(!f.get('article').innerHTML.includes('![长图排版示例]'));assert.equal(f.get('editor').value,source);
 });
 test('right pane and share preview resolve images against their own note folder',()=>{
  const f=fixture();f.run("switchVault('local');openInPane('welcome','left');openInPane('stream','right')");assert.match(f.get('reference').innerHTML,/<img[^>]+alt="长图排版示例">/);f.get('shareBtn').onclick();f.get('shareImage').onclick();assert.match(f.get('sharePreview').innerHTML,/<img[^>]+alt="长图排版示例">/);
@@ -102,6 +102,13 @@ test('phone hamburger stays interactive while the pushed note body is inert and 
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&nav=0');f.get('menu').onclick();assert(f.get('window').classList.contains('nav-open'));assert.equal(f.get('noteWorkspace').inert,false);assert.equal(f.get('notePanes').inert,true);assert.equal(f.get('noteFooter').inert,true);assert.equal(f.get('mobileMore').inert,true);assert.notEqual(f.get('menu').inert,true);f.get('menu').onclick();assert(!f.get('window').classList.contains('nav-open'));assert.equal(f.get('notePanes').inert,false);assert.equal(f.get('noteFooter').inert,false);assert.equal(f.get('mobileMore').inert,false);assert.equal(f.get('navSidebar').inert,true);
 });
 
+test('hamburger exits focus and reveals navigation',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=wide&focus=1&nav=0');
+ assert(f.run('focused'));assert(f.get('window').classList.contains('focus'));
+ f.get('menu').onclick();
+ assert(!f.run('focused'));assert(!f.get('window').classList.contains('focus'));assert(!f.get('window').classList.contains('nav-hidden'));
+});
+
 test('trash is a collapsed bottom folder; delete updates entries without auto-expanding and restore works',()=>{
  const f=fixture();assert.equal(f.get('trashFolder').open,false);assert(f.get('trashList').innerHTML.includes('回收站为空'));f.run("deleteFile('reading_stream')");assert.equal(f.get('trashFolder').open,false);assert(f.get('trashList').innerHTML.includes('基础排版'));assert.equal(f.get('trashCount').textContent,'1');f.get('openTrash').onkeydown({key:'ArrowRight',preventDefault(){}});assert.equal(f.get('trashFolder').open,true);assert(!f.get('trashDialog').open);f.run("trashFolderState[activeVault]=true;restoreFile('reading_stream')");assert(f.get('trashList').innerHTML.includes('回收站为空'));assert.equal(f.get('trashCount').textContent,'');assert.equal(f.get('trashFolder').open,false);f.get('openTrash').onkeydown({key:'ArrowLeft',preventDefault(){}});assert.equal(f.get('trashFolder').open,false);
 });
@@ -135,8 +142,8 @@ test('trash shows original location and restores the same note there without ove
  const f=fixture();const before=f.run("JSON.stringify(notes.find(n=>n.id==='reading_stream'))");f.run("deleteFile('reading_stream')");assert(f.get('trashList').innerHTML.includes('原位置：阅读笔记 / 10_写作'));f.run("restoreFile('reading_stream')");assert.equal(f.run("JSON.stringify(notes.find(n=>n.id==='reading_stream'))"),before);f.run("deleteFile('reading_stream');notes.push({...note('reading_stream'),id:'conflict',deleted:false});restoreFile('reading_stream')");assert(f.run("note('reading_stream').deleted"));assert.equal(f.run("notes.find(n=>n.id==='conflict').deleted"),false);
 });
 
-test('same-note panes hide redundant other-pane preview and its empty menu',()=>{
- const f=fixture();f.run("setViewport('wide');openInPane('reading_stream','left');openInPane('reading_reading_journal','right')");for(const id of ['samePreview','rightSamePreview','leftMore','rightMore'])assert(!f.get(id).classList.contains('hidden'));f.get('leftMore').open=true;f.get('samePreview').onclick();assert.equal(f.run('current'),f.run('reference'));for(const id of ['samePreview','rightSamePreview','leftMore','rightMore'])assert(f.get(id).classList.contains('hidden'));assert.equal(f.get('leftMore').open,false);f.run('setEditing(true,false);setRightEditing(true,false);previewSameNote()');assert(f.run('editing&&rightEditing'));f.run("openInPane('reading_reading_journal','right')");for(const id of ['samePreview','rightSamePreview','leftMore','rightMore'])assert(!f.get(id).classList.contains('hidden'));f.run("syncUrl()");const g=fixture(f.href());assert(!g.get('samePreview').classList.contains('hidden'));f.run("openInPane(current,'right');syncUrl()");const h=fixture(f.href());assert(h.get('samePreview').classList.contains('hidden'));assert(h.get('rightSamePreview').classList.contains('hidden'));
+test('same-note panes hide redundant other-pane preview but keep the backlinks menu',()=>{
+ const f=fixture();f.run("setViewport('wide');openInPane('reading_stream','left');openInPane('reading_reading_journal','right')");for(const id of ['samePreview','rightSamePreview','leftMore','rightMore'])assert(!f.get(id).classList.contains('hidden'));f.get('leftMore').open=true;f.get('samePreview').onclick();assert.equal(f.run('current'),f.run('reference'));for(const id of ['samePreview','rightSamePreview'])assert(f.get(id).classList.contains('hidden'));for(const id of ['leftMore','rightMore'])assert(!f.get(id).classList.contains('hidden'));assert.equal(f.get('leftMore').open,false);assert.equal(f.get('leftBacklinks').textContent,'查看反链');f.run('setEditing(true,false);setRightEditing(true,false);previewSameNote()');assert(f.run('editing&&rightEditing'));f.run("openInPane('reading_reading_journal','right')");assert(!f.get('leftMore').classList.contains('hidden'));assert(!f.get('rightMore').classList.contains('hidden'));f.run("syncUrl()");const g=fixture(f.href());assert(!g.get('samePreview').classList.contains('hidden'));f.run("openInPane(current,'right');syncUrl()");const h=fixture(f.href());assert(h.get('samePreview').classList.contains('hidden'));assert(h.get('rightSamePreview').classList.contains('hidden'));assert(!h.get('leftMore').classList.contains('hidden'));assert(!h.get('rightMore').classList.contains('hidden'));
 });
 
 test('pane headers omit note picker; file click follows active pane and drag targets a pane',()=>{
@@ -319,4 +326,42 @@ test('deleting the final vault leaves a recoverable manager empty state and crea
 test('browser history remains usable after deleting every in-memory vault',()=>{
  const f=fixture();f.run('openVaultManager(false)');for(const id of ['reading','projects','local'])f.run(`openVaultAction('delete','${id}');confirmVaultAction()`);
  assert.equal(f.run('libraries.length'),0);assert.doesNotThrow(()=>f.back());assert.equal(f.run('libraries.length'),0);assert.equal(f.run('activeVault'),'');assert(f.run('vaultManagerOpen'));
+});
+
+test('wiki links resolve relative paths, offer missing-note creation, and backlink results open in their pane',()=>{
+ const f=fixture();
+ f.run("openInPane('reading_reading_journal','left');note('reading_reading_journal').text='[[10_写作/基础排版|排版]] `[[幽灵]]`\\n```md\\n[[幽灵]]\\n```';render()");
+ assert.match(f.get('article').innerHTML,/data-source="reading_stream"/);
+ assert(!f.get('article').innerHTML.includes('data-wiki-create="幽灵"'));
+ f.run("note('reading_reading_journal').text='![[10_写作/基础排版]] [[10_写作/基础排版#二级标题|标题]]';render()");
+ assert(f.get('article').innerHTML.includes('![[10_写作/基础排版]]'));
+ assert(!f.get('article').innerHTML.includes('data-wiki-create="10_写作/基础排版"'));
+ assert.match(f.get('article').innerHTML,/标题锚点暂不支持/);
+ f.run("openInPane('reading_reading_journal','left');note('reading_reading_journal').text='[[新建条目]]';render()");
+ assert.match(f.get('article').innerHTML,/data-wiki-create="新建条目"/);
+ const missing={dataset:{wikiCreate:'新建条目'}};f.get('article').contains=node=>node===missing;
+ f.get('article').dispatch('click',{target:{closest:selector=>selector==='[data-wiki-create]'?missing:null},preventDefault(){}});
+ assert.equal(f.get('newEntryDialog').open,true);assert.equal(f.get('newEntryFolder').value,'40_阅读');assert.equal(f.get('newEntryName').value,'新建条目');
+ f.get('confirmNewEntry').onclick();assert.equal(f.run('note(current).title'),'新建条目');assert.equal(f.run('note(current).folder'),'40_阅读');
+ const g=fixture();g.run("openInPane('reading_reading_journal','left');note('reading_reading_journal').text='[[10_写作/基础排版]] `[[幽灵]]`\\n~~~md\\n[[幽灵]]\\n~~~';render();openInPane('reading_stream','right')");g.get('rightBacklinks').onclick();
+ assert.equal(g.get('rightBacklinksCount').textContent,'1');assert(!g.get('rightBacklinksPanel').classList.contains('hidden'));assert(g.get('rightBacklinksItems').innerHTML.includes('40_阅读 / 读书对话练习.md'));
+ g.flush();assert.equal(new URL(g.href()).searchParams.get('backlinks'),'right');
+ const source={dataset:{backlinkNote:'reading_reading_journal',backlinkPane:'right'}};g.event('document','click',{target:{closest:selector=>selector==='[data-backlink-note]'?source:null}});assert.equal(g.run('reference'),'reading_reading_journal');assert.equal(g.run('activePane'),'right');
+ g.run("note('reading_reading_journal').text='![[10_写作/基础排版]]';renderBacklinksPanel('right')");assert.equal(g.get('rightBacklinksCount').textContent,'0');
+});
+
+test('preview images open a scrollable full-image viewer by click or keyboard and restore focus on close',()=>{
+ const f=fixture();f.run("openInPane('reading_stream','left')");assert.match(f.get('article').innerHTML,/data-preview-image/);assert.match(f.get('article').innerHTML,/role="button" tabindex="0" aria-label="查看完整图片：[^\"]+" alt="/);
+ const image={src:'data:image/svg+xml;base64,PHN2Zz4=',alt:'长图',focus(){this.focused=true}};f.get('article').contains=node=>node===image;
+ f.get('article').dispatch('click',{target:{closest:selector=>selector==='[data-preview-image]'?image:null}});assert.equal(f.get('imageViewerDialog').open,true);assert.equal(f.get('imageViewerImage').src,image.src);assert.equal(f.get('imageViewerTitle').textContent,'长图');
+ f.get('closeImageViewer').onclick();assert.equal(f.get('imageViewerDialog').open,false);assert.equal(f.get('imageViewerImage').alt,'');assert.equal(image.focused,true);
+ let prevented=false;f.get('article').dispatch('keydown',{target:{matches:selector=>selector==='img[data-preview-image]',src:image.src,alt:image.alt,focus(){this.focused=true}},key:'Enter',preventDefault(){prevented=true}});assert(prevented);assert.equal(f.get('imageViewerDialog').open,true);assert.match(html,/\.image-viewer-scroll\{[^}]*overflow:auto/);f.get('closeImageViewer').onclick();
+});
+
+test('escaped wiki links stay literal and do not create backlinks',()=>{
+ const f=fixture(),escaped='\\[[10_写作/基础排版]]';
+ assert.deepEqual(JSON.parse(f.run('JSON.stringify(wikiTargetsIn('+JSON.stringify(escaped)+'))')),[]);
+ f.run('note(\'reading_reading_journal\').text='+JSON.stringify(escaped)+';render()');
+ assert(!f.get('article').innerHTML.includes('class="wiki-link'));
+ assert(!f.get('article').innerHTML.includes('data-wiki-create='));
 });
