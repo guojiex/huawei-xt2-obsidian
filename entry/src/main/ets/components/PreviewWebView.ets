@@ -103,6 +103,10 @@ class PreviewImpl {
     this.enqueue('window.__mdpreview.closeImageViewer()');
   }
 
+  scrollToHeading(index: number): void {
+    this.enqueue(`window.__mdpreview.scrollToHeading(${Math.max(0, Math.floor(index))})`);
+  }
+
   requestShareCaptureMetrics(id: number): void {
     this.enqueue(`window.__mdpreview.requestShareCaptureMetrics(${id})`);
   }
@@ -180,6 +184,10 @@ export class PreviewBridge {
     }
     this.impl?.closeImageViewer();
     return true;
+  }
+
+  scrollToHeading(index: number): void {
+    this.impl?.scrollToHeading(index);
   }
 
   resetDocument(): void {

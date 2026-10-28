@@ -15,6 +15,13 @@ import { FileTreeView } from './FileTreeView';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 
+export interface ChapterEntry {
+  index: number;
+  level: number;
+  title: string;
+  offset: number;
+}
+
 @Component
 export struct VaultSidebar {
   /** 抽屉形态（sm 覆盖层）：不显示「收起 «」——抽屉关掉即可，无收起语义 */
@@ -31,6 +38,8 @@ export struct VaultSidebar {
   @Prop noteCount: number = 0;
   /** 当前打开文件的库内相对路径（父级持有，树只画选中态） */
   @Prop currentFilePath: string = '';
+  @Prop chapters: ChapterEntry[] = [];
+  @Prop selectedChapterIndex: number = -1;
   /**
    * 重扫信号 + 需要显示出来的路径：**透传给 FileTreeView**（那边才是状态持有者）。
    * refreshSeq：父级每 +1 一次，树重扫一次（新建 / 改名 / 删除笔记后刷新）；
@@ -41,6 +50,7 @@ export struct VaultSidebar {
   @Prop revealPath: string = '';
   /** 下拉菜单开关（瞬态） */
   @State menuOpen: boolean = false;
+  @State sidebarTab: string = 'files';
   /**
    * 弹层宽（vp）：原型 .vault-menu 是 left:0; right:0 于 .vault-switch —— **与卡片同宽**，
    * 不是固定值。侧栏宽随断点等分变化，故在卡片上 onAreaChange 实测回填。
@@ -67,6 +77,9 @@ export struct VaultSidebar {
   onCreateNote: () => void = () => {};
   /** 选中文件回调（向父级传递，由父级决定编辑器行为） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
+  onSelectChapter: (index: number) => void = (index: number) => {};
+  /** 文件行尾的跨栏打开入口。 */
+  onOpenOtherPane: (relPath: string) => void = (relPath: string) => {};
   onReferenceNote: (relPath: string, vaultId: string) => void =
     (relPath: string, vaultId: string) => {};
   /**
@@ -333,41 +346,119 @@ export struct VaultSidebar {
         .padding({ left: Space.s4, right: Space.s2 })
       }
 
-      // 真实文件树（v0.2 M1 需求 1.1–1.5）。
-      // 当前文件由父级持有并在两处之间传递：折叠父目录不会连带清掉它（需求 1.4）。
-      FileTreeView({
-        vaultId: this.currentVaultId,
-        currentFilePath: this.currentFilePath,
-        refreshSeq: this.refreshSeq,
-        revealPath: this.revealPath,
-        referenceOnly: this.referenceOnly,
-        onSelectFile: (relPath: string): void => {
-          this.onSelectFile(relPath);
-        },
-        onReferenceNote: (relPath: string, vaultId: string): void => {
-          this.onReferenceNote(relPath, vaultId);
-        },
-        onCreateInDir: (dirRelPath: string): void => {
-          this.onCreateInDir(dirRelPath);
-        },
-        onRenamePath: (relPath: string, isDir: boolean): void => {
-          this.onRenamePath(relPath, isDir);
-        },
-        onMovePath: (relPath: string, isDir: boolean): void => {
-          this.onMovePath(relPath, isDir);
-        },
-        onDeletePath: (relPath: string, isDir: boolean): void => {
-          this.onDeletePath(relPath, isDir);
-        },
-        onSharePath: (relPath: string, isDir: boolean): void => {
-          this.onSharePath(relPath, isDir);
-        },
-        onSwipeDelete: (relPath: string): void => {
-          this.onSwipeDelete(relPath);
+      if (!this.referenceOnly) {
+        Row() {
+          Row() {
+            Text('文件')
+              .fontSize(FontSize.body3)
+              .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+              .width('100%')
+              .textAlign(TextAlign.Center)
+          }
+          .layoutWeight(1)
+          .height(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .border({ width: { bottom: 2 }, color: this.sidebarTab === 'files'
+            ? $r('app.color.brand') : $r('app.color.line') })
+          .onClick((): void => { this.sidebarTab = 'files'; })
+
+          Row() {
+            Text('章节')
+              .fontSize(FontSize.body3)
+              .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+              .width('100%')
+              .textAlign(TextAlign.Center)
+          }
+          .layoutWeight(1)
+          .height(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .border({ width: { bottom: 2 }, color: this.sidebarTab === 'chapters'
+            ? $r('app.color.brand') : $r('app.color.line') })
+          .onClick((): void => { this.sidebarTab = 'chapters'; })
         }
-      })
-        .layoutWeight(1)
         .width('100%')
+        .padding({ left: Space.s3, right: Space.s3 })
+      }
+
+      Stack() {
+        // 保持树常驻，切换章节时不丢失折叠和滚动位置。
+        FileTreeView({
+          vaultId: this.currentVaultId,
+          currentFilePath: this.currentFilePath,
+          refreshSeq: this.refreshSeq,
+          revealPath: this.revealPath,
+          referenceOnly: this.referenceOnly,
+          onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
+          onOpenOtherPane: (relPath: string): void => { this.onOpenOtherPane(relPath); },
+          onReferenceNote: (relPath: string, vaultId: string): void => {
+            this.onReferenceNote(relPath, vaultId);
+          },
+          onCreateInDir: (dirRelPath: string): void => { this.onCreateInDir(dirRelPath); },
+          onRenamePath: (relPath: string, isDir: boolean): void => { this.onRenamePath(relPath, isDir); },
+          onMovePath: (relPath: string, isDir: boolean): void => { this.onMovePath(relPath, isDir); },
+          onDeletePath: (relPath: string, isDir: boolean): void => { this.onDeletePath(relPath, isDir); },
+          onSharePath: (relPath: string, isDir: boolean): void => { this.onSharePath(relPath, isDir); },
+          onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); }
+        })
+          .width('100%')
+          .height('100%')
+          .visibility(this.referenceOnly || this.sidebarTab === 'files' ? Visibility.Visible : Visibility.Hidden)
+
+        Column() {
+          Text(this.currentFilePath.length > 0 ? this.currentFilePath : '未选择笔记')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s2 })
+          if (this.chapters.length > 0) {
+            List() {
+              ForEach(this.chapters, (chapter: ChapterEntry) => {
+                ListItem() {
+                  Row({ space: Space.s2 }) {
+                    Text('H' + chapter.level.toString())
+                      .fontSize(FontSize.caption)
+                      .fontColor($r('app.color.text_tertiary'))
+                      .width(Space.s6)
+                    Text(chapter.title)
+                      .fontSize(chapter.level <= 2 ? FontSize.body2 : FontSize.body3)
+                      .fontColor(chapter.index === this.selectedChapterIndex
+                        ? $r('app.color.brand') : $r('app.color.text_primary'))
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .layoutWeight(1)
+                  }
+                  .width('100%')
+                  .height(Size.touch)
+                  .padding({ left: Space.s2 + (chapter.level - 1) * Space.s3, right: Space.s3 })
+                  .backgroundColor(chapter.index === this.selectedChapterIndex
+                    ? $r('app.color.brand_bg') : $r('app.color.bg_page'))
+                  .borderRadius(Radius.control)
+                  .onClick((): void => { this.onSelectChapter(chapter.index); })
+                }
+                .width('100%')
+              })
+            }
+            .layoutWeight(1)
+            .width('100%')
+          } else {
+            Column() {
+              Text(this.currentFilePath.length > 0 ? '当前笔记没有章节' : '先打开一篇笔记')
+                .fontSize(FontSize.body3)
+                .fontColor($r('app.color.text_tertiary'))
+            }
+            .layoutWeight(1)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .visibility(!this.referenceOnly && this.sidebarTab === 'chapters' ? Visibility.Visible : Visibility.Hidden)
+      }
+      .layoutWeight(1)
+      .width('100%')
 
       if (!this.referenceOnly && !this.compact) {
         Text('← 左滑显示操作；滑到底移入回收站，可撤销')

@@ -48,7 +48,10 @@ interface MdEditorApi {
   getContent(): string
   requestContent(reqId: number): void
   insertText(b64: string): void
+  applyFormat(kind: string): void
+  scrollToOffset(offset: number): void
   focus(): void
+  blur(): void
   setTheme(theme: string): void
   setEditable(editable: boolean): void
   setLinkCandidatesResult(id: number, b64: string): void
@@ -213,6 +216,8 @@ let themeMode = 'light'
 // ---------- 实例 ----------
 let view: EditorView | null = null
 let changeTimer: number | undefined = undefined
+let isComposing = false
+let applyingContent = false
 const editableCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 let isEditable = true
@@ -231,7 +236,10 @@ function extensionsFor(theme: string) {
     // 实证）：最初放在 ensureView 的 concat 里，setTheme 热切换用 extensionsFor 重建 state
     // 时把它丢了 → docChanged 无人监听 → change 事件从此绝迹、防抖自动保存/预览联动全失效。
     EditorView.updateListener.of((update) => {
-      if (!update.docChanged) {
+      if (!update.docChanged || applyingContent) {
+        return
+      }
+      if (isComposing) {
         return
       }
       // debounce：连续击键不逐帧过桥（保存/切走时 ArkTS 会主动拉全量）
@@ -256,7 +264,102 @@ function ensureView(): EditorView {
     extensions: extensionsFor(themeMode)
   })
   view = new EditorView({ state, parent })
+  view.dom.addEventListener('compositionstart', () => {
+    isComposing = true
+    if (changeTimer !== undefined) {
+      window.clearTimeout(changeTimer)
+      changeTimer = undefined
+    }
+    postToArkts({ type: 'event', name: 'composition', composing: true })
+  })
+  view.dom.addEventListener('compositionend', () => {
+    isComposing = false
+    postToArkts({ type: 'event', name: 'composition', composing: false })
+    if (changeTimer !== undefined) {
+      window.clearTimeout(changeTimer)
+    }
+    changeTimer = window.setTimeout(() => {
+      changeTimer = undefined
+      if (view) {
+        postToArkts({ type: 'event', name: 'change', len: view.state.doc.length })
+      }
+    }, 300)
+  })
   return view
+}
+
+function applyMarkdownFormat(kind: string): void {
+  if (!view || !isEditable) {
+    return
+  }
+  const state = view.state
+  const value = state.doc.toString()
+  const selection = state.selection.main
+  let start = selection.from
+  let end = selection.to
+  const selected = state.sliceDoc(start, end)
+  let replacement = ''
+  let selectionStart = start
+  let selectionEnd = end
+  const inlineFormats: Record<string, [string, string, string]> = {
+    bold: ['**', '**', '粗体文字'],
+    italic: ['*', '*', '斜体文字'],
+    inlineCode: ['`', '`', '代码'],
+    link: ['[', '](https://example.com)', '链接文字']
+  }
+  const inline = inlineFormats[kind]
+  if (inline) {
+    const text = selected || inline[2]
+    replacement = inline[0] + text + inline[1]
+    selectionStart = start + inline[0].length
+    selectionEnd = selectionStart + text.length
+  } else if (kind === 'paragraph' || /^h[1-6]$/.test(kind)) {
+    const lineStart = state.doc.lineAt(start).from
+    const lineEnd = state.doc.lineAt(end).to
+    const prefix = kind === 'paragraph' ? '' : '#'.repeat(Number(kind.substring(1))) + ' '
+    const lines = state.sliceDoc(lineStart, lineEnd).split('\n')
+    replacement = lines.map((line: string): string =>
+      prefix + line.replace(/^#{1,6} +/, '')).join('\n')
+    start = lineStart
+    end = lineEnd
+    selectionStart = start
+    selectionEnd = start + replacement.length
+  } else {
+    const prefixes: Record<string, string> = {
+      list: '- ',
+      ordered: '1. ',
+      task: '- [ ] ',
+      quote: '> '
+    }
+    let prefix = prefixes[kind]
+    if (kind === 'code') {
+      replacement = '```\n' + (selected || '代码') + '\n```'
+      selectionStart = start + 4
+      selectionEnd = selectionStart + (selected || '代码').length
+    } else if (prefix) {
+      replacement = (selected || (kind === 'quote' ? '引用文字' : '列表项'))
+        .split('\n').map((line: string, index: number): string =>
+          (kind === 'ordered' ? (index + 1).toString() + '. ' : prefix) + line).join('\n')
+      if (start > 0 && value[start - 1] !== '\n') {
+        replacement = '\n' + replacement
+        selectionStart += 1
+      }
+      if (end < value.length && value[end] !== '\n') {
+        replacement += '\n'
+      }
+      selectionEnd = selectionStart + replacement.length - (start > 0 && value[start - 1] !== '\n' ? 1 : 0) -
+        (end < value.length && value[end] !== '\n' ? 1 : 0)
+    } else {
+      return
+    }
+  }
+  view.dispatch({
+    changes: { from: start, to: end, insert: replacement },
+    selection: { anchor: selectionStart, head: selectionEnd },
+    scrollIntoView: true,
+    userEvent: 'input'
+  })
+  view.focus()
 }
 
 const api: MdEditorApi = {
@@ -266,11 +369,16 @@ const api: MdEditorApi = {
     console.log('[mdeditor] setContent len=' + text.length)
     const v = ensureView()
     // setDoc 会走 undo 栈：用 effects 直接替换，避免用户一次 ctrl+z 撤回到「设置前」
-    v.dispatch({
-      changes: { from: 0, to: v.state.doc.length, insert: text },
-      // 设置内容不是用户编辑，不进 undo 历史
-      annotations: []
-    })
+    applyingContent = true
+    try {
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: text },
+        // 设置内容不是用户编辑，不进 undo 历史
+        annotations: []
+      })
+    } finally {
+      applyingContent = false
+    }
   },
 
   getContent(): string {
@@ -296,8 +404,23 @@ const api: MdEditorApi = {
     })
   },
 
+  applyFormat(kind: string): void {
+    applyMarkdownFormat(kind)
+  },
+
+  scrollToOffset(offset: number): void {
+    const v = ensureView()
+    const safeOffset = Math.max(0, Math.min(offset, v.state.doc.length))
+    v.dispatch({ selection: { anchor: safeOffset }, scrollIntoView: true })
+    v.focus()
+  },
+
   focus(): void {
     ensureView().focus()
+  },
+
+  blur(): void {
+    view?.contentDOM.blur()
   },
 
   setTheme(theme: string): void {

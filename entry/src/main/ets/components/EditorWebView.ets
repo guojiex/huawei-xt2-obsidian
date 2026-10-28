@@ -108,8 +108,26 @@ class EditorImpl {
     this.enqueue(`window.__mdeditor.insertText('${payload}')`);
   }
 
+  applyFormat(kind: string): void {
+    const formats: string[] = ['paragraph', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic',
+      'inlineCode', 'code', 'link', 'list', 'ordered', 'task', 'quote'];
+    if (!formats.includes(kind)) {
+      return;
+    }
+    this.enqueue(`window.__mdeditor.applyFormat('${kind}')`);
+  }
+
+  scrollToOffset(offset: number): void {
+    const safeOffset: number = Math.max(0, Math.floor(offset));
+    this.enqueue(`window.__mdeditor.scrollToOffset(${safeOffset})`);
+  }
+
   focus(): void {
     this.enqueue('window.__mdeditor.focus()');
+  }
+
+  blur(): void {
+    this.enqueue('window.__mdeditor.blur()');
   }
 
   setLinkCandidatesResult(id: number, candidates: string): void {
@@ -168,8 +186,20 @@ export class EditorBridge {
     this.impl?.insertText(text);
   }
 
+  applyFormat(kind: string): void {
+    this.impl?.applyFormat(kind);
+  }
+
+  scrollToOffset(offset: number): void {
+    this.impl?.scrollToOffset(offset);
+  }
+
   focus(): void {
     this.impl?.focus();
+  }
+
+  blur(): void {
+    this.impl?.blur();
   }
 
   setLinkCandidatesResult(id: number, candidates: string): void {
@@ -199,6 +229,8 @@ export struct EditorWebView {
   @State private loadFailed: boolean = false;
   /** 内容变化通知（debounce 300ms，只报长度；要内容请调 bridge.getContent()） */
   onChange: (len: number) => void = (len: number) => {};
+  /** 输入法组合输入开始 / 结束；组合期间禁止向该编辑器下发另一栏内容。 */
+  onCompositionChange: (composing: boolean) => void = (composing: boolean) => {};
   /** 页面就绪（首帧可交互） */
   onReady: () => void = () => {};
   /** Web 加载错误 */
@@ -246,7 +278,7 @@ export struct EditorWebView {
   }
 
   private handleMessage(json: string): void {
-    let msg: Record<string, string | number> = {};
+    let msg: Record<string, string | number | boolean> = {};
     try {
       msg = JSON.parse(json) as Record<string, string | number>;
     } catch (error) {
@@ -281,6 +313,8 @@ export struct EditorWebView {
       this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
     } else if (name === 'change') {
       this.onChange((msg['len'] as number) ?? 0);
+    } else if (name === 'composition') {
+      this.onCompositionChange((msg['composing'] as boolean) ?? false);
     } else if (name === 'linkCompletion') {
       this.onLinkCompletion(msg['id'] as number, msg['query'] as string);
     }

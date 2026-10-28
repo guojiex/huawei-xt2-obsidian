@@ -43,6 +43,8 @@ export struct FileTreeView {
   @Prop referenceOnly: boolean = false;
   /** 选中文件回调（把相对路径交给父级，由父级决定编辑器要做什么） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
+  /** 从行尾按钮在另一栏打开笔记。 */
+  onOpenOtherPane: (relPath: string) => void = (relPath: string) => {};
   /** 仅引用模式下点击文件行；不打开编辑器。 */
   onReferenceNote: (relPath: string, vaultId: string) => void = (relPath: string, vaultId: string) => {};
   /**
@@ -350,6 +352,18 @@ export struct FileTreeView {
               .onClick(() => {
               hilog.info(TREE_DOMAIN, TREE_TAG, '行内新建：目录 %{public}s', n.relPath);
               this.onCreateInDir(n.relPath);
+              })
+            } else if (!n.isDir && !this.referenceOnly) {
+              Row() {
+                Icon('swap', 16, $r('app.color.text_secondary'))
+              }
+              .width(Size.touch)
+              .height(Size.touch)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(Radius.icon)
+              .onClick((): void => {
+                this.onOpenOtherPane(n.relPath);
               })
             }
           }

@@ -35,6 +35,7 @@ interface MdPreviewApi {
   setTheme(theme: string): void
   resetDocument(): void
   closeImageViewer(): void
+  scrollToHeading(index: number): void
   requestShareCaptureMetrics(id: number): void
   prepareShareCapturePages(id: number, pageCount: number): void
   setShareCaptureScrollTop(id: number, top: number): void
@@ -281,6 +282,10 @@ const api: MdPreviewApi = {
       return
     }
     el.innerHTML = marked.parse(text) as string
+    const headings = el.querySelectorAll('h1,h2,h3,h4,h5,h6')
+    for (let i = 0; i < headings.length; i++) {
+      headings[i].setAttribute('data-chapter-index', String(i))
+    }
     const generation = ++mermaidRenderGeneration
     mermaidRender = renderMermaidBlocks(el, generation)
     localizeImages(el)
@@ -302,6 +307,11 @@ const api: MdPreviewApi = {
 
   closeImageViewer(): void {
     closeImageViewer()
+  },
+
+  scrollToHeading(index: number): void {
+    const heading = document.querySelector(`#content [data-chapter-index="${index}"]`)
+    heading?.scrollIntoView({ block: 'start', behavior: 'smooth' })
   },
 
   async requestShareCaptureMetrics(id: number): Promise<void> {

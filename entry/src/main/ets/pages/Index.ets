@@ -28,7 +28,7 @@ import { NotePathMutationResult, NoteService } from '../model/NoteService';
 import { FileTree } from '../model/FileTree';
 import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
-import { VaultSidebar } from '../components/VaultSidebar';
+import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
@@ -141,6 +141,8 @@ struct Index {
   @State agentHamburgerSeq: number = 0;
   @State agentRenameSeq: number = 0;
   @State moreMenuOpen: boolean = false;
+  @State formatMenuOpen: boolean = false;
+  @State formatMenuPane: string = 'left';
   @State navigationRatio: number = -1;
   @State contentRatio: number = DEFAULT_CONTENT_RATIO;
   @State sidebarProgress: number = 1;
@@ -159,6 +161,22 @@ struct Index {
    * 不存在三处各记一份然后不同步的可能。
    */
   @State currentFilePath: string = '';
+  /** v2 的第二栏单独记住笔记；同篇双编辑仍通过现有 NoteService 保存到同一文件。 */
+  @State rightFilePath: string = '';
+  @State rightEditing: boolean = false;
+  @State activePane: string = 'left';
+  @State leftComposing: boolean = false;
+  @State rightComposing: boolean = false;
+  @State rightEditorDirty: boolean = false;
+  @State rightImagePickerBusy: boolean = false;
+  @State chapterEntries: ChapterEntry[] = [];
+  @State selectedChapterIndex: number = -1;
+  @State chapterPath: string = '';
+  private rightEditorBridge: EditorBridge = new EditorBridge();
+  private rightPreviewBridge: PreviewBridge = new PreviewBridge();
+  private rightSaveTimer: number = -1;
+  private rightLastSavedText: string = '';
+  private rightLastPreviewText: string = '';
   @State backlinkPaths: string[] = [];
   @State backlinksExpanded: boolean = false;
   @State backlinksLoading: boolean = false;
@@ -379,6 +397,7 @@ struct Index {
     this.refreshCurrentVaultNoteCount();
     this.treeSeq++;
     void this.refreshBacklinks();
+    void this.refreshActiveChaptersFromBridge();
   }
 
   private async refreshBacklinks(): Promise<void> {
@@ -451,7 +470,9 @@ struct Index {
       this.leaveSecondaryView();
       return true;
     }
-    if (this.previewBridge.closeImageViewer()) {
+    const activePreview: PreviewBridge = this.activePane === 'right'
+      ? this.rightPreviewBridge : this.previewBridge;
+    if (activePreview.closeImageViewer()) {
       return true;
     }
     if (this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
@@ -464,7 +485,7 @@ struct Index {
   /** 页面隐藏（应用退到后台）：立刻落盘，兜底「杀进程重进内容还在」（2.3） */
   onPageHide(): void {
     if (this.topView === 'note') {
-      void this.flushSave();
+      void this.flushWorkspaceSaves();
     }
   }
 
@@ -485,7 +506,7 @@ struct Index {
   }
 
   private async openVaultManager(fromView: string): Promise<void> {
-    if (fromView === 'note' && !await this.flushSave()) {
+    if (fromView === 'note' && !await this.flushWorkspaceSaves()) {
       return;
     }
     this.vaultManagerReturnView = fromView;
@@ -493,7 +514,7 @@ struct Index {
   }
 
   private async openAgent(): Promise<void> {
-    if (this.topView !== 'note' || !await this.flushSave()) {
+    if (this.topView !== 'note' || !await this.flushWorkspaceSaves()) {
       return;
     }
     this.moreMenuOpen = false;
@@ -543,11 +564,12 @@ struct Index {
   /** 外部入口切换了当前库：落盘旧库编辑后按 switchVault 的重置序列对齐本页状态。 */
   private async adoptExternalVaultSwitch(): Promise<void> {
     try {
-      if (!await this.flushSave()) {
+      if (!await this.flushWorkspaceSaves()) {
         return;
       }
       this.refreshFromRegistry();
       this.currentFilePath = '';
+      this.rightFilePath = '';
       this.quickSwitchOpen = false;
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
@@ -576,13 +598,197 @@ struct Index {
     return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
   }
 
+  private activeFilePath(): string {
+    return this.activePane === 'right' ? this.rightFilePath : this.currentFilePath;
+  }
+
+  private activeEditorBridge(): EditorBridge {
+    return this.activePane === 'right' ? this.rightEditorBridge : this.editorBridge;
+  }
+
+  private sharedNoteEditor(): EditorBridge {
+    if (this.leftComposing) {
+      return this.editorBridge;
+    }
+    if (this.rightComposing || this.rightEditorDirty || (this.rightEditing && this.activePane === 'right')) {
+      return this.rightEditorBridge;
+    }
+    return this.editorBridge;
+  }
+
+  private parseChapterEntries(text: string): ChapterEntry[] {
+    const entries: ChapterEntry[] = [];
+    const lines: string[] = text.split('\n');
+    let offset: number = 0;
+    let fenceChar: string = '';
+    for (let i: number = 0; i < lines.length; i++) {
+      const line: string = lines[i];
+      const fence = line.match(/^ {0,3}(`{3,}|~{3,})/);
+      if (fence) {
+        const marker: string = fence[1].substring(0, 1);
+        fenceChar = fenceChar.length === 0 ? marker : (fenceChar === marker ? '' : fenceChar);
+        offset += line.length + 1;
+        continue;
+      }
+      if (fenceChar.length === 0) {
+        const heading = line.match(/^ {0,3}(#{1,6})[ \t]+(.+?)\s*#*\s*$/);
+        const setext = i + 1 < lines.length ? lines[i + 1].match(/^ {0,3}(=+|-+)\s*$/) : null;
+        if (heading) {
+          const title: string = heading[2].replace(/\s+#+\s*$/, '').trim();
+          if (title.length > 0) {
+            entries.push({
+              index: entries.length,
+              level: heading[1].length,
+              title: title,
+              offset: offset
+            });
+          }
+        } else if (setext && line.trim().length > 0) {
+          entries.push({
+            index: entries.length,
+            level: setext[1].startsWith('=') ? 1 : 2,
+            title: line.trim(),
+            offset: offset
+          });
+        }
+      }
+      offset += line.length + 1;
+    }
+    return entries;
+  }
+
+  private updateChapterEntries(text: string, path: string): void {
+    if (path.length === 0 || path !== this.activeFilePath()) {
+      return;
+    }
+    if (path !== this.chapterPath) {
+      this.selectedChapterIndex = -1;
+      this.chapterPath = path;
+    }
+    this.chapterEntries = this.parseChapterEntries(text);
+    if (this.selectedChapterIndex >= this.chapterEntries.length) {
+      this.selectedChapterIndex = -1;
+    }
+  }
+
+  private async refreshActiveChaptersFromBridge(): Promise<void> {
+    const pane: string = this.activePane;
+    const path: string = this.activeFilePath();
+    if (path.length === 0) {
+      this.chapterPath = '';
+      this.chapterEntries = [];
+      this.selectedChapterIndex = -1;
+      return;
+    }
+    const bridge: EditorBridge = this.activeEditorBridge();
+    if (!bridge.ready) {
+      return;
+    }
+    try {
+      const text: string = await bridge.getContent();
+      if (pane === this.activePane && path === this.activeFilePath()) {
+        this.updateChapterEntries(text, path);
+      }
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, '更新章节导航失败');
+    }
+  }
+
+  private selectChapter(index: number): void {
+    if (index < 0 || index >= this.chapterEntries.length) {
+      return;
+    }
+    const chapter: ChapterEntry = this.chapterEntries[index];
+    this.selectedChapterIndex = index;
+    if (this.activePane === 'right') {
+      if (this.rightEditing) {
+        this.rightEditorBridge.scrollToOffset(chapter.offset);
+      } else {
+        this.rightPreviewBridge.scrollToHeading(index);
+      }
+    } else if (this.smMode === 'edit') {
+      this.editorBridge.scrollToOffset(chapter.offset);
+    } else {
+      this.previewBridge.scrollToHeading(index);
+    }
+    this.closeNoteNavigation();
+  }
+
+  private editorBridgeForPath(path: string): EditorBridge {
+    if (path.length > 0 && path === this.currentFilePath && path === this.rightFilePath) {
+      return this.sharedNoteEditor();
+    }
+    if (path.length > 0 && path === this.currentFilePath) {
+      return this.editorBridge;
+    }
+    if (path.length > 0 && path === this.rightFilePath) {
+      return this.rightEditorBridge;
+    }
+    return this.activeEditorBridge();
+  }
+
+  private setActivePane(pane: string): void {
+    this.activePane = pane === 'right' ? 'right' : 'left';
+    void this.refreshSharedEditability();
+    void this.refreshActiveChaptersFromBridge();
+    if (this.activePane === 'right' && this.rightFilePath.length === 0 && this.currentFilePath.length > 0) {
+      void this.loadRightFile(this.currentFilePath);
+    }
+  }
+
+  /** Same-note editing has one active caret; the other editor stays read-only and mirrors content. */
+  private async refreshSharedEditability(): Promise<void> {
+    const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
+    const leftRequested: boolean = this.smMode === 'edit';
+    const rightRequested: boolean = this.rightEditing;
+    const leftEditable: boolean = this.leftComposing || (leftRequested &&
+      (!sharedNote || (!this.rightComposing && this.activePane === 'left')));
+    const rightEditable: boolean = this.rightComposing || (rightRequested &&
+      (!sharedNote || (!this.leftComposing && this.activePane === 'right')));
+
+    // Revoke the old editor first so a same-note pane switch never leaves two active carets.
+    if (!leftEditable && this.editorBridge.ready) {
+      await this.editorBridge.setEditable(false);
+      this.editorBridge.blur();
+    }
+    if (!rightEditable && this.rightEditorBridge.ready) {
+      await this.rightEditorBridge.setEditable(false);
+      this.rightEditorBridge.blur();
+    }
+    if (leftEditable && this.editorBridge.ready) {
+      await this.editorBridge.setEditable(true);
+    }
+    if (rightEditable && this.rightEditorBridge.ready) {
+      await this.rightEditorBridge.setEditable(true);
+    }
+  }
+
+  private toggleActivePane(): void {
+    this.setActivePane(this.activePane === 'left' ? 'right' : 'left');
+  }
+
+  private isPaneEditable(pane: string): boolean {
+    const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
+    if (pane === 'right') {
+      return this.rightEditorBridge.ready && (this.rightComposing || (this.rightEditing &&
+        (!sharedNote || (!this.leftComposing && this.activePane === 'right'))));
+    }
+    return this.editorBridge.ready && (this.leftComposing || (this.smMode === 'edit' &&
+      (!sharedNote || (!this.rightComposing && this.activePane === 'left'))));
+  }
+
+  private applyEditorFormat(kind: string, pane: string): void {
+    if (!this.isPaneEditable(pane)) {
+      return;
+    }
+    const bridge: EditorBridge = pane === 'right' ? this.rightEditorBridge : this.editorBridge;
+    bridge.applyFormat(kind);
+  }
+
   private appBarTitle(): string {
     if (this.topView === 'note') {
-      if (this.breakpoint === Breakpoint.SM) {
-        const noteName: string = this.currentNoteName();
-        return noteName.length > 0 ? noteName : '曜石笔记';
-      }
-      return this.sidebarCollapsed ? this.currentVaultName() : '曜石笔记';
+      return this.breakpoint === Breakpoint.SM || this.sidebarCollapsed
+        ? this.currentVaultName() : '曜石笔记';
     }
     if (this.topView === 'vaults') {
       return '笔记库';
@@ -618,7 +824,25 @@ struct Index {
       }
       this.smMode = 'edit';
     }
-    void this.loadFile(relPath);
+    if (this.activePane === 'right') {
+      void this.loadRightFile(relPath);
+    } else {
+      void this.loadFile(relPath);
+    }
+  }
+
+  private openFileInOtherPane(relPath: string): void {
+    const targetPane: string = this.activePane === 'left' ? 'right' : 'left';
+    this.activePane = targetPane;
+    if (this.isSingleScreenLayout()) {
+      this.setDrawerOpen(false);
+      this.smMode = 'edit';
+    }
+    if (targetPane === 'right') {
+      void this.loadRightFile(relPath);
+    } else {
+      void this.loadFile(relPath);
+    }
   }
 
   /** 打开快切时重新扫描当前库，候选与目录展开状态无关。 */
@@ -657,12 +881,218 @@ struct Index {
     this.lastSavedText = text;
     this.editorDirty = false;
     await this.editorBridge.setContent(text);
+    if (relPath.length > 0 && relPath === this.rightFilePath) {
+      this.rightLastSavedText = text;
+      this.rightEditorDirty = false;
+    }
     // M3 联动：文件加载后预览同步本页内容 + 告知笔记目录（相对图片引用的解析基准）
     this.previewBridge.resetDocument();
     this.previewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
     this.pushPreview(text, true);
+    if (relPath.length > 0 && this.rightFilePath.length === 0) {
+      this.rightFilePath = relPath;
+      await this.readRightAndPush(relPath);
+    } else if (this.rightFilePath === relPath && relPath.length > 0) {
+      await this.readRightAndPush(relPath);
+    }
+    if (this.activePane === 'left') {
+      this.updateChapterEntries(text, relPath);
+    }
+    await this.refreshSharedEditability();
+    await this.refreshActiveChaptersFromBridge();
     void this.refreshBacklinks();
     return true;
+  }
+
+  private async readRightAndPush(relPath: string): Promise<boolean> {
+    let text: string | null = '';
+    if (this.currentVaultId.length > 0 && relPath.length > 0) {
+      text = NoteService.tryReadNote(VaultRegistry.get(), this.currentVaultId, relPath);
+      if (text === null) {
+        return false;
+      }
+    }
+    this.rightLastSavedText = text;
+    this.rightEditorDirty = false;
+    await this.rightEditorBridge.setContent(text);
+    this.rightPreviewBridge.resetDocument();
+    this.rightPreviewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
+    this.pushRightPreview(text, true);
+    if (this.activePane === 'right') {
+      this.updateChapterEntries(text, relPath);
+    }
+    await this.refreshSharedEditability();
+    await this.refreshActiveChaptersFromBridge();
+    return true;
+  }
+
+  private async loadRightFile(relPath: string): Promise<void> {
+    const previousPath: string = this.rightFilePath;
+    const vaultId: string = this.currentVaultId;
+    if (relPath === previousPath) {
+      return;
+    }
+    if (!await this.flushRightSave(previousPath, vaultId)) {
+      return;
+    }
+    const text: string | null = relPath.length > 0
+      ? NoteService.tryReadNote(VaultRegistry.get(), vaultId, relPath) : '';
+    if (text === null) {
+      promptAction.showToast({ message: '打开笔记失败' });
+      return;
+    }
+    this.rightFilePath = relPath;
+    this.rightLastSavedText = text;
+    this.rightEditorDirty = false;
+    await this.readRightAndPush(relPath);
+    if (relPath.length > 0) {
+      this.ensureRecentOpenStore();
+      (this.recentOpenStore as RecentOpenStore).record(vaultId, relPath);
+    }
+  }
+
+  private async flushRightSave(targetPath: string = this.rightFilePath,
+    targetVaultId: string = this.currentVaultId): Promise<boolean> {
+    if (this.rightSaveTimer !== -1) {
+      clearTimeout(this.rightSaveTimer);
+      this.rightSaveTimer = -1;
+    }
+    if (targetPath.length === 0 || targetVaultId.length === 0 || !this.rightEditorBridge.ready) {
+      return true;
+    }
+    if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
+      return await this.flushSave(targetPath, targetVaultId, this.sharedNoteEditor());
+    }
+    let text: string = '';
+    try {
+      text = await this.rightEditorBridge.getContent();
+    } catch (error) {
+      promptAction.showToast({ message: '保存失败，请稍后重试' });
+      return false;
+    }
+    const savedText: string = targetPath === this.rightFilePath ? this.rightLastSavedText : '';
+    if (text === savedText) {
+      if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
+        this.rightEditorDirty = false;
+      }
+      return true;
+    }
+    try {
+      await NoteService.saveNote(VaultRegistry.get(), targetVaultId, targetPath, text);
+      if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
+        this.rightLastSavedText = text;
+        this.rightEditorDirty = false;
+      }
+      if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
+        this.lastSavedText = text;
+        this.editorDirty = false;
+        void this.refreshBacklinks();
+      }
+      return true;
+    } catch (error) {
+      this.toastRegistryError('保存失败', error);
+      return false;
+    }
+  }
+
+  private scheduleRightSave(): void {
+    if (this.rightFilePath.length === 0) {
+      return;
+    }
+    if (this.rightFilePath === this.currentFilePath) {
+      if (this.saveTimer !== -1) {
+        clearTimeout(this.saveTimer);
+      }
+      this.saveTimer = setTimeout((): void => {
+        this.saveTimer = -1;
+        void this.flushRightSave();
+      }, 800);
+      return;
+    }
+    if (this.rightSaveTimer !== -1) {
+      clearTimeout(this.rightSaveTimer);
+    }
+    this.rightSaveTimer = setTimeout((): void => {
+      this.rightSaveTimer = -1;
+      void this.flushRightSave();
+    }, 800);
+  }
+
+  private pushRightPreview(text: string, force: boolean = false): void {
+    if (!force && text === this.rightLastPreviewText) {
+      return;
+    }
+    this.rightLastPreviewText = text;
+    if (this.currentVaultId.length > 0 && this.rightFilePath.length > 0) {
+      const files: string[] = WikiLinkService.files(VaultRegistry.get(), this.currentVaultId);
+      this.rightPreviewBridge.setContent(WikiLinkParser.renderForPreview(text, this.rightFilePath, files));
+    } else {
+      this.rightPreviewBridge.setContent(text);
+    }
+  }
+
+  private async syncLeftContentToRight(): Promise<void> {
+    if (this.currentFilePath.length === 0 || this.rightFilePath !== this.currentFilePath ||
+      !this.editorBridge.ready) {
+      return;
+    }
+    try {
+      const text: string = await this.editorBridge.getContent();
+      this.pushRightPreview(text);
+      if (this.activePane === 'left') {
+        this.updateChapterEntries(text, this.currentFilePath);
+      } else {
+        this.updateChapterEntries(text, this.rightFilePath);
+      }
+      if (this.rightEditorBridge.ready && !this.rightComposing) {
+        await this.rightEditorBridge.setContent(text);
+        this.rightEditorDirty = false;
+      }
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, '双栏同步右栏失败');
+    }
+  }
+
+  private async syncRightContentToLeft(): Promise<void> {
+    if (this.rightFilePath.length === 0 || this.rightFilePath !== this.currentFilePath ||
+      !this.rightEditorBridge.ready) {
+      return;
+    }
+    try {
+      const text: string = await this.rightEditorBridge.getContent();
+      this.pushPreview(text);
+      if (this.rightFilePath === this.currentFilePath) {
+        this.pushRightPreview(text);
+      }
+      if (this.editorBridge.ready && !this.leftComposing) {
+        await this.editorBridge.setContent(text);
+        this.editorDirty = true;
+      }
+      this.rightEditorDirty = false;
+      if (this.activePane === 'right') {
+        this.updateChapterEntries(text, this.rightFilePath);
+      } else {
+        this.updateChapterEntries(text, this.currentFilePath);
+      }
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, '双栏同步左栏失败');
+    }
+  }
+
+  private onLeftCompositionChange(composing: boolean): void {
+    this.leftComposing = composing;
+    void this.refreshSharedEditability();
+    if (!composing) {
+      void this.syncLeftContentToRight();
+    }
+  }
+
+  private onRightCompositionChange(composing: boolean): void {
+    this.rightComposing = composing;
+    void this.refreshSharedEditability();
+    if (!composing) {
+      void this.syncRightContentToLeft();
+    }
   }
 
   /**
@@ -680,8 +1110,22 @@ struct Index {
   private async loadFile(relPath: string): Promise<void> {
     const prev: string = this.currentFilePath;
     const vaultId: string = this.currentVaultId;
+    const rightSharesPrevious: boolean = this.rightFilePath === prev && prev.length > 0;
+    const rightIsActiveEditor: boolean = rightSharesPrevious && !this.leftComposing &&
+      (this.rightComposing || this.rightEditorDirty || (this.rightEditing && this.activePane === 'right'));
     this.currentFilePath = relPath;
-    if (!await this.flushSave(prev, vaultId)) {
+    if (rightIsActiveEditor && !await this.flushRightSave(prev, vaultId)) {
+      this.currentFilePath = prev;
+      this.scheduleSave();
+      return;
+    }
+    if (!rightIsActiveEditor && !await this.flushSave(prev, vaultId)) {
+      this.currentFilePath = prev;
+      this.scheduleSave();
+      return;
+    }
+    if (!rightSharesPrevious && this.rightFilePath.length > 0 &&
+      !await this.flushRightSave(this.rightFilePath, vaultId)) {
       this.currentFilePath = prev;
       this.scheduleSave();
       return;
@@ -706,23 +1150,25 @@ struct Index {
    *   连带把「打开文件 / 删除」整个动作吞掉（void 调用 + 静默 rejection）。
    *   所以 getContent 与 saveNote 两处 IO 都各自包 try/catch。
    */
-  private async flushSave(targetPath: string | null = null, targetVaultId: string = ''): Promise<boolean> {
+  private async flushSave(targetPath: string | null = null, targetVaultId: string = '',
+    sourceBridge: EditorBridge | null = null): Promise<boolean> {
     if (this.saveTimer !== -1) {
       clearTimeout(this.saveTimer);
       this.saveTimer = -1;
     }
     const path: string = targetPath === null ? this.currentFilePath : targetPath;
     const vaultId: string = targetVaultId.length > 0 ? targetVaultId : this.currentVaultId;
+    const source: EditorBridge = sourceBridge === null ? this.editorBridge : sourceBridge;
     if (vaultId.length === 0 || path.length === 0) {
       return true;
     }
     // 编辑器未就绪时 getContent 返回 ''，此时落盘会把真实文件清空 —— 必须跳过
-    if (!this.editorBridge.ready) {
+    if (!source.ready) {
       return true;
     }
     let text: string = '';
     try {
-      text = await this.editorBridge.getContent();
+      text = await source.getContent();
     } catch (error) {
       // 拉不到内容：放弃这次保存（拿空串落盘会清空文件），但绝不让异常外泄挡住调用方
       const err = error as BusinessError;
@@ -733,6 +1179,9 @@ struct Index {
     if (text === this.lastSavedText) {
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
         this.editorDirty = false;
+        if (path === this.rightFilePath) {
+          this.rightEditorDirty = false;
+        }
       }
       return true;
     }
@@ -741,6 +1190,17 @@ struct Index {
       this.lastSavedText = text;
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
         this.editorDirty = false;
+        if (path === this.rightFilePath) {
+          this.rightLastSavedText = text;
+          this.rightEditorDirty = false;
+          const mirror: EditorBridge = source === this.rightEditorBridge
+            ? this.editorBridge : this.rightEditorBridge;
+          if (mirror.ready && !this.leftComposing && !this.rightComposing) {
+            await mirror.setContent(text);
+          }
+          this.pushPreview(text);
+          this.pushRightPreview(text);
+        }
         void this.refreshBacklinks();
       }
       return true;
@@ -748,6 +1208,17 @@ struct Index {
       this.toastRegistryError('保存失败', error);
       return false;
     }
+  }
+
+  /** Persist visible workspace content without creating two writers for a shared note. */
+  private async flushWorkspaceSaves(): Promise<boolean> {
+    if (this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath) {
+      return await this.flushSave(this.currentFilePath, this.currentVaultId, this.sharedNoteEditor());
+    }
+    if (!await this.flushSave()) {
+      return false;
+    }
+    return await this.flushRightSave();
   }
 
   /** 编辑器有改动：防抖 800ms 后再落盘，避免每次击键都写盘 */
@@ -780,18 +1251,23 @@ struct Index {
     }
   }
 
-  private provideWikiLinkCompletions(id: number, query: string): void {
+  private provideWikiLinkCompletions(id: number, query: string, pane: string = 'left'): void {
     let candidates: WikiLinkCandidate[] = [];
     if (this.currentVaultId.length > 0) {
       candidates = WikiLinkParser.completionCandidates(query,
         WikiLinkService.files(VaultRegistry.get(), this.currentVaultId));
     }
-    this.editorBridge.setLinkCandidatesResult(id, JSON.stringify(candidates));
+    const bridge: EditorBridge = pane === 'right' ? this.rightEditorBridge : this.editorBridge;
+    bridge.setLinkCandidatesResult(id, JSON.stringify(candidates));
   }
 
-  private async handleWikiLinkClick(target: string): Promise<void> {
+  private provideRightWikiLinkCompletions(id: number, query: string): void {
+    this.provideWikiLinkCompletions(id, query, 'right');
+  }
+
+  private async handleWikiLinkClick(target: string, pane: string = 'left'): Promise<void> {
     const vaultId: string = this.currentVaultId;
-    const sourcePath: string = this.currentFilePath;
+    const sourcePath: string = pane === 'right' ? this.rightFilePath : this.currentFilePath;
     if (vaultId.length === 0 || sourcePath.length === 0) {
       return;
     }
@@ -799,7 +1275,11 @@ struct Index {
     const resolution: WikiLinkResolution = WikiLinkParser.resolve(target, sourcePath,
       WikiLinkService.files(registry, vaultId));
     if (resolution.status === 'resolved') {
-      this.onSelectFile(resolution.path);
+      if (pane === 'right') {
+        void this.loadRightFile(resolution.path);
+      } else {
+        void this.loadFile(resolution.path);
+      }
       return;
     }
     if (resolution.status === 'ambiguous') {
@@ -821,14 +1301,19 @@ struct Index {
     if (result.index !== 1) {
       return;
     }
-    if (vaultId !== this.currentVaultId || sourcePath !== this.currentFilePath) {
+    const currentSourcePath: string = pane === 'right' ? this.rightFilePath : this.currentFilePath;
+    if (vaultId !== this.currentVaultId || sourcePath !== currentSourcePath) {
       promptAction.showToast({ message: '当前笔记已变化，请重新打开链接' });
       return;
     }
     const latest: WikiLinkResolution = WikiLinkParser.resolve(target, sourcePath,
       WikiLinkService.files(registry, vaultId));
     if (latest.status === 'resolved') {
-      this.onSelectFile(latest.path);
+      if (pane === 'right') {
+        void this.loadRightFile(latest.path);
+      } else {
+        void this.loadFile(latest.path);
+      }
       return;
     }
     if (latest.status !== 'missing') {
@@ -848,7 +1333,11 @@ struct Index {
         this.drawerOpen = false;
         this.smMode = 'edit';
       }
-      await this.loadFile(createdPath);
+      if (pane === 'right') {
+        await this.loadRightFile(createdPath);
+      } else {
+        await this.loadFile(createdPath);
+      }
     } catch (error) {
       this.toastRegistryError('创建链接目标失败', error);
     }
@@ -901,22 +1390,28 @@ struct Index {
   }
 
   /** Select one Gallery image, copy it into the current vault, and insert its relative Markdown path. */
-  private async pickImageForCurrentNote(): Promise<void> {
-    if (this.imagePickerBusy) {
+  private async pickImageForCurrentNote(pane: string = 'left'): Promise<void> {
+    const isRight: boolean = pane === 'right';
+    const notePath: string = isRight ? this.rightFilePath : this.currentFilePath;
+    const bridge: EditorBridge = isRight ? this.rightEditorBridge : this.editorBridge;
+    if (this.imagePickerBusy || this.rightImagePickerBusy) {
       return;
     }
-    if (this.currentVaultId.length === 0 || this.currentFilePath.length === 0) {
+    if (this.currentVaultId.length === 0 || notePath.length === 0) {
       promptAction.showToast({ message: '请先打开一篇笔记' });
       return;
     }
-    if (!this.editorBridge.ready) {
+    if (!bridge.ready) {
       promptAction.showToast({ message: '编辑器尚未就绪，请稍后重试' });
       return;
     }
 
-    this.imagePickerBusy = true;
+    if (isRight) {
+      this.rightImagePickerBusy = true;
+    } else {
+      this.imagePickerBusy = true;
+    }
     const vaultId: string = this.currentVaultId;
-    const notePath: string = this.currentFilePath;
     const registry: VaultRegistry = VaultRegistry.get();
     try {
       const options: photoAccessHelper.PhotoSelectOptions = new photoAccessHelper.PhotoSelectOptions();
@@ -929,24 +1424,30 @@ struct Index {
       if (uri.length === 0) {
         return;
       }
-      if (vaultId !== this.currentVaultId || notePath !== this.currentFilePath) {
+      const currentPath: string = isRight ? this.rightFilePath : this.currentFilePath;
+      if (vaultId !== this.currentVaultId || notePath !== currentPath) {
         promptAction.showToast({ message: '当前笔记已变化，未导入图片' });
         return;
       }
 
       const imported = await NoteImageService.importPickedImage(registry, registry.abilityContext(),
         vaultId, notePath, uri);
-      if (vaultId !== this.currentVaultId || notePath !== this.currentFilePath) {
+      const currentPathAfterImport: string = isRight ? this.rightFilePath : this.currentFilePath;
+      if (vaultId !== this.currentVaultId || notePath !== currentPathAfterImport) {
         NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
         promptAction.showToast({ message: '笔记已切换，图片未插入' });
         return;
       }
-      this.editorBridge.insertText(imported.markdownReference);
+      bridge.insertText(imported.markdownReference);
     } catch (error) {
       const err = error as BusinessError;
       promptAction.showToast({ message: err.message.length > 0 ? '图片导入失败：' + err.message : '图片导入失败' });
     } finally {
-      this.imagePickerBusy = false;
+      if (isRight) {
+        this.rightImagePickerBusy = false;
+      } else {
+        this.imagePickerBusy = false;
+      }
     }
   }
 
@@ -999,14 +1500,13 @@ struct Index {
         return;
       }
       const editorMounted: boolean = this.topView === 'note';
-      const previousVaultId: string = this.currentVaultId;
-      const previousPath: string = this.currentFilePath;
-      if (editorMounted && !await this.flushSave(previousPath, previousVaultId)) {
+      if (editorMounted && !await this.flushWorkspaceSaves()) {
         return;
       }
       VaultRegistry.get().setCurrent(id);
       this.refreshFromRegistry();
       this.currentFilePath = '';
+      this.rightFilePath = '';
       this.quickSwitchOpen = false;
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
@@ -1155,9 +1655,18 @@ struct Index {
       // 写回会 recreate 一个本该消失的文件）。
       const isCurrent: boolean = this.currentFilePath === relPath
         || this.currentFilePath.startsWith(relPath + '/');
+      const isRightCurrent: boolean = this.rightFilePath === relPath
+        || this.rightFilePath.startsWith(relPath + '/');
+      if (isCurrent || isRightCurrent) {
+        if (!await this.flushWorkspaceSaves()) {
+          return;
+        }
+      }
       if (isCurrent) {
-        await this.flushSave();
         this.currentFilePath = '';
+      }
+      if (isRightCurrent) {
+        this.rightFilePath = '';
       }
       await NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
       this.revealPath = '';
@@ -1188,13 +1697,19 @@ struct Index {
     }
     try {
       const wasCurrent: boolean = this.currentFilePath === relPath;
-      if (wasCurrent) {
-        await this.flushSave();
+      const wasRight: boolean = this.rightFilePath === relPath;
+      if (wasCurrent || wasRight) {
+        if (!await this.flushWorkspaceSaves()) {
+          return;
+        }
       }
       const reg: VaultRegistry = VaultRegistry.get();
       const trashRel: string = TrashService.moveToTrash(reg, this.currentVaultId, relPath);
       if (wasCurrent) {
         this.currentFilePath = '';
+      }
+      if (wasRight) {
+        this.rightFilePath = '';
       }
       this.refreshFileTree();
       this.trashSeq++;
@@ -1274,7 +1789,7 @@ struct Index {
       return;
     }
     try {
-      if (!await this.flushSave()) {
+      if (!await this.flushWorkspaceSaves()) {
         return;
       }
       const previousCurrent: string = this.currentFilePath;
@@ -1283,6 +1798,7 @@ struct Index {
       this.ensureRecentOpenStore();
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
       this.retargetCurrent(relPath, mutation.path, isDir);
+      this.retargetRight(relPath, mutation.path, isDir);
       this.refreshFileTree();
       let reloaded: boolean = false;
       if (this.currentFilePath !== previousCurrent ||
@@ -1305,7 +1821,7 @@ struct Index {
       return;
     }
     try {
-      if (!await this.flushSave()) {
+      if (!await this.flushWorkspaceSaves()) {
         return;
       }
       const previousCurrent: string = this.currentFilePath;
@@ -1314,6 +1830,7 @@ struct Index {
       this.ensureRecentOpenStore();
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
       this.retargetCurrent(relPath, mutation.path, isDir);
+      this.retargetRight(relPath, mutation.path, isDir);
       this.revealPath = mutation.path;
       this.refreshFileTree();
       let reloaded: boolean = false;
@@ -1363,6 +1880,21 @@ struct Index {
     }
   }
 
+  private retargetRight(oldRel: string, newRel: string, isDir: boolean): void {
+    if (this.rightFilePath.length === 0 || oldRel === newRel) {
+      return;
+    }
+    if (!isDir) {
+      if (this.rightFilePath === oldRel) {
+        this.rightFilePath = newRel;
+      }
+      return;
+    }
+    if (this.rightFilePath === oldRel || this.rightFilePath.startsWith(oldRel + '/')) {
+      this.rightFilePath = newRel + this.rightFilePath.substring(oldRel.length);
+    }
+  }
+
   // ===== 对话框拉起（每次新建 controller 传新鲜参数） =====
 
   private openCreateDialog(): void {
@@ -1379,11 +1911,12 @@ struct Index {
   }
 
   private openShareNoteDialog(): void {
-    if (this.topView !== 'note' || this.currentFilePath.length === 0) {
+    const path: string = this.activeFilePath();
+    if (this.topView !== 'note' || path.length === 0) {
       promptAction.showToast({ message: '请先打开一篇笔记' });
       return;
     }
-    this.openShareDialog('note', this.currentFilePath);
+    this.openShareDialog('note', path);
   }
 
   private openSharePath(relPath: string, isDir: boolean): void {
@@ -1415,12 +1948,13 @@ struct Index {
       promptAction.showToast({ message: '当前知识库不存在' });
       return;
     }
-    if (scope === 'note' && !this.editorBridge.ready) {
+    const shareBridge: EditorBridge = this.editorBridgeForPath(path);
+    if (scope === 'note' && !shareBridge.ready) {
       promptAction.showToast({ message: '编辑器尚未就绪，暂时无法分享' });
       return;
     }
     let title: string = '分享笔记';
-    let itemName: string = this.currentFileName();
+    let itemName: string = path.substring(path.lastIndexOf('/') + 1);
     let description: string = '范围：当前编辑中的笔记及其引用的库内图片，不包含链接到的其他笔记。';
     let itemSummary: string = '';
     if (scope === 'folder') {
@@ -1448,7 +1982,7 @@ struct Index {
     if (vault.type === 'git') {
       try {
         const link: ShareLinkScope = scope;
-        const targetPath: string = scope === 'note' ? this.currentFilePath : path;
+        const targetPath: string = path;
         const linkResult = ShareLinkService.build(vault, link, targetPath);
         options.push({ value: 'link', label: '远端网页链接', detail: '来自已配置的 Git 远端和跟踪分支。' });
         notice = linkResult.accessNotice;
@@ -1480,26 +2014,28 @@ struct Index {
     try {
       if (format === 'link') {
         const link: ShareLinkScope = scope;
-        const targetPath: string = scope === 'note' ? this.currentFilePath : path;
+        const targetPath: string = path;
         const result = ShareLinkService.build(vault, link, targetPath);
         await this.shareLink(result.url, itemName, registry);
         return;
       }
       if (format === 'image' && scope === 'note') {
-        await this.prepareNoteImageShare(this.currentVaultId, path, itemName);
+        await this.prepareNoteImageShare(this.currentVaultId, path, itemName, this.editorBridgeForPath(path));
         return;
       }
       if (scope === 'note') {
-        const markdown: string = await this.editorBridge.getContent();
+        const markdown: string = await this.editorBridgeForPath(path).getContent();
         const prepared = await NoteShareService.prepareNote(registry, this.currentVaultId, path, markdown);
         await this.shareFile(prepared.filePath, prepared.fileName, uniformTypeDescriptor.UniformDataType.FILE,
           registry);
         return;
       }
       let snapshot: ShareSnapshot | null = null;
-      if (this.editorBridge.ready && this.currentFilePath.length > 0 &&
-        (scope === 'vault' || this.currentFilePath.startsWith(path + '/') || this.currentFilePath === path)) {
-        snapshot = { path: this.currentFilePath, markdown: await this.editorBridge.getContent() };
+      const activePath: string = this.activeFilePath();
+      const activeBridge: EditorBridge = this.editorBridgeForPath(activePath);
+      if (activeBridge.ready && activePath.length > 0 &&
+        (scope === 'vault' || activePath.startsWith(path + '/') || activePath === path)) {
+        snapshot = { path: activePath, markdown: await activeBridge.getContent() };
       }
       const prepared = await ShareArchiveService.prepareZip(registry, this.currentVaultId, path, snapshot);
       await this.shareFile(prepared.filePath, prepared.fileName, uniformTypeDescriptor.UniformDataType.FILE,
@@ -1578,9 +2114,10 @@ struct Index {
     this.rejectShareCaptureReady(new Error('分享图片生成已取消'));
   }
 
-  private async prepareNoteImageShare(vaultId: string, notePath: string, itemName: string): Promise<void> {
+  private async prepareNoteImageShare(vaultId: string, notePath: string, itemName: string,
+    editor: EditorBridge): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
-    const markdown: string = await this.editorBridge.getContent();
+    const markdown: string = await editor.getContent();
     const bridge: PreviewBridge = new PreviewBridge();
     bridge.setNoteDir(NoteShareService.parentOf(notePath));
     bridge.setContent(markdown);
@@ -1910,11 +2447,13 @@ struct Index {
         .segItem(this.smMode === 'edit')
         .onClick(() => {
           this.smMode = 'edit';
+          void this.refreshSharedEditability();
         })
       Text('预览')
         .segItem(this.smMode === 'preview')
         .onClick(() => {
           this.smMode = 'preview';
+          void this.refreshSharedEditability();
           // 切到预览立刻拉一次编辑器当前内容：Web 侧 change 事件有 300ms 防抖，
           // 点击前刚敲的字可能还没报上来，直接 getContent 才是最新
           void this.updatePreviewFromEditor();
@@ -2129,11 +2668,7 @@ struct Index {
         this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
           this.onHamburger();
         })
-        if (this.topView === 'note') {
-          this.IconButton('message', $r('app.color.text_secondary'), (): void => {
-            void this.openAgent();
-          })
-        } else {
+        if (this.topView === 'agent') {
           this.IconButton('doc', $r('app.color.text_secondary'), (): void => {
             this.moreMenuOpen = false;
             this.topView = 'note';
@@ -2155,23 +2690,10 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
-        // 单屏保留搜索与更多；分享、同步、设置移入更多菜单。
-        this.IconButton('search', $r('app.color.text_secondary'), (): void => {
-          this.openQuickSwitcher();
+        this.IconButton('swap', $r('app.color.text_secondary'), (): void => {
+          this.toggleActivePane();
         })
-        if (this.breakpoint === Breakpoint.SM) {
-          this.MoreMenuButton()
-        } else {
-          this.IconButton('share', $r('app.color.text_secondary'), (): void => {
-            this.openShareNoteDialog();
-          })
-          this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
-            router.pushUrl({ url: 'pages/SyncPage' });
-          })
-          this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
-            this.openSettings('note', 'general');
-          })
-        }
+        this.MoreMenuButton()
       } else if (this.topView === 'agent') {
         this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
           this.openSettings('agent', 'agent');
@@ -2214,6 +2736,19 @@ struct Index {
   @Builder
   MoreMenu() {
     Column() {
+      Row() {
+        Text('搜索与最近打开')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .onClick(() => {
+        this.moreMenuOpen = false;
+        this.openQuickSwitcher();
+      })
       Row() {
         Text('分享笔记')
           .fontSize(FontSize.body2)
@@ -2269,7 +2804,9 @@ struct Index {
       vaults: this.vaults,
       currentVaultId: this.currentVaultId,
       noteCount: this.currentVaultNoteCount,
-      currentFilePath: this.currentFilePath,
+      currentFilePath: this.activeFilePath(),
+      chapters: this.chapterEntries,
+      selectedChapterIndex: this.selectedChapterIndex,
       refreshSeq: this.treeSeq,
       revealPath: this.revealPath,
       onCollapse: (): void => { this.setSidebarCollapsed(true); },
@@ -2321,7 +2858,9 @@ struct Index {
         this.closeNoteNavigation();
         this.topView = 'trash';
       },
-      onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); }
+      onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
+      onSelectChapter: (index: number): void => { this.selectChapter(index); },
+      onOpenOtherPane: (relPath: string): void => { this.openFileInOtherPane(relPath); }
     })
   }
 
@@ -2340,14 +2879,17 @@ struct Index {
 
       Stack({ alignContent: Alignment.Start }) {
         Column() {
-          this.EditorPane(false)
+          this.LeftWorkspacePane(false)
         }
         .width('100%')
         .height('100%')
-        .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
-        if (this.smMode === 'preview') {
-          this.PreviewPane()
+        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
+        Column() {
+          this.RightWorkspacePane()
         }
+        .width('100%')
+        .height('100%')
+        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
       }
       .width('100%')
       .height('100%')
@@ -2383,14 +2925,17 @@ struct Index {
 
       Stack({ alignContent: Alignment.Start }) {
         Column() {
-          this.EditorPane(false)
+          this.LeftWorkspacePane(false)
         }
         .width('100%')
         .height('100%')
-        .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
-        if (this.smMode === 'preview') {
-          this.PreviewPane()
+        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
+        Column() {
+          this.RightWorkspacePane()
         }
+        .width('100%')
+        .height('100%')
+        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
       }
       .width(Math.max(0, this.windowWidthVp - this.noteNavigationWidth() * this.sidebarProgress -
         Space.s4 * this.sidebarProgress))
@@ -2416,13 +2961,13 @@ struct Index {
         .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
 
         Column() {
-          this.EditorPane(false)
+          this.LeftWorkspacePane(false)
         }
         .width(this.windowWidthVp * 0.5)
         .height('100%')
 
         Column() {
-          this.PreviewPane()
+          this.RightWorkspacePane()
         }
         .width(this.windowWidthVp * 0.5 * (1 - this.sidebarProgress))
         .height('100%')
@@ -2448,7 +2993,7 @@ struct Index {
           .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
 
         Column() {
-          this.EditorPane(false)
+          this.LeftWorkspacePane(false)
         }
         .width(this.noteContentWidth() * this.noteContentRatio())
         .height('100%')
@@ -2464,7 +3009,7 @@ struct Index {
           .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
 
         Column() {
-          this.PreviewPane()
+          this.RightWorkspacePane()
         }
         .width(this.noteContentWidth() * (1 - this.noteContentRatio()))
         .height('100%')
@@ -2477,6 +3022,263 @@ struct Index {
     .clip(true)
   }
 
+  @Builder
+  LeftWorkspacePane(showHingeWarning: boolean) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column() {
+        this.EditorPane(showHingeWarning)
+      }
+      .width('100%')
+      .height('100%')
+      .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
+      Column() {
+        this.PreviewPane()
+      }
+      .width('100%')
+      .height('100%')
+      .visibility(this.smMode === 'preview' ? Visibility.Visible : Visibility.Hidden)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.bg_card'))
+    .onClick((): void => { this.setActivePane('left'); })
+  }
+
+  @Builder
+  FormatAction(label: string, kind: string, pane: string) {
+    Row() {
+      Text(label)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_primary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.icon)
+    .backgroundColor($r('app.color.bg_secondary'))
+    .enabled(this.isPaneEditable(pane))
+    .onClick((): void => { this.applyEditorFormat(kind, pane); })
+  }
+
+  @Builder
+  FormatOption(label: string, kind: string) {
+    Row() {
+      Text(label)
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .layoutWeight(1)
+    .height(Size.touch)
+    .padding({ left: Space.s2, right: Space.s2 })
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.icon)
+    .backgroundColor($r('app.color.bg_secondary'))
+    .onClick((): void => {
+      this.formatMenuOpen = false;
+      this.applyEditorFormat(kind, this.formatMenuPane);
+    })
+  }
+
+  @Builder
+  FormatMenu() {
+    Column({ space: Space.s2 }) {
+      Text('文字与段落')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .padding({ bottom: Space.s1 })
+      Row({ space: Space.s1 }) {
+        this.FormatOption('正文', 'paragraph')
+        this.FormatOption('H1', 'h1')
+        this.FormatOption('H2', 'h2')
+      }
+      .width('100%')
+      Row({ space: Space.s1 }) {
+        this.FormatOption('H3', 'h3')
+        this.FormatOption('H4', 'h4')
+        this.FormatOption('H5', 'h5')
+      }
+      .width('100%')
+      Row({ space: Space.s1 }) {
+        this.FormatOption('H6', 'h6')
+        this.FormatOption('粗体', 'bold')
+        this.FormatOption('斜体', 'italic')
+      }
+      .width('100%')
+      Row({ space: Space.s1 }) {
+        this.FormatOption('行内代码', 'inlineCode')
+        this.FormatOption('代码块', 'code')
+        this.FormatOption('链接', 'link')
+      }
+      .width('100%')
+      Row({ space: Space.s1 }) {
+        this.FormatOption('无序列表', 'list')
+        this.FormatOption('有序列表', 'ordered')
+        this.FormatOption('待办', 'task')
+      }
+      .width('100%')
+      Row({ space: Space.s1 }) {
+        this.FormatOption('引用', 'quote')
+      }
+      .width('100%')
+    }
+    .width(Size.paneMinW)
+    .padding(Space.s3)
+    .borderRadius(Radius.card)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+  }
+
+  @Builder
+  FormatToolbar(pane: string) {
+    Row({ space: Space.s1 }) {
+      Row() {
+        Text('Aa')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+      }
+      .width(Size.touch)
+      .height(Size.touch)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(Radius.icon)
+      .backgroundColor($r('app.color.bg_secondary'))
+      .enabled(this.isPaneEditable(pane))
+      .onClick((): void => {
+        if (this.formatMenuPane === pane) {
+          this.formatMenuOpen = !this.formatMenuOpen;
+        } else {
+          this.formatMenuPane = pane;
+          this.formatMenuOpen = true;
+        }
+      })
+      .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
+        builder: this.FormatMenu(),
+        placement: Placement.TopLeft,
+        enableArrow: false,
+        offset: { x: 0, y: -Space.s2 },
+        mask: false,
+        autoCancel: true,
+        popupColor: Color.Transparent,
+        onWillDismiss: (action: DismissPopupAction): void => {
+          action.dismiss();
+          this.formatMenuOpen = false;
+        }
+      })
+      this.FormatAction('B', 'bold', pane)
+      this.FormatAction('I', 'italic', pane)
+      this.FormatAction('☐', 'task', pane)
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s2, right: Space.s2 })
+    .alignItems(VerticalAlign.Center)
+    .border({ width: { top: 1 }, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
+  }
+
+  @Builder
+  RightWorkspacePane() {
+    Column() {
+      Row({ space: Space.s1 }) {
+        Text(this.rightFilePath.length > 0 ? this.rightFilePath : '尚未选择笔记')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+          .onClick((): void => { this.setActivePane('right'); })
+        Text('编辑')
+          .fontSize(FontSize.body3)
+          .fontColor(this.rightEditing ? $r('app.color.brand') : $r('app.color.text_secondary'))
+          .padding({ left: Space.s2, right: Space.s2 })
+          .onClick((): void => {
+            this.setActivePane('right');
+            this.rightEditing = true;
+          void this.refreshSharedEditability();
+            void this.syncLeftContentToRight();
+          })
+        Text('预览')
+          .fontSize(FontSize.body3)
+          .fontColor(!this.rightEditing ? $r('app.color.brand') : $r('app.color.text_secondary'))
+          .padding({ left: Space.s2, right: Space.s2 })
+          .onClick((): void => {
+            this.setActivePane('right');
+            this.rightEditing = false;
+          void this.refreshSharedEditability();
+            void this.syncRightContentToLeft();
+          })
+        if (this.rightEditing) {
+          Text('图片')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .padding({ left: Space.s1, right: Space.s2 })
+            .enabled(this.rightFilePath.length > 0 && !this.rightImagePickerBusy)
+            .onClick((): void => { void this.pickImageForCurrentNote('right'); })
+        }
+      }
+      .width('100%')
+      .height(Size.paneHeadH)
+      .padding({ left: Space.s4, right: Space.s2 })
+      .alignItems(VerticalAlign.Center)
+      .border({ width: { top: 2, bottom: 1 }, color: this.activePane === 'right'
+        ? $r('app.color.brand') : $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+
+      Stack() {
+        EditorWebView({
+          bridge: this.rightEditorBridge,
+          onChange: (_len: number): void => {
+            this.rightEditorDirty = true;
+            this.scheduleRightSave();
+            void this.syncRightContentToLeft();
+            if (this.activePane === 'right') {
+              void this.refreshActiveChaptersFromBridge();
+            }
+          },
+          onCompositionChange: (composing: boolean): void => {
+            this.onRightCompositionChange(composing);
+          },
+          onLinkCompletion: (id: number, query: string): void => {
+            this.provideRightWikiLinkCompletions(id, query);
+          },
+          onReady: (): void => {
+            void this.readRightAndPush(this.rightFilePath);
+          },
+          onError: (msg: string): void => {
+            hilog.error(DOMAIN, TAG, '右栏编辑器 Web: %{public}s', msg);
+          }
+        })
+          .width('100%')
+          .height('100%')
+          .visibility(this.rightEditing ? Visibility.Visible : Visibility.Hidden)
+        PreviewWebView({
+          bridge: this.rightPreviewBridge,
+          onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
+          onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
+          onError: (msg: string): void => {
+            hilog.error(DOMAIN, TAG, '右栏预览 Web: %{public}s', msg);
+          }
+        })
+          .width('100%')
+          .height('100%')
+          .visibility(this.rightEditing ? Visibility.Hidden : Visibility.Visible)
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .backgroundColor($r('app.color.bg_card'))
+      if (this.rightEditing) {
+        this.FormatToolbar('right')
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.bg_card'))
+    .onClick((): void => { this.setActivePane('right'); })
+  }
+
   /**
    * 编辑区占位（真实编辑器 v0.2 M2 接入）。
    * showHingeWarning：lg 收起态专用——编辑区扩到 2/3 会跨第一条折痕。
@@ -2487,7 +3289,7 @@ struct Index {
   EditorPane(showHingeWarning: boolean) {
     Column() {
       this.PaneHead({
-        title: this.currentFilePath.length > 0 ? this.currentFileName() : '尚未选择笔记',
+        title: this.currentFilePath.length > 0 ? this.currentFilePath : '尚未选择笔记',
         showImageAction: true
       })
 
@@ -2504,6 +3306,13 @@ struct Index {
             }
             this.scheduleSave();
             this.schedulePreviewUpdate();
+            void this.syncLeftContentToRight();
+            if (this.activePane === 'left') {
+              void this.refreshActiveChaptersFromBridge();
+            }
+          },
+          onCompositionChange: (composing: boolean): void => {
+            this.onLeftCompositionChange(composing);
           },
           onLinkCompletion: (id: number, query: string): void => {
             this.provideWikiLinkCompletions(id, query);
@@ -2536,6 +3345,9 @@ struct Index {
       .layoutWeight(1)
       .width('100%')
       .backgroundColor($r('app.color.bg_card'))
+      if (this.smMode === 'edit') {
+        this.FormatToolbar('left')
+      }
     }
     .width('100%')
     .height('100%')
