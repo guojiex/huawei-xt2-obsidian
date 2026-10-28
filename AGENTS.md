@@ -39,7 +39,7 @@
 | 14 | 路径**只能**由 `context.filesDir` 等 Context 属性拼出，禁止硬编码沙箱目录字符串；库内相对路径 → 绝对路径**只用一层解析器** | 官方强调；UI 与意图执行器共用，别各拼一遍 |
 | 15 | 端侧意图 / AI 修改已有笔记**同样走 `AtomicFile`** —— 禁止用 `openSync(READ_WRITE\|TRUNC)` 覆盖原内容；新建唯一附件按硬约束 10 选择写入方式 | 这是保护现有笔记内容的工程策略，不是 HarmonyOS 平台强制要求 |
 | 16 | 埋点用**原生 `hiAppEvent` + `UIObserver`**，不引第三方 SDK；**笔记内容一律禁止进埋点**（标题/文件名/路径/正文/字数/标签全禁） | 个人知识库的隐私红线；采集内容会抬高合规与审核成本 |
-| 17 | 颜色 / 圆角 / 间距 / 字号**只引用 token**（`app.color.*` / `app.float.*` 或常量模块），**组件里禁止散写数值**；token 真源是 `docs/prototype/index.html` 的 `:root` 段，改值两边同步 | 散写会让深色模式与换主色变成全局搜替换（2026-10-17 定，落地在 v0.2） |
+| 17 | 颜色 / 圆角 / 间距 / 字号**只引用 token**（`app.color.*` / `app.float.*` 或常量模块），**组件里禁止散写数值**；token 真源是 `docs/prototype/v2/index.html` 的 `:root` 段，改值两边同步 | 散写会让深色模式与换主色变成全局搜替换（2026-10-17 定，落地在 v0.2） |
 | 18 | 禁止凭记忆写 **`Hds*` 组件名**或 **`sys.symbol.*` 资源 id**；UI Design Kit / Symbol 未核实前用自绘兜底 | 同铁律：编造 API 会直接编译失败；待核实项见 `api_notes.md` **I 组** |
 | 19 | **`build-profile.json5` 永久保持 `"signingConfigs": []`**；签名改由工程级 **`hvigorfile.ts` 的 `config.ohos.overrides.signingConfig`** 注入，凭据只存在于 `.local/local-signing.json`（已 gitignore） | DevEco 自动签名会往 `build-profile.json5` 回写**密码明文 + 本机绝对路径**，而该文件**不能 ignore**（移除后 hvigor 报 `00304035 Not Found`，实测）。机制与 ⚠️ 运行时 schema（**只接受 `material` / `type`，写 `name` 构建失败**）见 `api_notes.md` **I4**；日常用 `.\tools\signing.ps1 -Import` 抽凭据，`-InstallHook` 装 pre-commit 兜底 |
 
@@ -61,7 +61,7 @@ docs/
   releases/                   ★ 版本档案：vX.Y/需求文档.md（**落码前必看**）
   open_questions.md           已定决策总表 + 待决 + TODO 挂起
   harmonyos/                  ★ 鸿蒙知识库：api_notes.md（真源）/ qa/ / prompts/
-  prototype/index.html        单文件交互原型（浏览器直接打开）
+  prototype/v2/index.html     当前单文件交互原型（浏览器直接打开）
 spec/                        v0.1 的 spec/plan/tasks（**执行计划，不是承诺记录**）
 tools/build.ps1               命令行构建 HAP（不用开 DevEco）
 tools/install.ps1             装 HAP 到真机 / 拉起

@@ -23,7 +23,7 @@ Agent 的 loop、上下文、Tools/Skills、提示词与运行恢复使用[独�
 - [`docs/requirements_backlog.md`](docs/requirements_backlog.md) —— 需求池
 - [`docs/open_questions.md`](docs/open_questions.md) —— 待决清单与 TODO 挂起项
 - **[`docs/harmonyos/README.md`](docs/harmonyos/README.md)** —— 鸿蒙知识库：与官方 Agent 的问答与结论（单一真源）
-- [`docs/prototype/index.html`](docs/prototype/index.html) —— 单文件交互原型（浏览器直接打开）
+- [`docs/prototype/v2/index.html`](docs/prototype/v2/index.html) —— 当前单文件交互原型（浏览器直接打开）
 
 ## 构建
 

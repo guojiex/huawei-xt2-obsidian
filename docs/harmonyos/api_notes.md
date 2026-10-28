@@ -916,7 +916,7 @@ AppScope/app.json5 → app.versionCode / app.versionName
 - **token 化本身没有技术风险**：`app.color.*` / `app.float.*` 资源或常量模块，纯工程约定。
 - **深色模式**：ArkUI 有系统级深色资源目录（`resources/dark/`），
   但**在 J-1～J-3 核实前**，本版本只保证「另有一套 token」，不承诺手动切换开关（需求池 J 节已标后置）。
-- **token 真源**：`docs/prototype/index.html` 的 `:root` 与 `[data-theme="dark"]` 段。
+- **token 真源**：`docs/prototype/v2/index.html` 的 `:root` 与 `[data-theme="dark"]` 段。
   ArkTS 侧改值时**两边同步**。
 
 ### I3 系统返回键 / 侧滑返回的拦截 —— **I-1 ✅ 已核实（2026-10-17）**
