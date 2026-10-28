@@ -72,14 +72,14 @@ test('frontmatter stays editable but is hidden in both previews and share image'
  const f=fixture();f.run("openInPane('reading_reading_journal','left');openInPane('reading_reading_journal','right')");const source=f.get('editor').value;assert(source.startsWith('---\n'));for(const id of ['article','reference']){assert(!f.get(id).innerHTML.includes('title:'));assert(!f.get(id).innerHTML.includes('tags:'));assert(f.get(id).innerHTML.includes('读书对话练习</h1>'));}f.get('shareBtn').onclick();f.get('shareImage').onclick();assert(!f.get('sharePreview').innerHTML.includes('title:'));assert.equal(f.get('editor').value,source);const headings=JSON.parse(f.run('JSON.stringify(headingsFor(note(current).text))'));assert.equal(headings[0].offset,source.indexOf('# 读书对话练习'));assert.equal(headings[1].offset,source.indexOf('## 本轮阅读问题'));
 });
 test('frontmatter handling preserves source offsets and does not strip body or incomplete blocks',()=>{
- const f=fixture();const source='\uFEFF---\r\ntitle: sample\r\n# metadata comment\r\n...\r\n# Heading\r\n\r\n---\r\nBody';f.run('globalThis.fmSource='+JSON.stringify(source));assert.equal(f.run('headingsFor(fmSource).length'),1);assert.equal(f.run('headingsFor(fmSource)[0].offset'),source.indexOf('# Heading'));assert(f.run('renderMarkdown(fmSource,true)').includes('<hr>'));assert(!f.run('renderMarkdown(fmSource,true)').includes('metadata comment'));assert(f.run("renderMarkdown('---\\ntitle: unfinished',false)").includes('unfinished'));assert(f.run("renderMarkdown('正文\\n---\\n后文',false)").includes('后文'));assert.equal(f.run("markdownBody('---\\n---\\n# Title').text"),'# Title');
+ const f=fixture();const source='\uFEFF---\r\ntitle: sample\r\n# metadata comment\r\n...\r\n# Heading\r\n\r\n---\r\nBody';f.run('globalThis.fmSource='+JSON.stringify(source));assert.equal(f.run('headingsFor(fmSource).length'),1);assert.equal(f.run('headingsFor(fmSource)[0].offset'),source.indexOf('# Heading'));assert.match(f.run('renderMarkdown(fmSource,true)'),/<hr data-source-start="\d+" data-source-end="\d+">/);assert(!f.run('renderMarkdown(fmSource,true)').includes('metadata comment'));assert(f.run("renderMarkdown('---\\ntitle: unfinished',false)").includes('unfinished'));assert(f.run("renderMarkdown('正文\\n---\\n后文',false)").includes('后文'));assert.equal(f.run("markdownBody('---\\n---\\n# Title').text"),'# Title');
 });
 
 test('frontmatter tags render as chips without exposing raw YAML or changing source',()=>{
  const f=fixture();f.run("openInPane('reading_reading_journal','left');openInPane('reading_reading_journal','right')");const source=f.get('editor').value;for(const id of ['article','reference']){assert(f.get(id).innerHTML.includes('aria-label="笔记标签"'));assert(!f.get(id).innerHTML.includes('note-tags-label'));assert(f.get(id).innerHTML.includes('>#样例</span>'));assert(f.get(id).innerHTML.includes('>#阅读</span>'));assert(!f.get(id).innerHTML.includes('tags:'));assert(!f.get(id).innerHTML.includes('title:'));}assert.equal(f.get('editor').value,source);const tags=f.run('frontmatterTags('+JSON.stringify('---\ntags: ["Tag", "nested/tag", "tag", "1984", "y1984"]\n---\n# Note')+')');assert.deepEqual(Array.from(tags),['Tag','nested/tag','y1984']);
 });
 test('inline tags render outside code and links, keeping nested/unicode tags and numeric text correct',()=>{
- const f=fixture();const rendered=f.run('renderMarkdown('+JSON.stringify('# Heading\n\n#样例 #写作/练习 #1984 #y1984\n\n`#code` [link](https://example.com/#fragment)\n\n```\n#fenced\n```')+',false)');assert(rendered.includes('>#样例</span>'));assert(rendered.includes('>#写作/练习</span>'));assert(rendered.includes('>#y1984</span>'));assert(!rendered.includes('>#1984</span>'));assert(rendered.includes('<code>#code</code>'));assert(rendered.includes('<pre><code>#fenced</code></pre>'));assert(!rendered.includes('>#fragment</span>'));
+ const f=fixture();const rendered=f.run('renderMarkdown('+JSON.stringify('# Heading\n\n#样例 #写作/练习 #1984 #y1984\n\n`#code` [link](https://example.com/#fragment)\n\n```\n#fenced\n```')+',false)');assert(rendered.includes('>#样例</span>'));assert(rendered.includes('>#写作/练习</span>'));assert(rendered.includes('>#y1984</span>'));assert(!rendered.includes('>#1984</span>'));assert(rendered.includes('<code>#code</code>'));assert.match(rendered,/<pre data-source-start="\d+" data-source-end="\d+"><code>#fenced<\/code><\/pre>/);assert(!rendered.includes('>#fragment</span>'));
 });
 
 test('phone hides redundant pane switching for same note and preserves current edit/preview controls',()=>{
@@ -167,11 +167,11 @@ test('Aa recognizes code-body selection, full fences and caret; code click remov
 });
 test('plain text code formatting toggles repeatedly, preserves surrounding lines and uses safe fences',()=>{
  const f=fixture(),editor=setFormatSource(f,'前文\n包含\n后文',4,5);for(let i=0;i<6;i++){f.run("openFormat('left');applyFormatChoice('code')");assert.equal(editor.value,i%2===0?'前文\n```\n包含\n```\n后文':'前文\n包含\n后文');assert.equal(editor.value.slice(editor.selectionStart,editor.selectionEnd),'包含');}
- const g=fixture(),other=setFormatSource(g,'const marker = "```";');g.run("insertFormat('code')");assert(other.value.startsWith('````\n'));assert(g.run("renderMarkdown($('editor').value,false)").includes('<pre><code>const marker'));g.run("insertFormat('code')");assert.equal(other.value,'const marker = "```";');
+ const g=fixture(),other=setFormatSource(g,'const marker = "```";');g.run("insertFormat('code')");assert(other.value.startsWith('````\n'));assert.match(g.run("renderMarkdown($('editor').value,false)"),/<pre data-source-start="\d+" data-source-end="\d+"><code>const marker/);g.run("insertFormat('code')");assert.equal(other.value,'const marker = "```";');
 });
 test('code fence matching retains inner fences, CRLF and adjacent blocks and skips YAML metadata',()=>{
  const f=fixture(),source='前文\r\n\r\n~~~~python\r\n包含\r\n```\r\n\r\n~~~~~\r\n\r\n```js\r\n后块\r\n```',editor=setFormatSource(f,source,source.indexOf('包含'),source.indexOf('包含')+2);f.run("openFormat('left')");assert.equal(f.get('formatCodeChoice').attrs['aria-pressed'],'true');f.run("applyFormatChoice('code')");assert.equal(editor.value,'前文\r\n\r\n包含\r\n```\r\n\r\n\r\n```js\r\n后块\r\n```');
- const g=fixture(),text='````js\n```\n# 非标题\n````\n# 标题',e=setFormatSource(g,text,9,10);g.run("openFormat('left')");assert.equal(g.get('formatCodeChoice').attrs['aria-pressed'],'true');assert.equal(g.run("headingsFor($('editor').value).length"),1);assert(g.run("renderMarkdown($('editor').value,false)").includes('<pre><code>```\n# 非标题</code></pre>'));g.run("applyFormatChoice('code')");assert.equal(e.value,'```\n# 非标题\n# 标题');assert.equal(g.run("codeBlockAt("+JSON.stringify("---\nexample: ```\n---\n正文")+",5,5)"),null);
+ const g=fixture(),text='````js\n```\n# 非标题\n````\n# 标题',e=setFormatSource(g,text,9,10);g.run("openFormat('left')");assert.equal(g.get('formatCodeChoice').attrs['aria-pressed'],'true');assert.equal(g.run("headingsFor($('editor').value).length"),1);assert.match(g.run("renderMarkdown($('editor').value,false)"),/<pre data-source-start="\d+" data-source-end="\d+"><code>```\n# 非标题<\/code><\/pre>/);g.run("applyFormatChoice('code')");assert.equal(e.value,'```\n# 非标题\n# 标题');assert.equal(g.run("codeBlockAt("+JSON.stringify("---\nexample: ```\n---\n正文")+",5,5)"),null);
 });
 test('mixed selections do not mark a single code block and right-pane toggle preserves left note',()=>{
  const f=fixture(),source='```\n一\n```\n正文\n~~~\n二\n~~~',editor=setFormatSource(f,source,source.indexOf('一'),source.indexOf('二')+1);f.run("openFormat('left')");assert.equal(f.get('formatCodeChoice').attrs['aria-pressed'],'false');f.run('closeFormat()');assert.equal(editor.value,source);
@@ -192,4 +192,43 @@ test('design format switch targets active right pane and closes phone navigation
 
 test('edit-preview visual variants share the same pane state and survive a reproducible URL',()=>{
  const f=fixture(),left=f.run('current'),right=f.run('reference');f.run("setEditing(true,false);setRightEditing(false,false)");for(const style of ['outline','underline','capsule']){f.get('modeStyle').value=style;f.get('modeStyle').onchange();assert.equal(f.get('window').dataset.modeStyle,style);assert.equal(f.run('editing'),true);assert.equal(f.run('rightEditing'),false);assert.equal(f.run('current'),left);assert.equal(f.run('reference'),right);}f.get('modeStyle').value='underline';f.get('modeStyle').onchange();f.run('syncUrl()');const g=fixture(f.href());assert.equal(g.get('modeStyle').value,'underline');assert.equal(g.get('window').dataset.modeStyle,'underline');assert.equal(g.run('editing'),true);assert.equal(g.run('rightEditing'),false);const bad=fixture('file:///repo/index.html?ui=2&modeStyle=invalid');assert.equal(bad.get('modeStyle').value,'outline');const missing=fixture('file:///repo/index.html?ui=2');assert.equal(missing.get('modeStyle').value,'outline');const legacy=fixture('file:///repo/index.html?ui=2&modeStyle=capsule');assert.equal(legacy.get('modeStyle').value,'capsule');assert(html.includes('<option value="outline" selected>轻描边</option>'));assert(html.includes('id="window" data-mode-style="outline"'));
+});
+
+
+test('same-note preview exposes the follow preference only in its pane menu and persists it',()=>{
+ const f=fixture();f.run("openInPane('reading_stream','left');openInPane('reading_stream','right');setEditing(true,false);setRightEditing(false,false);activatePane('left')");
+ assert(f.get('rightFollowToggle').classList.contains('hidden')===false);assert(f.get('leftFollowToggle').classList.contains('hidden'));assert(f.get('rightMore').classList.contains('hidden')===false);assert.equal(f.get('rightFollowToggle').attrs['aria-pressed'],'true');
+ f.get('rightFollowToggle').onclick();assert.equal(f.run('followEnabled'),false);assert.equal(f.get('rightFollowToggle').attrs['aria-pressed'],'false');assert.equal(new URL(f.href()).searchParams.get('follow'),'0');
+ f.get('rightFollowToggle').onclick();assert.equal(f.run('followEnabled'),true);assert.equal(new URL(f.href()).searchParams.get('follow'),'1');
+ const restored=fixture(f.href());assert.equal(restored.run('followEnabled'),true);const disabled=fixture(f.href().replace('follow=1','follow=0'));assert.equal(disabled.run('followEnabled'),false);
+});
+
+test('manual preview scroll pauses follow until the editor is actively scrolled again',()=>{
+ const f=fixture();f.run("openInPane('reading_stream','left');openInPane('reading_stream','right');setEditing(true,false);setRightEditing(false,false);activatePane('left')");
+ f.get('rightScroll').dispatch('wheel',{type:'wheel',deltaY:20});assert.equal(f.run('previewFollowing'),false);
+ f.get('editor').dispatch('wheel',{type:'wheel',deltaY:20});assert.equal(f.run('previewFollowing'),true);
+ f.get('rightScroll').dispatch('keydown',{type:'keydown',key:'ArrowDown'});assert.equal(f.run('previewFollowing'),false);
+ f.get('editor').dispatch('keydown',{type:'keydown',key:'a'});assert.equal(f.run('previewFollowing'),false);
+ f.get('editor').dispatch('keydown',{type:'keydown',key:'PageDown'});assert.equal(f.run('previewFollowing'),true);
+});
+
+test('source offsets map through markdown blocks without using document scroll percentage',()=>{
+ const f=fixture();const source='\uFEFF---\r\ntitle: sample\r\n---\r\n# 同名\r\n# 同名\r\n\r\n~~~js\r\n代码\r\n~~~\r\n正文';
+ const html=f.run('renderMarkdown('+JSON.stringify(source)+',true)'),ranges=[...html.matchAll(/data-source-start="(\d+)" data-source-end="(\d+)"/g)].map(match=>[Number(match[1]),Number(match[2])]);
+ assert.deepEqual(ranges,[[source.indexOf('# 同名'),source.indexOf('# 同名')+4],[source.indexOf('# 同名',source.indexOf('# 同名')+1),source.indexOf('# 同名',source.indexOf('# 同名')+1)+4],[source.indexOf('~~~js'),source.indexOf('~~~\r\n正文')+3],[source.indexOf('正文'),source.indexOf('正文')+2]]);
+ assert.equal(f.run('previewPositionForOffset(15,[{start:0,end:10,top:20,height:100},{start:20,end:30,top:200,height:40}])'),120);
+ assert.equal(f.run('previewPositionForOffset(100,[{start:0,end:10,top:20,height:100}])'),120);
+});
+
+test('editor scroll maps its source block to preview position in either pane direction',()=>{
+ const f=fixture();f.run("openInPane('reading_stream','left');openInPane('reading_stream','right');setEditing(true,false);setRightEditing(false,false);activatePane('left');editorLinePositions=[{start:0,end:10,top:0,height:100},{start:10,end:20,top:100,height:100}];previewBlockPositions=[{start:0,end:10,top:20,height:100},{start:10,end:20,top:500,height:200}];followGeometryDirty=false;$('editor').scrollHeight=1000;$('editor').clientHeight=300;$('editor').scrollTop=150;$('rightScroll').scrollHeight=1500;$('rightScroll').clientHeight=300;syncPreviewFollow()");
+ assert.equal(f.get('rightScroll').scrollTop,600);
+ f.run("setEditing(false,false);setRightEditing(true,false);activatePane('right');editorLinePositions=[{start:0,end:10,top:0,height:100},{start:10,end:20,top:100,height:100}];previewBlockPositions=[{start:0,end:10,top:20,height:100},{start:10,end:20,top:500,height:200}];followGeometryDirty=false;$('rightEditor').scrollHeight=1000;$('rightEditor').clientHeight=300;$('rightEditor').scrollTop=150;$('writingScroll').scrollHeight=1500;$('writingScroll').clientHeight=300;syncPreviewFollow()");
+ assert.equal(f.get('writingScroll').scrollTop,600);
+});
+
+test('hidden or different-note panes never receive follow scrolling',()=>{
+ const f=fixture();f.run("openInPane('reading_stream','left');openInPane('reading_stream','right');setEditing(true,false);setRightEditing(false,false);activatePane('left');editorLinePositions=[{start:0,end:10,top:0,height:100}];previewBlockPositions=[{start:0,end:10,top:400,height:200}];followGeometryDirty=false;$('editor').scrollTop=100;$('rightScroll').scrollTop=17;referenceEnabled=false;syncPreviewFollow()");
+ assert.equal(f.get('rightScroll').scrollTop,17);
+ f.run("referenceEnabled=true;reference='reading_reading_journal';$('rightScroll').scrollTop=23;syncPreviewFollow()");assert.equal(f.get('rightScroll').scrollTop,23);
 });
