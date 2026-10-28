@@ -789,7 +789,7 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 
 本机 API 26 SDK 的 `@ohos.app.ability.InsightIntentExecutor.d.ts` 声明 `onExecuteInUIAbilityBackgroundMode(name, param)` 自 API 11 支持，返回 `ExecuteResult` 或其 Promise。冷启动由 UIAbility `onCreate` 进入执行回调，不要求创建 window；热启动直接进入回调。这是 SDK 声明，不是本项目设备运行证据。
 
-2026-10-26 静态检查：仓库尚无上述插件意图配置、执行器或 FunctionComponent 平台入口接线。平台代码页提供的是 ai_plugin JSON / OpenAPI YAML 声明，不是 App 的完整 ArkTS 业务实现；六项草稿配置不等于已经能读写设备笔记。核对来源见 [当日归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。
+2026-10-28 项目进展：仓库已为平台 `ListVaults` 0.1.0 增加配置映射及后台 `InsightIntentExecutor`，把 `VaultRegistry.list()` 投影为知识库 id/name/type/isCurrent 字段。其他六项工具、FunctionComponent 接线、平台调用与 API 24 / XT2 运行仍未验；本次代码只说明本机 SDK 编译目标上的接线实现，不代表设备闭环。平台代码页提供的是 ai_plugin JSON / OpenAPI YAML 声明，不是 App 的完整 ArkTS 业务实现；早期六项草稿配置不等于已经能读写设备笔记。核对来源见 [当日归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。
 
 ---
 
@@ -1441,3 +1441,11 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 ### R4 ✅ 邮件拉起接口存在；⚠️ mailto 设备匹配待验
 
 本机 SDK 的 UIAbilityContext.startAbility Promise 签名自 API9，wantConstant 有 ACTION_SEND_TO_DATA；可作为邮件草稿方案的基础。startAbilityByType Promise 签名自 API11，必需 type/wantParam/abilityStartCallback 三参数，用户转交的两参数例子不能照抄。邮件预填与无客户端处理仍须正常设备验证；不据拉起结果宣称邮件发送/送达，不提供后台静默发送承诺。来源与实施边界见 [邮件反馈核实](qa/2026-10-27_邮件反馈拉起方式_API24.md)。
+
+## S 组：Native libgit2 N-API 封装 PoC（2026-10-27）
+
+### S1 ⚠️ N-API 声明可编译，API 24 设备加载待验
+
+本机安装的 HarmonyOS Native SDK 为 API 26（26.0.0.105）。其 `sysroot/usr/include/napi/native_api.h` 声明 `napi_module_register`、`napi_create_promise`、`napi_create_async_work`、`napi_queue_async_work`、`napi_create_threadsafe_function`、`napi_call_threadsafe_function` 等 N-API 接口；线程安全函数接口起始 API10。`sysroot/usr/lib/aarch64-linux-ohos/libace_napi.z.so` 提供链接库。使用此 SDK 配置 `OHOS_COMPATIBLE_SDK_VERSION=24` 可生成 `aarch64-linux-ohos24.0.0` 编译目标，但仍以 API 26 sysroot 编译，不等于 API 24 SDK 或设备验收。
+
+本机 `@ohos.net.http.d.ts` 的 `HttpRequestOptions.caPath` 从 API10 起可用；不设置时，SDK 声明网络栈使用系统预设 CA，并给出 `/etc/ssl/certs/cacert.pem` 路径。Native PoC 在 HTTPS clone 前把此路径交给 libgit2/mbedTLS，`caFile` 仅作可选覆盖。声明描述的是 HTTP 网络栈的默认 CA；Native mbedTLS 直接读取该路径是否在 API24 / XT2 可行，仍待设备验证。PoC 的 HAP 集成、模块导入和 XT2/API 24 运行均待验。
