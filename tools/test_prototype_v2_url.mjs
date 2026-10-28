@@ -4,10 +4,11 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../docs/prototype/v2/index.html',import.meta.url),'utf8');
 const code=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const markupIds=new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g),match=>match[1]));
 function fixture(href='file:///repo/docs/prototype/v2/index.html',storage=new Map()){
  const nodes=new Map(),events={document:{},window:{}},pending=[];
  const listen=(area,key,fn)=>(events[area][key]??=[]).push(fn);
- const get=id=>{if(!nodes.has(id))nodes.set(id,{clientWidth:1200,clientHeight:300,scrollHeight:1000,scrollTop:0,innerHTML:'',value:'',textContent:'',dataset:{},attrs:{},style:{setProperty(k,v){this[k]=v},removeProperty(k){delete this[k]}},classList:{values:new Set(),contains(k){return this.values.has(k)},add(...keys){keys.forEach(k=>this.values.add(k))},remove(...keys){keys.forEach(k=>this.values.delete(k))},toggle(k,on=!this.values.has(k)){on?this.values.add(k):this.values.delete(k);return on}},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){return[]},listeners:{},addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)},dispatch(type,event){for(const fn of this.listeners[type]||[])fn(event)},getBoundingClientRect(){return this.rect||(/^(formatBtn|rightFormatBtn)$/.test(id)?{left:100,right:148,top:700,bottom:748,width:48,height:48}:id==='formatDialog'?{left:0,right:360,top:0,bottom:400,width:360,height:400}:{left:0,right:1200,top:0,bottom:800,width:1200,height:800})},focus(){this.focused=true},contains(){return false},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=start;this.selectionEnd=start+text.length},show(){this.open=true},showModal(){this.open=true},close(){this.open=false}});return nodes.get(id);};
+ const get=id=>{if(!nodes.has(id))nodes.set(id,{clientWidth:1200,clientHeight:300,scrollHeight:1000,scrollTop:0,innerHTML:'',value:'',textContent:'',dataset:{},attrs:{},style:{setProperty(k,v){this[k]=v},removeProperty(k){delete this[k]}},classList:{values:new Set(),contains(k){return this.values.has(k)},add(...keys){keys.forEach(k=>this.values.add(k))},remove(...keys){keys.forEach(k=>this.values.delete(k))},toggle(k,on=!this.values.has(k)){on?this.values.add(k):this.values.delete(k);return on}},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){return[]},listeners:{},addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)},dispatch(type,event){for(const fn of this.listeners[type]||[])fn(event)},getBoundingClientRect(){return this.rect||(/^(formatBtn|rightFormatBtn)$/.test(id)?{left:100,right:148,top:700,bottom:748,width:48,height:48}:id==='formatDialog'?{left:0,right:360,top:0,bottom:400,width:360,height:400}:{left:0,right:1200,top:0,bottom:800,width:1200,height:800})},focus(){this.focused=true},select(){this.selected=true},contains(){return false},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=start;this.selectionEnd=start+text.length},show(){this.open=true},showModal(){this.open=true},close(){this.open=false}});return nodes.get(id);};
  let location=new URL(href),index=0;const history=[location.href];
  const win={innerWidth:1320,innerHeight:1000,get location(){return location},history:{pushState(_,__,href){location=new URL(href);history.splice(++index);history.push(location.href)},replaceState(_,__,href){location=new URL(href);history[index]=location.href}},addEventListener(k,fn){listen('window',k,fn)}};
  const context=vm.createContext({URL,URLSearchParams,window:win,document:{getElementById:get,querySelectorAll(){return[]},body:{dataset:{}},addEventListener(k,fn){listen('document',k,fn)}},queueMicrotask:fn=>pending.push(fn),setTimeout:fn=>{pending.push(fn);return 1},clearTimeout(){},ResizeObserver:class{observe(){}},getComputedStyle:()=>({getPropertyValue:k=>k==='--pane-min'?'240px':k==='--format-width'?'360px':k==='--s2'?'8px':'16px'}),localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}});
@@ -276,4 +277,46 @@ test('Escape closes swipe actions and returns focus to the file or folder row',(
   f.get('notes').querySelectorAll=()=>[wrap];f.run('document').activeElement=action;f.event('document','keydown',{key:'Escape'});
   assert.equal(actions.inert,true);assert.equal(trigger.focused,true,`${type} trigger regains focus`);
  }
+});
+
+test('vault manager handlers reference controls that exist in the page markup',()=>{
+ const actionCode=code.slice(code.indexOf('function renderVaultManager'),code.indexOf('function notePath'));
+ const referencedIds=Array.from(actionCode.matchAll(/\$\('([^']+)'\)/g),match=>match[1]);
+ assert(referencedIds.length>0);
+ for(const id of referencedIds)assert(markupIds.has(id),`vault manager references missing element #${id}`);
+});
+
+test('temporary vault names, notes and folders stay out of reproduction URLs',()=>{
+ const f=fixture();f.run("openVaultManager(false);openVaultAction('create')");f.get('vaultActionName').value='临时私有库';f.get('confirmVaultAction').onclick();
+ f.run("addDemoFolder(activeVault,'用户资料/草稿');folderState[activeVault+'/用户资料']=false;notes.push({id:'private-note-id',vault:activeVault,folder:'用户资料',title:'机密标题',text:'机密正文',deleted:false});current='private-note-id';reference='private-note-id';shareFolderPath='用户资料';$('shareScope').value='folder';$('shareDialog').open=true;syncUrl('replace')");
+ const url=f.href(),params=new URL(url).searchParams,decoded=decodeURIComponent(url);
+ assert(!decoded.includes('临时私有库'));assert(!decoded.includes('private-note-id'));assert(!decoded.includes('机密标题'));assert(!decoded.includes('机密正文'));assert(!decoded.includes('用户资料'));
+ assert(Array.from(f.run('SAMPLE_VAULT.vaults.map(v=>v.id)')).includes(params.get('vault')));
+ const publicNoteIds=Array.from(f.run('publicSampleNotes.map(n=>n.id)'));assert(publicNoteIds.includes(params.get('left')));assert(publicNoteIds.includes(params.get('right')));
+ assert.equal(params.get('panel'),'none');assert.equal(params.has('collapsed'),false);assert.equal(params.has('shareFolder'),false);
+});
+
+test('vault manager is reachable from the picker and its page is restored from the URL',()=>{
+ const f=fixture();f.get('manageVaults').onclick();assert(f.run('vaultManagerOpen'));assert(f.get('vaultManagerPage').classList.contains('hidden')===false);assert(f.get('vaultCards').innerHTML.includes('阅读笔记'));assert(f.get('vaultCards').innerHTML.includes('项目笔记'));assert.equal(new URL(f.href()).searchParams.get('view'),'vaults');
+ const restored=fixture(f.href());assert(restored.run('vaultManagerOpen'));assert.equal(restored.get('vaultManagerPage').classList.contains('hidden'),false);assert(restored.get('vaultCards').innerHTML.includes('本地笔记'));restored.get('closeVaultManager').onclick();assert(!restored.run('vaultManagerOpen'));
+});
+
+test('vault create and rename preserve the active empty vault and suffix duplicate names',()=>{
+ const f=fixture();f.run("openVaultManager(false);openVaultAction('create')");assert(f.get('vaultActionDialog').open);f.get('vaultActionName').value='../阅读笔记';f.get('vaultActionName').oninput();assert.match(f.get('vaultActionPath').textContent,/vaults\/阅读笔记-2/);f.get('confirmVaultAction').onclick();assert.equal(f.run('activeVault'),'阅读笔记-2');assert.equal(f.run('currentNotes().length'),0);assert(f.get('notes').innerHTML.includes('当前知识库还没有笔记'));assert(f.get('vaultCards').innerHTML.includes('阅读笔记-2'));
+ f.run("openVaultAction('rename','阅读笔记-2')");f.get('vaultActionName').value='新/空库';f.get('vaultActionName').oninput();f.get('confirmVaultAction').onclick();assert.equal(f.run('activeVault'),'新空库');assert.equal(f.run('currentNotes().length'),0);assert(f.get('vaultCards').innerHTML.includes('vaults/新空库'));
+});
+
+test('vault rename migrates notes and folder state; confirmed deletion removes only that demo vault',()=>{
+ const f=fixture();f.run("switchVault('reading');folderState['reading/10_写作']=false;openVaultManager(false);openVaultAction('rename','reading')");f.get('vaultActionName').value='项目笔记';f.get('vaultActionName').oninput();f.get('confirmVaultAction').onclick();assert.equal(f.run('activeVault'),'项目笔记-2');assert.equal(f.run("currentNotes().length"),2);assert(f.run("notes.filter(n=>n.vault==='reading').length===0"));assert.equal(f.run("folderState['项目笔记-2/10_写作']"),false);
+ f.run("openVaultAction('delete','项目笔记-2')");assert(f.get('vaultActionDialog').open);assert.match(f.get('vaultActionDescription').textContent,/刷新后公开样例会恢复/);f.get('confirmVaultAction').onclick();assert(!f.run("libraries.some(v=>v.id==='项目笔记-2')"));assert.equal(f.run("notes.filter(n=>n.vault==='项目笔记-2').length"),0);assert.equal(f.run('activeVault'),'local');assert(f.get('vaultCards').innerHTML.includes('本地笔记'));
+});
+
+test('deleting the final vault leaves a recoverable manager empty state and creation path',()=>{
+ const f=fixture();f.run('openVaultManager(false)');for(const id of ['reading','projects','local']){f.run(`openVaultAction('delete','${id}');confirmVaultAction()`);}assert.equal(f.run('libraries.length'),0);assert.equal(f.run('activeVault'),'');assert(f.get('vaultCards').innerHTML.includes('暂无知识库'));assert(f.get('notes').innerHTML.includes('当前没有知识库'));assert(f.get('vaultName').textContent.includes('暂无知识库'));
+ f.get('createVaultButton').onclick();f.get('vaultActionName').value='重新开始';f.get('confirmVaultAction').onclick();assert.equal(f.run('libraries.length'),1);assert.equal(f.run('activeVault'),'重新开始');assert.equal(f.run('currentNotes().length'),0);
+});
+
+test('browser history remains usable after deleting every in-memory vault',()=>{
+ const f=fixture();f.run('openVaultManager(false)');for(const id of ['reading','projects','local'])f.run(`openVaultAction('delete','${id}');confirmVaultAction()`);
+ assert.equal(f.run('libraries.length'),0);assert.doesNotThrow(()=>f.back());assert.equal(f.run('libraries.length'),0);assert.equal(f.run('activeVault'),'');assert(f.run('vaultManagerOpen'));
 });
