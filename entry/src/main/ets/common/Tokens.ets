@@ -1,14 +1,14 @@
 /**
  * Tokens.ets —— 设计 token 的**数值部分**（v0.2 §3.5 需求 4.1 / 4.3 / 4.4 / 4.5 / 4.10）
  *
- * 真源：`docs/prototype/index.html` 的 `:root`。
+ * 真源：`docs/prototype/v2/index.html` 的 `:root`。
  *   - **颜色**不放这里**：颜色是要跟随系统深色切换的，必须走资源
  *     `entry/src/main/resources/base|dark/element/color.json`，用 `$r('app.color.*')` 引用。
  *     这样深色模式是「另一套 token」而不是浅色反色（需求 4.2）。
  *   - **数值**（间距/圆角/字号/尺寸/动效）放这里：ArkTS 里要做算术（如树缩进 = 层级 × 24），
  *     资源 `$r()` 是 Resource 不能参与运算，所以统一用常量模块。
  *
- * 改值规矩（AGENTS.md 硬约束 17）：改这里必须同步改原型 `:root`，两边不许漂。
+ * 改值规矩（AGENTS.md 硬约束 17）：改这里必须同步改 v2 原型 `:root`，两边不许漂。
  */
 
 /** 间距：4vp 栅格（4.4）—— 不允许出现 5 / 7 / 9 这类非栅格值 */

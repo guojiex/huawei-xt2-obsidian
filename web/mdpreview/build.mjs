@@ -4,8 +4,7 @@
  * 单文件内联避免加载不到 bundle.js。
  *
  * 改了 src/ 之后必须重跑，否则真机/模拟器跑旧产物（AGENTS.md §Web 打包约定）。
- * CSS token 与 docs/prototype/index.html 的 :root / [data-theme="dark"] 保持一致
- * （改值两边同步，v0.2 需求文档 §3.5）。
+ * CSS token 与 docs/prototype/v2/index.html 的 :root / [data-theme="dark"] 保持一致；改值时两边同步。
  */
 import { build } from 'esbuild'
 import fs from 'node:fs'
@@ -48,7 +47,7 @@ const html = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>mdpreview</title>
 <style>
-  /* token 与 docs/prototype/index.html :root 同源（改值两边同步） */
+  /* token 与 docs/prototype/v2/index.html :root 同源（改值两边同步） */
   :root {
     --brand: #007DFF;
     --bg-card: #FFFFFF;
