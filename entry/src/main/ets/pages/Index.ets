@@ -979,6 +979,18 @@ struct Index {
     const anchorY: number = anchorArea[1];
     const anchorWidth: number = anchorArea[2];
     const anchorHeight: number = anchorArea[3];
+    if (this.breakpoint === Breakpoint.SM) {
+      // 7.26 / v2 phone：单屏 Aa 面板贴编辑区底部呈现，不依赖锚点几何。
+      if (paneWidth <= 0 || paneHeight <= 0) {
+        return;
+      }
+      this.formatMenuWidth = Math.min(Size.phonePanelW, paneWidth);
+      const sheetMaxHeight: number = paneHeight * Size.panelMaxRatio;
+      if (Math.abs(this.formatMenuMaxHeight - sheetMaxHeight) >= 0.5) {
+        this.formatMenuMaxHeight = sheetMaxHeight;
+      }
+      return;
+    }
     if (paneWidth <= 0 || paneHeight <= 0 || anchorWidth <= 0 || anchorHeight <= 0) {
       return;
     }
@@ -1022,6 +1034,14 @@ struct Index {
     if (Math.abs(this.formatMenuMaxHeight - availableHeight) >= 0.5) {
       this.formatMenuMaxHeight = availableHeight;
     }
+  }
+
+  /** 7.26 / v2：贴底面板只保留上圆角；锚定浮层四角同圆角。 */
+  private formatMenuRadius(asSheet: boolean): BorderRadiuses {
+    if (asSheet) {
+      return { topLeft: Radius.card, topRight: Radius.card, bottomLeft: 0, bottomRight: 0 };
+    }
+    return { topLeft: Radius.card, topRight: Radius.card, bottomLeft: Radius.card, bottomRight: Radius.card };
   }
 
   private applyEditorFormat(kind: string, pane: string): void {
@@ -3622,28 +3642,30 @@ struct Index {
   }
 
   @Builder
-  FormatOption(label: string, kind: string) {
-    Row() {
-      Text(label)
-        .fontSize(FontSize.body3)
+  FormatCell(glyph: string, caption: string, kind: string) {
+    Column({ space: Space.s1 }) {
+      Text(glyph)
+        .fontSize(FontSize.s2)
         .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
           ? this.rightCodeBlockActive : this.leftCodeBlockActive)
           ? $r('app.color.brand') : $r('app.color.text_primary'))
         .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(caption)
+        .fontSize(FontSize.caption)
+        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
+          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
+          ? $r('app.color.brand') : $r('app.color.text_primary'))
+        .maxLines(1)
     }
-    .layoutWeight(1)
-    .height(Size.touch)
-    .padding({ left: Space.s2, right: Space.s2 })
+    .width('100%')
+    .constraintSize({ minHeight: Size.touch })
+    .padding({ top: Space.s2, bottom: Space.s2 })
     .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
     .borderRadius(Radius.icon)
     .backgroundColor(kind === 'code' && (this.formatMenuPane === 'right'
       ? this.rightCodeBlockActive : this.leftCodeBlockActive)
       ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
-    .border({ width: 1, color: kind === 'code' && (this.formatMenuPane === 'right'
-      ? this.rightCodeBlockActive : this.leftCodeBlockActive)
-      ? $r('app.color.brand') : Color.Transparent })
+    .enabled(this.isPaneEditable(this.formatMenuPane))
     .onClick((): void => {
       this.formatMenuOpen = false;
       this.applyEditorFormat(kind, this.formatMenuPane);
@@ -3651,68 +3673,96 @@ struct Index {
   }
 
   @Builder
-  FormatMenu() {
+  FormatMenu(asSheet: boolean) {
     Scroll() {
-      Column({ space: Space.s2 }) {
+      Column() {
         Row() {
           Text('文字与段落')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_secondary'))
-            .layoutWeight(1)
-          Text('×')
             .fontSize(FontSize.s2)
-            .fontColor($r('app.color.text_secondary'))
-            .width(Size.touch)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+          Text('完成')
+            .fontSize(FontSize.body1)
+            .fontColor($r('app.color.text_primary'))
             .height(Size.touch)
             .textAlign(TextAlign.Center)
             .focusable(true)
             .onClick((): void => { this.closeFormatMenu(true); })
         }
         .width('100%')
-        Row({ space: Space.s1 }) {
-          this.FormatOption('正文', 'paragraph')
-          this.FormatOption('H1', 'h1')
-          this.FormatOption('H2', 'h2')
+        .alignItems(VerticalAlign.Center)
+        Column({ space: Space.s4 }) {
+          Column() {
+            Text('段落')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+            GridRow({ columns: 3, gutter: { x: Space.s2, y: Space.s2 } }) {
+              GridCol() { this.FormatCell('Aa', '正文', 'paragraph') }
+              GridCol() { this.FormatCell('H1', '1 级标题', 'h1') }
+              GridCol() { this.FormatCell('H2', '2 级标题', 'h2') }
+              GridCol() { this.FormatCell('H3', '3 级标题', 'h3') }
+              GridCol() { this.FormatCell('H4', '4 级标题', 'h4') }
+              GridCol() { this.FormatCell('H5', '5 级标题', 'h5') }
+              GridCol() { this.FormatCell('H6', '6 级标题', 'h6') }
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          Column() {
+            Text('文字')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+            GridRow({ columns: 3, gutter: { x: Space.s2, y: Space.s2 } }) {
+              GridCol() { this.FormatCell('B', '加粗', 'bold') }
+              GridCol() { this.FormatCell('I', '斜体', 'italic') }
+              GridCol() { this.FormatCell('</>', '行内代码', 'inlineCode') }
+              GridCol() { this.FormatCell('```', '代码块', 'code') }
+              GridCol() { this.FormatCell('↗', '链接', 'link') }
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .border({ width: { top: 1 }, color: $r('app.color.line') })
+          .padding({ top: Space.s4 })
+          Column() {
+            Text('列表与引用')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+            GridRow({ columns: 3, gutter: { x: Space.s2, y: Space.s2 } }) {
+              GridCol() { this.FormatCell('≡', '无序列表', 'list') }
+              GridCol() { this.FormatCell('1.', '有序列表', 'ordered') }
+              GridCol() { this.FormatCell('☑', '待办', 'task') }
+              GridCol() { this.FormatCell('❞', '引用', 'quote') }
+            }
+            .width('100%')
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .border({ width: { top: 1 }, color: $r('app.color.line') })
+          .padding({ top: Space.s4 })
         }
         .width('100%')
-        Row({ space: Space.s1 }) {
-          this.FormatOption('H3', 'h3')
-          this.FormatOption('H4', 'h4')
-          this.FormatOption('H5', 'h5')
-        }
-        .width('100%')
-        Row({ space: Space.s1 }) {
-          this.FormatOption('H6', 'h6')
-          this.FormatOption('粗体', 'bold')
-          this.FormatOption('斜体', 'italic')
-        }
-        .width('100%')
-        Row({ space: Space.s1 }) {
-          this.FormatOption('行内代码', 'inlineCode')
-          this.FormatOption('代码块', 'code')
-          this.FormatOption('链接', 'link')
-        }
-        .width('100%')
-        Row({ space: Space.s1 }) {
-          this.FormatOption('无序列表', 'list')
-          this.FormatOption('有序列表', 'ordered')
-          this.FormatOption('待办', 'task')
-        }
-        .width('100%')
-        Row({ space: Space.s1 }) {
-          this.FormatOption('引用', 'quote')
-        }
-        .width('100%')
+        .margin({ top: Space.s4 })
       }
       .width('100%')
-      .padding(Space.s3)
+      .padding(Space.s5)
     }
     .width(this.formatMenuWidth)
     .constraintSize({ maxHeight: this.formatMenuMaxHeight })
     .scrollBar(BarState.Auto)
-    .borderRadius(Radius.card)
+    .borderRadius(this.formatMenuRadius(asSheet))
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
+    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
     .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(this.formatMenuPane, event); })
   }
 
@@ -3738,8 +3788,8 @@ struct Index {
           this.recordFormatAnchorArea(pane, newArea);
         })
         .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
-        .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
-          builder: this.FormatMenu(),
+        .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane && this.breakpoint !== Breakpoint.SM, {
+          builder: this.FormatMenu(false),
           placement: this.formatPopupPlacement,
           enableArrow: false,
           offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
@@ -3926,6 +3976,16 @@ struct Index {
         .backgroundColor($r('app.color.bg_card'))
         if (this.smMode === 'edit' && this.currentFilePath.length > 0) {
           this.FormatToolbar('left')
+        }
+        if (this.formatMenuOpen && this.formatMenuPane === 'left' && this.breakpoint === Breakpoint.SM &&
+          this.smMode === 'edit' && this.currentFilePath.length > 0) {
+          // 7.26 / v2 phone：单屏 Aa 面板贴编辑区底部；backdrop 透明，点空白处关闭。
+          Column() {
+          }
+          .width('100%')
+          .height('100%')
+          .onClick((): void => { this.closeFormatMenu(); })
+          this.FormatMenu(true)
         }
       }
       .layoutWeight(1)
