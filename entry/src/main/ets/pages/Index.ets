@@ -685,8 +685,10 @@ struct Index {
 
   private parseChapterEntries(text: string): ChapterEntry[] {
     const entries: ChapterEntry[] = [];
-    const lines: string[] = text.split('\n');
-    let offset: number = 0;
+    const frontmatter = text.match(/^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/);
+    const contentOffset: number = frontmatter !== null ? frontmatter[0].length : 0;
+    const lines: string[] = text.substring(contentOffset).split('\n');
+    let offset: number = contentOffset;
     let fenceChar: string = '';
     for (let i: number = 0; i < lines.length; i++) {
       const line: string = lines[i];
