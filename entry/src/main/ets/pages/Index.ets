@@ -3662,7 +3662,7 @@ struct Index {
   @Builder
   ImageFormatAction(pane: string) {
     Row() {
-      Icon('image', 18, this.isImagePickerBusy(pane)
+      Icon('image', Space.s5, this.isImagePickerBusy(pane)
         ? $r('app.color.text_tertiary') : $r('app.color.text_primary'))
     }
     .width(Size.touch)
