@@ -94,8 +94,25 @@ export struct SettingsView {
     } else {
       return false;
     }
-    this.getUIContext().getFocusController().requestFocus('settings-category-' + categories[index]);
+    if (this.singleScreenLayout && this.showCategoryList) {
+      this.focusCategoryRow(categories[index]);
+    } else {
+      this.selectCategory(categories[index]);
+      if (!this.singleScreenLayout) {
+        this.focusCategoryRow(categories[index]);
+      }
+    }
     return true;
+  }
+
+  private focusCategoryRow(category: string): void {
+    this.getUIContext().getFocusController().requestFocus('settings-category-' + category);
+  }
+
+  private focusCategoryHeading(category: string): void {
+    if (this.singleScreenLayout && !this.showCategoryList) {
+      this.getUIContext().getFocusController().requestFocus('settings-heading-' + category);
+    }
   }
 
   private async openFeedbackEmail(): Promise<void> {
@@ -449,6 +466,12 @@ export struct SettingsView {
     .id('settings-category-' + category)
     .onKeyEvent((event: KeyEvent): boolean => { return this.onCategoryKey(category, event); })
     .onClick(() => { this.selectCategory(category); })
+    .onAppear((): void => {
+      if ((!this.singleScreenLayout || this.showCategoryList) &&
+        category === this.normalizedCategory(this.selectedCategory)) {
+        this.focusCategoryRow(category);
+      }
+    })
   }
 
   @Builder
@@ -497,6 +520,9 @@ export struct SettingsView {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .focusable(true)
+        .id('settings-heading-general')
+        .onAppear((): void => { this.focusCategoryHeading('general'); })
       Text('当前界面随窗口宽度切换布局；旋转后按新的窗口宽高重新排布。')
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
@@ -779,6 +805,9 @@ export struct SettingsView {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .focusable(true)
+        .id('settings-heading-data')
+        .onAppear((): void => { this.focusCategoryHeading('data'); })
       Column({ space: Space.s3 }) {
         Text('数据管理')
           .fontSize(FontSize.body2)
@@ -827,6 +856,9 @@ export struct SettingsView {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .focusable(true)
+        .id('settings-heading-about')
+        .onAppear((): void => { this.focusCategoryHeading('about'); })
       Column() {
         Row() {
           Text('曜')
@@ -905,6 +937,9 @@ export struct SettingsView {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .focusable(true)
+        .id('settings-heading-feedback')
+        .onAppear((): void => { this.focusCategoryHeading('feedback'); })
       Text('请通过邮件描述你遇到的问题或改进建议。邮件由你检查并确认发送，不会自动附带笔记、对话、日志或诊断信息。')
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
