@@ -1,4 +1,4 @@
-import { ArgumentMatchers, afterEach, beforeAll, describe, expect, it, MockKit, when } from '@ohos/hypium';
+import { ArgumentMatchers, afterAll, afterEach, beforeAll, describe, expect, it, MockKit, when } from '@ohos/hypium';
 import { FileTree } from '../main/ets/model/FileTree';
 import { FullTextSearchResult } from '../main/ets/model/SearchIndex';
 import { FullTextSearchService } from '../main/ets/model/FullTextSearchService';
@@ -46,6 +46,9 @@ export default function fullTextSearchServiceTest(): void {
     afterEach((): void => {
       FullTextSearchService.discardVault('a');
       FullTextSearchService.discardVault('b');
+    });
+
+    afterAll((): void => {
       mock.ignoreMock(FileTree as Object, 'allMarkdownFiles');
       mock.ignoreMock(FullTextSearchService as Object, 'readMarkdown');
     });
@@ -105,6 +108,34 @@ export default function fullTextSearchServiceTest(): void {
           (_completed: number, _total: number): void => {});
         expect(results.length).assertEqual(1);
         expect(results[0].path).assertEqual('重建.md');
+      });
+
+    it('removes a trashed note from the index and restores it from the source file', 0,
+      async (): Promise<void> => {
+        const path: string = '恢复/文件.md';
+        const absolutePath: string = registry.absoluteIn('a', path);
+        filesByRoot.set(registry.vaultDirOf('a'), [path]);
+        contentsByPath.set(absolutePath, '回收站恢复标记');
+
+        let results: FullTextSearchResult[] = await FullTextSearchService.search(
+          registry, 'a', '恢复标记', (_completed: number, _total: number): void => {});
+        expect(results.length).assertEqual(1);
+
+        FullTextSearchService.noteRemoved('a', path, false);
+        results = await FullTextSearchService.search(registry, 'a', '恢复标记',
+          (_completed: number, _total: number): void => {});
+        expect(results.length).assertEqual(0);
+
+        FullTextSearchService.noteRestored(registry, 'a', path);
+        results = await FullTextSearchService.search(registry, 'a', '恢复标记',
+          (_completed: number, _total: number): void => {});
+        expect(results.length).assertEqual(1);
+        expect(results[0].path).assertEqual(path);
+
+        FullTextSearchService.noteRemoved('a', path, false);
+        results = await FullTextSearchService.search(registry, 'a', '恢复标记',
+          (_completed: number, _total: number): void => {});
+        expect(results.length).assertEqual(0);
       });
 
   });
