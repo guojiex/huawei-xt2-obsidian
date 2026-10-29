@@ -34,7 +34,7 @@ function createHarness(options = {}) {
     TrashService: {
       moveToTrash(_registry, vaultId, path) {
         calls.push(`trash:${vaultId}:${path}`);
-        return `.trash/${path}`;
+        return path;
       },
       restore(_registry, vaultId, path) {
         calls.push(`restore:${vaultId}:${path}`);
@@ -57,7 +57,10 @@ function createHarness(options = {}) {
     async readRightAndPush(path) { calls.push(`clear-right:${path}`); },
     refreshFileTree() { calls.push('refresh-tree'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
-    showUndo() { calls.push('show-undo'); },
+    showUndo(_message, snapshot) {
+      calls.push('show-undo');
+      app.undoSnap = snapshot;
+    },
     hideUndo() { calls.push('hide-undo'); },
     loadFile(path) { calls.push(`load-left:${path}`); },
     loadRightFile(path) { calls.push(`load-right:${path}`); }
@@ -83,6 +86,16 @@ test('moving the selected right note to trash clears its editor while preserving
   ]);
   assert.equal(app.currentFilePath, 'keep.md');
   assert.equal(app.rightFilePath, '');
+  assert.equal(app.undoSnap.vaultId, 'local');
+  assert.equal(app.undoSnap.relPath, 'folder/current.md');
+  assert.equal(app.undoSnap.wasCurrent, false);
+  assert.equal(app.undoSnap.wasRight, true);
+
+  app.undoTrashRestore();
+  assert.deepEqual(calls, [
+    'flush', 'reset-feedback', 'trash:local:folder/current.md', 'clear-right:', 'refresh-tree', 'show-undo',
+    'hide-undo', 'restore:local:folder/current.md', 'refresh-tree', 'load-right:folder/current.md'
+  ]);
 });
 
 test('deleting an unrelated path leaves both editor buffers alone', async () => {
@@ -96,19 +109,19 @@ test('deleting an unrelated path leaves both editor buffers alone', async () => 
 
 test('undoing a right-only note deletion restores that note in the right pane', () => {
   const { app, calls } = createHarness({ currentFilePath: 'keep.md' });
-  app.undoSnap = { vaultId: 'local', relPath: '.trash/folder/removed.md', wasCurrent: false, wasRight: true };
+  app.undoSnap = { vaultId: 'local', relPath: 'folder/removed.md', wasCurrent: false, wasRight: true };
   app.undoTrashRestore();
 
   assert.deepEqual(calls, [
-    'hide-undo', 'restore:local:.trash/folder/removed.md', 'refresh-tree', 'load-right:.trash/folder/removed.md'
+    'hide-undo', 'restore:local:folder/removed.md', 'refresh-tree', 'load-right:folder/removed.md'
   ]);
   assert.equal(app.trashSeq, 1);
 });
 
 test('undoing a note shared by both panes reopens it through the left shared-note path once', () => {
   const { app, calls } = createHarness();
-  app.undoSnap = { vaultId: 'local', relPath: '.trash/shared.md', wasCurrent: true, wasRight: true };
+  app.undoSnap = { vaultId: 'local', relPath: 'shared.md', wasCurrent: true, wasRight: true };
   app.undoTrashRestore();
 
-  assert.deepEqual(calls, ['hide-undo', 'restore:local:.trash/shared.md', 'refresh-tree', 'load-left:.trash/shared.md']);
+  assert.deepEqual(calls, ['hide-undo', 'restore:local:shared.md', 'refresh-tree', 'load-left:shared.md']);
 });
