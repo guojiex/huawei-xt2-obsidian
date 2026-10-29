@@ -7,11 +7,15 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+const resetStart = source.indexOf('  private resetSaveFeedback(): void {');
+const resetEnd = source.indexOf('\n  private hideSaveFeedback()', resetStart);
+assert.ok(resetStart >= 0 && resetEnd > resetStart, 'could not find Index.resetSaveFeedback');
+const resetSaveFeedbackMethod = source.slice(resetStart, resetEnd).trim();
 const start = source.indexOf('  private async flushSave(targetPath: string | null = null, targetVaultId: string = \'\',');
 const end = source.indexOf('\n  /** Persist visible workspace content', start);
 assert.ok(start >= 0 && end > start, 'could not find Index.flushSave');
 const flushSaveMethod = source.slice(start, end).trim();
-const code = transformSync(`class IndexHarness { ${flushSaveMethod} }; module.exports = IndexHarness;`, {
+const code = transformSync(`class IndexHarness { ${resetSaveFeedbackMethod} ${flushSaveMethod} }; module.exports = IndexHarness;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;
@@ -65,6 +69,7 @@ function createHarness(options = {}) {
     topView: 'note',
     editorBridge: editor,
     showSaveFeedback() { calls.push('save-success'); },
+    hideSaveFeedback() { calls.push('hide-success'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
     refreshBacklinks() {}
   });
@@ -105,4 +110,14 @@ test('a note that changes while the write is pending does not get success feedba
 
   assert.equal(await app.flushSave(), true);
   assert.deepEqual(calls, ['read', 'write']);
+});
+
+test('editing while the write is pending invalidates that save feedback', async () => {
+  const { app, calls } = createHarness({
+    onWrite(current) { current.resetSaveFeedback(); }
+  });
+
+  assert.equal(await app.flushSave(), true);
+  assert.deepEqual(calls, ['read', 'write', 'hide-success']);
+  assert.equal(app.lastSavedText, 'new content');
 });
