@@ -3319,12 +3319,14 @@ struct Index {
       Row() {
         Text('分享笔记')
           .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
+          .fontColor(this.activeFilePath().length > 0
+            ? $r('app.color.text_primary') : $r('app.color.text_disabled'))
           .layoutWeight(1)
       }
       .width('100%')
       .height(Size.touch)
       .padding({ left: Space.s3, right: Space.s3 })
+      .enabled(this.activeFilePath().length > 0)
       .onClick(() => {
         this.moreMenuOpen = false;
         this.openShareNoteDialog();
@@ -3342,21 +3344,22 @@ struct Index {
         this.moreMenuOpen = false;
         this.openSettings('note', 'general');
       })
-      if (this.activeFilePath().length > 0) {
-        Row() {
-          Text(this.backlinksExpanded && this.backlinksPane === this.activePane ? '隐藏反链' : '查看反链')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .onClick((): void => {
-          this.moreMenuOpen = false;
-          this.toggleBacklinks(this.activePane);
-        })
+      Row() {
+        Text(this.activeFilePath().length > 0 && this.backlinksExpanded &&
+          this.backlinksPane === this.activePane ? '隐藏反链' : '查看反链')
+          .fontSize(FontSize.body2)
+          .fontColor(this.activeFilePath().length > 0
+            ? $r('app.color.text_primary') : $r('app.color.text_disabled'))
+          .layoutWeight(1)
       }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .enabled(this.activeFilePath().length > 0)
+      .onClick((): void => {
+        this.moreMenuOpen = false;
+        this.toggleBacklinks(this.activePane);
+      })
       if (this.currentFilePath.length > 0 && this.rightFilePath.length > 0 &&
         this.currentFilePath !== this.rightFilePath) {
         Row() {
