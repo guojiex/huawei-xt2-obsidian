@@ -161,6 +161,7 @@ struct Index {
   @State sidebarProgress: number = 1;
   @State drawerProgress: number = 0;
   @State splitDragging: boolean = false;
+  private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
   private navigationDragStart: number = 0;
   private contentDragStart: number = 0;
@@ -293,6 +294,7 @@ struct Index {
     const splitState = (this.splitLayoutStore as SplitLayoutStore).load();
     this.navigationRatio = splitState.navigationRatio;
     this.contentRatio = splitState.contentRatio;
+    this.syncNavigationForBreakpoint();
   }
 
   private ensureSplitLayoutStore(): void {
@@ -467,8 +469,17 @@ struct Index {
     if (this.breakpoint !== Breakpoint.SM) {
       this.setDrawerOpen(false);
     }
+    this.syncNavigationForBreakpoint();
     if (this.topView === 'note' && this.currentFilePath.length > 0) {
       void this.refreshAfterBreakpointChange(this.currentFilePath, this.currentVaultId);
+    }
+  }
+
+  private syncNavigationForBreakpoint(): void {
+    const enteredBreakpoint: boolean = this.layoutBreakpoint !== this.breakpoint;
+    this.layoutBreakpoint = this.breakpoint;
+    if (enteredBreakpoint && this.breakpoint === Breakpoint.MD && this.referenceVisible && !this.focused) {
+      this.setSidebarCollapsed(true);
     }
   }
 
