@@ -389,16 +389,17 @@ export struct SettingsView {
         .height('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .backgroundColor($r('app.color.bg_navigation'))
       } else if (this.singleScreenLayout) {
         this.CategoryContent()
       } else {
         Row() {
           Scroll() {
             Column({ space: Space.s1 }) {
-              this.CategoryRow('general', '通用', false)
-              this.CategoryRow('data', '数据', false)
-              this.CategoryRow('feedback', '问题与建议', false)
-              this.CategoryRow('about', '关于与版本记录', false)
+              this.CategoryRow('general', '通用', true)
+              this.CategoryRow('data', '数据', true)
+              this.CategoryRow('feedback', '问题与建议', true)
+              this.CategoryRow('about', '关于与版本记录', true)
             }
             .width('100%')
             .padding({ left: Space.s3, right: Space.s3, top: Space.s3, bottom: Space.s3 })
@@ -407,6 +408,7 @@ export struct SettingsView {
           .height('100%')
           .align(Alignment.Top)
           .scrollBar(BarState.Off)
+          .backgroundColor($r('app.color.bg_navigation'))
           .border({ width: { right: 1 }, color: $r('app.color.line') })
 
           Column() {
@@ -439,8 +441,8 @@ export struct SettingsView {
     .height(Size.touch)
     .padding({ left: Space.s3, right: Space.s3 })
     .borderRadius(Radius.control)
-    .backgroundColor(!this.singleScreenLayout && this.selectedTab === category
-      ? $r('app.color.brand_bg') : $r('app.color.bg_card'))
+    .backgroundColor(this.selectedTab === category
+      ? $r('app.color.brand_bg') : Color.Transparent)
     .focusable(true)
     .id('settings-category-' + category)
     .onKeyEvent((event: KeyEvent): boolean => { return this.onCategoryKey(category, event); })
