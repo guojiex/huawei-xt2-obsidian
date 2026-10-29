@@ -542,6 +542,11 @@ struct Index {
     }
   }
 
+  private returnFromSettings(): void {
+    this.settingsDetail = false;
+    this.topView = this.settingsReturnView;
+  }
+
   private async openVaultManager(fromView: string): Promise<void> {
     if (fromView === 'note' && !await this.flushWorkspaceSaves()) {
       return;
@@ -3204,7 +3209,11 @@ struct Index {
       if (this.topView !== 'note' && this.topView !== 'agent') {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
         this.IconButton('back', $r('app.color.text_primary'), (): void => {
-          this.leaveSecondaryView();
+          if (this.topView === 'settings') {
+            this.returnFromSettings();
+          } else {
+            this.leaveSecondaryView();
+          }
         })
       } else {
         this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
@@ -4156,12 +4165,14 @@ struct Index {
       vaults: this.vaults,
       selectedCategory: this.settingsCategory,
       showCategoryList: this.isSingleScreenLayout() && !this.settingsDetail,
+      showCategoryBack: this.isSingleScreenLayout() && this.settingsDetail && this.settingsReturnView !== 'agent',
       onSelectCategory: (category: string): void => {
         this.settingsCategory = category;
         if (this.isSingleScreenLayout()) {
           this.settingsDetail = true;
         }
       },
+      onBackToCategories: (): void => { this.settingsDetail = false; },
       onOpenHistory: (): void => { this.topView = 'history'; },
       onResetSplit: (): void => { this.resetSplitLayout(); }
     })
