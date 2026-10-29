@@ -43,6 +43,8 @@ export interface UndoSnap {
   relPath: string;
   /** 删的是否是当时正在编辑的文件（撤销后重新加载它，原型 snap.wasCurrent） */
   wasCurrent: boolean;
+  /** 文件是否也在右栏打开；右栏独有笔记撤销后恢复到原栏。 */
+  wasRight: boolean;
 }
 
 export class TrashService {

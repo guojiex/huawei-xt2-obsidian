@@ -8,8 +8,8 @@ const require = createRequire(new URL('../web/mdpreview/package.json', import.me
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
 
-function extractMethod(signature, nextMarker) {
-  const start = source.indexOf(`  private async ${signature}`);
+function extractMethod(signature, nextMarker, modifier = 'private async') {
+  const start = source.indexOf(`  ${modifier} ${signature}`);
   const end = source.indexOf(nextMarker, start);
   assert.ok(start >= 0 && end > start, `could not find Index method ${signature}`);
   return source.slice(start, end).trim();
@@ -17,7 +17,8 @@ function extractMethod(signature, nextMarker) {
 
 const deletePathMethod = extractMethod('doDeletePath(relPath: string): Promise<void> {', '\n  /** 注册表操作失败');
 const trashFileMethod = extractMethod('doTrashFile(relPath: string): Promise<void> {', '\n  /** 撤销条：弹出');
-const classSource = `class IndexHarness { ${deletePathMethod}\n${trashFileMethod} }; module.exports = IndexHarness;`;
+const undoRestoreMethod = extractMethod('undoTrashRestore(): void {', '\n  /** 回收站视图「恢复」', 'private');
+const classSource = `class IndexHarness { ${deletePathMethod}\n${trashFileMethod}\n${undoRestoreMethod} }; module.exports = IndexHarness;`;
 const code = transformSync(classSource, { loader: 'ts', format: 'cjs' }).code;
 
 function createHarness(options = {}) {
@@ -34,6 +35,9 @@ function createHarness(options = {}) {
       moveToTrash(_registry, vaultId, path) {
         calls.push(`trash:${vaultId}:${path}`);
         return `.trash/${path}`;
+      },
+      restore(_registry, vaultId, path) {
+        calls.push(`restore:${vaultId}:${path}`);
       }
     }
   });
@@ -53,7 +57,10 @@ function createHarness(options = {}) {
     async readRightAndPush(path) { calls.push(`clear-right:${path}`); },
     refreshFileTree() { calls.push('refresh-tree'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
-    showUndo() { calls.push('show-undo'); }
+    showUndo() { calls.push('show-undo'); },
+    hideUndo() { calls.push('hide-undo'); },
+    loadFile(path) { calls.push(`load-left:${path}`); },
+    loadRightFile(path) { calls.push(`load-right:${path}`); }
   });
   return { app, calls };
 }
@@ -85,4 +92,23 @@ test('deleting an unrelated path leaves both editor buffers alone', async () => 
   assert.deepEqual(calls, ['delete:local:other-folder', 'refresh-tree']);
   assert.equal(app.currentFilePath, 'keep.md');
   assert.equal(app.rightFilePath, 'also-keep.md');
+});
+
+test('undoing a right-only note deletion restores that note in the right pane', () => {
+  const { app, calls } = createHarness({ currentFilePath: 'keep.md' });
+  app.undoSnap = { vaultId: 'local', relPath: '.trash/folder/removed.md', wasCurrent: false, wasRight: true };
+  app.undoTrashRestore();
+
+  assert.deepEqual(calls, [
+    'hide-undo', 'restore:local:.trash/folder/removed.md', 'refresh-tree', 'load-right:.trash/folder/removed.md'
+  ]);
+  assert.equal(app.trashSeq, 1);
+});
+
+test('undoing a note shared by both panes reopens it through the left shared-note path once', () => {
+  const { app, calls } = createHarness();
+  app.undoSnap = { vaultId: 'local', relPath: '.trash/shared.md', wasCurrent: true, wasRight: true };
+  app.undoTrashRestore();
+
+  assert.deepEqual(calls, ['hide-undo', 'restore:local:.trash/shared.md', 'refresh-tree', 'load-left:.trash/shared.md']);
 });

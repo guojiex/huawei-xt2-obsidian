@@ -2101,7 +2101,9 @@ struct Index {
       this.refreshFileTree();
       this.trashSeq++;
       const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
-      const snap: UndoSnap = { vaultId: this.currentVaultId, relPath: trashRel, wasCurrent: wasCurrent };
+      const snap: UndoSnap = {
+        vaultId: this.currentVaultId, relPath: trashRel, wasCurrent: wasCurrent, wasRight: wasRight
+      };
       this.showUndo('已移入回收站：「' + name + '」', snap);
     } catch (error) {
       this.toastRegistryError('删除失败', error);
@@ -2143,8 +2145,12 @@ struct Index {
       this.refreshFileTree();
       this.trashSeq++;
       // 删的正是当时在编辑的那篇 → 撤销后重新加载（内容就是删除前 flush 落盘的那份）
-      if (snap.wasCurrent && snap.vaultId === this.currentVaultId) {
-        void this.loadFile(snap.relPath);
+      if (snap.vaultId === this.currentVaultId) {
+        if (snap.wasCurrent) {
+          void this.loadFile(snap.relPath);
+        } else if (snap.wasRight) {
+          void this.loadRightFile(snap.relPath);
+        }
       }
     } catch (error) {
       this.showUndo('原位置已有同名文件，请先处理重名', null);
