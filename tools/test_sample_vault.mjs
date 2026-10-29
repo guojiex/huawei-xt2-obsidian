@@ -24,6 +24,7 @@ async function run({ fresh = true, occupied = false, failAt = -1 } = {}) {
   const samples = [{ path: 'start/welcome.md', content: '# 欢迎' }, { path: 'assets/diagram.svg', content: '<svg/>' }];
   const context = {
     module: { exports: {} },
+    DEFAULT_VAULT_ID: 'local',
     fileIo: {
       listFileSync() { return [...files.keys()]; },
       accessSync(p) { return dirs.has(p) || files.has(p); },
