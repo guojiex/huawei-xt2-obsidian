@@ -251,6 +251,12 @@ struct Index {
   private lastSavedText: string = '';
   @State editorDirty: boolean = false;
   @State imagePickerBusy: boolean = false;
+  @State saveFeedbackMounted: boolean = false;
+  @State saveFeedbackOpacity: number = 0;
+  @State saveFeedbackWorkspaceBottomVp: number = 0;
+  private saveFeedbackTimer: number = -1;
+  private saveFeedbackFadeTimer: number = -1;
+  private saveFeedbackRevision: number = 0;
 
   /**
    * M3 预览（3.1/3.2）：marked 渲染器跑在 PreviewWebView 里，本页做「编辑 → 预览」联动。
@@ -412,6 +418,9 @@ struct Index {
   private refreshFromRegistry(): void {
     const reg: VaultRegistry = VaultRegistry.get();
     this.vaults = reg.list();
+    if (this.currentVaultId !== reg.currentId()) {
+      this.resetSaveFeedback();
+    }
     this.currentVaultId = reg.currentId();
     this.refreshCurrentVaultNoteCount();
   }
@@ -533,7 +542,9 @@ struct Index {
   /** 页面隐藏（应用退到后台）：立刻落盘，兜底「杀进程重进内容还在」（2.3） */
   onPageHide(): void {
     if (this.topView === 'note') {
-      void this.flushWorkspaceSaves();
+      void this.flushWorkspaceSaves().then((): void => {
+        this.resetSaveFeedback();
+      });
     }
   }
 
@@ -594,6 +605,7 @@ struct Index {
       return;
     }
     // Agent 页打开期间 Web 编辑器已卸载；不能 flush 它持有的旧内容覆盖 Agent 写入。
+    this.resetSaveFeedback();
     this.currentFilePath = path;
     this.lastSavedText = text;
     this.editorDirty = false;
@@ -923,9 +935,56 @@ struct Index {
   }
 
   private onFormatContextChanged(): void {
+    if (this.topView !== 'note') {
+      this.resetSaveFeedback();
+    }
     if (this.formatMenuOpen) {
       this.updateFormatPopupLayout(this.formatMenuPane);
     }
+  }
+
+  private resetSaveFeedback(): void {
+    this.saveFeedbackRevision++;
+    this.hideSaveFeedback();
+  }
+
+  private hideSaveFeedback(): void {
+    if (this.saveFeedbackTimer !== -1) {
+      clearTimeout(this.saveFeedbackTimer);
+      this.saveFeedbackTimer = -1;
+    }
+    if (this.saveFeedbackFadeTimer !== -1) {
+      clearTimeout(this.saveFeedbackFadeTimer);
+      this.saveFeedbackFadeTimer = -1;
+    }
+    this.saveFeedbackOpacity = 0;
+    this.saveFeedbackMounted = false;
+  }
+
+  private showSaveFeedback(): void {
+    this.hideSaveFeedback();
+    this.saveFeedbackMounted = true;
+    this.saveFeedbackOpacity = 1;
+    this.saveFeedbackTimer = setTimeout((): void => {
+      this.saveFeedbackTimer = -1;
+      this.saveFeedbackOpacity = 0;
+      this.saveFeedbackFadeTimer = setTimeout((): void => {
+        this.saveFeedbackFadeTimer = -1;
+        this.saveFeedbackMounted = false;
+      }, Motion.durBase);
+    }, 3500);
+  }
+
+  private saveFeedbackBottomMargin(): number {
+    const windowBottom: number = this.formatWindowArea[1] + this.formatWindowArea[3];
+    const workspaceGap: number = Math.max(0, windowBottom - this.saveFeedbackWorkspaceBottomVp);
+    return Space.s3 + Math.max(0, this.keyboardInsetVp() - workspaceGap);
+  }
+
+  private recordSaveFeedbackWorkspaceArea(area: Area): void {
+    const y: number = typeof area.globalPosition.y === 'number' ? area.globalPosition.y : 0;
+    const height: number = typeof area.height === 'number' ? area.height : 0;
+    this.saveFeedbackWorkspaceBottomVp = y + height;
   }
 
   private onFormatKeyboardInsetChanged(): void {
@@ -1213,9 +1272,11 @@ struct Index {
     if (relPath === previousPath) {
       return;
     }
-    if (!await this.flushRightSave(previousPath, vaultId)) {
+    this.resetSaveFeedback();
+    if (!await this.flushRightSave(previousPath, vaultId, false)) {
       return;
     }
+    this.resetSaveFeedback();
     const text: string | null = relPath.length > 0
       ? NoteService.tryReadNote(VaultRegistry.get(), vaultId, relPath) : '';
     if (text === null) {
@@ -1233,7 +1294,7 @@ struct Index {
   }
 
   private async flushRightSave(targetPath: string = this.rightFilePath,
-    targetVaultId: string = this.currentVaultId): Promise<boolean> {
+    targetVaultId: string = this.currentVaultId, showFeedback: boolean = true): Promise<boolean> {
     if (this.rightSaveTimer !== -1) {
       clearTimeout(this.rightSaveTimer);
       this.rightSaveTimer = -1;
@@ -1242,8 +1303,9 @@ struct Index {
       return true;
     }
     if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
-      return await this.flushSave(targetPath, targetVaultId, this.sharedNoteEditor());
+      return await this.flushSave(targetPath, targetVaultId, this.sharedNoteEditor(), showFeedback);
     }
+    const feedbackRevision: number = this.saveFeedbackRevision;
     let text: string = '';
     try {
       text = await this.rightEditorBridge.getContent();
@@ -1268,6 +1330,10 @@ struct Index {
         this.lastSavedText = text;
         this.editorDirty = false;
         void this.refreshBacklinks();
+      }
+      if (showFeedback && feedbackRevision === this.saveFeedbackRevision && this.topView === 'note' &&
+        targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
+        this.showSaveFeedback();
       }
       return true;
     } catch (error) {
@@ -1389,6 +1455,7 @@ struct Index {
    * 改成先切指针后 flush，UI 立刻跟上；flush 用捕获的 prev 写旧内容，**不会串到新路径**。
    */
   private async loadFile(relPath: string): Promise<void> {
+    this.resetSaveFeedback();
     const prev: string = this.currentFilePath;
     const vaultId: string = this.currentVaultId;
     const rightSharesPrevious: boolean = this.rightFilePath === prev && prev.length > 0;
@@ -1432,13 +1499,14 @@ struct Index {
    *   所以 getContent 与 saveNote 两处 IO 都各自包 try/catch。
    */
   private async flushSave(targetPath: string | null = null, targetVaultId: string = '',
-    sourceBridge: EditorBridge | null = null): Promise<boolean> {
+    sourceBridge: EditorBridge | null = null, showFeedback: boolean = true): Promise<boolean> {
     if (this.saveTimer !== -1) {
       clearTimeout(this.saveTimer);
       this.saveTimer = -1;
     }
     const path: string = targetPath === null ? this.currentFilePath : targetPath;
     const vaultId: string = targetVaultId.length > 0 ? targetVaultId : this.currentVaultId;
+    const feedbackRevision: number = this.saveFeedbackRevision;
     const source: EditorBridge = sourceBridge === null ? this.editorBridge : sourceBridge;
     if (vaultId.length === 0 || path.length === 0) {
       return true;
@@ -1483,6 +1551,10 @@ struct Index {
           this.pushRightPreview(text);
         }
         void this.refreshBacklinks();
+      }
+      if (showFeedback && feedbackRevision === this.saveFeedbackRevision && this.topView === 'note' &&
+        path === this.currentFilePath && vaultId === this.currentVaultId) {
+        this.showSaveFeedback();
       }
       return true;
     } catch (error) {
@@ -1951,6 +2023,7 @@ struct Index {
         if (!await this.flushWorkspaceSaves()) {
           return;
         }
+        this.resetSaveFeedback();
       }
       if (isCurrent) {
         this.currentFilePath = '';
@@ -1992,6 +2065,7 @@ struct Index {
         if (!await this.flushWorkspaceSaves()) {
           return;
         }
+        this.resetSaveFeedback();
       }
       const reg: VaultRegistry = VaultRegistry.get();
       const trashRel: string = TrashService.moveToTrash(reg, this.currentVaultId, relPath);
@@ -2161,11 +2235,13 @@ struct Index {
     }
     if (!isDir) {
       if (this.currentFilePath === oldRel) {
+        this.resetSaveFeedback();
         this.currentFilePath = newRel;
       }
       return;
     }
     if (this.currentFilePath === oldRel || this.currentFilePath.startsWith(oldRel + '/')) {
+      this.resetSaveFeedback();
       this.currentFilePath = newRel + this.currentFilePath.substring(oldRel.length);
     }
   }
@@ -2176,11 +2252,13 @@ struct Index {
     }
     if (!isDir) {
       if (this.rightFilePath === oldRel) {
+        this.resetSaveFeedback();
         this.rightFilePath = newRel;
       }
       return;
     }
     if (this.rightFilePath === oldRel || this.rightFilePath.startsWith(oldRel + '/')) {
+      this.resetSaveFeedback();
       this.rightFilePath = newRel + this.rightFilePath.substring(oldRel.length);
     }
   }
@@ -2906,11 +2984,15 @@ struct Index {
       if (this.breakpoint === Breakpoint.SM) {
         Column() {
           this.Appbar()
-          Column() {
+          Stack({ alignContent: Alignment.BottomStart }) {
             this.NoteBody()
+            this.SaveFeedback()
           }
           .layoutWeight(1)
           .width('100%')
+          .onAreaChange((oldArea: Area, newArea: Area): void => {
+            this.recordSaveFeedbackWorkspaceArea(newArea);
+          })
           this.Statusbar()
         }
         .width('100%')
@@ -2952,11 +3034,15 @@ struct Index {
 
           Column() {
             this.Appbar()
-            Column() {
+            Stack({ alignContent: Alignment.BottomStart }) {
               this.NoteBody()
+              this.SaveFeedback()
             }
             .layoutWeight(1)
             .width('100%')
+            .onAreaChange((oldArea: Area, newArea: Area): void => {
+              this.recordSaveFeedbackWorkspaceArea(newArea);
+            })
             this.Statusbar()
           }
           .layoutWeight(1)
@@ -3894,6 +3980,7 @@ struct Index {
           EditorWebView({
             bridge: this.rightEditorBridge,
             onChange: (len: number): void => {
+              this.resetSaveFeedback();
               this.rightEditorDirty = true;
               this.rightEditorLen = len;
               this.scheduleRightSave();
@@ -3975,6 +4062,7 @@ struct Index {
           bridge: this.editorBridge,
           onChange: (len: number): void => {
             // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
+            this.resetSaveFeedback();
             this.editorDirty = true;
             if (len !== this.editorLen) {
               this.editorLen = len;
@@ -4225,11 +4313,6 @@ struct Index {
   @Builder
   Statusbar() {
     Row() {
-      Text((this.activePane === 'right' ? this.rightEditorDirty : this.editorDirty)
-        ? '正在保存更改…' : '更改已保存在本地')
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_tertiary'))
-        .maxLines(1)
       Blank()
       Text((this.activePane === 'right' ? this.rightEditorLen : Math.max(0, this.editorLen)).toString() + ' 字')
         .fontSize(FontSize.caption)
@@ -4243,5 +4326,30 @@ struct Index {
     .alignItems(VerticalAlign.Center)
     .border({ width: { top: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
+  }
+
+  @Builder
+  SaveFeedback() {
+    if (this.saveFeedbackMounted) {
+      Row({ space: Space.s2 }) {
+        Row()
+          .width(Space.s2)
+          .height(Space.s2)
+          .borderRadius(Radius.full)
+          .backgroundColor($r('app.color.success'))
+        Text('更改已保存在本地')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+      }
+      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+      .border({ width: 1, color: $r('app.color.line') })
+      .borderRadius(Radius.full)
+      .backgroundColor($r('app.color.bg_card'))
+      .opacity(this.saveFeedbackOpacity)
+      .animation({ duration: Motion.durBase, curve: Curve.EaseInOut })
+      .margin({ left: Space.s5, bottom: this.saveFeedbackBottomMargin() })
+      .hitTestBehavior(HitTestMode.None)
+    }
   }
 }
