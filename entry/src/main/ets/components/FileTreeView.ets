@@ -23,6 +23,7 @@ import { FileTree, ExpandStore, TreeNode } from '../model/FileTree';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { unifiedDataChannel } from '@kit.ArkData';
 import { TrashView } from './TrashView';
 
@@ -156,6 +157,21 @@ export struct FileTreeView {
 
   private isExpanded(relPath: string): boolean {
     return this.expanded.indexOf(relPath) >= 0;
+  }
+
+  private onDirectoryKey(node: TreeNode, event: KeyEvent): boolean {
+    if (!node.isDir || event.type !== KeyType.Down) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_RIGHT && !this.isExpanded(node.relPath)) {
+      this.toggleDir(node.relPath);
+      return true;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_LEFT && this.isExpanded(node.relPath)) {
+      this.toggleDir(node.relPath);
+      return true;
+    }
+    return false;
   }
 
   /** v2 的文件树主标题隐藏 Markdown 扩展名，文件操作仍使用完整相对路径。 */
@@ -430,6 +446,8 @@ export struct FileTreeView {
               this.onSelectFile(n.relPath);
             }
           })
+          .focusable(n.isDir)
+          .onKeyEvent((event: KeyEvent): boolean => { return this.onDirectoryKey(n, event); })
         }
         .width('100%')
         .padding({ right: Space.s2 })
