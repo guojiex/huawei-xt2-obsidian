@@ -5,6 +5,11 @@ import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../docs/prototype/v2/index.html',import.meta.url),'utf8');
 const code=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const markupIds=new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g),match=>match[1]));
+test('save-success feedback stays hidden until the simulated save succeeds, then fades out',()=>{
+ assert.match(html,/\.save-feedback\{position:absolute;left:var\(--s5\)/);
+ assert.match(code,/scheduleSaveFeedback\(\).*setTimeout\(\(\)=>\{const feedback=saveFeedback\(\);feedback\.classList\.remove\('hidden'\);saveFeedbackHideTimer=setTimeout\(\(\)=>feedback\.classList\.add\('hidden'\),3500\);\},800\)/);
+ assert.match(code,/event\.target===\$\('editor'\)\|\|event\.target===\$\('rightEditor'\)/);
+});
 function fixture(href='file:///repo/docs/prototype/v2/index.html',storage=new Map()){
  const nodes=new Map(),events={document:{},window:{}},pending=[];
  const listen=(area,key,fn)=>(events[area][key]??=[]).push(fn);
