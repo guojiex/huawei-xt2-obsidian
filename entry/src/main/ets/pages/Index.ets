@@ -2705,7 +2705,7 @@ struct Index {
   @Builder
   IconButton(name: string, color: ResourceColor, onTap: () => void) {
     Row() {
-      Icon(name, 22, color)
+      Icon(name, Space.s5, color)
     }
     .width(Size.touch)
     .height(Size.touch)
@@ -3225,7 +3225,10 @@ struct Index {
         .layoutWeight(1)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ left: Space.s2, right: Space.s2 })
+        .margin({
+          left: this.isSingleScreenLayout() ? Space.s1 : Space.s2,
+          right: this.isSingleScreenLayout() ? Space.s1 : Space.s2
+        })
         .gesture(TapGesture({ count: 2 }).onAction((): void => {
           if (this.topView === 'agent') {
             this.agentRenameSeq++;
@@ -3268,7 +3271,7 @@ struct Index {
   @Builder
   MoreMenuButton() {
     Row() {
-      Icon('more', 22, $r('app.color.text_secondary'))
+      Icon('more', Space.s5, $r('app.color.text_secondary'))
     }
     .width(Size.touch)
     .height(Size.touch)
