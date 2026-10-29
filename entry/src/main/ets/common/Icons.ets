@@ -23,7 +23,7 @@
 
 /**
  * 图标路径（24 viewBox，只用直线命令）。
- * 坐标来源：`docs/prototype/index.html` 的内联 SVG（弧线图标已改写为折线）。
+ * 坐标来源：历史设计稿 `4b1fa3d^:docs/prototype/index.html` 的内联 SVG（弧线图标已改写为折线）；当前视觉基线见 `docs/prototype/v2/index.html`。
  */
 const P_MENU: string = 'M4 7h16M4 12h16M4 17h16';
 const P_BACK: string = 'M15 5l-7 7 7 7';

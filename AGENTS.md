@@ -39,7 +39,7 @@
 | 14 | 路径**只能**由 `context.filesDir` 等 Context 属性拼出，禁止硬编码沙箱目录字符串；库内相对路径 → 绝对路径**只用一层解析器** | 官方强调；UI 与意图执行器共用，别各拼一遍 |
 | 15 | 端侧意图 / AI 修改已有笔记**同样走 `AtomicFile`** —— 禁止用 `openSync(READ_WRITE\|TRUNC)` 覆盖原内容；新建唯一附件按硬约束 10 选择写入方式 | 这是保护现有笔记内容的工程策略，不是 HarmonyOS 平台强制要求 |
 | 16 | 埋点用**原生 `hiAppEvent` + `UIObserver`**，不引第三方 SDK；**笔记内容一律禁止进埋点**（标题/文件名/路径/正文/字数/标签全禁） | 个人知识库的隐私红线；采集内容会抬高合规与审核成本 |
-| 17 | 颜色 / 圆角 / 间距 / 字号**只引用 token**（`app.color.*` / `app.float.*` 或常量模块），**组件里禁止散写数值**；真源按原迁移规则指向旧稿 `docs/prototype/index.html` 的 `:root` 段（该稿已从工作树移除，可从提交 `4b1fa3d^` 查看）。v2 是 v0.9 迁移目标，须通过 9.8 归档门禁后再切换本规则；迁移期间的 token 对齐证据记入 v0.9 清单 | 散写会让深色模式与换主色变成全局搜替换（2026-10-17 定，落地在 v0.2） |
+| 17 | 颜色 / 圆角 / 间距 / 字号**只引用 token**（`app.color.*` / `app.float.*` 或常量模块），**组件里禁止散写数值**；唯一设计真源是 `docs/prototype/v2/index.html` 的 `:root` / `[data-theme="dark"]`。编辑器、预览和原生资源按明确映射同步；组件里不散写数值，具体差异与验证见 v0.9 迁移清单。v1 设计稿保持从工作树删除；历史对照只读 Git 历史，不恢复或归档旧稿 | 散写会让深色模式与换主色变成全局搜替换（2026-10-17 定，落地在 v0.2） |
 | 18 | 禁止凭记忆写 **`Hds*` 组件名**或 **`sys.symbol.*` 资源 id**；UI Design Kit / Symbol 未核实前用自绘兜底 | 同铁律：编造 API 会直接编译失败；待核实项见 `api_notes.md` **I 组** |
 | 19 | **`build-profile.json5` 永久保持 `"signingConfigs": []`**；签名改由工程级 **`hvigorfile.ts` 的 `config.ohos.overrides.signingConfig`** 注入，凭据只存在于 `.local/local-signing.json`（已 gitignore） | DevEco 自动签名会往 `build-profile.json5` 回写**密码明文 + 本机绝对路径**，而该文件**不能 ignore**（移除后 hvigor 报 `00304035 Not Found`，实测）。机制与 ⚠️ 运行时 schema（**只接受 `material` / `type`，写 `name` 构建失败**）见 `api_notes.md` **I4**；日常用 `.\tools\signing.ps1 -Import` 抽凭据，`-InstallHook` 装 pre-commit 兜底 |
 
