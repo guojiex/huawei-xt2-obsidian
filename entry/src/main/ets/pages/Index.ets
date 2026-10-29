@@ -54,6 +54,7 @@ import { ShareImagePreviewDialog, ShareImagePreviewPage } from '../components/Sh
 import { NoteShareService } from '../model/NoteShareService';
 import { NoteImageShareService } from '../model/NoteImageShareService';
 import { NoteImageService } from '../model/NoteImageService';
+import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
 import { ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
 import { ShareLinkService, ShareLinkScope } from '../model/ShareLinkService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
@@ -1331,8 +1332,14 @@ struct Index {
         this.editorDirty = false;
         void this.refreshBacklinks();
       }
-      if (showFeedback && feedbackRevision === this.saveFeedbackRevision && this.topView === 'note' &&
-        targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
+      if (shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: true,
+        feedbackEnabled: showFeedback,
+        saveRevisionCurrent: feedbackRevision === this.saveFeedbackRevision,
+        noteViewActive: this.topView === 'note',
+        targetCurrent: targetPath === this.rightFilePath && targetVaultId === this.currentVaultId
+      })) {
         this.showSaveFeedback();
       }
       return true;
@@ -1552,8 +1559,14 @@ struct Index {
         }
         void this.refreshBacklinks();
       }
-      if (showFeedback && feedbackRevision === this.saveFeedbackRevision && this.topView === 'note' &&
-        path === this.currentFilePath && vaultId === this.currentVaultId) {
+      if (shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: true,
+        feedbackEnabled: showFeedback,
+        saveRevisionCurrent: feedbackRevision === this.saveFeedbackRevision,
+        noteViewActive: this.topView === 'note',
+        targetCurrent: path === this.currentFilePath && vaultId === this.currentVaultId
+      })) {
         this.showSaveFeedback();
       }
       return true;

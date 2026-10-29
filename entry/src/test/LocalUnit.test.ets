@@ -8,6 +8,7 @@ import { ShareLinkService } from '../main/ets/model/ShareLinkService';
 import { VaultEntry } from '../main/ets/model/Vault';
 import { ConfigurationConstant } from '@kit.AbilityKit';
 import { appThemeForColorMode } from '../main/ets/common/AppTheme';
+import { shouldShowSaveFeedback } from '../main/ets/model/SaveFeedbackPolicy';
 
 export default function localUnitTest() {
   describe('localUnitTest', () => {
@@ -44,6 +45,65 @@ export default function localUnitTest() {
       expect(isSingleLandscapeWindow(709, 790)).assertEqual(false);
       expect(isSingleLandscapeWindow(1061, 790)).assertEqual(false);
       expect(isSingleLandscapeWindow(380, 790)).assertEqual(false);
+    });
+
+    it('shows save feedback only for a successful, current note write', 0, () => {
+      expect(shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: true,
+        feedbackEnabled: true,
+        saveRevisionCurrent: true,
+        noteViewActive: true,
+        targetCurrent: true
+      })).assertTrue();
+      expect(shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: false,
+        feedbackEnabled: true,
+        saveRevisionCurrent: true,
+        noteViewActive: true,
+        targetCurrent: true
+      })).assertFalse();
+      expect(shouldShowSaveFeedback({
+        contentReadSucceeded: false,
+        writeSucceeded: true,
+        feedbackEnabled: true,
+        saveRevisionCurrent: true,
+        noteViewActive: true,
+        targetCurrent: true
+      })).assertFalse();
+      expect(shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: true,
+        feedbackEnabled: false,
+        saveRevisionCurrent: true,
+        noteViewActive: true,
+        targetCurrent: true
+      })).assertFalse();
+      expect(shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: true,
+        feedbackEnabled: true,
+        saveRevisionCurrent: false,
+        noteViewActive: true,
+        targetCurrent: true
+      })).assertFalse();
+      expect(shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: true,
+        feedbackEnabled: true,
+        saveRevisionCurrent: true,
+        noteViewActive: false,
+        targetCurrent: true
+      })).assertFalse();
+      expect(shouldShowSaveFeedback({
+        contentReadSucceeded: true,
+        writeSucceeded: true,
+        feedbackEnabled: true,
+        saveRevisionCurrent: true,
+        noteViewActive: true,
+        targetCurrent: false
+      })).assertFalse();
     });
 
     it('shared pane widths respect ratio limits and 240vp pane minimums', 0, () => {
