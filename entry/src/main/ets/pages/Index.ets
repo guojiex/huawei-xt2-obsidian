@@ -642,6 +642,7 @@ struct Index {
       this.drawerOpen = false;
       this.smMode = 'edit';
       await this.readAndPush('');
+      await this.readRightAndPush('');
     } catch (error) {
       this.toastRegistryError('切换库失败', error);
     }
@@ -1887,9 +1888,8 @@ struct Index {
       this.recentOpenPaths = [];
       this.drawerOpen = false;
       this.smMode = 'edit';
-      if (editorMounted) {
-        await this.readAndPush('');
-      }
+      await this.readAndPush('');
+      await this.readRightAndPush('');
     } catch (error) {
       this.toastRegistryError('切换库失败', error);
     }
@@ -1900,8 +1900,7 @@ struct Index {
       const reg: VaultRegistry = VaultRegistry.get();
       const entry: VaultEntry = reg.createLocal(name);
       // 原型行为：新建后自动切到新库（doCreate → switchVault）
-      reg.setCurrent(entry.id);
-      this.refreshFromRegistry();
+      void this.switchVault(entry.id);
     } catch (error) {
       this.toastRegistryError('新建库失败', error);
     }
