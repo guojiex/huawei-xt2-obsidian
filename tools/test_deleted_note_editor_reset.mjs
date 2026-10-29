@@ -23,6 +23,7 @@ const code = transformSync(classSource, { loader: 'ts', format: 'cjs' }).code;
 
 function createHarness(options = {}) {
   const calls = [];
+  const shownUndos = [];
   const context = vm.createContext({
     module: { exports: {} },
     VaultRegistry: { get: () => ({}) },
@@ -38,6 +39,9 @@ function createHarness(options = {}) {
       },
       restore(_registry, vaultId, path) {
         calls.push(`restore:${vaultId}:${path}`);
+        if (options.restoreFails) {
+          throw new Error('controlled restore conflict');
+        }
       }
     }
   });
@@ -57,15 +61,16 @@ function createHarness(options = {}) {
     async readRightAndPush(path) { calls.push(`clear-right:${path}`); },
     refreshFileTree() { calls.push('refresh-tree'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
-    showUndo(_message, snapshot) {
+    showUndo(message, snapshot) {
       calls.push('show-undo');
+      shownUndos.push({ message, snapshot });
       app.undoSnap = snapshot;
     },
     hideUndo() { calls.push('hide-undo'); },
     loadFile(path) { calls.push(`load-left:${path}`); },
     loadRightFile(path) { calls.push(`load-right:${path}`); }
   });
-  return { app, calls };
+  return { app, calls, shownUndos };
 }
 
 test('permanent deletion clears the left editor after deleting its selected subtree', async () => {
@@ -124,4 +129,16 @@ test('undoing a note shared by both panes reopens it through the left shared-not
   app.undoTrashRestore();
 
   assert.deepEqual(calls, ['hide-undo', 'restore:local:shared.md', 'refresh-tree', 'load-left:shared.md']);
+});
+
+test('a restore conflict keeps the file untouched and replaces undo with a no-action notice', () => {
+  const { app, calls, shownUndos } = createHarness({ restoreFails: true });
+  app.undoSnap = { vaultId: 'local', relPath: 'folder/removed.md', wasCurrent: true, wasRight: false };
+
+  app.undoTrashRestore();
+
+  assert.deepEqual(calls, ['hide-undo', 'restore:local:folder/removed.md', 'show-undo']);
+  assert.deepEqual(shownUndos, [{ message: '原位置已有同名文件，请先处理重名', snapshot: null }]);
+  assert.equal(app.undoSnap, null);
+  assert.equal(app.trashSeq, 0);
 });
