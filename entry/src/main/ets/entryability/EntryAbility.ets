@@ -27,6 +27,12 @@ interface ColorModeObserver {
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
   private colorModeObserverRegistered: boolean = false;
+  private readonly keyboardAvoidAreaListener = (options: window.AvoidAreaOptions): void => {
+    if (options.type !== window.AvoidAreaType.TYPE_KEYBOARD) {
+      return;
+    }
+    this.publishKeyboardInset(options.area);
+  };
   private readonly colorModeObserver: ColorModeObserver = {
     onColorModeUpdated: (colorMode: ConfigurationConstant.ColorMode): void => {
       this.publishAppTheme(colorMode);
@@ -83,6 +89,8 @@ export default class EntryAbility extends UIAbility {
       this.mainWindow.on('windowSizeChange', (size: window.Size) => {
         this.applyWindowSize(size.width, size.height);
       });
+      this.mainWindow.on('avoidAreaChange', this.keyboardAvoidAreaListener);
+      this.publishKeyboardInset(this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_KEYBOARD));
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, '断点监听注册失败: %{public}s', JSON.stringify(err));
@@ -111,6 +119,7 @@ export default class EntryAbility extends UIAbility {
     try {
       if (this.mainWindow !== null) {
         this.mainWindow.off('windowSizeChange');
+        this.mainWindow.off('avoidAreaChange', this.keyboardAvoidAreaListener);
         this.mainWindow = null;
       }
     } catch (error) {
@@ -165,6 +174,11 @@ export default class EntryAbility extends UIAbility {
     // 折痕只落 px，换算放到页面侧（UI 上下文）——官方提醒 px2vp 依赖窗口像素密度，
     // 在 UIAbility 早期生命周期换算可能异常
     AppStorage.setOrCreate('creasePx', this.collectCreasePx());
+  }
+
+  private publishKeyboardInset(area: window.AvoidArea): void {
+    const keyboardHeightPx: number = area.visible ? area.bottomRect.height : 0;
+    AppStorage.setOrCreate('keyboardInsetPx', Math.max(0, keyboardHeightPx));
   }
 
   private publishAppTheme(colorMode: ConfigurationConstant.ColorMode | undefined): void {

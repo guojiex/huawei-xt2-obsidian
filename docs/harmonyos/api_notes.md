@@ -451,6 +451,8 @@ Huawei_TripleFold API 26 arm64 模拟器已确认安装并运行系统输入法�
 `com.jxg.huaweiobsidian`（v0.2.0，compatibleSdkVersion 6.1.1(24)）正在运行。17:33 屏幕截图中软键盘已显示，底栏可见“中/英”；随后在 CodeMirror 中逐键输入 `nihao`，键盘显示拼音 `ni'hao` 和候选“你好”，点候选后编辑区出现“你好”。按两次退格并等待 2 秒后，编辑区恢复为空白。截图：`.local/shots/pinyin_nihao_20261022_173935.png`、`.local/shots/pinyin_cleared_20261022_174110.png`。此前一次点按未观察到键盘，不代表输入法不可用。
 此前的实际操作记录见 [2026-10-19 模拟器输入法答复](qa/2026-10-19_API26_三折叠模拟器输入法答复.md)：`textarea` 曾唤起中文拼音键盘，之后 CodeMirror 可输入并提交中文。现有截图与留存事件记录没有完整的 `compositionstart/update/end` 序列，因此只确认系统输入法可用、拼音候选可提交到 CodeMirror；composition 细节、光标与滚动、首次焦点差异和系统性 A/B 对照仍待模拟器验证。结论只适用于此 API 26 arm64 模拟器，不外推到 API 24 x86 或 XT2。
 
+**2026-10-29 键盘避让区声明与 UI 验证**：本机 API 26 SDK `@ohos.window.d.ts` 将 `AvoidAreaType.TYPE_KEYBOARD`、`Window.getWindowAvoidArea()` 与 `Window.on/off('avoidAreaChange')` 标记为 `@since 9`，回调使用的 `AvoidAreaOptions` 标记为 `@since 12`，均不高于工程 API 24 上限。原生用该事件发布键盘底部避让高度，Aa 浮层据此重新计算所属栏可视区。unsigned HAP 构建并在 API 26 Huawei TripleFold 实际点按：键盘显示时打开 Aa、滚动选项后“完成”仍可见并成功关闭面板，键盘继续显示。此为本机 API 26 SDK 声明与模拟器结果；API 24 / XT2 运行时行为仍待验。
+
 ---
 
 ### B7 WebMessagePort：rawfile 页面可用，支持 ArrayBuffer，上限未记载 （2026-10-17 新增）

@@ -108,6 +108,8 @@ struct Index {
   @StorageProp('windowWidthVp') windowWidthVp: number = 0;
   /** 窗口当前高度 vp，Agent 矮窗口输入区按真实尺寸收敛。 */
   @StorageProp('windowHeightVp') windowHeightVp: number = 0;
+  /** 系统软键盘底部避让高度（px，由 EntryAbility 发布）。 */
+  @StorageProp('keyboardInsetPx') @Watch('onFormatKeyboardInsetChanged') keyboardInsetPx: number = 0;
   /** display.getFoldStatus() 读数（调试用，-1 = 没取到；api_notes A1） */
   @StorageProp('foldStatus') foldStatus: number = -1;
   /**
@@ -903,6 +905,16 @@ struct Index {
     }
   }
 
+  private onFormatKeyboardInsetChanged(): void {
+    if (this.formatMenuOpen) {
+      this.updateFormatPopupLayout(this.formatMenuPane);
+    }
+  }
+
+  private keyboardInsetVp(): number {
+    return px2vp(Math.max(0, this.keyboardInsetPx));
+  }
+
   private recordFormatPaneArea(pane: string, area: Area): void {
     this.recordFormatArea(pane === 'right' ? this.rightFormatPaneArea : this.leftFormatPaneArea, area);
     if (this.formatMenuOpen && this.formatMenuPane === pane) {
@@ -979,18 +991,6 @@ struct Index {
     const anchorY: number = anchorArea[1];
     const anchorWidth: number = anchorArea[2];
     const anchorHeight: number = anchorArea[3];
-    if (this.breakpoint === Breakpoint.SM) {
-      // 7.26 / v2 phone：单屏 Aa 面板贴编辑区底部呈现，不依赖锚点几何。
-      if (paneWidth <= 0 || paneHeight <= 0) {
-        return;
-      }
-      this.formatMenuWidth = Math.min(Size.phonePanelW, paneWidth);
-      const sheetMaxHeight: number = paneHeight * Size.panelMaxRatio;
-      if (Math.abs(this.formatMenuMaxHeight - sheetMaxHeight) >= 0.5) {
-        this.formatMenuMaxHeight = sheetMaxHeight;
-      }
-      return;
-    }
     if (paneWidth <= 0 || paneHeight <= 0 || anchorWidth <= 0 || anchorHeight <= 0) {
       return;
     }
@@ -1003,8 +1003,10 @@ struct Index {
       windowWidth > 0 ? this.formatWindowArea[0] + windowWidth : paneX + paneWidth);
     const visibleBottom: number = Math.min(paneY + paneHeight,
       windowHeight > 0 ? this.formatWindowArea[1] + windowHeight : paneY + paneHeight);
+    const keyboardInset: number = this.keyboardInsetVp();
+    const keyboardSafeBottom: number = Math.max(visibleTop, visibleBottom - keyboardInset);
     if (anchorX + anchorWidth <= visibleLeft || anchorX >= visibleRight ||
-      anchorY + anchorHeight <= visibleTop || anchorY >= visibleBottom) {
+      anchorY + anchorHeight <= visibleTop || anchorY >= keyboardSafeBottom) {
       this.closeFormatMenu();
       return;
     }
@@ -1012,7 +1014,7 @@ struct Index {
     const gap: number = Space.s2;
     const width: number = Math.min(Size.formatMenuW, visibleRight - visibleLeft - gap * 2);
     const above: number = Math.max(0, anchorY - visibleTop - gap * 2);
-    const below: number = Math.max(0, visibleBottom - anchorY - anchorHeight - gap * 2);
+    const below: number = Math.max(0, keyboardSafeBottom - anchorY - anchorHeight - gap * 2);
     const naturalHeight: number = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
     const showAbove: boolean = above >= naturalHeight || above >= below;
     const availableHeight: number = showAbove ? above : below;
@@ -1026,7 +1028,7 @@ struct Index {
     const maxLeft: number = visibleRight - gap - width;
     const left: number = Math.max(minLeft, Math.min(centerX - width / 2, maxLeft));
     this.formatPopupPlacement = showAbove ? Placement.Top : Placement.Bottom;
-    this.formatPopupOffsetX = left + width / 2 - centerX;
+    this.formatPopupOffsetX = this.breakpoint === Breakpoint.SM ? 0 : left + width / 2 - centerX;
     this.formatPopupOffsetY = showAbove ? -gap : gap;
     if (Math.abs(this.formatMenuWidth - width) >= 0.5) {
       this.formatMenuWidth = width;
@@ -1034,14 +1036,6 @@ struct Index {
     if (Math.abs(this.formatMenuMaxHeight - availableHeight) >= 0.5) {
       this.formatMenuMaxHeight = availableHeight;
     }
-  }
-
-  /** 7.26 / v2：贴底面板只保留上圆角；锚定浮层四角同圆角。 */
-  private formatMenuRadius(asSheet: boolean): BorderRadiuses {
-    if (asSheet) {
-      return { topLeft: Radius.card, topRight: Radius.card, bottomLeft: 0, bottomRight: 0 };
-    }
-    return { topLeft: Radius.card, topRight: Radius.card, bottomLeft: Radius.card, bottomRight: Radius.card };
   }
 
   private applyEditorFormat(kind: string, pane: string): void {
@@ -3681,25 +3675,27 @@ struct Index {
   }
 
   @Builder
-  FormatMenu(asSheet: boolean) {
-    Scroll() {
-      Column() {
-        Row() {
-          Text('文字与段落')
-            .fontSize(FontSize.s2)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-          Text('完成')
-            .fontSize(FontSize.body1)
-            .fontColor($r('app.color.text_primary'))
-            .height(Size.touch)
-            .textAlign(TextAlign.Center)
-            .focusable(true)
-            .onClick((): void => { this.closeFormatMenu(true); })
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
+  FormatMenu() {
+    Column() {
+      Row() {
+        Text('文字与段落')
+          .fontSize(FontSize.s2)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .layoutWeight(1)
+        Text('完成')
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.text_primary'))
+          .height(Size.touch)
+          .textAlign(TextAlign.Center)
+          .focusable(true)
+          .onClick((): void => { this.closeFormatMenu(true); })
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s5, right: Space.s5 })
+      .alignItems(VerticalAlign.Center)
+      Scroll() {
         Column({ space: Space.s4 }) {
           Column() {
             Text('段落')
@@ -3760,14 +3756,16 @@ struct Index {
         }
         .width('100%')
         .margin({ top: Space.s4 })
+        .padding({ left: Space.s5, right: Space.s5, bottom: Space.s5 })
       }
       .width('100%')
-      .padding(Space.s5)
+      .constraintSize({ maxHeight: Math.max(0, this.formatMenuMaxHeight - Size.touch - Space.s5) })
+      .scrollBar(BarState.Auto)
     }
     .width(this.formatMenuWidth)
     .constraintSize({ maxHeight: this.formatMenuMaxHeight })
-    .scrollBar(BarState.Auto)
-    .borderRadius(this.formatMenuRadius(asSheet))
+    .padding({ top: Space.s5 })
+    .borderRadius(Radius.card)
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
     .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
@@ -3796,8 +3794,8 @@ struct Index {
           this.recordFormatAnchorArea(pane, newArea);
         })
         .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
-        .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane && this.breakpoint !== Breakpoint.SM, {
-          builder: this.FormatMenu(false),
+        .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
+          builder: this.FormatMenu(),
           placement: this.formatPopupPlacement,
           enableArrow: false,
           offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
@@ -3829,6 +3827,7 @@ struct Index {
     .width('100%')
     .height(Size.touch + Space.s5)
     .padding({ bottom: Space.s5 })
+    .margin({ bottom: this.keyboardInsetVp() })
     .alignItems(VerticalAlign.Bottom)
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
@@ -3984,16 +3983,6 @@ struct Index {
         .backgroundColor($r('app.color.bg_card'))
         if (this.smMode === 'edit' && this.currentFilePath.length > 0) {
           this.FormatToolbar('left')
-        }
-        if (this.formatMenuOpen && this.formatMenuPane === 'left' && this.breakpoint === Breakpoint.SM &&
-          this.smMode === 'edit' && this.currentFilePath.length > 0) {
-          // 7.26 / v2 phone：单屏 Aa 面板贴编辑区底部；backdrop 透明，点空白处关闭。
-          Column() {
-          }
-          .width('100%')
-          .height('100%')
-          .onClick((): void => { this.closeFormatMenu(); })
-          this.FormatMenu(true)
         }
       }
       .layoutWeight(1)

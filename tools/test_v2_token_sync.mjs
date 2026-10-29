@@ -135,7 +135,7 @@ test('native theme colors and ArkTS numeric tokens match v2 mappings', () => {
     ['FontSize.s2', 'large'], ['FontSize.s3', 'large'],
     ['Size.paneHeadH', 's12'], ['Size.itemH', 'touch'], ['Size.buttonH', 'touch'],
     ['Size.sidebarW', 'nav-width'], ['Size.drawerW', 'mobile-nav-width'], ['Size.paneMinW', 'pane-min'],
-    ['Size.formatMenuW', 'format-width'], ['Size.phonePanelW', 'phone-width'],
+    ['Size.formatMenuW', 'format-width'],
     ['Size.touch', 'touch'], ['Size.treeIndent', 'tree-indent'], ['Size.swipeDelExtra', 'swipe-extra'],
     ['Motion.durBase', 'ease']
   ]
@@ -143,6 +143,9 @@ test('native theme colors and ArkTS numeric tokens match v2 mappings', () => {
     const expected = cssNumber(light, `--${cssName}`)
     assert.equal(numericToken(tokens, tokenName), expected, `${tokenName} should match --${cssName}`)
   }
+  // These tokens size the browser prototype frame and search result list; they
+  // no longer describe the native Aa panel, which follows its anchor geometry.
+  assert.equal(cssNumber(light, '--phone-width'), 390)
+  assert.equal(cssNumber(light, '--panel-height'), 80)
   assert.equal(numericToken(tokens, 'LINE_HEIGHT_BODY'), cssNumber(light, '--leading'))
-  assert.equal(numericToken(tokens, 'Size.panelMaxRatio'), cssNumber(light, '--panel-height') / 100)
 })
