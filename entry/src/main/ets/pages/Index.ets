@@ -1027,8 +1027,8 @@ struct Index {
     const minLeft: number = visibleLeft + gap;
     const maxLeft: number = visibleRight - gap - width;
     const left: number = Math.max(minLeft, Math.min(centerX - width / 2, maxLeft));
-    this.formatPopupPlacement = showAbove ? Placement.Top : Placement.Bottom;
-    this.formatPopupOffsetX = this.breakpoint === Breakpoint.SM ? 0 : left + width / 2 - centerX;
+    this.formatPopupPlacement = showAbove ? Placement.TopLeft : Placement.BottomLeft;
+    this.formatPopupOffsetX = pane === 'right' ? left - anchorX + anchorWidth - gap : left - anchorX;
     this.formatPopupOffsetY = showAbove ? -gap : gap;
     if (Math.abs(this.formatMenuWidth - width) >= 0.5) {
       this.formatMenuWidth = width;
