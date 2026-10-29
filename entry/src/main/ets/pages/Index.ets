@@ -3641,10 +3641,10 @@ struct Index {
   FormatAction(label: string, kind: string, pane: string) {
     Row() {
       if (kind === 'task') {
-        Icon('task', 20, $r('app.color.text_primary'))
+        Icon('task', Space.s5, $r('app.color.text_primary'))
       } else {
         Text(label)
-          .fontSize(FontSize.body2)
+          .fontSize(FontSize.s3)
           .fontWeight(kind === 'bold' ? FontWeight.Bold : FontWeight.Normal)
           .fontStyle(kind === 'italic' ? FontStyle.Italic : FontStyle.Normal)
           .fontColor($r('app.color.text_primary'))
@@ -3807,10 +3807,10 @@ struct Index {
   FormatToolbar(pane: string) {
     Row() {
       Blank()
-      Row({ space: Space.s1 }) {
+      Row() {
         Row() {
           Text('Aa')
-            .fontSize(FontSize.body2)
+            .fontSize(FontSize.s3)
             .fontColor($r('app.color.text_primary'))
         }
         .width(Size.touch)
@@ -3847,7 +3847,7 @@ struct Index {
           this.ImageFormatAction(pane)
         }
       }
-      .padding(Space.s1)
+      .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
       .alignItems(VerticalAlign.Center)
       .borderRadius(Radius.full)
       .backgroundColor($r('app.color.bg_card'))
