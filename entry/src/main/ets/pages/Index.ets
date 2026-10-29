@@ -453,6 +453,13 @@ struct Index {
     }
   }
 
+  private toggleBacklinks(pane: string): void {
+    this.setActivePane(pane);
+    const samePaneExpanded: boolean = this.backlinksExpanded && this.backlinksPane === pane;
+    this.backlinksPane = pane;
+    this.backlinksExpanded = !samePaneExpanded;
+  }
+
   /** 档位变化：抽屉语义只在 sm；切到 md/lg 强制收抽屉，防止回 sm 时意外打开 */
   private onBreakpointChanged(): void {
     this.moreMenuOpen = false;
@@ -2443,7 +2450,7 @@ struct Index {
       this.shareImagePreviewSessionId = sessionId;
       this.shareImagePreviewTitle = itemName;
       this.shareImagePreviewPages = pages;
-      this.openShareImagePreview(itemName, pages);
+      this.openShareImagePreview(itemName, pages, notePath);
     } catch (error) {
       this.shareCaptureActive = false;
       bridge.cancelShareCaptureRequests('分享图片生成已结束');
@@ -2468,7 +2475,7 @@ struct Index {
     }
   }
 
-  private openShareImagePreview(itemName: string, pages: ShareImagePreviewPage[]): void {
+  private openShareImagePreview(itemName: string, pages: ShareImagePreviewPage[], notePath: string): void {
     this.shareImagePreviewCtl = new CustomDialogController({
       builder: ShareImagePreviewDialog({
         itemName: itemName,
@@ -2482,6 +2489,7 @@ struct Index {
         },
         onCancel: (): void => {
           this.cleanupShareImagePreview();
+          this.openShareDialog('note', notePath);
         }
       }),
       autoCancel: false,
@@ -2781,11 +2789,7 @@ struct Index {
       .padding({ left: Space.s3, right: Space.s3 })
       .onClick((): void => {
         this.paneMoreOpen = false;
-        this.setActivePane(pane);
-        const samePaneExpanded: boolean = this.backlinksExpanded && this.backlinksPane === pane;
-        this.backlinksPane = pane;
-        this.backlinksExpanded = !samePaneExpanded;
-        void this.refreshBacklinks();
+        this.toggleBacklinks(pane);
       })
     }
     .width(Size.sidebarW)
@@ -3228,7 +3232,7 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
-        if (this.breakpoint === Breakpoint.SM) {
+        if (this.isSingleScreenLayout()) {
           this.MoreMenuButton()
         } else {
           this.IconButton('columns', this.isReferenceShown()
@@ -3315,6 +3319,21 @@ struct Index {
         this.moreMenuOpen = false;
         this.openSettings('note', 'general');
       })
+      if (this.activeFilePath().length > 0) {
+        Row() {
+          Text(this.backlinksExpanded && this.backlinksPane === this.activePane ? '隐藏反链' : '查看反链')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .onClick((): void => {
+          this.moreMenuOpen = false;
+          this.toggleBacklinks(this.activePane);
+        })
+      }
       if (this.currentFilePath.length > 0 && this.rightFilePath.length > 0 &&
         this.currentFilePath !== this.rightFilePath) {
         Row() {

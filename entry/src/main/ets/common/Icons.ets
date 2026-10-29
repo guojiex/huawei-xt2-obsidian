@@ -46,7 +46,7 @@ const P_SYNC: string = 'M20 12L17.66 17.66L12 20L6.34 17.66L4 12L6.34 6.34L12 4M
 // 设置（sliders）：三条横线 + 三个竖向旋钮（纯直线）
 const P_SETTINGS: string = 'M4 7h16M12 4v6M4 12h14M8 9v6M4 17h18M14 14v6';
 const P_MESSAGE: string = 'M4 4h16v12H9l-5 4zM8 8h8M8 12h5';
-const P_SHARE: string = 'M12 15V3M8 7l4-4 4 4M5 11v8h14v-8';
+const P_SHARE: string = 'M14 4L22 12L14 20L14 15L11 15L8 16L5 18L2 21L3 15L5 12L8 10L11 9L14 9Z';
 const P_IMAGE: string = 'M3 4h18v16H3zM4 17l5-5 4 4 3-3 4 4';
 const P_TASK: string = 'M3 5h6v6H3zM4.5 8l1.5 1.5L10 5.5M13 8h8M13 16h8M3 16h6';
 const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';

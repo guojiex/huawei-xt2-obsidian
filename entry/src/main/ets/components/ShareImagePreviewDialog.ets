@@ -61,7 +61,7 @@ export struct ShareImagePreviewDialog {
       .width('100%')
       .height(Size.drawerW * 0.75)
       Row({ space: Space.s2 }) {
-        Button('取消')
+        Button('返回格式选择')
           .layoutWeight(1)
           .height(Size.touch)
           .fontSize(FontSize.body2)
