@@ -30,7 +30,7 @@ export interface VaultEntry {
 }
 
 /** 默认库名：首启自动创建，随应用即用，不配远端也能进应用（spec.md FR-007）。 */
-export const DEFAULT_VAULT_ID: string = 'local';
+export const DEFAULT_VAULT_ID: string = '我的笔记';
 
 /**
  * 库名消毒纯函数（新建与改名共用，spec.md FR-009）：
