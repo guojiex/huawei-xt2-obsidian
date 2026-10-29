@@ -8,7 +8,7 @@ export interface ChangelogEntry {
   changes: string[];
 }
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
-  {"version": "0.6.0", "date": "2026-10-28", "status": "pending", "title": "小艺本地笔记操作暂缓", "changes": ["FunctionComponent + 单 Agent + 端插件路线已明确；App 侧 ListVaults 映射和白名单投影已实现。", "其余端插件工具、Agent/AGC 绑定与 API 24 / XT2 真实调用仍待验；本条记录外部依赖状态，不表示已接入。"], "statusLabel": "暂缓 · 未发布"},
+  {"version": "0.6.0", "date": "2026-10-28", "status": "pending", "title": "小艺本地笔记操作暂缓", "changes": ["FunctionComponent + 单 Agent + 端插件路线已明确；App 侧 ListVaults 映射和白名单投影已实现。", "App 侧 CreateVault 后台入口已实现，复用本地知识库创建规则并保持当前库不变。", "其余端插件工具、Agent/AGC 绑定与 API 24 / XT2 真实调用仍待验；本条记录外部依赖状态，不表示已接入。"], "statusLabel": "暂缓 · 未发布"},
   {"version": "0.5.0", "date": "2026-10-25", "status": "in_progress", "title": "共享样例与数据管理", "changes": ["共享样例笔记库供原型与首次安装使用，旧数据不自动覆盖。", "设置新增重置所有数据入口，确认后重新打开恢复样例。", "关于与完整版本记录改为同源数据生成。", "本阶段仍在开发，完整设备验收尚未完成。"], "statusLabel": "开发中"},
   {"version": "0.4.0", "date": "2026-10-23", "status": "implemented", "title": "快速找到笔记", "changes": ["按当前库文件名或部分路径快速打开笔记，支持中文和同名路径区分。", "最近打开按库保存，删除、改名和移动后更新失效路径。", "快切以遮罩弹层显示，卡片外点击关闭；API 26 模拟器已验证，XT2 待验。"], "statusLabel": "已实现 · 未发布"},
   {"version": "0.3.0", "date": "2026-10-23", "status": "pending", "title": "Git 同步暂缓", "changes": ["同步页已接入多库注册表和令牌安全存储；完整 clone 验收与 commit/push 回写仍未完成。", "Git 同步继续按 v0.3 外部依赖暂缓；小艺状态单列于 v0.6。"], "statusLabel": "暂缓 · 未发布"},

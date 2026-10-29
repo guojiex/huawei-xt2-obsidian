@@ -41,6 +41,7 @@
       "title": "小艺本地笔记操作暂缓",
       "changes": [
         "FunctionComponent + 单 Agent + 端插件路线已明确；App 侧 ListVaults 映射和白名单投影已实现。",
+        "App 侧 CreateVault 后台入口已实现，复用本地知识库创建规则并保持当前库不变。",
         "其余端插件工具、Agent/AGC 绑定与 API 24 / XT2 真实调用仍待验；本条记录外部依赖状态，不表示已接入。"
       ]
     },

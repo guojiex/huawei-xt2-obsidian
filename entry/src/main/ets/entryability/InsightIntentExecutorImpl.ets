@@ -13,7 +13,7 @@ interface VaultSummary {
 export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
   async onExecuteInUIAbilityBackgroundMode(name: string,
     param: Record<string, Object>): Promise<insightIntent.ExecuteResult> {
-    if (name !== 'ListVaults') {
+    if (name !== 'ListVaults' && name !== 'CreateVault') {
       return {
         code: -1,
         result: { message: '不支持的端插件工具：' + name }
@@ -23,6 +23,26 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
     try {
       const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
       const registry: VaultRegistry = VaultRegistry.initialize(context);
+      if (name === 'CreateVault') {
+        const requestedName: Object = param['name'];
+        if (typeof requestedName !== 'string' || requestedName.trim().length === 0) {
+          return {
+            code: -1,
+            result: { message: '库名不能为空。' }
+          };
+        }
+        const entry: VaultEntry = registry.createLocal(requestedName);
+        return {
+          code: 0,
+          result: {
+            vaultId: entry.id,
+            name: entry.id,
+            type: entry.type,
+            message: '已创建本地知识库「' + entry.id + '」，当前库未切换。'
+          }
+        };
+      }
+
       const currentVaultId: string = registry.currentId();
       const entries: VaultEntry[] = registry.list();
       const vaults: VaultSummary[] = [];
@@ -49,7 +69,9 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
       const err = error as Error;
       return {
         code: -1,
-        result: { message: '读取知识库列表失败：' + err.message }
+        result: {
+          message: (name === 'CreateVault' ? '创建知识库失败：' : '读取知识库列表失败：') + err.message
+        }
       };
     }
   }
