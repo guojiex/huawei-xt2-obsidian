@@ -14,6 +14,7 @@ import { VaultEntry } from '../model/Vault';
 import { FileTreeView } from './FileTreeView';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 export interface ChapterEntry {
   index: number;
@@ -105,6 +106,10 @@ export struct VaultSidebar {
     return this.currentVaultId + ':' + this.currentFilePath + ':' + chapter.offset.toString();
   }
 
+  private chapterFocusId(chapter: ChapterEntry): string {
+    return 'vault-chapter-' + this.chapterKey(chapter);
+  }
+
   private chapterTitleText(): string {
     if (this.currentFilePath.length === 0) {
       return '未选择笔记 · 0 个章节';
@@ -181,6 +186,62 @@ export struct VaultSidebar {
       next.push(key);
     }
     this.collapsedChapterKeys = next;
+  }
+
+  private focusChapter(chapter: ChapterEntry): void {
+    this.getUIContext().getFocusController().requestFocus(this.chapterFocusId(chapter));
+  }
+
+  private parentChapter(chapter: ChapterEntry): ChapterEntry | null {
+    for (let i = chapter.index - 1; i >= 0; i--) {
+      if (this.chapters[i].level < chapter.level) {
+        return this.chapters[i];
+      }
+    }
+    return null;
+  }
+
+  private onChapterKey(chapter: ChapterEntry, event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    const visible: ChapterEntry[] = this.visibleChapterEntries();
+    const position: number = visible.indexOf(chapter);
+    if (position < 0) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_UP) {
+      this.focusChapter(visible[(position + visible.length - 1) % visible.length]);
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_DOWN) {
+      this.focusChapter(visible[(position + 1) % visible.length]);
+    } else if (event.keyCode === KeyCode.KEYCODE_MOVE_HOME) {
+      this.focusChapter(visible[0]);
+    } else if (event.keyCode === KeyCode.KEYCODE_MOVE_END) {
+      this.focusChapter(visible[visible.length - 1]);
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_LEFT) {
+      if (this.hasChapterChildren(chapter.index) && !this.isChapterCollapsed(chapter)) {
+        this.toggleChapter(chapter);
+      } else {
+        const parent: ChapterEntry | null = this.parentChapter(chapter);
+        if (parent !== null) {
+          this.focusChapter(parent);
+        }
+      }
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_RIGHT) {
+      if (this.hasChapterChildren(chapter.index)) {
+        if (this.isChapterCollapsed(chapter)) {
+          this.toggleChapter(chapter);
+        } else if (position + 1 < visible.length && visible[position + 1].level > chapter.level) {
+          this.focusChapter(visible[position + 1]);
+        }
+      }
+    } else if (event.keyCode === KeyCode.KEYCODE_ENTER ||
+      event.keyCode === KeyCode.KEYCODE_SPACE || event.keyCode === KeyCode.KEYCODE_DPAD_CENTER) {
+      this.onSelectChapter(chapter.index);
+    } else {
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -489,6 +550,7 @@ export struct VaultSidebar {
                 ? $r('app.color.brand') : Color.Transparent)
           }
           .height(Size.touch)
+          .width('50%')
           .justifyContent(FlexAlign.End)
           .alignItems(HorizontalAlign.Center)
           .padding({ left: Space.s3, right: Space.s3 })
@@ -515,6 +577,7 @@ export struct VaultSidebar {
                 ? $r('app.color.brand') : Color.Transparent)
           }
           .height(Size.touch)
+          .width('50%')
           .justifyContent(FlexAlign.End)
           .alignItems(HorizontalAlign.Center)
           .padding({ left: Space.s3, right: Space.s3 })
@@ -593,6 +656,11 @@ export struct VaultSidebar {
                       .padding({ left: Space.s2, right: Space.s2 })
                       .layoutWeight(1)
                       .height(Size.touch)
+                      .focusable(true)
+                      .id(this.chapterFocusId(chapter))
+                      .onKeyEvent((event: KeyEvent): boolean => {
+                        return this.onChapterKey(chapter, event);
+                      })
                       .onClick((): void => { this.onSelectChapter(chapter.index); })
                   }
                   .width('100%')

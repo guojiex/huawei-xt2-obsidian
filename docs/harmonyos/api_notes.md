@@ -1308,6 +1308,12 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 当前本机 HarmonyOS SDK 的 `ets/component/gesture.d.ts` 声明 `TapGesture` since 7、连续点击参数 `count` since 11；`ets/component/common.d.ts` 声明 `onKeyEvent` since 7；`ets/api/@ohos.multimodalInput.keyCode.d.ts` 声明 `KEYCODE_F2 = 2091` since 9。均早于工程兼容上限 API 24，未使用更新接口。
 - API 26 TripleFold lg 实测：双击会话标题打开改名；键盘路径需先 Tab 将焦点移至会话行，再发送 F2。该结果只证明当前模拟器交互，不证明 API 24/XT2 的焦点行为。
 
+### L-13 v0.9 章节侧栏键盘导航（本机 SDK 声明）⚠️
+
+- 本机 HarmonyOS SDK 的 `ets/api/@ohos.multimodalInput.keyCode.d.ts` 声明方向键 `KEYCODE_DPAD_UP/DOWN/LEFT/RIGHT` 为 2012–2015、中心键 2016、空格 2050、Enter 2054、Home/End 2081–2082，均为 since 9。
+- `ets/component/common.d.ts` 的布尔型 `onKeyEvent` 回调为 since 15（void 型重载为 since 7），组件 `id()` 为 since 11；`ets/api/@ohos.arkui.UIContext.d.ts` 的 `UIContext.getFocusController()` / `FocusController.requestFocus()` 为 since 12。声明版本均不高于工程兼容上限 API 24。
+- 以上仅核对当前本机 SDK 的声明与可用版本；本轮 HAP 在 API 26 模拟器安装，未实际注入键盘事件，不能据此宣称 API 24 / XT2 键盘行为通过。
+
 ---
 
 ## 落地决策表
