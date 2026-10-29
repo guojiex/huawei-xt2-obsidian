@@ -2045,6 +2045,11 @@ struct Index {
         this.rightFilePath = '';
       }
       await NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
+      if (isCurrent) {
+        await this.readAndPush('');
+      } else if (isRightCurrent) {
+        await this.readRightAndPush('');
+      }
       this.revealPath = '';
       this.refreshFileTree();
     } catch (error) {
@@ -2087,6 +2092,11 @@ struct Index {
       }
       if (wasRight) {
         this.rightFilePath = '';
+      }
+      if (wasCurrent) {
+        await this.readAndPush('');
+      } else if (wasRight) {
+        await this.readRightAndPush('');
       }
       this.refreshFileTree();
       this.trashSeq++;
