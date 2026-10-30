@@ -54,8 +54,10 @@ import {
 import { SplitHandle } from '../components/SplitHandle';
 import { ShareNoteDialog, ShareFormatOption } from '../components/ShareNoteDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewPage } from '../components/ShareImagePreviewDialog';
+import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
 import { NoteShareService } from '../model/NoteShareService';
 import { NoteImageShareService } from '../model/NoteImageShareService';
+import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteImageService } from '../model/NoteImageService';
 import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
 import { ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
@@ -305,6 +307,7 @@ struct Index {
   private movePathCtl: CustomDialogController | null = null;
   private shareNoteCtl: CustomDialogController | null = null;
   private shareImagePreviewCtl: CustomDialogController | null = null;
+  private shareTextPreviewCtl: CustomDialogController | null = null;
   private shareCaptureBridge: PreviewBridge = new PreviewBridge();
   private readonly shareCaptureComponentId: string = 'note-image-share-capture';
   private shareCaptureReadyResolver: (() => void) | null = null;
@@ -2796,6 +2799,7 @@ struct Index {
     if (scope === 'note') {
       options.push({ value: 'image', label: '排版图片', detail: '覆盖全文与本地图片；长文会分图并显示页数。' });
       options.push({ value: 'file', label: 'Markdown / ZIP', detail: '无本地图片分享 Markdown；有本地图片时自动打包 ZIP。' });
+      options.push({ value: 'text', label: '文本', detail: '预览并编辑标题与正文；图片和复杂格式按提示降级。' });
     } else {
       const count = ShareArchiveService.countScope(registry, this.currentVaultId, path);
       itemSummary = '范围内 ' + count.noteCount.toString() + ' 篇 Markdown、' +
@@ -2848,6 +2852,12 @@ struct Index {
         await this.prepareNoteImageShare(this.currentVaultId, path, itemName, this.editorBridgeForPath(path));
         return;
       }
+      if (format === 'text' && scope === 'note') {
+        const markdown: string = await this.editorBridgeForPath(path).getContent();
+        const preview: NoteTextSharePreview = NoteTextShareService.createPreview(path, markdown);
+        this.openShareTextPreview(preview, path);
+        return;
+      }
       if (scope === 'note') {
         const markdown: string = await this.editorBridgeForPath(path).getContent();
         const prepared = await NoteShareService.prepareNote(registry, this.currentVaultId, path, markdown);
@@ -2896,6 +2906,41 @@ struct Index {
       label: 'HYPERLINK'
     });
     await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+  }
+
+  private openShareTextPreview(preview: NoteTextSharePreview, notePath: string): void {
+    this.shareTextPreviewCtl = new CustomDialogController({
+      builder: ShareTextPreviewDialog({
+        itemName: preview.title,
+        initialContent: preview.content,
+        limitations: preview.limitations,
+        onBack: (): void => { this.openShareDialog('note', notePath); },
+        onConfirm: (content: string): void => { void this.shareTextContent(preview.title, content); }
+      }),
+      autoCancel: false,
+      customStyle: true
+    });
+    this.shareTextPreviewCtl.open();
+  }
+
+  private async shareTextContent(title: string, content: string): Promise<void> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    try {
+      const shared = new systemShare.SharedData({
+        utd: uniformTypeDescriptor.UniformDataType.TEXT,
+        content: content,
+        title: title,
+        label: 'TEXT'
+      });
+      await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+    } catch (error) {
+      const err = error as Error;
+      void this.getUIContext().getPromptAction().showDialog({
+        title: '分享失败',
+        message: err.message.length > 0 ? err.message : '系统分享面板无法接收此文本，请改用 Markdown / ZIP。',
+        buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
+      });
+    }
   }
 
   private waitForShareCaptureReady(): Promise<void> {
