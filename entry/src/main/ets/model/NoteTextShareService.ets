@@ -167,7 +167,17 @@ export class NoteTextShareService {
   }
 
   private static cleanInline(text: string, flags: NoteTextShareFlags): string {
-    let output: string = text;
+    const inlineCode: string[] = [];
+    let markerPrefix: string = '\uE000';
+    while (text.indexOf(markerPrefix) >= 0) {
+      markerPrefix += '\uE000';
+    }
+    let output: string = text.replace(/(`+)([^`\n]+)\1/g,
+      (_whole: string, _ticks: string, code: string): string => {
+        const marker: string = markerPrefix + inlineCode.length.toString() + '\uE001';
+        inlineCode.push(code);
+        return marker;
+      });
     output = output.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_whole: string, alt: string): string => {
       flags.hasImage = true;
       return alt.length > 0 ? '[图片：' + alt + ']' : '[图片]';
@@ -206,7 +216,6 @@ export class NoteTextShareService {
     });
     output = output.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?p\b[^>]*>/gi, '\n');
     output = output.replace(/<[^>]+>/g, '');
-    output = output.replace(/(`+)([^`\n]+)\1/g, '$2');
     output = output.replace(/(\*\*|__)([^\n]+?)\1/g, '$2');
     output = output.replace(/~~([^\n]+?)~~/g, '$1');
     output = output.replace(/\*([^*\n]+)\*/g, '$1');
@@ -214,6 +223,10 @@ export class NoteTextShareService {
     output = output.replace(/\\([\\`*_{}\[\]()#+.!>|~-])/g, '$1');
     output = output.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+    for (let i = 0; i < inlineCode.length; i++) {
+      const marker: string = markerPrefix + i.toString() + '\uE001';
+      output = output.replace(marker, inlineCode[i]);
+    }
     return output;
   }
 

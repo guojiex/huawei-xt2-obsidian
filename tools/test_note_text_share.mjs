@@ -83,6 +83,13 @@ test('fenced code keeps its source text while fence markers and common inline fo
   assert.deepEqual(Array.from(result.limitations), []);
 });
 
+test('inline code preserves HTML and Markdown-looking source without reporting image limitations', () => {
+  const result = createPreview('code.md', 'Run `![x](assets/x.png) <b>literal</b> **raw**` as written.');
+
+  assert.equal(result.content, 'code\n\nRun ![x](assets/x.png) <b>literal</b> **raw** as written.');
+  assert.deepEqual(Array.from(result.limitations), []);
+});
+
 test('an unclosed frontmatter block remains visible and large text is not rejected by an invented local limit', () => {
   const unclosed = createPreview('sample.md', '---\ntitle: visible\nbody text');
   assert.match(unclosed.content, /title: visible/);
