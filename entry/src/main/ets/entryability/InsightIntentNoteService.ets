@@ -10,7 +10,7 @@ interface NoteMatch {
   path: string;
 }
 
-/** 小艺后台端插件的本地笔记工具。每次操作都使用参数中的明确 vaultId。 */
+/** 小艺后台端插件的本地笔记工具。vaultId 可省略，省略时定位用户当前选择的知识库。 */
 export class InsightIntentNoteService {
   private static readonly CONVERSATION_ID: string = 'xiaoyi';
   private static readonly busyVaults: Set<string> = new Set<string>();
@@ -46,7 +46,7 @@ export class InsightIntentNoteService {
   }
 
   private queryNotes(params: Record<string, Object>): Record<string, Object> {
-    const vaultId: string = this.requiredString(params, 'vaultId');
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
     const queryValue: Object = params['query'];
     const query: string = typeof queryValue === 'string' ? queryValue.trim().toLocaleLowerCase() : '';
     this.requireVault(vaultId);
@@ -67,7 +67,7 @@ export class InsightIntentNoteService {
   }
 
   private readNote(params: Record<string, Object>): Record<string, Object> {
-    const vaultId: string = this.requiredString(params, 'vaultId');
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
     const path: string = this.requiredString(params, 'path');
     this.requireVault(vaultId);
     this.requireExistingNote(vaultId, path);
@@ -87,7 +87,7 @@ export class InsightIntentNoteService {
   }
 
   private async createNote(params: Record<string, Object>): Promise<Record<string, Object>> {
-    const vaultId: string = this.requiredString(params, 'vaultId');
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
     const requestedPath: string = this.requiredString(params, 'path');
     const content: string = this.requiredString(params, 'text', true);
     this.requireVault(vaultId);
@@ -118,7 +118,7 @@ export class InsightIntentNoteService {
   }
 
   private async appendNote(params: Record<string, Object>): Promise<Record<string, Object>> {
-    const vaultId: string = this.requiredString(params, 'vaultId');
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
     const path: string = this.requiredString(params, 'path');
     const baseHash: string = this.requiredString(params, 'baseHash');
     const addition: string = this.requiredString(params, 'text');
@@ -138,7 +138,7 @@ export class InsightIntentNoteService {
   }
 
   private async editNote(params: Record<string, Object>): Promise<Record<string, Object>> {
-    const vaultId: string = this.requiredString(params, 'vaultId');
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
     const path: string = this.requiredString(params, 'path');
     const baseHash: string = this.requiredString(params, 'baseHash');
     const anchor: string = this.requiredString(params, 'anchor');
@@ -159,7 +159,7 @@ export class InsightIntentNoteService {
   }
 
   private async undoLastEdit(params: Record<string, Object>): Promise<Record<string, Object>> {
-    const vaultId: string = this.requiredString(params, 'vaultId');
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
     const operationId: string = this.requiredString(params, 'operationId');
     this.requireVault(vaultId);
     this.enterVault(vaultId);
@@ -410,6 +410,18 @@ export class InsightIntentNoteService {
       throw new Error('INVALID_PARAMETER：缺少有效参数「' + key + '」。');
     }
     return value as string;
+  }
+
+  /** vaultId 缺省解析：显式传入优先；否则用用户当前选择的知识库；两者皆无则拒绝执行。 */
+  private static resolveVaultId(params: Record<string, Object>, currentVaultId: string): string {
+    const provided: Object = params['vaultId'];
+    if (typeof provided === 'string' && provided.trim().length > 0) {
+      return provided.trim();
+    }
+    if (currentVaultId.length > 0) {
+      return currentVaultId;
+    }
+    throw new Error('NO_CURRENT_VAULT：未指定 vaultId，且用户当前未选择知识库。');
   }
 
   private static appendText(before: string, addition: string): string {

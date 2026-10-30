@@ -24,12 +24,12 @@ function extractStaticMethod(name) {
   return source.slice(start, end).replace(`private static ${name}`, `function ${name}`);
 }
 
-const methods = ['appendText', 'replaceUniqueAnchor'].map(extractStaticMethod).join('\n');
+const methods = ['appendText', 'replaceUniqueAnchor', 'resolveVaultId'].map(extractStaticMethod).join('\n');
 const code = transformSync(methods, { loader: 'ts', format: 'cjs' }).code +
-  '\nmodule.exports = { appendText, replaceUniqueAnchor };';
+  '\nmodule.exports = { appendText, replaceUniqueAnchor, resolveVaultId };';
 const module = { exports: {} };
 vm.runInContext(code, vm.createContext({ module, exports: module.exports, Error }));
-const { appendText, replaceUniqueAnchor } = module.exports;
+const { appendText, replaceUniqueAnchor, resolveVaultId } = module.exports;
 
 assert.equal(appendText('', 'new'), 'new');
 assert.equal(appendText('old', 'new'), 'old\nnew');
@@ -38,6 +38,12 @@ assert.equal(replaceUniqueAnchor('before target after', 'target', 'updated'), 'b
 assert.throws(() => replaceUniqueAnchor('same same', 'same', 'x'), /ANCHOR_NOT_UNIQUE/);
 assert.throws(() => replaceUniqueAnchor('before', 'missing', 'x'), /ANCHOR_NOT_UNIQUE/);
 assert.throws(() => replaceUniqueAnchor('whole note', 'whole note', ''), /WHOLE_NOTE_DELETE_DENIED/);
+assert.equal(resolveVaultId({ vaultId: 'vault-a' }, 'vault-b'), 'vault-a');
+assert.equal(resolveVaultId({ vaultId: '  vault-a  ' }, 'vault-b'), 'vault-a');
+assert.equal(resolveVaultId({}, 'vault-b'), 'vault-b');
+assert.equal(resolveVaultId({ vaultId: '' }, 'vault-b'), 'vault-b');
+assert.throws(() => resolveVaultId({}, ''), /NO_CURRENT_VAULT/);
+assert.throws(() => resolveVaultId({ vaultId: '' }, ''), /NO_CURRENT_VAULT/);
 
 const guardSource = fs.readFileSync(new URL('../entry/src/main/ets/model/WorkspaceEditGuard.ets', import.meta.url),
   'utf8').replace(/^export class WorkspaceEditGuard/m, 'class WorkspaceEditGuard');
@@ -83,14 +89,14 @@ for (const name of expected.slice(2)) {
 for (const method of ['queryNotes', 'readNote', 'createNote', 'appendNote', 'editNote', 'undoLastEdit']) {
   const start = noteService.search(new RegExp(`private (?:async )?${method}\\(`));
   assert.ok(start >= 0, `missing ${method}`);
-  assert.ok(noteService.slice(start, start + 240).includes("requiredString(params, 'vaultId')"),
-    `${method} must require an explicit vaultId`);
+  assert.ok(noteService.slice(start, start + 300).includes('InsightIntentNoteService.resolveVaultId(params, this.registry.currentId())'),
+    `${method} must resolve vaultId with an explicit-current fallback`);
 }
+assert.ok(noteService.includes('NO_CURRENT_VAULT'), 'omitted vaultId without a current vault must fail explicitly');
 assert.ok(noteService.includes('requireExistingNote(vaultId, path)'));
 assert.ok(noteService.includes('NoteService.saveNoteIfUnchanged'));
 assert.ok(noteService.includes('NoteService.deleteNoteIfUnchanged'));
 assert.ok(noteService.includes('WorkspaceEditGuard.isUnsaved(vaultId, path)'));
-assert.ok(!noteService.includes('currentId()'), 'tool operations must not infer the target library globally');
 assert.ok(noteStorage.includes('new fileIo.AtomicFile('), 'existing-note writes must use AtomicFile');
 assert.ok(index.includes('FunctionComponent({'), 'the note workspace must expose the platform component');
 assert.ok(index.includes("this.xiaoyiController.on('agentDialogClosed'"), 'closing the panel must refresh local files');
