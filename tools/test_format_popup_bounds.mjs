@@ -7,11 +7,15 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+const keyboardHandlerStart = source.indexOf('  private onFormatKeyboardInsetChanged(): void {');
+const keyboardHandlerEnd = source.indexOf('\n  private keyboardInsetVp(): number {', keyboardHandlerStart);
+assert.ok(keyboardHandlerStart >= 0 && keyboardHandlerEnd > keyboardHandlerStart,
+  'could not find Index.onFormatKeyboardInsetChanged');
 const start = source.indexOf('  private updateFormatPopupLayout(pane: string): void {');
 const end = source.indexOf('\n  private applyEditorFormat(', start);
 assert.ok(start >= 0 && end > start, 'could not find Index.updateFormatPopupLayout');
 
-const code = transformSync(`class FormatPopupHarness { ${source.slice(start, end).trim()} }; module.exports = FormatPopupHarness;`, {
+const code = transformSync(`class FormatPopupHarness { ${source.slice(keyboardHandlerStart, keyboardHandlerEnd).trim()} ${source.slice(start, end).trim()} }; module.exports = FormatPopupHarness;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;
@@ -91,5 +95,51 @@ test('a right-pane popup offset is measured from its right-aligned placement and
 
   assert.equal(app.formatMenuWidth, 360);
   assert.equal(app.formatPopupOffsetX, -3);
+  assert.equal(app.formatMenuOpen, true);
+});
+
+test('a popup below the anchor uses the available space when the upper space is smaller', () => {
+  const app = layout({
+    pane: 'left',
+    leftPaneArea: [0, 95, 379, 650],
+    leftAnchorArea: [55, 150, 48, 48],
+    windowArea: [0, 39, 1107, 737]
+  });
+
+  assert.equal(app.formatPopupPlacement, 'bottom-left');
+  assert.equal(app.formatMenuMaxHeight, 531);
+  assert.equal(app.formatMenuOpen, true);
+});
+
+test('a keyboard inset change repositions the open popup within the keyboard-safe area', () => {
+  const options = {
+    pane: 'left',
+    leftPaneArea: [0, 95, 379, 650],
+    leftAnchorArea: [55, 338, 48, 48],
+    windowArea: [0, 39, 1107, 737],
+    keyboardInsetVp: 0
+  };
+  const app = layout(options);
+
+  assert.equal(app.formatPopupPlacement, 'bottom-left');
+  options.keyboardInsetVp = 250;
+  app.onFormatKeyboardInsetChanged();
+
+  assert.equal(app.formatPopupPlacement, 'top-left');
+  assert.equal(app.formatMenuMaxHeight, 227);
+  assert.equal(app.formatMenuOpen, true);
+});
+
+test('a narrow pane constrains the popup width to its own visible bounds', () => {
+  const app = layout({
+    pane: 'left',
+    leftPaneArea: [100, 90, 240, 650],
+    leftAnchorArea: [180, 650, 48, 48],
+    windowArea: [0, 39, 1107, 737]
+  });
+
+  assert.equal(app.formatMenuWidth, 224);
+  assert.equal(app.formatPopupOffsetX, -72);
+  assert.equal(app.formatPopupPlacement, 'top-left');
   assert.equal(app.formatMenuOpen, true);
 });
