@@ -86,6 +86,20 @@ test('images, tables, formulas, and wiki links get readable text and explicit li
   ]);
 });
 
+test('autolinks and raw HTML links retain their targets in editable text', () => {
+  const result = createPreview('links.md', [
+    'Open <https://example.test/direct>, <a href="https://example.test/double">**bold**</a>,',
+    "<a href='https://example.test/single'>single</a>, or <a href=https://example.test/plain>plain</a>."
+  ].join(' '));
+
+  assert.equal(result.content, [
+    'links',
+    '',
+    'Open https://example.test/direct, bold (https://example.test/double), single (https://example.test/single), or plain (https://example.test/plain).'
+  ].join('\n'));
+  assert.deepEqual(Array.from(result.limitations), []);
+});
+
 test('fenced code keeps its source text while fence markers and common inline formatting are removed', () => {
   const result = createPreview('code.md', [
     '```typescript',

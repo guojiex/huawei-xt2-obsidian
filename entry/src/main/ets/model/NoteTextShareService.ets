@@ -230,6 +230,14 @@ export class NoteTextShareService {
       flags.hasImage = true;
       return alt.length > 0 ? '[图片：' + alt + ']' : '[图片]';
     });
+    output = output.replace(/<(https?:\/\/[^>\s]+|mailto:[^>\s]+)>/gi, '$1');
+    output = output.replace(/<a\b[^>]*\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi,
+      (_whole: string, doubleQuoted: string | undefined, singleQuoted: string | undefined,
+        unquoted: string | undefined, label: string): string => {
+        const target: string = doubleQuoted !== undefined ? doubleQuoted
+          : singleQuoted !== undefined ? singleQuoted : unquoted !== undefined ? unquoted : '';
+        return target.length > 0 ? label + ' (' + target + ')' : label;
+      });
     output = output.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?p\b[^>]*>/gi, '\n');
     output = output.replace(/<[^>]+>/g, '');
     output = output.replace(/(\*\*|__)([^\n]+?)\1/g, '$2');
