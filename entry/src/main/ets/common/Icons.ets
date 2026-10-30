@@ -43,15 +43,18 @@ const P_RESTORE: string = 'M9 5L4 10L9 15M4 10H13L17 12L20 16V19';
 const P_ARCHIVE: string = 'M3 5h18v4H3zM5 9v10h14V9M9 13h6';
 // 同步（refresh）：3/4 圆环 + 箭头（纯折线逼近，无弧线）
 const P_SYNC: string = 'M20 12L17.66 17.66L12 20L6.34 17.66L4 12L6.34 6.34L12 4M12 4L15.5 5.5M12 4L13.5 8.5';
-// 设置（sliders）：三条横线 + 三个竖向旋钮（纯直线）
-const P_SETTINGS: string = 'M4 7h16M12 4v6M4 12h14M8 9v6M4 17h18M14 14v6';
+// 设置（sliders）：三条等长横线 + 三个圆形滑钮（对齐 v2 settingsBtn：knob 用三段三次贝塞尔画圆，避免 A 命令 flag 被 scalePath 缩放）
+const P_SETTINGS: string = 'M4 6h3M11 6h9M9 4C10.1 4 11 4.9 11 6C11 7.1 10.1 8 9 8C7.9 8 7 7.1 7 6C7 4.9 7.9 4 9 4'
+  + 'M4 12h9M17 12h3M15 10C16.1 10 17 10.9 17 12C17 13.1 16.1 14 15 14C13.9 14 13 13.1 13 12C13 10.9 13.9 10 15 10'
+  + 'M4 18h3M11 18h9M9 16C10.1 16 11 16.9 11 18C11 19.1 10.1 20 9 20C7.9 20 7 19.1 7 18C7 16.9 7.9 16 9 16';
 const P_MESSAGE: string = 'M4 4h16v12H9l-5 4zM8 8h8M8 12h5';
 const P_SHARE: string = 'M14 4L22 12L14 20L14 15L11 15L8 16L5 18L2 21L3 15L5 12L8 10L11 9L14 9Z';
 const P_IMAGE: string = 'M3 4h18v16H3zM4 17l5-5 4 4 3-3 4 4';
 const P_TASK: string = 'M3 5h6v6H3zM4.5 8l1.5 1.5L10 5.5M13 8h8M13 16h8M3 16h6';
 const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 const P_SWAP: string = 'M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4';
-const P_COLUMNS: string = 'M3 5h8v14H3zM13 5h8v14h-8z';
+// 双栏（对齐 v2 showRef）：圆角外框（rx=3，四角用三次贝塞尔逼近）+ 中央分隔线，避免 A 命令 flag 被 scalePath 缩放
+const P_COLUMNS: string = 'M6 4H18C19.66 4 21 5.34 21 7V17C21 18.66 19.66 20 18 20H6C4.34 20 3 18.66 3 17V7C3 5.34 4.34 4 6 4M12 4v16';
 const P_FOCUS: string = 'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5';
 
 /** 名字 → 路径；未知名字返回空串（画不出东西，但不会崩） */

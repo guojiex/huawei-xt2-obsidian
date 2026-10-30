@@ -2852,9 +2852,9 @@ struct Index {
 
   // ===== 视觉构件 =====
 
-  /** 顶栏图标按钮：视觉 22，热区 48（4.x 修正 v0.1 的 32×32 不足） */
+  /** 顶栏图标按钮：视觉 22，热区 48（4.x 修正 v0.1 的 32×32 不足）；bgColor 用于按下态底色（v2 #showRef[aria-pressed=true] 的 --blue-soft） */
   @Builder
-  IconButton(name: string, color: ResourceColor, onTap: () => void) {
+  IconButton(name: string, color: ResourceColor, onTap: () => void, bgColor: ResourceColor = Color.Transparent) {
     Row() {
       Icon(name, Space.s5, color)
     }
@@ -2862,6 +2862,7 @@ struct Index {
     .height(Size.touch)
     .justifyContent(FlexAlign.Center)
     .borderRadius(Radius.icon)
+    .backgroundColor(bgColor)
     .onClick(onTap)
   }
 
@@ -3349,7 +3350,8 @@ struct Index {
           this.IconButton('columns', this.isReferenceShown()
             ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
             this.toggleReference();
-          })
+          }, this.isReferenceShown()
+            ? $r('app.color.brand_bg') : Color.Transparent)
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
           })
