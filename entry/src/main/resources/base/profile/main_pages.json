@@ -1,6 +1,7 @@
 {
   "src": [
     "pages/Index",
-    "pages/SyncPage"
+    "pages/SyncPage",
+    "pages/AgentKitPage"
   ]
 }

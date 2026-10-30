@@ -18,8 +18,7 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
-import { BusinessError } from '@kit.BasicServicesKit';
-import { ButtonType as AgentButtonType, FunctionComponent, FunctionController } from '@kit.AgentFrameworkKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
@@ -72,7 +71,6 @@ import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
-const XIAOYI_AGENT_ID: string = 'agentb21117de704941b3ba497bd5de94f6ad';
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -170,10 +168,10 @@ struct Index {
   @State splitDragging: boolean = false;
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
-  private xiaoyiController: FunctionController = new FunctionController();
-  private readonly xiaoyiDialogClosedListener = (): void => {
-    void this.refreshWorkspaceAfterXiaoyi();
-  };
+  /** Current DevEco emulator reports productModel "emulator"; no dedicated isEmulator API is used. */
+  private readonly agentKitUnavailableInSimulator: boolean =
+    deviceInfo.productModel.toLowerCase().indexOf('emulator') >= 0;
+  private refreshAfterXiaoyiPage: boolean = false;
   private workspaceSessionStore: WorkspaceSessionStore | null = null;
   private pendingWorkspaceSession: WorkspaceSession | null = null;
   private workspaceSessionRestoreStarted: boolean = false;
@@ -321,8 +319,6 @@ struct Index {
   @State shareImagePreviewPages: ShareImagePreviewPage[] = [];
 
   aboutToAppear(): void {
-    this.xiaoyiController.off('agentDialogClosed', this.xiaoyiDialogClosedListener);
-    this.xiaoyiController.on('agentDialogClosed', this.xiaoyiDialogClosedListener);
     this.refreshFromRegistry();
     this.ensureRecentOpenStore();
     this.ensureSplitLayoutStore();
@@ -332,10 +328,6 @@ struct Index {
     this.syncNavigationForBreakpoint();
     this.ensureWorkspaceSessionStore();
     this.pendingWorkspaceSession = (this.workspaceSessionStore as WorkspaceSessionStore).load();
-  }
-
-  aboutToDisappear(): void {
-    this.xiaoyiController.off('agentDialogClosed', this.xiaoyiDialogClosedListener);
   }
 
   private ensureSplitLayoutStore(): void {
@@ -895,6 +887,25 @@ struct Index {
     this.topView = 'agent';
   }
 
+  private async openXiaoyiPage(): Promise<void> {
+    if (this.agentKitUnavailableInSimulator) {
+      return;
+    }
+    if (this.topView !== 'note' || !await this.flushWorkspaceSaves()) {
+      return;
+    }
+    try {
+      await import('./AgentKitPage');
+      this.refreshAfterXiaoyiPage = true;
+      await router.pushUrl({ url: 'pages/AgentKitPage' });
+    } catch (error) {
+      this.refreshAfterXiaoyiPage = false;
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '加载小艺入口失败，错误码 %{public}d', err.code);
+      promptAction.showToast({ message: '当前设备暂时无法使用小艺' });
+    }
+  }
+
   private openSettings(fromView: string, initialTab: string): void {
     this.moreMenuOpen = false;
     this.settingsReturnView = fromView;
@@ -934,6 +945,11 @@ struct Index {
     const regId: string = VaultRegistry.get().currentId();
     if (regId.length > 0 && regId !== this.currentVaultId) {
       void this.adoptExternalVaultSwitch();
+      return;
+    }
+    if (this.refreshAfterXiaoyiPage) {
+      this.refreshAfterXiaoyiPage = false;
+      void this.refreshWorkspaceAfterXiaoyi();
     }
   }
 
@@ -3790,26 +3806,19 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
-        FunctionComponent({
-          agentId: XIAOYI_AGENT_ID,
-          controller: this.xiaoyiController,
-          options: {
-            title: 'Agent 对话',
-            titleFontSize: FontSize.body2,
-            iconSize: Space.s5,
-            iconColors: [$r('app.color.brand')],
-            titleColors: [$r('app.color.brand')],
-            backgroundColor: $r('app.color.brand_bg'),
-            buttonType: AgentButtonType.CAPSULE,
-            controlSize: ControlSize.NORMAL,
-            isShowShadow: false
-          },
-          onError: (error: BusinessError): void => {
-            hilog.error(DOMAIN, TAG, '小艺 FunctionComponent 错误码 %{public}d', error.code);
-            promptAction.showToast({ message: '暂时无法打开小艺' });
-          }
-        })
-          .margin({ left: Space.s1, right: Space.s1 })
+        if (!this.agentKitUnavailableInSimulator) {
+          Button('Agent 对话')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.brand'))
+            .height(Size.touch)
+            .padding({ left: Space.s3, right: Space.s3 })
+            .borderRadius(Radius.full)
+            .backgroundColor($r('app.color.brand_bg'))
+            .margin({ left: Space.s1, right: Space.s1 })
+            .onClick((): void => {
+              void this.openXiaoyiPage();
+            })
+        }
         if (this.isSingleScreenLayout()) {
           this.MoreMenuButton()
         } else {

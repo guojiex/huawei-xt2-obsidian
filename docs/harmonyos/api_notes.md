@@ -667,6 +667,8 @@ ohpm publish yourlib.har
 
 2026-10-26 Stack 覆盖 spike：API 26 模拟器构建成功，但启动接入 `FunctionComponent` 的 HAP 时触发 `SIGABRT`；Faultlogger 的 `LastFatalMessage` 为缺少 `com.huawei.hmsapp.hiai.hsp/agentKitHsp`，尚未进入 UI 触摸验证。该结果说明当前模拟器运行环境不具备此组件依赖，**不能判断遮罩视觉或点击命中是否可行**；临时接线和无效 `agentId` 已撤下，XT2 真机仍待测。
 
+2026-10-30 模拟器启动隔离复验：华为[模拟器与真机差异指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide-emulator-specification)指出，Kit 能力不支持导致应用闪退时可尝试动态引入 Kit，并给出缺少 Kit HSP 的 `LoadJSPandaFile` 报错示例；[ArkTS 动态加载指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-dynamic-import)说明动态 `import` 可按条件延迟加载模块。当前实现把 `@kit.AgentFrameworkKit` 静态导入及 `FunctionComponent` 放到 `AgentKitPage`，首页根据 `deviceInfo.productModel` 是否包含 `emulator` 决定是否展示入口，并仅在其他设备上动态导入该页。当前 API 26 模拟器通过 HDC 查询到 `const.product.model=emulator`；unsigned HAP 构建、覆盖安装、拉起后，应用主进程仍在运行，UI 树有 111 个节点，未包含 Agent 入口文案，未观察到本次启动的 `agentKitHsp` / `SIGABRT` 匹配日志。这里验证的是当前模拟器启动隔离；`deviceInfo.productModel` 在其他模拟器型号上的具体取值、真实设备的动态页面加载/Agent 拉起，以及模拟器点击绕过 guard 后的行为均未验证。API 26 SDK 将 `deviceInfo.productModel` 标为 API 6 起；动态路由代码已编译，真实设备页面路由待测。
+
 官方指南另要求先创建智能体、关联应用，并确保设备已登录华为账号且联网。`FunctionOptions.queryText` 可设置初始查询文本。满足版本范围不等于本机 Agent 可用，仍需支持查询及设备验证。
 
 该组件用于拉起已上线的指定智能体面板。本文列出的控制器没有消息流、历史注入或工具调用回传接口，**不能据此认定已满足自有聊天工作区的 Provider 协议**；是否存在其他正式接口仍待核实。
