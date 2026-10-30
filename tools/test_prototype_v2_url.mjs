@@ -5,6 +5,10 @@ import vm from 'node:vm';
 const html=fs.readFileSync(new URL('../docs/prototype/v2/index.html',import.meta.url),'utf8');
 const code=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const markupIds=new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g),match=>match[1]));
+test('footer links to the current v2 design notes without restoring the deleted prototype entry',()=>{
+ assert.match(html,/<a href="\.\/设计说明\.md">设计说明<\/a>/);
+ assert.doesNotMatch(html,/href="\.\.\/index\.html"/);
+});
 test('save-success feedback stays hidden until the simulated save succeeds, then fades out',()=>{
  assert.match(html,/\.save-feedback\{position:absolute;left:var\(--s5\)/);
  assert.match(code,/scheduleSaveFeedback\(\).*setTimeout\(\(\)=>\{const feedback=saveFeedback\(\);feedback\.classList\.remove\('hidden'\);saveFeedbackHideTimer=setTimeout\(\(\)=>feedback\.classList\.add\('hidden'\),3500\);\},800\)/);
