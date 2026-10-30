@@ -10,6 +10,7 @@
  *
  * 改值规矩（AGENTS.md 硬约束 17）：改这里必须同步改 v2 原型 `:root`，两边不许漂。
  */
+import { curves } from '@kit.ArkUI';
 
 /** 间距：4vp 栅格（4.4）—— 不允许出现 5 / 7 / 9 这类非栅格值 */
 export class Space {
@@ -80,6 +81,10 @@ export class Motion {
   static readonly durFast: number = 120;
   static readonly durBase: number = 180;   // v2 --ease
   static readonly durSlow: number = 300;
+  /** 文件列表展开/收起的推动动画时长（v2 --nav-duration）：汉堡按钮触发，比 --ease 慢 */
+  static readonly durNav: number = 240;    // v2 --nav-duration
+  /** 推动动画曲线（v2 --nav-curve） */
+  static readonly navCurve: curves.ICurve = curves.cubicBezierCurve(0.2, 0, 0, 1);
   /** 撤销条（1.7）：滑到底删除后的后悔药显示时长（原型 showToast 5 秒） */
   static readonly snack: number = 5000;
 }

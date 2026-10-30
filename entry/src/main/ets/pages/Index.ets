@@ -3568,7 +3568,7 @@ struct Index {
       .height('100%')
       .margin({ left: -Size.drawerW * (1 - this.drawerProgress) })
       .enabled(this.drawerOpen)
-      .animation({ duration: Motion.durBase, curve: Curve.EaseInOut })
+      .animation({ duration: Motion.durNav, curve: Motion.navCurve })
 
       Stack({ alignContent: Alignment.Start }) {
         Column() {
@@ -3587,7 +3587,7 @@ struct Index {
       .width('100%')
       .height('100%')
       .translate({ x: Size.drawerW * this.drawerProgress })
-      .animation({ duration: Motion.durBase, curve: Curve.EaseInOut })
+      .animation({ duration: Motion.durNav, curve: Motion.navCurve })
     }
     .width('100%')
     .height('100%')
@@ -3604,7 +3604,7 @@ struct Index {
       .height('100%')
       .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
       .enabled(!this.sidebarCollapsed)
-      .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+      .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
 
       SplitHandle({
         dragStarted: (): void => { this.startNavigationDrag(false); },
@@ -3616,7 +3616,7 @@ struct Index {
         .margin({ left: -Space.s2 * this.sidebarProgress,
           right: -Space.s2 * this.sidebarProgress })
         .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
 
       Stack({ alignContent: Alignment.Start }) {
         Column() {
@@ -3652,7 +3652,7 @@ struct Index {
         .height('100%')
         .margin({ left: -this.windowWidthVp * 0.5 * (1 - this.sidebarProgress) })
         .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
 
         Column() {
           this.LeftWorkspacePane(false)
@@ -3665,7 +3665,7 @@ struct Index {
         }
         .width(this.windowWidthVp * 0.5 * (1 - this.sidebarProgress))
         .height('100%')
-        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
       } else {
         Column() {
           this.NoteNavigation(false)
@@ -3674,7 +3674,7 @@ struct Index {
         .height('100%')
         .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
         .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
 
         SplitHandle({
           dragStarted: (): void => { this.startNavigationDrag(false); },
@@ -3686,14 +3686,14 @@ struct Index {
           .margin({ left: -Space.s2 * this.sidebarProgress,
             right: -Space.s2 * this.sidebarProgress })
           .enabled(!this.sidebarCollapsed)
-          .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
 
         Column() {
           this.LeftWorkspacePane(false)
         }
         .width(this.noteContentWidth() * this.noteContentRatio())
         .height('100%')
-        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
 
         SplitHandle({
           dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
@@ -3703,7 +3703,7 @@ struct Index {
         })
           .width(Space.s4)
           .margin({ left: -Space.s2, right: -Space.s2 })
-          .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
 
         Column() {
           this.RightWorkspacePane()
@@ -3711,7 +3711,7 @@ struct Index {
         .width(this.noteContentWidth() * (1 - this.noteContentRatio()))
         .height('100%')
         .border({ width: { left: 1 }, color: $r('app.color.line') })
-        .animation({ duration: this.splitDragging ? 0 : Motion.durBase, curve: Curve.EaseInOut })
+        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
       }
     }
     .width('100%')

@@ -137,7 +137,7 @@ test('native theme colors and ArkTS numeric tokens match v2 mappings', () => {
     ['Size.sidebarW', 'nav-width'], ['Size.drawerW', 'mobile-nav-width'], ['Size.paneMinW', 'pane-min'],
     ['Size.formatMenuW', 'format-width'],
     ['Size.touch', 'touch'], ['Size.treeIndent', 'tree-indent'], ['Size.swipeDelExtra', 'swipe-extra'],
-    ['Motion.durBase', 'ease']
+    ['Motion.durBase', 'ease'], ['Motion.durNav', 'nav-duration']
   ]
   for (const [tokenName, cssName] of numericMappings) {
     const expected = cssNumber(light, `--${cssName}`)
