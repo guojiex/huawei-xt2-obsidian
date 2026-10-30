@@ -1,22 +1,32 @@
-# libgit2 N-API PoC
+# libgit2 N-API
 
-This is a standalone native module experiment. It is not listed in the production app's dependencies and is not wired into `SyncPage` or the current isomorphic-git bridge. The native module is packaged only by the `ohosTest` HAP for isolated API 26 emulator validation.
+This module is wired into the production App HAP through `entry/src/main/cpp/` and is also packaged in the `ohosTest` HAP for isolated validation. The existing Web/isomorphic-git implementation remains in the repository as historical implementation and fallback evidence.
 
-The module exports:
+## API
 
-- `getVersion(): string`
-- `getFeatures(): { threads: boolean; https: boolean; ssh: boolean }`
-- `getRepositoryState(path): { branch: string; clean: boolean; statusEntryCount: number; packFileCount: number }` (read-only test probe)
-- `clone(options): Promise<string>`
+- `getVersion()` / `getFeatures()` report the linked libgit2 build.
+- `getRepositoryState(path)` reads the current branch, HEAD, worktree/index status count, pack count, and ahead/behind counts against `origin/xt2`.
+- `clone(options)` clones an HTTP(S) repository into a new target directory, with optional branch, Basic credentials or Bearer token, CA override, and transfer progress callback.
+- `gitAction(options)` supports `stage`, `commit`, `fetch`, and `push` on an existing repository.
 
-`clone` accepts `{ url, targetPath, branch?, username?, password?, caFile?, onProgress? }`. It accepts HTTP(S), checks HTTPS against HarmonyOS's preset CA bundle by default, and allows `caFile` as an optional override for private CA setups. It rejects credentials embedded in URLs and refuses a target path that already exists. Credential pairs stay in memory for the operation and are never logged. `branch` selects the branch to check out; `onProgress` receives best-effort packfile counters on the JS thread. The credential callback supports HTTP username/password; provider-specific GitHub/Gitee behavior still needs validation.
+`stage` writes the libgit2 index and excludes the root `.trash` path while retaining any already tracked `.trash` index entries. `commit` writes Git objects and the current branch reference. `fetch` updates Git objects and `origin/xt2`. `push` fetches first, targets only `refs/heads/xt2`, rejects a non-fast-forward update, and never uses a force refspec. These operations do not checkout files or write/delete note or attachment paths in the worktree.
 
-Clone runs on N-API async work so the caller thread does not wait for network I/O. Rejected promises include the libgit2 error detail. A failed clone may leave a partial new target; the caller owns cleanup. Do not pass a path to an existing vault. The intended future caller must derive the target from `context.filesDir` through the app's shared path resolver and pass only its unique import directory.
+`pull` and checkout are intentionally not exposed. libgit2 does not promise an all-files transaction or rollback after a failed/interrupted checkout, and `AtomicFile` cannot wrap those native writes. Do not add an existing-vault checkout until an application-level recovery boundary is designed and verified.
 
-The `ohosTest` target links the same module and requests `ohos.permission.INTERNET` for its local HTTP fixture and public HTTPS probe. Build the test HAP with `hvigorw assembleHap --mode module -p module=entry@ohosTest -p product=default`; this is test-only packaging and does not enable the module in the production HAP.
+Clone accepts only a non-existent absolute target path. The App obtains its path from `VaultRegistry` and the shared resolver, creates a unique `__importing` directory, verifies the cloned repository from disk, and registers it only after validation. Clone failure cleanup is limited to that marked import. Never pass an existing vault as a clone target.
 
-The local API 26 SDK documents `/etc/ssl/certs/cacert.pem` as the preset CA bundle for `@ohos.net.http` starting at API 10. The wrapper configures libgit2 to read that bundle before HTTPS clones. The path and native mbedTLS access still need validation on API 24 / XT2.
+HTTPS uses the HarmonyOS preset CA path by default; `caFile` is only for exceptional private-CA environments. Credential values stay in operation memory and are not logged or written to the repository URL. App tokens are read from `@kit.AssetStoreKit`; Basic and Bearer are selected by remote provider. Device tests currently verify authentication with a local isolated HTTP fixture; provider-specific HTTPS authentication remains unverified.
 
-Build the native dependency and wrapper with `./native/git2_napi/build.sh`. The script downloads libgit2 v1.9.7 and mbedTLS v3.6.7, builds for arm64 with `OHOS_COMPATIBLE_SDK_VERSION=24`, and writes libraries under `.build/out/libs/arm64-v8a/`. It does not modify the app build files. The generated N-API module links against `libgit2.so.1.9`; both libraries must be packaged together when integration is evaluated.
+## Build and validation
 
-The local SDK used for the compile has API 26 headers/sysroot. The API 24 target flag is compile evidence only; module loading and clone behavior still require API 24 / XT2 validation.
+Build the Native dependencies for the arm64 API 24 compatibility target:
+
+```sh
+./native/git2_napi/build.sh
+```
+
+This uses the installed API 26 Native SDK/sysroot with `OHOS_COMPATIBLE_SDK_VERSION=24`; it is compile evidence, not API 24 device evidence. Both App and test HAP builds package `libgit2_napi.so` with `libgit2.so.1.9`.
+
+The API 26 emulator Hypium suite `Git2Native` currently passes 9/9. It covers module load, HTTPS system CA clone, isolated Basic/Bearer authentication, branch and progress callbacks, byte hashes, bad-credential and unreachable-endpoint cleanup, existing-target refusal, index-write failure protection, duplicate stage/push, `.trash` exclusion, commit/fetch/push, and rejection of remote divergence. The fixture is local and disposable; no real user remote is used.
+
+API 24 / XT2 device load and sync, production App UI end-to-end, AssetStoreKit runtime retrieval, actual provider HTTPS authentication, and pull/checkout recovery remain unverified.

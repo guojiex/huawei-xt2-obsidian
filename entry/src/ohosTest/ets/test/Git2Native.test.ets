@@ -14,6 +14,7 @@ interface Git2NativeTarget {
 const FIXTURE_URL: string = 'http://127.0.0.1:19439/fixture.git';
 const FIXTURE_USERNAME: string = 'fixture-user';
 const FIXTURE_PASSWORD: string = 'fixture-password';
+const FIXTURE_BEARER_TOKEN: string = 'fixture-bearer-token';
 const PUBLIC_HTTPS_FIXTURE_URL: string = 'https://github.com/git-fixtures/basic.git';
 const EMPTY_SHA256: string = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 const SHA256_ROUND_CONSTANTS: number[] = [
@@ -148,6 +149,16 @@ async function sha256(path: string): Promise<string> {
   return sha256Bytes(bytes);
 }
 
+function writeText(path: string, value: string): void {
+  const file: fileIo.File = fileIo.openSync(path,
+    fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+  try {
+    fileIo.writeSync(file.fd, value);
+  } finally {
+    fileIo.closeSync(file);
+  }
+}
+
 async function fixturePackSha256(): Promise<string> {
   const request: http.HttpRequest = http.createHttp();
   try {
@@ -239,8 +250,157 @@ export default function git2NativeTest() {
             .assertEqual('52ccca2f91b824d33d9141718e1afaf1466b4b54af76301266ee6a3e789d378b');
           expect(await sha256(registry.absoluteIn(target.id, 'git-object.bin')))
             .assertEqual('d62cc92f4535f9bb245d4fccfe902f332c555b0a79dd858fcf34f71699825b31');
+          expect(await sha256(registry.absoluteIn(target.id, 'progress-probe.bin')))
+            .assertEqual('b640ef8d06e11763a7b12c4bfc61fa7be9f6cd109d89cb7d1b91490f1db06133');
         } finally {
           removeTree(target.path);
+        }
+      });
+
+    it('stages, commits, fetches and pushes without changing workspace bytes', 0,
+      async (): Promise<void> => {
+        const current = newTarget('sync_current');
+        const stale = newTarget('sync_stale');
+        const remoteCheck = newTarget('sync_remote_check');
+        const noteRelPath: string = '笔记/中文.md';
+        const notePath: string = registry.absoluteIn(current.id, noteRelPath);
+        const staleNotePath: string = registry.absoluteIn(stale.id, noteRelPath);
+        let committedOid: string = '';
+        try {
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: current.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: stale.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+
+          writeText(notePath, '# 已编辑\n工作区内容保持原字节。\n');
+          const expectedHash: string = await sha256(notePath);
+          const trashDir: string = registry.trashDirOf(current.id);
+          if (!fileIo.accessSync(trashDir)) {
+            fileIo.mkdirSync(trashDir);
+          }
+          writeText(trashDir + '/ignored.md', 'do not stage');
+          writeText(trashDir + '/tracked.md', 'local trash change must stay local\n');
+
+          const indexLockPath: string = current.path + '/.git/index.lock';
+          const indexPath: string = current.path + '/.git/index';
+          const indexHashBeforeFailure: string = await sha256(indexPath);
+          fileIo.mkdirSync(indexLockPath);
+          let writeFailed: boolean = false;
+          try {
+            await nativeGit2.gitAction({ operation: 'stage', repositoryPath: current.path });
+          } catch {
+            writeFailed = true;
+          } finally {
+            fileIo.rmdirSync(indexLockPath);
+          }
+          expect(writeFailed).assertTrue();
+          expect(await sha256(indexPath)).assertEqual(indexHashBeforeFailure);
+          expect(await sha256(notePath)).assertEqual(expectedHash);
+          expect(nativeGit2.getRepositoryState(current.path).statusEntryCount).assertEqual(1);
+
+          await nativeGit2.gitAction({ operation: 'stage', repositoryPath: current.path });
+          await nativeGit2.gitAction({ operation: 'stage', repositoryPath: current.path });
+          const stagedState: Git2RepositoryState = nativeGit2.getRepositoryState(current.path);
+          expect(stagedState.clean).assertFalse();
+          expect(stagedState.statusEntryCount).assertEqual(1);
+
+          committedOid = await nativeGit2.gitAction({
+            operation: 'commit',
+            repositoryPath: current.path,
+            message: 'test: update note',
+            authorName: 'Isolated Fixture',
+            authorEmail: 'fixture@example.invalid',
+          });
+          expect(await sha256(notePath)).assertEqual(expectedHash);
+          const committedState: Git2RepositoryState = nativeGit2.getRepositoryState(current.path);
+          expect(committedState.clean).assertTrue();
+          expect(committedState.aheadCount).assertEqual(1);
+
+          let authFailed: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'push',
+              repositoryPath: current.path,
+              bearerToken: 'incorrect-test-token',
+            });
+          } catch {
+            authFailed = true;
+          }
+          expect(authFailed).assertTrue();
+          expect(await sha256(notePath)).assertEqual(expectedHash);
+
+          const pushedOid: string = await nativeGit2.gitAction({
+            operation: 'push',
+            repositoryPath: current.path,
+            bearerToken: FIXTURE_BEARER_TOKEN,
+          });
+          expect(pushedOid).assertEqual(committedOid);
+          expect(nativeGit2.getRepositoryState(current.path).aheadCount).assertEqual(0);
+          expect(await nativeGit2.gitAction({
+            operation: 'push',
+            repositoryPath: current.path,
+            bearerToken: FIXTURE_BEARER_TOKEN,
+          })).assertEqual(committedOid);
+          expect(await sha256(notePath)).assertEqual(expectedHash);
+
+          expect(await nativeGit2.gitAction({
+            operation: 'fetch',
+            repositoryPath: stale.path,
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          })).assertEqual('fetched');
+          const fetchedState: Git2RepositoryState = nativeGit2.getRepositoryState(stale.path);
+          expect(fetchedState.behindCount > 0).assertTrue();
+
+          writeText(staleNotePath, '# 远端前的本地更改\n不应强推覆盖远端。\n');
+          const staleHash: string = await sha256(staleNotePath);
+          await nativeGit2.gitAction({ operation: 'stage', repositoryPath: stale.path });
+          await nativeGit2.gitAction({
+            operation: 'commit',
+            repositoryPath: stale.path,
+            message: 'test: stale local update',
+            authorName: 'Isolated Fixture',
+            authorEmail: 'fixture@example.invalid',
+          });
+          let conflictRejected: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'push',
+              repositoryPath: stale.path,
+              username: FIXTURE_USERNAME,
+              password: FIXTURE_PASSWORD,
+            });
+          } catch {
+            conflictRejected = true;
+          }
+          expect(conflictRejected).assertTrue();
+          expect(await sha256(staleNotePath)).assertEqual(staleHash);
+
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: remoteCheck.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          expect(nativeGit2.getRepositoryState(remoteCheck.path).head).assertEqual(committedOid);
+          expect(fileIo.accessSync(registry.trashDirOf(remoteCheck.id) + '/ignored.md')).assertFalse();
+          expect(fileIo.readTextSync(registry.trashDirOf(remoteCheck.id) + '/tracked.md'))
+            .assertEqual('preserve tracked trash bytes\n');
+        } finally {
+          removeTree(current.path);
+          removeTree(stale.path);
+          removeTree(remoteCheck.path);
         }
       });
 
@@ -268,6 +428,46 @@ export default function git2NativeTest() {
         expect(fileIo.accessSync(importingPath)).assertFalse();
         expect(fileIo.accessSync(target.path)).assertFalse();
       });
+
+    it('rejects an unreachable endpoint and cleans the isolated partial target', 0,
+      async (): Promise<void> => {
+        const target = newTarget('offline');
+        const importingId: string = target.id + '__importing';
+        const importingPath: string = registry.vaultDirOf(importingId);
+        registry.beginGitImport(target.id, importingId);
+        let rejected: boolean = false;
+        try {
+          await nativeGit2.clone({
+            url: 'http://127.0.0.1:19440/unreachable.git',
+            targetPath: importingPath,
+            branch: 'xt2',
+          });
+        } catch {
+          rejected = true;
+        } finally {
+          registry.cleanupGitImport(target.id, importingId);
+        }
+        expect(rejected).assertTrue();
+        expect(fileIo.accessSync(importingPath)).assertFalse();
+        expect(fileIo.accessSync(target.path)).assertFalse();
+      });
+
+    it('sends a bearer token in the Authorization header', 0, async (): Promise<void> => {
+      const target = newTarget('bearer_auth');
+      try {
+        await nativeGit2.clone({
+          url: FIXTURE_URL,
+          targetPath: target.path,
+          branch: 'xt2',
+          bearerToken: 'fixture-bearer-token',
+        });
+        const state: Git2RepositoryState = nativeGit2.getRepositoryState(target.path);
+        expect(state.branch).assertEqual('xt2');
+        expect(state.clean).assertTrue();
+      } finally {
+        removeTree(target.path);
+      }
+    });
 
     it('refuses an existing target without changing its sentinel file', 0, async (): Promise<void> => {
       const target = newTarget('existing_target');

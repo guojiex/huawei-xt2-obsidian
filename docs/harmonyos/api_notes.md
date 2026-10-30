@@ -1468,4 +1468,6 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 
 本机安装的 HarmonyOS Native SDK 为 API 26（26.0.0.105）。其 `sysroot/usr/include/napi/native_api.h` 声明 `napi_module_register`、`napi_create_promise`、`napi_create_async_work`、`napi_queue_async_work`、`napi_create_threadsafe_function`、`napi_call_threadsafe_function` 等 N-API 接口；线程安全函数接口起始 API10。`sysroot/usr/lib/aarch64-linux-ohos/libace_napi.z.so` 提供链接库。使用此 SDK 配置 `OHOS_COMPATIBLE_SDK_VERSION=24` 可生成 `aarch64-linux-ohos24.0.0` 编译目标，但仍以 API 26 sysroot 编译，不等于 API 24 SDK 或设备验收。
 
-本机 `@ohos.net.http.d.ts` 的 `HttpRequestOptions.caPath` 从 API10 起可用；不设置时，SDK 声明网络栈使用系统预设 CA，并给出 `/etc/ssl/certs/cacert.pem` 路径。Native PoC 在 HTTPS clone 前把此路径交给 libgit2/mbedTLS，`caFile` 仅作可选覆盖。声明描述的是 HTTP 网络栈的默认 CA；Native mbedTLS 直接读取该路径是否在 API24 / XT2 可行，仍待设备验证。PoC 的 HAP 集成、模块导入和 XT2/API 24 运行均待验。
+本机 `@ohos.net.http.d.ts` 的 `HttpRequestOptions.caPath` 从 API10 起可用；不设置时，SDK 声明网络栈使用系统预设 CA，并给出 `/etc/ssl/certs/cacert.pem` 路径。Native libgit2 在 HTTPS 操作前把此路径交给 libgit2/mbedTLS，`caFile` 仅作可选覆盖。API26 模拟器公开 GitHub HTTPS clone 通过；这是 Native 对系统 CA 路径的设备证据，不等同于 API24 / XT2 验收或服务商 HTTPS 认证。
+
+2026-10-31：Native 模块已编入主 App 与 `ohosTest` HAP；API26 模拟器 `Git2Native` Hypium 9/9，包括 Native 模块加载、隔离认证、`xt2` 分支、进度、clone 字节哈希、stage/commit/fetch/push、失败清理、索引写失败保护、`.trash` 排除和非快进拒绝。当前实现没有调用 checkout，也未实现 pull：libgit2 不承诺 checkout 多文件写入/删除的整体原子性或失败/中断整库回滚；`AtomicFile` 不能包裹其原生写入。API24 / XT2、生产 App 页面端到端、AssetStoreKit 真机读令牌和真实服务商 HTTPS 认证仍待验。详见 [v0.3 验收记录](../releases/v0.3/需求文档.md#6-验收记录)。

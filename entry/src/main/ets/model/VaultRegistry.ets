@@ -240,6 +240,58 @@ export class VaultRegistry {
     return entry;
   }
 
+  /** 记录前台 Git 同步完成时间；不保存令牌或提交内容。 */
+  recordGitSync(id: string, timestamp: number): void {
+    const entry: VaultEntry | null = this.findEntry(id);
+    if (entry === null || entry.type !== 'git') {
+      throw new Error('目标不是已登记的 Git 库: ' + id);
+    }
+    const previous: number | undefined = entry.lastSyncAt;
+    entry.lastSyncAt = timestamp;
+    try {
+      this.persist(true);
+    } catch (error) {
+      if (previous === undefined) {
+        entry.lastSyncAt = undefined;
+      } else {
+        entry.lastSyncAt = previous;
+      }
+      this.persist();
+      const err = error as BusinessError;
+      throw new Error(err.message);
+    }
+  }
+
+  /** 保存当前 Git 库的非敏感用户名；令牌仍只由 GitCredentialStore 管理。 */
+  updateGitAuthUsername(id: string, username: string): void {
+    const entry: VaultEntry | null = this.findEntry(id);
+    if (entry === null || entry.type !== 'git') {
+      throw new Error('目标不是已登记的 Git 库: ' + id);
+    }
+    const previous: string | undefined = entry.authUsername;
+    const normalized: string = username.trim();
+    if (previous === normalized || (previous === undefined && normalized.length === 0)) {
+      return;
+    }
+    if (normalized.length === 0) {
+      entry.authUsername = undefined;
+    } else {
+      entry.authUsername = normalized;
+    }
+    try {
+      this.persist(true);
+    } catch (error) {
+      if (previous === undefined) {
+        entry.authUsername = undefined;
+      } else {
+        entry.authUsername = previous;
+      }
+      this.persist();
+      const err = error as BusinessError;
+      throw new Error(err.message);
+    }
+  }
+
   /** 在 clone 开始前登记恢复意图；标记目录与库内容分离，不进入 Git 工作树。 */
   beginGitImport(finalId: string, importingId: string): void {
     this.recoverGitImportResidues();

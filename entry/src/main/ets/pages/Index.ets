@@ -973,6 +973,20 @@ struct Index {
     this.topView = 'vaults';
   }
 
+  private currentVaultIsGit(): boolean {
+    const entry: VaultEntry | null = VaultRegistry.get().currentEntry();
+    return entry !== null && entry.type === 'git';
+  }
+
+  private async openGitSyncPage(): Promise<void> {
+    if (!await this.flushWorkspaceSaves()) {
+      promptAction.showToast({ message: '当前笔记未保存，暂不能打开 Git 同步' });
+      return;
+    }
+    this.moreMenuOpen = false;
+    router.pushUrl({ url: 'pages/SyncPage' });
+  }
+
   private async openAgent(): Promise<void> {
     if (this.topView !== 'note' || !await this.flushWorkspaceSaves()) {
       return;
@@ -3906,6 +3920,11 @@ struct Index {
         if (this.isSingleScreenLayout()) {
           this.MoreMenuButton()
         } else {
+          if (this.currentVaultIsGit()) {
+            this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
+              void this.openGitSyncPage();
+            })
+          }
           this.IconButton('columns', this.isReferenceShown()
             ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
             this.toggleReference();
@@ -3965,6 +3984,20 @@ struct Index {
   @Builder
   MoreMenu() {
     Column() {
+      if (this.currentVaultIsGit()) {
+        Row() {
+          Text('同步到 Git')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .onClick((): void => {
+          void this.openGitSyncPage();
+        })
+      }
       Row() {
         Text('分享笔记')
           .fontSize(FontSize.body2)
@@ -4078,7 +4111,7 @@ struct Index {
       },
       onImportGit: (): void => {
         this.closeNoteNavigation();
-        router.pushUrl({ url: 'pages/SyncPage' });
+        void this.openGitSyncPage();
       },
       onCreateNote: (): void => {
         this.closeNoteNavigation();
@@ -4893,7 +4926,7 @@ struct Index {
       onOpenNote: (path: string): void => { this.openAgentNote(path); },
       onSwitchVault: (id: string): void => { this.doSwitchVault(id); },
       onManageVaults: (): void => { void this.openVaultManager('agent'); },
-      onImportGit: (): void => { router.pushUrl({ url: 'pages/SyncPage' }); },
+      onImportGit: (): void => { void this.openGitSyncPage(); },
       onNavigationDragStart: (): void => { this.startNavigationDrag(true); },
       onNavigationDrag: (offsetX: number): void => { this.updateNavigationDrag(offsetX, true); },
       onSplitDragEnd: (): void => { this.endSplitDrag(); },

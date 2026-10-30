@@ -20,15 +20,32 @@ export interface Git2CloneOptions {
   branch?: string;
   username?: string;
   password?: string;
+  bearerToken?: string;
   caFile?: string;
   onProgress?: (progress: Git2Progress) => void;
 }
 
 export interface Git2RepositoryState {
   branch: string;
+  head: string;
   clean: boolean;
   statusEntryCount: number;
   packFileCount: number;
+  aheadCount: number;
+  behindCount: number;
+}
+
+export interface Git2ActionOptions {
+  operation: 'stage' | 'commit' | 'fetch' | 'push';
+  repositoryPath: string;
+  username?: string;
+  password?: string;
+  bearerToken?: string;
+  caFile?: string;
+  message?: string;
+  authorName?: string;
+  authorEmail?: string;
+  onProgress?: (progress: Git2Progress) => void;
 }
 
 declare const nativeGit2: {
@@ -36,6 +53,7 @@ declare const nativeGit2: {
   getFeatures(): Git2Features;
   getRepositoryState(path: string): Git2RepositoryState;
   clone(options: Git2CloneOptions): Promise<string>;
+  gitAction(options: Git2ActionOptions): Promise<string>;
 };
 
 export default nativeGit2;

@@ -8,12 +8,21 @@ import path from 'node:path'
 const port = Number.parseInt(process.env.GIT2_FIXTURE_PORT ?? '19439', 10)
 const username = 'fixture-user'
 const password = 'fixture-password'
+const bearerToken = 'fixture-bearer-token'
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'git2-napi-fixture-'))
 const work = path.join(root, 'work')
 const repositories = path.join(root, 'repositories')
 const bare = path.join(repositories, 'fixture.git')
 const image = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x80, 0x01, 0x42, 0x00, 0x7f, 0xfe])
 const gitBinary = Buffer.from([0x00, 0xff, 0x7f, 0xc3, 0x28, 0x80])
+const progressProbe = Buffer.alloc(262144)
+let progressState = 0x12345678
+for (let i = 0; i < progressProbe.length; i++) {
+  progressState ^= progressState << 13
+  progressState ^= progressState >>> 17
+  progressState ^= progressState << 5
+  progressProbe[i] = progressState & 0xff
+}
 let server
 
 function runGit(args) {
@@ -47,6 +56,7 @@ function parseResponse(raw) {
 function handleGitRequest(request, response) {
   const url = new URL(request.url, 'http://127.0.0.1')
   const expected = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
+  const expectedBearer = `Bearer ${bearerToken}`
   if (request.method === 'GET' && url.pathname === '/__fixture/pack-sha256') {
     const packName = fs.readdirSync(path.join(bare, 'objects', 'pack'))
       .find((name) => name.endsWith('.pack'))
@@ -60,7 +70,7 @@ function handleGitRequest(request, response) {
     return
   }
 
-  if (request.headers.authorization !== expected) {
+  if (request.headers.authorization !== expected && request.headers.authorization !== expectedBearer) {
     response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="git2-fixture"' })
     response.end()
     return
@@ -119,10 +129,13 @@ try {
   fs.mkdirSync(path.dirname(work), { recursive: true })
   fs.mkdirSync(path.join(work, '笔记'), { recursive: true })
   fs.mkdirSync(path.join(work, '50_Assets'), { recursive: true })
+  fs.mkdirSync(path.join(work, '.trash'), { recursive: true })
   fs.writeFileSync(path.join(work, '笔记', '中文.md'), '# Native clone 验证\n这是 xt2 分支。\n', 'utf8')
   fs.writeFileSync(path.join(work, '空文件.bin'), Buffer.alloc(0))
   fs.writeFileSync(path.join(work, '50_Assets', '小图.png'), image)
+  fs.writeFileSync(path.join(work, '.trash', 'tracked.md'), 'preserve tracked trash bytes\n', 'utf8')
   fs.writeFileSync(path.join(work, 'git-object.bin'), gitBinary)
+  fs.writeFileSync(path.join(work, 'progress-probe.bin'), progressProbe)
   runGit(['init', '--initial-branch=main', work])
   runGit(['-C', work, 'config', 'user.name', 'Native Fixture'])
   runGit(['-C', work, 'config', 'user.email', 'native-fixture@example.invalid'])
@@ -134,6 +147,7 @@ try {
   runGit(['-C', work, 'commit', '-m', 'fixture xt2'])
   fs.mkdirSync(repositories, { recursive: true })
   runGit(['init', '--bare', '--initial-branch=main', bare])
+  runGit(['--git-dir', bare, 'config', 'http.receivepack', 'true'])
   runGit(['-C', work, 'push', bare, 'main', 'xt2'])
   runGit(['--git-dir', bare, 'gc', '--aggressive', '--prune=now'])
 
