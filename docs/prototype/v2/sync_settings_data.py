@@ -20,7 +20,8 @@ def main():
     version, build = helpers['package_version']()
     config = json.loads((ROOT / 'app_config.json').read_text())
     data = dict(version=version, build=build, entries=entries,
-                recent=helpers['recent'](entries), feedbackEmail=config['feedbackEmail'])
+                recent=helpers['recent'](entries), feedbackEmail=config['feedbackEmail'],
+                developerName=config['developerName'])
     block = BEGIN + '\nconst settingsData = ' + helpers['quoted'](data) + ';\n' + END
     text = TARGET.read_text()
     start = text.index(BEGIN)

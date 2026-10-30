@@ -288,6 +288,10 @@
 
 不使用 GitHub Issues，不自建反馈服务，不接入未经证实的 Feedback Kit；评分评论与元服务反馈的边界见 [api_notes R1–R3](harmonyos/api_notes.md)。不主动读取/附带/上传笔记、文件名、路径、对话、账号凭据或日志；打开邮件应用不等于发送成功。原型邮件入口已设计，原生外部邮件调用须核实 API24 后实施并验收。
 
+### I-开发者：关于页展示应用开发者信息（2026-10-30，已分配 v0.9 §9.13）
+
+华为应用市场审核要求提供「应用开发者信息的隐私页/关于页」截图，需展示「应用由×××开发」等信息。关于卡在定位行下方增加开发者署名行：「应用由 {developerName} 开发，联系方式 {feedbackEmail}」，署名与 AGC 开发者账号名称一致（用户 2026-10-30 确认为「郭捷昕」）。署名真源为仓库 `app_config.json` 的 `developerName`，与 `feedbackEmail` 同为发布配置，由 `tools/build_app_config.py` 生成 `DEVELOPER_NAME`（支持 `--check`），原型经 `docs/prototype/v2/sync_settings_data.py` 注入 `settingsData.developerName`；不散写在组件里，不在埋点或日志中采集。
+
 ## J. 视觉与设计系统（Design Token）
 
 > 用户需求（2026-10-17）：**设计稿有点丑，按华为设计资源修一修。**

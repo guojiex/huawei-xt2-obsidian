@@ -29,7 +29,7 @@ import { AgentSession, AgentSkillDefault } from '../model/AgentModels';
 import { VaultEntry } from '../model/Vault';
 import { Icon } from '../common/Icons';
 import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
-import { FEEDBACK_EMAIL } from '../model/AppConfig';
+import { FEEDBACK_EMAIL, DEVELOPER_NAME } from '../model/AppConfig';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 @Component
@@ -890,6 +890,11 @@ export struct SettingsView {
         .width('100%')
         .margin({ bottom: Space.s3 })
         this.InfoRow('定位', '为 XT2 三折叠做的本地 Markdown 笔记')
+        Text('应用由 ' + DEVELOPER_NAME + ' 开发，联系方式 ' + FEEDBACK_EMAIL)
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .margin({ top: Space.s1 })
         Text('开源 · MIT · github.com/guojiex/huawei-xt2-obsidian（含 isomorphic-git、CodeMirror 等 MIT 组件）')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))
