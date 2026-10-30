@@ -1,11 +1,7 @@
 {
   "version": 1,
-  "entry": "welcome",
+  "entry": "inbox",
   "notes": [
-    {
-      "id": "welcome",
-      "path": "00_开始/欢迎使用.md"
-    },
     {
       "id": "inbox",
       "path": "00_开始/快速上手.md"

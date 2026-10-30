@@ -10,7 +10,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(path.join(root, 'entry/src/main/ets/model/SampleVaultInstaller.ets'), 'utf8');
-const code = transformSync(source.replace(/^import .*;\n/gm, ''), { loader: 'ts', format: 'cjs' }).code;
+const code = transformSync(source.replace(/^import[^\n]*\r?\n/gm, ''), { loader: 'ts', format: 'cjs' }).code;
 
 async function run({ fresh = true, occupied = false, failAt = -1 } = {}) {
   const dirs = new Set(['/local']);

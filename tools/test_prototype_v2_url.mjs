@@ -116,7 +116,7 @@ test('reported phone link renders relative sample images when switched from edit
  const source=f.get('editor').value;assert(source.includes('![长图排版示例](../50_Assets/长图排版示例.svg)'));assert(f.run('editing'));f.get('previewTab').onclick();assert(!f.run('editing'));assert.match(f.get('article').innerHTML,/<img[^>]*src="data:image\/svg\+xml;base64,[^"]+"[^>]*alt="长图排版示例">/);assert(!f.get('article').innerHTML.includes('![长图排版示例]'));assert.equal(f.get('editor').value,source);
 });
 test('right pane and share preview resolve images against their own note folder',()=>{
- const f=fixture();f.run("switchVault('local');openInPane('welcome','left');openInPane('stream','right')");assert.match(f.get('reference').innerHTML,/<img[^>]+alt="长图排版示例">/);f.get('shareBtn').onclick();f.get('shareImage').onclick();assert.match(f.get('sharePreview').innerHTML,/<img[^>]+alt="长图排版示例">/);
+ const f=fixture();f.run("switchVault('local');openInPane('inbox','left');openInPane('stream','right')");assert.match(f.get('reference').innerHTML,/<img[^>]+alt="长图排版示例">/);f.get('shareBtn').onclick();f.get('shareImage').onclick();assert.match(f.get('sharePreview').innerHTML,/<img[^>]+alt="长图排版示例">/);
  f.run("note(reference).folder='20_样式/子目录';renderReference()");assert(!f.get('reference').innerHTML.includes('<img'));assert(f.get('reference').innerHTML.includes('图片未找到'));assert(!f.get('article').innerHTML.includes('长图排版示例'));
 });
 test('asset lookup handles encoded paths and rejects root escape without reading arbitrary files',()=>{

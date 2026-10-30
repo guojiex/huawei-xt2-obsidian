@@ -29,7 +29,7 @@ def outputs():
         p = Path(rel)
         assert not p.is_absolute() and '..' not in p.parts and not any(x.startswith('.') for x in p.parts), rel
         bodies[rel] = (SOURCE / 'notes' / p).read_text()
-    actual = {str(p.relative_to(SOURCE / 'notes')) for p in (SOURCE / 'notes').rglob('*') if p.is_file()}
+    actual = {p.relative_to(SOURCE / 'notes').as_posix() for p in (SOURCE / 'notes').rglob('*') if p.is_file()}
     assert actual == set(paths), (actual - set(paths), set(paths) - actual)
 
     tree = []
