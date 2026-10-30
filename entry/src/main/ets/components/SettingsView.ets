@@ -961,15 +961,10 @@ export struct SettingsView {
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ bottom: Space.s3 })
-        Text() {
-          Span('开源 · MIT · ')
-          Span('github.com/guojiex/huawei-xt2-obsidian ↗')
-            .fontColor($r('app.color.brand'))
-          Span('\n含 isomorphic-git、CodeMirror 等 MIT 组件。')
-        }
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_tertiary'))
-        .width('100%')
+        Text('开源 · MIT。含 isomorphic-git、CodeMirror 等 MIT 组件。')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
