@@ -474,14 +474,16 @@ function positionFormatPanel(){
  const anchor=button.getBoundingClientRect(),bounds=pane.getBoundingClientRect(),workspace=$('window').getBoundingClientRect(),visual=window.visualViewport;
  const gap=parseFloat(getComputedStyle(panel).getPropertyValue('--s2'));
  const area={left:Math.max(bounds.left,workspace.left,visual?visual.offsetLeft:0),right:Math.min(bounds.right,workspace.right,visual?visual.offsetLeft+visual.width:window.innerWidth),top:Math.max(bounds.top,workspace.top,visual?visual.offsetTop:0),bottom:Math.min(bounds.bottom,workspace.bottom,visual?visual.offsetTop+visual.height:window.innerHeight)};
- if(anchor.width<=0||anchor.height<=0||anchor.right<=area.left||anchor.left>=area.right||anchor.bottom<=area.top||anchor.top>=area.bottom||area.right-area.left<=gap*2){closeFormat(false);return;}
+ if(anchor.width<=0||anchor.height<=0||area.right-area.left<=gap*2||area.bottom-area.top<=gap*2){closeFormat(false);return;}
  const width=Math.min(parseFloat(getComputedStyle(panel).getPropertyValue('--format-width')),area.right-area.left-gap*2);
- const above=Math.max(0,anchor.top-area.top-gap*2),below=Math.max(0,area.bottom-anchor.bottom-gap*2);
+ const anchorTop=Math.max(area.top,Math.min(anchor.top,area.bottom)),anchorBottom=Math.max(area.top,Math.min(anchor.bottom,area.bottom));
+ const anchorCenter=Math.max(area.left+gap+width/2,Math.min(anchor.left+anchor.width/2,area.right-gap-width/2));
+ const above=Math.max(0,anchorTop-area.top-gap*2),below=Math.max(0,area.bottom-anchorBottom-gap*2);
  panel.style.width=width+'px';const needed=panel.scrollHeight,up=above>=needed||above>=below,available=up?above:below;
  if(available<=0){closeFormat(false);return;}
  panel.style.maxHeight=available+'px';const height=Math.min(panel.getBoundingClientRect().height,available);
- panel.style.left=Math.max(area.left+gap,Math.min(anchor.left+anchor.width/2-width/2,area.right-gap-width))+'px';
- panel.style.top=(up?anchor.top-gap-height:anchor.bottom+gap)+'px';panel.dataset.placement=up?'above':'below';
+ panel.style.left=(anchorCenter-width/2)+'px';
+ panel.style.top=(up?anchorTop-gap-height:anchorBottom+gap)+'px';panel.dataset.placement=up?'above':'below';
 }
 function followFormatPanel(){positionFormatPanel();if($('formatDialog').open&&window.requestAnimationFrame)formatFrame=window.requestAnimationFrame(followFormatPanel);}
 function openFormat(pane){const id=pane==='left'?current:reference;if(!id||!(pane==='left'?editing:rightEditing))return;if($('formatDialog').open){const same=formatTarget&&formatTarget.pane===pane;closeFormat(false);if(same)return;}activatePane(pane);const editor=$(pane==='left'?'editor':'rightEditor');formatTarget={pane,note:id,start:editor.selectionStart,end:editor.selectionEnd};const codeActive=!!codeBlockAt(editor.value,formatTarget.start,formatTarget.end);$('formatCodeChoice').setAttribute('aria-pressed',String(codeActive));$('formatCodeChoice').title=codeActive?'取消代码块':'设为代码块';$('formatDialog').show();$('formatFollowDemo').checked=true;$(pane==='left'?'formatBtn':'rightFormatBtn').setAttribute('aria-expanded','true');followFormatPanel();}
