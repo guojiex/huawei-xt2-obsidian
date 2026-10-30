@@ -19,12 +19,14 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { FunctionComponent, FunctionController } from '@kit.AgentFrameworkKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
 import { AgentRuntime } from '../model/AgentRuntime';
 import { NotePathMutationResult, NoteService } from '../model/NoteService';
+import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 import { FileTree } from '../model/FileTree';
 import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
@@ -67,6 +69,7 @@ import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
+const XIAOYI_AGENT_ID: string = 'agentb21117de704941b3ba497bd5de94f6ad';
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -164,6 +167,10 @@ struct Index {
   @State splitDragging: boolean = false;
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
+  private xiaoyiController: FunctionController = new FunctionController();
+  private readonly xiaoyiDialogClosedListener = (): void => {
+    void this.refreshWorkspaceAfterXiaoyi();
+  };
   private navigationDragStart: number = 0;
   private contentDragStart: number = 0;
   /**
@@ -295,6 +302,8 @@ struct Index {
   @State shareImagePreviewPages: ShareImagePreviewPage[] = [];
 
   aboutToAppear(): void {
+    this.xiaoyiController.off('agentDialogClosed', this.xiaoyiDialogClosedListener);
+    this.xiaoyiController.on('agentDialogClosed', this.xiaoyiDialogClosedListener);
     this.refreshFromRegistry();
     this.ensureRecentOpenStore();
     this.ensureSplitLayoutStore();
@@ -302,6 +311,10 @@ struct Index {
     this.navigationRatio = splitState.navigationRatio;
     this.contentRatio = splitState.contentRatio;
     this.syncNavigationForBreakpoint();
+  }
+
+  aboutToDisappear(): void {
+    this.xiaoyiController.off('agentDialogClosed', this.xiaoyiDialogClosedListener);
   }
 
   private ensureSplitLayoutStore(): void {
@@ -969,6 +982,43 @@ struct Index {
     }
   }
 
+  private async refreshWorkspaceAfterXiaoyi(): Promise<void> {
+    if (this.topView !== 'note' || this.currentVaultId.length === 0) {
+      return;
+    }
+    const vaultId: string = this.currentVaultId;
+    const leftPath: string = this.currentFilePath;
+    const rightPath: string = this.rightFilePath;
+    if (leftPath.length > 0 && !WorkspaceEditGuard.isUnsaved(vaultId, leftPath)) {
+      const current: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, leftPath);
+      if (current === null) {
+        this.currentFilePath = '';
+        await this.readAndPush('');
+      } else if (current !== this.lastSavedText) {
+        await this.readAndPush(leftPath);
+      }
+    }
+    if (rightPath.length > 0 && rightPath === leftPath && leftPath.length > 0 &&
+      !WorkspaceEditGuard.isUnsaved(vaultId, rightPath)) {
+      const current: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, rightPath);
+      if (current === null) {
+        this.rightFilePath = '';
+        await this.readRightAndPush('');
+      } else if (current !== this.rightLastSavedText) {
+        await this.readRightAndPush(rightPath);
+      }
+    } else if (rightPath.length > 0 && rightPath !== leftPath &&
+      !WorkspaceEditGuard.isUnsaved(vaultId, rightPath)) {
+      const current: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, rightPath);
+      if (current === null) {
+        this.rightFilePath = '';
+        await this.readRightAndPush('');
+      } else if (current !== this.rightLastSavedText) {
+        await this.readRightAndPush(rightPath);
+      }
+    }
+  }
+
   private resetSaveFeedback(): void {
     this.saveFeedbackRevision++;
     this.hideSaveFeedback();
@@ -1247,6 +1297,7 @@ struct Index {
         return false;
       }
     }
+    WorkspaceEditGuard.clear('left', this.currentVaultId, relPath);
     this.lastSavedText = text;
     this.editorDirty = false;
     this.editorLen = text.length;
@@ -1282,6 +1333,7 @@ struct Index {
         return false;
       }
     }
+    WorkspaceEditGuard.clear('right', this.currentVaultId, relPath);
     this.rightLastSavedText = text;
     this.rightEditorDirty = false;
     this.rightEditorLen = text.length;
@@ -1346,6 +1398,7 @@ struct Index {
     }
     const savedText: string = targetPath === this.rightFilePath ? this.rightLastSavedText : '';
     if (text === savedText) {
+      WorkspaceEditGuard.clear('right', targetVaultId, targetPath);
       if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
         this.rightEditorDirty = false;
       }
@@ -1353,6 +1406,7 @@ struct Index {
     }
     try {
       await NoteService.saveNote(VaultRegistry.get(), targetVaultId, targetPath, text);
+      WorkspaceEditGuard.clear('right', targetVaultId, targetPath);
       if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
         this.rightLastSavedText = text;
         this.rightEditorDirty = false;
@@ -1430,6 +1484,7 @@ struct Index {
       }
       if (this.rightEditorBridge.ready && !this.rightComposing) {
         await this.rightEditorBridge.setContent(text);
+        WorkspaceEditGuard.clear('right', this.currentVaultId, this.currentFilePath);
         this.rightEditorDirty = false;
       }
     } catch (error) {
@@ -1450,8 +1505,10 @@ struct Index {
       }
       if (this.editorBridge.ready && !this.leftComposing) {
         await this.editorBridge.setContent(text);
+        WorkspaceEditGuard.mark('left', this.currentVaultId, this.currentFilePath);
         this.editorDirty = true;
       }
+      WorkspaceEditGuard.clear('right', this.currentVaultId, this.rightFilePath);
       this.rightEditorDirty = false;
       if (this.activePane === 'right') {
         this.updateChapterEntries(text, this.rightFilePath);
@@ -1563,9 +1620,11 @@ struct Index {
       return false;
     }
     if (text === this.lastSavedText) {
+      WorkspaceEditGuard.clear('left', vaultId, path);
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
         this.editorDirty = false;
         if (path === this.rightFilePath) {
+          WorkspaceEditGuard.clear('right', vaultId, path);
           this.rightEditorDirty = false;
         }
       }
@@ -1573,11 +1632,13 @@ struct Index {
     }
     try {
       await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text);
+      WorkspaceEditGuard.clear('left', vaultId, path);
       this.lastSavedText = text;
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
         this.editorDirty = false;
         if (path === this.rightFilePath) {
           this.rightLastSavedText = text;
+          WorkspaceEditGuard.clear('right', vaultId, path);
           this.rightEditorDirty = false;
           const mirror: EditorBridge = source === this.rightEditorBridge
             ? this.editorBridge : this.rightEditorBridge;
@@ -3344,6 +3405,16 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
+        FunctionComponent({
+          agentId: XIAOYI_AGENT_ID,
+          controller: this.xiaoyiController,
+          options: { title: 'Agent 对话' },
+          onError: (error: BusinessError): void => {
+            hilog.error(DOMAIN, TAG, '小艺 FunctionComponent 错误码 %{public}d', error.code);
+            promptAction.showToast({ message: '暂时无法打开小艺' });
+          }
+        })
+          .margin({ left: Space.s1, right: Space.s1 })
         if (this.isSingleScreenLayout()) {
           this.MoreMenuButton()
         } else {
@@ -3985,6 +4056,7 @@ struct Index {
             bridge: this.rightEditorBridge,
             onChange: (len: number): void => {
               this.resetSaveFeedback();
+              WorkspaceEditGuard.mark('right', this.currentVaultId, this.rightFilePath);
               this.rightEditorDirty = true;
               this.rightEditorLen = len;
               this.scheduleRightSave();
@@ -4067,6 +4139,7 @@ struct Index {
           onChange: (len: number): void => {
             // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
             this.resetSaveFeedback();
+            WorkspaceEditGuard.mark('left', this.currentVaultId, this.currentFilePath);
             this.editorDirty = true;
             if (len !== this.editorLen) {
               this.editorLen = len;

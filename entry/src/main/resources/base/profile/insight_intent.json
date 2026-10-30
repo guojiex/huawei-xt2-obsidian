@@ -23,6 +23,48 @@
           "background"
         ]
       }
+    },
+    {
+      "intentName": "QueryNotes",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "ReadNote",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "CreateNote",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "AppendNote",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "EditNote",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "UndoLastEdit",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
     }
   ]
 }

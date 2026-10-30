@@ -1,4 +1,5 @@
 import { common, insightIntent, InsightIntentExecutor } from '@kit.AbilityKit';
+import { InsightIntentNoteService } from './InsightIntentNoteService';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 
@@ -13,7 +14,9 @@ interface VaultSummary {
 export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
   async onExecuteInUIAbilityBackgroundMode(name: string,
     param: Record<string, Object>): Promise<insightIntent.ExecuteResult> {
-    if (name !== 'ListVaults' && name !== 'CreateVault') {
+    const isNoteTool: boolean = name === 'QueryNotes' || name === 'ReadNote' || name === 'CreateNote' ||
+      name === 'AppendNote' || name === 'EditNote' || name === 'UndoLastEdit';
+    if (name !== 'ListVaults' && name !== 'CreateVault' && !isNoteTool) {
       return {
         code: -1,
         result: { message: '不支持的端插件工具：' + name }
@@ -23,6 +26,10 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
     try {
       const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
       const registry: VaultRegistry = VaultRegistry.initialize(context);
+      if (isNoteTool) {
+        const result: Record<string, Object> = await new InsightIntentNoteService(registry).execute(name, param);
+        return { code: 0, result };
+      }
       if (name === 'CreateVault') {
         const requestedName: Object = param['name'];
         if (typeof requestedName !== 'string' || requestedName.trim().length === 0) {
@@ -70,7 +77,8 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
       return {
         code: -1,
         result: {
-          message: (name === 'CreateVault' ? '创建知识库失败：' : '读取知识库列表失败：') + err.message
+          message: (name === 'CreateVault' ? '创建知识库失败：' :
+            name === 'ListVaults' ? '读取知识库列表失败：' : '笔记操作失败：') + err.message
         }
       };
     }

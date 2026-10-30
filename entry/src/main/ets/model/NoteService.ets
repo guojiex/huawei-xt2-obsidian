@@ -109,7 +109,7 @@ export class NoteService {
       throw new Error('CREATE_CONFLICT：目标笔记路径已被占用，未覆盖现有文件。');
     }
     NoteService.ensureParentDirectories(registry, vaultId, relPath);
-    await NoteService.saveNote(registry, vaultId, relPath, content);
+    await NoteService.enqueueSaveNote(registry, vaultId, relPath, content, null, true);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', relPath);
   }
 
@@ -190,14 +190,62 @@ export class NoteService {
    * 返回 Promise：flushSave await 它，失败 reject `Error`（调用方据此 toast）。
    */
   static saveNote(registry: VaultRegistry, vaultId: string, relPath: string, content: string): Promise<void> {
+    return NoteService.enqueueSaveNote(registry, vaultId, relPath, content, null, false);
+  }
+
+  /**
+   * 按读取版本条件保存。比较发生在与普通自动保存相同的写队列内，避免读后、排队期间
+   * 有另一笔 App 保存先落盘后再被本次工具覆盖。
+   */
+  static saveNoteIfUnchanged(registry: VaultRegistry, vaultId: string, relPath: string,
+    expectedContent: string, content: string): Promise<void> {
+    return NoteService.enqueueSaveNote(registry, vaultId, relPath, content, expectedContent, false);
+  }
+
+  private static enqueueSaveNote(registry: VaultRegistry, vaultId: string, relPath: string,
+    content: string, expectedContent: string | null, mustBeNew: boolean): Promise<void> {
     const abs: string = registry.absoluteIn(vaultId, relPath);
     const job: Promise<void> = NoteService.saveChain.then((): Promise<void> => {
+      if (mustBeNew && NoteService.exists(registry, vaultId, relPath)) {
+        throw new Error('CREATE_CONFLICT：目标笔记路径已被占用，未覆盖现有文件。');
+      }
+      if (expectedContent !== null) {
+        const current: string | null = NoteService.tryReadNote(registry, vaultId, relPath);
+        if (current === null || current !== expectedContent) {
+          throw new Error('STALE_CONTENT：笔记已变化，未覆盖新内容。');
+        }
+      }
       return NoteService.runAtomicSave(abs, relPath, content);
     }).then((): void => {
       FullTextSearchService.noteSaved(vaultId, relPath, content);
       WikiLinkService.noteSaved(vaultId, relPath, content);
     });
     // 链上吞掉 rejection：单个保存失败不能断掉后续保存的排队
+    NoteService.saveChain = job.then((): void => {
+    }, (): void => {
+    });
+    return job;
+  }
+
+  /** 撤销本次创建时，只有文件仍等于操作结果才从库中移除。 */
+  static deleteNoteIfUnchanged(registry: VaultRegistry, vaultId: string, relPath: string,
+    expectedContent: string): Promise<void> {
+    const job: Promise<void> = NoteService.saveChain.then(async (): Promise<void> => {
+      const current: string | null = NoteService.tryReadNote(registry, vaultId, relPath);
+      if (current === null || current !== expectedContent) {
+        throw new Error('UNDO_CONFLICT：笔记已有后续修改，未删除。');
+      }
+      const abs: string = registry.absoluteIn(vaultId, relPath);
+      const stat: fileIo.Stat = fileIo.statSync(abs);
+      if (stat.isDirectory()) {
+        throw new Error('UNDO_CONFLICT：目标已不是笔记文件，未删除。');
+      }
+      fileIo.unlinkSync(abs);
+      FullTextSearchService.noteRemoved(vaultId, relPath, false);
+      WikiLinkService.pathRemoved(vaultId);
+      await NoteDraftService.discardPath(registry, vaultId, relPath);
+      hilog.info(NOTE_DOMAIN, NOTE_TAG, '撤销创建笔记 %{public}s', relPath);
+    });
     NoteService.saveChain = job.then((): void => {
     }, (): void => {
     });

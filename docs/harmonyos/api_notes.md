@@ -785,13 +785,15 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 
 ---
 
-### F15 端插件按名称/版本映射到本地意图执行器 ✅ 文档与 SDK 明确 / ⚠️ 项目未接线
+### F15 端插件按名称/版本映射到本地意图执行器 ✅ 文档、SDK 与本地接线 / ⚠️ 设备和平台闭环待验
 
 [官方端侧配置文档](https://developer.huawei.com/consumer/cn/doc/doccenter-celia/plugin-to-terminal--configuration-0000002733447010) 要求创建 `entry/src/main/resources/base/profile/insight_intent.json`，`insightIntents` 数组内的 `intentName` / `intentVersion` 与平台工具名/版本完全一致；`srcEntry` 指向执行器，`uiAbility.ability` 指向对应 UIAbility，后台工具示例配置 `executeMode: ["background"]`。这里的配置式 `insightIntents` 不等于 F2 待核实的装饰器 `insightIntentsSrcEntry`。
 
 本机 API 26 SDK 的 `@ohos.app.ability.InsightIntentExecutor.d.ts` 声明 `onExecuteInUIAbilityBackgroundMode(name, param)` 自 API 11 支持，返回 `ExecuteResult` 或其 Promise。冷启动由 UIAbility `onCreate` 进入执行回调，不要求创建 window；热启动直接进入回调。这是 SDK 声明，不是本项目设备运行证据。
 
 2026-10-28 项目进展：仓库已为平台 `ListVaults` 0.1.0 增加配置映射及后台 `InsightIntentExecutor`，把 `VaultRegistry.list()` 投影为知识库 id/name/type/isCurrent 字段。其他六项工具、FunctionComponent 接线、平台调用与 API 24 / XT2 运行仍未验；本次代码只说明本机 SDK 编译目标上的接线实现，不代表设备闭环。平台代码页提供的是 ai_plugin JSON / OpenAPI YAML 声明，不是 App 的完整 ArkTS 业务实现；早期六项草稿配置不等于已经能读写设备笔记。核对来源见 [当日归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。
+
+2026-10-30 实施更新：本工程 `Index` 已在笔记工作区顶栏接入 `FunctionComponent` 并监听关闭事件刷新文件；`insight_intent.json` 增加 `QueryNotes`、`ReadNote`、`CreateNote`、`AppendNote`、`EditNote`、`UndoLastEdit` / `0.1.0` 后台映射，统一执行器复用 `VaultRegistry`、`FileTree`、`NoteService`、`AgentOperationStorage` 与 `AtomicFile`。源码级工具契约/文本规则测试及 API 26 SDK 目标 HAP 构建通过。平台 Agent 仍是草稿，测试组、平台真实调用、API 24 / XT2 与发布审核尚未验证；SDK 构建不能表述为设备或端到端成功，详见 [v0.6 验收记录](../releases/v0.6/验收记录.md)。
 
 ---
 
