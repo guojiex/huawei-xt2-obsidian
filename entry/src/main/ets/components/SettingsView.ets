@@ -40,6 +40,7 @@ export struct SettingsView {
   @Prop singleScreenLayout: boolean = false;
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
+  @Prop paneWidthSummary: string = '—';
   /** 当前库 id（诊断区显示库目录） */
   @Prop currentVaultId: string = '';
   @Prop showLineNumbers: boolean = false;
@@ -618,6 +619,7 @@ export struct SettingsView {
           .fontColor($r('app.color.text_primary'))
           .width('100%')
           .margin({ bottom: Space.s3 })
+        this.InfoRow('当前栏宽', this.paneWidthSummary, false)
         Text('拖动导航和正文分隔条调整栏宽；编辑与预览比例会自动保存。')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_secondary'))

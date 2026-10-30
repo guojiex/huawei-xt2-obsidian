@@ -718,6 +718,33 @@ struct Index {
     return clampContentRatio(this.contentRatio, this.noteContentWidth());
   }
 
+  private settingsPaneWidthSummary(): string {
+    const totalWidth: number = this.windowWidthVp;
+    if (totalWidth <= 0) {
+      return '—';
+    }
+    const singleScreenLayout: boolean = this.isSingleScreenLayout();
+    const navigationVisible: boolean = !singleScreenLayout &&
+      !this.sidebarCollapsed && !this.focused;
+    const sidebarWidth: number = navigationVisible
+      ? this.noteNavigationWidth() * this.sidebarProgress : 0;
+    const contentWidth: number = Math.max(0, totalWidth - sidebarWidth);
+    let leftWidth: number = contentWidth;
+    let rightWidth: number = 0;
+    if (singleScreenLayout || this.focused) {
+      leftWidth = this.activePane === 'left' ? totalWidth : 0;
+      rightWidth = this.activePane === 'right' ? totalWidth : 0;
+    } else if (this.breakpoint === Breakpoint.MD) {
+      rightWidth = this.referenceVisible ? totalWidth * 0.5 * (1 - this.sidebarProgress) : 0;
+      leftWidth = Math.max(0, contentWidth - rightWidth);
+    } else if (this.breakpoint === Breakpoint.LG && this.referenceVisible) {
+      leftWidth = contentWidth * this.noteContentRatio();
+      rightWidth = contentWidth - leftWidth;
+    }
+    const percent = (width: number): string => (width / totalWidth * 100).toFixed(1) + '%';
+    return '目录 ' + percent(sidebarWidth) + ' · 左栏 ' + percent(leftWidth) + ' · 右栏 ' + percent(rightWidth);
+  }
+
   private notePaneWidth(pane: string): Length {
     if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane ? '100%' : 0;
@@ -4916,6 +4943,7 @@ struct Index {
       singleScreenLayout: this.isSingleScreenLayout(),
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
+      paneWidthSummary: this.settingsPaneWidthSummary(),
       currentVaultId: this.currentVaultId,
       vaults: this.vaults,
       showLineNumbers: this.showLineNumbers,
