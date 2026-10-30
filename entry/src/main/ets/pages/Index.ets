@@ -1135,8 +1135,13 @@ struct Index {
     const minLeft: number = visibleLeft + gap;
     const maxLeft: number = visibleRight - gap - width;
     const left: number = Math.max(minLeft, Math.min(centerX - width / 2, maxLeft));
+    const defaultPopupLeft: number = pane === 'right' ? anchorX - anchorWidth + gap : anchorX;
+    const windowLeft: number = windowWidth > 0 ? this.formatWindowArea[0] : paneX;
+    const windowRight: number = windowWidth > 0 ? windowLeft + windowWidth : paneX + paneWidth;
+    const defaultPopupLeftInWindow: number = Math.max(windowLeft + gap,
+      Math.min(defaultPopupLeft, windowRight - gap - width));
     this.formatPopupPlacement = showAbove ? Placement.TopLeft : Placement.BottomLeft;
-    this.formatPopupOffsetX = pane === 'right' ? left - anchorX + anchorWidth - gap : left - anchorX;
+    this.formatPopupOffsetX = left - defaultPopupLeftInWindow;
     this.formatPopupOffsetY = showAbove ? -gap : gap;
     if (Math.abs(this.formatMenuWidth - width) >= 0.5) {
       this.formatMenuWidth = width;
