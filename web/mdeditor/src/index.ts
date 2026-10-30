@@ -26,6 +26,7 @@ import { Compartment, EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
+import { preservedScrollTop } from './scrollAnchor'
 import {
   hasCodeBlockSelection,
   normalizeEditorText,
@@ -218,6 +219,21 @@ let themeMode = 'light'
 
 // ---------- 实例 ----------
 let view: EditorView | null = null
+interface EditorScrollAnchor {
+  offset: number
+  viewportY: number
+}
+
+let editorScrollAnchor: EditorScrollAnchor = { offset: 0, viewportY: 0 }
+let scrollResizePending = false
+let observedEditorWidth = 0
+let observedEditorHeight = 0
+let anchorCaptureFrame = 0
+let anchorRestoreFrame = 0
+let scrollResizeGeneration = 0
+let editorResizeObserver: ResizeObserver | null = null
+let userScrollIntent = false
+let userScrollIntentTimer: number | undefined = undefined
 let changeTimer: number | undefined = undefined
 let isComposing = false
 let applyingContent = false
@@ -227,6 +243,124 @@ const readOnlyCompartment = new Compartment()
 let isEditable = true
 
 let reportedCodeBlockState = false
+
+function readEditorScrollAnchor(editor: EditorView): EditorScrollAnchor {
+  const scrollRect = editor.scrollDOM.getBoundingClientRect()
+  const contentRect = editor.contentDOM.getBoundingClientRect()
+  const offset = editor.posAtCoords({ x: contentRect.left + 1, y: scrollRect.top + 1 }, false) ?? 0
+  const block = editor.lineBlockAt(offset)
+  const anchor = editor.coordsAtPos(offset)
+  return {
+    offset: offset,
+    viewportY: (anchor?.top ?? editor.documentTop + block.top) - scrollRect.top
+  }
+}
+
+function restoreEditorScrollAnchor(editor: EditorView): void {
+  const scrollRect = editor.scrollDOM.getBoundingClientRect()
+  const offset: number = Math.max(0, Math.min(editorScrollAnchor.offset, editor.state.doc.length))
+  const block = editor.lineBlockAt(offset)
+  const anchor = editor.coordsAtPos(offset)
+  const anchorScreenTop: number = anchor?.top ?? editor.documentTop + block.top
+  const nextScrollTop: number = preservedScrollTop(
+    editor.scrollDOM.scrollTop,
+    anchorScreenTop,
+    scrollRect.top,
+    editorScrollAnchor.viewportY,
+    editor.scrollDOM.scrollHeight,
+    editor.scrollDOM.clientHeight
+  )
+  editor.scrollDOM.scrollTop = nextScrollTop
+}
+
+function scheduleEditorScrollAnchorCapture(): void {
+  const editor: EditorView | null = view
+  if (!editor || scrollResizePending || anchorCaptureFrame !== 0) {
+    return
+  }
+  anchorCaptureFrame = window.requestAnimationFrame((): void => {
+    anchorCaptureFrame = 0
+    if (!view || scrollResizePending ||
+      view.scrollDOM.clientWidth !== observedEditorWidth ||
+      view.scrollDOM.clientHeight !== observedEditorHeight) {
+      return
+    }
+    editorScrollAnchor = readEditorScrollAnchor(view)
+  })
+}
+
+function handleEditorScroll(): void {
+  if (!userScrollIntent) {
+    return
+  }
+  scheduleEditorScrollAnchorCapture()
+  if (userScrollIntentTimer !== undefined) {
+    window.clearTimeout(userScrollIntentTimer)
+  }
+  userScrollIntentTimer = window.setTimeout((): void => {
+    userScrollIntent = false
+    userScrollIntentTimer = undefined
+  }, 200)
+}
+
+function markEditorScrollIntent(): void {
+  userScrollIntent = true
+  if (userScrollIntentTimer !== undefined) {
+    window.clearTimeout(userScrollIntentTimer)
+  }
+  userScrollIntentTimer = window.setTimeout((): void => {
+    userScrollIntent = false
+    userScrollIntentTimer = undefined
+  }, 200)
+}
+
+function observeEditorSize(editor: EditorView): void {
+  observedEditorWidth = editor.scrollDOM.clientWidth
+  observedEditorHeight = editor.scrollDOM.clientHeight
+  editor.scrollDOM.addEventListener('scroll', handleEditorScroll, { passive: true })
+  editorResizeObserver = new ResizeObserver((entries: ResizeObserverEntry[]): void => {
+    const width: number = editor.scrollDOM.clientWidth
+    const height: number = editor.scrollDOM.clientHeight
+    const scrollSizeChanged: boolean = width !== observedEditorWidth || height !== observedEditorHeight
+    const contentResized: boolean = entries.some((entry: ResizeObserverEntry): boolean =>
+      entry.target === editor.contentDOM)
+    if (!scrollSizeChanged && (!scrollResizePending || !contentResized)) {
+      return
+    }
+    if (scrollSizeChanged) {
+      observedEditorWidth = width
+      observedEditorHeight = height
+      scrollResizePending = true
+      userScrollIntent = false
+      if (userScrollIntentTimer !== undefined) {
+        window.clearTimeout(userScrollIntentTimer)
+        userScrollIntentTimer = undefined
+      }
+    }
+    const resizeGeneration: number = ++scrollResizeGeneration
+    if (anchorRestoreFrame !== 0) {
+      window.cancelAnimationFrame(anchorRestoreFrame)
+    }
+    anchorRestoreFrame = window.requestAnimationFrame((): void => {
+      anchorRestoreFrame = window.requestAnimationFrame((): void => {
+        anchorRestoreFrame = 0
+        if (view === editor) {
+          restoreEditorScrollAnchor(editor)
+        }
+        window.requestAnimationFrame((): void => {
+          if (resizeGeneration === scrollResizeGeneration) {
+            scrollResizePending = false
+          }
+        })
+      })
+    })
+  })
+  editorResizeObserver.observe(editor.scrollDOM)
+  editorResizeObserver.observe(editor.contentDOM)
+  editor.scrollDOM.addEventListener('touchstart', markEditorScrollIntent, { passive: true })
+  editor.scrollDOM.addEventListener('touchmove', markEditorScrollIntent, { passive: true })
+  editor.scrollDOM.addEventListener('wheel', markEditorScrollIntent, { passive: true })
+}
 
 function reportCodeBlockSelection(state: EditorState): void {
   const active = hasCodeBlockSelection(state)
@@ -263,6 +397,9 @@ function extensionsFor(theme: string) {
     // 实证）：最初放在 ensureView 的 concat 里，setTheme 热切换用 extensionsFor 重建 state
     // 时把它丢了 → docChanged 无人监听 → change 事件从此绝迹、防抖自动保存/预览联动全失效。
     EditorView.updateListener.of((update) => {
+      if (update.docChanged || update.selectionSet) {
+        scheduleEditorScrollAnchorCapture()
+      }
       if (update.selectionSet || update.docChanged) {
         reportCodeBlockSelection(update.state)
       }
@@ -294,6 +431,7 @@ function ensureView(): EditorView {
     extensions: extensionsFor(themeMode)
   })
   view = new EditorView({ state, parent })
+  observeEditorSize(view)
   view.dom.addEventListener('compositionstart', () => {
     isComposing = true
     if (changeTimer !== undefined) {
