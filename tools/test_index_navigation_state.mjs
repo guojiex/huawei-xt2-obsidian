@@ -29,7 +29,10 @@ class NavigationHarness {
   ${method('  private isReferenceShown(): boolean {', '\n  private toggleFocus(')}
   ${method('  private toggleFocus(): void {', '\n  private previewActiveNoteInOtherPane(')}
   ${method('  private onHamburger(): void {', '\n  // ===== 库操作')}
+  ${method('  onBackPress(): boolean {', '\n  /** 页面隐藏')}
 
+  isSingleLandscape() { return this.singleLandscape; }
+  leaveSecondaryView() { this.secondaryViewLeft = true; }
   setActivePane(pane) {
     this.activePane = pane;
     this.activePaneChanges.push(pane);
@@ -81,7 +84,11 @@ function createHarness(overrides = {}) {
     moreMenuOpen: true,
     paneMoreOpen: true,
     agentHamburgerSeq: 0,
-    activePaneChanges: []
+    activePaneChanges: [],
+    singleLandscape: false,
+    secondaryViewLeft: false,
+    previewBridge: { closeImageViewer: () => false },
+    rightPreviewBridge: { closeImageViewer: () => false }
   }, overrides);
   return app;
 }
@@ -254,4 +261,32 @@ test('active workspace shell animates single-screen translation and wide-screen 
   assert.match(shellSource, /\.width\(this\.noteContentWidth\(\)\)/);
   assert.doesNotMatch(shellSource, /visibility\(.*(?:drawerOpen|sidebarCollapsed)/);
   assert.match(bodySource, /\.enabled\(this\.notePaneWidth\('right'\) !== 0\)/);
+});
+
+test('system back closes expanded compact-landscape navigation before existing page handlers', () => {
+  let imageViewerOpen = true;
+  const app = createHarness({
+    breakpoint: Breakpoint.MD,
+    layoutBreakpoint: Breakpoint.MD,
+    singleLandscape: true,
+    sidebarCollapsed: false,
+    sidebarProgress: 1,
+    moreMenuOpen: false,
+    quickSwitchOpen: false,
+    previewBridge: {
+      closeImageViewer: () => {
+        if (!imageViewerOpen) return false;
+        imageViewerOpen = false;
+        return true;
+      }
+    }
+  });
+
+  assert.equal(app.onBackPress(), true);
+  assert.equal(app.sidebarCollapsed, true);
+  assert.equal(app.sidebarProgress, 0);
+  assert.equal(imageViewerOpen, true);
+
+  assert.equal(app.onBackPress(), true);
+  assert.equal(imageViewerOpen, false);
 });

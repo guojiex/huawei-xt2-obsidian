@@ -936,7 +936,7 @@ struct Index {
 
   /**
    * 系统返回键/侧滑返回拦截（需求 2.7b；api_notes I-1 / I3.1 已真机核实：侧滑同样触发）。
-   * 按优先级依次消费：① 快切/抽屉；② 次级视图；③ 图片查看器；④ sm 预览态；
+   * 按优先级依次消费：① 快切/抽屉/矮横屏导航；② 次级视图；③ 图片查看器；④ sm 预览态；
    * 都不是则返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
@@ -950,6 +950,10 @@ struct Index {
     }
     if (this.drawerOpen) {
       this.setDrawerOpen(false);
+      return true;
+    }
+    if (this.isSingleLandscape() && !this.sidebarCollapsed) {
+      this.setSidebarCollapsed(true);
       return true;
     }
     if (this.topView !== 'note') {
