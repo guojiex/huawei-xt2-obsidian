@@ -10,11 +10,15 @@ const tokensBundle = buildSync({
   platform: 'node',
   format: 'cjs',
   write: false,
+  external: ['@kit.ArkUI'],
   resolveExtensions: ['.ets', '.ts', '.js'],
   loader: { '.ets': 'ts' }
 }).outputFiles[0].text;
 const tokensModule = { exports: {} };
-new Function('module', 'exports', tokensBundle)(tokensModule, tokensModule.exports);
+new Function('module', 'exports', 'require', tokensBundle)(tokensModule, tokensModule.exports, (id) => {
+  assert.equal(id, '@kit.ArkUI');
+  return { curves: { cubicBezierCurve: () => ({}) } };
+});
 const { Size, Space } = tokensModule.exports;
 const minimumPaneWidth = Size.paneMinW;
 const splitterWidth = Space.s4;
@@ -24,11 +28,15 @@ const bundle = buildSync({
   platform: 'node',
   format: 'cjs',
   write: false,
+  external: ['@kit.ArkUI'],
   resolveExtensions: ['.ets', '.ts', '.js'],
   loader: { '.ets': 'ts' }
 }).outputFiles[0].text;
 const layoutModule = { exports: {} };
-new Function('module', 'exports', bundle)(layoutModule, layoutModule.exports);
+new Function('module', 'exports', 'require', bundle)(layoutModule, layoutModule.exports, (id) => {
+  assert.equal(id, '@kit.ArkUI');
+  return { curves: { cubicBezierCurve: () => ({}) } };
+});
 const {
   DEFAULT_CONTENT_RATIO,
   MAX_NAV_RATIO,

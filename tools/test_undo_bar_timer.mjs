@@ -32,6 +32,7 @@ function createHarness() {
   let nextTimerId = 1;
   const context = vm.createContext({
     module: { exports: {} },
+    curves: { cubicBezierCurve: () => ({}) },
     setTimeout(callback, delay) {
       const timer = { id: nextTimerId++, callback, delay, cleared: false };
       timers.push(timer);

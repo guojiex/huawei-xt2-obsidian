@@ -13,11 +13,15 @@ const layoutBundle = buildSync({
   platform: 'node',
   format: 'cjs',
   write: false,
+  external: ['@kit.ArkUI'],
   resolveExtensions: ['.ets', '.ts', '.js'],
   loader: { '.ets': 'ts' }
 }).outputFiles[0].text;
 const layoutModule = { exports: {} };
-new Function('module', 'exports', layoutBundle)(layoutModule, layoutModule.exports);
+new Function('module', 'exports', 'require', layoutBundle)(layoutModule, layoutModule.exports, (id) => {
+  assert.equal(id, '@kit.ArkUI');
+  return { curves: { cubicBezierCurve: () => ({}) } };
+});
 const { DEFAULT_CONTENT_RATIO } = layoutModule.exports;
 const classStart = source.indexOf('export class SplitLayoutStore {');
 assert.ok(classStart >= 0, 'could not find SplitLayoutStore');
