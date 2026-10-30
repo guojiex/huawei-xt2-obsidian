@@ -81,6 +81,8 @@ export struct FileTreeView {
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
+  @State pathMenuPath: string = '';
+  private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
 
   aboutToAppear(): void {
@@ -95,10 +97,12 @@ export struct FileTreeView {
   }
 
   private onVaultChanged(): void {
+    this.closePathMenu(false);
     this.reload();
   }
 
   private onRefresh(): void {
+    this.closePathMenu(false);
     this.reload();
   }
 
@@ -172,6 +176,70 @@ export struct FileTreeView {
       return true;
     }
     return false;
+  }
+
+  private treeRowFocusId(node: TreeNode): string {
+    return 'file-tree-row-' + this.vaultId + ':' + node.relPath;
+  }
+
+  private pathMenuFocusId(node: TreeNode, action: string): string {
+    return this.treeRowFocusId(node) + ':menu:' + action;
+  }
+
+  private openPathMenu(node: TreeNode): void {
+    this.pathMenuReturnFocusId = this.treeRowFocusId(node);
+    this.pathMenuPath = node.relPath;
+  }
+
+  private closePathMenu(restoreFocus: boolean): void {
+    const focusId: string = this.pathMenuReturnFocusId;
+    this.pathMenuPath = '';
+    this.pathMenuReturnFocusId = '';
+    if (restoreFocus && focusId.length > 0) {
+      this.getUIContext().getFocusController().requestFocus(focusId);
+    }
+  }
+
+  private onPathMenuDismiss(action: DismissPopupAction): void {
+    action.dismiss();
+    this.closePathMenu(action.reason === DismissReason.PRESS_BACK);
+  }
+
+  private onTreeRowKey(node: TreeNode, event: KeyEvent): boolean {
+    if (this.onDirectoryKey(node, event)) {
+      return true;
+    }
+    if (event.type !== KeyType.Down || this.referenceOnly) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_MENU) {
+      this.openPathMenu(node);
+      return true;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_F10) {
+      let shiftPressed: boolean = false;
+      if (event.getModifierKeyState !== undefined) {
+        shiftPressed = event.getModifierKeyState(['Shift']);
+      }
+      if (shiftPressed) {
+        this.openPathMenu(node);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private runPathMenuAction(node: TreeNode, action: string): void {
+    this.closePathMenu(false);
+    if (action === 'share' && node.isDir) {
+      this.onSharePath(node.relPath, true);
+    } else if (action === 'rename') {
+      this.onRenamePath(node.relPath, node.isDir);
+    } else if (action === 'move') {
+      this.onMovePath(node.relPath, node.isDir);
+    } else if (action === 'delete') {
+      this.onDeletePath(node.relPath, node.isDir);
+    }
   }
 
   /** v2 的文件树主标题隐藏 Markdown 扩展名，文件操作仍使用完整相对路径。 */
@@ -332,6 +400,50 @@ export struct FileTreeView {
   }
 
   @Builder
+  PathMenuItem(n: TreeNode, action: string, label: string, icon: string,
+    destructive: boolean, first: boolean) {
+    Row({ space: Space.s2 }) {
+      Icon(icon, Space.s4, destructive ? $r('app.color.danger') : $r('app.color.text_secondary'))
+      Text(label)
+        .fontSize(FontSize.body2)
+        .fontColor(destructive ? $r('app.color.danger') : $r('app.color.text_primary'))
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .borderRadius(Radius.control)
+    .focusable(true)
+    .id(this.pathMenuFocusId(n, action))
+    .accessibilityText(label)
+    .onClick((): void => { this.runPathMenuAction(n, action); })
+    .onAppear((): void => {
+      if (first) {
+        this.getUIContext().getFocusController().requestFocus(this.pathMenuFocusId(n, action));
+      }
+    })
+  }
+
+  @Builder
+  PathActionsMenu(n: TreeNode) {
+    Column({ space: Space.s1 }) {
+      if (n.isDir) {
+        this.PathMenuItem(n, 'share', '分享', 'share', false, true)
+        this.PathMenuItem(n, 'rename', '改名', 'rename', false, false)
+      } else {
+        this.PathMenuItem(n, 'rename', '改名', 'rename', false, true)
+      }
+      this.PathMenuItem(n, 'move', '移动', 'move', false, false)
+      this.PathMenuItem(n, 'delete', '删除', 'trash', true, false)
+    }
+    .width(Size.touch * 3)
+    .padding(Space.s2)
+    .borderRadius(Radius.menu)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+  }
+
+  @Builder
   TreeList() {
     List() {
       ForEach(this.nodes, (n: TreeNode) => {
@@ -446,8 +558,19 @@ export struct FileTreeView {
               this.onSelectFile(n.relPath);
             }
           })
-          .focusable(n.isDir)
-          .onKeyEvent((event: KeyEvent): boolean => { return this.onDirectoryKey(n, event); })
+          .focusable(true)
+          .id(this.treeRowFocusId(n))
+          .onKeyEvent((event: KeyEvent): boolean => { return this.onTreeRowKey(n, event); })
+          .bindPopup(this.pathMenuPath === n.relPath && !this.referenceOnly, {
+            builder: this.PathActionsMenu(n),
+            placement: Placement.BottomLeft,
+            enableArrow: false,
+            offset: { x: 0, y: Space.s1 },
+            mask: false,
+            autoCancel: true,
+            popupColor: Color.Transparent,
+            onWillDismiss: (action: DismissPopupAction): void => { this.onPathMenuDismiss(action); }
+          })
         }
         .width('100%')
         .padding({ right: Space.s2 })

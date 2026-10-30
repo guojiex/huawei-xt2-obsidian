@@ -1312,6 +1312,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 
 - 本机 HarmonyOS SDK 的 `ets/api/@ohos.multimodalInput.keyCode.d.ts` 声明方向键 `KEYCODE_DPAD_UP/DOWN/LEFT/RIGHT` 为 2012–2015、中心键 2016、空格 2050、Enter 2054、Home/End 2081–2082，均为 since 9。
 - `ets/component/common.d.ts` 的布尔型 `onKeyEvent` 回调为 since 15（void 型重载为 since 7），组件 `id()` 为 since 11；`ets/api/@ohos.arkui.UIContext.d.ts` 的 `UIContext.getFocusController()` / `FocusController.requestFocus()` 为 since 12。声明版本均不高于工程兼容上限 API 24。
+- 文件树操作菜单快捷键声明：`ets/api/@ohos.multimodalInput.keyCode.d.ts` 的 `KEYCODE_MENU` / `KEYCODE_F10` 均为 since 9；ArkUI `KeyEvent.getModifierKeyState(['Shift'])` 以及 `DismissPopupAction.reason` / `dismiss()` 均为 since 12，`DismissReason.PRESS_BACK` 包含 Esc 与系统 Back。均不高于 API 24；这只是本机 SDK 声明核对，不证明键盘路由、弹层焦点或设备交互。
 - 以上仅核对当前本机 SDK 的声明与可用版本；本轮 HAP 在 API 26 模拟器安装，未实际注入键盘事件，不能据此宣称 API 24 / XT2 键盘行为通过。
 
 ---
