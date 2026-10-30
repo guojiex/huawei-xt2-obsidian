@@ -51,6 +51,7 @@ function createHarness(options = {}) {
       calls.push('flush');
       return options.flushSucceeds ?? true;
     },
+    stopWorkspaceSessionSaving() { calls.push('stop-session'); },
     refreshFromRegistry() {
       calls.push('refresh');
       this.currentVaultId = registry.currentId();
@@ -78,7 +79,7 @@ test('switching vaults clears both persistent editor buffers, including from a s
   await app.switchVault('temporary');
 
   assert.deepEqual(calls, [
-    'set-current:temporary', 'refresh', 'clear-left:', 'clear-right:'
+    'stop-session', 'set-current:temporary', 'refresh', 'clear-left:', 'clear-right:'
   ]);
   assert.equal(state.currentId, 'temporary');
   assert.equal(app.currentFilePath, '');
@@ -95,7 +96,7 @@ test('external vault changes clear both persistent editor buffers', async () => 
   await app.adoptExternalVaultSwitch();
 
   assert.deepEqual(calls, [
-    'flush', 'refresh', 'clear-left:', 'clear-right:'
+    'flush', 'stop-session', 'refresh', 'clear-left:', 'clear-right:'
   ]);
   assert.equal(state.currentId, 'external');
   assert.equal(app.currentFilePath, '');

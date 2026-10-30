@@ -22,6 +22,7 @@ function method(startMarker, endMarker) {
 
 const code = transformSync(`
 class NavigationHarness {
+  scheduleWorkspaceSessionSave() {}
   ${method('  private setSidebarCollapsed(collapsed: boolean): void {', '\n  private setDrawerOpen(')}
   ${method('  private setDrawerOpen(open: boolean): void {', '\n  private closeNoteNavigation(')}
   ${method('  private syncNavigationForBreakpoint(): void {', '\n  private async refreshAfterBreakpointChange(')}

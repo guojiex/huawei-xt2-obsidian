@@ -37,6 +37,7 @@ export struct VaultSidebar {
   @Prop currentVaultId: string = '';
   /** 当前库内有效 Markdown 笔记数 */
   @Prop noteCount: number = 0;
+  @Prop sidebarTab: string = 'files';
   /** 当前打开文件的库内相对路径（父级持有，树只画选中态） */
   @Prop currentFilePath: string = '';
   @Prop chapters: ChapterEntry[] = [];
@@ -52,7 +53,6 @@ export struct VaultSidebar {
   @Prop revealPath: string = '';
   /** 下拉菜单开关（瞬态） */
   @State menuOpen: boolean = false;
-  @State sidebarTab: string = 'files';
   @State collapsedChapterKeys: string[] = [];
   /**
    * 弹层宽（vp）：原型 .vault-menu 是 left:0; right:0 于 .vault-switch —— **与卡片同宽**，
@@ -82,6 +82,7 @@ export struct VaultSidebar {
   onCreateNote: () => void = () => {};
   /** 选中文件回调（向父级传递，由父级决定编辑器行为） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
+  onSidebarTabChange: (tab: string) => void = (tab: string) => {};
   onSelectChapter: (index: number) => void = (index: number) => {};
   /** 文件行尾的跨栏打开入口。 */
   onOpenOtherPane: (relPath: string) => void = (relPath: string) => {};
@@ -555,7 +556,7 @@ export struct VaultSidebar {
           .alignItems(HorizontalAlign.Center)
           .padding({ left: Space.s3, right: Space.s3 })
           .focusable(true)
-          .onClick((): void => { this.sidebarTab = 'files'; })
+          .onClick((): void => { this.onSidebarTabChange('files'); })
 
           Column() {
             Row() {
@@ -582,7 +583,7 @@ export struct VaultSidebar {
           .alignItems(HorizontalAlign.Center)
           .padding({ left: Space.s3, right: Space.s3 })
           .focusable(true)
-          .onClick((): void => { this.sidebarTab = 'chapters'; })
+          .onClick((): void => { this.onSidebarTabChange('chapters'); })
         }
         .width('100%')
         .padding({ left: Space.s2, right: Space.s2 })

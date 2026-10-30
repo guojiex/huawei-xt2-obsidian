@@ -122,6 +122,11 @@ class EditorImpl {
     this.enqueue(`window.__mdeditor.scrollToOffset(${safeOffset})`);
   }
 
+  restoreScrollTop(top: number): void {
+    const safeTop: number = Number.isFinite(top) ? Math.max(0, Math.floor(top)) : 0;
+    this.enqueue(`window.__mdeditor.restoreScrollTop(${safeTop})`);
+  }
+
   focus(): void {
     this.enqueue('window.__mdeditor.focus()');
   }
@@ -161,9 +166,14 @@ class EditorImpl {
 /** 父组件持有的句柄：页面就绪前调用会进队列，不会丢 */
 export class EditorBridge {
   private impl: EditorImpl | undefined = undefined;
+  private workspaceScrollTop: number = 0;
+  private hasWorkspaceScrollTop: boolean = false;
 
   bind(impl: EditorImpl): void {
     this.impl = impl;
+    if (this.hasWorkspaceScrollTop) {
+      impl.restoreScrollTop(this.workspaceScrollTop);
+    }
   }
 
   /** 编辑器页面是否就绪（ready 前 getContent 会返回 ''，落盘会清空文件，故保存前必查） */
@@ -192,6 +202,16 @@ export class EditorBridge {
 
   scrollToOffset(offset: number): void {
     this.impl?.scrollToOffset(offset);
+  }
+
+  restoreScrollTop(top: number): void {
+    this.rememberScrollTop(top);
+    this.impl?.restoreScrollTop(top);
+  }
+
+  rememberScrollTop(top: number): void {
+    this.workspaceScrollTop = Number.isFinite(top) ? Math.max(0, top) : 0;
+    this.hasWorkspaceScrollTop = true;
   }
 
   focus(): void {
@@ -233,6 +253,8 @@ export struct EditorWebView {
   onCompositionChange: (composing: boolean) => void = (composing: boolean) => {};
   /** 当前光标 / 选区是否位于同一个围栏代码块。 */
   onCodeBlockStateChange: (active: boolean) => void = (active: boolean) => {};
+  /** Web 编辑器视口滚动位置；只上报数字，不传递笔记内容。 */
+  onScrollPositionChange: (top: number) => void = (top: number) => {};
   /** 页面就绪（首帧可交互） */
   onReady: () => void = () => {};
   /** Web 加载错误 */
@@ -319,6 +341,8 @@ export struct EditorWebView {
       this.onCompositionChange((msg['composing'] as boolean) ?? false);
     } else if (name === 'codeBlockState') {
       this.onCodeBlockStateChange((msg['active'] as boolean) ?? false);
+    } else if (name === 'scroll') {
+      this.onScrollPositionChange((msg['top'] as number) ?? 0);
     } else if (name === 'linkCompletion') {
       this.onLinkCompletion(msg['id'] as number, msg['query'] as string);
     }

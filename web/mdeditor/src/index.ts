@@ -27,6 +27,7 @@ import { markdown } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { preservedScrollTop } from './scrollAnchor'
+import { clampWorkspaceScrollTop, editorWorkspaceScrollContainer } from './workspaceScroll'
 import {
   hasCodeBlockSelection,
   normalizeEditorText,
@@ -62,6 +63,7 @@ interface MdEditorApi {
   setTheme(theme: string): void
   setEditable(editable: boolean): void
   setLinkCandidatesResult(id: number, b64: string): void
+  restoreScrollTop(top: number): void
   onArktsReady(): void
 }
 
@@ -234,6 +236,9 @@ let scrollResizeGeneration = 0
 let editorResizeObserver: ResizeObserver | null = null
 let userScrollIntent = false
 let userScrollIntentTimer: number | undefined = undefined
+let scrollReportTimer: number | undefined = undefined
+let workspaceScrollReportSuppressedUntil = 0
+let workspaceScrollRestoreGeneration = 0
 let changeTimer: number | undefined = undefined
 let isComposing = false
 let applyingContent = false
@@ -289,7 +294,33 @@ function scheduleEditorScrollAnchorCapture(): void {
   })
 }
 
-function handleEditorScroll(): void {
+function handleEditorScroll(event: Event): void {
+  const editor: EditorView | null = view
+  if (!editor) {
+    return
+  }
+  const eventTarget: EventTarget | null = event.target
+  const documentScroller: HTMLElement = document.scrollingElement ?? document.documentElement
+  const isDocumentScroll: boolean = eventTarget === document || eventTarget === documentScroller ||
+    eventTarget === document.documentElement || eventTarget === document.body
+  if (!isDocumentScroll && eventTarget !== editor.scrollDOM) {
+    return
+  }
+  const scrollContainer = isDocumentScroll ? documentScroller : editor.scrollDOM
+  const top: number = Math.max(0, scrollContainer.scrollTop)
+  if (scrollReportTimer !== undefined) {
+    window.clearTimeout(scrollReportTimer)
+    scrollReportTimer = undefined
+  }
+  if (Date.now() < workspaceScrollReportSuppressedUntil) {
+    return
+  }
+  scrollReportTimer = window.setTimeout((): void => {
+    scrollReportTimer = undefined
+    if (view) {
+      postToArkts({ type: 'event', name: 'scroll', top: top })
+    }
+  }, 200)
   if (!userScrollIntent) {
     return
   }
@@ -317,7 +348,7 @@ function markEditorScrollIntent(): void {
 function observeEditorSize(editor: EditorView): void {
   observedEditorWidth = editor.scrollDOM.clientWidth
   observedEditorHeight = editor.scrollDOM.clientHeight
-  editor.scrollDOM.addEventListener('scroll', handleEditorScroll, { passive: true })
+  document.addEventListener('scroll', handleEditorScroll, { passive: true, capture: true })
   editorResizeObserver = new ResizeObserver((entries: ResizeObserverEntry[]): void => {
     const width: number = editor.scrollDOM.clientWidth
     const height: number = editor.scrollDOM.clientHeight
@@ -357,9 +388,9 @@ function observeEditorSize(editor: EditorView): void {
   })
   editorResizeObserver.observe(editor.scrollDOM)
   editorResizeObserver.observe(editor.contentDOM)
-  editor.scrollDOM.addEventListener('touchstart', markEditorScrollIntent, { passive: true })
-  editor.scrollDOM.addEventListener('touchmove', markEditorScrollIntent, { passive: true })
-  editor.scrollDOM.addEventListener('wheel', markEditorScrollIntent, { passive: true })
+  document.addEventListener('touchstart', markEditorScrollIntent, { passive: true, capture: true })
+  document.addEventListener('touchmove', markEditorScrollIntent, { passive: true, capture: true })
+  document.addEventListener('wheel', markEditorScrollIntent, { passive: true, capture: true })
 }
 
 function reportCodeBlockSelection(state: EditorState): void {
@@ -532,6 +563,7 @@ function applyMarkdownFormat(kind: string): void {
 
 const api: MdEditorApi = {
   setContent(b64: string): void {
+    workspaceScrollRestoreGeneration++
     const normalizedText = normalizeEditorText(b64decode(b64))
     documentLineEnding = normalizedText.lineEnding
     const text = normalizedText.text
@@ -583,6 +615,27 @@ const api: MdEditorApi = {
     const safeOffset = Math.max(0, Math.min(offset, v.state.doc.length))
     v.dispatch({ selection: { anchor: safeOffset }, scrollIntoView: true })
     v.focus()
+  },
+
+  restoreScrollTop(top: number): void {
+    const generation = ++workspaceScrollRestoreGeneration
+    const target: number = Number.isFinite(top) ? Math.max(0, top) : 0
+    const editor = ensureView()
+    if (scrollReportTimer !== undefined) {
+      window.clearTimeout(scrollReportTimer)
+      scrollReportTimer = undefined
+    }
+    window.requestAnimationFrame((): void => {
+      window.requestAnimationFrame((): void => {
+        if (view !== editor || generation !== workspaceScrollRestoreGeneration) {
+          return
+        }
+        const documentScroller = document.scrollingElement ?? document.documentElement
+        const scrollElement = editorWorkspaceScrollContainer(editor.scrollDOM, documentScroller)
+        workspaceScrollReportSuppressedUntil = Date.now() + 250
+        scrollElement.scrollTop = clampWorkspaceScrollTop(scrollElement, target)
+      })
+    })
   },
 
   focus(): void {

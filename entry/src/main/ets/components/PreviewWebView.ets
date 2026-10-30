@@ -39,6 +39,7 @@ class PreviewNativeProxy {
   imageViewerChangeHandler: (state: string) => void = () => {};
   shareCaptureHandler: (payload: string) => void = (payload: string) => {};
   wikiLinkClickHandler: (targetB64: string) => void = (_targetB64: string) => {};
+  workspaceScrollHandler: (top: number) => void = (_top: number) => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -54,6 +55,10 @@ class PreviewNativeProxy {
 
   onWikiLinkClick(targetB64: string): void {
     this.wikiLinkClickHandler(targetB64);
+  }
+
+  onWorkspaceScroll(top: number): void {
+    this.workspaceScrollHandler(top);
   }
 }
 
@@ -107,6 +112,11 @@ class PreviewImpl {
     this.enqueue(`window.__mdpreview.scrollToHeading(${Math.max(0, Math.floor(index))})`);
   }
 
+  restoreScrollTop(top: number): void {
+    const safeTop: number = Number.isFinite(top) ? Math.max(0, Math.floor(top)) : 0;
+    this.enqueue(`window.__mdpreview.restoreScrollTop(${safeTop})`);
+  }
+
   requestShareCaptureMetrics(id: number): void {
     this.enqueue(`window.__mdpreview.requestShareCaptureMetrics(${id})`);
   }
@@ -142,6 +152,8 @@ export class PreviewBridge {
   private impl: PreviewImpl | undefined = undefined;
   private content: string = '';
   private hasContent: boolean = false;
+  private workspaceScrollTop: number = 0;
+  private hasWorkspaceScrollTop: boolean = false;
   private noteDir: string = '';
   private theme: string = 'light';
   private captureWaiters: Map<number, CaptureWaiter> = new Map<number, CaptureWaiter>();
@@ -153,6 +165,9 @@ export class PreviewBridge {
     impl.setTheme(this.theme);
     if (this.hasContent) {
       impl.setContent(this.content);
+    }
+    if (this.hasWorkspaceScrollTop) {
+      impl.restoreScrollTop(this.workspaceScrollTop);
     }
   }
 
@@ -188,6 +203,16 @@ export class PreviewBridge {
 
   scrollToHeading(index: number): void {
     this.impl?.scrollToHeading(index);
+  }
+
+  restoreScrollTop(top: number): void {
+    this.rememberScrollTop(top);
+    this.impl?.restoreScrollTop(top);
+  }
+
+  rememberScrollTop(top: number): void {
+    this.workspaceScrollTop = Number.isFinite(top) ? Math.max(0, top) : 0;
+    this.hasWorkspaceScrollTop = true;
   }
 
   resetDocument(): void {
@@ -289,6 +314,8 @@ export struct PreviewWebView {
   onError: (msg: string) => void = (msg: string) => {};
   /** 双链点击回调，参数为目标文本。 */
   onWikiLinkClick: (target: string) => void = (_target: string) => {};
+  /** Web 预览视口滚动位置；只上报数字，不传递笔记内容。 */
+  onScrollPositionChange: (top: number) => void = (top: number) => {};
   /** Web 页面桥接就绪。 */
   onReady: () => void = () => {};
   /** Web 组件标识，供分享图片分页截图定位。 */
@@ -311,6 +338,9 @@ export struct PreviewWebView {
     };
     this.proxy.wikiLinkClickHandler = (targetB64: string): void => {
       this.handleWikiLinkClick(targetB64);
+    };
+    this.proxy.workspaceScrollHandler = (top: number): void => {
+      this.onScrollPositionChange(top);
     };
     // JS 桥收的是 base64（避免引号/换行转义），这里解开再交给父级回调
     this.proxy.readAssetHandler = (relB64: string): string => {
@@ -354,7 +384,7 @@ export struct PreviewWebView {
     }
     try {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
-        ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick']);
+        ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (error) {

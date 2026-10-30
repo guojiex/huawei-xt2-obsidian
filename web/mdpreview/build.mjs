@@ -42,7 +42,8 @@ const code = fs.readFileSync(tmpFile, 'utf8')
 fs.unlinkSync(tmpFile)
 
 // 内联脚本里出现 </script 会提前闭合标签
-const safe = code.replace(/<\/script/gi, '<\\/script')
+// Keep generated rawfile clean when bundled Mermaid templates contain trailing spaces.
+const safe = code.replace(/[ \t]+$/gm, '').replace(/<\/script/gi, '<\\/script')
 const katexCss = fs.readFileSync(path.join(katexDist, 'katex.min.css'), 'utf8')
 
 const html = `<!doctype html>

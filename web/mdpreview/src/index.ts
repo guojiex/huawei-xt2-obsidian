@@ -24,6 +24,7 @@ declare global {
       readAsset?: (relB64: string) => string
       onImageViewerChange?: (state: string) => void
       onShareCaptureResult?: (payload: string) => void
+      onWorkspaceScroll?: (top: number) => void
     }
   }
 }
@@ -36,6 +37,7 @@ interface MdPreviewApi {
   resetDocument(): void
   closeImageViewer(): void
   scrollToHeading(index: number): void
+  restoreScrollTop(top: number): void
   requestShareCaptureMetrics(id: number): void
   prepareShareCapturePages(id: number, pageCount: number): void
   setShareCaptureScrollTop(id: number, top: number): void
@@ -152,6 +154,13 @@ function closeImageViewer(): void {
 function resetPreviewDocument(): void {
   closeImageViewer()
   const content = document.getElementById('content') as HTMLElement
+  workspaceScrollRestoreGeneration++
+  workspaceScrollRestorePending = false
+  if (workspaceScrollTimer !== undefined) {
+    window.clearTimeout(workspaceScrollTimer)
+    workspaceScrollTimer = undefined
+  }
+  workspaceScrollReportSuppressedUntil = Date.now() + 250
   content.scrollTop = 0
 }
 
@@ -193,8 +202,30 @@ function updateImageBounds(): void {
 }
 
 const contentResizeObserver = new ResizeObserver(updateImageBounds)
-contentResizeObserver.observe(document.getElementById('content') as HTMLElement)
+const contentElement = document.getElementById('content') as HTMLElement
+contentResizeObserver.observe(contentElement)
 window.addEventListener('resize', updateImageBounds)
+
+let workspaceScrollTimer: number | undefined = undefined
+let workspaceScrollRestorePending = false
+let workspaceScrollReportSuppressedUntil = 0
+let workspaceScrollRestoreGeneration = 0
+contentElement.addEventListener('scroll', (): void => {
+  if (workspaceScrollTimer !== undefined) {
+    window.clearTimeout(workspaceScrollTimer)
+    workspaceScrollTimer = undefined
+  }
+  if (workspaceScrollRestorePending || Date.now() < workspaceScrollReportSuppressedUntil) {
+    return
+  }
+  workspaceScrollTimer = window.setTimeout((): void => {
+    workspaceScrollTimer = undefined
+    const arkts = window.__arkts
+    if (arkts && typeof arkts.onWorkspaceScroll === 'function') {
+      arkts.onWorkspaceScroll(Math.max(0, contentElement.scrollTop))
+    }
+  }, 200)
+}, { passive: true })
 
 function shareCaptureMetrics(): { scrollHeight: number; viewportHeight: number; viewportWidth: number; scrollTop: number } {
   const content = document.getElementById('content') as HTMLElement
@@ -273,6 +304,12 @@ const api: MdPreviewApi = {
   setContent(b64: string): void {
     const text = b64decode(b64)
     const el = document.getElementById('content') as HTMLElement
+    workspaceScrollRestoreGeneration++
+    workspaceScrollRestorePending = false
+    if (workspaceScrollTimer !== undefined) {
+      window.clearTimeout(workspaceScrollTimer)
+      workspaceScrollTimer = undefined
+    }
     if (text.trim().length === 0) {
       mermaidRenderGeneration++
       mermaidRender = Promise.resolve()
@@ -312,6 +349,35 @@ const api: MdPreviewApi = {
   scrollToHeading(index: number): void {
     const heading = document.querySelector(`#content [data-chapter-index="${index}"]`)
     heading?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  },
+
+  async restoreScrollTop(top: number): Promise<void> {
+    const content = document.getElementById('content') as HTMLElement
+    const generation = ++workspaceScrollRestoreGeneration
+    workspaceScrollRestorePending = true
+    if (workspaceScrollTimer !== undefined) {
+      window.clearTimeout(workspaceScrollTimer)
+      workspaceScrollTimer = undefined
+    }
+    try {
+      await mermaidRender
+      await waitForLocalImages(content)
+    } catch (error) {
+      // Missing images or a failed diagram must not prevent the text position from restoring.
+    }
+    await nextRenderedFrame()
+    if (generation !== workspaceScrollRestoreGeneration) {
+      return
+    }
+    const safeTop = Number.isFinite(top) ? Math.max(0, top) : 0
+    const maxTop = Math.max(0, content.scrollHeight - content.clientHeight)
+    workspaceScrollReportSuppressedUntil = Date.now() + 250
+    content.scrollTop = Math.min(safeTop, maxTop)
+    window.setTimeout((): void => {
+      if (generation === workspaceScrollRestoreGeneration) {
+        workspaceScrollRestorePending = false
+      }
+    }, 250)
   },
 
   async requestShareCaptureMetrics(id: number): Promise<void> {
