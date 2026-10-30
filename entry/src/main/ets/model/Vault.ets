@@ -35,8 +35,8 @@ export const DEFAULT_VAULT_ID: string = '我的笔记';
 /**
  * 库名消毒纯函数（新建与改名共用，spec.md FR-009）：
  * 1. 过滤 `/ \ : * ? " < > |` 与控制字符（charCode < 0x20）；
- * 2. 去前导点（防 `.`/`..` 逃逸 vaults/）；
- * 3. 去首尾空白；
+ * 2. 去首尾空白后去前导点（防空白掩盖 `.`/`..`）；
+ * 3. 再去首尾空白；
  * 4. 结果为空 → 返回空串，由调用方拒绝（不在此抛错，便于 UI 实时预览）。
  */
 export function sanitizeVaultName(raw: string): string {
@@ -55,11 +55,11 @@ export function sanitizeVaultName(raw: string): string {
     }
     filtered += ch;
   }
-  // 去前导点：防 '.' / '..' 逃逸 vaults/（spec.md FR-009 第 2 步）
+  // 先 trim，让空白前缀不能掩盖 '.' / '..'；resolver 仍会再次拒绝点开头段。
+  const trimmed: string = filtered.trim();
   let start: number = 0;
-  while (start < filtered.length && filtered.charAt(start) === '.') {
+  while (start < trimmed.length && trimmed.charAt(start) === '.') {
     start++;
   }
-  // 去首尾空白（第 3 步）
-  return filtered.substring(start).trim();
+  return trimmed.substring(start).trim();
 }
