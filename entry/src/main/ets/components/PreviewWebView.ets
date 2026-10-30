@@ -16,6 +16,7 @@ import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BridgeCodec } from '../common/BridgeCodec';
 import { FontSize } from '../common/Tokens';
+import { PreviewFollowAnchor } from '../model/PreviewFollowPolicy';
 
 export interface PreviewCaptureResult {
   scrollHeight: number;
@@ -60,6 +61,7 @@ class PreviewNativeProxy {
   onWorkspaceScroll(top: number): void {
     this.workspaceScrollHandler(top);
   }
+
 }
 
 /** 桥接内部实现：页面就绪前收到的指令先进队列，onPageEnd 后按序补发 */
@@ -115,6 +117,20 @@ class PreviewImpl {
   restoreScrollTop(top: number): void {
     const safeTop: number = Number.isFinite(top) ? Math.max(0, Math.floor(top)) : 0;
     this.enqueue(`window.__mdpreview.restoreScrollTop(${safeTop})`);
+  }
+
+  scrollToSourceLine(anchor: PreviewFollowAnchor): void {
+    const line: number = Number.isInteger(anchor.line) ? Math.max(1, anchor.line) : 1;
+    const lineProgress: number = Number.isFinite(anchor.lineProgress)
+      ? Math.max(0, Math.min(1, anchor.lineProgress)) : 0;
+    const viewportRatio: number = Number.isFinite(anchor.viewportRatio)
+      ? Math.max(0, Math.min(1, anchor.viewportRatio)) : 0;
+    this.enqueue(`window.__mdpreview.scrollToSourceLine(${line},${lineProgress},${viewportRatio},` +
+      `${anchor.atStart},${anchor.atEnd})`);
+  }
+
+  cancelSourceFollow(): void {
+    this.enqueue('window.__mdpreview.cancelSourceFollow()');
   }
 
   requestShareCaptureMetrics(id: number): void {
@@ -208,6 +224,14 @@ export class PreviewBridge {
   restoreScrollTop(top: number): void {
     this.rememberScrollTop(top);
     this.impl?.restoreScrollTop(top);
+  }
+
+  scrollToSourceLine(anchor: PreviewFollowAnchor): void {
+    this.impl?.scrollToSourceLine(anchor);
+  }
+
+  cancelSourceFollow(): void {
+    this.impl?.cancelSourceFollow();
   }
 
   rememberScrollTop(top: number): void {

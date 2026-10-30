@@ -62,6 +62,7 @@ interface MdEditorApi {
   blur(): void
   setTheme(theme: string): void
   setLineNumbers(show: boolean): void
+  reportVisibleSourceAnchor(): void
   setEditable(editable: boolean): void
   setLinkCandidatesResult(id: number, b64: string): void
   restoreScrollTop(top: number): void
@@ -242,6 +243,8 @@ let scrollResizeGeneration = 0
 let editorResizeObserver: ResizeObserver | null = null
 let userScrollIntent = false
 let userScrollIntentTimer: number | undefined = undefined
+let sourceScrollReportFrame = 0
+let sourceScrollReportForced = false
 let scrollReportTimer: number | undefined = undefined
 let workspaceScrollReportSuppressedUntil = 0
 let workspaceScrollRestoreGeneration = 0
@@ -300,6 +303,49 @@ function scheduleEditorScrollAnchorCapture(): void {
   })
 }
 
+function readVisibleSourceAnchor(editor: EditorView): {
+  line: number; lineProgress: number; viewportRatio: number; atStart: boolean; atEnd: boolean
+} {
+  const scrollRect = editor.scrollDOM.getBoundingClientRect()
+  const contentRect = editor.contentDOM.getBoundingClientRect()
+  const offset: number = editor.posAtCoords({ x: contentRect.left + 1, y: scrollRect.top + 1 }, false) ?? 0
+  const line = editor.state.doc.lineAt(offset)
+  const lineLength: number = Math.max(1, line.to - line.from)
+  const documentScroller = document.scrollingElement ?? document.documentElement
+  const scrollContainer = editorWorkspaceScrollContainer(editor.scrollDOM, documentScroller)
+  const maxScrollTop: number = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
+  const scrollTop: number = Math.max(0, scrollContainer.scrollTop)
+  return {
+    line: line.number,
+    lineProgress: Math.max(0, Math.min(1, (offset - line.from) / lineLength)),
+    viewportRatio: 0,
+    atStart: scrollTop <= 1,
+    atEnd: maxScrollTop > 1 && scrollTop >= maxScrollTop - 1
+  }
+}
+
+function scheduleSourceScrollReport(force: boolean = false): void {
+  if (force) {
+    sourceScrollReportForced = true
+  }
+  if (sourceScrollReportFrame !== 0) {
+    return
+  }
+  sourceScrollReportFrame = window.requestAnimationFrame((): void => {
+    sourceScrollReportFrame = 0
+    const forced: boolean = sourceScrollReportForced
+    sourceScrollReportForced = false
+    const editor: EditorView | null = view
+    if (!editor || (!forced && (!userScrollIntent || Date.now() < workspaceScrollReportSuppressedUntil))) {
+      return
+    }
+    const anchor = readVisibleSourceAnchor(editor)
+    postToArkts({ type: 'event', name: 'sourceScroll', line: anchor.line,
+      lineProgress: anchor.lineProgress, viewportRatio: anchor.viewportRatio,
+      atStart: anchor.atStart, atEnd: anchor.atEnd })
+  })
+}
+
 function handleEditorScroll(event: Event): void {
   const editor: EditorView | null = view
   if (!editor) {
@@ -331,6 +377,7 @@ function handleEditorScroll(event: Event): void {
     return
   }
   scheduleEditorScrollAnchorCapture()
+  scheduleSourceScrollReport()
   if (userScrollIntentTimer !== undefined) {
     window.clearTimeout(userScrollIntentTimer)
   }
@@ -340,7 +387,13 @@ function handleEditorScroll(event: Event): void {
   }, 200)
 }
 
-function markEditorScrollIntent(): void {
+function markEditorScrollIntent(event?: Event): void {
+  if (event?.type === 'keydown') {
+    const key = (event as KeyboardEvent).key
+    if (!['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(key)) {
+      return
+    }
+  }
   userScrollIntent = true
   if (userScrollIntentTimer !== undefined) {
     window.clearTimeout(userScrollIntentTimer)
@@ -397,6 +450,7 @@ function observeEditorSize(editor: EditorView): void {
   document.addEventListener('touchstart', markEditorScrollIntent, { passive: true, capture: true })
   document.addEventListener('touchmove', markEditorScrollIntent, { passive: true, capture: true })
   document.addEventListener('wheel', markEditorScrollIntent, { passive: true, capture: true })
+  document.addEventListener('keydown', markEditorScrollIntent, { capture: true })
 }
 
 function reportCodeBlockSelection(state: EditorState): void {
@@ -576,6 +630,16 @@ function applyMarkdownFormat(kind: string): void {
 const api: MdEditorApi = {
   setContent(b64: string): void {
     workspaceScrollRestoreGeneration++
+    if (sourceScrollReportFrame !== 0) {
+      window.cancelAnimationFrame(sourceScrollReportFrame)
+      sourceScrollReportFrame = 0
+    }
+    sourceScrollReportForced = false
+    userScrollIntent = false
+    if (userScrollIntentTimer !== undefined) {
+      window.clearTimeout(userScrollIntentTimer)
+      userScrollIntentTimer = undefined
+    }
     const normalizedText = normalizeEditorText(b64decode(b64))
     documentLineEnding = normalizedText.lineEnding
     const text = normalizedText.text
@@ -646,6 +710,7 @@ const api: MdEditorApi = {
         const scrollElement = editorWorkspaceScrollContainer(editor.scrollDOM, documentScroller)
         workspaceScrollReportSuppressedUntil = Date.now() + 250
         scrollElement.scrollTop = clampWorkspaceScrollTop(scrollElement, target)
+        scheduleSourceScrollReport(true)
       })
     })
   },
@@ -673,6 +738,10 @@ const api: MdEditorApi = {
 
   setLineNumbers(show: boolean): void {
     setLineNumberVisibility(show)
+  },
+
+  reportVisibleSourceAnchor(): void {
+    scheduleSourceScrollReport(true)
   },
 
   setEditable(editable: boolean): void {

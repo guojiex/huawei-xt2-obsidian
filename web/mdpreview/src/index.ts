@@ -16,6 +16,7 @@
 
 import { marked } from 'marked'
 import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
+import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 
 declare global {
   interface Window {
@@ -37,6 +38,8 @@ interface MdPreviewApi {
   resetDocument(): void
   closeImageViewer(): void
   scrollToHeading(index: number): void
+  scrollToSourceLine(line: number, lineProgress: number, viewportRatio: number, atStart: boolean, atEnd: boolean): void
+  cancelSourceFollow(): void
   restoreScrollTop(top: number): void
   requestShareCaptureMetrics(id: number): void
   prepareShareCapturePages(id: number, pageCount: number): void
@@ -152,6 +155,7 @@ function closeImageViewer(): void {
 }
 
 function resetPreviewDocument(): void {
+  cancelSourceFollow()
   closeImageViewer()
   const content = document.getElementById('content') as HTMLElement
   workspaceScrollRestoreGeneration++
@@ -201,7 +205,10 @@ function updateImageBounds(): void {
   }
 }
 
-const contentResizeObserver = new ResizeObserver(updateImageBounds)
+const contentResizeObserver = new ResizeObserver((): void => {
+  updateImageBounds()
+  invalidateSourceGeometry()
+})
 const contentElement = document.getElementById('content') as HTMLElement
 contentResizeObserver.observe(contentElement)
 window.addEventListener('resize', updateImageBounds)
@@ -210,7 +217,183 @@ let workspaceScrollTimer: number | undefined = undefined
 let workspaceScrollRestorePending = false
 let workspaceScrollReportSuppressedUntil = 0
 let workspaceScrollRestoreGeneration = 0
+
+interface SourceBlockGeometry {
+  startLine: number
+  endLine: number
+  top: number
+  height: number
+}
+
+interface SourceFollowAnchor {
+  line: number
+  lineProgress: number
+  viewportRatio: number
+  atStart: boolean
+  atEnd: boolean
+}
+
+let sourceBlockGeometry: SourceBlockGeometry[] = []
+let sourceGeometryDirty = true
+let sourceFollowAnchor: SourceFollowAnchor | null = null
+let sourceFollowFrame = 0
+let sourceBlockResizeObserver: ResizeObserver | null = null
+let workspaceUserScrollIntent = false
+let workspaceUserScrollIntentReported = false
+let workspaceUserScrollIntentTimer: number | undefined = undefined
+
+function measureSourceBlocks(): void {
+  const rootRect = contentElement.getBoundingClientRect()
+  const wrappers = contentElement.querySelectorAll('.preview-source-block')
+  const measured: SourceBlockGeometry[] = []
+  for (let i = 0; i < wrappers.length; i++) {
+    const wrapper = wrappers[i] as HTMLElement
+    let top = Number.POSITIVE_INFINITY
+    let bottom = Number.NEGATIVE_INFINITY
+    for (let childIndex = 0; childIndex < wrapper.children.length; childIndex++) {
+      const child = wrapper.children[childIndex] as HTMLElement
+      const rect = child.getBoundingClientRect()
+      if (rect.height > 0) {
+        top = Math.min(top, rect.top)
+        bottom = Math.max(bottom, rect.bottom)
+      }
+    }
+    if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom <= top) {
+      continue
+    }
+    const startLine = Number(wrapper.dataset.sourceStartLine)
+    const endLine = Number(wrapper.dataset.sourceEndLine)
+    if (!Number.isFinite(startLine) || !Number.isFinite(endLine)) {
+      continue
+    }
+    measured.push({
+      startLine: startLine,
+      endLine: endLine,
+      top: top - rootRect.top + contentElement.scrollTop,
+      height: bottom - top
+    })
+  }
+  sourceBlockGeometry = measured
+  sourceGeometryDirty = false
+}
+
+function scheduleSourceFollow(): void {
+  if (sourceFollowAnchor === null || sourceFollowFrame !== 0) {
+    return
+  }
+  sourceFollowFrame = window.requestAnimationFrame((): void => {
+    sourceFollowFrame = 0
+    const anchor = sourceFollowAnchor
+    if (anchor === null) {
+      return
+    }
+    if (sourceGeometryDirty) {
+      measureSourceBlocks()
+    }
+    const maxTop = Math.max(0, contentElement.scrollHeight - contentElement.clientHeight)
+    const top = sourceScrollTop(sourceBlockGeometry, anchor.line, anchor.lineProgress, anchor.viewportRatio,
+      contentElement.clientHeight, maxTop, anchor.atStart, anchor.atEnd)
+    if (Math.abs(contentElement.scrollTop - top) <= 1) {
+      return
+    }
+    if (workspaceScrollTimer !== undefined) {
+      window.clearTimeout(workspaceScrollTimer)
+      workspaceScrollTimer = undefined
+    }
+    contentElement.scrollTop = top
+  })
+}
+
+function invalidateSourceGeometry(): void {
+  sourceGeometryDirty = true
+  scheduleSourceFollow()
+}
+
+function observeSourceBlocks(): void {
+  if (sourceBlockResizeObserver !== null) {
+    sourceBlockResizeObserver.disconnect()
+  }
+  sourceBlockResizeObserver = new ResizeObserver((): void => {
+    invalidateSourceGeometry()
+  })
+  const children = contentElement.querySelectorAll('.preview-source-block > *')
+  for (let i = 0; i < children.length; i++) {
+    sourceBlockResizeObserver.observe(children[i])
+  }
+  sourceGeometryDirty = true
+  scheduleSourceFollow()
+}
+
+function reportWorkspaceScrollIntent(): void {
+  if (workspaceUserScrollIntentReported) {
+    return
+  }
+  workspaceUserScrollIntentReported = true
+  sourceFollowAnchor = null
+  if (sourceFollowFrame !== 0) {
+    window.cancelAnimationFrame(sourceFollowFrame)
+    sourceFollowFrame = 0
+  }
+}
+
+function cancelSourceFollow(): void {
+  sourceFollowAnchor = null
+  if (sourceFollowFrame !== 0) {
+    window.cancelAnimationFrame(sourceFollowFrame)
+    sourceFollowFrame = 0
+  }
+  workspaceUserScrollIntent = false
+  workspaceUserScrollIntentReported = false
+  if (workspaceUserScrollIntentTimer !== undefined) {
+    window.clearTimeout(workspaceUserScrollIntentTimer)
+    workspaceUserScrollIntentTimer = undefined
+  }
+}
+
+function markWorkspaceScrollIntent(event: Event): void {
+  if (event.type === 'keydown') {
+    const key = (event as KeyboardEvent).key
+    if (!['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(key)) {
+      return
+    }
+  }
+  workspaceUserScrollIntent = true
+  workspaceUserScrollIntentReported = false
+  if (workspaceUserScrollIntentTimer !== undefined) {
+    window.clearTimeout(workspaceUserScrollIntentTimer)
+  }
+  workspaceUserScrollIntentTimer = window.setTimeout((): void => {
+    workspaceUserScrollIntent = false
+    workspaceUserScrollIntentReported = false
+    workspaceUserScrollIntentTimer = undefined
+  }, 500)
+}
+
+for (const type of ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'keydown']) {
+  contentElement.addEventListener(type, markWorkspaceScrollIntent, { passive: true, capture: true })
+}
+
+const sourceMutationObserver = new MutationObserver((records: MutationRecord[]): void => {
+  const sourceChildrenChanged: boolean = records.some((record: MutationRecord): boolean => {
+    if (record.type !== 'childList') {
+      return false
+    }
+    const target = record.target as Element
+    return target === contentElement || target.classList?.contains('preview-source-block') === true
+  })
+  if (sourceChildrenChanged) {
+    observeSourceBlocks()
+  } else {
+    invalidateSourceGeometry()
+  }
+})
+sourceMutationObserver.observe(contentElement, { childList: true, characterData: true, subtree: true })
+window.addEventListener('resize', invalidateSourceGeometry)
+
 contentElement.addEventListener('scroll', (): void => {
+  if (workspaceUserScrollIntent && !workspaceUserScrollIntentReported) {
+    reportWorkspaceScrollIntent()
+  }
   if (workspaceScrollTimer !== undefined) {
     window.clearTimeout(workspaceScrollTimer)
     workspaceScrollTimer = undefined
@@ -312,16 +495,23 @@ const api: MdPreviewApi = {
     }
     const split = splitFrontmatter(text)
     const tagsHtml = renderNoteTags(text)
-    const bodyHtml = split.body.trim().length === 0 ? '' : (marked.parse(split.body) as string)
+    const bodyOffset = text.substring(0, text.length - split.body.length).split('\n').length - 1
+    const renderedBody = split.body.trim().length === 0
+      ? { html: '', blocks: [] }
+      : renderMarkdownWithSourceBlocks(split.body, bodyOffset)
+    const bodyHtml = renderedBody.html
     if (tagsHtml.length === 0 && bodyHtml.length === 0) {
       mermaidRenderGeneration++
       mermaidRender = Promise.resolve()
       el.innerHTML = '<div class="empty">空笔记</div>'
+      sourceBlockGeometry = []
+      observeSourceBlocks()
       updateImageBounds()
       console.log('[mdpreview] setContent: empty')
       return
     }
     el.innerHTML = tagsHtml + bodyHtml
+    observeSourceBlocks()
     const headings = el.querySelectorAll('h1,h2,h3,h4,h5,h6')
     for (let i = 0; i < headings.length; i++) {
       headings[i].setAttribute('data-chapter-index', String(i))
@@ -352,6 +542,28 @@ const api: MdPreviewApi = {
   scrollToHeading(index: number): void {
     const heading = document.querySelector(`#content [data-chapter-index="${index}"]`)
     heading?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+  },
+
+  scrollToSourceLine(line: number, lineProgress: number, viewportRatio: number,
+    atStart: boolean, atEnd: boolean): void {
+    workspaceUserScrollIntent = false
+    workspaceUserScrollIntentReported = false
+    if (workspaceUserScrollIntentTimer !== undefined) {
+      window.clearTimeout(workspaceUserScrollIntentTimer)
+      workspaceUserScrollIntentTimer = undefined
+    }
+    sourceFollowAnchor = {
+      line: Number.isFinite(line) ? Math.max(1, Math.floor(line)) : 1,
+      lineProgress: Number.isFinite(lineProgress) ? Math.max(0, Math.min(1, lineProgress)) : 0,
+      viewportRatio: Number.isFinite(viewportRatio) ? Math.max(0, Math.min(1, viewportRatio)) : 0,
+      atStart: atStart,
+      atEnd: atEnd
+    }
+    scheduleSourceFollow()
+  },
+
+  cancelSourceFollow(): void {
+    cancelSourceFollow()
   },
 
   async restoreScrollTop(top: number): Promise<void> {

@@ -12,6 +12,7 @@ import { webview } from '@kit.ArkWeb';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BridgeCodec } from '../common/BridgeCodec';
 import { FontSize } from '../common/Tokens';
+import { PreviewFollowAnchor } from '../model/PreviewFollowPolicy';
 
 const EDITOR_DOMAIN = 0x0000;
 const EDITOR_TAG = 'EditorWebView';
@@ -149,6 +150,10 @@ class EditorImpl {
     this.enqueue(`window.__mdeditor.setLineNumbers(${show})`);
   }
 
+  reportVisibleSourceAnchor(): void {
+    this.enqueue('window.__mdeditor.reportVisibleSourceAnchor()');
+  }
+
   async setEditable(editable: boolean): Promise<void> {
     const script: string = `window.__mdeditor.setEditable(${editable})`;
     if (this.readyFlag) {
@@ -234,6 +239,10 @@ export class EditorBridge {
     this.impl?.setTheme(theme);
   }
 
+  reportVisibleSourceAnchor(): void {
+    this.impl?.reportVisibleSourceAnchor();
+  }
+
   async setEditable(editable: boolean): Promise<void> {
     await this.impl?.setEditable(editable);
   }
@@ -260,6 +269,8 @@ export struct EditorWebView {
   onCodeBlockStateChange: (active: boolean) => void = (active: boolean) => {};
   /** Web 编辑器视口滚动位置；只上报数字，不传递笔记内容。 */
   onScrollPositionChange: (top: number) => void = (top: number) => {};
+  /** 编辑器主动滚动时上报源码位置锚点，不传递正文。 */
+  onSourceScrollChange: (anchor: PreviewFollowAnchor) => void = (_anchor: PreviewFollowAnchor) => {};
   /** 页面就绪（首帧可交互） */
   onReady: () => void = () => {};
   /** Web 加载错误 */
@@ -353,6 +364,22 @@ export struct EditorWebView {
       this.onCodeBlockStateChange((msg['active'] as boolean) ?? false);
     } else if (name === 'scroll') {
       this.onScrollPositionChange((msg['top'] as number) ?? 0);
+    } else if (name === 'sourceScroll') {
+      const line: number = msg['line'] as number;
+      const lineProgress: number = msg['lineProgress'] as number;
+      const viewportRatio: number = msg['viewportRatio'] as number;
+      const atStart: boolean = msg['atStart'] as boolean;
+      const atEnd: boolean = msg['atEnd'] as boolean;
+      if (Number.isInteger(line) && line > 0 && Number.isFinite(lineProgress) &&
+        Number.isFinite(viewportRatio) && typeof atStart === 'boolean' && typeof atEnd === 'boolean') {
+        this.onSourceScrollChange({
+          line: line,
+          lineProgress: Math.max(0, Math.min(1, lineProgress)),
+          viewportRatio: Math.max(0, Math.min(1, viewportRatio)),
+          atStart: atStart,
+          atEnd: atEnd
+        });
+      }
     } else if (name === 'linkCompletion') {
       this.onLinkCompletion(msg['id'] as number, msg['query'] as string);
     }

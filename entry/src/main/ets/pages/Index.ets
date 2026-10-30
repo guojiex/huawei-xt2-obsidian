@@ -47,6 +47,7 @@ import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
+import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from '../model/PreviewFollowPolicy';
 import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
   DEFAULT_CONTENT_RATIO, clampContentRatio, clampNavigationWidth,
@@ -139,7 +140,7 @@ struct Index {
   /** sm 抽屉开关（瞬态 @State：UIAbility 折叠切换不重建则存活，api_notes A4 ✅） */
   @State drawerOpen: boolean = false;
   /** md/lg 侧栏收起态（瞬态 @State） */
-  @State sidebarCollapsed: boolean = false;
+  @State @Watch('onFormatContextChanged') sidebarCollapsed: boolean = false;
   /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
   @State @Watch('onFormatContextChanged') topView: string = 'note';
   @State vaultManagerReturnView: string = 'note';
@@ -207,6 +208,9 @@ struct Index {
   @State @Watch('onFormatContextChanged') rightFilePath: string = '';
   @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
   @State showLineNumbers: boolean = false;
+  @State followPreviewEnabled: boolean = true;
+  private previewFollowPairKey: string = '';
+  private previewFollowPane: string = '';
   @State @Watch('onFormatContextChanged') activePane: string = 'left';
   @State @Watch('onFormatContextChanged') referenceVisible: boolean = true;
   @State @Watch('onFormatContextChanged') focused: boolean = false;
@@ -329,6 +333,8 @@ struct Index {
     this.refreshFromRegistry();
     this.ensureEditorPreferenceStore();
     this.showLineNumbers = (this.editorPreferenceStore as EditorPreferenceStore).showLineNumbers();
+    this.followPreviewEnabled = (this.editorPreferenceStore as EditorPreferenceStore).followPreview();
+    this.synchronizePreviewFollowContext();
     this.ensureRecentOpenStore();
     this.ensureSplitLayoutStore();
     const splitState = (this.splitLayoutStore as SplitLayoutStore).load();
@@ -359,6 +365,68 @@ struct Index {
     this.showLineNumbers = show;
     this.ensureEditorPreferenceStore();
     (this.editorPreferenceStore as EditorPreferenceStore).saveShowLineNumbers(show);
+  }
+
+  private currentPreviewFollowPair(): PreviewFollowPair | null {
+    return resolvePreviewFollowPair({
+      topView: this.topView,
+      vaultId: this.currentVaultId,
+      leftPath: this.currentFilePath,
+      rightPath: this.rightFilePath,
+      leftEditing: this.smMode === 'edit',
+      rightEditing: this.rightEditing,
+      bothPanesVisible: !this.isSingleScreenLayout() && this.isReferenceShown()
+    });
+  }
+
+  private previewBridgeForPane(pane: string): PreviewBridge {
+    return pane === 'right' ? this.rightPreviewBridge : this.previewBridge;
+  }
+
+  private editorBridgeForPane(pane: string): EditorBridge {
+    return pane === 'right' ? this.rightEditorBridge : this.editorBridge;
+  }
+
+  private synchronizePreviewFollowContext(): PreviewFollowPair | null {
+    const pair: PreviewFollowPair | null = this.currentPreviewFollowPair();
+    if (!this.followPreviewEnabled || pair === null) {
+      if (this.previewFollowPane.length > 0) {
+        this.previewBridgeForPane(this.previewFollowPane).cancelSourceFollow();
+      }
+      this.previewFollowPairKey = '';
+      this.previewFollowPane = '';
+      return null;
+    }
+    if (pair.key !== this.previewFollowPairKey) {
+      if (this.previewFollowPane.length > 0) {
+        this.previewBridgeForPane(this.previewFollowPane).cancelSourceFollow();
+      }
+      this.previewBridgeForPane(pair.previewPane).cancelSourceFollow();
+      this.previewFollowPairKey = pair.key;
+      this.previewFollowPane = pair.previewPane;
+      this.editorBridgeForPane(pair.sourcePane).reportVisibleSourceAnchor();
+    }
+    return pair;
+  }
+
+  private handlePreviewFollowSourceScroll(pane: string, anchor: PreviewFollowAnchor): void {
+    const pair: PreviewFollowPair | null = this.synchronizePreviewFollowContext();
+    if (pair === null || pair.sourcePane !== pane) {
+      return;
+    }
+    this.previewBridgeForPane(pair.previewPane).scrollToSourceLine(anchor);
+  }
+
+  private setPreviewFollowEnabled(enabled: boolean): void {
+    this.followPreviewEnabled = enabled;
+    this.ensureEditorPreferenceStore();
+    (this.editorPreferenceStore as EditorPreferenceStore).saveFollowPreview(enabled);
+    this.synchronizePreviewFollowContext();
+  }
+
+  private shouldShowPreviewFollowToggle(pane: string): boolean {
+    const pair: PreviewFollowPair | null = this.currentPreviewFollowPair();
+    return pair !== null && pair.previewPane === pane;
   }
 
   private ensureWorkspaceSessionStore(): void {
@@ -808,6 +876,7 @@ struct Index {
       this.setDrawerOpen(false);
     }
     this.syncNavigationForBreakpoint();
+    this.synchronizePreviewFollowContext();
     if (this.topView === 'note' && this.currentFilePath.length > 0) {
       void this.refreshAfterBreakpointChange(this.currentFilePath, this.currentVaultId);
     }
@@ -1279,6 +1348,7 @@ struct Index {
     if (this.topView !== 'note') {
       this.resetSaveFeedback();
     }
+    this.synchronizePreviewFollowContext();
     if (this.formatMenuOpen) {
       this.updateFormatPopupLayout(this.formatMenuPane);
     }
@@ -3377,6 +3447,22 @@ struct Index {
   @Builder
   PaneMoreMenu(pane: string) {
     Column() {
+      if (this.shouldShowPreviewFollowToggle(pane)) {
+        Row() {
+          Text('跟随编辑：' + (this.followPreviewEnabled ? '开' : '关'))
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .focusable(true)
+        .onClick((): void => {
+          this.paneMoreOpen = false;
+          this.setPreviewFollowEnabled(!this.followPreviewEnabled);
+        })
+      }
       if (this.paneFilePath(pane).length > 0) {
         Row() {
           Text('在另一栏预览')
@@ -4473,6 +4559,9 @@ struct Index {
             onScrollPositionChange: (top: number): void => {
               this.updateWorkspaceScroll('right', 'edit', top);
             },
+            onSourceScrollChange: (anchor: PreviewFollowAnchor): void => {
+              this.handlePreviewFollowSourceScroll('right', anchor);
+            },
             onCompositionChange: (composing: boolean): void => {
               this.onRightCompositionChange(composing);
             },
@@ -4565,6 +4654,9 @@ struct Index {
           },
           onScrollPositionChange: (top: number): void => {
             this.updateWorkspaceScroll('left', 'edit', top);
+          },
+          onSourceScrollChange: (anchor: PreviewFollowAnchor): void => {
+            this.handlePreviewFollowSourceScroll('left', anchor);
           },
           onCompositionChange: (composing: boolean): void => {
             this.onLeftCompositionChange(composing);

@@ -67,6 +67,7 @@ const html = `<!doctype html>
     font-family: var(--font);
     word-break: break-word;
   }
+  .preview-source-block { display: contents; }
   #content h1 { font-size: var(--heading); margin: var(--s3) 0 var(--s4); font-weight: 650; letter-spacing: -.035em; line-height: 1.35; }
   #content .note-tags { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s4); font-size: var(--caption); }
   #content .note-tag { display: inline-block; padding: 0 var(--s2); border-radius: var(--pill); background: var(--blue-soft); color: var(--blue); font-size: var(--small); overflow-wrap: anywhere; }

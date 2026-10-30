@@ -24,6 +24,7 @@ function extractBlock(startText) {
 }
 
 const resetDocument = extractBlock('function resetPreviewDocument(): void {')
+const cancelSourceFollow = extractBlock('function cancelSourceFollow(): void {')
 const restoreMethod = extractBlock('  async restoreScrollTop(top: number): Promise<void> {')
   .replace(/^  async restoreScrollTop/, '  async restoreScrollTop')
 const code = transformSync(`
@@ -31,20 +32,28 @@ const code = transformSync(`
   let workspaceScrollRestorePending = false;
   let workspaceScrollReportSuppressedUntil = 0;
   let workspaceScrollRestoreGeneration = 0;
+  let sourceFollowAnchor = { line: 8 };
+  let sourceFollowFrame = 1;
+  let workspaceUserScrollIntent = true;
+  let workspaceUserScrollIntentReported = true;
+  let workspaceUserScrollIntentTimer = 7;
   let mermaidRender = Promise.resolve();
   const timers = [];
   const imageWaiters = [];
   const content = { scrollTop: 0, scrollHeight: 1200, clientHeight: 240 };
-  const window = { clearTimeout() {}, setTimeout(callback) { timers.push(callback); } };
+  const window = { clearTimeout() {}, cancelAnimationFrame() {}, setTimeout(callback) { timers.push(callback); } };
   const document = { getElementById() { return content; } };
   function closeImageViewer() {}
   async function waitForLocalImages() {
     return new Promise(resolve => imageWaiters.push(resolve));
   }
   function nextRenderedFrame() { return Promise.resolve(); }
+  ${cancelSourceFollow}
   ${resetDocument}
   const api = { ${restoreMethod} };
-  module.exports = { api, content, imageWaiters, resetPreviewDocument };
+  module.exports = { api, content, imageWaiters, resetPreviewDocument,
+    getFollowState: () => ({ sourceFollowAnchor, sourceFollowFrame, workspaceUserScrollIntent,
+      workspaceUserScrollIntentReported, workspaceUserScrollIntentTimer }) };
 `, { loader: 'ts', format: 'cjs' }).code
 
 function fixture() {
@@ -59,12 +68,18 @@ async function letImagesWaitStart() {
 }
 
 test('a pending restore cannot move the preview after a document reset and newer restore', async () => {
-  const { api, content, imageWaiters, resetPreviewDocument } = fixture()
+  const { api, content, imageWaiters, resetPreviewDocument, getFollowState } = fixture()
   const staleRestore = api.restoreScrollTop(720)
   await letImagesWaitStart()
   assert.equal(imageWaiters.length, 1)
 
   resetPreviewDocument()
+  const followState = getFollowState()
+  assert.equal(followState.sourceFollowAnchor, null)
+  assert.equal(followState.sourceFollowFrame, 0)
+  assert.equal(followState.workspaceUserScrollIntent, false)
+  assert.equal(followState.workspaceUserScrollIntentReported, false)
+  assert.equal(followState.workspaceUserScrollIntentTimer, undefined)
   const currentRestore = api.restoreScrollTop(180)
   await letImagesWaitStart()
   assert.equal(imageWaiters.length, 2)
