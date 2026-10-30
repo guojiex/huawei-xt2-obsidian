@@ -126,6 +126,7 @@ docs/harmonyos/
 
 | # | 问题 | 卡住什么 | 状态 |
 | --- | --- | --- | --- |
+| T-1 | API24 普通 Stage 应用能否读取系统“减少动态效果”偏好？ArkUI `.animation` 与 ArkWeb CSS `prefers-reduced-motion` 是否自动遵循？ | v0.10 10.7 | ❓ 待问；[核实提示词](prompts/2026-10-31_API24_系统减少动态效果与ArkUI动画核实.md)，旧缩放常量不可用，见 [api_notes T1](api_notes.md#t1) |
 | ~~A-3~~ | ~~除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案~~ | ~~若有，可省掉自绘 + 真机校准~~ | ✅ **已答**（2026-10-17 折痕追问 Q4）：**没有**。官方立场是「布局适配优先基于响应式断点」，`FoldSplitContainer` 只有 `PresetSplitRatio` 三档预设且不对齐折痕 → **自绘等分是官方认可路线**，不必再找 |
 | **C1-API26** | API 26 模拟器 clone 写 `.git/config` 时 `AtomicFile` 返回流的 `WriteStream.write(Uint8Array, ...)` 报 13900020 | v0.3 clone | 🟡 实时 hilog 记录 `Illegal write buffer or encoding` / `Failed to resolve buf and options`；旧 `startWrite failed` UI 标签由共享 `try/catch` 误标，分阶段捕获后定位到 `WriteStream.write()` 参数解析路径。`utf8`、不传 encoding、复制字节数组仍复现；具体原因未知，只在 API 26 模拟器实测，API 24 / XT2 未测试。见 [`api_notes.md`](api_notes.md)、[v0.3 §6](../releases/v0.3/需求文档.md) 与[更新后的追问提示词](prompts/2026-10-22_API26_AtomicFile_clone_.git_config.md) |
 | ~~B-1~~ | ~~`onInterceptRequest` 能否拿到 POST body~~ | ~~同步层能否简化为拦截~~ | ✅ **已解决**：能拿到但是 `string`，**拦截方案否决**，转发为最终方案 |

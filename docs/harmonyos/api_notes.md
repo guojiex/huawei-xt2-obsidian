@@ -1471,3 +1471,17 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 本机 `@ohos.net.http.d.ts` 的 `HttpRequestOptions.caPath` 从 API10 起可用；不设置时，SDK 声明网络栈使用系统预设 CA，并给出 `/etc/ssl/certs/cacert.pem` 路径。Native libgit2 在 HTTPS 操作前把此路径交给 libgit2/mbedTLS，`caFile` 仅作可选覆盖。API26 模拟器公开 GitHub HTTPS clone 通过；这是 Native 对系统 CA 路径的设备证据，不等同于 API24 / XT2 验收或服务商 HTTPS 认证。
 
 2026-10-31：Native 模块已编入主 App 与 `ohosTest` HAP；API26 模拟器 `Git2Native` Hypium 9/9，包括 Native 模块加载、隔离认证、`xt2` 分支、进度、clone 字节哈希、stage/commit/fetch/push、失败清理、索引写失败保护、`.trash` 排除和非快进拒绝。当前实现没有调用 checkout，也未实现 pull：libgit2 不承诺 checkout 多文件写入/删除的整体原子性或失败/中断整库回滚；`AtomicFile` 不能包裹其原生写入。API24 / XT2、生产 App 页面端到端、AssetStoreKit 真机读令牌和真实服务商 HTTPS 认证仍待验。详见 [v0.3 验收记录](../releases/v0.3/需求文档.md#6-验收记录)。
+
+## T 组：系统减少动态效果与原生动画响应
+
+### T1
+
+**❌ `ANIMATOR_DURATION_SCALE` 不支持使用；❓ API24 系统减动效偏好读取方式未确认**
+
+本机 DevEco Studio 26.0.0.851 随附 API 26 SDK 的 `openharmony/ets/api/@ohos.settings.d.ts` 声明 `settings.display.ANIMATOR_DURATION_SCALE` 为 `@since 7`、`@deprecated since 21`，描述动画时长缩放比例；但同一 SDK 随附的 Settings API 参考在该常量条目明确标注“该常量不支持使用”。所以“声明存在”不能作为应用可读取或可依赖的证据，也不能把它推断为无障碍“减少动态效果”偏好。`TRANSITION_ANIMATION_SCALE` 与 `WINDOW_ANIMATION_SCALE` 在该参考中同样标注不支持使用，不作为替代。
+
+本机证据定位：`/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/ets/api/@ohos.settings.d.ts` 204–214 行；随附参考 `/Applications/DevEco-Studio.app/Contents/plugins/openharmony/ohos-info-center-view/static/hos/JsEtsAPIReference/zh-cn_topic_0000002666413442.html` 175–179 行。
+
+该 SDK 对 `settings.display.ACCESSIBILITY_STATUS` 的说明只是“是否启用任一无障碍功能”，`ACTIVATED_ACCESSIBILITY_SERVICES` 是已启用服务列表；两者都不表示减少动态效果偏好。对本机 API 26 `openharmony/ets/api/*.d.ts` 的检索未找到公开的 `reduceMotion` / `reducedMotion` API。官方开发者文档检索也未找到 API24 普通应用读取该偏好的直接说明；这属于本次检索范围内的缺失证据，不证明系统内部不存在其他未公开机制。
+
+目前未确认 API24 普通 Stage 应用读取系统减少动态效果偏好的受支持接口，也未确认 ArkUI `.animation` 是否自动遵循该设置，或 ArkWeb 的 CSS `prefers-reduced-motion` 是否会反映 HarmonyOS 系统偏好。不得用已标注不支持的缩放常量、整体无障碍开关或 Android 行为替代。v0.10 10.7 暂不接线，待官方核实或 API24 / XT2 正常 UI 实测；本机 SDK 声明和浏览器原型均不构成设备行为证明。
