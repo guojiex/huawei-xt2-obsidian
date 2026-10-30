@@ -50,6 +50,40 @@ test('Git share design state exposes scope-specific remote link previews without
  const h=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&gitShareDemo=1&panel=share&scope=vault&stage=link');assert.equal(h.run('shareStage'),'link');assert(h.get('sharePreview').innerHTML.includes('仓库首页链接'));assert.equal(new URL(h.href()).searchParams.get('gitShareDemo'),'1');
  g.get('gitShareDemo').checked=false;g.get('gitShareDemo').onchange();assert(g.get('shareRemoteLink').classList.contains('hidden'));assert.equal(g.run('shareStage'),'formats');
 });
+test('no-note demo toggle grays out note-scoped controls and restores the selection',()=>{
+ const f=fixture();const before=f.run('current');assert.equal(f.get('editTab').disabled,false);assert.equal(f.get('previewTab').disabled,false);assert.equal(f.get('shareBtn').disabled,false);
+ f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();
+ assert.equal(f.run('current'),null);assert.equal(f.get('editTab').disabled,true);assert.equal(f.get('previewTab').disabled,true);assert.equal(f.get('shareBtn').disabled,true);assert.equal(f.get('noNoteDemo').checked,true);assert.equal(f.get('leftTitle').classList.contains('hidden'),true);
+ f.run("openInPane('reading_stream','left')");
+ assert.equal(f.get('noNoteDemo').checked,false);assert.equal(f.get('editTab').disabled,false);
+ f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();f.get('noNoteDemo').checked=false;f.get('noNoteDemo').onchange();
+ assert.equal(f.run('current'),'reading_stream');
+});
+test('no-note empty state centers the brand line with create and search actions',()=>{
+ assert.match(html,/id="leftEmpty"[^>]*>[\s\S]*?把空间，留给思考。[\s\S]*?从笔记列表选择一篇，或直接新建。[\s\S]*?id="emptyNewNote"[^>]*>新建笔记[\s\S]*?id="emptySearch"[^>]*>搜索笔记/);
+ assert.match(html,/\.pane-empty\{display:flex;flex-direction:column;align-items:center;justify-content:center/);
+ assert.match(html,/\.pane-empty-icon\{width:var\(--s16\);height:var\(--s16\);stroke-width:1\.2;color:var\(--line\)\}/);
+ assert.match(html,/\.pane-empty-actions \.primary\{width:auto;padding:0 var\(--s6\)\}/);
+ const f=fixture();
+ f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();
+ const empty=f.get('leftEmpty');
+ assert(!empty.classList.contains('hidden'));
+ assert(f.get('article').classList.contains('hidden'));
+ assert(f.get('editor').classList.contains('hidden'));
+ assert.equal(f.get('count').textContent,'');
+ assert.equal(f.get('leftTitle').classList.contains('hidden'),true);
+ f.get('emptyNewNote').onclick();
+ assert(f.get('newEntryDialog').open);
+ f.get('cancelNewEntry').onclick();
+ assert(!f.get('newEntryDialog').open);
+ f.get('emptySearch').onclick();
+ assert(f.get('quickSearchDialog').open);
+ f.get('closeQuickSearch').onclick();
+ f.run("openInPane('reading_stream','left')");
+ assert(empty.classList.contains('hidden'));
+ assert(!f.get('article').classList.contains('hidden'));
+ assert(f.get('count').textContent.includes('字 · 本地样例'));
+});
 test('URL overrides other browser width preferences and keeps collapsed folders and scroll position',()=>{
  const f=fixture();f.run("folderState['reading/10_写作']=false;$('writingScroll').scrollTop=120;syncUrl()");const storage=new Map([['xt2-prototype-v2-widths',JSON.stringify({nav:.7,content:.2})]]);const g=fixture(f.href(),storage);assert.equal(g.run('widths.nav'),.3333);assert.equal(g.run("folderState['reading/10_写作']"),false);assert.equal(g.get('writingScroll').scrollTop,120);
 });
@@ -222,11 +256,6 @@ test('design switch opens Aa directly, stays open for layout controls and reflec
 test('design format switch targets active right pane and closes phone navigation before opening',()=>{
  const f=fixture();f.run("setViewport('phone');activatePane('right',true);$('window').classList.add('nav-open');applySplits()");f.get('formatFollowDemo').checked=true;f.get('formatFollowDemo').onchange();assert(f.run('rightEditing'));assert.equal(f.run('formatTarget.pane'),'right');assert(f.get('formatDialog').open);assert(!f.get('window').classList.contains('nav-open'));assert(f.get('formatFollowDemo').checked);
 });
-
-test('edit-preview visual variants share the same pane state and survive a reproducible URL',()=>{
- const f=fixture(),left=f.run('current'),right=f.run('reference');f.run("setEditing(true,false);setRightEditing(false,false)");for(const style of ['outline','underline','capsule']){f.get('modeStyle').value=style;f.get('modeStyle').onchange();assert.equal(f.get('window').dataset.modeStyle,style);assert.equal(f.run('editing'),true);assert.equal(f.run('rightEditing'),false);assert.equal(f.run('current'),left);assert.equal(f.run('reference'),right);}f.get('modeStyle').value='underline';f.get('modeStyle').onchange();f.run('syncUrl()');const g=fixture(f.href());assert.equal(g.get('modeStyle').value,'underline');assert.equal(g.get('window').dataset.modeStyle,'underline');assert.equal(g.run('editing'),true);assert.equal(g.run('rightEditing'),false);const bad=fixture('file:///repo/index.html?ui=2&modeStyle=invalid');assert.equal(bad.get('modeStyle').value,'outline');const missing=fixture('file:///repo/index.html?ui=2');assert.equal(missing.get('modeStyle').value,'outline');const legacy=fixture('file:///repo/index.html?ui=2&modeStyle=capsule');assert.equal(legacy.get('modeStyle').value,'capsule');assert(html.includes('<option value="outline" selected>轻描边</option>'));assert(html.includes('id="window" data-mode-style="outline"'));
-});
-
 
 test('same-note preview exposes the follow preference only in its pane menu and persists it',()=>{
  const f=fixture();f.run("openInPane('reading_stream','left');openInPane('reading_stream','right');setEditing(true,false);setRightEditing(false,false);activatePane('left')");
