@@ -49,6 +49,7 @@ function createHarness(options = {}) {
         }
       }
     },
+    WorkspaceEditGuard: { mark() {}, clear() {} },
     shouldShowSaveFeedback(value) {
       return value.contentReadSucceeded && value.writeSucceeded && value.feedbackEnabled &&
         value.saveRevisionCurrent && value.noteViewActive && value.targetCurrent;

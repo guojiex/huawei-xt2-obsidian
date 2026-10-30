@@ -49,6 +49,7 @@ function createHarness() {
     VaultRegistry: { get: () => ({}) },
     WikiLinkService: { files: () => [] },
     WikiLinkParser: { renderForPreview: (text) => text },
+    WorkspaceEditGuard: { mark() {}, clear() {} },
     hilog: { warn() {} }
   });
   vm.runInContext(code, context);

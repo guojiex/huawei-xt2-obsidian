@@ -1579,6 +1579,7 @@ struct Index {
         return false;
       }
     }
+    WorkspaceEditGuard.clear('left', this.currentVaultId, relPath);
     if (!this.workspaceSessionRestoring && this.committedLeftPath !== relPath) {
       this.leftEditorScrollTop = 0;
       this.leftPreviewScrollTop = 0;
