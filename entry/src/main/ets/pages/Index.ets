@@ -345,6 +345,34 @@ struct Index {
     return clampContentRatio(this.contentRatio, this.noteContentWidth());
   }
 
+  private notePaneWidth(pane: string): Length {
+    if (this.breakpoint === Breakpoint.SM || this.focused) {
+      return this.activePane === pane ? '100%' : 0;
+    }
+    if (this.breakpoint === Breakpoint.MD) {
+      const showReferencePane: boolean = this.sidebarCollapsed && this.referenceVisible;
+      if (pane === 'right') {
+        return showReferencePane ? '50%' : 0;
+      }
+      return showReferencePane ? '50%' : '100%';
+    }
+    if (pane === 'right') {
+      return this.referenceVisible ? this.noteContentWidth() * (1 - this.noteContentRatio()) : 0;
+    }
+    return this.referenceVisible
+      ? this.noteContentWidth() * this.noteContentRatio() : '100%';
+  }
+
+  private notePaneVisible(pane: string): boolean {
+    if (this.breakpoint === Breakpoint.SM || this.focused) {
+      return this.activePane === pane;
+    }
+    if (this.breakpoint === Breakpoint.MD) {
+      return pane === 'left' || (this.sidebarCollapsed && this.referenceVisible);
+    }
+    return pane === 'left' || this.referenceVisible;
+  }
+
   private startNavigationDrag(agent: boolean): void {
     this.splitDragging = true;
     this.navigationDragStart = agent ? this.agentNavigationWidth() : this.noteNavigationWidth();
@@ -3009,79 +3037,76 @@ struct Index {
   }
 
   @Builder
+  NoteWorkspaceContent() {
+    Column() {
+      this.Appbar()
+      Stack({ alignContent: Alignment.BottomStart }) {
+        this.NoteBody()
+        this.SaveFeedback()
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .onAreaChange((oldArea: Area, newArea: Area): void => {
+        this.recordSaveFeedbackWorkspaceArea(newArea);
+      })
+      this.Statusbar()
+    }
+    .layoutWeight(1)
+    .height('100%')
+    .backgroundColor($r('app.color.bg_card'))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
   NoteWorkspaceShell() {
     Stack({ alignContent: Alignment.Bottom }) {
-      if (this.breakpoint === Breakpoint.SM) {
+      Row() {
         Column() {
-          this.Appbar()
-          Stack({ alignContent: Alignment.BottomStart }) {
-            this.NoteBody()
-            this.SaveFeedback()
+          if (this.breakpoint !== Breakpoint.SM) {
+            this.NoteNavigation(false)
           }
-          .layoutWeight(1)
-          .width('100%')
-          .onAreaChange((oldArea: Area, newArea: Area): void => {
-            this.recordSaveFeedbackWorkspaceArea(newArea);
-          })
-          this.Statusbar()
         }
-        .width('100%')
+        .width(this.breakpoint === Breakpoint.SM || this.sidebarCollapsed || this.focused
+          ? 0 : this.noteNavigationWidth())
         .height('100%')
-        .backgroundColor($r('app.color.bg_card'))
+        .backgroundColor($r('app.color.bg_navigation'))
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-        .visibility(this.drawerOpen ? Visibility.Hidden : Visibility.Visible)
+        .visibility(this.breakpoint === Breakpoint.SM || this.sidebarCollapsed || this.focused
+          ? Visibility.Hidden : Visibility.Visible)
 
+        SplitHandle({
+          dragStarted: (): void => { this.startNavigationDrag(false); },
+          dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
+          dragEnded: (): void => { this.endSplitDrag(); },
+          resetRequested: (): void => { this.resetSplitLayout(); }
+        })
+          .width(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused ? Space.s4 : 0)
+          .margin(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused
+            ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
+          .enabled(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused)
+          .visibility(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused
+            ? Visibility.Visible : Visibility.Hidden)
+
+        Column() {
+          this.NoteWorkspaceContent()
+        }
+        .layoutWeight(1)
+        .height('100%')
+        .visibility(this.breakpoint === Breakpoint.SM && this.drawerOpen
+          ? Visibility.Hidden : Visibility.Visible)
+      }
+      .width('100%')
+      .height('100%')
+
+      if (this.breakpoint === Breakpoint.SM) {
         Column() {
           this.NoteNavigation(true)
         }
-          .width('100%')
-          .height('100%')
-          .backgroundColor($r('app.color.bg_navigation'))
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-          .visibility(this.drawerOpen ? Visibility.Visible : Visibility.Hidden)
-      } else {
-        Row() {
-          Column() {
-            this.NoteNavigation(false)
-          }
-          .width(this.sidebarCollapsed || this.focused ? 0 : this.noteNavigationWidth())
-          .height('100%')
-          .backgroundColor($r('app.color.bg_navigation'))
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-          .visibility(this.sidebarCollapsed || this.focused ? Visibility.Hidden : Visibility.Visible)
-
-          if (!this.sidebarCollapsed && !this.focused) {
-            SplitHandle({
-              dragStarted: (): void => { this.startNavigationDrag(false); },
-              dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
-              dragEnded: (): void => { this.endSplitDrag(); },
-              resetRequested: (): void => { this.resetSplitLayout(); }
-            })
-              .width(Space.s4)
-              .margin({ left: -Space.s2, right: -Space.s2 })
-              .enabled(!this.focused)
-          }
-
-          Column() {
-            this.Appbar()
-            Stack({ alignContent: Alignment.BottomStart }) {
-              this.NoteBody()
-              this.SaveFeedback()
-            }
-            .layoutWeight(1)
-            .width('100%')
-            .onAreaChange((oldArea: Area, newArea: Area): void => {
-              this.recordSaveFeedbackWorkspaceArea(newArea);
-            })
-            this.Statusbar()
-          }
-          .layoutWeight(1)
-          .height('100%')
-          .backgroundColor($r('app.color.bg_card'))
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-        }
         .width('100%')
         .height('100%')
+        .backgroundColor($r('app.color.bg_navigation'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+        .visibility(this.drawerOpen ? Visibility.Visible : Visibility.Hidden)
       }
 
       if (this.undoVisible) {
@@ -3096,88 +3121,36 @@ struct Index {
 
   @Builder
   NoteBody() {
-    if (this.breakpoint === Breakpoint.SM) {
-      Stack({ alignContent: Alignment.Start }) {
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
-
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
+    Row() {
+      Column() {
+        this.LeftWorkspacePane(false)
       }
-      .width('100%')
+      .width(this.notePaneWidth('left'))
       .height('100%')
-    } else if (this.focused) {
-      Stack({ alignContent: Alignment.Start }) {
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
+      .visibility(this.notePaneVisible('left') ? Visibility.Visible : Visibility.Hidden)
 
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
+      SplitHandle({
+        dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
+        dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
+        dragEnded: (): void => { this.endSplitDrag(); },
+        resetRequested: (): void => { this.resetSplitLayout(); }
+      })
+        .width(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible ? Space.s4 : 0)
+        .margin(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
+          ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
+        .enabled(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible)
+        .visibility(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
+          ? Visibility.Visible : Visibility.Hidden)
+
+      Column() {
+        this.RightWorkspacePane()
       }
-      .width('100%')
+      .width(this.notePaneWidth('right'))
       .height('100%')
-    } else if (this.breakpoint === Breakpoint.MD) {
-      Row() {
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width(this.sidebarCollapsed && this.referenceVisible ? '50%' : '100%')
-        .height('100%')
-
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width(this.sidebarCollapsed && this.referenceVisible ? '50%' : 0)
-        .height('100%')
-        .visibility(this.sidebarCollapsed && this.referenceVisible ? Visibility.Visible : Visibility.Hidden)
-      }
-      .width('100%')
-      .height('100%')
-    } else {
-      Row() {
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width(this.referenceVisible ? this.noteContentWidth() * this.noteContentRatio() : '100%')
-        .height('100%')
-
-        if (this.referenceVisible) {
-          SplitHandle({
-            dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
-            dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
-            dragEnded: (): void => { this.endSplitDrag(); },
-            resetRequested: (): void => { this.resetSplitLayout(); }
-          })
-            .width(Space.s4)
-            .margin({ left: -Space.s2, right: -Space.s2 })
-        }
-
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width(this.referenceVisible ? this.noteContentWidth() * (1 - this.noteContentRatio()) : 0)
-        .height('100%')
-        .visibility(this.referenceVisible ? Visibility.Visible : Visibility.Hidden)
-      }
-      .width('100%')
-      .height('100%')
+      .visibility(this.notePaneVisible('right') ? Visibility.Visible : Visibility.Hidden)
     }
+    .width('100%')
+    .height('100%')
   }
 
   build() {
