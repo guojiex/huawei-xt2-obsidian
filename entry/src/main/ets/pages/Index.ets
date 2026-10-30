@@ -696,13 +696,22 @@ struct Index {
     return navigationWidth(this.windowWidthVp, ratio, contentPanes, 0);
   }
 
+  private drawerNavigationWidth(): number {
+    return Math.min(Size.drawerW, this.windowWidthVp);
+  }
+
   private agentNavigationWidth(): number {
     return navigationWidth(this.windowWidthVp, this.navigationRatio, 1, 1);
   }
 
   private noteContentWidth(): number {
-    const navWidth: number = this.noteNavigationWidth() * this.sidebarProgress;
+    const progress: number = this.focused ? 0 : this.sidebarProgress;
+    const navWidth: number = this.noteNavigationWidth() * progress;
     return Math.max(0, this.windowWidthVp - navWidth);
+  }
+
+  private noteNavigationProgress(): number {
+    return this.focused ? 0 : this.sidebarProgress;
   }
 
   private noteContentRatio(): number {
@@ -710,15 +719,16 @@ struct Index {
   }
 
   private notePaneWidth(pane: string): Length {
-    if (this.breakpoint === Breakpoint.SM || this.focused) {
+    if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane ? '100%' : 0;
     }
     if (this.breakpoint === Breakpoint.MD) {
-      const showReferencePane: boolean = this.sidebarCollapsed && this.referenceVisible;
+      const rightWidth: number = this.referenceVisible
+        ? this.windowWidthVp * 0.5 * (1 - this.sidebarProgress) : 0;
       if (pane === 'right') {
-        return showReferencePane ? '50%' : 0;
+        return rightWidth;
       }
-      return showReferencePane ? '50%' : '100%';
+      return this.referenceVisible ? this.noteContentWidth() - rightWidth : this.noteContentWidth();
     }
     if (pane === 'right') {
       return this.referenceVisible ? this.noteContentWidth() * (1 - this.noteContentRatio()) : 0;
@@ -728,11 +738,11 @@ struct Index {
   }
 
   private notePaneVisible(pane: string): boolean {
-    if (this.breakpoint === Breakpoint.SM || this.focused) {
+    if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane;
     }
     if (this.breakpoint === Breakpoint.MD) {
-      return pane === 'left' || (this.sidebarCollapsed && this.referenceVisible);
+      return pane === 'left' || this.referenceVisible;
     }
     return pane === 'left' || this.referenceVisible;
   }
@@ -3627,53 +3637,67 @@ struct Index {
   @Builder
   NoteWorkspaceShell() {
     Stack({ alignContent: Alignment.Bottom }) {
-      Row() {
-        Column() {
-          if (this.breakpoint !== Breakpoint.SM) {
-            this.NoteNavigation(false)
+      if (this.isSingleScreenLayout()) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          Column() {
+            this.NoteNavigation(this.breakpoint === Breakpoint.SM)
           }
-        }
-        .width(this.breakpoint === Breakpoint.SM || this.sidebarCollapsed || this.focused
-          ? 0 : this.noteNavigationWidth())
-        .height('100%')
-        .backgroundColor($r('app.color.bg_navigation'))
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-        .visibility(this.breakpoint === Breakpoint.SM || this.sidebarCollapsed || this.focused
-          ? Visibility.Hidden : Visibility.Visible)
+          .width(this.drawerNavigationWidth())
+          .height('100%')
+          .backgroundColor($r('app.color.bg_navigation'))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+          .translate({ x: -this.drawerNavigationWidth() *
+            (1 - (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress())) })
+          .enabled(this.breakpoint === Breakpoint.SM ? this.drawerOpen : !this.sidebarCollapsed)
+          .animation({ duration: Motion.durNav, curve: Motion.navCurve })
 
-        SplitHandle({
-          dragStarted: (): void => { this.startNavigationDrag(false); },
-          dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
-          dragEnded: (): void => { this.endSplitDrag(); },
-          resetRequested: (): void => { this.resetSplitLayout(); }
-        })
-          .width(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused ? Space.s4 : 0)
-          .margin(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused
-            ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
-          .enabled(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused)
-          .visibility(this.breakpoint !== Breakpoint.SM && !this.sidebarCollapsed && !this.focused
-            ? Visibility.Visible : Visibility.Hidden)
-
-        Column() {
-          this.NoteWorkspaceContent()
-        }
-        .layoutWeight(1)
-        .height('100%')
-        .visibility(this.breakpoint === Breakpoint.SM && this.drawerOpen
-          ? Visibility.Hidden : Visibility.Visible)
-      }
-      .width('100%')
-      .height('100%')
-
-      if (this.breakpoint === Breakpoint.SM) {
-        Column() {
-          this.NoteNavigation(true)
+          Column() {
+            this.NoteWorkspaceContent()
+          }
+          .width('100%')
+          .height('100%')
+          .translate({ x: this.drawerNavigationWidth() *
+            (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress()) })
+          .animation({ duration: Motion.durNav, curve: Motion.navCurve })
         }
         .width('100%')
         .height('100%')
-        .backgroundColor($r('app.color.bg_navigation'))
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-        .visibility(this.drawerOpen ? Visibility.Visible : Visibility.Hidden)
+        .clip(true)
+      } else {
+        Row() {
+          Column() {
+            this.NoteNavigation(false)
+          }
+          .width(this.noteNavigationWidth())
+          .height('100%')
+          .backgroundColor($r('app.color.bg_navigation'))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+          .margin({ left: -this.noteNavigationWidth() * (1 - this.noteNavigationProgress()) })
+          .enabled(!this.sidebarCollapsed && !this.focused)
+          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+
+          SplitHandle({
+            dragStarted: (): void => { this.startNavigationDrag(false); },
+            dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
+            dragEnded: (): void => { this.endSplitDrag(); },
+            resetRequested: (): void => { this.resetSplitLayout(); }
+          })
+            .width(Space.s4 * this.noteNavigationProgress())
+            .margin({ left: -Space.s2 * this.noteNavigationProgress(),
+              right: -Space.s2 * this.noteNavigationProgress() })
+            .enabled(!this.sidebarCollapsed && !this.focused)
+            .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+
+          Column() {
+            this.NoteWorkspaceContent()
+          }
+          .width(this.noteContentWidth())
+          .height('100%')
+          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+        }
+        .width('100%')
+        .height('100%')
+        .clip(true)
       }
 
       if (this.undoVisible) {
@@ -3714,6 +3738,7 @@ struct Index {
       }
       .width(this.notePaneWidth('right'))
       .height('100%')
+      .enabled(this.notePaneWidth('right') !== 0)
       .visibility(this.notePaneVisible('right') ? Visibility.Visible : Visibility.Hidden)
     }
     .width('100%')

@@ -35,12 +35,17 @@ function createHarness(overrides = {}) {
   Object.assign(app, {
     breakpoint: Breakpoint.SM,
     focused: false,
+    singleLandscape: false,
     activePane: 'left',
     sidebarCollapsed: false,
+    sidebarProgress: 1,
     referenceVisible: true,
-    noteContentWidth: () => 600,
+    windowWidthVp: 1000,
+    navigationWidthVp: 400,
+    noteContentWidth() { return this.windowWidthVp - this.navigationWidthVp * this.sidebarProgress; },
     noteContentRatio: () => 0.4
   }, overrides);
+  app.isSingleScreenLayout = () => app.breakpoint === Breakpoint.SM || app.singleLandscape;
   return app;
 }
 
@@ -69,11 +74,10 @@ test('NoteWorkspaceShell keeps one workspace tree under every breakpoint', () =>
   assert.equal((workspace.match(/this\.Appbar\(/g) ?? []).length, 1);
   assert.equal((workspace.match(/this\.Statusbar\(/g) ?? []).length, 1);
   assert.equal((workspace.match(/this\.SaveFeedback\(/g) ?? []).length, 1);
-  assert.equal((shell.match(/this\.NoteWorkspaceContent\(/g) ?? []).length, 1);
-  assert.equal((shell.match(/this\.NoteNavigation\(true\)/g) ?? []).length, 1);
+  assert.equal((shell.match(/this\.NoteWorkspaceContent\(/g) ?? []).length, 2);
+  assert.match(shell, /if \(this\.isSingleScreenLayout\(\)\)[\s\S]*\} else \{/);
+  assert.match(shell, /this\.NoteNavigation\(this\.breakpoint === Breakpoint\.SM\)/);
   assert.equal((shell.match(/this\.NoteNavigation\(false\)/g) ?? []).length, 1);
-  assert.match(shell, /if \(this\.breakpoint !== Breakpoint\.SM\) \{\s*this\.NoteNavigation\(false\)/);
-  assert.match(shell, /if \(this\.breakpoint === Breakpoint\.SM\) \{\s*Column\(\) \{\s*this\.NoteNavigation\(true\)/);
 });
 
 test('sm and focused modes keep only the active pane visible at full width', () => {
@@ -90,23 +94,31 @@ test('sm and focused modes keep only the active pane visible at full width', () 
   assert.equal(focused.notePaneVisible('right'), false);
 });
 
-test('md shows one full pane with navigation or two equal panes when collapsed', () => {
+test('md animates from one available pane to two panes as navigation collapses', () => {
   const withNavigation = createHarness({ breakpoint: Breakpoint.MD });
-  assert.equal(withNavigation.notePaneWidth('left'), '100%');
+  assert.equal(withNavigation.notePaneWidth('left'), 600);
   assert.equal(withNavigation.notePaneWidth('right'), 0);
   assert.equal(withNavigation.notePaneVisible('left'), true);
-  assert.equal(withNavigation.notePaneVisible('right'), false);
+  assert.equal(withNavigation.notePaneVisible('right'), true);
 
-  const split = createHarness({ breakpoint: Breakpoint.MD, sidebarCollapsed: true });
-  assert.equal(split.notePaneWidth('left'), '50%');
-  assert.equal(split.notePaneWidth('right'), '50%');
+  const split = createHarness({ breakpoint: Breakpoint.MD, sidebarCollapsed: true, sidebarProgress: 0 });
+  assert.equal(split.notePaneWidth('left'), 500);
+  assert.equal(split.notePaneWidth('right'), 500);
   assert.equal(split.notePaneVisible('left'), true);
   assert.equal(split.notePaneVisible('right'), true);
 
   split.referenceVisible = false;
-  assert.equal(split.notePaneWidth('left'), '100%');
+  assert.equal(split.notePaneWidth('left'), 1000);
   assert.equal(split.notePaneWidth('right'), 0);
   assert.equal(split.notePaneVisible('right'), false);
+});
+
+test('single-landscape layout keeps only the active pane full-width while navigation pushes it', () => {
+  const landscape = createHarness({ breakpoint: Breakpoint.MD, singleLandscape: true, activePane: 'right' });
+  assert.equal(landscape.notePaneWidth('left'), 0);
+  assert.equal(landscape.notePaneWidth('right'), '100%');
+  assert.equal(landscape.notePaneVisible('left'), false);
+  assert.equal(landscape.notePaneVisible('right'), true);
 });
 
 test('lg preserves the saved split ratio and hides the right pane when collapsed', () => {

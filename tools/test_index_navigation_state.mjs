@@ -38,6 +38,31 @@ class NavigationHarness {
 module.exports = NavigationHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
 
+const geometryCode = transformSync(`
+class NavigationGeometryHarness {
+  ${method('  private noteNavigationWidth(): number {', '\n  private drawerNavigationWidth()')}
+  ${method('  private drawerNavigationWidth(): number {', '\n  private agentNavigationWidth()')}
+  ${method('  private noteContentWidth(): number {', '\n  private noteNavigationProgress()')}
+  ${method('  private noteNavigationProgress(): number {', '\n  private noteContentRatio()')}
+  ${method('  private notePaneWidth(pane: string): Length {', '\n  private notePaneVisible(')}
+  ${method('  private notePaneVisible(pane: string): boolean {', '\n  private startNavigationDrag(')}
+
+  isSingleLandscape() { return false; }
+  isSingleScreenLayout() { return this.breakpoint === Breakpoint.SM || this.isSingleLandscape(); }
+  noteContentRatio() { return this.contentRatio; }
+}
+module.exports = NavigationGeometryHarness;
+`, { loader: 'ts', format: 'cjs' }).code;
+
+const shellStart = source.indexOf('  NoteWorkspaceShell() {');
+const shellEnd = source.indexOf('\n  @Builder\n  NoteBody()', shellStart);
+assert.ok(shellStart >= 0 && shellEnd > shellStart, 'could not find active NoteWorkspaceShell builder');
+const shellSource = source.slice(shellStart, shellEnd);
+const bodyStart = source.indexOf('  NoteBody() {');
+const bodyEnd = source.indexOf('\n  build() {', bodyStart);
+assert.ok(bodyStart >= 0 && bodyEnd > bodyStart, 'could not find active NoteBody builder');
+const bodySource = source.slice(bodyStart, bodyEnd);
+
 function createHarness(overrides = {}) {
   const module = { exports: {} };
   vm.runInContext(code, vm.createContext({ module, exports: module.exports, Breakpoint }));
@@ -176,4 +201,57 @@ test('reference visibility follows compact, middle, and wide layout semantics', 
   assert.equal(app.isReferenceShown(), true);
   app.referenceVisible = false;
   assert.equal(app.isReferenceShown(), false);
+});
+
+test('navigation widths interpolate with sidebar progress and focused mode restores full content width', () => {
+  const module = { exports: {} };
+  vm.runInContext(geometryCode, vm.createContext({
+    module,
+    exports: module.exports,
+    Breakpoint,
+    Size: { drawerW: 300 },
+    navigationWidth: (width, ratio) => width * ratio
+  }));
+  const app = new module.exports();
+  Object.assign(app, {
+    windowWidthVp: 1200,
+    windowHeightVp: 800,
+    breakpoint: Breakpoint.LG,
+    navigationRatio: 0.3,
+    contentRatio: 0.5,
+    sidebarProgress: 0.5,
+    focused: false,
+    referenceVisible: true,
+    activePane: 'left'
+  });
+
+  assert.equal(app.noteNavigationProgress(), 0.5);
+  assert.equal(app.noteContentWidth(), 1020);
+  assert.equal(app.notePaneWidth('left') + app.notePaneWidth('right'), 1020);
+  assert.equal(app.drawerNavigationWidth(), 300);
+
+  app.focused = true;
+  assert.equal(app.noteNavigationProgress(), 0);
+  assert.equal(app.noteContentWidth(), 1200);
+  app.windowWidthVp = 250;
+  assert.equal(app.drawerNavigationWidth(), 250);
+
+  app.breakpoint = Breakpoint.MD;
+  app.focused = false;
+  app.isSingleLandscape = () => true;
+  app.activePane = 'right';
+  assert.equal(app.notePaneWidth('right'), '100%');
+  assert.equal(app.notePaneWidth('left'), 0);
+  assert.equal(app.notePaneVisible('right'), true);
+  assert.equal(app.notePaneVisible('left'), false);
+});
+
+test('active workspace shell animates single-screen translation and wide-screen widths without hiding navigation mid-transition', () => {
+  assert.match(shellSource, /if \(this\.isSingleScreenLayout\(\)\)/);
+  assert.match(shellSource, /\.translate\(\{ x: -this\.drawerNavigationWidth\(\) \*/);
+  assert.match(shellSource, /\.translate\(\{ x: this\.drawerNavigationWidth\(\) \*/);
+  assert.match(shellSource, /\.animation\(\{ duration: Motion\.durNav, curve: Motion\.navCurve \}\)/);
+  assert.match(shellSource, /\.width\(this\.noteContentWidth\(\)\)/);
+  assert.doesNotMatch(shellSource, /visibility\(.*(?:drawerOpen|sidebarCollapsed)/);
+  assert.match(bodySource, /\.enabled\(this\.notePaneWidth\('right'\) !== 0\)/);
 });
