@@ -3028,6 +3028,9 @@ struct Index {
   private async shareTextContent(title: string, content: string): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
     try {
+      if (!NoteTextShareService.isWithinShareLimit(title, content)) {
+        throw new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。');
+      }
       const shared = new systemShare.SharedData({
         utd: uniformTypeDescriptor.UniformDataType.TEXT,
         content: content,

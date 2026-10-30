@@ -11,9 +11,25 @@ const code = transformSync(source + '\nmodule.exports = NoteTextShareService;', 
   loader: 'ts',
   format: 'cjs'
 }).code;
-const context = vm.createContext({ module: { exports: {} } });
+const arktsRuntime = {
+  util: {
+    TextEncoder: class {
+      encodeInto(text) {
+        const bytes = new TextEncoder().encode(text);
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      }
+    }
+  }
+};
+const arkDataRuntime = { uniformTypeDescriptor: { UniformDataType: { TEXT: 'text/plain' } } };
+const context = vm.createContext({
+  module: { exports: {} },
+  require: (name) => name === '@kit.ArkTS' ? arktsRuntime :
+    name === '@kit.ArkData' ? arkDataRuntime : require(name)
+});
 vm.runInContext(code, context);
-const { createPreview } = context.module.exports;
+const NoteTextShareService = context.module.exports;
+const { createPreview } = NoteTextShareService;
 
 test('frontmatter title replaces the filename, duplicate title is omitted, and common Markdown stays readable', () => {
   const result = createPreview('notes/fallback.md', [
@@ -90,7 +106,7 @@ test('inline code preserves HTML and Markdown-looking source without reporting i
   assert.deepEqual(Array.from(result.limitations), []);
 });
 
-test('an unclosed frontmatter block remains visible and large text is not rejected by an invented local limit', () => {
+test('an unclosed frontmatter block remains visible and large text is preserved with an explicit Share Kit limit warning', () => {
   const unclosed = createPreview('sample.md', '---\ntitle: visible\nbody text');
   assert.match(unclosed.content, /title: visible/);
   assert.match(unclosed.content, /body text/);
@@ -101,4 +117,15 @@ test('an unclosed frontmatter block remains visible and large text is not reject
   const largeText = 'x'.repeat(200 * 1024);
   const large = createPreview('large.md', largeText);
   assert.equal(large.content.length, largeText.length + 'large\n\n'.length);
+  assert.deepEqual(Array.from(large.limitations), [
+    '文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。'
+  ]);
+});
+
+test('Share Kit text size counts UTF-8 bytes for title, content, UTD, and label', () => {
+  const limit = 200 * 1024;
+  const recordFieldsBytes = 6 + 'text/plain'.length + 'TEXT'.length;
+  assert.equal(NoteTextShareService.isWithinShareLimit('标题', 'x'.repeat(limit - recordFieldsBytes)), true);
+  assert.equal(NoteTextShareService.isWithinShareLimit('标题', 'x'.repeat(limit - recordFieldsBytes + 1)), false);
+  assert.equal(NoteTextShareService.isWithinShareLimit('t', '汉'.repeat(Math.floor(limit / 3) + 1)), false);
 });

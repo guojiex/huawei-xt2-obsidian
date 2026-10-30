@@ -1,3 +1,6 @@
+import { util } from '@kit.ArkTS';
+import { uniformTypeDescriptor } from '@kit.ArkData';
+
 export interface NoteTextSharePreview {
   title: string;
   content: string;
@@ -14,6 +17,8 @@ interface NoteTextShareFlags {
 
 /** 将单篇笔记快照转换为可编辑文本；未知 Markdown 保留原文，避免静默丢内容。 */
 export class NoteTextShareService {
+  private static readonly SHARE_LIMIT_BYTES: number = 200 * 1024;
+
   static createPreview(fileName: string, markdown: string): NoteTextSharePreview {
     const lines: string[] = markdown.replace(/\r\n?/g, '\n').split('\n');
     const flags: NoteTextShareFlags = {
@@ -147,7 +152,18 @@ export class NoteTextShareService {
     if (flags.hasWikiLink) {
       limitations.push('双链改为可读文字，链接目标放在括号中。');
     }
+    if (!NoteTextShareService.isWithinShareLimit(title, content)) {
+      limitations.push('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。');
+    }
     return { title: title, content: content, limitations: limitations };
+  }
+
+  /** Share Kit 限制 SharedData 总大小；按 UTF-8 字节统计记录中的文本字段。 */
+  static isWithinShareLimit(title: string, content: string): boolean {
+    const encoder: util.TextEncoder = new util.TextEncoder();
+    const totalBytes: number = encoder.encodeInto(title).byteLength + encoder.encodeInto(content).byteLength +
+      encoder.encodeInto(uniformTypeDescriptor.UniformDataType.TEXT).byteLength + encoder.encodeInto('TEXT').byteLength;
+    return totalBytes <= NoteTextShareService.SHARE_LIMIT_BYTES;
   }
 
   private static titleFromFileName(fileName: string): string {
