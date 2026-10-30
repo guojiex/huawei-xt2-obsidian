@@ -4,8 +4,9 @@
  * 以内容区整体替换形态挂载在 Index 内容区（与 VaultManagerView 同级）。
  * 顶栏返回由 Index 处理；单屏分类详情另提供返回分类入口。
  *
- * 内容（照原型「设置与关于」规格，2026-10-21 对齐设计稿改版）：
- *  - 关于卡：hero（应用名 + 版本号）+ 定位一行 + 开源信息一行小字；
+ * 内容（照 v2 原型「设置与关于」规格，2026-10-30 对齐 v2 关于卡与通用/数据/问题与建议分类）：
+ *  - 关于卡：hero（64vp 图标 + 应用名 + 版本号）+ 定位段落 + 「应用由×××开发，
+ *    联系方式」行（署名真源 app_config.json 的 developerName，v0.9 §9.13）+ 开源许可小字；
  *    **包名行已删**（设计稿 2026-10-21 拍板：那是开发期对 hdc 日志/签名用的诊断值，用户不需要）；
  *    版本号**运行时从自身包信息读出，不在代码写死常量**（api_notes H-1/H-2：
  *    getBundleInfoForSelfSync 在 try/catch 内调用，失败兜底显示占位，读不到也不崩）；
@@ -125,7 +126,7 @@ export struct SettingsView {
     try {
       await (getContext(this) as common.UIAbilityContext).startAbility(want);
     } catch (error) {
-      this.feedbackError = '未能打开邮件应用，请使用下方邮箱地址手动反馈';
+      this.feedbackError = '未能打开邮件应用，请使用上方反馈邮箱手动发送';
     }
   }
 
@@ -372,23 +373,25 @@ export struct SettingsView {
     }
   }
 
-  /** 一行「标签 + 值」（诊断/定位行共用） */
+  /** 一行「标签 + 值」（v2 settings-facts / setting-row：14 号、值右对齐、可选行分隔线） */
   @Builder
-  InfoRow(label: string, value: string) {
+  InfoRow(label: string, value: string, showDivider: boolean) {
     Row() {
       Text(label)
-        .fontSize(FontSize.body3)
+        .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_tertiary'))
-        .width(96)
       Text(value)
-        .fontSize(FontSize.body3)
+        .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_primary'))
         .layoutWeight(1)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textAlign(TextAlign.End)
     }
     .width('100%')
-    .margin({ bottom: Space.s2 })
+    .alignItems(VerticalAlign.Center)
+    .padding({ top: showDivider ? Space.s3 : Space.s2, bottom: showDivider ? Space.s3 : Space.s2 })
+    .border(showDivider ? { width: { bottom: 1 }, color: $r('app.color.line') } : { width: 0 })
   }
 
   build() {
@@ -477,7 +480,7 @@ export struct SettingsView {
   @Builder
   CategoryContent() {
     Scroll() {
-      Column({ space: Space.s4 }) {
+      Column() {
         if (this.showCategoryBack) {
           Row() {
             Button('← 设置分类')
@@ -490,6 +493,7 @@ export struct SettingsView {
           }
           .width('100%')
           .justifyContent(FlexAlign.Start)
+          .margin({ bottom: Space.s4 })
         }
         if (this.selectedTab === 'general') {
           this.GeneralTab()
@@ -514,12 +518,13 @@ export struct SettingsView {
 
   @Builder
   GeneralTab() {
-    Column({ space: Space.s3 }) {
+    Column() {
       Text('通用')
-        .fontSize(FontSize.body2)
-        .fontWeight(FontWeight.Medium)
+        .fontSize(FontSize.s3)
+        .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .margin({ bottom: Space.s5 })
         .focusable(true)
         .id('settings-heading-general')
         .onAppear((): void => { this.focusCategoryHeading('general'); })
@@ -527,27 +532,34 @@ export struct SettingsView {
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
-      Column({ space: Space.s2 }) {
+        .margin({ bottom: Space.s4 })
+      Column() {
         Text('外观')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
           .width('100%')
-        this.InfoRow('显示主题', this.appTheme === 'dark' ? '深色（跟随系统）' : '浅色（跟随系统）')
+          .margin({ bottom: Space.s3 })
+        this.InfoRow('显示主题', this.appTheme === 'dark' ? '深色（跟随系统）' : '浅色（跟随系统）', false)
       }
       .width('100%')
-      .padding(Space.s4)
+      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
-      Column({ space: Space.s2 }) {
+      .margin({ bottom: Space.s4 })
+      Column() {
         Text('阅读与编辑布局')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
           .width('100%')
+          .margin({ bottom: Space.s3 })
         Text('拖动导航和正文分隔条调整栏宽；编辑与预览比例会自动保存。')
-          .fontSize(FontSize.body3)
+          .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
+          .margin({ bottom: Space.s3 })
         Text('恢复等分栏宽')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
@@ -556,14 +568,15 @@ export struct SettingsView {
           .onClick(() => { this.onResetSplit(); })
       }
       .width('100%')
-      .padding(Space.s4)
+      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
       Column() {
         Row() {
           Text('诊断信息')
-            .fontSize(FontSize.body3)
+            .fontSize(FontSize.body2)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
@@ -576,14 +589,14 @@ export struct SettingsView {
         .focusable(true)
         .onClick((): void => { this.diagnosticsExpanded = !this.diagnosticsExpanded; })
         if (this.diagnosticsExpanded) {
-          this.InfoRow('当前形态', this.formLabel())
-          this.InfoRow('断点', this.breakpoint)
-          this.InfoRow('库目录', this.vaultDir())
+          this.InfoRow('当前形态', this.formLabel(), true)
+          this.InfoRow('断点', this.breakpoint, true)
+          this.InfoRow('库目录', this.vaultDir(), true)
         }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding(Space.s4)
+      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
@@ -799,29 +812,33 @@ export struct SettingsView {
 
   @Builder
   DataTab() {
-    Column({ space: Space.s3 }) {
+    Column() {
       Text('数据')
-        .fontSize(FontSize.body2)
-        .fontWeight(FontWeight.Medium)
+        .fontSize(FontSize.s3)
+        .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .margin({ bottom: Space.s5 })
         .focusable(true)
         .id('settings-heading-data')
         .onAppear((): void => { this.focusCategoryHeading('data'); })
-      Column({ space: Space.s3 }) {
+      Column() {
         Text('数据管理')
-          .fontSize(FontSize.body2)
-          .fontWeight(FontWeight.Medium)
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
           .width('100%')
+          .margin({ bottom: Space.s3 })
         Text('清除本地数据后，重新打开应用会恢复首次安装的样例笔记库。此操作无法撤销。')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
+          .margin({ bottom: Space.s3 })
         Text('远端 Git 仓库不会被修改；重置前请先确认已保存需要保留的本地内容。')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
+          .margin({ bottom: Space.s3 })
         Button(this.resetting ? '正在重置…' : '重置所有数据…')
           .width('100%')
           .height(Size.touch)
@@ -833,16 +850,18 @@ export struct SettingsView {
           .onClick(() => { this.confirmReset(); })
         if (this.resetError.length > 0) {
           Text(this.resetError)
-            .fontSize(FontSize.body3)
+            .fontSize(FontSize.body2)
             .fontColor($r('app.color.danger'))
             .width('100%')
+            .margin({ top: Space.s3 })
         }
       }
       .width('100%')
-      .padding(Space.s4)
+      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -850,23 +869,29 @@ export struct SettingsView {
 
   @Builder
   AboutTab() {
-    Column({ space: Space.s4 }) {
+    Column() {
       Text('关于与版本记录')
-        .fontSize(FontSize.body2)
-        .fontWeight(FontWeight.Medium)
+        .fontSize(FontSize.s3)
+        .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .margin({ bottom: Space.s5 })
         .focusable(true)
         .id('settings-heading-about')
         .onAppear((): void => { this.focusCategoryHeading('about'); })
+      Text('在这里查看应用版本与更新记录。')
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .margin({ bottom: Space.s4 })
       Column() {
         Row() {
           Text('曜')
-            .fontSize(FontSize.s2)
+            .fontSize(FontSize.heading)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.on_brand'))
-            .width(Size.itemH)
-            .height(Size.itemH)
+            .width(Space.s16)
+            .height(Space.s16)
             .textAlign(TextAlign.Center)
             .borderRadius(Radius.card)
             .linearGradient({
@@ -879,7 +904,7 @@ export struct SettingsView {
               .fontWeight(FontWeight.Bold)
               .fontColor($r('app.color.text_primary'))
             Text(this.versionText())
-              .fontSize(FontSize.body3)
+              .fontSize(FontSize.body2)
               .fontColor($r('app.color.text_tertiary'))
               .margin({ top: Space.s1 })
           }
@@ -889,32 +914,48 @@ export struct SettingsView {
         .alignItems(VerticalAlign.Center)
         .width('100%')
         .margin({ bottom: Space.s3 })
-        this.InfoRow('定位', '为 XT2 三折叠做的本地 Markdown 笔记')
-        Text('应用由 ' + DEVELOPER_NAME + ' 开发，联系方式 ' + FEEDBACK_EMAIL)
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .margin({ top: Space.s1 })
-        Text('开源 · MIT · github.com/guojiex/huawei-xt2-obsidian（含 isomorphic-git、CodeMirror 等 MIT 组件）')
-          .fontSize(FontSize.caption)
+        Text('为 XT2 三折叠做的本地 Markdown 笔记。')
+          .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
-          .padding({ top: Space.s2 })
-          .border({ width: { top: 1 }, color: $r('app.color.line') })
+          .margin({ bottom: Space.s3 })
+        Text() {
+          Span('应用由 ')
+          Span(DEVELOPER_NAME)
+            .fontWeight(FontWeight.Bold)
+          Span(' 开发，联系方式 ')
+          Span(FEEDBACK_EMAIL)
+            .fontColor($r('app.color.brand'))
+        }
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .margin({ bottom: Space.s3 })
+        Text() {
+          Span('开源 · MIT · ')
+          Span('github.com/guojiex/huawei-xt2-obsidian ↗')
+            .fontColor($r('app.color.brand'))
+          Span('\n含 isomorphic-git、CodeMirror 等 MIT 组件。')
+        }
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding(Space.s4)
+      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
 
       Column() {
         Text('更新日志')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
           .width('100%')
-          .margin({ bottom: Space.s2 })
+          .margin({ bottom: Space.s3 })
         ChangelogList({ entries: RECENT_CHANGELOG })
         Text('查看完整版本记录 ›')
           .fontSize(FontSize.body2)
@@ -925,7 +966,7 @@ export struct SettingsView {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding(Space.s4)
+      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
@@ -936,12 +977,13 @@ export struct SettingsView {
 
   @Builder
   FeedbackTab() {
-    Column({ space: Space.s3 }) {
+    Column() {
       Text('问题与建议')
-        .fontSize(FontSize.body2)
-        .fontWeight(FontWeight.Medium)
+        .fontSize(FontSize.s3)
+        .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
+        .margin({ bottom: Space.s5 })
         .focusable(true)
         .id('settings-heading-feedback')
         .onAppear((): void => { this.focusCategoryHeading('feedback'); })
@@ -949,12 +991,14 @@ export struct SettingsView {
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
-      Column({ space: Space.s3 }) {
+        .margin({ bottom: Space.s4 })
+      Column() {
         Text('问题与建议')
-          .fontSize(FontSize.body2)
-          .fontWeight(FontWeight.Medium)
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Bold)
           .fontColor($r('app.color.text_primary'))
           .width('100%')
+          .margin({ bottom: Space.s3 })
         Button('发送反馈邮件')
           .width('100%')
           .height(Size.touch)
@@ -967,19 +1011,20 @@ export struct SettingsView {
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
           .width('100%')
-          .padding({ top: Space.s2, bottom: Space.s2 })
+          .padding({ top: Space.s4, bottom: Space.s4 })
         if (this.feedbackError.length > 0) {
           Text(this.feedbackError)
-            .fontSize(FontSize.body3)
+            .fontSize(FontSize.body2)
             .fontColor($r('app.color.danger'))
             .width('100%')
         }
       }
       .width('100%')
-      .padding(Space.s4)
+      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)

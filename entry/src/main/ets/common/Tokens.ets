@@ -47,6 +47,7 @@ export class FontSize {
   static readonly s3: number = 20;       // v2 --large
   static readonly s2: number = 20;       // 顶栏标题
   static readonly s1: number = 24;
+  static readonly heading: number = 32;  // v2 --heading（关于 hero 图标字）
 }
 
 /** 尺寸 */
