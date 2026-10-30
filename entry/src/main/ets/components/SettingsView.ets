@@ -66,6 +66,8 @@ export struct SettingsView {
   @State managedSessions: AgentSession[] = [];
   @State sessionMessage: string = '';
   @State feedbackError: string = '';
+  @State feedbackDraft: string = '';
+  @State feedbackPreview: string = '';
   @State diagnosticsExpanded: boolean = false;
   private resetDialog: CustomDialogController | null = null;
   private deleteSessionDialog: CustomDialogController | null = null;
@@ -118,16 +120,24 @@ export struct SettingsView {
 
   private async openFeedbackEmail(): Promise<void> {
     this.feedbackError = '';
-    const subject: string = encodeURIComponent('曜石笔记 · 问题与建议');
+    const bodyText: string = this.feedbackDraft.length > 0
+      ? this.feedbackDraft
+      : '操作步骤：\n实际结果：\n期望结果：';
     const want: Want = {
       action: 'ohos.want.action.sendToData',
-      uri: 'mailto:' + FEEDBACK_EMAIL + '?subject=' + subject
+      uri: 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent('曜石笔记 · 问题与建议')
+        + '&body=' + encodeURIComponent(bodyText)
     };
     try {
       await (getContext(this) as common.UIAbilityContext).startAbility(want);
     } catch (error) {
       this.feedbackError = '未能打开邮件应用，请使用上方反馈邮箱手动发送';
     }
+  }
+
+  private previewFeedback(): void {
+    const trimmed: string = this.feedbackDraft.trim();
+    this.feedbackPreview = trimmed.length > 0 ? trimmed : '请先填写反馈内容';
   }
 
   private onSelectedCategoryChanged(): void {
@@ -987,7 +997,7 @@ export struct SettingsView {
         .focusable(true)
         .id('settings-heading-feedback')
         .onAppear((): void => { this.focusCategoryHeading('feedback'); })
-      Text('请通过邮件描述你遇到的问题或改进建议。邮件由你检查并确认发送，不会自动附带笔记、对话、日志或诊断信息。')
+      Text('遇到问题或有建议，欢迎告诉我们。')
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
@@ -999,19 +1009,65 @@ export struct SettingsView {
           .fontColor($r('app.color.text_primary'))
           .width('100%')
           .margin({ bottom: Space.s3 })
-        Button('发送反馈邮件')
-          .width('100%')
-          .height(Size.touch)
+        Text('请描述操作步骤、实际结果和期望结果，帮助我们了解问题。')
           .fontSize(FontSize.body2)
-          .fontColor($r('app.color.on_brand'))
-          .backgroundColor($r('app.color.brand'))
-          .borderRadius(Radius.button)
-          .onClick((): void => { void this.openFeedbackEmail(); })
-        Text(FEEDBACK_EMAIL)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .margin({ bottom: Space.s3 })
+        Text('反馈内容')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .margin({ bottom: Space.s3 })
+        TextArea({ text: this.feedbackDraft, placeholder: '操作步骤：\n实际结果：\n期望结果：' })
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_secondary'))
+          .backgroundColor($r('app.color.bg_secondary'))
+          .padding(Space.s3)
+          .constraintSize({ minHeight: Space.s16 })
+          .borderRadius(Radius.control)
+          .border({ width: 1, color: $r('app.color.line') })
+          .margin({ bottom: Space.s3 })
+          .onChange((value: string): void => { this.feedbackDraft = value; })
+        Text('预览反馈内容')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
+          .height(Size.touch)
+          .textAlign(TextAlign.Start)
+          .onClick((): void => { this.previewFeedback(); })
+        if (this.feedbackPreview.length > 0) {
+          Text(this.feedbackPreview)
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .margin({ bottom: Space.s3 })
+        }
+        Row({ space: Space.s3 }) {
+          Text('反馈邮箱')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_secondary'))
+          Text(FEEDBACK_EMAIL)
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.brand'))
+        }
+        .width('100%')
+        .padding({ top: Space.s4, bottom: Space.s4 })
+        Text('发送反馈邮件 ›')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.brand'))
+          .height(Size.touch)
+          .textAlign(TextAlign.Start)
+          .onClick((): void => { void this.openFeedbackEmail(); })
+        Text('将在邮件应用中创建邮件，由你编辑并确认发送。若未打开，可使用上方邮箱地址手动发送。')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_secondary'))
           .width('100%')
-          .padding({ top: Space.s4, bottom: Space.s4 })
+          .margin({ bottom: Space.s3 })
+        Text('不会自动附带笔记、对话或日志；添加截图前请检查私人信息。')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
         if (this.feedbackError.length > 0) {
           Text(this.feedbackError)
             .fontSize(FontSize.body2)
