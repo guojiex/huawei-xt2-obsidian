@@ -82,6 +82,28 @@ test('wide recovery restores both panes and drops paths no longer in the current
   });
 });
 
+test('moved or deleted session paths clear their panes without guessing by filename', async () => {
+  const movedOrDeleted = session({ leftPath: '10_写作/old.md', rightPath: '20_样式/deleted.md' });
+  const resolved = workspaceSessionPaths(movedOrDeleted, false, ['10_写作/renamed.md', '99_其他/old.md']);
+  assert.deepEqual(JSON.parse(JSON.stringify(resolved)), { leftPath: '', rightPath: '' });
+
+  const events = [];
+  assert.equal(await restoreWorkspacePane(resolved.leftPath, async (path) => {
+    events.push('open-left:' + path);
+    return true;
+  }, async () => events.push('clear-left')), false);
+  assert.equal(await restoreWorkspacePane(resolved.rightPath, async (path) => {
+    events.push('open-right:' + path);
+    return true;
+  }, async () => events.push('clear-right')), false);
+  assert.deepEqual(events, ['clear-left', 'clear-right']);
+
+  const vaultGuard = indexSource.indexOf('const hasVault: boolean = registry.list().some');
+  const pathEnumeration = indexSource.indexOf('const validPaths: string[] = FileTree.allMarkdownFiles');
+  assert.ok(vaultGuard >= 0 && pathEnumeration > vaultGuard,
+    'the saved vault must exist before its paths can be considered for recovery');
+});
+
 test('pane restore falls back independently after unreadable or throwing targets', async () => {
   const events = [];
   const leftOpened = await restoreWorkspacePane('10_写作/a.md', async () => {
