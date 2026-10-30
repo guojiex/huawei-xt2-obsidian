@@ -525,13 +525,7 @@ struct Index {
     if (path !== this.currentFilePath || vaultId !== this.currentVaultId) {
       return;
     }
-    if (!await this.flushSave(path, vaultId)) {
-      return;
-    }
-    if (path !== this.currentFilePath || vaultId !== this.currentVaultId) {
-      return;
-    }
-    await this.readAndPush(path);
+    await this.flushSave(path, vaultId);
   }
 
   /**
