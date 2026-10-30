@@ -28,9 +28,9 @@
 | 目录栏收起 | md/lg 可收起；当前默认比例、可拖与独立宽度状态按 [v0.7 7.22–7.23](releases/v0.7/需求文档.md)，不再以旧“固定 2/3”或“一栏一物理屏”覆盖最新规则 | 2026-10-17；2026-10-27 文档对齐 |
 | App 私有存储与删库联动 | 2026-10-26 已确认，详见 [存储规划 §9](engineering/应用内部存储架构_审查稿.md#9-用户确认记录2026-10-26)：保留 Preferences、不强制 app.json；稳定 vaultKey；聊天/操作账在库外、首期长期保留不自动淘汰；删库须弹窗告知并连同私有聊天删除。尚未实现/验收 | 2026-10-26 |
 | 存储位置 | 应用沙箱 `filesDir/vaults/<库名>/`，与 PC 端 Obsidian vault 结构一致 | — |
-| 同步方案 | **isomorphic-git 双向**，冲突**推 `xt2` 分支**，手机端不做合并 UI（PC 端解） | — |
+| 同步方案 | **Native libgit2 优先**，设备与数据保护验证后接入；Native 经验证不可行时再评估现有 isomorphic-git 等备选。冲突**推 `xt2` 分支**，手机端不做合并 UI（PC 端解） | — |
 | GitHub 单向 zipball 导入 | ❌ 放弃，改动会被覆盖 | — |
-| 同步网络层 | **只用「JS 自定义 http client 转发到 `@ohos.net.http`」**；`onInterceptRequest` 拦截 ❌ 否决（`getRequestBody()` 返回 string，二进制有风险） | 2026-10-17 |
+| 同步网络层 | 若采用 Web 备选，使用「JS 自定义 http client 转发到 `@ohos.net.http`」；`onInterceptRequest` 拦截 ❌ 否决（`getRequestBody()` 返回 string，二进制有风险） | 2026-10-17 |
 | 大数据通道 | **WebMessagePort + ArrayBuffer + 分块（4MB）**；`runJavaScript` 只走控制指令 | 2026-10-17 |
 | git 计算容器 | **常驻**：`Stack` + `visibility(Hidden)`；❌ 不用 `NodeContainer` 动态卸载（会重载、JS 状态丢） | 2026-10-17 |
 | git 桥接线程 | **先主线程**；要进 Worker 必须把 port **transfer** 进去 | 2026-10-17 |

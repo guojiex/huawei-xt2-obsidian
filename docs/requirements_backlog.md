@@ -58,9 +58,9 @@
 | 需求点 | 价值 | 成本 | 依赖 | MVP 建议 |
 | --- | --- | --- | --- | --- |
 | GitHub 单向拉取（zipball 导入） | 高 | S | 网络 + 解压 | ✗ 已放弃，改动会被覆盖 |
-| GitHub 双向同步（isomorphic-git） | 高 | M–L | Web 组件 + fs 桥接 | ✓ **已纳入 MVP** |
+| GitHub 双向同步（isomorphic-git） | 高 | M–L | Web 组件 + fs 桥接 | Native 经验证不可行时的备选；已有实现与验证保留 |
 | Git Data API 轻量双向（无本地历史） | 高 | M | HTTP + sha 乐观锁 | ✗ 未选，完整 git 语义更值 |
-| libgit2 Native 双向 | 高 | L | NDK 编译 | 原后置；2026-10-27 用户单独授权在 v0.3 做版本/能力查询及支持分支、进度和系统 CA 的异步 clone N-API PoC，不代表切换正式 Git 引擎 |
+| libgit2 Native 双向 | 高 | L | NDK 编译 | 2026-10-30 用户决定 v0.3 优先验证并采用 Native；先验证设备运行和数据保护，再完成同步；保留现有 PoC 证据 |
 | 冲突策略：推 `xt2` 分支，PC 端合并 | 高 | M | 同步方案 | ✓ **已纳入 MVP**，手机上不做合并 |
 | 冲突副本（远端版本另存新文件） | 中 | S | 无 | ✗ 未选，会污染库且推不上去 |
 | WebDAV 同步（坚果云等） | 中高 | M | WebDAV 客户端 | 后置 |

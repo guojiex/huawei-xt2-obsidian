@@ -28,10 +28,10 @@
 | 3 | 断点用 `window.on('windowSizeChange')` + `px2vp()`，**不要用 `getFoldDisplayMode()` 做形态分支** | 官方推荐统一断点机制，该接口不返回全部形态值 |
 | 4 | 三折叠在系统里**始终是 `phone`**，`deviceTypes` 保持 `["phone","tablet","2in1"]` | 全展开 10 英寸也不会变成 tablet/2in1 |
 | 5 | **三栏自绘**，禁用 `FoldSplitContainer` | 已否决，见决策总表 |
-| 6 | 同步**只用「JS 自定义 http client 转发到 `@ohos.net.http`」**，拦截方案已否决 | `getRequestBody()` 返回 string，二进制 packfile 有风险 |
-| 7 | packfile / 大文本走 **WebMessagePort + ArrayBuffer + 分块（4MB）**；`runJavaScript` 只走控制指令 | `runJavaScript` 返回值是 string，上限未记载 |
-| 8 | git 容器**常驻**：`Stack` + `visibility(Hidden)`，**不用 `NodeContainer` 动态卸载** | 卸载会销毁 Web 实例、JS 状态全丢 |
-| 9 | git 桥接**先主线程**；要进 Worker 必须把 port **transfer** 进去 | Worker 内无 window，拿不到 `javaScriptProxy` |
+| 6 | 同步优先验证并采用 **Native libgit2**；仅当 Native 经验证不可行时评估备选。若使用现有 Web 路线，只用 JS 自定义 HTTP client 转发到 `@ohos.net.http`，拦截方案已否决 | `getRequestBody()` 返回 string，二进制 packfile 有风险 |
+| 7 | Web 备选的 packfile / 大文本走 **WebMessagePort + ArrayBuffer + 分块（4MB）**；`runJavaScript` 只走控制指令 | `runJavaScript` 返回值是 string，上限未记载 |
+| 8 | Web 备选的 git 容器**常驻**：`Stack` + `visibility(Hidden)`，**不用 `NodeContainer` 动态卸载** | 卸载会销毁 Web 实例、JS 状态全丢 |
+| 9 | Web 备选的 git 桥接**先主线程**；要进 Worker 必须把 port **transfer** 进去 | Worker 内无 window，拿不到 `javaScriptProxy` |
 | 10 | **`AtomicFile` 是完整性方案，不是 HarmonyOS 强制 API。** 更新已有文件、失败时必须保留旧内容，或不能让目标路径出现半成品时用 `fileIo.AtomicFile`；不要自行用 tmp + `renameSync` 模拟原子替换。对新建且唯一命名的图片附件，可在 API ≤24 接口核实后用 `fileIo.copyFile` 从已授权源 fd 复制到解析器给出的新目标；等待复制完成、校验后再插入 Markdown 引用，失败时删除可能的半成品。复制中断可能留下不完整目标；若产品不接受此风险则用 `AtomicFile`。 | `AtomicFile` 保留原文件的失败回滚语义见 `api_notes.md` C1；Picker URI 授权见 Q1。`copyFile` 默认覆盖同名目标，必须使用新路径；API 声明与 URI/fd 用法须以当前 SDK 和官方资料核实 |
 | 11 | 令牌存 **`@kit.AssetStoreKit`**（敏感值只放 `SECRET`），不写明文 | 无需权限；`ALIAS` 不加密 |
 | 12 | 异步渲染下 **Web 组件宽高 ≤ 7680px 物理像素** | 超过会白屏；三栏各 1/3 约 1061px，安全 |

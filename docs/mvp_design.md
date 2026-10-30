@@ -238,9 +238,11 @@ preferencesDir/
 
 工程已生成 `EntryBackupAbility`（backup extension）与 `backup_config.json`，MVP 阶段即可配置备份 `vault/` 目录，走系统备份恢复通道。
 
-### 4.4 同步：GitHub 双向（isomorphic-git）
+### 4.4 同步：GitHub 双向
 
-**决策**：在 Web 组件内运行 isomorphic-git（纯 JS 实现），支持 clone / pull / commit / push。手机端必须能回写，所以单向导入方案作废。库规模在数百篇量级，性能顾虑不成立。
+> **2026-10-30 路线更新**：优先验证并采用 Native libgit2；设备验证或数据保护证明不可行时再评估 isomorphic-git 等备选。下方 Web 架构是现有实现与历史证据，不再是当前首选；[v0.3 需求](releases/v0.3/需求文档.md)为当前执行范围。
+
+**历史方案**：在 Web 组件内运行 isomorphic-git（纯 JS 实现），支持 clone / pull / commit / push。手机端必须能回写，所以单向导入方案作废。库规模在数百篇量级，性能顾虑不成立。
 
 不采用更轻的 Git Data API 的原因：既然要回写，完整 git 语义（本地历史、diff、分支）带来的收益超过那点额外成本，且冲突可以用"推分支"优雅解决。
 
