@@ -8,6 +8,7 @@ const require = createRequire(new URL('../web/mdpreview/package.json', import.me
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
 const methodNames = [
+  ['sharedNoteEditor', '  private sharedNoteEditor(): EditorBridge {', '\n  private parseChapterEntries('],
   ['refreshSharedEditability', '  private async refreshSharedEditability(): Promise<void> {', '\n  private toggleActivePane()'],
   ['isPaneEditable', '  private isPaneEditable(pane: string): boolean {', '\n  private isImagePickerBusy(']
 ];
@@ -47,6 +48,7 @@ function createHarness(overrides = {}) {
     activePane: 'left',
     smMode: 'edit',
     rightEditing: true,
+    rightEditorDirty: false,
     leftComposing: false,
     rightComposing: false,
     editorBridge: bridge('left'),
@@ -114,4 +116,21 @@ test('an editor in composition remains the sole editable source until compositio
   assert.equal(app.rightEditorBridge.editable, true);
   assert.equal(app.isPaneEditable('left'), false);
   assert.equal(app.isPaneEditable('right'), true);
+});
+
+test('same-note saving selects the active, composing, or dirty editor as its sole source', () => {
+  const left = createHarness();
+  assert.equal(left.app.sharedNoteEditor(), left.app.editorBridge);
+
+  const activeRight = createHarness({ activePane: 'right' });
+  assert.equal(activeRight.app.sharedNoteEditor(), activeRight.app.rightEditorBridge);
+
+  const composingRight = createHarness({ rightComposing: true });
+  assert.equal(composingRight.app.sharedNoteEditor(), composingRight.app.rightEditorBridge);
+
+  const dirtyRight = createHarness({ rightEditorDirty: true, rightEditing: false });
+  assert.equal(dirtyRight.app.sharedNoteEditor(), dirtyRight.app.rightEditorBridge);
+
+  const composingLeft = createHarness({ leftComposing: true, activePane: 'right' });
+  assert.equal(composingLeft.app.sharedNoteEditor(), composingLeft.app.editorBridge);
 });
