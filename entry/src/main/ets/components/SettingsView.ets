@@ -66,7 +66,9 @@ export struct SettingsView {
   @State managedSessions: AgentSession[] = [];
   @State sessionMessage: string = '';
   @State feedbackError: string = '';
-  @State feedbackDraft: string = '';
+  @State feedbackSteps: string = '';
+  @State feedbackActual: string = '';
+  @State feedbackExpected: string = '';
   @State feedbackPreview: string = '';
   @State diagnosticsExpanded: boolean = false;
   private resetDialog: CustomDialogController | null = null;
@@ -118,11 +120,29 @@ export struct SettingsView {
     }
   }
 
+  private composeFeedbackBody(): string {
+    const parts: string[] = [];
+    const steps: string = this.feedbackSteps.trim();
+    const actual: string = this.feedbackActual.trim();
+    const expected: string = this.feedbackExpected.trim();
+    if (steps.length > 0) {
+      parts.push('操作步骤：\n' + steps);
+    }
+    if (actual.length > 0) {
+      parts.push('实际结果：\n' + actual);
+    }
+    if (expected.length > 0) {
+      parts.push('期望结果：\n' + expected);
+    }
+    return parts.join('\n\n');
+  }
+
   private async openFeedbackEmail(): Promise<void> {
     this.feedbackError = '';
-    const bodyText: string = this.feedbackDraft.length > 0
-      ? this.feedbackDraft
-      : '操作步骤：\n实际结果：\n期望结果：';
+    const composed: string = this.composeFeedbackBody();
+    const bodyText: string = composed.length > 0
+      ? composed
+      : '操作步骤：\n\n实际结果：\n\n期望结果：';
     const want: Want = {
       action: 'ohos.want.action.sendToData',
       uri: 'mailto:' + FEEDBACK_EMAIL + '?subject=' + encodeURIComponent('曜石笔记 · 问题与建议')
@@ -136,8 +156,8 @@ export struct SettingsView {
   }
 
   private previewFeedback(): void {
-    const trimmed: string = this.feedbackDraft.trim();
-    this.feedbackPreview = trimmed.length > 0 ? trimmed : '请先填写反馈内容';
+    const composed: string = this.composeFeedbackBody();
+    this.feedbackPreview = composed.length > 0 ? composed : '请先填写反馈内容';
   }
 
   private onSelectedCategoryChanged(): void {
@@ -1014,22 +1034,51 @@ export struct SettingsView {
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
           .margin({ bottom: Space.s3 })
-        Text('反馈内容')
+        Text('操作步骤')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
           .margin({ bottom: Space.s3 })
-        TextArea({ text: this.feedbackDraft, placeholder: '操作步骤：\n实际结果：\n期望结果：' })
+        TextArea({ text: this.feedbackSteps })
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_primary'))
-          .placeholderColor($r('app.color.text_secondary'))
           .backgroundColor($r('app.color.bg_secondary'))
           .padding(Space.s3)
           .constraintSize({ minHeight: Space.s16 })
           .borderRadius(Radius.control)
           .border({ width: 1, color: $r('app.color.line') })
           .margin({ bottom: Space.s3 })
-          .onChange((value: string): void => { this.feedbackDraft = value; })
+          .onChange((value: string): void => { this.feedbackSteps = value; })
+        Text('实际结果')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .margin({ bottom: Space.s3 })
+        TextArea({ text: this.feedbackActual })
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.bg_secondary'))
+          .padding(Space.s3)
+          .constraintSize({ minHeight: Space.s16 })
+          .borderRadius(Radius.control)
+          .border({ width: 1, color: $r('app.color.line') })
+          .margin({ bottom: Space.s3 })
+          .onChange((value: string): void => { this.feedbackActual = value; })
+        Text('期望结果')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .margin({ bottom: Space.s3 })
+        TextArea({ text: this.feedbackExpected })
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.bg_secondary'))
+          .padding(Space.s3)
+          .constraintSize({ minHeight: Space.s16 })
+          .borderRadius(Radius.control)
+          .border({ width: 1, color: $r('app.color.line') })
+          .margin({ bottom: Space.s3 })
+          .onChange((value: string): void => { this.feedbackExpected = value; })
         Text('预览反馈内容')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
