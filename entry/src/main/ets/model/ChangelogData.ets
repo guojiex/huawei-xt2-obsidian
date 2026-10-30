@@ -8,6 +8,9 @@ export interface ChangelogEntry {
   changes: string[];
 }
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
+  {"version": "0.9.0", "date": "2026-10-27", "status": "in_progress", "title": "v2 界面迁移与统一设计", "changes": ["以 v2 设计稿为唯一现行设计入口，原生界面与视觉规格统一迁移。", "快切与搜索合并为一次查询：文件名、路径与正文一起出结果，正文命中显示摘录。", "未选笔记时编辑、预览与分享置灰，左栏显示空态引导，可直接新建或搜索。", "迁移仍在进行：原生同步与 API24 / XT2 设备验收未完成。"], "statusLabel": "开发中"},
+  {"version": "0.8.0", "date": "2026-10-27", "status": "implemented", "title": "笔记、文件夹与知识库分享", "changes": ["单篇笔记可分享排版图片或 Markdown / ZIP，文件夹与知识库可打包 ZIP 并补齐引用图片。", "Git 内容可在 ZIP 与远端链接之间选择，私有仓库标注访问权限。", "经系统分享面板交给微信 / 飞书等应用；取消与失败不修改原笔记。", "原生实现与部分验收完成，部分设备与接收端验证仍待补。"], "statusLabel": "已实现 · 未发布"},
+  {"version": "0.7.0", "date": "2026-10-26", "status": "implemented", "title": "共用界面与本地体验", "changes": ["笔记页汉堡导航、单行顶栏与更多菜单；设置分类与分层返回。", "新增问题与建议（反馈邮箱草稿）、Markdown 格式栏与编辑预览滚动跟随。", "导航与正文分栏支持宽度记忆和重置；旋转、矮窗口与导航推入回位保留编辑状态。", "Agent 工作区按 2026-10-26 范围修订移出本版，未交付。"], "statusLabel": "已实现 · 未发布"},
   {"version": "0.6.0", "date": "2026-10-28", "status": "pending", "title": "小艺本地笔记操作暂缓", "changes": ["FunctionComponent + 单 Agent + 端插件路线已明确；App 侧 ListVaults 映射和白名单投影已实现。", "App 侧 CreateVault 后台入口已实现，复用本地知识库创建规则并保持当前库不变。", "其余端插件工具、Agent/AGC 绑定与 API 24 / XT2 真实调用仍待验；本条记录外部依赖状态，不表示已接入。"], "statusLabel": "暂缓 · 未发布"},
   {"version": "0.5.0", "date": "2026-10-25", "status": "in_progress", "title": "共享样例与数据管理", "changes": ["共享样例笔记库供原型与首次安装使用，旧数据不自动覆盖。", "设置新增重置所有数据入口，确认后重新打开恢复样例。", "关于与完整版本记录改为同源数据生成。", "本阶段仍在开发，完整设备验收尚未完成。"], "statusLabel": "开发中"},
   {"version": "0.4.0", "date": "2026-10-23", "status": "implemented", "title": "快速找到笔记", "changes": ["按当前库文件名或部分路径快速打开笔记，支持中文和同名路径区分。", "最近打开按库保存，删除、改名和移动后更新失效路径。", "快切以遮罩弹层显示，卡片外点击关闭；API 26 模拟器已验证，XT2 待验。"], "statusLabel": "已实现 · 未发布"},
