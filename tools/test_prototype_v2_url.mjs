@@ -84,6 +84,29 @@ test('no-note empty state centers the brand line with create and search actions'
  assert(!f.get('article').classList.contains('hidden'));
  assert(f.get('count').textContent.includes('字 · 本地样例'));
 });
+test('quick search aggregates filename and content matches without mode tabs',()=>{
+ assert(!html.includes('quickNameMode')&&!html.includes('quickContentMode')&&!html.includes('search-mode'));
+ assert.match(html,/placeholder="搜索文件名、路径或正文"/);
+ const f=fixture();
+ f.run('openQuickSearch()');
+ assert.equal(f.get('quickSearchLabel').textContent,'最近打开');
+ f.run("notes.push({id:'agg_name',vault:'reading',title:'AGGNEEDLE 图解',folder:'',tag:'',text:'正文不含关键词',deleted:false})");
+ f.run("notes.push({id:'agg_content',vault:'reading',title:'长文随笔',folder:'随笔',tag:'',text:'这里记录了 AGGNEEDLE 工艺的细节。',deleted:false})");
+ f.get('quickSearchInput').value='AGGNEEDLE';
+ f.run('renderQuickSearch()');
+ assert.equal(f.get('quickSearchLabel').textContent,'搜索结果');
+ assert.equal(f.get('quickSearchCount').textContent,'2');
+ const results=f.get('quickSearchResults').innerHTML;
+ assert(results.indexOf('agg_name')<results.indexOf('agg_content'));
+ assert(results.includes('search-excerpt'));
+ f.get('quickSearchInput').value='什么都没有的词';
+ f.run('renderQuickSearch()');
+ assert(!f.get('quickSearchEmpty').classList.contains('hidden'));
+ assert.equal(f.get('quickSearchEmpty').textContent,'没有匹配的笔记');
+ f.get('quickSearchInput').value='';
+ f.run('renderQuickSearch()');
+ assert.equal(f.get('quickSearchLabel').textContent,'最近打开');
+});
 test('URL overrides other browser width preferences and keeps collapsed folders and scroll position',()=>{
  const f=fixture();f.run("folderState['reading/10_写作']=false;$('writingScroll').scrollTop=120;syncUrl()");const storage=new Map([['xt2-prototype-v2-widths',JSON.stringify({nav:.7,content:.2})]]);const g=fixture(f.href(),storage);assert.equal(g.run('widths.nav'),.3333);assert.equal(g.run("folderState['reading/10_写作']"),false);assert.equal(g.get('writingScroll').scrollTop,120);
 });
