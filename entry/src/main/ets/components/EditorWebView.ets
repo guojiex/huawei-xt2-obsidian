@@ -145,6 +145,10 @@ class EditorImpl {
     this.enqueue(`window.__mdeditor.setTheme('${safe}')`);
   }
 
+  setLineNumbers(show: boolean): void {
+    this.enqueue(`window.__mdeditor.setLineNumbers(${show})`);
+  }
+
   async setEditable(editable: boolean): Promise<void> {
     const script: string = `window.__mdeditor.setEditable(${editable})`;
     if (this.readyFlag) {
@@ -245,6 +249,7 @@ export class EditorBridge {
 export struct EditorWebView {
   /** 由 EntryAbility 跟随系统颜色模式写入。 */
   @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
+  @Prop @Watch('onLineNumbersChanged') showLineNumbers: boolean = false;
   @State private pageReady: boolean = false;
   @State private loadFailed: boolean = false;
   /** 内容变化通知（debounce 300ms，只报长度；要内容请调 bridge.getContent()） */
@@ -279,6 +284,10 @@ export struct EditorWebView {
 
   onThemeChanged(): void {
     this.impl?.setTheme(this.theme);
+  }
+
+  onLineNumbersChanged(): void {
+    this.impl?.setLineNumbers(this.showLineNumbers);
   }
 
   /**
@@ -328,6 +337,7 @@ export struct EditorWebView {
       this.bridge.bind(impl);
       impl.markReady();
       impl.setTheme(this.theme);
+      impl.setLineNumbers(this.showLineNumbers);
       this.pageReady = true;
       this.loadFailed = false;
       hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'Web 编辑器页面就绪，桥接已建立');

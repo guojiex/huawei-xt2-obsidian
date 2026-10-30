@@ -42,6 +42,7 @@ export struct SettingsView {
   @Prop windowHeightVp: number = 0;
   /** 当前库 id（诊断区显示库目录） */
   @Prop currentVaultId: string = '';
+  @Prop showLineNumbers: boolean = false;
   @StorageProp('appTheme') appTheme: string = 'light';
   @Prop vaults: VaultEntry[] = [];
   @Prop @Watch('onSelectedCategoryChanged') selectedCategory: string = 'general';
@@ -51,6 +52,7 @@ export struct SettingsView {
   onBackToCategories: () => void = () => {};
   onOpenHistory: () => void = () => {};
   onResetSplit: () => void = () => {};
+  onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
 
   @State versionName: string = '—';
   @State versionCode: number = 0;
@@ -571,6 +573,37 @@ export struct SettingsView {
           .width('100%')
           .margin({ bottom: Space.s3 })
         this.InfoRow('显示主题', this.appTheme === 'dark' ? '深色（跟随系统）' : '浅色（跟随系统）', false)
+      }
+      .width('100%')
+      .padding(Space.s5)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
+      Column() {
+        Text('编辑器')
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .margin({ bottom: Space.s3 })
+        Row() {
+          Column({ space: Space.s1 }) {
+            Text('显示行号')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_primary'))
+            Text('编辑 Markdown 时显示，预览不显示')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Toggle({ type: ToggleType.Switch, isOn: this.showLineNumbers })
+            .accessibilityText('显示行号')
+            .onChange((show: boolean): void => { this.onShowLineNumbersChange(show); })
+        }
+        .width('100%')
+        .height(Size.touch)
       }
       .width('100%')
       .padding(Space.s5)

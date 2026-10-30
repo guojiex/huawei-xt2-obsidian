@@ -61,6 +61,7 @@ interface MdEditorApi {
   focus(): void
   blur(): void
   setTheme(theme: string): void
+  setLineNumbers(show: boolean): void
   setEditable(editable: boolean): void
   setLinkCandidatesResult(id: number, b64: string): void
   restoreScrollTop(top: number): void
@@ -196,6 +197,8 @@ const LIGHT_THEME = EditorView.theme(
     '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
     '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
     '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
+    '.cm-lineNumbers': { display: 'none' },
+    '&.cm-show-line-numbers .cm-lineNumbers': { display: 'block' },
     '.cm-activeLine': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--blue-soft)' },
@@ -209,6 +212,8 @@ const DARK_THEME = EditorView.theme(
     '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
     '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
     '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
+    '.cm-lineNumbers': { display: 'none' },
+    '&.cm-show-line-numbers .cm-lineNumbers': { display: 'block' },
     '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--blue-soft)' },
@@ -218,6 +223,7 @@ const DARK_THEME = EditorView.theme(
 )
 
 let themeMode = 'light'
+let lineNumbersVisible = false
 
 // ---------- 实例 ----------
 let view: EditorView | null = null
@@ -452,6 +458,11 @@ function extensionsFor(theme: string) {
   ]
 }
 
+function setLineNumberVisibility(show: boolean): void {
+  lineNumbersVisible = show
+  view?.dom.classList.toggle('cm-show-line-numbers', show)
+}
+
 function ensureView(): EditorView {
   if (view) {
     return view
@@ -462,6 +473,7 @@ function ensureView(): EditorView {
     extensions: extensionsFor(themeMode)
   })
   view = new EditorView({ state, parent })
+  setLineNumberVisibility(lineNumbersVisible)
   observeEditorSize(view)
   view.dom.addEventListener('compositionstart', () => {
     isComposing = true
@@ -657,6 +669,10 @@ const api: MdEditorApi = {
         extensions: extensionsFor(themeMode)
       }))
     }
+  },
+
+  setLineNumbers(show: boolean): void {
+    setLineNumberVisibility(show)
   },
 
   setEditable(editable: boolean): void {

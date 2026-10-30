@@ -46,6 +46,7 @@ import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
+import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
 import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
   DEFAULT_CONTENT_RATIO, clampContentRatio, clampNavigationWidth,
@@ -170,6 +171,7 @@ struct Index {
   @State splitDragging: boolean = false;
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
+  private editorPreferenceStore: EditorPreferenceStore | null = null;
   private xiaoyiController: FunctionController = new FunctionController();
   private readonly xiaoyiDialogClosedListener = (): void => {
     void this.refreshWorkspaceAfterXiaoyi();
@@ -204,6 +206,7 @@ struct Index {
   /** v2 的第二栏单独记住笔记；同篇双编辑仍通过现有 NoteService 保存到同一文件。 */
   @State @Watch('onFormatContextChanged') rightFilePath: string = '';
   @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
+  @State showLineNumbers: boolean = false;
   @State @Watch('onFormatContextChanged') activePane: string = 'left';
   @State @Watch('onFormatContextChanged') referenceVisible: boolean = true;
   @State @Watch('onFormatContextChanged') focused: boolean = false;
@@ -324,6 +327,8 @@ struct Index {
     this.xiaoyiController.off('agentDialogClosed', this.xiaoyiDialogClosedListener);
     this.xiaoyiController.on('agentDialogClosed', this.xiaoyiDialogClosedListener);
     this.refreshFromRegistry();
+    this.ensureEditorPreferenceStore();
+    this.showLineNumbers = (this.editorPreferenceStore as EditorPreferenceStore).showLineNumbers();
     this.ensureRecentOpenStore();
     this.ensureSplitLayoutStore();
     const splitState = (this.splitLayoutStore as SplitLayoutStore).load();
@@ -342,6 +347,18 @@ struct Index {
     if (this.splitLayoutStore === null) {
       this.splitLayoutStore = new SplitLayoutStore(VaultRegistry.get().abilityContext());
     }
+  }
+
+  private ensureEditorPreferenceStore(): void {
+    if (this.editorPreferenceStore === null) {
+      this.editorPreferenceStore = new EditorPreferenceStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private setShowLineNumbers(show: boolean): void {
+    this.showLineNumbers = show;
+    this.ensureEditorPreferenceStore();
+    (this.editorPreferenceStore as EditorPreferenceStore).saveShowLineNumbers(show);
   }
 
   private ensureWorkspaceSessionStore(): void {
@@ -4441,6 +4458,7 @@ struct Index {
         Stack() {
           EditorWebView({
             bridge: this.rightEditorBridge,
+            showLineNumbers: this.showLineNumbers,
             onChange: (len: number): void => {
               this.resetSaveFeedback();
               WorkspaceEditGuard.mark('right', this.currentVaultId, this.rightFilePath);
@@ -4529,6 +4547,7 @@ struct Index {
         // 内容由本页在「选中文件 / 切库」时读好下发；组件本身不碰文件 IO（硬约束 14）。
         EditorWebView({
           bridge: this.editorBridge,
+          showLineNumbers: this.showLineNumbers,
           onChange: (len: number): void => {
             // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
             this.resetSaveFeedback();
@@ -4745,6 +4764,7 @@ struct Index {
       windowHeightVp: this.windowHeightVp,
       currentVaultId: this.currentVaultId,
       vaults: this.vaults,
+      showLineNumbers: this.showLineNumbers,
       selectedCategory: this.settingsCategory,
       showCategoryList: this.isSingleScreenLayout() && !this.settingsDetail,
       showCategoryBack: this.isSingleScreenLayout() && this.settingsDetail && this.settingsReturnView !== 'agent',
@@ -4756,7 +4776,8 @@ struct Index {
       },
       onBackToCategories: (): void => { this.settingsDetail = false; },
       onOpenHistory: (): void => { this.topView = 'history'; },
-      onResetSplit: (): void => { this.resetSplitLayout(); }
+      onResetSplit: (): void => { this.resetSplitLayout(); },
+      onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); }
     })
   }
 
