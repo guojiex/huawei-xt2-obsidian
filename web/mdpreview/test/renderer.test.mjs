@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  frontmatterTags,
   renderMarkdown,
+  renderNoteTags,
   resolveVaultImagePath,
   shareCaptureBottomPadding,
+  splitFrontmatter,
   validateMermaidSource
 } from '../src/renderer.mjs'
 
@@ -80,4 +83,38 @@ test('adds only the missing capture height and preserves existing bottom padding
   assert.equal(padding, 213)
   assert.equal(3433 + padding - 48, 2 * 1799)
   assert.equal(shareCaptureBottomPadding(1600, 800, 2, 48), 48)
+})
+
+test('splits frontmatter from body and passes plain Markdown through unchanged', () => {
+  const plain = '# 标题\n\n正文'
+  const noFrontmatter = splitFrontmatter(plain)
+  assert.equal(noFrontmatter.frontmatter, '')
+  assert.equal(noFrontmatter.body, plain)
+
+  const withFrontmatter = splitFrontmatter('---\ntitle: 笔记\ntags:\n  - 阅读\n---\n# 标题\n\n正文')
+  assert.equal(withFrontmatter.frontmatter, '---\ntitle: 笔记\ntags:\n  - 阅读\n---\n')
+  assert.equal(withFrontmatter.body, '# 标题\n\n正文')
+
+  const crlf = splitFrontmatter('---\r\ntags: [a]\r\n---\r\n正文')
+  assert.equal(crlf.body, '正文')
+  const dots = splitFrontmatter('---\ntags: [a]\n...\n正文')
+  assert.equal(dots.body, '正文')
+})
+
+test('extracts tags from block lists, inline lists and quoted values with dedupe and validation', () => {
+  assert.deepEqual(frontmatterTags('---\ntags:\n  - 阅读\n  - #产品\n  - "多词"\n  - 多 词\n---\n正文'), ['阅读', '产品', '多词'])
+  assert.deepEqual(frontmatterTags("---\ntags: [阅读, 产品, 阅读, '多词']\n---\n正文"), ['阅读', '产品', '多词'])
+  assert.deepEqual(frontmatterTags('---\ntags: [123, 456, 笔记]\n---\n正文'), ['笔记'])
+  assert.deepEqual(frontmatterTags('---\ntitle: 无标签笔记\n---\n正文'), [])
+  assert.deepEqual(frontmatterTags('# 无 frontmatter'), [])
+})
+
+test('renders note tags as escaped chips and returns empty string without tags', () => {
+  const html = renderNoteTags('---\ntags:\n  - 阅读<b>\n  - 产品\n---\n正文')
+  assert.equal(
+    html,
+    '<div class="note-tags" aria-label="笔记标签"><span class="note-tag">#阅读&lt;b&gt;</span><span class="note-tag">#产品</span></div>'
+  )
+  assert.equal(renderNoteTags('---\ntitle: 无标签\n---\n正文'), '')
+  assert.equal(renderNoteTags('# 无 frontmatter'), '')
 })

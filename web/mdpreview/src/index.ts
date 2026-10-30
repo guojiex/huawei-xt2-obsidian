@@ -15,7 +15,7 @@
  */
 
 import { marked } from 'marked'
-import { renderMermaidSvg, resolveVaultImagePath, shareCaptureBottomPadding } from './renderer.mjs'
+import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
 
 declare global {
   interface Window {
@@ -310,7 +310,10 @@ const api: MdPreviewApi = {
       window.clearTimeout(workspaceScrollTimer)
       workspaceScrollTimer = undefined
     }
-    if (text.trim().length === 0) {
+    const split = splitFrontmatter(text)
+    const tagsHtml = renderNoteTags(text)
+    const bodyHtml = split.body.trim().length === 0 ? '' : (marked.parse(split.body) as string)
+    if (tagsHtml.length === 0 && bodyHtml.length === 0) {
       mermaidRenderGeneration++
       mermaidRender = Promise.resolve()
       el.innerHTML = '<div class="empty">空笔记</div>'
@@ -318,7 +321,7 @@ const api: MdPreviewApi = {
       console.log('[mdpreview] setContent: empty')
       return
     }
-    el.innerHTML = marked.parse(text) as string
+    el.innerHTML = tagsHtml + bodyHtml
     const headings = el.querySelectorAll('h1,h2,h3,h4,h5,h6')
     for (let i = 0; i < headings.length; i++) {
       headings[i].setAttribute('data-chapter-index', String(i))

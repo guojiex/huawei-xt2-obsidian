@@ -74,6 +74,85 @@ marked.use({
 
 let nextMermaidId = 0
 
+/** Leading YAML frontmatter block（BOM / CRLF / `---`·`...` 闭合），与 v2 原型 markdownBody 同规则。 */
+const FRONTMATTER_PATTERN = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/
+
+/** Split a note into its leading YAML frontmatter (delimiters included) and body. */
+export function splitFrontmatter(markdown) {
+  const match = FRONTMATTER_PATTERN.exec(markdown)
+  if (!match) {
+    return { frontmatter: '', body: markdown }
+  }
+  return { frontmatter: match[0], body: markdown.slice(match[0].length) }
+}
+
+/** Tag validity per v2 prototype: non-empty word characters plus at least one non-numeric character. */
+function validTag(value) {
+  return /^[\p{L}\p{N}\p{M}\p{S}_/-]+$/u.test(value) && /[^\p{N}]/u.test(value)
+}
+
+/** Extract deduplicated `tags:` values from the YAML frontmatter (inline or block list, quoted or bare). */
+export function frontmatterTags(markdown) {
+  const split = splitFrontmatter(markdown)
+  if (split.frontmatter.length === 0) {
+    return []
+  }
+  const lines = split.frontmatter.replace(/^\uFEFF/, '').split(/\r?\n/)
+  const values = []
+  let reading = false
+  for (const line of lines.slice(1, -1)) {
+    const key = line.match(/^tags:[ \t]*(.*)$/)
+    if (key) {
+      reading = true
+      const inline = key[1].replace(/[ \t]+#.*$/, '').trim()
+      if (inline.startsWith('[') && inline.endsWith(']')) {
+        values.push(...(inline.slice(1, -1).match(/"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|[^,]+/g) || []))
+      }
+      continue
+    }
+    if (reading) {
+      const item = line.match(/^[ \t]*-[ \t]+(.*)$/)
+      if (item) {
+        values.push(item[1])
+      } else if (/^[^ \t#]/.test(line)) {
+        reading = false
+      }
+    }
+  }
+  const tags = []
+  const seen = new Set()
+  for (let value of values) {
+    value = value.trim()
+    if (value.startsWith('"') && value.endsWith('"')) {
+      try {
+        value = JSON.parse(value)
+      } catch {
+        continue
+      }
+    } else if (value.startsWith("'") && value.endsWith("'")) {
+      value = value.slice(1, -1).replace(/''/g, "'")
+    } else {
+      value = value.replace(/[ \t]+#.*$/, '')
+    }
+    value = value.replace(/^#/, '')
+    if (validTag(value) && !seen.has(value.toLowerCase())) {
+      seen.add(value.toLowerCase())
+      tags.push(value)
+    }
+  }
+  return tags
+}
+
+/** Render frontmatter tags as the v2 note-tags chip row; empty string when there are no valid tags. */
+export function renderNoteTags(markdown) {
+  const tags = frontmatterTags(markdown)
+  if (tags.length === 0) {
+    return ''
+  }
+  const chips = tags.map((tag) => `<span class="note-tag">#${escapeHtml(tag)}</span>`).join('')
+  return `<div class="note-tags" aria-label="笔记标签">${chips}</div>`
+}
+
 /** Parse and render one Mermaid block, allowing the caller to isolate failures per block. */
 export async function renderMermaidSvg(source) {
   const id = `mdpreview-mermaid-${nextMermaidId++}`
