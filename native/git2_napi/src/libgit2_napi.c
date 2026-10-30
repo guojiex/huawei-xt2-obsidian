@@ -1,6 +1,7 @@
 #include <node_api.h>
 #include <git2.h>
 
+#include <dirent.h>
 #include <errno.h>
 #include <limits.h>
 #include <pthread.h>
@@ -329,6 +330,112 @@ static napi_value get_features(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static napi_value get_repository_state(napi_env env, napi_callback_info info) {
+  size_t argc = 1;
+  napi_value argv[1];
+  napi_valuetype type;
+  size_t path_length = 0;
+  char *path = NULL;
+  git_repository *repository = NULL;
+  git_reference *head = NULL;
+  git_status_list *status = NULL;
+  napi_value result;
+  napi_value branch_value;
+  napi_value clean_value;
+  napi_value status_count_value;
+  napi_value pack_count_value;
+  char pack_directory[MAX_ARGUMENT_BYTES + 32];
+  size_t pack_file_count = 0;
+  size_t status_count = 0;
+  const char *branch = "";
+  bool clean = false;
+  napi_value message;
+  napi_value error;
+
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc != 1 ||
+      napi_typeof(env, argv[0], &type) != napi_ok || type != napi_string ||
+      napi_get_value_string_utf8(env, argv[0], NULL, 0, &path_length) != napi_ok ||
+      path_length == 0 || path_length > MAX_ARGUMENT_BYTES) {
+    return throw_type_error(env, "getRepositoryState expects one absolute repository path");
+  }
+
+  path = (char *)malloc(path_length + 1);
+  if (path == NULL ||
+      napi_get_value_string_utf8(env, argv[0], path, path_length + 1, &path_length) != napi_ok ||
+      path[0] != '/') {
+    free(path);
+    return throw_type_error(env, "repository path must be absolute");
+  }
+
+  if (git_repository_open_ext(&repository, path, GIT_REPOSITORY_OPEN_NO_SEARCH, NULL) < 0) {
+    const git_error *git_error = git_error_last();
+    const char *detail = git_error != NULL && git_error->message != NULL
+                             ? git_error->message
+                             : "repository could not be opened";
+    (void)napi_create_string_utf8(env, detail, NAPI_AUTO_LENGTH, &message);
+    (void)napi_create_error(env, NULL, message, &error);
+    (void)napi_throw(env, error);
+    free(path);
+    return NULL;
+  }
+
+  if (git_repository_head(&head, repository) == 0) {
+    branch = git_reference_shorthand(head);
+    if (branch == NULL) {
+      branch = "";
+    }
+  }
+
+  git_status_options status_options;
+  if (git_status_options_init(&status_options, GIT_STATUS_OPTIONS_VERSION) == 0) {
+    status_options.show = GIT_STATUS_SHOW_INDEX_AND_WORKDIR;
+    status_options.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED |
+                           GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
+    if (git_status_list_new(&status, repository, &status_options) == 0) {
+      status_count = git_status_list_entrycount(status);
+      clean = status_count == 0;
+    }
+  }
+
+  const char *git_directory = git_repository_path(repository);
+  if (git_directory != NULL &&
+      snprintf(pack_directory, sizeof(pack_directory), "%sobjects/pack", git_directory) > 0) {
+    DIR *directory = opendir(pack_directory);
+    if (directory != NULL) {
+      struct dirent *entry;
+      while ((entry = readdir(directory)) != NULL) {
+        size_t name_length = strlen(entry->d_name);
+        if (name_length > 5 && strcmp(entry->d_name + name_length - 5, ".pack") == 0) {
+          pack_file_count++;
+        }
+      }
+      closedir(directory);
+    }
+  }
+
+  if (napi_create_object(env, &result) != napi_ok ||
+      napi_create_string_utf8(env, branch, NAPI_AUTO_LENGTH, &branch_value) != napi_ok ||
+      napi_set_named_property(env, result, "branch", branch_value) != napi_ok ||
+      napi_get_boolean(env, clean, &clean_value) != napi_ok ||
+      napi_set_named_property(env, result, "clean", clean_value) != napi_ok ||
+      napi_create_double(env, (double)status_count, &status_count_value) != napi_ok ||
+      napi_set_named_property(env, result, "statusEntryCount", status_count_value) != napi_ok ||
+      napi_create_double(env, (double)pack_file_count, &pack_count_value) != napi_ok ||
+      napi_set_named_property(env, result, "packFileCount", pack_count_value) != napi_ok) {
+    git_status_list_free(status);
+    git_reference_free(head);
+    git_repository_free(repository);
+    free(path);
+    return throw_type_error(env, "could not read repository state");
+  }
+
+  git_status_list_free(status);
+  git_reference_free(head);
+  git_repository_free(repository);
+  free(path);
+  return result;
+}
+
 static napi_value clone_async(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
@@ -452,6 +559,7 @@ static napi_value register_module(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"getVersion", NULL, get_version, NULL, NULL, NULL, napi_default, NULL},
       {"getFeatures", NULL, get_features, NULL, NULL, NULL, napi_default, NULL},
+      {"getRepositoryState", NULL, get_repository_state, NULL, NULL, NULL, napi_default, NULL},
       {"clone", NULL, clone_async, NULL, NULL, NULL, napi_default, NULL},
   };
   if (napi_define_properties(env, exports,
