@@ -1549,16 +1549,13 @@ struct Index {
       windowHeight > 0 ? this.formatWindowArea[1] + windowHeight : paneY + paneHeight);
     const keyboardInset: number = this.keyboardInsetVp();
     const keyboardSafeBottom: number = Math.max(visibleTop, visibleBottom - keyboardInset);
-    if (anchorX + anchorWidth <= visibleLeft || anchorX >= visibleRight ||
-      anchorY + anchorHeight <= visibleTop || anchorY >= keyboardSafeBottom) {
-      this.closeFormatMenu();
-      return;
-    }
-
     const gap: number = Space.s2;
+    const safeAnchorTop: number = Math.max(visibleTop, Math.min(anchorY, keyboardSafeBottom));
+    const safeAnchorBottom: number = Math.max(visibleTop,
+      Math.min(anchorY + anchorHeight, keyboardSafeBottom));
     const width: number = Math.min(Size.formatMenuW, visibleRight - visibleLeft - gap * 2);
-    const above: number = Math.max(0, anchorY - visibleTop - gap * 2);
-    const below: number = Math.max(0, keyboardSafeBottom - anchorY - anchorHeight - gap * 2);
+    const above: number = Math.max(0, safeAnchorTop - visibleTop - gap * 2);
+    const below: number = Math.max(0, keyboardSafeBottom - safeAnchorBottom - gap * 2);
     const naturalHeight: number = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
     const showAbove: boolean = above >= naturalHeight || above >= below;
     const availableHeight: number = showAbove ? above : below;
@@ -1567,10 +1564,12 @@ struct Index {
       return;
     }
 
-    const centerX: number = anchorX + anchorWidth / 2;
     const minLeft: number = visibleLeft + gap;
     const maxLeft: number = visibleRight - gap - width;
-    const left: number = Math.max(minLeft, Math.min(centerX - width / 2, maxLeft));
+    const minCenterX: number = minLeft + width / 2;
+    const maxCenterX: number = maxLeft + width / 2;
+    const centerX: number = Math.max(minCenterX, Math.min(anchorX + anchorWidth / 2, maxCenterX));
+    const left: number = centerX - width / 2;
     const defaultPopupLeft: number = pane === 'right' ? anchorX - anchorWidth + gap : anchorX;
     const windowLeft: number = windowWidth > 0 ? this.formatWindowArea[0] : paneX;
     const windowRight: number = windowWidth > 0 ? windowLeft + windowWidth : paneX + paneWidth;
@@ -1578,7 +1577,9 @@ struct Index {
       Math.min(defaultPopupLeft, windowRight - gap - width));
     this.formatPopupPlacement = showAbove ? Placement.TopLeft : Placement.BottomLeft;
     this.formatPopupOffsetX = left - defaultPopupLeftInWindow;
-    this.formatPopupOffsetY = showAbove ? -gap : gap;
+    this.formatPopupOffsetY = showAbove
+      ? safeAnchorTop - anchorY - gap
+      : safeAnchorBottom - anchorY - anchorHeight + gap;
     if (Math.abs(this.formatMenuWidth - width) >= 0.5) {
       this.formatMenuWidth = width;
     }

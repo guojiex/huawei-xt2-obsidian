@@ -143,3 +143,33 @@ test('a narrow pane constrains the popup width to its own visible bounds', () =>
   assert.equal(app.formatPopupPlacement, 'top-left');
   assert.equal(app.formatMenuOpen, true);
 });
+
+test('rotation keeps the popup inside its visible pane when the anchor moves beyond the lower-right edge', () => {
+  const app = layout({
+    pane: 'right',
+    rightPaneArea: [600, 200, 300, 400],
+    rightAnchorArea: [930, 820, 48, 48],
+    windowArea: [0, 39, 1107, 737]
+  });
+
+  assert.equal(app.formatMenuWidth, 284);
+  assert.equal(app.formatMenuMaxHeight, 384);
+  assert.equal(app.formatPopupPlacement, 'top-left');
+  assert.equal(app.formatPopupOffsetX, -207);
+  assert.equal(app.formatPopupOffsetY, -228);
+  assert.equal(app.formatMenuOpen, true);
+});
+
+test('rotation keeps the popup below the visible pane when the anchor moves above it', () => {
+  const app = layout({
+    pane: 'left',
+    leftPaneArea: [0, 95, 379, 650],
+    leftAnchorArea: [-80, -20, 48, 48],
+    windowArea: [0, 39, 1107, 737]
+  });
+
+  assert.equal(app.formatPopupPlacement, 'bottom-left');
+  assert.equal(app.formatPopupOffsetX, 0);
+  assert.equal(app.formatPopupOffsetY, 75);
+  assert.equal(app.formatMenuOpen, true);
+});
