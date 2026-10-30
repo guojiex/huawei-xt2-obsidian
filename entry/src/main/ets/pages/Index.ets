@@ -19,7 +19,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { FunctionComponent, FunctionController } from '@kit.AgentFrameworkKit';
+import { ButtonType as AgentButtonType, FunctionComponent, FunctionController } from '@kit.AgentFrameworkKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
@@ -3793,7 +3793,17 @@ struct Index {
         FunctionComponent({
           agentId: XIAOYI_AGENT_ID,
           controller: this.xiaoyiController,
-          options: { title: 'Agent 对话' },
+          options: {
+            title: 'Agent 对话',
+            titleFontSize: FontSize.body2,
+            iconSize: Space.s5,
+            iconColors: [$r('app.color.brand')],
+            titleColors: [$r('app.color.brand')],
+            backgroundColor: $r('app.color.brand_bg'),
+            buttonType: AgentButtonType.CAPSULE,
+            controlSize: ControlSize.NORMAL,
+            isShowShadow: false
+          },
           onError: (error: BusinessError): void => {
             hilog.error(DOMAIN, TAG, '小艺 FunctionComponent 错误码 %{public}d', error.code);
             promptAction.showToast({ message: '暂时无法打开小艺' });

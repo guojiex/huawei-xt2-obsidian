@@ -661,7 +661,7 @@ ohpm publish yourlib.har
 
 [通过 Function 组件拉起智能体](https://developer.huawei.com/consumer/cn/doc/doccenter-capabilities/hmaf-function) 明确组件分图标和按钮：不传标题显示图标，传标题显示按钮；按钮可配置功能描述。指南要求创建智能体、关联应用、设备登录华为账号并联网；组件需传 `agentId`、`onError`，可设初始 `queryText`，并可用 `isAgentSupport` 检查、监听对话框打开/关闭事件。`FunctionController` 没有普通 ArkUI Button 可调用的公开 `open` / `launch` 方法，因此支持路径是把 `FunctionComponent` 本身放在入口位置，由用户点击该组件启动；不能由普通自绘 Button 程序化拉起，也不能假定能保留自定义图标。标题可用“Agent 对话”，但系统组件的最终外观须在目标设备确认。
 
-2026-10-30 API 26 SDK 样式声明核对：`@hms.ai.AgentFramework.d.ets` 的 `BaseOptions` / `FunctionOptions` 还公开 `titleFontSize`（14–16vp）、`iconSize`（16–24vp）、`iconColors`（单色图标着色）、`controlSize`、`buttonType`（`CIRCLE` / `CAPSULE` / `ICON_ABOVE_TITLE`）、`isShowShadow`（仅 Capsule）、`backgroundColor` 与 `titleColors`（单色或双色）。这些选项能调整系统组件样式，但未提供自定义图像图标或任意自绘外观。`ICON_ABOVE_TITLE` 声明从 HarmonyOS 6.0.1(API 21) 起；其余相关选项在 SDK 中标为 6.0.0(API 20) 起。XT2 上各选项的显示效果尚未实测。当前工程 `Index` 只传 `title: 'Agent 对话'`，其余使用系统默认值。
+2026-10-30 API 26 SDK 样式声明核对：`@hms.ai.AgentFramework.d.ets` 的 `BaseOptions` / `FunctionOptions` 还公开 `titleFontSize`（14–16vp）、`iconSize`（16–24vp）、`iconColors`（单色图标着色）、`controlSize`、`buttonType`（`CIRCLE` / `CAPSULE` / `ICON_ABOVE_TITLE`）、`isShowShadow`（仅 Capsule）、`backgroundColor` 与 `titleColors`（单色或双色）。这些选项能调整系统组件样式，但未提供自定义图像图标或任意自绘外观。`ICON_ABOVE_TITLE` 声明从 HarmonyOS 6.0.1(API 21) 起；其余相关选项在 SDK 中标为 6.0.0(API 20) 起。工程顶栏选择常规尺寸胶囊、14vp 标题、20vp 图标及品牌色，无阴影；XT2 上各选项的显示效果尚未实测。
 
 2026-10-27 客服答复同样建议以 Function 组件作为应用入口，详见[客服与官方文档核对归档](qa/2026-10-27_客服智能体与Skill接入建议_API24.md)。这解决了“是否有受支持的接入路线”，没有验证 AGC 关联状态、Agent 发布/测试资格或 XT2 运行。此前社区答复与 Stack 覆盖 spike 仍是历史证据：公开自绘按钮启动 API 仍不存在；模拟器因缺少 `agentKitHsp` 启动失败，不证明目标真机也缺少该系统 HSP，也不能证明遮罩方案可行。详见[旧答复归档](qa/2026-10-26_小艺自绘按钮拉起答复_API24.md)。
 
