@@ -52,6 +52,8 @@ const html = `<!doctype html>
   ${sharedTokens}
   html, body { margin: 0; padding: 0; height: 100%; background: var(--paper); }
   #editor { height: 100%; }
+  #editor .cm-gutter.cm-lineNumbers { display: none !important; }
+  #editor .cm-editor.cm-show-line-numbers .cm-gutter.cm-lineNumbers { display: flex !important; }
   /* 关键：让 contenteditable 区域在触屏上正常滚动/长按，不吃系统手势 */
   #editor .cm-scroller { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 </style>

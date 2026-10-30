@@ -12,6 +12,7 @@ const settingsSource = fs.readFileSync(new URL('../entry/src/main/ets/components
 const indexSource = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
 const editorSource = fs.readFileSync(new URL('../entry/src/main/ets/components/EditorWebView.ets', import.meta.url), 'utf8');
 const prototypeSource = fs.readFileSync(new URL('../docs/prototype/v2/index.html', import.meta.url), 'utf8');
+const editorBuildSource = fs.readFileSync(new URL('../web/mdeditor/build.mjs', import.meta.url), 'utf8');
 
 const classStart = storeSource.indexOf('export class EditorPreferenceStore {');
 assert.ok(classStart >= 0, 'could not find EditorPreferenceStore');
@@ -116,6 +117,18 @@ test('CodeMirror line-number visibility changes only a CSS class and keeps the c
   harness.setLineNumberVisibility(false);
   assert.equal(classes.has('cm-show-line-numbers'), false);
   assert.equal(harness.getState().view.state, state);
+});
+
+test('bundled CSS hides CodeMirror’s forced gutter and the theme change restores the selected visibility', () => {
+  assert.match(editorBuildSource, /#editor \.cm-gutter\.cm-lineNumbers \{ display: none !important; \}/);
+  assert.match(editorBuildSource, /#editor \.cm-editor\.cm-show-line-numbers \.cm-gutter\.cm-lineNumbers \{ display: flex !important; \}/);
+
+  const themeStart = webSource.indexOf('  setTheme(theme: string): void {');
+  const lineNumbersStart = webSource.indexOf('  setLineNumbers(show: boolean): void {', themeStart);
+  const themeMethod = webSource.slice(themeStart, lineNumbersStart);
+  const stateReset = themeMethod.indexOf('view.setState(');
+  const visibilityRestore = themeMethod.indexOf('setLineNumberVisibility(lineNumbersVisible)');
+  assert.ok(stateReset >= 0 && visibilityRestore > stateReset);
 });
 
 test('native setting is wired to both editors and exposes a named accessible switch', () => {

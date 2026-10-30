@@ -198,8 +198,6 @@ const LIGHT_THEME = EditorView.theme(
     '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
     '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
     '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
-    '.cm-lineNumbers': { display: 'none' },
-    '&.cm-show-line-numbers .cm-lineNumbers': { display: 'block' },
     '.cm-activeLine': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--blue-soft)' },
@@ -213,8 +211,6 @@ const DARK_THEME = EditorView.theme(
     '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
     '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
     '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
-    '.cm-lineNumbers': { display: 'none' },
-    '&.cm-show-line-numbers .cm-lineNumbers': { display: 'block' },
     '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': { backgroundColor: 'var(--blue-soft)' },
@@ -733,6 +729,7 @@ const api: MdEditorApi = {
         selection: view.state.selection,
         extensions: extensionsFor(themeMode)
       }))
+      setLineNumberVisibility(lineNumbersVisible)
     }
   },
 
