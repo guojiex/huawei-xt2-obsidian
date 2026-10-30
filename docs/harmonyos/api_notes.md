@@ -1404,6 +1404,8 @@ F4 仍为未充分核实的平台生命周期记录；不能据此声称支持�
 
 **2026-10-30 API 26 运行观察（不外推至 API 24 / XT2）**：`Huawei_TripleFold` 对样例 `快速上手.md`（611 B）调起系统面板后，列出“华为分享 / 复制 / 另存为 / 添加至中转站”，未显示微信或飞书。点“另存为”进入“将文件保存至‘我的手机’”界面，列出 `Download` 与 `Documents`；系统 Back 返回分享面板，未保存文件。点“华为分享”后出现设备发现 / 传输权限说明；本轮取消授权，随后只看到“点击开启”页面，没有发现或选择接收设备。截图：`.local/shots/v09_share_system_targets_api26_20261030.png`、`v09_share_save_as_target_api26_20261030.png`、`v09_share_huawei_prompt_api26_20261030.png`、`v09_share_huawei_landing_api26_20261030.png`、`v09_share_after_save_cancel_api26_20261030.png`。此观察只证明 API 26 系统面板和本机保存目标 UI 可达；不证明任何目标应用读取文件或接收人收到内容。
 
+**2026-10-30 API 26 另存为补验（不外推至 API 24 / XT2）**：分享 `欢迎使用.md`（729 B），在系统保存界面选择 `Download` 并确认后返回笔记页。此结果只证明目标选择 / 确认流程可达；HDC shell 无媒体目录权限，首次启动系统文件管理器要求隐私授权，本轮取消，因此未确认下载文件是否存在或内容是否正确，也没有接收方读取证据。控件树留在本机忽略目录 `.local/shots/v09_share_receive_panel_ui.md`、`v09_share_receive_save_as_ui.md`、`v09_share_receive_download_folder_ui.md`、`v09_share_receive_saved_ui.md`。
+
 ### O2 ✅ 沙箱文件 / 目录压缩 API 可用于 API 24；目录结构以产物检查验收
 
 - 本机 `@ohos.zlib` 声明 `compressFile(inFile, outFile, options)` since 9，可将沙箱文件或目录压缩成文件；`compressFiles(inFiles, outFile, options)` since 12。API 24 可用前者打包准备好的临时目录。需以解压后文件集合、相对路径和中文 / 空格文件名测试确认实际产物。
