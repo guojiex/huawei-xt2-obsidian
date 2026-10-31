@@ -150,7 +150,8 @@ def main():
             if not p.exists() or p.read_text(encoding='utf-8') != text:
                 stale.append(str(p.relative_to(ROOT)))
         else:
-            p.write_text(text, encoding='utf-8', newline='\n')
+            with p.open('w', encoding='utf-8', newline='\n') as output:
+                output.write(text)
             print('Generated', p.relative_to(ROOT))
     if stale:
         raise SystemExit('Generated sample data out of date: ' + ', '.join(stale))

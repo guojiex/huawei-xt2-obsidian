@@ -19,6 +19,27 @@ test('renders headings, ordered and unordered lists, and blockquotes', () => {
   assert.match(html, /<blockquote>[\s\S]*?引用内容[\s\S]*?<\/blockquote>/)
 })
 
+test('renders callout types, custom titles and folded callouts with content kept in the DOM', () => {
+  const html = renderMarkdown('> [!note] 记录提示\n> **正文内容**\n\n> [!WARNING] 边界\n> 保持原样\n\n> [!tip]- 可折叠提示\n> 折叠内容仍在 DOM 中。')
+
+  assert.match(html, /class="callout" data-callout="note" data-callout-group="blue"/)
+  assert.match(html, /class="callout-title">[\s\S]*?<span>记录提示<\/span>/)
+  assert.match(html, /<strong>正文内容<\/strong>/)
+  assert.match(html, /class="callout" data-callout="warning" data-callout-group="amber"/)
+  // 「-」按官方语义默认折叠：用 details 承载且不带 open，内容仍留在 DOM 中
+  assert.match(html, /<details class="callout" data-callout="tip" data-callout-group="blue">/)
+  assert.doesNotMatch(html, /<details[^>]*\sopen/)
+  assert.match(html, /折叠内容仍在 DOM 中。/)
+})
+
+test('escapes callout titles and falls unknown callout types back to note', () => {
+  const html = renderMarkdown('> [!note] <img src=x onerror=alert(1)>\n> 正文\n\n> [!custom] 自定义\n> 原始内容')
+
+  assert.match(html, /<span>&lt;img src=x onerror=alert\(1\)&gt;<\/span>/)
+  // 未知类型按官方语义回落 note，不退回普通引用
+  assert.match(html, /data-callout="note"[\s\S]*?<span>自定义<\/span>[\s\S]*?原始内容/)
+})
+
 test('renders GFM tables and fenced code blocks', () => {
   const html = renderMarkdown('| 名称 | 值 |\n| --- | --- |\n| 条目 | 3 |\n\n```ts\nconst answer = 42\n```')
 

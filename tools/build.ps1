@@ -5,6 +5,15 @@
 #   .\tools\build.ps1                 # 构建 debug HAP（arm64，默认）
 #   .\tools\build.ps1 -Task clean     # 清理
 #   .\tools\build.ps1 -Abi x86_64     # 只本次构建编 x86_64
+#   .\tools\build.ps1 -Release        # ★ 上架发布包：用 AGC 发布证书/Profile 签名并打 .app
+#
+# -Release 说明（2026-10-31 上架用）：
+#   设置环境变量 OHOS_SIGNING_PROFILE=release → 工程级 hvigorfile.ts 改读
+#   .local/release-signing.json（发布凭据），不再用自动签名的调试凭据。
+#   两套凭据不通用：发布签名的包装不上真机（只能上架），调试签名上不了架。
+#   默认任务也从 assembleHap 变成 assembleApp（上架要 .app 不是 .hap）。
+#   发布包必须 arm64 —— 若 .local/local-abi.json 还是 x86_64 会直接终止，先跑
+#   .\tools\abi.ps1 -Reset。
 #
 # -Abi 说明（重要）：
 #   仓库提交的 entry/build-profile.json5 永远只有 arm64-v8a —— 真机 XT2 与
@@ -28,6 +37,7 @@ param(
     [ValidateSet('arm64-v8a', 'x86_64')]
     [string]$Abi = 'arm64-v8a',
     [switch]$OhpmInstall,
+    [switch]$Release,
     [string]$DevEco = 'C:\Program Files\Huawei\DevEco Studio'
 )
 
@@ -55,8 +65,26 @@ if ($OhpmInstall) {
     & (Join-Path $DevEco 'tools\ohpm\bin\ohpm.bat') install
 }
 
+if ($Release) {
+    if (-not $PSBoundParameters.ContainsKey('Task')) { $Task = 'assembleApp' }
+    if (-not (Test-Path -LiteralPath (Join-Path $repoRoot '.local\release-signing.json'))) {
+        Write-Error "缺少 .local/release-signing.json（发布凭据）—— 见 hvigorfile.ts 注释与 tools/signing.ps1"
+    }
+    if ($Abi -ne 'arm64-v8a') {
+        Write-Error "发布包必须 arm64-v8a，不能带 -Abi $Abi"
+    }
+    if (Test-Path -LiteralPath (Join-Path $repoRoot '.local\local-abi.json')) {
+        $abiNow = (Get-Content -LiteralPath (Join-Path $repoRoot '.local\local-abi.json') -Raw).Trim()
+        if ($abiNow -notmatch 'arm64') {
+            Write-Error ".local/local-abi.json = $abiNow —— 发布包会编成非 arm64。先跑 .\tools\abi.ps1 -Reset"
+        }
+    }
+    $env:OHOS_SIGNING_PROFILE = 'release'
+}
+
 Write-Host "task      : $Task"
 Write-Host "abi       : $Abi"
+Write-Host "signing   : $(if ($Release) { 'release（发布证书/Profile）' } else { 'default（调试自动签名）' })"
 Write-Host "deveco    : $DevEco"
 Write-Host "java home : $env:JAVA_HOME"
 

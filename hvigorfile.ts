@@ -28,7 +28,21 @@ import * as fs from 'fs';
  * .local/local-signing.json（已在 .gitignore 中忽略）。
  * 没有该文件时（例如别人 clone 后首次构建）不注入，产物为 unsigned，构建不报错。
  */
-const LOCAL_SIGNING_FILE: string = './.local/local-signing.json';
+/**
+ * 调试 / 发布两套凭据分开（2026-10-31 上架需要）：
+ *   默认读 local-signing.json（DevEco 自动签名的调试凭据，日常装机调试用）；
+ *   设置环境变量 OHOS_SIGNING_PROFILE=release 时改读 release-signing.json（AGC 申请的
+ *   发布证书 + 发布 Profile），对应 tools/build.ps1 -Release。
+ * 两者**不能混用**：发布签名的包装不上真机（只能上架），调试签名上不了架。
+ * 不设环境变量时行为与过去完全一致 —— IDE 点「运行」不受影响。
+ */
+const LOCAL_SIGNING_FILES: Record<string, string> = {
+  default: './.local/local-signing.json',
+  release: './.local/release-signing.json'
+};
+
+const signingProfileKey: string = (process.env['OHOS_SIGNING_PROFILE'] ?? 'default').trim();
+const LOCAL_SIGNING_FILE: string = LOCAL_SIGNING_FILES[signingProfileKey] ?? LOCAL_SIGNING_FILES['default'];
 
 function loadLocalSigning(): Record<string, string> {
   if (fs.existsSync(LOCAL_SIGNING_FILE)) {
@@ -41,9 +55,9 @@ const signingMaterial: Record<string, string> = loadLocalSigning();
 const hasSigning: boolean = Object.keys(signingMaterial).length > 0;
 
 if (hasSigning) {
-  console.log('[signing] 已从 .local/local-signing.json 注入签名配置（build-profile.json5 保持干净）');
+  console.log(`[signing] 已从 ${LOCAL_SIGNING_FILE}（profile=${signingProfileKey}）注入签名配置（build-profile.json5 保持干净）`);
 } else {
-  console.log('[signing] 未找到 .local/local-signing.json —— 本次构建不签名（产物为 -unsigned.hap）');
+  console.log(`[signing] 未找到 ${LOCAL_SIGNING_FILE}（profile=${signingProfileKey}）—— 本次构建不签名（产物为 -unsigned.hap）`);
 }
 
 export default {

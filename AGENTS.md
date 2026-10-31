@@ -89,6 +89,28 @@ tools/
 .\tools\build.ps1                  # 直接就是签名构建（hvigorfile.ts 注入）
 ```
 
+### 发布签名（上架 AGC，2026-10-31 落地）
+
+调试凭据与发布凭据**分开两套**，互不通用：发布签名的包装不上真机，调试签名上不了架。
+
+```powershell
+$env:OHOS_SIGNING_PROFILE = 'release'   # 让 hvigorfile.ts 改读 .local/release-signing.json
+.\tools\build.ps1 -Release              # 发布构建（默认 assembleApp，强制 arm64）
+```
+
+材料放 `.local/release-signing/`（`yaoshi_release.p12` / `.csr` / `.cer` / `.p7b`，密码同目录
+`keystore.pass.txt`），与 `build-profile.json5` 无签名配置的做法一致。
+
+⚠️ **两个实测硬约束**（都踩过，别再犯）：
+
+1. **`storePassword` / `keyPassword` 必须 ≥ 32 位**，否则签名阶段直接失败：
+   `00303116 Configuration Error … length of the storePassword or keyPassword field … is less than 32`。
+   生成时就给 40 位纯字母数字。
+2. **改密钥库口令必须「先写密码文件，再执行 keytool」**。反过来的话一旦中途失败，
+   库已换新口令而新口令没落盘 → 私钥永久不可恢复 → 证书 + Profile 全部作废，只能重新申请。
+   另外 **PKCS12 不支持 `keytool -keypasswd`**（`UnsupportedOperationException`），
+   改 `-storepasswd` 就等于同时改了 key password。
+
 ```bash
 cd web/gitbridge
 node build.mjs                 # 改了 src/ 后必做：重新打包 rawfile 产物

@@ -136,6 +136,10 @@ test('native setting is wired to both editors and exposes a named accessible swi
   assert.match(indexSource, /saveShowLineNumbers\(show\)/);
   assert.match(editorSource, /@Prop @Watch\('onLineNumbersChanged'\) showLineNumbers: boolean = false/);
   assert.match(editorSource, /window\.__mdeditor\.setLineNumbers\(\$\{show\}\)/);
+  const themeChangeStart = editorSource.indexOf('  onThemeChanged(): void {');
+  const lineNumberChangeStart = editorSource.indexOf('  onLineNumbersChanged(): void {', themeChangeStart);
+  const themeChange = editorSource.slice(themeChangeStart, lineNumberChangeStart);
+  assert.match(themeChange, /this\.impl\?\.setTheme\(this\.theme\);[\s\S]*this\.impl\?\.setLineNumbers\(this\.showLineNumbers\);/);
   assert.match(settingsSource, /Toggle\(\{ type: ToggleType\.Switch, isOn: this\.showLineNumbers \}\)[\s\S]*?\.accessibilityText\('显示行号'\)/);
   assert.match(settingsSource, /编辑 Markdown 时显示，预览不显示/);
 });
