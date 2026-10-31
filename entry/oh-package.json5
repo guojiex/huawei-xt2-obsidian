@@ -5,6 +5,9 @@
   "main": "",
   "author": "Jiexin Guo",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {
+    "libgit2_napi.so": "file:./src/main/cpp/types/libgit2_napi",
+    "libvaultdir_napi.so": "file:./src/main/cpp/types/vaultdir_napi"
+  }
 }
 
