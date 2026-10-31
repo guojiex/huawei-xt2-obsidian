@@ -95,6 +95,37 @@ node build.mjs                 # 改了 src/ 后必做：重新打包 rawfile �
 npm run smoke                  # node 冒烟（真 clone）
 ```
 
+## Native 构建与跨机器 ABI（重要）
+
+App 的 git 能力走 `native/git2_napi`（libgit2 编成 so），**`.build/` 是 gitignore 的**：
+换机器 / 全新 clone 之后第一次构建 HAP 之前必须先编 native，否则 CMake 直接
+`FATAL_ERROR: Build native/git2_napi before assembling the App HAP`。
+
+```bash
+./native/git2_napi/build.sh                    # 默认 arm64-v8a，真机 / Apple Silicon Mac 用这个
+OHOS_ARCH=x86_64 ./native/git2_napi/build.sh   # 仅本机 Windows 模拟器需要，见下
+export OHOS_NDK=...                            # Windows 本机要显式指向 DevEco 的 native SDK
+```
+
+| 宿主 | 模拟器镜像架构 | 能否装 arm64-only HAP |
+| --- | --- | --- |
+| XT2 真机 / Mac Apple Silicon（arm64 镜像） | arm64 | ✅ 直接用默认配置 |
+| **Windows 本机**（DevEco 只提供 x86 镜像） | x86_64 | ❌ `bm install` 报 code:9568347 |
+
+仓库提交的 `entry/build-profile.json5` **永远只有 `arm64-v8a`**，不要为了本机环境改它。
+Windows 本机要跑模拟器时：
+
+```powershell
+OHOS_ARCH=x86_64 bash native/git2_napi/build.sh   # 一次即可，产物放 .build/out/libs/x86_64
+.\tools\build.ps1 -Abi x86_64                     # 临时改 abiFilters，构建完自动还原
+```
+
+`-Abi` 结束后会把 `build-profile.json5` 原样还原，`git status` 依旧干净，另一台
+Mac / 真机构建完全不受影响。三处架构硬编码已改成按 `OHOS_ARCH` 推导，arm64 时的
+路径与历史完全一致，已有的 arm64 产物不会被迫重编。
+
+> x86_64 模拟器只能用来验收 UI，**它的证据不能外推到 API 24 / XT2 真机**。
+
 ## 静态内容生成
 
 - 样例真源：`sample_vault/notes/` + `manifest.json`，运行 `python3 tools/generators/build_sample_vault.py`。

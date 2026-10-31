@@ -3,9 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { readSourceFile } from './lib/source.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const prototypeHtml = fs.readFileSync(path.join(root, 'docs/prototype/v2/index.html'), 'utf8')
+// 必须归一 CRLF：tokenBlock 的正则里 [^\r\n]* 匹配不到换行，两个规则之间的 \s*
+// 会把原型的 \r\n 一起吃进 tokenBlock，而构建产物是 LF，includes 就永远为 false。
+// 在 macOS 上 LF 恰好相等所以看不出问题，这个用例是"Mac 通过、Windows 挂"。
+const prototypeHtml = readSourceFile(path.join(root, 'docs/prototype/v2/index.html'))
 const tokenBlock = prototypeHtml.match(/:root\{[^\r\n]*\}\s*\[data-theme=dark\]\{[^\r\n]*\}/)?.[0]
 assert.ok(tokenBlock, 'v2 light and dark token blocks must remain available')
 
@@ -72,7 +76,7 @@ test('editor and preview bundles embed the exact v2 light and dark token blocks'
     'entry/src/main/resources/rawfile/mdeditor/index.html',
     'entry/src/main/resources/rawfile/mdpreview/index.html'
   ]) {
-    const generatedHtml = fs.readFileSync(path.join(root, relativePath), 'utf8')
+    const generatedHtml = readSourceFile(path.join(root, relativePath))
     assert.ok(generatedHtml.includes(tokenBlock), `${relativePath} is stale`)
   }
 })

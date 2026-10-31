@@ -25,6 +25,15 @@ Build the Native dependencies for the arm64 API 24 compatibility target:
 ./native/git2_napi/build.sh
 ```
 
+This targets **arm64-v8a** with `OHOS_COMPATIBLE_SDK_VERSION=24` by default, which covers the XT2 device and Apple Silicon Mac emulators. A second architecture exists only for x86_64 emulator images — Windows DevEco ships no arm64 image, so an arm64-only HAP is rejected there with `install failed, code:9568347` (ABI mismatch):
+
+```sh
+OHOS_ARCH=x86_64 ./native/git2_napi/build.sh        # artifact: .build/out/libs/x86_64
+OHOS_NDK=/path/to/openharmony/native ./native/git2_napi/build.sh   # non-macOS default SDK path
+```
+
+Set `OHOS_NDK` when the NDK is not at the macOS default `/Applications/DevEco-Studio.app/...`. Build trees are keyed per architecture (`libgit2-x86_64/`, `mbedtls-x86_64/`, …); the arm64 trees keep their original paths so existing artifacts stay valid. Only `arm64-v8a` and `x86_64` are accepted; anything else exits with an error.
+
 This uses the installed API 26 Native SDK/sysroot with `OHOS_COMPATIBLE_SDK_VERSION=24`; it is compile evidence, not API 24 device evidence. Both App and test HAP builds package `libgit2_napi.so` with `libgit2.so.1.9`.
 
 The API 26 emulator Hypium suite `Git2Native` currently passes 9/9. It covers module load, HTTPS system CA clone, isolated Basic/Bearer authentication, branch and progress callbacks, byte hashes, bad-credential and unreachable-endpoint cleanup, existing-target refusal, index-write failure protection, duplicate stage/push, `.trash` exclusion, commit/fetch/push, and rejection of remote divergence. The fixture is local and disposable; no real user remote is used.
