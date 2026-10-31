@@ -1495,12 +1495,25 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 
 **连带变更**：`module.json5` 首次出现 `INTERNET` 之外的权限（`ohos.permission.FILE_ACCESS_PERSIST`），仓库手册硬约束 13 已按「已拍板的例外」补记。**发布前仍需完成 AGC 受限权限申请**，否则上架版本拿不到该权限。
 
-**设备实测结论（2026-10-31，API26 x86_64 模拟器 + 上述 ACL profile 签名包）**：
-- `atm dump -d -p ohos.permission.FILE_ACCESS_PERSIST` → `grantMode: SYSTEM_GRANT`、`availableLevel: NORMAL`、`availableType: NORMAL`、`provisionEnable: true`、`distributedSceneEnable: false`。**即：声明即授予，运行时不需要 `requestPermissionsFromUser` 弹窗**；`availableLevel` 实测为 NORMAL，印证「API 12 起降为 normal」的官方 NOTE。
-- `atm dump -t -b com.jxg.huaweiobsidian` → `ohos.permission.FILE_ACCESS_PERSIST` 与 `ohos.permission.INTERNET` 均为 `grantStatus: 0`、`grantFlag: 4`（`0` = 已授予；系统日志中未授权场景表现为 `-1`）。**两个权限状态完全一致，说明它已被当普通权限自动授予。**
-- `provisionEnable: true` 意味着 **profile 必须包含该权限才会授予** —— 这正是 AGC 受限权限申请在发布链路上的必要性来源，也解释了为什么只改 `module.json5` 不够（本机靠含 ACL 的 debug profile 满足）。
-- 未换 profile 前旧包 `bm dump` 只有 `INTERNET`；换 profile 后 `reqPermissionDetails` / `reqPermissions` 均含该权限，且安装成功（换 profile 导致的 `code:9568332 sign info inconsistent` 需先卸载旧包再装）。
-- ⚠️ 以上为 **API26 模拟器**证据，非 API24 / XT2。API12+ 等级已降为 normal，预期一致，但按规则仍标「待验证（需 XT2/API24）」，不在关键路径上外推。
+**设备实测 ①（2026-10-31，API26 x86_64 模拟器 + 上述 ACL profile 签名包）**：
+- `atm dump -d -p ohos.permission.FILE_ACCESS_PERSIST` → `grantMode: SYSTEM_GRANT`、`availableLevel: NORMAL`、`availableType: NORMAL`、`provisionEnable: true`、`distributedSceneEnable: false`。**即：声明即授予，运行时不需要 `requestPermissionsFromUser` 弹窗**。
+- `atm dump -t -b com.jxg.huaweiobsidian` → 该权限与 `INTERNET` 同为 `grantStatus: 0`、`grantFlag: 4`（`0` = 已授予；未授权场景表现为 `-1`）。
+- ⚠️ 模拟器非 XT2，且当时只用含 ACL 的 profile 测过，一度误判为「profile 必须含该权限」（见下方实测 ② 的更正）。
+
+**设备实测 ②（2026-10-31 晚，XT2 真机 LAP-AL10 / 系统 API 26 —— 结论推翻了实测 ① 的推论）**：改用 **DevEco 自动签名的 profile（`acls` 为空数组）** 构建，仅凭 `module.json5` 里那一行声明：
+
+```
+atm dump -d -p ohos.permission.FILE_ACCESS_PERSIST
+    grantMode: SYSTEM_GRANT   availableLevel: NORMAL   availableType: NORMAL   provisionEnable: true
+atm dump -t -b com.jxg.huaweiobsidian
+    FILE_ACCESS_PERSIST  grantStatus: 0  grantFlag: 4   ← 与 INTERNET 一致，已授予
+```
+
+**结论（以本条为准）**：在 API ≥ 12 的设备上（本 XT2 实测为 API 26），**profile 不需要包含 `FILE_ACCESS_PERSIST` 的 ACL，只需要在 `module.json5` 声明即被授予**。`provisionEnable: true` 不等于「profile 必须带权限」——实测 ① 把这个字段解释错了。`Strictly speaking`：我们在 XT2 真机上的这个文件权限已被授予。
+
+这条更正同时意味着：**v1.5 的开发 / 真机调试不需要专门去申请含 ACL 的 debug profile**（那个 profile 反而因为证书不同源导致装不上，见 AGENTS.md 硬约束 19 附带的坑）。发布上架仍按上面的 AGC 三步走。
+
+**残留风险**：以上均为 **API 26 设备**（模拟器 + XT2 真机）证据。目标设备兼容级别为 API 24，官方 NOTE 明确「API version 12 及以后可直接声明」，24 > 12 故预期一致；但手上没有真正只到 API 24 的设备，**不外推**，v1.5 §6.1 仍保留「待验证（需 XT2/API24）」的字样直到其完成判定跑通。
 
 **发布链路：AGC 受限权限申请（官方流程，来源：[申请使用受限权限](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides-V14/declare-permissions-in-acl-V14) / [Requesting Restricted Permissions](https://developer.huawei.com/consumer/en/doc/doccenter-capabilities/declare-permissions-in-acl)）**：
 1. **AGC 申请权限证书**：在 AppGallery Connect 提交受限权限申请，审核结果通过互动中心与邮件通知（官方称「within the specified review period」，Restricted Permissions 列表里多数标注 3 个工作日）。官方强调「应优先使用 Picker / 安全控件等替代方案，仅少量符合特殊场景的应用被允许申请」——本权限官方给的典型场景正是「文档编辑类应用期望历史记录里直接打开，不必再次拉起 Picker」，与本工程 v1.5 场景吻合。

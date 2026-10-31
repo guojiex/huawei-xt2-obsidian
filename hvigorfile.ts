@@ -38,7 +38,12 @@ import * as fs from 'fs';
  */
 const LOCAL_SIGNING_FILES: Record<string, string> = {
   default: './.local/local-signing.json',
-  release: './.local/release-signing.json'
+  release: './.local/release-signing.json',
+  // v1.5 外部目录持久授权需要含 FILE_ACCESS_PERSIST 的 profile（同源见下）。
+  // ⚠️ 启用前提：该 profile 的 development-certificate 必须与 certpath/storeFile
+  // 是同一个开发证书，否则 `bm install` 报 9568322 not trusted app source
+  // （2026-10-31 实测：证书 SHA1 65E4… 与本机 keystore C7FA… 不同源）。
+  'file-access': './.local/file-access-signing.json'
 };
 
 const signingProfileKey: string = (process.env['OHOS_SIGNING_PROFILE'] ?? 'default').trim();

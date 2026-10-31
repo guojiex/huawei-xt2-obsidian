@@ -41,7 +41,16 @@
 | 16 | 埋点用**原生 `hiAppEvent` + `UIObserver`**，不引第三方 SDK；**笔记内容一律禁止进埋点**（标题/文件名/路径/正文/字数/标签全禁） | 个人知识库的隐私红线；采集内容会抬高合规与审核成本 |
 | 17 | 颜色 / 圆角 / 间距 / 字号**只引用 token**（`app.color.*` / `app.float.*` 或常量模块），**组件里禁止散写数值**；唯一设计真源是 `docs/prototype/v2/index.html` 的 `:root` / `[data-theme="dark"]`。编辑器、预览和原生资源按明确映射同步；组件里不散写数值，具体差异与验证见 v0.9 迁移清单。v1 设计稿保持从工作树删除；历史对照只读 Git 历史，不恢复或归档旧稿 | 散写会让深色模式与换主色变成全局搜替换（2026-10-17 定，落地在 v0.2） |
 | 18 | 禁止凭记忆写 **`Hds*` 组件名**或 **`sys.symbol.*` 资源 id**；UI Design Kit / Symbol 未核实前用自绘兜底 | 同铁律：编造 API 会直接编译失败；待核实项见 `api_notes.md` **I 组** |
-| 19 | **`build-profile.json5` 永久保持 `"signingConfigs": []`**；签名改由工程级 **`hvigorfile.ts` 的 `config.ohos.overrides.signingConfig`** 注入，凭据只存在于 `.local/local-signing.json`（已 gitignore） | DevEco 自动签名会往 `build-profile.json5` 回写**密码明文 + 本机绝对路径**，而该文件**不能 ignore**（移除后 hvigor 报 `00304035 Not Found`，实测）。机制与 ⚠️ 运行时 schema（**只接受 `material` / `type`，写 `name` 构建失败**）见 `api_notes.md` **I4**；日常用 `.\tools\signing.ps1 -Import` 抽凭据，`-InstallHook` 装 pre-commit 兜底 |
+| 19 | **`build-profile.json5` 永久保持 `"signingConfigs": []`**；签名改由工程级 **`hvigorfile.ts` 的 `config.ohos.overrides.signingConfig`** 注入，凭据只存在于 `.local/local-signing.json`（已 gitignore） | DevEco 自动签名会往 `build-profile.json5` 回写**密码明文 + 本机绝对路径**，而该文件**不能 ignore**（移除后 hvigor 报 `00304035 Not Found`，实测）。⚠️ **签名链必须同源（2026-10-31 实测踩到的第二个签名坑）**：
+`profile(.p7b)` 里带的 development-certificate 必须与 `certpath(.cer)` / `storeFile(.p12)`
+是**同一个开发证书**，否则装机报 `code:9568322 signature verification failed due to not
+trusted app source`，**连真机都部署不上去**。当时是把 profile 换成了从别处下载的含 ACL
+的 p7b（证书 SHA1 `65E4…`），而本机 keystore 属于 DevEco 自动签名那套（`C7FA…`），两者
+不同源。查法：解析 p7b 的 `bundle-info.development-certificate` 与 `certpath` 证书算 SHA1 比对。
+工程已支持 `$env:OHOS_SIGNING_PROFILE = 'file-access'` 切到含 ACL 的那套，但**只有当你手上有
+与该 profile 配套的 p12/cer 时才用得起来**；日常（`default`）就用 DevEco 自动签名那套。
+
+机制与 ⚠️ 运行时 schema（**只接受 `material` / `type`，写 `name` 构建失败**）见 `api_notes.md` **I4**；日常用 `.\tools\signing.ps1 -Import` 抽凭据，`-InstallHook` 装 pre-commit 兜底 |
 
 ## 目录地图
 
