@@ -18,8 +18,7 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
-import { BusinessError } from '@kit.BasicServicesKit';
-import { FunctionComponent, FunctionController } from '@kit.AgentFrameworkKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
@@ -74,7 +73,6 @@ import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
-const XIAOYI_AGENT_ID: string = 'agentb21117de704941b3ba497bd5de94f6ad';
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -143,6 +141,7 @@ struct Index {
   @State @Watch('onFormatContextChanged') sidebarCollapsed: boolean = false;
   /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
   @State @Watch('onFormatContextChanged') topView: string = 'note';
+  @State agentKitSlotBuilder: WrappedBuilder<[() => void]> | null = null;
   @State vaultManagerReturnView: string = 'note';
   @State settingsReturnView: string = 'note';
   @State settingsCategory: string = 'general';
@@ -173,8 +172,10 @@ struct Index {
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
   private editorPreferenceStore: EditorPreferenceStore | null = null;
-  private xiaoyiController: FunctionController = new FunctionController();
-  private readonly xiaoyiDialogClosedListener = (): void => {
+  private agentKitLoadStarted: boolean = false;
+  private readonly agentKitUnavailableInSimulator: boolean =
+    deviceInfo.productModel.toLowerCase().indexOf('emulator') >= 0;
+  private readonly xiaoyiDialogClosed = (): void => {
     void this.refreshWorkspaceAfterXiaoyi();
   };
   private workspaceSessionStore: WorkspaceSessionStore | null = null;
@@ -328,8 +329,7 @@ struct Index {
   @State shareImagePreviewPages: ShareImagePreviewPage[] = [];
 
   aboutToAppear(): void {
-    this.xiaoyiController.off('agentDialogClosed', this.xiaoyiDialogClosedListener);
-    this.xiaoyiController.on('agentDialogClosed', this.xiaoyiDialogClosedListener);
+    void this.loadAgentKitSlot();
     this.refreshFromRegistry();
     this.ensureEditorPreferenceStore();
     this.showLineNumbers = (this.editorPreferenceStore as EditorPreferenceStore).showLineNumbers();
@@ -345,8 +345,21 @@ struct Index {
     this.pendingWorkspaceSession = (this.workspaceSessionStore as WorkspaceSessionStore).load();
   }
 
-  aboutToDisappear(): void {
-    this.xiaoyiController.off('agentDialogClosed', this.xiaoyiDialogClosedListener);
+  private async loadAgentKitSlot(): Promise<void> {
+    if (this.agentKitUnavailableInSimulator || this.agentKitLoadStarted) {
+      return;
+    }
+    this.agentKitLoadStarted = true;
+    try {
+      const agentModule: ESObject = await import('../components/AgentKitSlot');
+      const getAgentKitSlotBuilder: () => WrappedBuilder<[() => void]> =
+        agentModule.getAgentKitSlotBuilder as () => WrappedBuilder<[() => void]>;
+      this.agentKitSlotBuilder = getAgentKitSlotBuilder();
+    } catch (error) {
+      this.agentKitLoadStarted = false;
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '加载 AgentKit 入口失败，错误码 %{public}d', err.code);
+    }
   }
 
   private ensureSplitLayoutStore(): void {
@@ -3963,16 +3976,12 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
-        FunctionComponent({
-          agentId: XIAOYI_AGENT_ID,
-          controller: this.xiaoyiController,
-          options: { title: 'Agent 对话' },
-          onError: (error: BusinessError): void => {
-            hilog.error(DOMAIN, TAG, '小艺 FunctionComponent 错误码 %{public}d', error.code);
-            promptAction.showToast({ message: '暂时无法打开小艺' });
+        if (this.agentKitSlotBuilder !== null) {
+          Row() {
+            this.agentKitSlotBuilder.builder(this.xiaoyiDialogClosed)
           }
-        })
           .margin({ left: Space.s1, right: Space.s1 })
+        }
         if (this.isSingleScreenLayout()) {
           this.MoreMenuButton()
         } else {

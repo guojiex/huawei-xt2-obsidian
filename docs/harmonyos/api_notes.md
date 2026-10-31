@@ -669,7 +669,9 @@ ohpm publish yourlib.har
 
 2026-10-30 模拟器启动隔离复验：华为[模拟器与真机差异指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/ide-emulator-specification)指出，Kit 能力不支持导致应用闪退时可尝试动态引入 Kit，并给出缺少 Kit HSP 的 `LoadJSPandaFile` 报错示例；[ArkTS 动态加载指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-dynamic-import)说明动态 `import` 可按条件延迟加载模块。当前实现把 `@kit.AgentFrameworkKit` 静态导入及 `FunctionComponent` 放到 `AgentKitPage`，首页根据 `deviceInfo.productModel` 是否包含 `emulator` 决定是否展示入口，并仅在其他设备上动态导入该页。当前 API 26 模拟器通过 HDC 查询到 `const.product.model=emulator`；unsigned HAP 构建、覆盖安装、拉起后，应用主进程仍在运行，UI 树有 111 个节点，未包含 Agent 入口文案，未观察到本次启动的 `agentKitHsp` / `SIGABRT` 匹配日志。这里验证的是当前模拟器启动隔离；`deviceInfo.productModel` 在其他模拟器型号上的具体取值、真实设备的动态页面加载/Agent 拉起，以及模拟器点击绕过 guard 后的行为均未验证。API 26 SDK 将 `deviceInfo.productModel` 标为 API 6 起；动态路由代码已编译，真实设备页面路由待测。
 
-2026-10-31 用户提供的 AI 答复与补充答复核对见[归档](qa/2026-10-31_模拟器AgentKit动态加载与设备识别答复核对_API24.md)。官方模拟器 FAQ 索引中有“在应用中如何区分真机和模拟器”条目，但本轮正文访问超时，未独立复核条目所述 `emulator` 值；本机 API26 模拟器的系统属性值 `emulator` 已有 HDC 实测。动态加载 Kit 依赖并用设备型号跳过模拟器路径，是文档支持的隔离方向；不过答复中的 `ESObject` / `@Builder` 动态组件调用未在本工程编译，触发缺失 HSP 时 reject 还是 native 崩溃仍未知。当前 main 已恢复首页静态 Kit 导入，2026-10-31 启动复验再次命中 `agentKitHsp` 缺失；历史隔离成功只覆盖“跳过动态加载时能启动”，不证明动态加载后组件可在首页渲染。
+2026-10-31 用户提供的 AI 答复与补充答复核对见[归档](qa/2026-10-31_模拟器AgentKit动态加载与设备识别答复核对_API24.md)。官方模拟器 FAQ 索引中有“在应用中如何区分真机和模拟器”条目，但本轮正文访问超时，未独立复核条目所述 `emulator` 值；本机 API26 模拟器的系统属性值 `emulator` 已有 HDC 实测。动态加载 Kit 依赖并用设备型号跳过模拟器路径，是文档支持的隔离方向；早先直接把动态导入的 `@Component` 类型作为组件调用没有通过 ArkTS 编译。
+
+2026-10-31 代码修复与模拟器复验：`Index` 不再静态导入 `@kit.AgentFrameworkKit`；本机模拟器型号为 `emulator` 时不执行动态导入。Kit 依赖留在 `AgentKitSlot.ets`，由模块内 `@Builder` 经 `wrapBuilder` 包装后导出，首页只在非模拟器路径动态导入并调用包装后的 Builder。Hvigor `assembleHap` 编译及签名成功；签名包覆盖安装因已有安装包签名不一致而失败，同次构建 unsigned HAP 安装成功。重新启动后模拟器显示笔记工作区，日志未发现本次启动对应的 `agentKitHsp` / `SIGABRT` 匹配项。该结果验证当前 API26 模拟器跳过 Kit 模块时可进入应用；真机动态导入、顶栏实际渲染与 Agent 拉起仍未验证。此前“当前 main 已恢复首页静态 Kit 导入、启动再次命中 HSP”的结论只描述本次修复前状态，不再是当前代码状态。
 
 官方指南另要求先创建智能体、关联应用，并确保设备已登录华为账号且联网。`FunctionOptions.queryText` 可设置初始查询文本。满足版本范围不等于本机 Agent 可用，仍需支持查询及设备验证。
 
