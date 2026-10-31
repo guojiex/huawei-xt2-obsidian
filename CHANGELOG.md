@@ -1,6 +1,6 @@
 # 版本记录
 
-> 由 `changelog.json` 生成，运行 `python3 tools/build_changelog.py` 更新。日期为阶段记录日期；只有标记“已发布”的条目表示正式发布。
+> 由 `changelog.json` 生成，运行 `python3 tools/generators/build_changelog.py` 更新。日期为阶段记录日期；只有标记“已发布”的条目表示正式发布。
 
 ## v0.9.0 · v2 界面迁移与统一设计
 

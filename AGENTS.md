@@ -63,10 +63,12 @@ docs/
   harmonyos/                  ★ 鸿蒙知识库：api_notes.md（真源）/ qa/ / prompts/
   prototype/v2/index.html     当前单文件交互原型（浏览器直接打开）
 spec/                        v0.1 的 spec/plan/tasks（**执行计划，不是承诺记录**）
-tools/build.ps1               命令行构建 HAP（不用开 DevEco）
-tools/install.ps1             装 HAP 到真机 / 拉起
-tools/signing.ps1             签名配置挂载(-On) / 还原(-Off) / 状态(-Status) / 装钩子
-tools/gen_app_icon.py         程序化生成分层图标
+tools/
+  build.ps1                   命令行构建 HAP（不用开 DevEco）
+  install.ps1                 装 HAP 到真机 / 拉起
+  signing.ps1                 签名配置挂载(-On) / 还原(-Off) / 状态(-Status) / 装钩子
+  tests/                      全部 Node/Python 测试（test_*.mjs、test_changelog.py、lib/source.mjs）
+  generators/                 生成器与图标脚本（build_*.py、gen_*.py）
 .local/                       ★ 本地私有：签名版 build-profile 备份（已 gitignore）
 ```
 
@@ -95,8 +97,8 @@ npm run smoke                  # node 冒烟（真 clone）
 
 ## 静态内容生成
 
-- 样例真源：`sample_vault/notes/` + `manifest.json`，运行 `python3 tools/build_sample_vault.py`。
-- 版本记录真源：`changelog.json`，运行 `python3 tools/build_changelog.py`；App 包版本仍取 `AppScope/app.json5` / 运行时包信息。
+- 样例真源：`sample_vault/notes/` + `manifest.json`，运行 `python3 tools/generators/build_sample_vault.py`。
+- 版本记录真源：`changelog.json`，运行 `python3 tools/generators/build_changelog.py`；App 包版本仍取 `AppScope/app.json5` / 运行时包信息。
 - 两个脚本都提供 `--check`，提交前检查并连同生成产物提交；不要手改生成的 ETS、CHANGELOG.md 或原型标记区。
 - 复用说明见 `docs/engineering/数据驱动页面.md`，不把个人笔记、令牌或运行时状态写入静态产物。
 

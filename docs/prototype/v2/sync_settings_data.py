@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
-    helpers = runpy.run_path(str(ROOT / 'tools/build_changelog.py'))
+    helpers = runpy.run_path(str(ROOT / 'tools/generators/build_changelog.py'))
     entries = helpers['validate'](json.loads((ROOT / 'changelog.json').read_text()))
     entries = [{**entry, 'statusLabel': helpers['LABELS'][entry['status']]} for entry in entries]
     version, build = helpers['package_version']()

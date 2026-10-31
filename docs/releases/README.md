@@ -134,7 +134,7 @@ docs/releases/vX.Y/需求文档.md（本版本承诺交付的）
 
 1. 补齐该版本目录的验收记录（`需求文档.md` 第 6 节）
 2. 同步 `app.json5` 的 `versionName` / `versionCode`
-3. 更新 `changelog.json` 对应版本记录、日期和状态，运行 `python3 tools/build_changelog.py`；`--check` 必须通过
+3. 更新 `changelog.json` 对应版本记录、日期和状态，运行 `python3 tools/generators/build_changelog.py`；`--check` 必须通过
 4. 打 git tag `vX.Y`，并在下方索引表把状态改成「已发布」
 
 ### R10 交给其他 Agent 实现时，用版本目录里的 `实现提示词.md`

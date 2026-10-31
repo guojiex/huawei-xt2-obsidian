@@ -1,0 +1,145 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
+
+const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
+const { transformSync } = require('esbuild');
+const source = fs.readFileSync(new URL('../../entry/src/main/ets/model/NoteTextShareService.ets', import.meta.url), 'utf8');
+const code = transformSync(source + '\nmodule.exports = NoteTextShareService;', {
+  loader: 'ts',
+  format: 'cjs'
+}).code;
+const arktsRuntime = {
+  util: {
+    TextEncoder: class {
+      encodeInto(text) {
+        const bytes = new TextEncoder().encode(text);
+        return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      }
+    }
+  }
+};
+const arkDataRuntime = { uniformTypeDescriptor: { UniformDataType: { TEXT: 'text/plain' } } };
+const context = vm.createContext({
+  module: { exports: {} },
+  require: (name) => name === '@kit.ArkTS' ? arktsRuntime :
+    name === '@kit.ArkData' ? arkDataRuntime : require(name)
+});
+vm.runInContext(code, context);
+const NoteTextShareService = context.module.exports;
+const { createPreview } = NoteTextShareService;
+
+test('frontmatter title replaces the filename, duplicate title is omitted, and common Markdown stays readable', () => {
+  const result = createPreview('notes/fallback.md', [
+    '---',
+    'title: "Readable title"',
+    'tags: [sample]',
+    '---',
+    '# Readable title',
+    '',
+    'A **bold** and *italic* word with [a link](https://example.test).',
+    '',
+    '- first',
+    '1. second',
+    '- [x] done',
+    '- [ ] next'
+  ].join('\n'));
+
+  assert.equal(result.title, 'Readable title');
+  assert.equal(result.content, [
+    'Readable title',
+    '',
+    'A bold and italic word with a link (https://example.test).',
+    '',
+    '• first',
+    '1. second',
+    '☑ done',
+    '☐ next'
+  ].join('\n'));
+  assert.deepEqual(Array.from(result.limitations), ['YAML 属性区不包含在文本中。']);
+});
+
+test('images, tables, formulas, and wiki links get readable text and explicit limitations', () => {
+  const result = createPreview('sample.md', [
+    '![diagram](assets/diagram.png)',
+    '',
+    '| Name | Value |',
+    '| --- | --- |',
+    '| A | ![cell](assets/cell.png) |',
+    '| Cost | $5 |',
+    '',
+    'Formula $x^2$ and [[target|alias]].',
+    '<img src="chart.png">'
+  ].join('\n'));
+
+  assert.match(result.content, /\[图片：diagram\]/);
+  assert.match(result.content, /Name \| Value\nA \| \[图片：cell\]\nCost \| \$5/);
+  assert.match(result.content, /Formula \$x\^2\$ and alias \(target\)/);
+  assert.match(result.content, /\[图片\]/);
+  assert.deepEqual(Array.from(result.limitations), [
+    '图片以文字占位，不会随文本传递；需保留附件时请选择排版图片或 Markdown / ZIP。',
+    '表格改为单元格文字排列，表格版式不会保留。',
+    '公式保留原始表达式，公式排版不会保留。',
+    '双链改为可读文字，链接目标放在括号中。'
+  ]);
+});
+
+test('autolinks and raw HTML links retain their targets in editable text', () => {
+  const result = createPreview('links.md', [
+    'Open <https://example.test/direct>, <a href="https://example.test/double">**bold**</a>,',
+    "<a href='https://example.test/single'>single</a>, or <a href=https://example.test/plain>plain</a>."
+  ].join(' '));
+
+  assert.equal(result.content, [
+    'links',
+    '',
+    'Open https://example.test/direct, bold (https://example.test/double), single (https://example.test/single), or plain (https://example.test/plain).'
+  ].join('\n'));
+  assert.deepEqual(Array.from(result.limitations), []);
+});
+
+test('fenced code keeps its source text while fence markers and common inline formatting are removed', () => {
+  const result = createPreview('code.md', [
+    '```typescript',
+    'const value = "**literal**";',
+    '```',
+    '',
+    'Inline `code` stays readable.'
+  ].join('\n'));
+
+  assert.equal(result.content, 'code\n\nconst value = "**literal**";\n\nInline code stays readable.');
+  assert.deepEqual(Array.from(result.limitations), []);
+});
+
+test('inline code preserves HTML and Markdown-looking source without reporting image limitations', () => {
+  const result = createPreview('code.md', 'Run `![x](assets/x.png) <b>literal</b> **raw**` as written.');
+
+  assert.equal(result.content, 'code\n\nRun ![x](assets/x.png) <b>literal</b> **raw** as written.');
+  assert.deepEqual(Array.from(result.limitations), []);
+});
+
+test('an unclosed frontmatter block remains visible and large text is preserved with an explicit Share Kit limit warning', () => {
+  const unclosed = createPreview('sample.md', '---\ntitle: visible\nbody text');
+  assert.match(unclosed.content, /title: visible/);
+  assert.match(unclosed.content, /body text/);
+  const emptyTitle = createPreview('fallback.md', "---\ntitle: ''\n---\nbody");
+  assert.equal(emptyTitle.title, 'fallback');
+  assert.equal(emptyTitle.content, 'fallback\n\nbody');
+
+  const largeText = 'x'.repeat(200 * 1024);
+  const large = createPreview('large.md', largeText);
+  assert.equal(large.content.length, largeText.length + 'large\n\n'.length);
+  assert.deepEqual(Array.from(large.limitations), [
+    '文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。'
+  ]);
+});
+
+test('Share Kit text size counts UTF-8 bytes for title, content, UTD, and label', () => {
+  const limit = 200 * 1024;
+  const recordFieldsBytes = 6 + 'text/plain'.length + 'TEXT'.length;
+  assert.equal(NoteTextShareService.isWithinShareLimit('标题', 'x'.repeat(limit - recordFieldsBytes)), true);
+  assert.equal(NoteTextShareService.isWithinShareLimit('标题', 'x'.repeat(limit - recordFieldsBytes + 1)), false);
+  assert.equal(NoteTextShareService.isWithinShareLimit('t', '汉'.repeat(Math.floor(limit / 3) + 1)), false);
+});
