@@ -1,19 +1,24 @@
 /**
  * TrashService.ets —— 回收站（v0.2 需求 1.7 / 1.8）
  *
- * 位置与结构：`vaults/<库>/.trash/` 下**镜像原库内相对路径**（删 `工程/a.md`
- * → `.trash/工程/a.md`）。为什么放库目录里而不是全局回收站：
- *  - 库改名 / 删除时回收站自动跟着走（rename/rmdir 作用在库根，`.trash` 是其子树）；
- *  - FileTree 天然过滤点开头目录，文件树里看不见它，不用加过滤规则；
- *  - 恢复目标就是它在 `.trash` 里的相对路径本身，不需要第二份「原路径」元数据。
- *  ⚠️ v0.3 Git 同步接入时要给 `.trash` 配 .gitignore（不能把已删笔记推上远端）。
+ * 位置与结构（**v1.5 15.6 已搬家**）：沙箱 `filesDir/trash/<vaultKey>/` 下**镜像原库内
+ * 相对路径**（删 `工程/a.md` → `trash/<vaultKey>/工程/a.md`）。
+ *
+ * 早先是 `<vaultDir>/.trash/`，v1.5 挪到库外的理由：
+ *  - 外部授权库的「库目录」是**用户的目录**，在里面建 `.trash` 会被 Obsidian / Git /
+ *    云盘当成普通内容，也和 15.5「移除库只解除关联、不清磁盘」打架（那个目录算谁的？）；
+ *  - 按 `<vaultKey>` 而不是 `<vaultId>` 分段，库改名后回收站仍能定位；
+ *  - 顺带不用再给 Git 同步写 `.gitignore` —— 它已经不在仓库里了。
+ * 仍在的约定：恢复目标 = 它在回收站里的相对路径本身（不需要第二份「原路径」元数据）。
+ * 代价：删库时要**显式**清掉 `trash/<vaultKey>`（VaultRegistry.remove 已做）；
+ *       以前这活是递归删库根顺带完成的。
  *
  * 与 NoteService 的分工：那边管「库里的笔记」，这边管「已删出库但还能救回的笔记」。
  * 删除语义（原型 deleteWithUndo）：文件 → 移入回收站 + 5 秒撤销条；
  * 目录 → 永久删除（确认框），不进回收站 —— 误删一棵子树的代价不该被「撤销」轻描淡写。
  *
  * 路径铁律（硬约束 #14）：绝对路径一律经 `VaultRegistry.absoluteInTrash()`，
- * `.trash` 段的拼接收口在 VaultPathResolver（本文件不拼沙箱路径）。
+ * `trash/<vaultKey>` 段的拼接收口在 VaultPathResolver（本文件不拼沙箱路径）。
  */
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -27,7 +32,7 @@ const TRASH_TAG: string = 'TrashService';
 
 /** 回收站条目（回收站视图一行） */
 export interface TrashItem {
-  /** 原库内相对路径 = 恢复目标路径（`.trash` 内的镜像路径，含重名后缀时的实际名） */
+  /** 原库内相对路径 = 恢复目标路径（回收站内的镜像路径，含重名后缀时的实际名） */
   relPath: string;
   /** 显示名（最后一段） */
   name: string;
@@ -50,7 +55,7 @@ export interface UndoSnap {
 export class TrashService {
   /**
    * 把文件移入回收站（1.7 主路径：左滑滑到底 / 删除确认框的「确认删除」）。
-   * - 逐级补建 `.trash` 里的父目录（镜像结构）；
+   * - 逐级补建回收站里的父目录（镜像结构）；
    * - 回收站里已有同路径文件（同一路径删两次且未恢复）→ 扩展名前加 -2/-3（不覆盖，
    *   与 NoteService.uniqueRelPath 同策略：覆盖等于静默丢掉一次已删内容）；
    * - renameSync 原子移动（同分区），中途失败不留半状态（最多留下空目录）。
@@ -71,8 +76,8 @@ export class TrashService {
         target = stem + '-' + n + ext;
       }
     }
-    // `.trash` 根必须先建：顶层文件没有父段可补建（ensureTrashParents 循环不跑），
-    // 嵌套文件的第一级 mkdir 也因 `.trash` 缺失而 ENOENT —— renameSync 必失败。
+    // 回收站根必须先建：顶层文件没有父段可补建（ensureTrashParents 循环不跑），
+    // 嵌套文件的第一级 mkdir 也因根缺失而 ENOENT —— renameSync 必失败。
     const trashRoot: string = registry.trashDirOf(vaultId);
     if (!fileIo.accessSync(trashRoot)) {
       fileIo.mkdirSync(trashRoot);
@@ -138,7 +143,7 @@ export class TrashService {
     }
   }
 
-  /** 原位置（库内，不在 `.trash`）是否已有同名文件（restore 拒绝覆盖的判定） */
+  /** 原位置（库内，不在回收站）是否已有同名文件（restore 拒绝覆盖的判定） */
   private static existsAtOrigin(registry: VaultRegistry, vaultId: string, relPath: string): boolean {
     try {
       return fileIo.accessSync(registry.absoluteIn(vaultId, relPath));
@@ -147,7 +152,7 @@ export class TrashService {
     }
   }
 
-  /** 补建 `.trash` 内 target 的所有父目录（镜像结构逐级 mkdir） */
+  /** 补建回收站内 target 的所有父目录（镜像结构逐级 mkdir） */
   private static ensureTrashParents(registry: VaultRegistry, vaultId: string, target: string): void {
     const segs: string[] = target.split('/');
     for (let i = 1; i < segs.length; i++) {
@@ -159,7 +164,7 @@ export class TrashService {
     }
   }
 
-  /** 递归收集回收站文件；relDir 为镜像的库内相对目录（'' = `.trash` 根） */
+  /** 递归收集回收站文件；relDir 为镜像的库内相对目录（'' = 回收站根） */
   private static walk(registry: VaultRegistry, vaultId: string, relDir: string, out: TrashItem[]): void {
     const absDir: string = relDir.length === 0
       ? registry.trashDirOf(vaultId)

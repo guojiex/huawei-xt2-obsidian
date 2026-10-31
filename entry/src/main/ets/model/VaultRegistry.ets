@@ -493,6 +493,7 @@ export class VaultRegistry {
     if (!this.isExternalEntry(target)) {
       this.removeVaultTree(id, '');
     }
+    this.removePrivateData(target);
     const kept: VaultEntry[] = [];
     for (let i = 0; i < this.state.vaults.length; i++) {
       if (this.state.vaults[i].id !== id) {
@@ -506,6 +507,34 @@ export class VaultRegistry {
     }
     this.forgetAccess(id);
     this.persist();
+  }
+
+  /**
+   * 删库时一并清掉这个库的 App 私有数据：回收站 + 崩溃恢复草稿（v1.5 15.6，用户拍板）。
+   *
+   * 这两样现在都在沙箱里按 `vaultKey` 分目录（15.6），跟用户文件已经是两回事，
+   * 所以**沙箱库和外部库一视同仁地清** —— 用户的笔记在 15.5 里原封不动留着，
+   * 但 App 自己的回收站与草稿没有理由在「删库」之后还赖在磁盘上。
+   * **刻意做成 best-effort**：这个阶段库目录（沙箱库）已经删掉了，如果回收站 / 草稿
+   * 清理失败就往外抛，会留下「文件系统已删、注册表还在」的半状态 —— 那比留几个孤儿
+   * 私有目录严重得多。孤儿草稿本来就有启动自愈（NoteDraftService.cleanupOrphans），
+   * 回收站残留下次由同类清理带走；失败只记日志。
+   * 必须在 `target` 还在注册表里时调用：出表后就查不到 vaultKey 了。
+   */
+  private removePrivateData(target: VaultEntry): void {
+    const dirs: string[] = [
+      this.resolver.trashDir(target.vaultKey),
+      this.resolver.draftsVaultDir(target.vaultKey)
+    ];
+    for (let i = 0; i < dirs.length; i++) {
+      try {
+        this.removePathTreeIfExists(dirs[i]);
+      } catch (error) {
+        const err = error as BusinessError;
+        hilog.warn(0x0000, 'VaultRegistry', '私有数据清理失败 %{public}s: %{public}s',
+          dirs[i], err.message);
+      }
+    }
   }
 
   private removeVaultTree(vaultId: string, relativePath: string): void {
@@ -571,15 +600,23 @@ export class VaultRegistry {
   }
 
   draftsVaultDirOf(vaultId: string): string {
-    return this.resolver.draftsVaultDir(vaultId);
+    return this.resolver.draftsVaultDir(this.vaultKeyOf(vaultId));
   }
 
   draftDirectory(vaultId: string, relativeDirectory: string): string {
-    return this.resolver.draftDirectory(vaultId, relativeDirectory);
+    return this.resolver.draftDirectory(this.vaultKeyOf(vaultId), relativeDirectory);
   }
 
   absoluteDraftIn(vaultId: string, relativePath: string): string {
-    return this.resolver.resolveDraft(vaultId, relativePath);
+    return this.resolver.resolveDraft(this.vaultKeyOf(vaultId), relativePath);
+  }
+
+  /**
+   * 孤儿草稿整棵删掉：删的原因是「这个 vaultKey 在注册表里已经不存在了」，
+   * 所以这里拿不到 vaultId，只能按 key 直接删目录（孤儿清理专用）。
+   */
+  removeDraftsTreeByKey(vaultKey: string): void {
+    this.removePathTreeIfExists(this.resolver.draftsVaultDir(vaultKey));
   }
 
   /** 库目录绝对路径（转发唯一解析器，供 UI 展示路径但不自行拼接）。 */
@@ -587,14 +624,16 @@ export class VaultRegistry {
     return this.resolver.vaultDir(id);
   }
 
-  /** 回收站目录绝对路径（转发唯一解析器，1.7）。 */
+  /**
+   * 回收站目录绝对路径（转发唯一解析器，1.7；v1.5 起落在沙箱 filesDir/trash/<vaultKey>）。
+   */
   trashDirOf(id: string): string {
-    return this.resolver.trashDir(id);
+    return this.resolver.trashDir(this.vaultKeyOf(id));
   }
 
   /** 回收站内相对路径 → 沙箱绝对路径（转发唯一解析器，1.7）。 */
   absoluteInTrash(vaultId: string, relativePath: string): string {
-    return this.resolver.resolveInTrash(vaultId, relativePath);
+    return this.resolver.resolveInTrash(this.vaultKeyOf(vaultId), relativePath);
   }
 
   /** 注册表展示用相对路径：vaults/<id>（仅展示，不是文件系统绝对路径）。 */

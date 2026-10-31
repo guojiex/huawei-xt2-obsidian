@@ -39,7 +39,8 @@ function createRegistry(vaultIds = [], existingPaths = [], ioOverrides = {}) {
     DEFAULT_VAULT_ID: vaultModule.DEFAULT_VAULT_ID,
     SAMPLE_VAULT_ID: vaultModule.SAMPLE_VAULT_ID,
     sanitizeVaultName: vaultModule.sanitizeVaultName,
-    fileIo
+    fileIo,
+    hilog: { warn() {}, info() {}, error() {}, debug() {} }
   });
   const registry = Object.create(VaultRegistry.prototype);
   registry.state = {
@@ -54,7 +55,10 @@ function createRegistry(vaultIds = [], existingPaths = [], ioOverrides = {}) {
   registry.resolver = {
     vaultsRoot: () => '/sandbox/vaults',
     vaultDir: (id) => `/sandbox/vaults/${id}`,
-    gitImportMarkerDir: (id) => `/sandbox/vaults/.git-imports/${id}`
+    gitImportMarkerDir: (id) => `/sandbox/vaults/.git-imports/${id}`,
+    // v1.5 15.6：删库要顺带清掉 App 私有数据（回收站 / 草稿），两者都在沙箱里按 vaultKey 分目录。
+    trashDir: (key) => `/sandbox/trash/${key}`,
+    draftsVaultDir: (key) => `/sandbox/drafts/${key}`
   };
   registry.ensureVaultsRoot = () => {};
   // v1.5：真机构造才会走到类字段初始化，这里用原型手工搭的对象得自己补上缓存 Map。
@@ -126,6 +130,40 @@ test('removing the last vault empties the registry and the same name can be crea
   assert.equal(registry.state.vaults.length, 1);
   assert.ok(fileOps.some((op) => op[0] === 'rmdir' && op[1] === '/sandbox/vaults/A'));
   assert.ok(fileOps.some((op) => op[0] === 'mkdir' && op[1] === '/sandbox/vaults/A'));
+});
+
+test('removing a vault also clears its trash and drafts directories', () => {
+  const { registry, fileOps } = createRegistry(
+    ['A'],
+    ['/sandbox/vaults/A', '/sandbox/trash/key-0', '/sandbox/drafts/key-0']
+  );
+
+  registry.remove('A');
+
+  // 按 vaultKey（不是 id）定位 —— 库改名之后私有数据仍找得到，这是 15.6 的要点。
+  assert.ok(fileOps.some((op) => op[0] === 'rmdir' && op[1] === '/sandbox/trash/key-0'),
+    '删库必须清掉该库的回收站');
+  assert.ok(fileOps.some((op) => op[0] === 'rmdir' && op[1] === '/sandbox/drafts/key-0'),
+    '删库必须清掉该库的草稿');
+});
+
+test('a failing private data cleanup does not resurrect a half-removed registry', () => {
+  const { registry } = createRegistry(
+    ['A'],
+    ['/sandbox/vaults/A', '/sandbox/trash/key-0'],
+    {
+      statSync(path) {
+        if (path === '/sandbox/trash/key-0') {
+          throw new Error('回收站占用中');
+        }
+        return { isDirectory: () => true };
+      }
+    }
+  );
+
+  // 库目录已经删掉了，这里必须留一个「注册表已净」而不是抛回去变成半状态。
+  registry.remove('A');
+  assert.equal(registry.state.vaults.length, 0);
 });
 
 test('a failing vault tree removal keeps the entry and the current vault in the registry', () => {

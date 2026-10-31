@@ -19,9 +19,11 @@ const restoreMethod = extractMethod(
   'static restore(registry: VaultRegistry, vaultId: string, trashRel: string): string {',
   '\n  private static existsInTrash('
 );
+// ⚠️ 结束标记用**下一个方法的签名**，不要用注释行：注释是给人看的，改文案就会导致
+// 这段源码切片静默失败（曾经因为把 `.trash` 注释改成「回收站」整份测试挂掉）。
 const existsAtOriginMethod = extractMethod(
   'private static existsAtOrigin(registry: VaultRegistry, vaultId: string, relPath: string): boolean {',
-  '\n  /** 补建 `.trash` 内 target'
+  '\n  private static ensureTrashParents('
 );
 const code = transformSync(`class TrashService { ${restoreMethod}\n${existsAtOriginMethod} }; module.exports = TrashService;`, {
   loader: 'ts',

@@ -10,12 +10,10 @@ import { common } from '@kit.AbilityKit';
 
 export class VaultPathResolver {
   /**
-   * 回收站目录段名（1.7）。`requireSafeSegment` 拒绝点开头段 —— 这是防**用户输入**
-   * 藏进隐藏目录的规则；`.trash` 是本解析器自有的常量段，不是外部输入，
-   * 故不走 requireSafeSegment，而是由 `trashDir()` 在这里唯一拼出（仍守硬约束 #14：
-   * 拼接只出现在本文件）。FileTree 天然过滤点开头目录，树里看不见它。
+   * 回收站根目录段名（1.7 引入，v1.5 改为沙箱私有根，见下）。段名是本解析器自有的常量，
+   * 不是外部输入，故不走 requireSafeSegment —— 走也很安全，只是没必要。
    */
-  static readonly TRASH_SEG: string = '.trash';
+  private static readonly TRASH_SEG: string = 'trash';
   private static readonly DRAFTS_SEG: string = 'drafts';
   private static readonly SHARE_SEG: string = 'share';
 
@@ -52,9 +50,24 @@ export class VaultPathResolver {
     return this.vaultsRoot() + '/' + safeId;
   }
 
-  /** 回收站目录绝对路径：filesDir/vaults/<vaultId>/.trash（1.7）。 */
-  trashDir(vaultId: string): string {
-    return this.vaultDir(vaultId) + '/' + VaultPathResolver.TRASH_SEG;
+  /**
+   * 回收站**根**：filesDir/trash（v1.5 15.6）。
+   *
+   * 为什么不再放 `<vaultDir>/.trash`：外部授权库的库目录是**用户的目录**，往里塞
+   * `.trash` 会被 Obsidian / Git / 云盘当成普通内容，还会和 15.5「移除库只解除关联、
+   * 不清磁盘」打架 —— 删库时那个目录算 App 的还是用户的，说不清。
+   * App 私有数据一律落沙箱。
+   */
+  trashRoot(): string {
+    return this.context.filesDir + '/' + VaultPathResolver.TRASH_SEG;
+  }
+
+  /**
+   * 回收站目录绝对路径：filesDir/trash/<vaultKey>。
+   * 按 vaultKey 而不是 vaultId 分段：库改名 id 变、key 不变，回收站要能在改名后仍定位。
+   */
+  trashDir(vaultKey: string): string {
+    return this.trashRoot() + '/' + this.requireSafeSegment(vaultKey);
   }
 
   /** 草稿根目录及单库路径也只在此处从 Context 属性拼出。 */
@@ -77,19 +90,21 @@ export class VaultPathResolver {
     return this.draftsRoot() + '.recovery';
   }
 
-  draftsVaultDir(vaultId: string): string {
-    return this.draftsRoot() + '/' + this.requireSafeSegment(vaultId);
+  /** 草稿的根则由 `draftsRoot()` 给出（同样在 filesDir 下，属于 App 私有数据）。 */
+  draftsVaultDir(vaultKey: string): string {
+    return this.draftsRoot() + '/' + this.requireSafeSegment(vaultKey);
   }
 
-  draftDirectory(vaultId: string, relativeDirectory: string): string {
-    return this.joinChecked(this.draftsVaultDir(vaultId), relativeDirectory);
+  /** 同 draftsVaultDir：草稿也在库外，按 vaultKey 分段，改名后仍能找回未恢复的草稿。 */
+  draftDirectory(vaultKey: string, relativeDirectory: string): string {
+    return this.joinChecked(this.draftsVaultDir(vaultKey), relativeDirectory);
   }
 
-  resolveDraft(vaultId: string, relativePath: string): string {
+  resolveDraft(vaultKey: string, relativePath: string): string {
     if (relativePath.length === 0) {
       throw new Error('VaultPathResolver: 草稿路径不能为空');
     }
-    return this.joinChecked(this.draftsVaultDir(vaultId), relativePath) + '.draft';
+    return this.joinChecked(this.draftsVaultDir(vaultKey), relativePath) + '.draft';
   }
 
   /**
@@ -101,11 +116,11 @@ export class VaultPathResolver {
   }
 
   /**
-   * 回收站内相对路径 → 沙箱绝对路径（1.7）。relPath = 原库内相对路径（镜像结构），
-   * 校验规则与 resolve 一致（拒绝绝对路径与 `..`）。
+   * 回收站内相对路径 → 沙箱绝对路径（1.7，v1.5 改 key 分段）。relPath = 原库内相对
+   * 路径（镜像结构），校验规则与 resolve 一致（拒绝绝对路径与 `..`）。
    */
-  resolveInTrash(vaultId: string, relativePath: string): string {
-    return this.joinChecked(this.trashDir(vaultId), relativePath);
+  resolveInTrash(vaultKey: string, relativePath: string): string {
+    return this.joinChecked(this.trashDir(vaultKey), relativePath);
   }
 
   /** App 私有 Agent 数据根；与用户知识库、草稿和分享缓存分开。 */

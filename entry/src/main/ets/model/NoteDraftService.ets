@@ -162,7 +162,7 @@ export class NoteDraftService {
   /** Ability 启动时清理已删除/移动文件对应的孤儿草稿。 */
   static cleanupOrphans(registry: VaultRegistry): void {
     const root: string = registry.draftsRoot();
-    let draftVaultIds: string[] = [];
+    let draftKeys: string[] = [];
     let knownVaults = registry.list();
     try {
       if (!fileIo.accessSync(root)) {
@@ -178,26 +178,29 @@ export class NoteDraftService {
         fileIo.mkdirSync(root);
         hilog.error(0x0000, 'NoteDraftService', '草稿根不是目录，原文件已保留并重建草稿目录');
       }
-      draftVaultIds = fileIo.listFileSync(root);
+      draftKeys = fileIo.listFileSync(root);
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(0x0000, 'NoteDraftService', '扫描草稿目录失败: %{public}s', err.message);
       return;
     }
-    for (let i = 0; i < draftVaultIds.length; i++) {
-      const vaultId: string = draftVaultIds[i];
-      let known: boolean = false;
+    // v1.5 15.6：草稿目录按 **vaultKey** 分（不是 vaultId），与回收站口径一致。
+    // 好处是库改名后旧草稿仍找得到；代价是这里要按 key 反查 id。
+    for (let i = 0; i < draftKeys.length; i++) {
+      const draftKey: string = draftKeys[i];
+      let ownerId: string = '';
       for (let j = 0; j < knownVaults.length; j++) {
-        if (knownVaults[j].id === vaultId) {
-          known = true;
+        if (knownVaults[j].vaultKey === draftKey) {
+          ownerId = knownVaults[j].id;
           break;
         }
       }
       try {
-        if (known) {
-          NoteDraftService.cleanupDirectory(registry, vaultId, '');
+        if (ownerId.length > 0) {
+          NoteDraftService.cleanupDirectory(registry, ownerId, '');
         } else {
-          NoteDraftService.removeDraftDirectory(registry, vaultId, '');
+          // 孤儿目录（库已删/注册表重建）：整个按 key 删掉。
+          registry.removeDraftsTreeByKey(draftKey);
         }
       } catch (error) {
         // 清理失败不阻止启动；恢复仍会逐字比较正式内容基线。
