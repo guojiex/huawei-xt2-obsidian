@@ -1,0 +1,39 @@
+# .github/workflows/harmonyos-ci.yml
+name: HarmonyOS CI
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 下载并解压命令行工具
+        run: |
+          # 从华为开发者官网下载 Linux 版 command-line-tools（含 SDK、ohpm、hvigor）
+          wget -O clt.zip "<command-line-tools 下载地址>"
+          unzip clt.zip -d $HOME/command-line-tools
+
+      - name: 配置环境变量
+        run: |
+          echo "DEVECO_SDK_HOME=$HOME/command-line-tools/sdk" >> $GITHUB_ENV
+          echo "$HOME/command-line-tools/bin" >> $GITHUB_ENV
+          echo "$HOME/command-line-tools/tool/node/bin" >> $GITHUB_ENV
+
+      - name: 安装依赖
+        run: ohpm install --all
+
+      - name: 构建 HAP
+        run: |
+          hvigorw clean --no-daemon
+          hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: hap
+          path: entry/build/default/outputs/default/*.hap
