@@ -70,3 +70,23 @@ add_custom_command(TARGET libgit2_napi POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy_if_different
     "${LIBGIT2_OUTPUT}/libgit2.so.1.9"
     "$<TARGET_FILE_DIR:libgit2_napi>/libgit2.so.1.9")
+
+# ---------------------------------------------------------------------------
+# vaultdir_napi：基于 fd 的目录遍历。
+#
+# 为什么它必须存在：ArkTS 侧 @ohos.file.fs 的 listFile* 只收「应用沙箱路径」，
+# 传 Picker 给的目录 URI 报 13900002；而 open/openSync 收「沙箱路径 or URI」，
+# 对同一个目录 URI 能成功拿到 fd。ArkTS 又没有任何基于 fd 的 readdir 语义接口，
+# 于是「fd → fdopendir/readdir」这一步只能在 Native 侧补。
+# 不依赖 libgit2，纯 musl，构建快、故障面小。
+# ---------------------------------------------------------------------------
+set(VAULTDIR_ROOT "${REPOSITORY_ROOT}/native/vaultdir_napi")
+
+add_library(vaultdir_napi SHARED "${VAULTDIR_ROOT}/src/vaultdir_napi.c")
+set_target_properties(vaultdir_napi PROPERTIES
+  OUTPUT_NAME "vaultdir_napi"
+  BUILD_WITH_INSTALL_RPATH TRUE
+  INSTALL_RPATH "$ORIGIN")
+target_compile_features(vaultdir_napi PRIVATE c_std_99)
+target_compile_options(vaultdir_napi PRIVATE -Wall -Wextra)
+target_link_libraries(vaultdir_napi PRIVATE "${ACE_NAPI_LIBRARY}")

@@ -1524,10 +1524,67 @@ atm dump -t -b com.jxg.huaweiobsidian
 - **上架时**：AGC 会按使用场景复核，需为每个受限权限填写权限说明并**上传视频说明使用场景**。
 - **调试阶段捷径**：官方写明 DevEco Studio 自动签名会代为向 AGC 申请受限权限；本机所用含 ACL 的 debug profile 与这一机制一致。**发布阶段必须手动按上述 1–3 步重走。**
 
-### T3 ❓ 目录 URI 的递归读写尚未验证
-`fileIo.openSync(uri)` 接受 URI、`listFileSync` 支持 `recursion` 是 SDK 声明事实；社区示例用「目录 URI → `openSync` → `listFile`」遍历，但这不是官方保证。未验证：授权是否顺延到子文件与新建文件、`AtomicFile` 能否作用于目录 URI、外部删除 / 移动后的失败形态。
+### T3 ✅ 目录 URI 不能用 `listFileSync` 枚举 —— 官方确认 + 设备实测双向坐实
+**结论（2026-10-31 已闭环）**：`fs.listFile* ` 的 path 契约是「应用沙箱路径」，传 Picker 目录 URI
+**必然报 13900002（ENOENT）**，官方答复确认不支持、也无公开支持计划。
+
+SDK 契约对照（本机 `@ohos.file.fs.d.ts`）——同一个 URI 在不同接口上的命运由 `@param` 写死：
+
+| 接口 | 行 | path 参数原文 |
+| --- | --- | --- |
+| `fs.open` | 2491 / 2529 / 2582 | Application sandbox path **or URI** of a file or directory |
+| `fs.lstat` | 1711 / 1733 | Application sandbox path **or URI** of the file（注明 URIs can be passed since API n） |
+| `fs.listFile` | 1548 起（所有重载） | Application sandbox path of the directory（**无 URI 字样**） |
+
+XT2 实测同一时刻同串两种结果：`listFileSync(uri, {recursion:true})` → 13900002；
+`openSync(uri, READ_ONLY)` → 成功拿到 fd。**所以网上「listFile 递归遍历外部目录」的社区示例无官方出处，不可依赖。**
 
 ### T4 ❓ 外部变更感知与跨应用共管没有本地证据
 `fileshare` 只描述本应用视角的授权；另一款软件能否管理同一目录取决于目录所在命名空间（如 Download 公共目录），不是本 App 授予的权限。此项须选定场景后设备实测。
 
-来源与逐条证据见 [外部目录授权能力核实记录](qa/2026-10-31_外部目录授权能力_API24.md)；以上依据均为本机 SDK 声明与官方文档，**没有设备实测值**，需在 XT2 / API 24 上跑通后回填。
+### T5 ✅ 三方枚举目录 URI 的唯一通路：`open` 拿 fd → Native `fdopendir`（2026-10-31 官方答复 + 设备实测）
+官方答复（2026-10-31）明确：**ArkTS 侧没有基于 fd 的 readdir 语义接口，遍历入口在 Native 侧**。
+三方应用、NORMAL 权限可用的完整链路：
+
+```
+DocumentViewPicker(FOLDER) → file://docs/... 目录 URI
+  → fileShare.persistPermission(READ|WRITE)   → fileShare.activatePermission
+  → fs.openSync(uri, READ_ONLY | OpenMode.DIR) → 目录 fd
+  → Native: dup(fd) → fdopendir(dupFd) → readdir → openat(fd, 子项名) 递归
+```
+
+**XT2 实测（LAP-AL10 / API 26，hilog `ProbeRunner`）**：
+
+| 步骤 | 结果 |
+| --- | --- |
+| `native_flat`（单层 `fdopendir`） | ✅ 16 条 —— 与 Picker 自报「Download 16 项」一致 |
+| `native_recursive`（递归 `openat`） | ✅ 31 条，**路径含子目录前缀**（如 `com.xueqiu.hm/xxx.pdf`）→ 授权顺延到子目录得到证明 |
+
+结论：**不存在能力缺口，产品形态不用改**（官方答复 Q5-C 明确不成立）。
+
+实现位置：`native/vaultdir_napi`（C，`listDirByFd` / `listDirRecursiveByFd`）、
+`model/VaultDirNative.ets`（ArkTS 封装 + 依赖注入）、
+`ExternalDirProbeDevice.ets` 的 `DeviceVaultDirFs` / `DeviceVaultDirNative`。
+
+两个必守的坑：
+- **`fdopendir` 接管 fd 所有权** —— 必须先 `dup()`，否则 ArkTS 侧 `closeSync` 会 double close。
+- **`OpenMode.READ_DIR` 不存在** —— 官方答复示例写错了，真实是 `OpenMode.DIR = 0o200000`（d.ts L199），
+  开目录写 `READ_ONLY | DIR`。**这是第 4 次官方答复出现具体 API 名错误。**
+
+Native 返回约定：相对路径**不带前导斜杠**（与 `listFileSync` 的「以 / 开头」不同），**目录项以 '/' 结尾**，
+按 `endsWith('/')` 区分类型，不必再 `stat`。失败返回 `ok:false + errno` 而非抛异常 —— 抛出去 errno 会被
+ArkTS 的 Error 包装吃掉。
+
+### T6 ❓ 写入链路尚未验证（下一轮核实目标）
+`atomic` 步骤在设备上报 **code=-1**（非 BusinessError），尚未定位。候选原因：
+`AtomicFile` 需要在目标目录创建临时文件，可能不接受 federated URI；也可能 `startWrite`/
+`WriteStream` 在外部 URI 上有别的约束。
+
+**这一条不解决，v1.5 的「编辑并保存回去」这条产品需求就落不了地**，优先级排在 15.x 之前。
+建议下一步：在核实页加一组「写」的对照探测 —— `uri` 原样 AtomicFile、`uri + '/x.md'` 子文件路径
+AtomicFile、`fs.openSync(子文件, READ_WRITE|CREATE)` + `writeSync`、`fs.copyFileSync`
+（把沙箱里写好的文件拷进去），四种方式各跑一次拿到 errno。
+
+来源与逐条证据见 [外部目录授权能力核实记录](qa/2026-10-31_外部目录授权能力_API24.md) 与
+[目录 URI 遍历答复核验](qa/2026-10-31_目录URI遍历答复核验.md)。T1 / T2 / T3 / T5 均有设备实测支撑；
+**所有读数来自 API 26 设备（XT2 / 模拟器），目标兼容级别为 API 24，未完成判定跑通前不外推。**

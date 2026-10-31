@@ -18,9 +18,14 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { FontSize, Radius, Space } from '../common/Tokens';
 import {
-  ExternalDirProbeRunner, ProbeStep, describeProbeStep, displayNameFromUri, selectProbeMarkdown
+  ExternalDirProbeRunner, ProbeStep, describeProbeStep, displayNameFromUri, selectProbeMarkdown,
+  safeDecodeUriComponent
 } from '../model/ExternalDirProbe';
-import { createDeviceProbeRunner, supportsFolderSelection } from '../model/ExternalDirProbeDevice';
+import { createDeviceProbeRunner, createVaultDirScanner, supportsFolderSelection } from '../model/ExternalDirProbeDevice';
+import {
+  describeVaultDirError, selectVaultMarkdown as pickVaultMarkdown,
+  VaultDirEntry, VaultDirScanResult, VaultDirectoryScanner
+} from '../model/VaultDirNative';
 
 const DOMAIN: number = 0x5941;
 const TAG: string = 'ProbeRunner';
@@ -34,6 +39,7 @@ struct ExternalDirProbePage {
   @State markdownCount: number = 0;
   private runner: ExternalDirProbeRunner = createDeviceProbeRunner(
     getContext(this) as common.UIAbilityContext);
+  private scanner: VaultDirectoryScanner = createVaultDirScanner();
   private currentUri: string = '';
   private firstMarkdown: string = '';
 
@@ -69,7 +75,8 @@ struct ExternalDirProbePage {
       }
       this.currentUri = uri;
       this.dirLabel = displayNameFromUri(uri);
-      this.push(describeProbeStep('select', true, 0, 'URI 形如 ' + uri.slice(0, 32) + '…'));
+      // 完整 URI 直接展示/hilog：路径里只有目录名（页面本来就显示），不含笔记内容
+      this.push(describeProbeStep('select', true, 0, 'URI = ' + uri));
 
       await this.stepOf('persist', async () => {
         await this.runner.persist(uri);
@@ -91,8 +98,11 @@ struct ExternalDirProbePage {
         const markdown: string[] = selectProbeMarkdown(entries);
         this.markdownCount = markdown.length;
         this.firstMarkdown = markdown.length > 0 ? markdown[0] : '';
-        return `列出 ${entries.length} 条，其中 Markdown ${markdown.length} 条`;
+        return `listFileSync 列出 ${entries.length} 条，其中 Markdown ${markdown.length} 条`;
       });
+      // Native 侧 fd 遍历：**无论上面成败都要跑** —— 它才是要回填的答案。
+      // 官方答复（2026-10-31）给的通路是「openSync(目录URI) 拿 fd → Native fdopendir」。
+      await this.probeNativeList(uri);
       await this.stepOf('atomic', async () => {
         const target: string[] = this.firstMarkdown.length > 0 ? [this.firstMarkdown] : [];
         const step: ProbeStep = await this.runner.probeWrite(uri, target);
@@ -101,9 +111,50 @@ struct ExternalDirProbePage {
         }
         return step.detail;
       });
+      await this.diagnoseListFailures(uri);
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Native fd 遍历核实（2026-10-31 加）：官方答复确认「ArkTS 侧没有基于 fd 的 readdir」，
+   * 通路是 openSync(目录URI) 拿 fd → Native fdopendir/openat。这里两级都跑：
+   * 单层（证明 fdopendir 能吃这个 fd）+ 递归（证明 openat 能进子目录、授权顺延）。
+   *
+   * **部分成功也算成功**：命中无权进入的子目录时 native 会带 code 但仍返回已拿到的条目，
+   * 这种时候不能判死，要把数量显示出来。
+   */
+  private async probeNativeList(uri: string): Promise<void> {
+    await this.stepOf('native_flat', async () => {
+      const result: VaultDirScanResult = this.scanner.scan(uri, false);
+      if (!result.ok && result.entries.length === 0) {
+        throw new Error(describeVaultDirError(result.code) + ' / ' + result.message);
+      }
+      const suffix: string = result.ok ? '' : '（部分成功：' + result.message + '）';
+      return `单层 fdopendir 拿到 ${result.entries.length} 条` + suffix;
+    });
+
+    await this.stepOf('native_recursive', async () => {
+      const result: VaultDirScanResult = this.scanner.scan(uri, true);
+      if (!result.ok && result.entries.length === 0) {
+        throw new Error(describeVaultDirError(result.code) + ' / ' + result.message);
+      }
+      this.applyScanResult(result);
+      let preview: string = '';
+      for (let i = 0; i < result.entries.length && i < 6; i++) {
+        preview += result.entries[i].path + ' ';
+      }
+      const suffix: string = result.ok ? '' : '（部分成功：' + result.message + '）';
+      return `递归 ${result.entries.length} 条 / Markdown ${this.markdownCount} 条` + suffix + '｜前几条：' + preview;
+    });
+  }
+
+  /** 把遍历结果折算成界面要显示的两个数字 + 第一个可写的 Markdown。 */
+  private applyScanResult(result: VaultDirScanResult): void {
+    const markdown: string[] = pickVaultMarkdown(result.entries);
+    this.markdownCount = markdown.length;
+    this.firstMarkdown = markdown.length > 0 ? markdown[0] : '';
   }
 
   /** 把抛异常的每一步收敛成一条失败记录，错误码从 BusinessError 里掏出来。 */
@@ -114,6 +165,38 @@ struct ExternalDirProbePage {
     } catch (error) {
       const code: number = ExternalDirProbeRunner.errorCodeOf(error);
       this.push(describeProbeStep(id, false, code, '失败'));
+    }
+  }
+
+  /**
+   * v1.5 核实诊断（2026-10-31 加）：listFileSync 对 Picker 目录 URI 报 13900002 后，
+   * 依次试「解码后 URI 的 listFile」「原样/解码 URI 的 openSync」，把失败形态钉死。
+   * 这些步骤成功与否都照常显示 —— 结论回填 api_notes T3 后随临时页一起删除。
+   */
+  private async diagnoseListFailures(uri: string): Promise<void> {
+    const listFailed: boolean = this.steps.some((step: ProbeStep): boolean =>
+      step.id === 'list' && !step.ok);
+    if (!listFailed) {
+      return;
+    }
+    const decoded: string = safeDecodeUriComponent(uri);
+    if (decoded !== uri) {
+      await this.stepOf('diag_list_decoded', async () => {
+        const entries: string[] = this.runner.listEntries(decoded);
+        return '解码后 listFileSync 列出 ' + entries.length + ' 条';
+      });
+    }
+    await this.stepOf('diag_open_raw', async () => {
+      const fd: number = this.runner.openDirForDiagnosis(uri);
+      this.runner.closeDirForDiagnosis(fd);
+      return '原样 openSync 成功（fd 可用）';
+    });
+    if (decoded !== uri) {
+      await this.stepOf('diag_open_decoded', async () => {
+        const fd: number = this.runner.openDirForDiagnosis(decoded);
+        this.runner.closeDirForDiagnosis(fd);
+        return '解码后 openSync 成功（fd 可用）';
+      });
     }
   }
 
@@ -130,7 +213,22 @@ struct ExternalDirProbePage {
       });
       await this.stepOf('list', async () => {
         const entries: string[] = this.runner.listEntries(this.currentUri);
-        return `重启后仍可递归列出 ${entries.length} 条`;
+        return `重启后 listFileSync 列出 ${entries.length} 条`;
+      });
+      await this.stepOf('native_recursive', async () => {
+        const result: VaultDirScanResult = this.scanner.scan(this.currentUri, true);
+        if (!result.ok && result.entries.length === 0) {
+          throw new Error(describeVaultDirError(result.code) + ' / ' + result.message);
+        }
+        return `重启后 Native 递归仍拿到 ${result.entries.length} 条（URI 未走 Picker，仅靠持久授权）`;
+      });
+      await this.stepOf('atomic', async () => {
+        const target: string[] = this.firstMarkdown.length > 0 ? [this.firstMarkdown] : [];
+        const step: ProbeStep = await this.runner.probeWrite(this.currentUri, target);
+        if (!step.ok) {
+          throw new Error(step.detail);
+        }
+        return '重启后原子写：' + step.detail;
       });
     } finally {
       this.busy = false;
@@ -202,7 +300,7 @@ struct ExternalDirProbePage {
             .borderRadius(Radius.card)
             .backgroundColor($r('app.color.bg_card'))
           }
-        }, (step: ProbeStep) => step.id)
+        }, (step: ProbeStep, index: number): string => index + '-' + step.id)
       }
       .width('100%')
       .layoutWeight(1)

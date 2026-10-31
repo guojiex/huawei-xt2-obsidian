@@ -1,0 +1,6 @@
+{
+  "name": "libvaultdir_napi.so",
+  "types": "./Index.d.ts",
+  "version": "0.1.0",
+  "description": "fd-based directory listing for external vault directories"
+}

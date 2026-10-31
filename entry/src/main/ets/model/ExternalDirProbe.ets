@@ -225,6 +225,9 @@ export interface ProbeFsLike {
   readText(uri: string): Promise<string>;
   /** 失败时抛 `ProbeWriteError`（带 code），由调用方转成可读文案。 */
   writeAtomic(uri: string, content: string): Promise<void>;
+  /** v1.5 核实用：`openSync(uri, READ_ONLY)` 探测目录能否打开，返回 fd。 */
+  openDir(uri: string): number;
+  closeDir(fd: number): void;
 }
 
 /**
@@ -274,6 +277,15 @@ export class ExternalDirProbeRunner {
   /** 步骤 4：递归列出 —— 用于确认授权是否顺延到子文件。 */
   listEntries(uri: string): string[] {
     return this.fs.listFileSync(uri, { recursion: true });
+  }
+
+  /** 核实诊断：目录 URI 能否被 fileIo.openSync 打开（listFile 13900002 时的第一个分叉点）。 */
+  openDirForDiagnosis(uri: string): number {
+    return this.fs.openDir(uri);
+  }
+
+  closeDirForDiagnosis(fd: number): void {
+    this.fs.closeDir(fd);
   }
 
   /**

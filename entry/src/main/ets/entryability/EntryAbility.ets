@@ -26,6 +26,8 @@ interface ColorModeObserver {
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
+  /** onCreate 保留启动 Want —— 调试直达参数在这里面（见 resolveInitialPage）。 */
+  private debugLaunchWant: Want | null = null;
   private colorModeObserverRegistered: boolean = false;
   private readonly keyboardAvoidAreaListener = (options: window.AvoidAreaOptions): void => {
     if (options.type !== window.AvoidAreaType.TYPE_KEYBOARD) {
@@ -43,6 +45,26 @@ export default class EntryAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
+    this.debugLaunchWant = want;
+  }
+
+  /**
+   * v1.5 临时核实直达（2026-10-31，与 ExternalDirProbePage 同生共死，正式实现落地后删除）：
+   * `aa start -a EntryAbility -b com.jxg.huaweiobsidian --ps yaoshi_debug_page pages/ExternalDirProbePage`
+   * 可以不经 Index 直接落到核实页 —— 设备上只有样例库（非 Git 库）时，
+   * SyncPage 的入口根本不出现，人工走不到核实页。白名单只收当前唯一核实页，
+   * 其他值一律回落 Index，不构成通用路由能力。
+   */
+  private resolveInitialPage(): string {
+    const parameters = this.debugLaunchWant?.parameters;
+    if (parameters !== undefined && parameters !== null) {
+      const requested = parameters['yaoshi_debug_page'];
+      if (typeof requested === 'string' && requested === 'pages/ExternalDirProbePage') {
+        hilog.info(DOMAIN, TAG, '%{public}s', '调试直达 pages/ExternalDirProbePage');
+        return requested;
+      }
+    }
+    return 'pages/Index';
   }
 
   onDestroy(): void {
@@ -102,7 +124,7 @@ export default class EntryAbility extends UIAbility {
     void SampleVaultInstaller.install(registry).catch((error: Error): void => {
       hilog.error(DOMAIN, TAG, '样例库预置失败，保留已写入内容，不自动重试: %{public}s', error.message);
     }).then((): void => {
-      windowStage.loadContent('pages/Index', (err) => {
+      windowStage.loadContent(this.resolveInitialPage(), (err) => {
         if (err.code) {
           hilog.error(DOMAIN, TAG, 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
           return;

@@ -22,10 +22,12 @@
 import { fileIo, fileShare, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import nativeVaultDir, { VaultDirListResult } from 'libvaultdir_napi.so';
 import {
   FileShareLike, ExternalDirPickerLike, ProbeFsLike, ProbePolicy, ProbeListOptions,
   ProbeWriteError, ExternalDirProbeRunner
 } from './ExternalDirProbe';
+import { VaultDirFsLike, VaultDirNativeLike, VaultDirectoryScanner } from './VaultDirNative';
 
 /** 选目录依赖的系统能力；实施前必须用 canIUse 判一遍（P1 前置项的要求）。 */
 export const FOLDER_SELECTION_SYSCAP: string = 'SystemCapability.FileManagement.UserFileService.FolderSelection';
@@ -76,6 +78,16 @@ export class DeviceProbeFs implements ProbeFsLike {
 
   async readText(uri: string): Promise<string> {
     return await fileIo.readText(uri);
+  }
+
+  /** 核实诊断：目录 URI 能否被 openSync 打开。失败时 BusinessError 原样抛出（code 会带上）。 */
+  openDir(uri: string): number {
+    const dirFile: fileIo.File = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY);
+    return dirFile.fd;
+  }
+
+  closeDir(fd: number): void {
+    fileIo.closeSync(fd);
   }
 
   /**
@@ -138,4 +150,40 @@ export function createDeviceProbeRunner(context: common.UIAbilityContext): Exter
     new DeviceFileShare(),
     new DeviceProbeFs()
   );
+}
+
+/* --------------------------------------------------------------------------
+ * vaultdir_napi 的 IO 端：把「开目录 fd」和「Native 遍历」接到真实实现上。
+ *
+ * 注意 OpenMode：官方答复示例里写的 `fs.OpenMode.READ_DIR` **不存在**，
+ * 本机 SDK namespace OpenMode 里是 `DIR = 0o200000`（见 @ohos.file.fs.d.ts L136-240）。
+ * 开目录要 `READ_ONLY | DIR`。这是「官方答复必须交叉验证」的又一例。
+ * -------------------------------------------------------------------------- */
+
+/** 只负责目录 fd 的开关，遍历整个链条里最薄的一层。 */
+export class DeviceVaultDirFs implements VaultDirFsLike {
+  openDirFd(uri: string): number {
+    const dirFile: fileIo.File = fileIo.openSync(uri, fileIo.OpenMode.READ_ONLY | fileIo.OpenMode.DIR);
+    return dirFile.fd;
+  }
+
+  closeFd(fd: number): void {
+    fileIo.closeSync(fd);
+  }
+}
+
+/** native 桥接本身就是同签名导出，这里只做适配器教养。 */
+export class DeviceVaultDirNative implements VaultDirNativeLike {
+  listDirByFd(fd: number): VaultDirListResult {
+    return nativeVaultDir.listDirByFd(fd);
+  }
+
+  listDirRecursiveByFd(fd: number): VaultDirListResult {
+    return nativeVaultDir.listDirRecursiveByFd(fd);
+  }
+}
+
+/** 组装一个跑在真机上的目录遍历器。 */
+export function createVaultDirScanner(): VaultDirectoryScanner {
+  return new VaultDirectoryScanner(new DeviceVaultDirNative(), new DeviceVaultDirFs());
 }

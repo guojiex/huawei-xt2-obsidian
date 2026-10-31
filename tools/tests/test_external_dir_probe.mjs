@@ -68,6 +68,15 @@ function createFs(initial = {}) {
       const key = uri.replace(DIR_URI + '/', '');
       writes.push([key, content]);
       files.set(key, content);
+    },
+    openDir(uri) {
+      this.openCalls = this.openCalls || [];
+      this.openCalls.push(uri);
+      return 42;
+    },
+    closeDir(fd) {
+      this.closeCalls = this.closeCalls || [];
+      this.closeCalls.push(fd);
     }
   };
 }
@@ -247,4 +256,18 @@ test('errorCodeOf reads numeric codes and degrades to -1 for unknown shapes', ()
   assert.equal(probe.ExternalDirProbeRunner.errorCodeOf(new Error('boom')), -1);
   assert.equal(probe.ExternalDirProbeRunner.errorCodeOf(null), -1);
   assert.equal(probe.ExternalDirProbeRunner.errorCodeOf('text'), -1);
+});
+
+// ---- 诊断转发：openDirForDiagnosis / closeDirForDiagnosis ----
+test('openDirForDiagnosis forwards to fs.openDir and returns fd', () => {
+  const { runner, fs } = createRunner();
+  const fd = runner.openDirForDiagnosis(DIR_URI);
+  assert.equal(fd, 42);
+  assert.deepEqual(fs.openCalls, [DIR_URI]);
+});
+
+test('closeDirForDiagnosis forwards to fs.closeDir', () => {
+  const { runner, fs } = createRunner();
+  runner.closeDirForDiagnosis(42);
+  assert.deepEqual(fs.closeCalls, [42]);
 });
