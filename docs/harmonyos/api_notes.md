@@ -1607,6 +1607,62 @@ ArkTS 的 Error 包装吃掉。
 - 不使用 NDK 私有 API，只依赖 POSIX 基线 + 官方文档认可的通路，答复明确**不会因此被上架驳回**。
 - **重激活后写链路仍成立**：杀进程重启 → `activatePermission` → 写 / 覆盖 / 改名 / 删除全部 ✅。
 
+### T9 ✅ ArkTS 不做结构化类型：同构但异名的结果接口不能互传（2026-10-31 编译实测）
+
+**现象（本机 `-Wall -Wextra` 之外的 ArkTS 编译器实测，错误码 10605030）**：
+`entry/src/main/ets/model/VaultAccess.ets` 里 `throwExternalFailure(result: ExternalIoResult, ...)`
+被调用时传入 `ExternalReadResult` / `ExternalBinaryResult` / `ExternalStringResult` /
+`ExternalFdResult`，编译器逐条报：
+
+```
+ERROR: 10605030 ArkTS Compiler Error
+Error Message: Structural typing is not supported (arkts-no-structural-typing)
+```
+
+这四者与 `ExternalIoResult` 的字段**完全一样或包含它的全部字段**（多一个 `content` / `bytes` /
+`entries` / `fd` 而已），在 TS 里合法，在 ArkTS 里非法——**ArkTS 只认声名字，不看结构**。
+`as ExternalIoResult` 强转能绕过，但那是把编译期检查按回去，属于技术债，不采用。
+
+**采用的解法（语义上也更准）**：抽公共状态基接口，各结果接口 `extends` 它，抛错函数只收状态部分。
+
+```typescript
+export interface ExternalIoStatus { ok: boolean; code: number; message: string; }
+export interface ExternalIoResult extends ExternalIoStatus {}
+export interface ExternalReadResult extends ExternalIoStatus { content: string; }
+export interface ExternalBinaryResult extends ExternalIoStatus { bytes: Uint8Array; }
+export interface ExternalStringResult extends ExternalIoStatus { entries: string[]; }
+export interface ExternalStatResult extends ExternalIoStatus { size: number; mtime: number; isDir: boolean; }
+export interface ExternalFdResult extends ExternalIoStatus { fd: number; }
+
+function throwExternalFailure(result: ExternalIoStatus, action: string): void { /* 只用到 code / message */ }
+```
+
+继承关系是 ArkTS 认可的兼容方式，比之一份合一字母段的胖接口（会让文本读也背一个 `bytes`）更贴近语义：
+**抛错这件事本来就只关心 `ok/code/message`，不关心载荷类型**。
+
+**连带结论**：Native 返回值在设备侧的转发层（`VaultAccessDevice.ets`）同样要守住这道线——
+`.d.ts` 里的 `VaultDir*Result` 与 model 层的 `External*Result` 是两份声明，跨层赋值必须当场
+`as` 到目标名（这一处是**有意为之**：`VaultAccessDevice.ets` 是全仓唯一的转译点，转译完以后
+model 层再无结构类型混用）。
+
+**校验方式**：hvigor `assembleHap` 全量编译通过（含 x86_64 与 arm64-v8a 两个 ABI 的 Native 编译），
+`tools/tests` 345/345 用例通过。
+
+### T10 ✅ Native 侧补齐 15.3 需要的四个能力（2026-10-31 编译 + 既有设备通路实测）
+
+在既有 T5（枚举）/ T7（写链路）之上补了四个方法，均走同一条「持有目录 fd + 相对名字」通路：
+
+| 方法 | Native 实现 | 用途 | 状态 |
+| --- | --- | --- | --- |
+| `statByFd(fd, name)` | `fstatat(fd, name, &meta, 0)`；`name` 为空串时 `fstat(fd)` | 文件树判定目录 / 文件、15.4 授权体检看目录还在不在 | 编译通过，待设备实跑一次确认 errno |
+| `mkdirByFd(fd, name)` | 逐段 `mkdirat` + `openat(O_DIRECTORY)` 进入下一段 | 写文件前备好父目录（`mkdir -p` 语义） | 同上 |
+| `removeDirByFd(fd, name)` | `unlinkat(AT_REMOVEDIR)` + 递归清内容 | 删目录树；外部目录没有 `.trash`，这是真删 | 同上 |
+| `readBinaryByFd(fd, name)` | `openat` + 按 `st_size` 读成 `Uint8Array` | 图片附件；走 `readFileByFd` 会因 UTF-8 编解码坏字节 | 同上 |
+
+**编译侧踩坑（写下来防复发）**：`stat_by_fd` 里局部变量不能叫 `info` —— 与同函数的形参
+`napi_callback_info info` 同名，clang 报 `redefinition of 'info' with a different type`。
+局部变量统一改名 `meta`。
+
 ### T8 ✅ 外部目录变更感知：没有官方方案，只能轮询
 
 `fileIo.createWatcher` 的 path 契约是**沙箱路径**，不支持外部目录 URI；
@@ -1617,5 +1673,6 @@ ArkTS 的 Error 包装吃掉。
 来源与逐条证据见 [外部目录授权能力核实记录](qa/2026-10-31_外部目录授权能力_API24.md)、
 [目录 URI 遍历答复核验](qa/2026-10-31_目录URI遍历答复核验.md) 与
 [目录 URI 写链路答复核验](qa/2026-10-31_目录URI写链路答复核验.md)。
-T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；
+T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机编译 + 既有设备通路支撑，
+尚未单独上机跑验收用例。
 **所有读数来自 API 26 设备（XT2 / 模拟器），目标兼容级别为 API 24，未完成判定跑通前不外推。**

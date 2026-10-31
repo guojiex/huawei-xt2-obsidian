@@ -36,7 +36,7 @@
 | 11 | 令牌存 **`@kit.AssetStoreKit`**（敏感值只放 `SECRET`），不写明文 | 无需权限；`ALIAS` 不加密 |
 | 12 | 异步渲染下 **Web 组件宽高 ≤ 7680px 物理像素** | 超过会白屏；三栏各 1/3 约 1061px，安全 |
 | 13 | 沙箱内读写**不需要任何权限**；只申请 `INTERNET` 就够。**已拍板例外（2026-10-31）**：v1.5 外部目录持久授权需要 `ohos.permission.FILE_ACCESS_PERSIST`，已在 `module.json5` 声明 —— 沙箱库不受影响，非 v1.5 功能**不得**新增任何权限 | 官方确认；例外依据见 `docs/harmonyos/api_notes.md` T2。**发布上架前必须完成 AGC 受限权限申请**，调试期靠含 ACL 的 debug profile |
-| 14 | 路径**只能**由 `context.filesDir` 等 Context 属性拼出，禁止硬编码沙箱目录字符串；库内相对路径 → 绝对路径**只用一层解析器** | 官方强调；UI 与意图执行器共用，别各拼一遍 |
+| 14 | 路径**只能**由 `context.filesDir` 等 Context 属性拼出，禁止硬编码沙箱目录字符串；库内相对路径 → 绝对路径**只用一层解析器**。**v1.5 延伸（2026-10-31）**：外部授权目录没有绝对路径，文件 IO 统一走 `VaultRegistry.accessFor(vaultId)` 拿到的 `VaultAccess`（沙箱 / 外部两个实现），上层**不得按 `rootKind` 分叉**，也不许把 Picker 给的 URI 当路径拼 | 官方强调；UI 与意图执行器共用，别各拼一遍。外部侧若到处写 `if (isExternal)` 就是新的多层解析器，详见 `docs/releases/v1.5/需求文档.md` §6.2 |
 | 15 | 端侧意图 / AI 修改已有笔记**同样走 `AtomicFile`** —— 禁止用 `openSync(READ_WRITE\|TRUNC)` 覆盖原内容；新建唯一附件按硬约束 10 选择写入方式 | 这是保护现有笔记内容的工程策略，不是 HarmonyOS 平台强制要求 |
 | 16 | 埋点用**原生 `hiAppEvent` + `UIObserver`**，不引第三方 SDK；**笔记内容一律禁止进埋点**（标题/文件名/路径/正文/字数/标签全禁） | 个人知识库的隐私红线；采集内容会抬高合规与审核成本 |
 | 17 | 颜色 / 圆角 / 间距 / 字号**只引用 token**（`app.color.*` / `app.float.*` 或常量模块），**组件里禁止散写数值**；唯一设计真源是 `docs/prototype/v2/index.html` 的 `:root` / `[data-theme="dark"]`。编辑器、预览和原生资源按明确映射同步；组件里不散写数值，具体差异与验证见 v0.9 迁移清单。v1 设计稿保持从工作树删除；历史对照只读 Git 历史，不恢复或归档旧稿 | 散写会让深色模式与换主色变成全局搜替换（2026-10-17 定，落地在 v0.2） |
@@ -231,6 +231,9 @@ hvigor，读不到脚本参数（这是 2026-10-31 踩过的坑：改了 build.p
 4. **base64 只解一层**：桥接 `channel.onResult` 内部已解过，调用方别再解。
 5. **Gitee 用 Basic（`username:私人令牌`），GitHub 用 `Bearer <PAT>` 且用户名留空** —— 两者不同。
 6. **ArkTS 不允许无类型对象字面量**，HTTP 请求等要显式声明类型。
+   ⚠️ **同样的事还有一条：ArkTS 不支持结构化类型**（10605030 `arkts-no-structural-typing`）。
+   字段相同、名字不同的两个接口不能互传，只能抽公共基接口 + `extends`（详见
+   `docs/harmonyos/api_notes.md` T9）。写通用工具函数时，形参收「只用到的最小接口」而不是某个具体结果类型。
 7. ⚠️ **CodeMirror 6 基于 `contenteditable`，官方建议优先 `textarea`**（输入法兼容性更好）。M0.5 必须两者对比实测，否则 M2 可能被卡死。
 8. **`.ps1` 必须是 UTF-8 with BOM**：PowerShell 5.1 在无 BOM 时按 GBK 读脚本，中文注释里的字节会被误解析成引号，报出「字符串缺少终止符」这类看起来毫无关联的错。新建 .ps1 后检查一次。
 9. **PowerShell 里别用 `$profile` 当变量名**（它是自动变量 = 用户配置文件路径）；函数返回**单元素数组会被解包成标量**，`$x[0]` 会变成字符串首字符。
