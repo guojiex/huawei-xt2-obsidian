@@ -81,6 +81,7 @@ const noteService = fs.readFileSync(new URL('../entry/src/main/ets/entryability/
   import.meta.url), 'utf8');
 const noteStorage = fs.readFileSync(new URL('../entry/src/main/ets/model/NoteService.ets', import.meta.url), 'utf8');
 const index = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+const agentKitSlot = fs.readFileSync(new URL('../entry/src/main/ets/components/AgentKitSlot.ets', import.meta.url), 'utf8');
 
 for (const name of expected.slice(2)) {
   assert.ok(executor.includes(`'${name}'`), `${name} must be dispatched`);
@@ -98,7 +99,9 @@ assert.ok(noteService.includes('NoteService.saveNoteIfUnchanged'));
 assert.ok(noteService.includes('NoteService.deleteNoteIfUnchanged'));
 assert.ok(noteService.includes('WorkspaceEditGuard.isUnsaved(vaultId, path)'));
 assert.ok(noteStorage.includes('new fileIo.AtomicFile('), 'existing-note writes must use AtomicFile');
-assert.ok(index.includes('FunctionComponent({'), 'the note workspace must expose the platform component');
-assert.ok(index.includes("this.xiaoyiController.on('agentDialogClosed'"), 'closing the panel must refresh local files');
+assert.ok(index.includes("import('../components/AgentKitSlot')"), 'the note workspace must load the platform component');
+assert.ok(agentKitSlot.includes('FunctionComponent({'), 'the AgentKit slot must expose the platform component');
+assert.ok(agentKitSlot.includes("this.controller.on('agentDialogClosed'"), 'closing the panel must be observed');
+assert.ok(index.includes('refreshWorkspaceAfterXiaoyi'), 'closing the panel must refresh local files');
 
 console.log('小艺端工具参数、意图映射、文本变换与安全接线检查通过（不代表平台调用或设备验收）');

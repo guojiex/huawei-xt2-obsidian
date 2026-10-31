@@ -133,12 +133,17 @@ export class VaultRegistry {
   }
 
   /** 教程笔记成功打开并保存工作区后清除首装标记。 */
-  markFirstInstallNoteOpened(): void {
+  markFirstInstallNoteOpened(): boolean {
     if (this.state.initialNotePath === undefined) {
-      return;
+      return true;
     }
+    const initialNotePath: string = this.state.initialNotePath;
     this.state.initialNotePath = undefined;
-    this.persist();
+    if (this.persist()) {
+      return true;
+    }
+    this.state.initialNotePath = initialNotePath;
+    return false;
   }
 
   /** 库列表（返回拷贝，调用方改动不影响注册表内部状态）。 */
@@ -724,23 +729,25 @@ export class VaultRegistry {
   }
 
   /** 注册表落盘（preferences putSync + flushSync，API 14+ 已于 T002 核对）。 */
-  private persist(mustSucceed: boolean = false): void {
+  private persist(mustSucceed: boolean = false): boolean {
     if (this.store === null) {
       hilog.error(REG_DOMAIN, REG_TAG, 'preferences 实例不可用，注册表未持久化');
       if (mustSucceed) {
         throw new Error('preferences 实例不可用，注册表未持久化');
       }
-      return;
+      return false;
     }
     try {
       this.store.putSync(this.PREF_KEY, JSON.stringify(this.state));
       this.store.flushSync();
+      return true;
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(REG_DOMAIN, REG_TAG, '注册表持久化失败: %{public}s', JSON.stringify(err));
       if (mustSucceed) {
         throw new Error(err.message);
       }
+      return false;
     }
   }
 

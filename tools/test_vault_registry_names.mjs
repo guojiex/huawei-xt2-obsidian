@@ -32,6 +32,7 @@ function createRegistry(vaultIds = [], existingPaths = []) {
   };
   const { VaultRegistry } = loadModule(registrySource, {
     DEFAULT_VAULT_ID: vaultModule.DEFAULT_VAULT_ID,
+    SAMPLE_VAULT_ID: vaultModule.SAMPLE_VAULT_ID,
     sanitizeVaultName: vaultModule.sanitizeVaultName,
     fileIo
   });
@@ -52,6 +53,7 @@ function createRegistry(vaultIds = [], existingPaths = []) {
   };
   registry.ensureVaultsRoot = () => {};
   registry.newVaultKey = () => 'new-key';
+  registry.isSafeVaultKey = (key) => key.length > 0;
   registry.persist = () => { fileOps.push(['persist']); };
   return { registry, paths, fileOps };
 }
@@ -81,4 +83,45 @@ test('native ID selection checks registered IDs and orphan directories, and rena
   assert.equal(registry.previewRenameId('阅读笔记', '阅读笔记'), '阅读笔记');
   assert.equal(registry.previewRenameId('阅读笔记', '阅读笔记-3'), '阅读笔记-3-2');
   assert.throws(() => registry.previewRenameId('阅读笔记', ' .. '), /库名不能为空/);
+});
+
+test('first install creates a personal vault and tutorial vault with the tutorial note pending', () => {
+  const { registry } = createRegistry();
+  registry.sampleInstallPending = true;
+
+  registry.createInitialVaults();
+
+  assert.deepEqual(registry.state.vaults.map((vault) => vault.id), [
+    vaultModule.DEFAULT_VAULT_ID,
+    vaultModule.SAMPLE_VAULT_ID
+  ]);
+  assert.equal(registry.state.currentVaultId, vaultModule.SAMPLE_VAULT_ID);
+  assert.equal(registry.firstInstallNotePath(), '00_开始/快速上手.md');
+});
+
+test('existing registries retain a valid first-install marker and ignore malformed values', () => {
+  const { registry } = createRegistry();
+  const vault = { id: 'local', vaultKey: 'key-0', type: 'local', createdAt: 0 };
+
+  assert.equal(registry.parseState(JSON.stringify({ vaults: [vault], currentVaultId: 'local' }))?.initialNotePath,
+    undefined);
+  assert.equal(registry.parseState(JSON.stringify({
+    vaults: [vault], currentVaultId: 'local', initialNotePath: '00_开始/快速上手.md'
+  }))?.initialNotePath, '00_开始/快速上手.md');
+  assert.equal(registry.parseState(JSON.stringify({
+    vaults: [vault], currentVaultId: 'local', initialNotePath: 42
+  }))?.initialNotePath, undefined);
+});
+
+test('first-install marker remains pending if the registry cannot persist its removal', () => {
+  const { registry } = createRegistry();
+  registry.state.initialNotePath = '00_开始/快速上手.md';
+  registry.persist = () => false;
+
+  assert.equal(registry.markFirstInstallNoteOpened(), false);
+  assert.equal(registry.firstInstallNotePath(), '00_开始/快速上手.md');
+
+  registry.persist = () => true;
+  assert.equal(registry.markFirstInstallNoteOpened(), true);
+  assert.equal(registry.firstInstallNotePath(), '');
 });

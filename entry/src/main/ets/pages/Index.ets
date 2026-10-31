@@ -461,8 +461,9 @@ struct Index {
       if (initialNotePath.length > 0 && registry.currentId() === SAMPLE_VAULT_ID) {
         this.currentFilePath = initialNotePath;
         if (await this.readAndPush(initialNotePath)) {
-          this.flushWorkspaceSessionSave();
-          registry.markFirstInstallNoteOpened();
+          if (this.flushWorkspaceSessionSave()) {
+            registry.markFirstInstallNoteOpened();
+          }
         } else {
           this.currentFilePath = '';
           await this.readAndPush('');
@@ -650,12 +651,12 @@ struct Index {
     }, 450);
   }
 
-  private flushWorkspaceSessionSave(): void {
+  private flushWorkspaceSessionSave(force: boolean = false): boolean {
     if (this.workspaceSessionSaveTimer !== -1) {
       clearTimeout(this.workspaceSessionSaveTimer);
       this.workspaceSessionSaveTimer = -1;
     }
-    this.saveWorkspaceSessionNow();
+    return this.saveWorkspaceSessionNow(force);
   }
 
   private stopWorkspaceSessionSaving(): void {
@@ -666,10 +667,10 @@ struct Index {
     }
   }
 
-  private saveWorkspaceSessionNow(): void {
-    if (!this.workspaceSessionSavingEnabled || this.workspaceSessionRestoring || this.topView !== 'note' ||
+  private saveWorkspaceSessionNow(force: boolean = false): boolean {
+    if (!this.workspaceSessionSavingEnabled || this.workspaceSessionRestoring || (!force && this.topView !== 'note') ||
       this.workspaceOpenRequests > 0 || this.currentVaultId.length === 0) {
-      return;
+      return false;
     }
     const chapterOffset: number = this.chapterPath === this.activeFilePath() && this.selectedChapterIndex >= 0 &&
       this.selectedChapterIndex < this.chapterEntries.length
@@ -698,6 +699,7 @@ struct Index {
     if (!saved) {
       hilog.warn(DOMAIN, TAG, '工作区会话保存失败');
     }
+    return saved;
   }
 
   private isSingleLandscape(): boolean {
@@ -1117,6 +1119,8 @@ struct Index {
       this.smMode = 'edit';
       await this.readAndPush('');
       await this.readRightAndPush('');
+      this.workspaceSessionSavingEnabled = true;
+      this.flushWorkspaceSessionSave(true);
     } catch (error) {
       this.toastRegistryError('切换库失败', error);
     }
@@ -2471,6 +2475,8 @@ struct Index {
       this.smMode = 'edit';
       await this.readAndPush('');
       await this.readRightAndPush('');
+      this.workspaceSessionSavingEnabled = true;
+      this.flushWorkspaceSessionSave(true);
     } catch (error) {
       this.toastRegistryError('切换库失败', error);
     }

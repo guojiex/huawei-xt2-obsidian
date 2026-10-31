@@ -8,8 +8,9 @@ const require = createRequire(new URL('../web/mdpreview/package.json', import.me
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
 const methods = [
-  ['scheduleWorkspaceSessionSave', '  private scheduleWorkspaceSessionSave(): void {', '\n  private flushWorkspaceSessionSave()'],
-  ['saveWorkspaceSessionNow', '  private saveWorkspaceSessionNow(): void {', '\n  private isSingleLandscape()']
+  ['scheduleWorkspaceSessionSave', '  private scheduleWorkspaceSessionSave(): void {',
+    '\n  private flushWorkspaceSessionSave(force: boolean = false): boolean'],
+  ['saveWorkspaceSessionNow', '  private saveWorkspaceSessionNow(force: boolean = false): boolean {', '\n  private isSingleLandscape()']
 ].map(([name, startMarker, endMarker]) => {
   const start = source.indexOf(startMarker);
   const end = source.indexOf(endMarker, start);
@@ -136,4 +137,21 @@ test('disabled, restoring, secondary-view, or library-less states do not schedul
     assert.equal(timer.pending, null);
     assert.equal(saved.length, 0);
   }
+});
+
+test('a library switch can persist an empty workspace snapshot from a secondary view', () => {
+  const { app, saved } = createHarness({
+    topView: 'vaults',
+    currentVaultId: 'personal',
+    currentFilePath: '',
+    rightFilePath: '',
+    committedLeftPath: '',
+    committedRightPath: ''
+  });
+
+  assert.equal(app.saveWorkspaceSessionNow(true), true);
+  assert.equal(saved.length, 1);
+  assert.equal(saved[0].vaultId, 'personal');
+  assert.equal(saved[0].leftPath, '');
+  assert.equal(saved[0].rightPath, '');
 });

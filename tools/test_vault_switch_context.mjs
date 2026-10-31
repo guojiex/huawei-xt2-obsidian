@@ -58,6 +58,7 @@ function createHarness(options = {}) {
     },
     async readAndPush(path) { calls.push(`clear-left:${path}`); },
     async readRightAndPush(path) { calls.push(`clear-right:${path}`); },
+    flushWorkspaceSessionSave(force) { calls.push(`save-session:${force}`); return true; },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); }
   });
   if (options.stubSwitch) {
@@ -79,7 +80,7 @@ test('switching vaults clears both persistent editor buffers, including from a s
   await app.switchVault('temporary');
 
   assert.deepEqual(calls, [
-    'stop-session', 'set-current:temporary', 'refresh', 'clear-left:', 'clear-right:'
+    'stop-session', 'set-current:temporary', 'refresh', 'clear-left:', 'clear-right:', 'save-session:true'
   ]);
   assert.equal(state.currentId, 'temporary');
   assert.equal(app.currentFilePath, '');
@@ -96,7 +97,7 @@ test('external vault changes clear both persistent editor buffers', async () => 
   await app.adoptExternalVaultSwitch();
 
   assert.deepEqual(calls, [
-    'flush', 'stop-session', 'refresh', 'clear-left:', 'clear-right:'
+    'flush', 'stop-session', 'refresh', 'clear-left:', 'clear-right:', 'save-session:true'
   ]);
   assert.equal(state.currentId, 'external');
   assert.equal(app.currentFilePath, '');
