@@ -196,7 +196,10 @@ announceReady()
 const LIGHT_THEME = EditorView.theme(
   {
     '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
-    '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
+    '.cm-content': {
+      fontFamily: 'var(--mono)', lineHeight: 'var(--leading)',
+      padding: 'var(--s2) 0 calc(var(--touch) + var(--s8) + var(--s5))'
+    },
     '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
     '.cm-activeLine': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(0, 0, 0, 0.04)' },
@@ -209,7 +212,10 @@ const LIGHT_THEME = EditorView.theme(
 const DARK_THEME = EditorView.theme(
   {
     '&': { backgroundColor: 'var(--paper)', color: 'var(--ink)', fontSize: 'var(--body)' },
-    '.cm-content': { fontFamily: 'var(--mono)', lineHeight: 'var(--leading)', padding: 'var(--s2) 0' },
+    '.cm-content': {
+      fontFamily: 'var(--mono)', lineHeight: 'var(--leading)',
+      padding: 'var(--s2) 0 calc(var(--touch) + var(--s8) + var(--s5))'
+    },
     '.cm-gutters': { backgroundColor: 'var(--paper)', border: 'none', color: 'var(--muted)' },
     '.cm-activeLine': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
     '.cm-activeLineGutter': { backgroundColor: 'rgba(255, 255, 255, 0.12)' },
