@@ -453,6 +453,8 @@ Huawei_TripleFold API 26 arm64 模拟器已确认安装并运行系统输入法�
 
 **2026-10-29 键盘避让区声明与 UI 验证**：本机 API 26 SDK `@ohos.window.d.ts` 将 `AvoidAreaType.TYPE_KEYBOARD`、`Window.getWindowAvoidArea()` 与 `Window.on/off('avoidAreaChange')` 标记为 `@since 9`，回调使用的 `AvoidAreaOptions` 标记为 `@since 12`，均不高于工程 API 24 上限。原生用该事件发布键盘底部避让高度，Aa 浮层据此重新计算所属栏可视区。unsigned HAP 构建并在 API 26 Huawei TripleFold 实际点按：键盘显示时打开 Aa、滚动选项后“完成”仍可见并成功关闭面板，键盘继续显示。此为本机 API 26 SDK 声明与模拟器结果；API 24 / XT2 运行时行为仍待验。
 
+**2026-10-31 M0.5 部分复验（API 26 arm64 隔离模拟器）**：A/B 页面分别加载 500 行样例，切换编辑器后页面载入时间未变；CodeMirror 短程滚动可从第 1 行移至第 8 行，光标读数保持行 1、列 1、offset 0。该轮未重新输入拼音，没有新 composition 事件证据。之后模拟器报告 `render_service SERVICE_BLOCK`，屏幕变黑且无当前 mission，故停止完整长文滚动与折叠 resize；故障原因未判定。语音、手写、XT2/API24 均未测。本段仅记录部分模拟器观察，B6 仍为 ❓，不据此选择最终编辑器方案。
+
 ---
 
 ### B7 WebMessagePort：rawfile 页面可用，支持 ArrayBuffer，上限未记载 （2026-10-17 新增）
