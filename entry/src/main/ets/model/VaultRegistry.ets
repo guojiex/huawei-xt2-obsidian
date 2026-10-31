@@ -24,12 +24,14 @@ const REG_TAG: string = 'VaultRegistry';
 interface VaultRegistryState {
   vaults: VaultEntry[];
   currentVaultId: string;
+  initialNotePath?: string;
 }
 
 /** JSON.parse 的原始载体：解析结果先落此类型，经 typeof 校验后才拷入严格模型。 */
 interface VaultRegistryRaw {
   vaults?: Object[];
   currentVaultId?: Object;
+  initialNotePath?: Object;
 }
 
 /** 单个库条目的原始（未校验）形态。 */
@@ -123,6 +125,20 @@ export class VaultRegistry {
     const pending: boolean = this.sampleInstallPending;
     this.sampleInstallPending = false;
     return pending;
+  }
+
+  /** 首装教程笔记路径；已有安装不会自动获得该值。 */
+  firstInstallNotePath(): string {
+    return typeof this.state.initialNotePath === 'string' ? this.state.initialNotePath : '';
+  }
+
+  /** 教程笔记成功打开并保存工作区后清除首装标记。 */
+  markFirstInstallNoteOpened(): void {
+    if (this.state.initialNotePath === undefined) {
+      return;
+    }
+    this.state.initialNotePath = undefined;
+    this.persist();
   }
 
   /** 库列表（返回拷贝，调用方改动不影响注册表内部状态）。 */
@@ -626,7 +642,11 @@ export class VaultRegistry {
       }
       const rawCurrent = parsed.currentVaultId;
       const currentVaultId: string = typeof rawCurrent === 'string' ? rawCurrent : '';
-      return { vaults: vaults, currentVaultId: currentVaultId };
+      const state: VaultRegistryState = { vaults: vaults, currentVaultId: currentVaultId };
+      if (typeof parsed.initialNotePath === 'string') {
+        state.initialNotePath = parsed.initialNotePath;
+      }
+      return state;
     } catch (error) {
       const err = error as BusinessError;
       hilog.warn(REG_DOMAIN, REG_TAG, '注册表 JSON 解析失败，按首启处理: %{public}s', JSON.stringify(err));
@@ -686,6 +706,7 @@ export class VaultRegistry {
             createdAt: Date.now()
           });
           this.state.currentVaultId = SAMPLE_VAULT_ID;
+          this.state.initialNotePath = '00_开始/快速上手.md';
         } catch (error) {
           const err = error as BusinessError;
           this.sampleInstallPending = false;

@@ -20,7 +20,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { Breakpoint } from '../model/Breakpoint';
-import { VaultEntry } from '../model/Vault';
+import { SAMPLE_VAULT_ID, VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
 import { AgentRuntime } from '../model/AgentRuntime';
@@ -456,6 +456,19 @@ struct Index {
     this.workspaceSessionRestoreStarted = true;
     const session: WorkspaceSession | null = this.pendingWorkspaceSession;
     if (session === null) {
+      const registry: VaultRegistry = VaultRegistry.get();
+      const initialNotePath: string = registry.firstInstallNotePath();
+      if (initialNotePath.length > 0 && registry.currentId() === SAMPLE_VAULT_ID) {
+        this.currentFilePath = initialNotePath;
+        if (await this.readAndPush(initialNotePath)) {
+          this.flushWorkspaceSessionSave();
+          registry.markFirstInstallNoteOpened();
+        } else {
+          this.currentFilePath = '';
+          await this.readAndPush('');
+        }
+        return;
+      }
       await this.readAndPush(this.currentFilePath);
       return;
     }
