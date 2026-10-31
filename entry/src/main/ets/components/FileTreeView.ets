@@ -31,6 +31,46 @@ const TREE_DOMAIN: number = 0x0002;
 const TREE_TAG: string = 'FileTreeView';
 const NOTE_REF_MIME: string = 'application/x-yaoshi-note-ref';
 
+/**
+ * LazyForEach 数据源（v1.0 需求 2「大目录懒加载」）。
+ * 文件树的每次变化都是整树重扫（FileTree.scan 返回全新数组），
+ * 所以这里只走 onDataReloaded 整体通知，不做按索引的增量维护——
+ * 避开 LazyForEach 增删不同步的经典 bug（faqs-arkui-1355）。
+ * dataSource 实例只创建一次，禁止重新赋值，只能通过 reload() 通知更新。
+ */
+class TreeRowDataSource implements IDataSource {
+  private nodes: TreeNode[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number {
+    return this.nodes.length;
+  }
+
+  getData(index: number): TreeNode {
+    return this.nodes[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (this.listeners.indexOf(listener) < 0) {
+      this.listeners.push(listener);
+    }
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const pos: number = this.listeners.indexOf(listener);
+    if (pos >= 0) {
+      this.listeners.splice(pos, 1);
+    }
+  }
+
+  reload(nodes: TreeNode[]): void {
+    this.nodes = nodes;
+    for (let i = 0; i < this.listeners.length; i++) {
+      this.listeners[i].onDataReloaded();
+    }
+  }
+}
+
 @Component
 export struct FileTreeView {
   /** 当前库 id（切库由 @Watch 触发重扫） */
@@ -84,6 +124,7 @@ export struct FileTreeView {
   @State pathMenuPath: string = '';
   private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
+  private treeSource: TreeRowDataSource = new TreeRowDataSource();
 
   aboutToAppear(): void {
     this.ensureStore();
@@ -133,11 +174,17 @@ export struct FileTreeView {
     this.rescan();
   }
 
+  /** 唯一写入口：@State（空态判断用）与 LazyForEach 数据源必须同批更新 */
+  private applyNodes(nodes: TreeNode[]): void {
+    this.nodes = nodes;
+    this.treeSource.reload(nodes);
+  }
+
   /** 重扫：读出该库的展开状态 → scan → 刷新可见行 */
   private reload(): void {
     this.ensureStore();
     if (this.vaultId.length === 0) {
-      this.nodes = [];
+      this.applyNodes([]);
       return;
     }
     const store: ExpandStore = this.store as ExpandStore;
@@ -150,11 +197,11 @@ export struct FileTreeView {
   /** 按当前 expanded 重新扫描库目录 */
   private rescan(): void {
     if (this.vaultId.length === 0) {
-      this.nodes = [];
+      this.applyNodes([]);
       return;
     }
     const rootAbs: string = VaultRegistry.get().vaultDirOf(this.vaultId);
-    this.nodes = FileTree.scan(rootAbs, this.expanded);
+    this.applyNodes(FileTree.scan(rootAbs, this.expanded));
     hilog.info(TREE_DOMAIN, TREE_TAG, '扫描 %{public}s：%{public}d 行可见 | %{public}s',
       this.vaultId, this.nodes.length, FileTree.describe(this.nodes));
   }
@@ -446,7 +493,7 @@ export struct FileTreeView {
   @Builder
   TreeList() {
     List() {
-      ForEach(this.nodes, (n: TreeNode) => {
+      LazyForEach(this.treeSource, (n: TreeNode) => {
         ListItem() {
           Row() {
             ForEach(this.levelsOf(n.depth), (lv: number) => {
@@ -605,7 +652,7 @@ export struct FileTreeView {
           edgeEffect: SwipeEdgeEffect.Spring
         })
         }, (n: TreeNode) => {
-        // ⚠️ 踩坑（2026-10-18 实测 + 官方 ForEach 键值规则 faqs-arkui-219）：
+        // ⚠️ 踩坑（2026-10-18 实测 + 官方键值复用规则 faqs-arkui-219，ForEach/LazyForEach 同理）：
         // 键值相同的项不会重新执行 itemGenerator，行子树整体复用 —— 只用 relPath 时，
         // 折叠/展开后 chevron 方向停在旧值（子行消失是因为键被移除，父行键没变）。
         // 选中高亮同机理：不进键值的话，点新文件旧高亮不掉、新高亮不上。
@@ -619,6 +666,7 @@ export struct FileTreeView {
     .width('100%')
     .padding({ left: Space.s4 })
     .scrollBar(BarState.Auto)
+    .cachedCount(10)
     .backgroundColor($r('app.color.bg_navigation'))
   }
 }

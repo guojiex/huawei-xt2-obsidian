@@ -236,7 +236,7 @@ export struct CreateNoteDialog {
           }
         }
         .width('100%')
-        .height(160)
+        .constraintSize({ maxHeight: 160 })
         .backgroundColor($r('app.color.bg_secondary'))
         .borderRadius(Radius.control)
         .padding(Space.s1)
@@ -583,7 +583,7 @@ export struct MovePathDialog {
           }
         }
         .width('100%')
-        .height(160)
+        .constraintSize({ maxHeight: 160 })
         .backgroundColor($r('app.color.bg_secondary'))
         .borderRadius(Radius.control)
         .padding(Space.s1)

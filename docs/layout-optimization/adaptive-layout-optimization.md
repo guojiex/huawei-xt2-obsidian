@@ -1,5 +1,7 @@
 # 自适应布局优化建议
 
+> **处理结论（2026-10-31，已完成裁决，不再逐条执行）**：经与代码和官方文档核对，本文只采纳两项必然收益改动并已随 [v1.0 需求 7](../releases/v1.0/需求文档.md) 落码——文件树 `ForEach` → `LazyForEach`、目录选择器两处固定高度改 `maxHeight` 上限。其余建议经核实**不做**：List 默认已有 Spring 回弹（faqs-arkui-113，补 `edgeEffect(Spring)` 是无效功）、Scroll 回弹属交互手感决策、`displayPriority` 属设计决策（「七能力填空」不构成需求）、NoteDialogs 场景 LazyForEach 无效（Scroll 不支持懒加载）、RelativeContainer 与固定宽高同三折叠断点自适应冲突。另勘误：全仓 `ForEach` 实为 25 处而非 8 处。完整理由与验证证据见 [v1.0 需求文档 §6 增量记录](../releases/v1.0/需求文档.md)；本文其余内容保留为审计原文。
+
 > 基于 HarmonyOS 七种自适应布局能力对项目进行审计，发现已有成果与待优化方向。
 >
 > 审计日期：2025 年 7 月 · 工程基础：`com.jxg.huaweiobsidian`，Stage 模型 + ArkTS
