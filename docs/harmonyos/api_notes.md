@@ -1500,6 +1500,15 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 - 未换 profile 前旧包 `bm dump` 只有 `INTERNET`；换 profile 后 `reqPermissionDetails` / `reqPermissions` 均含该权限，且安装成功（换 profile 导致的 `code:9568332 sign info inconsistent` 需先卸载旧包再装）。
 - ⚠️ 以上为 **API26 模拟器**证据，非 API24 / XT2。API12+ 等级已降为 normal，预期一致，但按规则仍标「待验证（需 XT2/API24）」，不在关键路径上外推。
 
+**发布链路：AGC 受限权限申请（官方流程，来源：[申请使用受限权限](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides-V14/declare-permissions-in-acl-V14) / [Requesting Restricted Permissions](https://developer.huawei.com/consumer/en/doc/doccenter-capabilities/declare-permissions-in-acl)）**：
+1. **AGC 申请权限证书**：在 AppGallery Connect 提交受限权限申请，审核结果通过互动中心与邮件通知（官方称「within the specified review period」，Restricted Permissions 列表里多数标注 3 个工作日）。官方强调「应优先使用 Picker / 安全控件等替代方案，仅少量符合特殊场景的应用被允许申请」——本权限官方给的典型场景正是「文档编辑类应用期望历史记录里直接打开，不必再次拉起 Picker」，与本工程 v1.5 场景吻合。
+2. **申请 Profile 时勾选该权限**：必须在 AGC「添加 Profile」页面申请对应受限权限，否则审核被驳回。Profile 里权限没覆盖代码使用的范围会导致签名失败或上架驳回。
+3. **工程内声明**：`module.json5` 的 `requestPermissions` 声明；仅 `user_grant` 权限还需运行时弹窗（本权限实测为 `SYSTEM_GRANT`，不需要）。
+
+- ⚠️ 官方明确：**未申请权限证书却在配置文件声明该权限，会导致应用安装失败**。本工程能安装成功，反证当前 profile 已带该权限证书。
+- **上架时**：AGC 会按使用场景复核，需为每个受限权限填写权限说明并**上传视频说明使用场景**。
+- **调试阶段捷径**：官方写明 DevEco Studio 自动签名会代为向 AGC 申请受限权限；本机所用含 ACL 的 debug profile 与这一机制一致。**发布阶段必须手动按上述 1–3 步重走。**
+
 ### T3 ❓ 目录 URI 的递归读写尚未验证
 `fileIo.openSync(uri)` 接受 URI、`listFileSync` 支持 `recursion` 是 SDK 声明事实；社区示例用「目录 URI → `openSync` → `listFile`」遍历，但这不是官方保证。未验证：授权是否顺延到子文件与新建文件、`AtomicFile` 能否作用于目录 URI、外部删除 / 移动后的失败形态。
 
