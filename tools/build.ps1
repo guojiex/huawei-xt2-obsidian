@@ -4,15 +4,18 @@
 # 用法（PowerShell）：
 #   .\tools\build.ps1                 # 构建 debug HAP（arm64，默认）
 #   .\tools\build.ps1 -Task clean     # 清理
-#   .\tools\build.ps1 -Abi x86_64     # 本机 x86_64 模拟器调试用，见下方说明
+#   .\tools\build.ps1 -Abi x86_64     # 只本次构建编 x86_64
 #
 # -Abi 说明（重要）：
 #   仓库提交的 entry/build-profile.json5 永远只有 arm64-v8a —— 真机 XT2 与
 #   Apple Silicon Mac 上的模拟器都是 arm64，不能为了本机环境去改它。
 #   Windows 版 DevEco 只提供 x86_64 模拟器镜像，arm64 镜像拿不到，arm64-only
 #   的 HAP 会被 bm install 以 code:9568347（ABI 不匹配）拒绝。
-#   传 -Abi x86_64 时本脚本临时改写 abiFilters，构建结束后无论成败都还原文件，
-#   所以 git status 依旧干净。前置条件：先用 OHOS_ARCH=x86_64 编好 native：
+#   -Abi 只影响这一次构建（用 .local/local-abi.json 叠加，**不碰 build-profile.json5**）。
+#   想在 IDE 里点「运行」也能部署到本机模拟器，改用让它持续生效的开关：
+#       .\tools\abi.ps1 -Set x86_64    # 之后命令行 + IDE 都编 x86_64
+#       .\tools\abi.ps1 -Reset         # 恢复 arm64（真机 / 提交前必做）
+#   前置条件：先用 OHOS_ARCH=x86_64 编好 native：
 #       OHOS_ARCH=x86_64 ./native/git2_napi/build.sh
 #
 # 常见坑：
@@ -57,21 +60,26 @@ Write-Host "abi       : $Abi"
 Write-Host "deveco    : $DevEco"
 Write-Host "java home : $env:JAVA_HOME"
 
-# 非默认 ABI 时临时改写 entry/build-profile.json5，构建结束后务必还原。
-# 备份放内存而不是临时文件：避免残留备份、也不受删除保护钩子影响，且能按原始
-# 字节（含 CRLF/BOM）原样写回。
-$profilePath = Join-Path $repoRoot 'entry\build-profile.json5'
-$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-$originalProfileText = $null
+# 非默认 ABI 时叠加一个本机覆盖，构建结束后务必撤回。
+# 与 tools/abi.ps1 是同一套机制（写 .local/local-abi.json，由 entry/hvigorfile.ts
+# 注入 abiFilters）：差别只是 -Abi 只管这一次构建，abi.ps1 -Set 不撤回，用于让 IDE
+# 里的「运行」也能编 x86_64。两处都不碰 entry/build-profile.json5。
+# ⚠️ 不用「临时改写 build-profile.json5」的方案（更早的版本试过）：那样 git 工作树会
+# 短暂出现改动，且某些环境对删除操作有保护钩子，finally 里删备份会报假失败。
+$abiOverrideFile = Join-Path $repoRoot '.local\local-abi.json'
+$abiOverrideCreated = $false
 
 if ($Abi -ne 'arm64-v8a') {
-    $originalProfileText = [System.IO.File]::ReadAllText($profilePath)
-    if (-not $originalProfileText.Contains('"arm64-v8a"')) {
-        throw "entry/build-profile.json5 里找不到 arm64-v8a，放弃改写（配置格式可能有变）"
+    $previous = $null
+    if (Test-Path -LiteralPath $abiOverrideFile) {
+        $previous = Get-Content -LiteralPath $abiOverrideFile -Raw
+    } else {
+        $abiOverrideCreated = $true
     }
-    $patched = $originalProfileText.Replace('"arm64-v8a"', '"' + $Abi + '"')
-    [System.IO.File]::WriteAllText($profilePath, $patched, $utf8NoBom)
-    Write-Host "已临时把 abiFilters 改为 $Abi（构建结束后自动还原）" -ForegroundColor Cyan
+    $payload = [ordered]@{ abiFilters = @($Abi) }
+    ($payload | ConvertTo-Json -Compress) | Set-Content -LiteralPath $abiOverrideFile -Encoding ascii
+    Write-Host "已叠加本机 ABI 覆盖（$Abi），构建结束后撤回" -ForegroundColor Cyan
+    if ($previous -ne $null) { Write-Host "  原有覆盖内容：$($previous.Trim())" -ForegroundColor DarkGray }
 }
 
 # ⚠️ hvigor 的 WARN（如「未配置签名，跳过签名」）走 stderr。
@@ -86,9 +94,13 @@ try {
     $exitCode = $LASTEXITCODE
 } finally {
     $ErrorActionPreference = $prevEap
-    if ($null -ne $originalProfileText) {
-        [System.IO.File]::WriteAllText($profilePath, $originalProfileText, $utf8NoBom)
-        Write-Host "已还原 entry/build-profile.json5（arm64-v8a）" -ForegroundColor Cyan
+    if ($Abi -ne 'arm64-v8a') {
+        if ($abiOverrideCreated) {
+            Remove-Item -LiteralPath $abiOverrideFile -Force -ErrorAction SilentlyContinue
+        } elseif ($null -ne $previous) {
+            Set-Content -LiteralPath $abiOverrideFile -Value $previous -Encoding ascii
+        }
+        Write-Host "已撤回本次构建的 ABI 覆盖（$Abi）" -ForegroundColor Cyan
     }
 }
 

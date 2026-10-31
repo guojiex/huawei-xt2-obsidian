@@ -110,19 +110,24 @@ export OHOS_NDK=...                            # Windows 本机要显式指向 D
 | 宿主 | 模拟器镜像架构 | 能否装 arm64-only HAP |
 | --- | --- | --- |
 | XT2 真机 / Mac Apple Silicon（arm64 镜像） | arm64 | ✅ 直接用默认配置 |
-| **Windows 本机**（DevEco 只提供 x86 镜像） | x86_64 | ❌ `bm install` 报 code:9568347 |
+| **Windows 本机**（DevEco 只提供 x86 镜像） | x86_64 | ❌ `bm install` 报 code:9568347 需要开覆盖 |
 
 仓库提交的 `entry/build-profile.json5` **永远只有 `arm64-v8a`**，不要为了本机环境改它。
 Windows 本机要跑模拟器时：
 
 ```powershell
-OHOS_ARCH=x86_64 bash native/git2_napi/build.sh   # 一次即可，产物放 .build/out/libs/x86_64
-.\tools\build.ps1 -Abi x86_64                     # 临时改 abiFilters，构建完自动还原
+OHOS_ARCH=x86_64 bash ./native/git2_napi/build.sh   # 一次即可，产物放 .build/out/libs/x86_64
+.\tools\abi.ps1 -Set x86_64                         # 持续开关：命令行 + IDE 都编 x86_64
+.\tools\abi.ps1 -Reset                              # 恢复 arm64（真机 / 提交前必做）
 ```
 
-`-Abi` 结束后会把 `build-profile.json5` 原样还原，`git status` 依旧干净，另一台
-Mac / 真机构建完全不受影响。三处架构硬编码已改成按 `OHOS_ARCH` 推导，arm64 时的
-路径与历史完全一致，已有的 arm64 产物不会被迫重编。
+原理：`.local/local-abi.json`（gitignore）由 **entry/hvigorfile.ts** 通过
+`overrides.buildOption.externalNativeOptions.abiFilters` 注入 hvigor pipeline。
+**必须注入在 pipeline 里** —— 只改命令行脚本没用，IDE 点「运行」走的是它自己的
+hvigor，读不到脚本参数（这是 2026-10-31 踩过的坑：改了 build.ps1 后 IDE 部署照旧失败）。
+
+单次覆盖用 `.\tools\build.ps1 -Abi x86_64`（只管这一次，跑完撤回）；
+想让 IDE 也能部署就用 `abi.ps1 -Set`，它能一直生效到 `-Reset`。
 
 > x86_64 模拟器只能用来验收 UI，**它的证据不能外推到 API 24 / XT2 真机**。
 
@@ -161,6 +166,9 @@ Mac / 真机构建完全不受影响。三处架构硬编码已改成按 `OHOS_A
 5. **Gitee 用 Basic（`username:私人令牌`），GitHub 用 `Bearer <PAT>` 且用户名留空** —— 两者不同。
 6. **ArkTS 不允许无类型对象字面量**，HTTP 请求等要显式声明类型。
 7. ⚠️ **CodeMirror 6 基于 `contenteditable`，官方建议优先 `textarea`**（输入法兼容性更好）。M0.5 必须两者对比实测，否则 M2 可能被卡死。
+8. **`.ps1` 必须是 UTF-8 with BOM**：PowerShell 5.1 在无 BOM 时按 GBK 读脚本，中文注释里的字节会被误解析成引号，报出「字符串缺少终止符」这类看起来毫无关联的错。新建 .ps1 后检查一次。
+9. **PowerShell 里别用 `$profile` 当变量名**（它是自动变量 = 用户配置文件路径）；函数返回**单元素数组会被解包成标量**，`$x[0]` 会变成字符串首字符。
+10. **改动 UI 开关类能力要想到 IDE 那条路**：命令行脚本的参数 IDE 读不到，必须注入 hvigor pipeline（见上面 ABI 覆盖）。
 
 ## 规范
 
