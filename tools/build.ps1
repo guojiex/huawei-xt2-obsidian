@@ -116,9 +116,14 @@ if ($Abi -ne 'arm64-v8a') {
 # 故这里临时降级为 Continue + 把 stderr 并入 stdout，改以退出码判定成败。
 $prevEap = $ErrorActionPreference
 $exitCode = 0
+# ⚠️ hvigor 的任务挂在哪个节点上决定 --mode：assembleHap 在模块节点（entry）→ module，
+# assembleApp 在工程节点（huawei-xt2-obsidian）→ project。混用会直接报
+# 00306054 Specification Limit Violation: Task [ 'assembleApp' ] was not found
+# （2026-10-31 实测；任务清单来自 hvigorw tasks --mode project）。
+$hvigorMode = if ($Release) { 'project' } else { 'module' }
 try {
     $ErrorActionPreference = 'Continue'
-    & $hvigorw $Task --mode module -p product=default --node-home $nodeHome 2>&1
+    & $hvigorw $Task --mode $hvigorMode -p product=default --node-home $nodeHome 2>&1
     $exitCode = $LASTEXITCODE
 } finally {
     $ErrorActionPreference = $prevEap
@@ -138,6 +143,21 @@ if ($exitCode -ne 0) {
 
 # 产物提示按实际情况输出：签名由工程级 hvigorfile.ts 从 .local/local-signing.json 注入，
 # 注入成功时是 signed，没有本地凭据时才是 unsigned（见 tools/signing.ps1 -Status）。
+# assembleApp 的产物在**工程根**的 build\outputs\default\，不在 entry\build 下（实测）。
+if ($Release) {
+    $appDir = Join-Path $repoRoot 'build\outputs\default'
+    $app = Get-ChildItem -LiteralPath $appDir -Filter '*-signed.app' -ErrorAction SilentlyContinue |
+           Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($app) {
+        Write-Host "`n上架产物（发布签名）：build\outputs\default\$($app.Name)" -ForegroundColor Green
+        Write-Host "  大小 $([math]::Round($app.Length / 1MB, 2)) MB   $($app.LastWriteTime)" -ForegroundColor Green
+        Write-Host "  拿这个文件去 AGC 上传；不要再拿 -unsigned.app" -ForegroundColor Green
+    } else {
+        Write-Host "`n未找到 -signed.app —— 检查 .local/release-signing.json 是否完整" -ForegroundColor Yellow
+    }
+    exit 0
+}
+
 $outDir = Join-Path $repoRoot 'entry\build\default\outputs\default'
 $signed = Get-ChildItem -LiteralPath $outDir -Filter '*-signed.hap' -ErrorAction SilentlyContinue |
           Sort-Object LastWriteTime -Descending | Select-Object -First 1

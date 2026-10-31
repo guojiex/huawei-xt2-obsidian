@@ -101,7 +101,16 @@ $env:OHOS_SIGNING_PROFILE = 'release'   # 让 hvigorfile.ts 改读 .local/releas
 材料放 `.local/release-signing/`（`yaoshi_release.p12` / `.csr` / `.cer` / `.p7b`，密码同目录
 `keystore.pass.txt`），与 `build-profile.json5` 无签名配置的做法一致。
 
-⚠️ **两个实测硬约束**（都踩过，别再犯）：
+⚠️ **三个实测硬约束**（都踩过，别再犯）：
+
+0. **密码必须是 DevEco 密文，不能是明文**。hvigor 的 `getKeyStorePwd()` **无条件**把
+   `material.storePassword` 当 hex 密文做 AES-128-GCM 解密，密钥取自
+   `dirname(storeFile)/material`（必须含 `fd/`(3 项)、`ac/`(1 文件)、`ce/`(1 文件)）。
+   填明文会在 SignHap 阶段报
+   `00308018 … ENOENT: no such file or directory, stat '<storeFile 同级目录>\material'`。
+   密文生成：`tools\encode_signing_pwd.mjs`（算法照 DevEco 的 `decipher-util.js` 复刻，
+   密钥只依赖 material 内容，与密码本身无关）。发布材料目录里那份
+   `.local/release-signing/material` 是从 `.ohos\config\material` 复制来的，**别删**。
 
 1. **`storePassword` / `keyPassword` 必须 ≥ 32 位**，否则签名阶段直接失败：
    `00303116 Configuration Error … length of the storePassword or keyPassword field … is less than 32`。
