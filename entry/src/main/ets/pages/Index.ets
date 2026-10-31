@@ -499,7 +499,7 @@ struct Index {
         this.refreshFromRegistry();
       }
 
-      const validPaths: string[] = FileTree.allMarkdownFiles(registry.vaultDirOf(session.vaultId));
+      const validPaths: string[] = FileTree.allNotesOf(registry.accessFor(session.vaultId));
       const desiredPaths = workspaceSessionPaths(session, this.isSingleScreenLayout(), validPaths);
       const leftPath: string = desiredPaths.leftPath;
       const rightPath: string = desiredPaths.rightPath;
@@ -889,7 +889,7 @@ struct Index {
 
   private refreshCurrentVaultNoteCount(): void {
     this.currentVaultNoteCount = this.currentVaultId.length > 0
-      ? FileTree.allMarkdownFiles(VaultRegistry.get().vaultDirOf(this.currentVaultId)).length
+      ? FileTree.allNotesOf(VaultRegistry.get().accessFor(this.currentVaultId)).length
       : 0;
   }
 
@@ -1729,7 +1729,7 @@ struct Index {
       return;
     }
     const registry: VaultRegistry = VaultRegistry.get();
-    const files: string[] = FileTree.allMarkdownFiles(registry.vaultDirOf(this.currentVaultId));
+    const files: string[] = FileTree.allNotesOf(registry.accessFor(this.currentVaultId));
     this.ensureRecentOpenStore();
     const store: RecentOpenStore = this.recentOpenStore as RecentOpenStore;
     this.quickSwitchFiles = files;
@@ -3329,7 +3329,7 @@ struct Index {
     // 目录选择器的候选：全量目录（不受展开状态影响）
     let dirs: string[] = [];
     try {
-      dirs = FileTree.allDirs(VaultRegistry.get().vaultDirOf(this.currentVaultId));
+      dirs = FileTree.allDirsOf(VaultRegistry.get().accessFor(this.currentVaultId));
     } catch (error) {
       const err = error as Error;
       hilog.warn(0x0001, 'Index', '列目录失败：%{public}s', err.message);
@@ -3415,7 +3415,7 @@ struct Index {
   private openMovePathDialog(relPath: string, isDir: boolean): void {
     let dirs: string[] = [];
     try {
-      const all: string[] = FileTree.allDirs(VaultRegistry.get().vaultDirOf(this.currentVaultId));
+      const all: string[] = FileTree.allDirsOf(VaultRegistry.get().accessFor(this.currentVaultId));
       if (isDir) {
         for (let i = 0; i < all.length; i++) {
           const d: string = all[i];

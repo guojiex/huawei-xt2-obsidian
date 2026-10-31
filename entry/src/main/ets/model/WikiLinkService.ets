@@ -41,7 +41,7 @@ export class WikiLinkService {
     if (WikiLinkService.activeVaultId === vaultId && WikiLinkService.activeIndex !== null) {
       return WikiLinkService.activeIndex.files.slice();
     }
-    return FileTree.allMarkdownFiles(registry.vaultDirOf(vaultId));
+    return FileTree.allNotesOf(registry.accessFor(vaultId));
   }
 
   static resolve(target: string, sourcePath: string, files: string[]): WikiLinkResolution {
@@ -102,7 +102,7 @@ export class WikiLinkService {
     newPath: string, isDirectory: boolean, writer: AtomicWriter): Promise<WikiLinkUpdateReport> {
     let files: string[];
     try {
-      files = FileTree.allMarkdownFiles(registry.vaultDirOf(vaultId));
+      files = FileTree.allNotesOf(registry.accessFor(vaultId));
     } catch (error) {
       WikiLinkService.invalidate(vaultId);
       return { updatedPaths: [], failedPaths: [], scanFailed: true };
@@ -217,7 +217,7 @@ export class WikiLinkService {
     }
 
     const generation: number = WikiLinkService.buildGeneration;
-    const files: string[] = FileTree.allMarkdownFiles(registry.vaultDirOf(vaultId));
+    const files: string[] = FileTree.allNotesOf(registry.accessFor(vaultId));
     const index: WikiLinkIndex = {
       files: files,
       outgoing: new Map<string, string[]>(),

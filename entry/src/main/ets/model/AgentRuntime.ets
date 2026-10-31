@@ -1,4 +1,5 @@
 import { FileTree, TreeNode } from './FileTree';
+import { VaultAccess } from './VaultAccess';
 import { NoteService } from './NoteService';
 import { VaultRegistry } from './VaultRegistry';
 import {
@@ -716,11 +717,13 @@ export class AgentRuntime {
   }
 
   private static listMarkdownPaths(registry: VaultRegistry, vaultId: string): string[] {
-    const root: string = registry.vaultDirOf(vaultId);
+    // v1.5：遍历入口换成 VaultAccess（含外部授权库）。ExpandStore 不存在的地方就
+    // 用「多次 expand-all 迭代」逼 FileTree 把整棵树吐出来，这一点没变。
+    const access: VaultAccess = registry.accessFor(vaultId);
     let expanded: string[] = [];
     const found: Map<string, TreeNode> = new Map<string, TreeNode>();
     for (let pass = 0; pass < 64; pass++) {
-      const nodes: TreeNode[] = FileTree.scan(root, expanded);
+      const nodes: TreeNode[] = FileTree.scan(access, expanded);
       let changed: boolean = false;
       for (let i = 0; i < nodes.length; i++) {
         const node: TreeNode = nodes[i];

@@ -99,7 +99,7 @@ test('moved or deleted session paths clear their panes without guessing by filen
   assert.deepEqual(events, ['clear-left', 'clear-right']);
 
   const vaultGuard = indexSource.indexOf('const hasVault: boolean = registry.list().some');
-  const pathEnumeration = indexSource.indexOf('const validPaths: string[] = FileTree.allMarkdownFiles');
+  const pathEnumeration = indexSource.indexOf('const validPaths: string[] = FileTree.allNotesOf');
   assert.ok(vaultGuard >= 0 && pathEnumeration > vaultGuard,
     'the saved vault must exist before its paths can be considered for recovery');
 });

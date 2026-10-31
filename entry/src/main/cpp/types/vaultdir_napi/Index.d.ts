@@ -42,6 +42,27 @@ export interface VaultDirReadResult extends VaultDirIoResult {
   content: string;
 }
 
+/** statByFd 的返回。mtime 是**秒**（POSIX st_mtime），用来做外部变更检测。 */
+export interface VaultDirStatResult extends VaultDirIoResult {
+  /** 字节数；失败为 0。 */
+  size: number;
+  /** 最后修改时间（Unix 秒）；失败为 0。 */
+  mtime: number;
+  /** 是否是目录；失败为 false。 */
+  isDir: boolean;
+}
+
+/** readBinaryByFd 的返回。图片附件必须走这条，不能走 readFileByFd。 */
+export interface VaultDirBinaryResult extends VaultDirIoResult {
+  /** 失败或空文件时为零长数组，不会是 undefined。 */
+  bytes: Uint8Array;
+}
+
+/** openDirByFd 的返回。失败时 fd 为 -1。 */
+export interface VaultDirFdResult extends VaultDirIoResult {
+  fd: number;
+}
+
 declare const nativeVaultDir: {
   /** 只列当前一层。 */
   listDirByFd(fd: number): VaultDirListResult;
@@ -58,6 +79,26 @@ declare const nativeVaultDir: {
   deleteByFd(fd: number, name: string): VaultDirIoResult;
   /** 同目录内改名 / 移动（renameat）。 */
   renameByFd(fd: number, oldName: string, newName: string): VaultDirIoResult;
+
+  /**
+   * 取子项元信息（fstatat）。**name 为空串表示问目录 fd 自己** ——
+   * 这是判断「持久化授权还活不活 / 目录有没有被挪走」的第一道探测。
+   */
+  statByFd(fd: number, name: string): VaultDirStatResult;
+  /** 建多级目录（逐段 mkdirat，等价于 mkdir -p）。已存在的段不报错。 */
+  mkdirByFd(fd: number, name: string): VaultDirIoResult;
+  /**
+   * 递归删子树（openat + unlinkat AT_REMOVEDIR）。
+   * ⚠️ 外部库没有 `.trash`：这一下是真删，UI 层必须先确认再调。
+   */
+  removeDirByFd(fd: number, name: string): VaultDirIoResult;
+  /** 打开子目录并返回它的 fd（⚠️ 新 fd，调用方负责关）。 */
+  openDirByFd(fd: number, name: string): VaultDirFdResult;
+  /**
+   * 按字节读（图片附件专用）。
+   * 为什么必须单列：二进制经 UTF-8 字符串必然坏字节，readFileByFd 对附件不可用。
+   */
+  readBinaryByFd(fd: number, name: string): VaultDirBinaryResult;
 };
 
 export default nativeVaultDir;

@@ -136,7 +136,7 @@ export class FullTextSearchService {
     }
 
     const generation: number = FullTextSearchService.buildGeneration;
-    const files: string[] = FileTree.allMarkdownFiles(registry.vaultDirOf(vaultId));
+    const files: string[] = FileTree.allNotesOf(registry.accessFor(vaultId));
     const index: SearchIndex = new SearchIndex();
     FullTextSearchService.buildVaultId = vaultId;
     FullTextSearchService.listeners = [onProgress];

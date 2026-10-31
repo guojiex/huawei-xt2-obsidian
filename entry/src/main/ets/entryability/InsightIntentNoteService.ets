@@ -50,7 +50,7 @@ export class InsightIntentNoteService {
     const queryValue: Object = params['query'];
     const query: string = typeof queryValue === 'string' ? queryValue.trim().toLocaleLowerCase() : '';
     this.requireVault(vaultId);
-    const paths: string[] = FileTree.allMarkdownFiles(this.registry.vaultDirOf(vaultId));
+    const paths: string[] = FileTree.allNotesOf(this.registry.accessFor(vaultId));
     const matches: NoteMatch[] = [];
     for (let i = 0; i < paths.length; i++) {
       const path: string = paths[i];
@@ -348,7 +348,7 @@ export class InsightIntentNoteService {
 
   private requireExistingNote(vaultId: string, path: string): void {
     const normalized: string = this.requireSafeNotePath(vaultId, path);
-    const paths: string[] = FileTree.allMarkdownFiles(this.registry.vaultDirOf(vaultId));
+    const paths: string[] = FileTree.allNotesOf(this.registry.accessFor(vaultId));
     if (normalized !== path || paths.indexOf(path) < 0) {
       throw new Error('NOTE_NOT_FOUND：目标不是指定知识库中的可见 Markdown 笔记。');
     }
@@ -374,7 +374,7 @@ export class InsightIntentNoteService {
     if (parent.length === 0) {
       return;
     }
-    const dirs: string[] = FileTree.allDirs(this.registry.vaultDirOf(vaultId));
+    const dirs: string[] = FileTree.allDirsOf(this.registry.accessFor(vaultId));
     if (dirs.indexOf(parent) < 0) {
       throw new Error('OUT_OF_SCOPE：目标目录不属于指定知识库或不存在。');
     }

@@ -16,6 +16,8 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DEFAULT_VAULT_ID, SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from './Vault';
 import { VaultPathResolver } from './VaultPathResolver';
+import { VaultAccess } from './VaultAccess';
+import { createExternalVaultAccess, createSandboxVaultAccess } from './VaultAccessDevice';
 
 const REG_DOMAIN: number = 0x0001;
 const REG_TAG: string = 'VaultRegistry';
@@ -44,6 +46,9 @@ interface VaultEntryRaw {
   branch?: Object;
   authUsername?: Object;
   lastSyncAt?: Object;
+  rootKind?: Object;
+  rootUri?: Object;
+  grantedAt?: Object;
 }
 
 export class VaultRegistry {
@@ -62,6 +67,8 @@ export class VaultRegistry {
   private initialized: boolean = false;
   private sampleInstallPending: boolean = false;
   private vaultKeySerial: number = 0;
+  /** vaultId → VaultAccess 的缓存（只缓存 accessor，不缓存 fd）。 */
+  private accessCache: Map<string, VaultAccess> = new Map<string, VaultAccess>();
 
   private constructor(context: common.UIAbilityContext) {
     this.context = context;
@@ -164,6 +171,15 @@ export class VaultRegistry {
       if (v.lastSyncAt !== undefined) {
         item.lastSyncAt = v.lastSyncAt;
       }
+      if (v.rootKind !== undefined) {
+        item.rootKind = v.rootKind;
+      }
+      if (v.rootUri !== undefined) {
+        item.rootUri = v.rootUri;
+      }
+      if (v.grantedAt !== undefined) {
+        item.grantedAt = v.grantedAt;
+      }
       copy.push(item);
     }
     return copy;
@@ -182,6 +198,54 @@ export class VaultRegistry {
   /** 当前库条目（不存在/列表空时返回 null）。 */
   currentEntry(): VaultEntry | null {
     return this.findEntry(this.state.currentVaultId);
+  }
+
+  /* ----------------------------------------------------------------------- */
+  /* v1.5：库访问层（沙箱 / 外部授权目录的统一入口）                          */
+  /* ----------------------------------------------------------------------- */
+
+  /**
+   * 取某个库的 VaultAccess —— **这是 15.3 之后所有文件读写的唯一入口**。
+   *
+   * 为什么上层不许再碰 `vaultDirOf` / `absoluteIn`：外部授权目录给不出绝对路径
+   * （Picker 只给 `file://docs/...` 这种 URI，`listFileSync` 收 URI 直接报
+   * 13900002，见 api_notes T3）。差异全部关在 VaultAccess 的两个实现里，上层
+   * 拿到什么 kind 都照同一个接口用。
+   *
+   * 缓存的是「低值 accessor」而不是 fd：真正的目录 fd 每次调用现开现关
+   * （DeviceExternalFdSource），避免跨应用重启后拿着失效 fd 报莫名其妙的 EBADF。
+   */
+  accessFor(id: string): VaultAccess {
+    const cached: VaultAccess | undefined = this.accessCache.get(id);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const entry: VaultEntry | null = this.findEntry(id);
+    if (entry === null) {
+      throw new Error('库不存在: ' + id);
+    }
+    const created: VaultAccess = this.isExternalEntry(entry) ?
+      createExternalVaultAccess(entry.rootUri as string) :
+      createSandboxVaultAccess(this.resolver, entry.id);
+    this.accessCache.set(id, created);
+    return created;
+  }
+
+  /** 当前库的 VaultAccess（currentVaultId 为空时抛错，调用方需保证已选库）。 */
+  currentAccess(): VaultAccess {
+    return this.accessFor(this.state.currentVaultId);
+  }
+
+  /** 扔掉缓存的 accessor：删库、改名、重新授权后必须调，否则会拿着旧的 URI 干活。 */
+  forgetAccess(id: string): void {
+    if (this.accessCache.has(id)) {
+      this.accessCache.delete(id);
+    }
+  }
+
+  /** 外部库的判定收口：三个字段必须齐活，缺一个就当沙箱处理（见 parseState 的同款守卫）。 */
+  private isExternalEntry(entry: VaultEntry): boolean {
+    return entry.rootKind === 'external' && typeof entry.rootUri === 'string' && entry.rootUri.length > 0;
   }
 
   /** 稳定的库身份，用于库改名后继续定位库外 Agent 私有数据。 */
@@ -388,14 +452,18 @@ export class VaultRegistry {
     if (newId === id) {
       return target;
     }
-    const oldDir: string = this.resolver.vaultDir(id);
-    const newDir: string = this.resolver.vaultDir(newId);
-    // 目标名经 uniqueVaultId 保证不存在，不覆盖已有目录（spec.md Edge Cases）
-    fileIo.renameSync(oldDir, newDir);
+    // 外部库的目录是用户的，改名只改「本 App 里怎么称呼它」，一个字节都不往磁盘上动。
+    if (!this.isExternalEntry(target)) {
+      const oldDir: string = this.resolver.vaultDir(id);
+      const newDir: string = this.resolver.vaultDir(newId);
+      // 目标名经 uniqueVaultId 保证不存在，不覆盖已有目录（spec.md Edge Cases）
+      fileIo.renameSync(oldDir, newDir);
+    }
     target.id = newId;
     if (this.state.currentVaultId === id) {
       this.state.currentVaultId = newId;
     }
+    this.forgetAccess(id);
     this.persist();
     return target;
   }
@@ -413,16 +481,18 @@ export class VaultRegistry {
   }
 
   /**
-   * 删除本地库（不可逆，FR-011）：先递归删除目录内容，再出表 → 当前库回落列表第一个。
-   * 顺序：先删目录，成功后才改注册表——失败即抛错且注册表未动（禁半状态）。
+   * v1.5：外部库的目录树归用户所有，删库**不许动用户文件**（需求 15.5）。
+   * 沙箱库照旧递归删目录；外部库只把自己的记录从注册表里摘掉，磁盘上的笔记原封不动
+   * ——用户在别的应用里还能照常看到，顶多是本 App 不再记得这个库。
    */
   remove(id: string): void {
     const target: VaultEntry | null = this.findEntry(id);
     if (target === null) {
       throw new Error('库不存在: ' + id);
     }
-    const dirPath: string = this.resolver.vaultDir(id);
-    this.removeVaultTree(id, '');
+    if (!this.isExternalEntry(target)) {
+      this.removeVaultTree(id, '');
+    }
     const kept: VaultEntry[] = [];
     for (let i = 0; i < this.state.vaults.length; i++) {
       if (this.state.vaults[i].id !== id) {
@@ -434,6 +504,7 @@ export class VaultRegistry {
       // 删除当前库 → 回落列表第一个；空列表为理论不可达，仍以空串兜底（spec.md Edge Cases）
       this.state.currentVaultId = this.state.vaults.length > 0 ? this.state.vaults[0].id : '';
     }
+    this.forgetAccess(id);
     this.persist();
   }
 
@@ -642,6 +713,16 @@ export class VaultRegistry {
         }
         if (typeof item.lastSyncAt === 'number') {
           entry.lastSyncAt = item.lastSyncAt;
+        }
+        // v1.5 外部库字段。rootUri 必须伴随 rootKind='external' 才作数，
+        // 否则宁可退化成沙箱语义——带着半个外部标记会走到「既打不开、又不报错」的死区。
+        if (typeof item.rootKind === 'string' && typeof item.rootUri === 'string' &&
+          item.rootKind === 'external' && item.rootUri.length > 0) {
+          entry.rootKind = item.rootKind;
+          entry.rootUri = item.rootUri;
+          if (typeof item.grantedAt === 'number') {
+            entry.grantedAt = item.grantedAt;
+          }
         }
         vaults.push(entry);
       }

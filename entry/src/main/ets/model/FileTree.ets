@@ -1,16 +1,22 @@
 /**
- * FileTree.ets —— 真实目录的文件树（v0.2 M1，需求 1.1–1.5）
+ * FileTree.ets —— 真实目录的文件树（v0.2 M1，需求 1.1–1.5；v1.5 改走 VaultAccess）
  *
  * 设计要点：
- * 1. **扁平化输出**：递归扫描后返回「当前可见」的节点数组（父目录折叠 → 子树整体不出现），
+ * 1. **扁平化输出**：返回「当前可见」的节点数组（父目录折叠 → 子树整体不出现），
  *    渲染层只按数组画，不做递归组件（ArkUI 里递归组件容易踩状态复用的坑）。
  * 2. **只显示目录与 .md**：隐藏文件/隐藏目录（以 `.` 开头）与其它扩展名一律不显示 ——
  *    这是笔记库，不是文件管理器，混进 .DS_Store / 图片会让树变得不可读。
- * 3. **有上限**：深度 ≤ 8、节点 ≤ 1000，防止超大目录把 UI 线程卡死（真机上的实际目录很少这么深）。
+ *    过滤不在这里做，由 VaultAccess 的两 Implementer 各自保证（并有用例锁住）。
+ * 3. **有上限**：深度 ≤ 8、节点 ≤ 1000，防止超大目录把 UI 线程卡死。
  * 4. **展开状态持久化**：按库分别记忆（需求 1.3），存 preferences，切库回来还是原样。
- * 5. 路径解析不在这里做：库根绝对路径由 `VaultRegistry.vaultDirAbs()` 给出（硬约束 #14）。
+ * 5. **这一层不再碰 IO**（v1.5 的关键改动）：之前 `scan(rootAbs, …)` 拿着绝对路径自己
+ *    `listFileSync` + `statSync` 递归，而外部授权库只有目录 fd、给不出绝对路径
+ *    （`listFileSync` 的 path 契约是沙箱路径，传 URI 报 13900002，见 api_notes T3）。
+ *    现在输入是 `VaultAccess.snapshot()` —— 一次遍历产出的规范化全树；本类只负责
+ *    「按展开状态剪枝 + 排版」，沙箱库与外部库共用这一份代码，不可能再出现
+ *    「沙箱能列出来的外部列不出来」这类差异。副作用是它变成了纯逻辑，可以在 Node 里跑。
  */
-import { fileIo } from '@kit.CoreFileKit';
+import { VaultAccess, VaultDirChild } from './VaultAccess';
 import { preferences } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -30,24 +36,9 @@ export interface TreeNode {
   depth: number;
 }
 
-interface ScanCount {
-  value: number;
-}
-
-/** 扫描 + 排序 */
 export class FileTree {
   static readonly MAX_DEPTH: number = 8;
   static readonly MAX_NODES: number = 1000;
-
-  /** 目录判定：statSync 失败（权限/竞态导致文件消失）按「不是目录」处理，不当错误抛出 */
-  private static isDir(parentAbs: string, name: string): boolean {
-    try {
-      const info: fileIo.Stat = fileIo.statSync(parentAbs + '/' + name);
-      return info.isDirectory();
-    } catch (error) {
-      return false;
-    }
-  }
 
   /**
    * 把可见行压成一行日志：`d0 DIR docs / d1 FILE 笔记.md`。
@@ -69,25 +60,45 @@ export class FileTree {
   }
 
   /**
-   * 扫描库目录，返回当前可见的扁平节点列表。
-   * @param rootAbs 库根绝对路径
+   * 扫描库，返回当前可见的扁平节点列表。
+   *
+   * @param access 库访问（沙箱或外部授权目录，本层不关心是哪种）
    * @param expanded 已展开目录的 relPath 列表
+   *
+   * 快照已按「目录子树在前、文件在后、同层字典序」排好（见 VaultAccess.sortVaultTree），
+   * 所以这里只要顺序过一遍、滤掉祖先没展开的分支，产出的行序就与原递归版完全一致。
    */
-  static scan(rootAbs: string, expanded: string[]): TreeNode[] {
+  static scan(access: VaultAccess, expanded: string[]): TreeNode[] {
+    const entries: VaultDirChild[] = access.snapshot();
     const out: TreeNode[] = [];
-    FileTree.walk(rootAbs, '', 0, expanded, out);
+    for (let i = 0; i < entries.length; i++) {
+      if (out.length >= FileTree.MAX_NODES) {
+        break;
+      }
+      const entry: VaultDirChild = entries[i];
+      const depth: number = FileTree.depthOf(entry.name);
+      if (depth >= FileTree.MAX_DEPTH) {
+        continue;
+      }
+      if (!FileTree.ancestorsExpanded(entry.name, expanded)) {
+        continue;
+      }
+      out.push({
+        name: FileTree.lastSegment(entry.name),
+        relPath: entry.name,
+        isDir: entry.isDir,
+        depth: depth
+      });
+    }
     return out;
   }
 
   /**
-   * 列出库内所有有效 Markdown 文件，不读取目录展开状态。
-   * 隐藏项、扩展名、深度和节点上限与文件树保持一致，供 v0.4 快速切换使用。
+   * 列出库内所有笔记文件，不读取目录展开状态（v0.4 快速切换 / 全文搜索用）。
+   * 过滤与上限规则统一放在 VaultAccess 一侧，保证与文件树同源。
    */
-  static allMarkdownFiles(rootAbs: string): string[] {
-    const out: string[] = [];
-    const count: ScanCount = { value: 0 };
-    FileTree.walkMarkdown(rootAbs, '', 0, out, count);
-    return out;
+  static allNotesOf(access: VaultAccess): string[] {
+    return access.allNotes();
   }
 
   /**
@@ -96,85 +107,37 @@ export class FileTree {
    * 默认上次点过的目录，根目录作为一个选项）。
    * 与 scan 的分工：scan 给可见行；这个给全量目录候选。
    */
-  static allDirs(rootAbs: string): string[] {
-    const out: string[] = [];
-    FileTree.walkDirs(rootAbs, '', 0, out);
-    return out;
+  static allDirsOf(access: VaultAccess): string[] {
+    return access.allDirs();
   }
 
-  private static walkDirs(absDir: string, relDir: string, depth: number, out: string[]): void {
-    if (depth >= FileTree.MAX_DEPTH || out.length >= FileTree.MAX_NODES) {
-      return;
-    }
-    let names: string[] = [];
-    try {
-      names = fileIo.listFileSync(absDir);
-    } catch (error) {
-      const err = error as Error;
-      hilog.warn(DOMAIN, TAG, '列目录失败 %{public}s: %{public}s', relDir, err.message);
-      return;
-    }
-    const dirNames: string[] = [];
-    for (let i = 0; i < names.length; i++) {
-      const nm: string = names[i];
-      if (nm.length > 0 && !nm.startsWith('.') && FileTree.isDir(absDir, nm)) {
-        dirNames.push(nm);
+  /** 一个条目的层级：根下第一层 = 0。 */
+  private static depthOf(relPath: string): number {
+    let count: number = 0;
+    for (let i = 0; i < relPath.length; i++) {
+      if (relPath.charAt(i) === '/') {
+        count++;
       }
     }
-    dirNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
-    for (let i = 0; i < dirNames.length; i++) {
-      if (out.length >= FileTree.MAX_NODES) {
-        return;
-      }
-      const rel: string = relDir.length === 0 ? dirNames[i] : relDir + '/' + dirNames[i];
-      out.push(rel);
-      FileTree.walkDirs(absDir + '/' + dirNames[i], rel, depth + 1, out);
-    }
+    return count;
   }
 
-  private static walkMarkdown(absDir: string, relDir: string, depth: number,
-    out: string[], count: ScanCount): void {
-    if (depth >= FileTree.MAX_DEPTH || count.value >= FileTree.MAX_NODES) {
-      return;
+  private static lastSegment(relPath: string): string {
+    const slash: number = relPath.lastIndexOf('/');
+    return slash < 0 ? relPath : relPath.substring(slash + 1);
+  }
+
+  /** 所有祖先目录都展开，这一条才可见。 */
+  private static ancestorsExpanded(relPath: string, expanded: string[]): boolean {
+    const slash: number = relPath.lastIndexOf('/');
+    if (slash < 0) {
+      return true;
     }
-    const dirNames: string[] = [];
-    const fileNames: string[] = [];
-    try {
-      const names: string[] = fileIo.listFileSync(absDir);
-      for (let i = 0; i < names.length; i++) {
-        const name: string = names[i];
-        if (name.length === 0 || name.startsWith('.')) {
-          continue;
-        }
-        if (FileTree.isDir(absDir, name)) {
-          dirNames.push(name);
-        } else if (name.endsWith('.md') || name.endsWith('.markdown')) {
-          fileNames.push(name);
-        }
-      }
-    } catch (error) {
-      const err = error as Error;
-      hilog.warn(DOMAIN, TAG, '读取目录失败 %{public}s: %{public}s', relDir, err.message);
-      return;
+    const parentPath: string = relPath.substring(0, slash);
+    if (expanded.indexOf(parentPath) < 0) {
+      return false;
     }
-    dirNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
-    fileNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
-    for (let i = 0; i < dirNames.length; i++) {
-      if (count.value >= FileTree.MAX_NODES) {
-        return;
-      }
-      const dirName: string = dirNames[i];
-      count.value++;
-      const dirRel: string = relDir.length === 0 ? dirName : relDir + '/' + dirName;
-      FileTree.walkMarkdown(absDir + '/' + dirName, dirRel, depth + 1, out, count);
-    }
-    for (let i = 0; i < fileNames.length; i++) {
-      if (count.value >= FileTree.MAX_NODES) {
-        return;
-      }
-      count.value++;
-      out.push(relDir.length === 0 ? fileNames[i] : relDir + '/' + fileNames[i]);
-    }
+    return FileTree.ancestorsExpanded(parentPath, expanded);
   }
 
   /** 库内相对路径的父目录（`a/b/c.md` → `a/b`；根下文件 → 空串） */
@@ -182,70 +145,13 @@ export class FileTree {
     const i: number = relPath.lastIndexOf('/');
     return i > 0 ? relPath.substring(0, i) : '';
   }
-
-  private static walk(absDir: string, relDir: string, depth: number,
-    expanded: string[], out: TreeNode[]): void {
-    if (depth >= FileTree.MAX_DEPTH || out.length >= FileTree.MAX_NODES) {
-      return;
-    }
-    const dirNames: string[] = [];
-    const fileNames: string[] = [];
-    try {
-      // ⚠️ 不用 opendirSync/Dir/Dirent：那是 @ohos.fileio（旧版）的成员，早已废弃，
-      // 最新版 @ohos.file.fs / CoreFileKit 的 fileIo **不导出**它们（编译已实测：
-      // Namespace 'fileIo' has no exported member 'Dir'）。官方明示替代者是 listFileSync。
-      // listFileSync 返回的是**名字数组**，是否目录要再 statSync —— 一次 stat 换稳定，值。
-      const names: string[] = fileIo.listFileSync(absDir);
-      for (let i = 0; i < names.length; i++) {
-        const nm: string = names[i];
-        // 隐藏项一律不显示（.trash / .git / 系统垃圾文件）
-        if (nm.length > 0 && !nm.startsWith('.')) {
-          if (FileTree.isDir(absDir, nm)) {
-            dirNames.push(nm);
-          } else if (nm.endsWith('.md') || nm.endsWith('.markdown')) {
-            fileNames.push(nm);
-          }
-        }
-      }
-    } catch (error) {
-      const err = error as Error;
-      hilog.warn(DOMAIN, TAG, '读取目录失败 %{public}s: %{public}s', relDir, err.message);
-      return;
-    }
-
-    dirNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
-    fileNames.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
-
-    // 目录在前、文件在后（原型顺序）
-    for (let i = 0; i < dirNames.length; i++) {
-      if (out.length >= FileTree.MAX_NODES) {
-        return;
-      }
-      const rel: string = relDir.length === 0 ? dirNames[i] : relDir + '/' + dirNames[i];
-      const node: TreeNode = { name: dirNames[i], relPath: rel, isDir: true, depth: depth };
-      out.push(node);
-      if (expanded.indexOf(rel) >= 0) {
-        FileTree.walk(absDir + '/' + dirNames[i], rel, depth + 1, expanded, out);
-      }
-    }
-    for (let i = 0; i < fileNames.length; i++) {
-      if (out.length >= FileTree.MAX_NODES) {
-        return;
-      }
-      const rel: string = relDir.length === 0 ? fileNames[i] : relDir + '/' + fileNames[i];
-      const node: TreeNode = { name: fileNames[i], relPath: rel, isDir: false, depth: depth };
-      out.push(node);
-    }
-  }
 }
 
 /**
- * 展开状态的持久化（需求 1.3：按库分别记忆）。
- * 存储键 = `expand_<vaultId>`，值 = JSON 数组字符串（不能直接用逗号拼：路径里可能含逗号）。
+ * ExpandStore —— 展开状态持久化（需求 1.3：按库分别记忆）
  *
- * 同文件还存 **lastdir_<vaultId>**（2026-10-18 用户拍板）：上次在树里点过的目录
- * —— 点目录行记该目录、点文件行记它的父目录。新建笔记对话框默认建在那里，
- * 想建根目录就在对话框的目录选择器里显式选「根目录」。
+ * 这里碰 preferences / UIAbilityContext，所以**不属于**上面那层纯逻辑：
+ * FileTree 类本身已经可以不依赖任何 @kit 包，能在 Node 单测里跑（见 test_file_tree_snapshot）。
  */
 export class ExpandStore {
   private static readonly PREF_NAME: string = 'file_tree_state';

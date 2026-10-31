@@ -27,6 +27,21 @@ export interface VaultEntry {
   authUsername?: string;
   /** 上次同步时间戳（ms），同步落地后更新 */
   lastSyncAt?: number;
+
+  /**
+   * v1.5：库的真实位置种类。缺省即 'sandbox'（老注册表没有这个字段，语义保持不变）。
+   * - 'sandbox'  —— filesDir/vaults/<id>，有绝对路径，走 @ohos.file.fs；
+   * - 'external' —— 用户通过 DocumentViewPicker 授权的外部目录，只有 URI + 目录 fd。
+   */
+  rootKind?: string;
+  /**
+   * v1.5：外部库的目录 URI（`file://docs/...`），仅 rootKind='external' 时有值。
+   * ⚠️ 这不是路径：拼不了绝对路径，任何拼接都会退化成报 13900002 的错误路径
+   * （见 api_notes T3）。它只能用来 openSync 拿 fd。
+   */
+  rootUri?: string;
+  /** 外部库：授权成功的时刻（ms），授权体检与「重新关联」提示要用。 */
+  grantedAt?: number;
 }
 
 /** 个人本地库：首次启动创建为空库；用户自己的笔记默认归此库。 */

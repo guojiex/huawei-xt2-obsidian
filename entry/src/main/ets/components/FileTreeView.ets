@@ -20,6 +20,7 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { FileTree, ExpandStore, TreeNode } from '../model/FileTree';
+import { VaultAccess } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
@@ -200,8 +201,10 @@ export struct FileTreeView {
       this.applyNodes([]);
       return;
     }
-    const rootAbs: string = VaultRegistry.get().vaultDirOf(this.vaultId);
-    this.applyNodes(FileTree.scan(rootAbs, this.expanded));
+    // v1.5：不再拿绝对路径自己递归 —— 外部授权库给不出绝对路径。
+    // VaultAccess 负责遍历（沙箱 fileIo / 外部 Native POSIX），这里只做剪枝与排版。
+    const access: VaultAccess = VaultRegistry.get().accessFor(this.vaultId);
+    this.applyNodes(FileTree.scan(access, this.expanded));
     hilog.info(TREE_DOMAIN, TREE_TAG, '扫描 %{public}s：%{public}d 行可见 | %{public}s',
       this.vaultId, this.nodes.length, FileTree.describe(this.nodes));
   }

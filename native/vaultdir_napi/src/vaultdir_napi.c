@@ -379,6 +379,52 @@ static bool vaultdir_write_all(int fd, const char *data, size_t length, int *err
 }
 
 /*
+ * 把一个已打开的 fd 一次读到尾（带 EINTR 重试，末尾留 '\0'）。
+ * 笔记与附件量级是 KB~几 MB，不做流式；抽出来自 `.md` 与二进制两处共用，
+ * 免得「文本读」和「附件读」各自演进、哪天行为分叉。
+ */
+static bool vaultdir_read_all(int file_fd, char **out_buffer, size_t *out_length, int *error) {
+  size_t capacity = 8192;
+  size_t length = 0;
+  char *buffer = (char *)malloc(capacity);
+  if (buffer == NULL) {
+    *error = ENOMEM;
+    return false;
+  }
+  while (true) {
+    if (length + 1 >= capacity) {
+      size_t grown = capacity * 2;
+      char *resized = (char *)realloc(buffer, grown);
+      if (resized == NULL) {
+        free(buffer);
+        *error = ENOMEM;
+        return false;
+      }
+      buffer = resized;
+      capacity = grown;
+    }
+    ssize_t got = read(file_fd, buffer + length, capacity - length - 1);
+    if (got < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      *error = errno;
+      free(buffer);
+      return false;
+    }
+    if (got == 0) {
+      break;
+    }
+    length += (size_t)got;
+  }
+  buffer[length] = '\0';
+  *out_buffer = buffer;
+  *out_length = length;
+  *error = 0;
+  return true;
+}
+
+/*
  * readFileByFd(dirFd, name) —— 读目录下的一个文本文件。
  * 对应「打开一篇笔记」；名字是**相对**目录 fd 的，不含任何路径分隔符以外的东西。
  */
@@ -404,46 +450,15 @@ static napi_value read_file_by_fd(napi_env env, napi_callback_info info) {
   }
   free(name);
 
-  /* 一次读到尾。笔记文件量级是 KB~百 KB，不做流式。 */
-  size_t capacity = 8192;
+  char *buffer = NULL;
   size_t length = 0;
-  char *buffer = (char *)malloc(capacity);
-  if (buffer == NULL) {
-    close(file_fd);
-    return vaultdir_build_read(env, ENOMEM, NULL);
-  }
   int error = 0;
-  while (true) {
-    if (length + 1 >= capacity) {
-      size_t grown = capacity * 2;
-      char *resized = (char *)realloc(buffer, grown);
-      if (resized == NULL) {
-        error = ENOMEM;
-        break;
-      }
-      buffer = resized;
-      capacity = grown;
-    }
-    ssize_t got = read(file_fd, buffer + length, capacity - length - 1);
-    if (got < 0) {
-      if (errno == EINTR) {
-        continue;
-      }
-      error = errno;
-      break;
-    }
-    if (got == 0) {
-      break;
-    }
-    length += (size_t)got;
+  if (!vaultdir_read_all(file_fd, &buffer, &length, &error)) {
+    close(file_fd);
+    return vaultdir_build_read(env, error, NULL);
   }
   close(file_fd);
 
-  if (error != 0) {
-    free(buffer);
-    return vaultdir_build_read(env, error, NULL);
-  }
-  buffer[length] = '\0';
   napi_value result = vaultdir_build_read(env, 0, buffer);
   free(buffer);
   return result;
@@ -576,6 +591,366 @@ static napi_value rename_by_fd(napi_env env, napi_callback_info info) {
   return vaultdir_build_simple(env, error);
 }
 
+/* ====================================================================== */
+/* v1.5 15.3/15.4 追加的四项能力                                          */
+/* ---------------------------------------------------------------------- */
+/* 前面六个函数是「核实链路」用的，够证明技术可行；但要真正把 FileTree /    */
+/* 编辑器接进来，还缺四件事：                                             */
+/*   stat        —— 15.4 要靠 mtime 判断外部有没有改过，没有它只能瞎猜；   */
+/*   mkdir       —— 新建笔记放到新目录时，父目录必须先存在；               */
+/*   递归删目录  —— 删除文件夹子树；                                      */
+/*   二进制读    —— 附件（图片）走 UTF-8 字符串一定坏字节。                */
+/* 四个都是 POSIX 标准调用（fstatat / mkdirat / unlinkat AT_REMOVEDIR /    */
+/* read），不涉及任何鸿蒙私有 API，风险面只在文件 unusually 大时的内存。    */
+/* ====================================================================== */
+
+/** { ok, code, message, size, mtime, isDir } —— size/mtime 用 double 承载：
+ *  ArkTS number 是 IEEE 754 双精度，53 位安全整数远大于任何单文件大小与秒级时间戳。 */
+static napi_value vaultdir_build_stat(napi_env env, int error, const struct stat *info) {
+  napi_value result = vaultdir_build_simple(env, error);
+  if (result == NULL) {
+    return NULL;
+  }
+  napi_value size_value = NULL;
+  napi_value mtime_value = NULL;
+  napi_value is_dir_value = NULL;
+  napi_create_double(env, info == NULL ? 0.0 : (double)info->st_size, &size_value);
+  napi_create_double(env, info == NULL ? 0.0 : (double)info->st_mtime, &mtime_value);
+  napi_get_boolean(env, info != NULL && S_ISDIR(info->st_mode), &is_dir_value);
+  napi_set_named_property(env, result, "size", size_value);
+  napi_set_named_property(env, result, "mtime", mtime_value);
+  napi_set_named_property(env, result, "isDir", is_dir_value);
+  return result;
+}
+
+/*
+ * statByFd(dirFd, name) —— 取一个子项的元信息。
+ *
+ * name 为空串时表示「问目录 fd 自己」，走 fstat(fd)：
+ * 这正是 15.4 探测「持久化授权还活不活」的第一道关 —— 目录被挪走了 here 会先失败。
+ */
+static napi_value stat_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[2] = {NULL, NULL};
+  if (!vaultdir_args(env, info, 2, argv)) {
+    return vaultdir_build_stat(env, EINVAL, NULL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_stat(env, EBADF, NULL);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_stat(env, EINVAL, NULL);
+  }
+  /* 局部变量不能叫 info —— 与 napi_callback_info 入参同名会触发
+     "redefinition with a different type"（CI 上是 -Werror 的错）。 */
+  struct stat meta;
+  int error = 0;
+  if (name[0] == '\0') {
+    if (fstat(fd, &meta) != 0) {
+      error = errno;
+    }
+  } else if (fstatat(fd, name, &meta, 0) != 0) {
+    error = errno;
+  }
+  free(name);
+  return vaultdir_build_stat(env, error, error == 0 ? &meta : NULL);
+}
+
+/*
+ * mkdirByFd(dirFd, name) —— 等价于 mkdir -p。
+ *
+ * 逐段 mkdirat 后再 openat 进入下一段，全程相对父 fd：既支持多级一次性创建，
+ * 也不用关心这棵树挂在哪。已存在的段允许 EEXIST；若已存在的同名物是文件，
+ * 下一步 openat 带 O_DIRECTORY 会报 ENOTDIR，不会悄悄干掉用户文件。
+ */
+static int vaultdir_mkdir_all(int root_fd, const char *rel, int *error) {
+  char *rest = vaultdir_dup(rel);
+  if (rest == NULL) {
+    *error = ENOMEM;
+    return 0;
+  }
+  size_t len = strlen(rest);
+  size_t pos = 0;
+  int current = root_fd;
+  int ok = 1;
+  while (pos < len) {
+    while (pos < len && rest[pos] == '/') {
+      pos++;
+    }
+    if (pos >= len) {
+      break;
+    }
+    size_t start = pos;
+    while (pos < len && rest[pos] != '/') {
+      pos++;
+    }
+    char slash = rest[pos];
+    rest[pos] = '\0';
+    const char *seg = rest + start;
+
+    if (mkdirat(current, seg, 0777) != 0 && errno != EEXIST) {
+      *error = errno;
+      ok = 0;
+      rest[pos] = slash;
+      break;
+    }
+    int next = openat(current, seg, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (next < 0) {
+      *error = errno;
+      ok = 0;
+      rest[pos] = slash;
+      break;
+    }
+    if (current != root_fd) {
+      close(current);
+    }
+    current = next;
+    rest[pos] = slash;
+  }
+  if (current != root_fd) {
+    close(current);
+  }
+  free(rest);
+  return ok;
+}
+
+static napi_value mkdir_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[2] = {NULL, NULL};
+  if (!vaultdir_args(env, info, 2, argv)) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_simple(env, EBADF);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int error = 0;
+  if (name[0] == '\0') {
+    error = EINVAL;
+  } else if (!vaultdir_mkdir_all(fd, name, &error)) {
+    if (error == 0) {
+      error = EIO;
+    }
+  }
+  free(name);
+  return vaultdir_build_simple(env, error);
+}
+
+/* 前向声明：清空目录与删子项互相递归，必须先把其中一个的签名露出来。 */
+static bool vaultdir_rm_all(int parent_fd, const char *name, int *error);
+
+/* 清空一个目录 fd 的全部内容（不删目录自身）。 */
+static bool vaultdir_clear_dir(int dir_fd, int *error) {
+  /* 同 scan 的结论：fdopendir 接管 fd 所有权，必须先 dup。 */
+  int owned_fd = dup(dir_fd);
+  if (owned_fd < 0) {
+    *error = errno;
+    return false;
+  }
+  DIR *stream = fdopendir(owned_fd);
+  if (stream == NULL) {
+    *error = errno;
+    close(owned_fd);
+    return false;
+  }
+  struct dirent *entry = NULL;
+  bool ok = true;
+  while ((entry = readdir(stream)) != NULL) {
+    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+      continue;
+    }
+    if (!vaultdir_rm_all(dir_fd, entry->d_name, error)) {
+      ok = false;
+      break;
+    }
+  }
+  closedir(stream); /* 会一并关掉 owned_fd */
+  return ok;
+}
+
+/* 删除 parent_fd 下的 name：目录递归清，普通文件直接 unlink。 */
+static bool vaultdir_rm_all(int parent_fd, const char *name, int *error) {
+  int child = openat(parent_fd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  if (child < 0) {
+    if (errno == ENOTDIR) {
+      if (unlinkat(parent_fd, name, 0) != 0) {
+        *error = errno;
+        return false;
+      }
+      return true;
+    }
+    *error = errno;
+    return false;
+  }
+  bool ok = vaultdir_clear_dir(child, error);
+  close(child);
+  if (!ok) {
+    return false;
+  }
+  if (unlinkat(parent_fd, name, AT_REMOVEDIR) != 0) {
+    *error = errno;
+    return false;
+  }
+  return true;
+}
+
+/**
+ * removeDirByFd(dirFd, name) —— 递归删子树。
+ *
+ * ⚠️ 这条一次调用就会抹掉磁盘上的真实文件，**没有回收站**：外部库不像沙箱库会把
+ * 内容先挪进 `.trash`（15.6：App 私有数据一律不落外部目录）。所以调用方必须在
+ * UI 层先做确认 —— 沙箱库删了还能从 .trash 捞回来，外部库删了就是真没了。
+ */
+static napi_value remove_dir_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[2] = {NULL, NULL};
+  if (!vaultdir_args(env, info, 2, argv)) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_simple(env, EBADF);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int error = 0;
+  if (name[0] == '\0') {
+    error = EINVAL;
+  } else if (!vaultdir_rm_all(fd, name, &error)) {
+    if (error == 0) {
+      error = EIO;
+    }
+  }
+  free(name);
+  return vaultdir_build_simple(env, error);
+}
+
+/** { ok, code, message, fd } —— openDirByFd 专用。失败时 fd 为 -1。 */
+static napi_value vaultdir_build_fd(napi_env env, int error, int opened_fd) {
+  napi_value result = vaultdir_build_simple(env, error);
+  if (result == NULL) {
+    return NULL;
+  }
+  napi_value fd_value = NULL;
+  napi_create_int32(env, opened_fd, &fd_value);
+  napi_set_named_property(env, result, "fd", fd_value);
+  return result;
+}
+
+/*
+ * openDirByFd(dirFd, name) —— 在父目录 fd 上打开一个**子目录**，返回它的 fd。
+ *
+ * 为什么要单列这个函数：readdir 需要先有一个目录 fd（listDirByFd 收的是 fd 而不
+ * 是名字），而文件树要在任意深度列一层。文件级那些接口（read/write/delete/rename）
+ * 本来就用 openat 吃相对路径 "a/b/c.md"，不缺这一层；只有列目录缺。
+ *
+ * ⚠️ 返回的是**新 fd，调用方负责关**。名字为空串不给 dup(dirFd) —— 那会让调用方
+ * 容易忘关；需要根 fd 时调用方自己再去开根。
+ */
+static napi_value open_dir_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[2] = {NULL, NULL};
+  if (!vaultdir_args(env, info, 2, argv)) {
+    return vaultdir_build_fd(env, EINVAL, -1);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_fd(env, EBADF, -1);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_fd(env, EINVAL, -1);
+  }
+  int opened = -1;
+  int error = 0;
+  if (name[0] == '\0') {
+    error = EINVAL;
+  } else {
+    opened = openat(fd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (opened < 0) {
+      error = errno;
+    }
+  }
+  free(name);
+  return vaultdir_build_fd(env, error, error == 0 ? opened : -1);
+}
+
+/** { ok, code, message, bytes: Uint8Array } —— 二进制读专用。 */
+static napi_value vaultdir_build_binary(napi_env env, int error, const char *data, size_t length) {
+  napi_value result = vaultdir_build_simple(env, error);
+  if (result == NULL) {
+    return NULL;
+  }
+  napi_value arraybuffer = NULL;
+  void *payload = NULL;
+  bool made = false;
+  if (data != NULL && napi_create_arraybuffer(env, length, &payload, &arraybuffer) == napi_ok) {
+    memcpy(payload, data, length);
+    napi_value typed = NULL;
+    if (napi_create_typedarray(env, napi_uint8_array, length, arraybuffer, 0, &typed) == napi_ok) {
+      napi_set_named_property(env, result, "bytes", typed);
+      made = true;
+    }
+  }
+  if (!made) {
+    /* 失败或零长度也要给一个空的 Uint8Array，别让 ArkTS 侧拿到 undefined。 */
+    napi_value empty_buffer = NULL;
+    void *empty = NULL;
+    if (napi_create_arraybuffer(env, 0, &empty, &empty_buffer) == napi_ok) {
+      napi_value typed = NULL;
+      if (napi_create_typedarray(env, napi_uint8_array, 0, empty_buffer, 0, &typed) == napi_ok) {
+        napi_set_named_property(env, result, "bytes", typed);
+      }
+    }
+  }
+  return result;
+}
+
+/*
+ * readBinaryByFd(dirFd, name) —— 按字节读一个文件。
+ *
+ * 存在的理由很直接：图片附件只要经过 UTF-8 字符串就必然坏字节（0x80 以上字节
+ * 会被替换成 U+FFFD），readFileByFd 那条路对二进制是不可用的。
+ */
+static napi_value read_binary_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[2] = {NULL, NULL};
+  if (!vaultdir_args(env, info, 2, argv)) {
+    return vaultdir_build_binary(env, EINVAL, NULL, 0);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_binary(env, EBADF, NULL, 0);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_binary(env, EINVAL, NULL, 0);
+  }
+  int file_fd = openat(fd, name, O_RDONLY | O_CLOEXEC);
+  if (file_fd < 0) {
+    int error = errno;
+    free(name);
+    return vaultdir_build_binary(env, error, NULL, 0);
+  }
+  free(name);
+
+  char *buffer = NULL;
+  size_t length = 0;
+  int error = 0;
+  if (!vaultdir_read_all(file_fd, &buffer, &length, &error)) {
+    close(file_fd);
+    return vaultdir_build_binary(env, error, NULL, 0);
+  }
+  close(file_fd);
+
+  napi_value result = vaultdir_build_binary(env, 0, buffer, length);
+  free(buffer);
+  return result;
+}
+
 static napi_value vaultdir_register_module(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"listDirByFd", NULL, list_dir_by_fd, NULL, NULL, NULL, napi_default, NULL},
@@ -584,6 +959,11 @@ static napi_value vaultdir_register_module(napi_env env, napi_value exports) {
       {"writeFileByFd", NULL, write_file_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"deleteByFd", NULL, delete_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"renameByFd", NULL, rename_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"statByFd", NULL, stat_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"mkdirByFd", NULL, mkdir_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"removeDirByFd", NULL, remove_dir_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"readBinaryByFd", NULL, read_binary_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"openDirByFd", NULL, open_dir_by_fd, NULL, NULL, NULL, napi_default, NULL},
   };
   if (napi_define_properties(env, exports,
                              sizeof(properties) / sizeof(properties[0]),

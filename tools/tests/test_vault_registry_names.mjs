@@ -57,6 +57,8 @@ function createRegistry(vaultIds = [], existingPaths = [], ioOverrides = {}) {
     gitImportMarkerDir: (id) => `/sandbox/vaults/.git-imports/${id}`
   };
   registry.ensureVaultsRoot = () => {};
+  // v1.5：真机构造才会走到类字段初始化，这里用原型手工搭的对象得自己补上缓存 Map。
+  registry.accessCache = new Map();
   registry.newVaultKey = () => 'new-key';
   registry.isSafeVaultKey = (key) => key.length > 0;
   registry.persist = () => { fileOps.push(['persist']); };
