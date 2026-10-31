@@ -93,15 +93,20 @@ function editorScrollAnchorHarness(userIntent = true, suppressed = false) {
 }
 
 function makeEditor(top = 49, scrollHeight = 100, clientHeight = 50) {
+  const heightRequests = [];
   return {
+    heightRequests,
     scrollDOM: {
       getBoundingClientRect: () => ({ top: 10 }),
       scrollHeight,
       clientHeight,
       scrollTop: top
     },
-    contentDOM: { getBoundingClientRect: () => ({ left: 20 }) },
-    posAtCoords: () => 15,
+    documentTop: -39,
+    lineBlockAtHeight(height) {
+      heightRequests.push(height);
+      return { from: 10, top: 40, bottom: 60 };
+    },
     state: { doc: { lineAt: () => ({ number: 3, from: 10, to: 20 }) } }
   };
 }
@@ -135,7 +140,8 @@ test('application preview-follow preference defaults on and persists across stor
 
 test('editor source-scroll reports are frame-coalesced and contain only numeric position data', () => {
   const harness = editorScrollAnchorHarness();
-  harness.setView(makeEditor());
+  const editor = makeEditor();
+  harness.setView(editor);
   harness.scheduleSourceScrollReport();
   harness.scheduleSourceScrollReport();
   assert.equal(harness.frames.length, 1);
@@ -145,18 +151,21 @@ test('editor source-scroll reports are frame-coalesced and contain only numeric 
     type: 'event', name: 'sourceScroll', line: 3, lineProgress: 0.5, viewportRatio: 0,
     atStart: false, atEnd: true
   });
+  assert.deepEqual(editor.heightRequests, [50]);
   assert.equal('text' in harness.events[0], false);
 });
 
 test('requesting the current editor anchor works without a user scroll or stale-restore suppression', () => {
   const harness = editorScrollAnchorHarness(false, true);
-  harness.setView(makeEditor());
+  const editor = makeEditor();
+  harness.setView(editor);
   harness.scheduleSourceScrollReport(true);
   assert.equal(harness.frames.length, 1);
   harness.frames[0]();
   assert.equal(harness.events.length, 1);
   assert.equal(harness.events[0].name, 'sourceScroll');
   assert.equal(harness.events[0].line, 3);
+  assert.deepEqual(editor.heightRequests, [50]);
   assert.equal('text' in harness.events[0], false);
 });
 
@@ -171,6 +180,29 @@ test('source boundary flags use the document scroller when CodeMirror has no scr
   assert.equal(harness.events.length, 1);
   assert.equal(harness.events[0].atStart, false);
   assert.equal(harness.events[0].atEnd, true);
+});
+
+test('visible source anchor uses the page viewport when the workspace document scrolls', () => {
+  const harness = editorScrollAnchorHarness();
+  harness.documentScroller.scrollTop = 500;
+  harness.documentScroller.scrollHeight = 1500;
+  harness.documentScroller.clientHeight = 1000;
+  const editor = makeEditor(0, 50, 50);
+  editor.documentTop = -500;
+  editor.scrollDOM.getBoundingClientRect = () => ({ top: -510 });
+  editor.lineBlockAtHeight = (height) => {
+    editor.heightRequests.push(height);
+    return { from: 410, top: 490, bottom: 510 };
+  };
+  editor.state.doc.lineAt = () => ({ number: 42, from: 410, to: 420 });
+  harness.setView(editor);
+  harness.scheduleSourceScrollReport();
+  harness.frames[0]();
+  assert.deepEqual(editor.heightRequests, [501]);
+  assert.deepEqual(JSON.parse(JSON.stringify(harness.events[0])), {
+    type: 'event', name: 'sourceScroll', line: 42, lineProgress: 0.55, viewportRatio: 0,
+    atStart: false, atEnd: true
+  });
 });
 
 test('native bridges and workspace connect source anchors, manual pause, and persistent preference', () => {

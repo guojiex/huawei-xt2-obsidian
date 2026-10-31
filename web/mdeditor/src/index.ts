@@ -309,17 +309,19 @@ function readVisibleSourceAnchor(editor: EditorView): {
   line: number; lineProgress: number; viewportRatio: number; atStart: boolean; atEnd: boolean
 } {
   const scrollRect = editor.scrollDOM.getBoundingClientRect()
-  const contentRect = editor.contentDOM.getBoundingClientRect()
-  const offset: number = editor.posAtCoords({ x: contentRect.left + 1, y: scrollRect.top + 1 }, false) ?? 0
-  const line = editor.state.doc.lineAt(offset)
-  const lineLength: number = Math.max(1, line.to - line.from)
   const documentScroller = document.scrollingElement ?? document.documentElement
   const scrollContainer = editorWorkspaceScrollContainer(editor.scrollDOM, documentScroller)
+  const viewportTop: number = scrollContainer === editor.scrollDOM ? scrollRect.top : 0
+  const documentOffset: number = Math.max(0, viewportTop + 1 - editor.documentTop)
+  const block = editor.lineBlockAtHeight(documentOffset)
+  const offset: number = block.from
+  const line = editor.state.doc.lineAt(offset)
   const maxScrollTop: number = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight)
   const scrollTop: number = Math.max(0, scrollContainer.scrollTop)
+  const blockHeight: number = Math.max(1, block.bottom - block.top)
   return {
     line: line.number,
-    lineProgress: Math.max(0, Math.min(1, (offset - line.from) / lineLength)),
+    lineProgress: Math.max(0, Math.min(1, (documentOffset - block.top) / blockHeight)),
     viewportRatio: 0,
     atStart: scrollTop <= 1,
     atEnd: maxScrollTop > 1 && scrollTop >= maxScrollTop - 1
