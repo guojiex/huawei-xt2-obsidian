@@ -26,6 +26,29 @@ class ChangelogTests(unittest.TestCase):
         self.assertEqual(len(entries), 5)
         self.assertEqual([x['version'] for x in generator.recent(entries)], ['0.4.0', '0.3.0', '0.2.0'])
 
+    def test_internal_entries_are_hidden_from_user_visible(self):
+        pending = self.entry('0.6.0', 'pending')
+        internal = self.entry('0.5.0', 'implemented')
+        internal['internal'] = True
+        visible = self.entry('0.4.0')
+        entries = generator.validate(self.data([pending, internal, visible]))
+        self.assertEqual([x['version'] for x in generator.user_visible(entries)], ['0.4.0'])
+        self.assertEqual([x['version'] for x in generator.recent(entries)], ['0.4.0'])
+
+    def test_bad_internal_flag_and_notes_fail(self):
+        for field, value in [('internal', 'yes'), ('notes', 'text'), ('notes', ['ok', '']), ('notes', [1])]:
+            with self.subTest(field=field, value=value):
+                entry = copy.deepcopy(self.entry())
+                entry[field] = value
+                with self.assertRaises(ValueError):
+                    generator.validate(self.data([entry]))
+
+    def test_valid_notes_are_kept(self):
+        entry = self.entry()
+        entry['internal'] = False
+        entry['notes'] = ['内部备注']
+        self.assertEqual(generator.validate(self.data([entry]))[0]['notes'], ['内部备注'])
+
     def test_duplicate_versions_fail(self):
         with self.assertRaises(ValueError):
             generator.validate(self.data([self.entry(), self.entry()]))

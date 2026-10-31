@@ -8,10 +8,6 @@ export struct ReleaseHistoryView {
   build() {
     Scroll() {
       Column({ space: Space.s4 }) {
-        Text('这里包含开发阶段记录；只有标记“已发布”的版本表示正式发布。')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
         Column() {
           ChangelogList({ entries: CHANGELOG_ENTRIES })
         }

@@ -15,7 +15,7 @@ export struct ChangelogList {
             .fontWeight(FontWeight.Bold)
             .fontColor($r('app.color.text_primary'))
             .width('100%')
-          Text(entry.date + ' · ' + entry.statusLabel)
+          Text(entry.date)
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_tertiary'))
             .width('100%')
