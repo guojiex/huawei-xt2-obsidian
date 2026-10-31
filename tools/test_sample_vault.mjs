@@ -13,18 +13,18 @@ const source = fs.readFileSync(path.join(root, 'entry/src/main/ets/model/SampleV
 const code = transformSync(source.replace(/^import[^\n]*\r?\n/gm, ''), { loader: 'ts', format: 'cjs' }).code;
 
 async function run({ fresh = true, occupied = false, failAt = -1 } = {}) {
-  const dirs = new Set(['/local']);
-  const files = new Map(occupied ? [['/local/user.md', 'keep me']] : []);
+  const dirs = new Set(['/tutorial']);
+  const files = new Map(occupied ? [['/tutorial/user.md', 'keep me']] : []);
   const writes = [];
   let grant = fresh;
   const registry = {
     consumeSampleInstall() { const result = grant; grant = false; return result; },
-    absoluteIn(vault, rel) { assert.equal(vault, 'local'); assert.ok(!rel.includes('..')); return '/local' + (rel ? '/' + rel : ''); }
+    absoluteIn(vault, rel) { assert.equal(vault, 'tutorial'); assert.ok(!rel.includes('..')); return '/tutorial' + (rel ? '/' + rel : ''); }
   };
   const samples = [{ path: 'start/welcome.md', content: '# 欢迎' }, { path: 'assets/diagram.svg', content: '<svg/>' }];
   const context = {
     module: { exports: {} },
-    DEFAULT_VAULT_ID: 'local',
+    SAMPLE_VAULT_ID: 'tutorial',
     fileIo: {
       listFileSync() { return [...files.keys()]; },
       accessSync(p) { return dirs.has(p) || files.has(p); },
@@ -32,8 +32,8 @@ async function run({ fresh = true, occupied = false, failAt = -1 } = {}) {
     },
     NoteService: { async saveNote(_, vault, rel, text) {
       if (writes.length === failAt) throw new Error('injected write failure');
-      assert.equal(vault, 'local');
-      files.set('/local/' + rel, text); writes.push(rel);
+      assert.equal(vault, 'tutorial');
+      files.set('/tutorial/' + rel, text); writes.push(rel);
     } },
     SAMPLE_VAULT_FILES: samples
   };
@@ -44,21 +44,21 @@ async function run({ fresh = true, occupied = false, failAt = -1 } = {}) {
   return { installer, registry, writes, files, error };
 }
 
-test('fresh empty default vault receives both Markdown and local assets', async () => {
-  const r = await run(); assert.equal(r.writes.length, 2); assert.equal(r.files.get('/local/start/welcome.md'), '# 欢迎');
+test('fresh empty tutorial vault receives both Markdown and local assets', async () => {
+  const r = await run(); assert.equal(r.writes.length, 2); assert.equal(r.files.get('/tutorial/start/welcome.md'), '# 欢迎');
 });
 test('existing installations are untouched, even if their default vault is empty', async () => {
   assert.equal((await run({ fresh: false })).writes.length, 0);
 });
 test('an existing file prevents all sample insertion', async () => {
-  const r = await run({ occupied: true }); assert.equal(r.writes.length, 0); assert.equal(r.files.get('/local/user.md'), 'keep me');
+  const r = await run({ occupied: true }); assert.equal(r.writes.length, 0); assert.equal(r.files.get('/tutorial/user.md'), 'keep me');
 });
 test('deleted samples are not resurrected on a later stage creation', async () => {
-  const r = await run(); r.files.delete('/local/start/welcome.md'); await r.installer.install(r.registry);
-  assert.ok(!r.files.has('/local/start/welcome.md')); assert.equal(r.writes.length, 2);
+  const r = await run(); r.files.delete('/tutorial/start/welcome.md'); await r.installer.install(r.registry);
+  assert.ok(!r.files.has('/tutorial/start/welcome.md')); assert.equal(r.writes.length, 2);
 });
 test('write failure stops insertion and does not automatically retry over user edits', async () => {
   const r = await run({ failAt: 1 }); assert.match(r.error.message, /injected/);
-  r.files.set('/local/start/welcome.md', 'user edit'); await r.installer.install(r.registry);
-  assert.equal(r.files.get('/local/start/welcome.md'), 'user edit'); assert.equal(r.writes.length, 1);
+  r.files.set('/tutorial/start/welcome.md', 'user edit'); await r.installer.install(r.registry);
+  assert.equal(r.files.get('/tutorial/start/welcome.md'), 'user edit'); assert.equal(r.writes.length, 1);
 });

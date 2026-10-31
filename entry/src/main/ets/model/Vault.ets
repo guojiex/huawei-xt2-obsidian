@@ -29,8 +29,11 @@ export interface VaultEntry {
   lastSyncAt?: number;
 }
 
-/** 默认库名：首启自动创建，随应用即用，不配远端也能进应用（spec.md FR-007）。 */
+/** 个人本地库：首次启动创建为空库；用户自己的笔记默认归此库。 */
 export const DEFAULT_VAULT_ID: string = '我的笔记';
+
+/** 首次安装的样例库：首次启动打开此库，内容来自共享样例源。 */
+export const SAMPLE_VAULT_ID: string = '曜石笔记教程';
 
 /**
  * 库名消毒纯函数（新建与改名共用，spec.md FR-009）：

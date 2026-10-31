@@ -14,7 +14,7 @@ import { preferences } from '@kit.ArkData';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { DEFAULT_VAULT_ID, sanitizeVaultName, VaultEntry } from './Vault';
+import { DEFAULT_VAULT_ID, SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from './Vault';
 import { VaultPathResolver } from './VaultPathResolver';
 
 const REG_DOMAIN: number = 0x0001;
@@ -86,7 +86,7 @@ export class VaultRegistry {
     return VaultRegistry.instance;
   }
 
-  /** 加载/创建注册表；首启（无注册表）自动建 vaults/local 并设为当前库（FR-007）。 */
+  /** 加载/创建注册表；全新安装创建个人库与教程库，并首次进入教程库。 */
   private init(): void {
     if (this.initialized) {
       return;
@@ -107,10 +107,12 @@ export class VaultRegistry {
       this.ensureCurrentValid();
       this.persist();
     } else {
-      // 首启：无注册表 → 建默认库 vaults/local
+      // 无注册表且没有既有库目录才按全新安装处理；保留失去注册表时的已有内容。
       this.state = { vaults: [], currentVaultId: '' };
-      this.sampleInstallPending = !fileIo.accessSync(this.resolver.vaultDir(DEFAULT_VAULT_ID));
-      this.createDefaultVault();
+      const vaultsRoot: string = this.resolver.vaultsRoot();
+      const hasExistingVaults: boolean = fileIo.accessSync(vaultsRoot) && fileIo.listFileSync(vaultsRoot).length > 0;
+      this.sampleInstallPending = !hasExistingVaults;
+      this.createInitialVaults();
     }
     this.recoverGitImportResidues();
     this.initialized = true;
@@ -663,7 +665,7 @@ export class VaultRegistry {
     }
   }
 
-  private createDefaultVault(): void {
+  private createInitialVaults(): void {
     try {
       this.ensureVaultsRoot();
       const dirPath: string = this.resolver.vaultDir(DEFAULT_VAULT_ID);
@@ -671,7 +673,28 @@ export class VaultRegistry {
         fileIo.mkdirSync(dirPath);
       }
       this.state.vaults.push({ id: DEFAULT_VAULT_ID, vaultKey: this.newVaultKey(), type: 'local', createdAt: Date.now() });
-      this.state.currentVaultId = DEFAULT_VAULT_ID;
+      if (this.sampleInstallPending) {
+        const sampleDir: string = this.resolver.vaultDir(SAMPLE_VAULT_ID);
+        try {
+          if (!fileIo.accessSync(sampleDir)) {
+            fileIo.mkdirSync(sampleDir);
+          }
+          this.state.vaults.push({
+            id: SAMPLE_VAULT_ID,
+            vaultKey: this.newVaultKey(),
+            type: 'local',
+            createdAt: Date.now()
+          });
+          this.state.currentVaultId = SAMPLE_VAULT_ID;
+        } catch (error) {
+          const err = error as BusinessError;
+          this.sampleInstallPending = false;
+          this.state.currentVaultId = DEFAULT_VAULT_ID;
+          hilog.error(REG_DOMAIN, REG_TAG, '创建教程库失败，回退到个人库: %{public}s', JSON.stringify(err));
+        }
+      } else {
+        this.state.currentVaultId = DEFAULT_VAULT_ID;
+      }
       this.persist();
     } catch (error) {
       const err = error as BusinessError;
