@@ -118,3 +118,67 @@ test('renders note tags as escaped chips and returns empty string without tags',
   assert.equal(renderNoteTags('---\ntitle: 无标签\n---\n正文'), '')
   assert.equal(renderNoteTags('# 无 frontmatter'), '')
 })
+
+test('renders Obsidian callouts with type, custom title and content', () => {
+  const html = renderMarkdown('> [!note] 记录提示\n> 用一句话写出今天最重要的发现。\n\n正文在后')
+
+  assert.match(html, /<div class="callout" data-callout="note" data-callout-group="blue">/)
+  assert.match(html, /<div class="callout-title">[^]*?<span>记录提示<\/span><\/div>/)
+  assert.match(html, /<div class="callout-content"><p>用一句话写出今天最重要的发现。<\/p>\s*<\/div>/)
+  assert.match(html, /<p>正文在后<\/p>/)
+  assert.equal(/<blockquote>/.test(html), false)
+})
+
+test('normalizes callout aliases, case and unknown types per the Obsidian fallback', () => {
+  const html = renderMarkdown(
+    '> [!CAUTION] 注意\n> 内容\n\n> [!TLDR]\n> 摘要\n\n> [!made-up-type]\n> 未知\n\n> [!cite]\n> 引用'
+  )
+
+  assert.match(html, /data-callout="warning" data-callout-group="amber"/)
+  assert.match(html, /<span>注意<\/span>/)
+  assert.match(html, /data-callout="abstract"/)
+  assert.match(html, /<span>Abstract<\/span>/)
+  assert.match(html, /data-callout="note"/)
+  assert.match(html, /<span>Note<\/span>/)
+  assert.match(html, /data-callout="quote" data-callout-group="gray"/)
+  assert.match(html, /<span>Quote<\/span>/)
+})
+
+test('renders foldable callouts as details with the Obsidian default state', () => {
+  const html = renderMarkdown(
+    '> [!tip]- 默认折叠\n> 收起内容\n\n> [!tip]+ 默认展开\n> 展开内容\n\n> [!tip] 不可折叠\n> 普通'
+  )
+
+  assert.match(html, /<details class="callout" data-callout="tip" data-callout-group="blue">/)
+  assert.match(html, /<summary class="callout-title">[^]*?<span>默认折叠<\/span><\/summary>/)
+  assert.match(html, /<details class="callout" data-callout="tip" data-callout-group="blue" open>/)
+  assert.match(html, /<div class="callout" data-callout="tip" data-callout-group="blue">/)
+  assert.equal(/<\/details>[\s\S]*?<\/details>/.test(html), true)
+  assert.match(html, /<p>收起内容<\/p>/)
+  assert.match(html, /<p>展开内容<\/p>/)
+  assert.match(html, /<p>普通<\/p>/)
+})
+
+test('keeps plain blockquotes rendering as blockquote even with bracket text', () => {
+  const html = renderMarkdown('> 这是普通引用，含 [!note] 字样但不构成 callout。\n> 第二行')
+
+  assert.match(html, /<blockquote>[\s\S]*?普通引用[\s\S]*?<\/blockquote>/)
+  assert.equal(/class="callout"/.test(html), false)
+})
+
+test('keeps multi-line, nested and CRLF callout content intact', () => {
+  const nested = renderMarkdown('> [!question] 外层\n> > [!todo] 内层\n> > 内层内容\n> 外层继续')
+
+  assert.match(nested, /data-callout="question"/)
+  assert.match(nested, /data-callout="todo"/)
+  assert.match(nested, /<p>内层内容<\/p>/)
+  assert.match(nested, /<p>外层继续<\/p>/)
+
+  const crlf = renderMarkdown('> [!warning] 边界\r\n> 第一行\r\n> 第二行\r\n')
+  assert.match(crlf, /data-callout="warning"/)
+  assert.match(crlf, /<p>第一行\n第二行<\/p>/)
+
+  const list = renderMarkdown('> [!example] 列表\n> - 甲\n> - 乙\n> ```ts\n> const a = 1\n> ```')
+  assert.match(list, /<ul>[\s\S]*?<li>甲<\/li>[\s\S]*?<li>乙<\/li>/)
+  assert.match(list, /<pre><code class="language-ts">const a = 1/)
+})

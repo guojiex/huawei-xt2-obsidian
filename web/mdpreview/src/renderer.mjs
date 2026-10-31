@@ -32,6 +32,37 @@ function escapeHtml(value) {
 marked.use({
   extensions: [
     {
+      name: 'callout',
+      level: 'block',
+      start(source) {
+        const index = source.search(/(^|\n) {0,3}>[ \t]*\[/)
+        return index < 0 ? undefined : index
+      },
+      tokenizer(source) {
+        const token = tokenizeCallout(source)
+        if (!token) return undefined
+        token.tokens = this.lexer.blockTokens(token.inner, [])
+        return token
+      },
+      renderer(token) {
+        const group = CALLOUT_GROUPS[token.kind] ?? 'blue'
+        const title = token.title.length > 0
+          ? escapeHtml(token.title)
+          : (CALLOUT_DEFAULT_TITLES[token.kind] ?? 'Note')
+        const content = this.parser.parse(token.tokens)
+        const titleRow = `${calloutIcon(group)}<span>${title}</span>`
+        if (token.fold === 'none') {
+          return `<div class="callout" data-callout="${token.kind}" data-callout-group="${group}">` +
+            `<div class="callout-title">${titleRow}</div>` +
+            `<div class="callout-content">${content}</div></div>\n`
+        }
+        const open = token.fold === 'open' ? ' open' : ''
+        return `<details class="callout" data-callout="${token.kind}" data-callout-group="${group}"${open}>` +
+          `<summary class="callout-title">${titleRow}</summary>` +
+          `<div class="callout-content">${content}</div></details>\n`
+      }
+    },
+    {
       name: 'mathBlock',
       level: 'block',
       start(source) {
@@ -73,6 +104,85 @@ marked.use({
 })
 
 let nextMermaidId = 0
+
+/**
+ * Obsidian callout 支持（v1.4；类型与折叠语义按 help.obsidian.md/callouts 2026-10-31 核对）：
+ * - 语法 `> [!类型] 可选标题` + 后续 `>` 行；类型大小写不敏感；
+ * - alias 归一化到 canonical 类型；未知类型按官方语义回落 note；
+ * - `[!类型]-` 默认折叠、`[!类型]+` 默认展开；无标记不可折叠；
+ * - 标题缺省显示 canonical 类型名（title case）。
+ * 配色按 accent 分组（blue/green/amber/red/gray），CSS 色板见 build.mjs 渲染器专属值。
+ */
+const CALLOUT_ALIASES = {
+  summary: 'abstract', tldr: 'abstract',
+  hint: 'tip', important: 'tip',
+  check: 'success', done: 'success',
+  help: 'question', faq: 'question',
+  caution: 'warning', attention: 'warning',
+  fail: 'failure', missing: 'failure',
+  error: 'danger',
+  cite: 'quote'
+}
+
+const CALLOUT_DEFAULT_TITLES = {
+  note: 'Note', abstract: 'Abstract', info: 'Info', todo: 'Todo', tip: 'Tip',
+  success: 'Success', question: 'Question', warning: 'Warning', failure: 'Failure',
+  danger: 'Danger', bug: 'Bug', example: 'Example', quote: 'Quote'
+}
+
+const CALLOUT_GROUPS = {
+  note: 'blue', abstract: 'blue', info: 'blue', todo: 'blue', tip: 'blue', example: 'blue',
+  success: 'green',
+  question: 'amber', warning: 'amber',
+  failure: 'red', danger: 'red', bug: 'red',
+  quote: 'gray'
+}
+
+const CALLOUT_HEAD_PATTERN = /^ {0,3}>[ \t]*\[!([A-Za-z][\w-]*)\]([+-])?[ \t]*([^\n]*)\r?\n?/
+const CALLOUT_BODY_LINE_PATTERN = /^ {0,3}>([^\n]*)\r?\n?/
+const CALLOUT_ICON_SHAPE = {
+  blue: '<circle cx="12" cy="12" r="8.6"/><path d="M12 11v5.2"/><path d="M12 7.6v.1"/>',
+  green: '<path d="M4.6 12.6l4.8 4.8L19.4 7"/>',
+  amber: '<path d="M12 3.6 21.4 20H2.6Z"/><path d="M12 9.6v4.6"/><path d="M12 17v.1"/>',
+  red: '<circle cx="12" cy="12" r="8.6"/><path d="M9.2 9.2l5.6 5.6M14.8 9.2l-5.6 5.6"/>',
+  gray: '<path d="M4.5 10.5h5v5h-5zM14.5 10.5h5v5h-5z"/>'
+}
+
+function calloutIcon(group) {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ` +
+    `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CALLOUT_ICON_SHAPE[group]}</svg>`
+}
+
+/** Split one Obsidian callout out of a blockquote, or return undefined for a normal quote. */
+function tokenizeCallout(source) {
+  const head = CALLOUT_HEAD_PATTERN.exec(source)
+  if (!head) {
+    return undefined
+  }
+  const rawKind = head[1].toLowerCase()
+  const kind = rawKind in CALLOUT_DEFAULT_TITLES
+    ? rawKind
+    : (rawKind in CALLOUT_ALIASES ? CALLOUT_ALIASES[rawKind] : 'note')
+  let rest = source.slice(head[0].length)
+  let inner = ''
+  while (true) {
+    const line = CALLOUT_BODY_LINE_PATTERN.exec(rest)
+    if (!line) {
+      break
+    }
+    inner += `${line[1].replace(/^ /, '')}\n`
+    rest = rest.slice(line[0].length)
+  }
+  return {
+    type: 'callout',
+    raw: source.slice(0, source.length - rest.length),
+    kind,
+    group: CALLOUT_GROUPS[kind],
+    fold: head[2] === '-' ? 'closed' : (head[2] === '+' ? 'open' : 'none'),
+    title: head[3].trim(),
+    inner
+  }
+}
 
 /** Leading YAML frontmatter block（BOM / CRLF / `---`·`...` 闭合），与 v2 原型 markdownBody 同规则。 */
 const FRONTMATTER_PATTERN = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/
