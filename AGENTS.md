@@ -147,10 +147,22 @@ export OHOS_NDK=...                            # Windows 本机要显式指向 D
 Windows 本机要跑模拟器时：
 
 ```powershell
-OHOS_ARCH=x86_64 bash ./native/git2_napi/build.sh   # 一次即可，产物放 .build/out/libs/x86_64
-.\tools\abi.ps1 -Set x86_64                         # 持续开关：命令行 + IDE 都编 x86_64
-.\tools\abi.ps1 -Reset                              # 恢复 arm64（真机 / 提交前必做）
+bash ./native/git2_napi/build.sh                             # arm64（默认架构，一次即可）
+OHOS_ARCH=x86_64 bash ./native/git2_napi/build.sh            # x86_64，产物放 .build/out/libs/x86_64
+.\tools\abi.ps1 -Dual          # ★ 推荐：同时编两种 ABI，模拟器与 XT2 真机共用同一个包
+.\tools\abi.ps1 -Set x86_64    # 只编 x86_64（不再也为真机出包时用）
+.\tools\abi.ps1 -Reset         # 恢复 arm64-only（出上架包前必做）
+.\tools\abi.ps1 -Status        # 看当前状态
 ```
+
+`-Dual` 的前提是**两个架构的 libgit2 都已编过**（`.build/out/libs/` 下要有 `arm64-v8a/` 与
+`x86_64/` 两个目录）。开着的包同时含两份 so（约 18MB vs 单架构约 10MB），好处是不用来回切：
+本机模拟器与 XT2 真机装同一个 HAP 都行。
+
+> ⚠️ **IDE 里点「运行」报 code:9568347 时的第一件事**：先跑 `.\tools\abi.ps1 -Status`。
+> 覆盖是**关着**的（该文件被 `build.ps1 -Abi` 的 finally 撤回了，或换过机器 / 清过
+> `.local/`），构建就会退回 arm64-only → x86_64 模拟器拒装。2026-10-31 第二次踩到。
+> `.local/` 是 gitignore 的本地目录，不含他改动时不该被清理。
 
 原理：`.local/local-abi.json`（gitignore）由 **entry/hvigorfile.ts** 通过
 `overrides.buildOption.externalNativeOptions.abiFilters` 注入 hvigor pipeline。
