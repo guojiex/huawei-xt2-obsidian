@@ -106,7 +106,12 @@ if ($Import) {
         if (-not $material.PSObject.Properties[$key]) { throw "签名配置缺少字段 $key，已中止。" }
     }
     if (-not (Test-Path $localDir)) { New-Item -ItemType Directory -Path $localDir | Out-Null }
-    $material | ConvertTo-Json | Set-Content -LiteralPath $localSigning -Encoding UTF8
+    # ⚠️ 必须无 BOM：PowerShell 5.1 的 `-Encoding UTF8` 会加 EF BB BF，
+    # 而 hvigorfile.ts 是 `JSON.parse(fs.readFileSync(...))` —— 带 BOM 会在构建最开始
+    # 就抛 `00302037 Script Error · Unexpected token '锘?'`，看不出是签名文件的问题
+    # （2026-10-31 实测）。UTF8NoBOM 是 PowerShell 6+ 的写法，5.1 用 .NET 兜底。
+    $json = $material | ConvertTo-Json
+    [System.IO.File]::WriteAllText($localSigning, $json, (New-Object System.Text.UTF8Encoding($false)))
     Write-Line "已写入 $localSigning" 'Cyan'
 
     # .local 必须在忽略列表里

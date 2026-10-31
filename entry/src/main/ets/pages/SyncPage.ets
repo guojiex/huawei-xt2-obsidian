@@ -435,6 +435,16 @@ struct SyncPage {
       .width('100%')
       .margin({ bottom: 16 })
 
+      // v1.5 前置核实的临时入口（2026-10-31）：真机上跑一遍「选目录 → 持久化 →
+      // 递归列出 → 读写」，把 api_notes T1–T4 的 ❓ 换成实测值。正式实现落地后移除。
+      Button('外部目录能力核实（v1.5 临时）')
+        .width('100%')
+        .enabled(!this.busy)
+        .margin({ bottom: Space.s2 })
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/ExternalDirProbePage' });
+        })
+
       if (this.syncMode) {
         Text('当前 Git 库：' + this.syncVaultId)
           .fontSize(FontSize.body1)
