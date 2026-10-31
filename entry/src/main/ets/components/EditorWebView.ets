@@ -295,6 +295,7 @@ export struct EditorWebView {
 
   onThemeChanged(): void {
     this.impl?.setTheme(this.theme);
+    this.impl?.setLineNumbers(this.showLineNumbers);
   }
 
   onLineNumbersChanged(): void {
