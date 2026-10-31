@@ -50,6 +50,20 @@ trusted app source`，**连真机都部署不上去**。当时是把 profile 换
 工程已支持 `$env:OHOS_SIGNING_PROFILE = 'file-access'` 切到含 ACL 的那套，但**只有当你手上有
 与该 profile 配套的 p12/cer 时才用得起来**；日常（`default`）就用 DevEco 自动签名那套。
 
+⚠️ **本地凭据过期会连坐 IDE 部署（第三个坑，2026-10-31）**：`.local/local-signing.json`
+由 `hvigorfile.ts` 以 `overrides.signingConfig` 注入，**优先级高于 IDE 自己的签名配置**。
+所以一旦 DevEco 重新生成了 keystore（`.ohos\config` 里 cer/p12/p7b 整套被重写，文件同名），
+而 `.local` 里那份还对应旧 keystore，就会出现「命令行和 IDE 点运行都报错」
+`11014003 Init keystore failed · keystore password was incorrect`。
+识别方法：对比 `.ohos\config\*.p12` 的修改时间与 `.local\local-signing.json` 的写入时间。
+恢复（三步，hvigorfile / build.ps1 都已针对该报错自动打印这段提示）：
+```powershell
+# 1) DevEco：File > Project Structure > Signing Configs → 自动签名 → Apply（写回凭据）
+.\tools\signing.ps1 -Import   # 2) 抽到 .local 并还原 build-profile.json5 为干净版
+.\tools\build.ps1             # 3) 两条路都恢复
+```
+应急：把 `.local\local-signing.json` 移走，IDE 就退回用它自己的签名配置去部署。
+
 机制与 ⚠️ 运行时 schema（**只接受 `material` / `type`，写 `name` 构建失败**）见 `api_notes.md` **I4**；日常用 `.\tools\signing.ps1 -Import` 抽凭据，`-InstallHook` 装 pre-commit 兜底 |
 
 ## 目录地图

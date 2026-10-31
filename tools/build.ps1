@@ -123,7 +123,9 @@ $exitCode = 0
 $hvigorMode = if ($Release) { 'project' } else { 'module' }
 try {
     $ErrorActionPreference = 'Continue'
-    & $hvigorw $Task --mode $hvigorMode -p product=default --node-home $nodeHome 2>&1
+    # 一边实时输出一边留档：后面要按 hvigor 的报错关键词给针对性提示。
+    & $hvigorw $Task --mode $hvigorMode -p product=default --node-home $nodeHome 2>&1 |
+        ForEach-Object { $script:buildLog += [string]$_; $_ }
     $exitCode = $LASTEXITCODE
 } finally {
     $ErrorActionPreference = $prevEap
@@ -138,6 +140,19 @@ try {
 }
 
 if ($exitCode -ne 0) {
+    # 针对性诊断（都是踩过的坑，hvigor 自己的报错不给解法）：
+    # 11014003 = keystore 打不开。原因是 .local/local-signing.json 里存的密码密文对应的
+    # keystore 已被 DevEco 替换（.ohos\config 里 cer/p12/p7b 被重写过一整套），
+    # 而这份凭据优先级高于 IDE 自己的签名配置 → **连 IDE 点运行都会失败**。
+    if ($script:buildLog -match '11014003|keystore password was incorrect') {
+        Write-Host ''
+        Write-Host '签名失败：本地凭据已经过期（keystore 被换过了）' -ForegroundColor Red
+        Write-Host '  1) DevEco Studio → File > Project Structure > Signing Configs' -ForegroundColor Yellow
+        Write-Host '     → 勾选自动签名并 Apply（这会把新凭据写回 build-profile.json5）' -ForegroundColor Yellow
+        Write-Host '  2) 接着跑 .\tools\signing.ps1 -Import（抽到 .local 并还原 build-profile）' -ForegroundColor Yellow
+        Write-Host '  3) 再跑 .\tools\build.ps1' -ForegroundColor Yellow
+        Write-Host '  应急：把 .local\local-signing.json 移走，IDE 就会用它自己的签名配置部署。' -ForegroundColor DarkGray
+    }
     Write-Error "构建失败，exit=$exitCode"
 }
 
