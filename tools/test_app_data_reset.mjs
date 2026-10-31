@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { TextDecoder } from 'node:util';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../entry/src/main/ets/model/AppDataResetService.ets', import.meta.url), 'utf8');
+import { readSourceFile } from './lib/source.mjs';
+const source = readSourceFile(new URL('../entry/src/main/ets/model/AppDataResetService.ets', import.meta.url));
 const code = transformSync(source.replace(/^import .*;\n/gm, ''), { loader: 'ts', format: 'cjs' }).code;
 
 function fixture({ aliases = ['vault:local:token', 'vault:pending-import:token', 'other:asset'], queryError = 0, removalError = 0, clearError = false } = {}) {

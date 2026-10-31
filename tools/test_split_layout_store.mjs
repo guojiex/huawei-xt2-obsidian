@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { buildSync, transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../entry/src/main/ets/model/SplitLayoutStore.ets', import.meta.url), 'utf8');
+import { readSourceFile, resolveSourcePath } from './lib/source.mjs';
+const source = readSourceFile(new URL('../entry/src/main/ets/model/SplitLayoutStore.ets', import.meta.url));
 const layoutBundle = buildSync({
-  entryPoints: [new URL('../entry/src/main/ets/model/PaneLayout.ets', import.meta.url).pathname],
+  entryPoints: [resolveSourcePath(new URL('../entry/src/main/ets/model/PaneLayout.ets', import.meta.url))],
   bundle: true,
   platform: 'node',
   format: 'cjs',

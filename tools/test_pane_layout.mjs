@@ -2,10 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
+import { resolveSourcePath } from './lib/source.mjs';
+
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { buildSync } = require('esbuild');
 const tokensBundle = buildSync({
-  entryPoints: [new URL('../entry/src/main/ets/common/Tokens.ets', import.meta.url).pathname],
+  entryPoints: [resolveSourcePath(new URL('../entry/src/main/ets/common/Tokens.ets', import.meta.url))],
   bundle: true,
   platform: 'node',
   format: 'cjs',
@@ -23,7 +25,7 @@ const { Size, Space } = tokensModule.exports;
 const minimumPaneWidth = Size.paneMinW;
 const splitterWidth = Space.s4;
 const bundle = buildSync({
-  entryPoints: [new URL('../entry/src/main/ets/model/PaneLayout.ets', import.meta.url).pathname],
+  entryPoints: [resolveSourcePath(new URL('../entry/src/main/ets/model/PaneLayout.ets', import.meta.url))],
   bundle: true,
   platform: 'node',
   format: 'cjs',

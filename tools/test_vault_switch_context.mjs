@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+import { readSourceFile } from './lib/source.mjs';
+const source = readSourceFile(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url));
 
 function extractMethod(signature, nextMarker, modifier) {
   const start = source.indexOf(`  ${modifier} ${signature}`);

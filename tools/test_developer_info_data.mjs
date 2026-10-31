@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readSourceFile } from './lib/source.mjs';
 
 const root = new URL('../', import.meta.url);
-const read = (path) => fs.readFileSync(new URL(path, root), 'utf8');
+const read = (path) => readSourceFile(new URL(path, root));
 const config = JSON.parse(read('app_config.json'));
 const nativeConfig = read('entry/src/main/ets/model/AppConfig.ets');
 const nativeSettings = read('entry/src/main/ets/components/SettingsView.ets');

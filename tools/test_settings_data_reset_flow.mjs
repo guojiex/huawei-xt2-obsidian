@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../entry/src/main/ets/components/SettingsView.ets', import.meta.url), 'utf8');
+import { readSourceFile } from './lib/source.mjs';
+const source = readSourceFile(new URL('../entry/src/main/ets/components/SettingsView.ets', import.meta.url));
 const start = source.indexOf('  private async resetData(): Promise<void> {');
 const end = source.indexOf('\n\n  aboutToAppear(): void {', start);
 assert.ok(start >= 0 && end > start, 'could not find SettingsView.resetData');

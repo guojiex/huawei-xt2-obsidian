@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
+import { readSourceFile } from './lib/source.mjs';
 
 function loadModule(source, globals = {}) {
   const code = transformSync(source.replace(/^import .*;\n/gm, ''), {
@@ -17,10 +17,10 @@ function loadModule(source, globals = {}) {
   return context.module.exports;
 }
 
-const vaultModule = loadModule(fs.readFileSync(
-  new URL('../entry/src/main/ets/model/Vault.ets', import.meta.url), 'utf8'));
-const registrySource = fs.readFileSync(
-  new URL('../entry/src/main/ets/model/VaultRegistry.ets', import.meta.url), 'utf8');
+const vaultModule = loadModule(readSourceFile(
+  new URL('../entry/src/main/ets/model/Vault.ets', import.meta.url)));
+const registrySource = readSourceFile(
+  new URL('../entry/src/main/ets/model/VaultRegistry.ets', import.meta.url));
 
 function createRegistry(vaultIds = [], existingPaths = []) {
   const paths = new Set(existingPaths);

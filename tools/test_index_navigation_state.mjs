@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
-const breakpointSource = fs.readFileSync(new URL('../entry/src/main/ets/model/Breakpoint.ets', import.meta.url), 'utf8');
+import { readSourceFile } from './lib/source.mjs';
+const source = readSourceFile(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const breakpointSource = readSourceFile(new URL('../entry/src/main/ets/model/Breakpoint.ets', import.meta.url));
 const breakpointCode = transformSync(breakpointSource, { loader: 'ts', format: 'cjs' }).code;
 const breakpointModule = { exports: {} };
 vm.runInContext(breakpointCode, vm.createContext({ module: breakpointModule, exports: breakpointModule.exports }));

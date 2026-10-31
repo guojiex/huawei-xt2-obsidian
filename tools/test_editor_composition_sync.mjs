@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+import { readSourceFile } from './lib/source.mjs';
+const source = readSourceFile(new URL('../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const methodNames = [
   ['syncLeftContentToRight', '  private async syncLeftContentToRight(): Promise<void> {', '\n  private async syncRightContentToLeft()'],
   ['syncRightContentToLeft', '  private async syncRightContentToLeft(): Promise<void> {', '\n  private onLeftCompositionChange('],
