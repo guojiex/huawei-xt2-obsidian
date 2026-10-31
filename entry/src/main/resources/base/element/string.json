@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "曜石笔记"
+    },
+    {
+      "name": "file_access_persist_reason",
+      "value": "记住你授权的笔记目录，重启应用或设备后仍能直接读写该目录，无需重新选择"
     }
   ]
 }

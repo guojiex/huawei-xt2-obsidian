@@ -35,7 +35,7 @@
 | 10 | **`AtomicFile` 是完整性方案，不是 HarmonyOS 强制 API。** 更新已有文件、失败时必须保留旧内容，或不能让目标路径出现半成品时用 `fileIo.AtomicFile`；不要自行用 tmp + `renameSync` 模拟原子替换。对新建且唯一命名的图片附件，可在 API ≤24 接口核实后用 `fileIo.copyFile` 从已授权源 fd 复制到解析器给出的新目标；等待复制完成、校验后再插入 Markdown 引用，失败时删除可能的半成品。复制中断可能留下不完整目标；若产品不接受此风险则用 `AtomicFile`。 | `AtomicFile` 保留原文件的失败回滚语义见 `api_notes.md` C1；Picker URI 授权见 Q1。`copyFile` 默认覆盖同名目标，必须使用新路径；API 声明与 URI/fd 用法须以当前 SDK 和官方资料核实 |
 | 11 | 令牌存 **`@kit.AssetStoreKit`**（敏感值只放 `SECRET`），不写明文 | 无需权限；`ALIAS` 不加密 |
 | 12 | 异步渲染下 **Web 组件宽高 ≤ 7680px 物理像素** | 超过会白屏；三栏各 1/3 约 1061px，安全 |
-| 13 | 沙箱内读写**不需要任何权限**，只申请 `INTERNET` 就够 | 官方确认 |
+| 13 | 沙箱内读写**不需要任何权限**；只申请 `INTERNET` 就够。**已拍板例外（2026-10-31）**：v1.5 外部目录持久授权需要 `ohos.permission.FILE_ACCESS_PERSIST`，已在 `module.json5` 声明 —— 沙箱库不受影响，非 v1.5 功能**不得**新增任何权限 | 官方确认；例外依据见 `docs/harmonyos/api_notes.md` T2。**发布上架前必须完成 AGC 受限权限申请**，调试期靠含 ACL 的 debug profile |
 | 14 | 路径**只能**由 `context.filesDir` 等 Context 属性拼出，禁止硬编码沙箱目录字符串；库内相对路径 → 绝对路径**只用一层解析器** | 官方强调；UI 与意图执行器共用，别各拼一遍 |
 | 15 | 端侧意图 / AI 修改已有笔记**同样走 `AtomicFile`** —— 禁止用 `openSync(READ_WRITE\|TRUNC)` 覆盖原内容；新建唯一附件按硬约束 10 选择写入方式 | 这是保护现有笔记内容的工程策略，不是 HarmonyOS 平台强制要求 |
 | 16 | 埋点用**原生 `hiAppEvent` + `UIObserver`**，不引第三方 SDK；**笔记内容一律禁止进埋点**（标题/文件名/路径/正文/字数/标签全禁） | 个人知识库的隐私红线；采集内容会抬高合规与审核成本 |

@@ -1481,8 +1481,24 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 ### T1 ✅ API 24 可以用官方 Picker 选目录
 本机 `@ohos.file.picker.d.ts`：`DocumentViewPicker.select()` 自 API9；`DocumentSelectOptions.selectMode` 与 `DocumentSelectMode.FOLDER` 自 API11（syscap `FileManagement.UserFileService.FolderSelection`），均在 API 24 内。`maxSelectNumber` 注释写明目录一次只能选一个；`authMode`（since 12）注释写明只在 2-in-1 设备生效，手机上无效果，不能依赖。
 
-### T2 ⚠️ 持久授权存在，但依赖 ACL 受限权限 `FILE_ACCESS_PERSIST`
-`@ohos.fileshare.d.ts` 的 `persistPermission` / `activatePermission` / `deactivatePermission` / `revokePermission` 自 API11，`checkPersistentPermission` 自 API17，全部 ≤ API 24；`OperationMode` 仅 `READ_MODE`(0b1) 与 `WRITE_MODE`(0b10) 可用（`CREATE_MODE` / `DELETE_MODE` 自 API20，超出范围）。五个接口**全部**要求权限 `ohos.permission.FILE_ACCESS_PERSIST`。官方 FAQ 写明该权限为 **ACL 受限权限、APL 等级 system_basic**，normal 级应用须通过 ACL 跨级申请；且持久授权存在系统数据库里，**应用或设备重启后必须调 `activatePermission()` 激活**。这直接触碰仓库手册硬约束 13（当前只申请 `INTERNET`），属许可边界变更，需用户拍板，不得先落码。
+### T2 ⚠️ 持久授权依赖 `FILE_ACCESS_PERSIST`；2026-10-31 用户拍板申请，调试期 ACL profile 已就位
+`@ohos.fileshare.d.ts` 的 `persistPermission` / `activatePermission` / `deactivatePermission` / `revokePermission` 自 API11，`checkPersistentPermission` 自 API17，全部 ≤ API 24；`OperationMode` 仅 `READ_MODE`(0b1) 与 `WRITE_MODE`(0b10) 可用（`CREATE_MODE` / `DELETE_MODE` 自 API20，超出范围）。五个接口**全部**要求权限 `ohos.permission.FILE_ACCESS_PERSIST`。持久授权存在系统数据库里，**应用或设备重启后必须调 `activatePermission()` 激活**。
+
+**权限等级口径（两个来源，取严者执行）**：
+- 官方 Restricted Permissions 文档把该权限列在受限清单内，条目 NOTE 原文：「In API version 12, the permission level of this permission is changed to normal. If the application is only for local debugging: For versions before API version 12, you still need to use this permission by following the restricted permission application method. **For API version 12 and later only, you can directly declare the permission.** If the application needs to be released to an application market: You still need to use this permission by following the restricted permission application method.」
+- 官方论坛答疑（华为侧回复开发者同名提问）：该权限属「特殊情况」，等级虽降为 normal，**文档仍特殊说明须按受限权限申请方式**——即 AGC 申请权限 → 申请 profile 时勾选 → `module.json5` 声明，三步齐全才生效。
+- 结论：**发布上架必须走受限权限申请（AGC 审核）**；本地调试按 NOTE 可直接声明，但为对齐发布要求，本机同样使用含 ACL 的 profile。
+
+**本机证据（2026-10-31）**：用户提供的调试 profile `测试profileDebug.p7b`（存于 `.local/profile-file-access-persist.p7b`，gitignore）解析结果——`type: debug`、`bundle-name: com.jxg.huaweiobsidian`（与本工程一致）、`apl: normal`、`acls.allowed-acls: ["ohos.permission.FILE_ACCESS_PERSIST"]`、`permissions: {}`、`validity` 覆盖至 2027-10-31。调试期 ACL 通道成立。
+
+**连带变更**：`module.json5` 首次出现 `INTERNET` 之外的权限（`ohos.permission.FILE_ACCESS_PERSIST`），仓库手册硬约束 13 已按「已拍板的例外」补记。**发布前仍需完成 AGC 受限权限申请**，否则上架版本拿不到该权限。
+
+**设备实测结论（2026-10-31，API26 x86_64 模拟器 + 上述 ACL profile 签名包）**：
+- `atm dump -d -p ohos.permission.FILE_ACCESS_PERSIST` → `grantMode: SYSTEM_GRANT`、`availableLevel: NORMAL`、`availableType: NORMAL`、`provisionEnable: true`、`distributedSceneEnable: false`。**即：声明即授予，运行时不需要 `requestPermissionsFromUser` 弹窗**；`availableLevel` 实测为 NORMAL，印证「API 12 起降为 normal」的官方 NOTE。
+- `atm dump -t -b com.jxg.huaweiobsidian` → `ohos.permission.FILE_ACCESS_PERSIST` 与 `ohos.permission.INTERNET` 均为 `grantStatus: 0`、`grantFlag: 4`（`0` = 已授予；系统日志中未授权场景表现为 `-1`）。**两个权限状态完全一致，说明它已被当普通权限自动授予。**
+- `provisionEnable: true` 意味着 **profile 必须包含该权限才会授予** —— 这正是 AGC 受限权限申请在发布链路上的必要性来源，也解释了为什么只改 `module.json5` 不够（本机靠含 ACL 的 debug profile 满足）。
+- 未换 profile 前旧包 `bm dump` 只有 `INTERNET`；换 profile 后 `reqPermissionDetails` / `reqPermissions` 均含该权限，且安装成功（换 profile 导致的 `code:9568332 sign info inconsistent` 需先卸载旧包再装）。
+- ⚠️ 以上为 **API26 模拟器**证据，非 API24 / XT2。API12+ 等级已降为 normal，预期一致，但按规则仍标「待验证（需 XT2/API24）」，不在关键路径上外推。
 
 ### T3 ❓ 目录 URI 的递归读写尚未验证
 `fileIo.openSync(uri)` 接受 URI、`listFileSync` 支持 `recursion` 是 SDK 声明事实；社区示例用「目录 URI → `openSync` → `listFile`」遍历，但这不是官方保证。未验证：授权是否顺延到子文件与新建文件、`AtomicFile` 能否作用于目录 URI、外部删除 / 移动后的失败形态。
