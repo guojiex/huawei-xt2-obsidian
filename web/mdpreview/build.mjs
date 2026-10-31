@@ -83,6 +83,15 @@ const html = `<!doctype html>
     border-left: var(--focus) solid var(--blue); border-radius: 0 var(--small-r) var(--small-r) 0;
     background: var(--blue-soft); color: var(--ink); font-size: var(--small);
   }
+  #content .callout {
+    margin: var(--s6) 0; padding: var(--s4) var(--s5);
+    border-left: var(--focus) solid var(--blue); border-radius: 0 var(--small-r) var(--small-r) 0;
+    background: var(--blue-soft); color: var(--ink); font-size: var(--small);
+  }
+  #content .callout-warning { border-left-color: var(--danger); }
+  #content .callout-tip { border-left-color: var(--green); }
+  #content .callout-title { margin-bottom: var(--s2); font-weight: 600; }
+  #content .callout-content > :last-child { margin-bottom: 0; }
   #content code {
     background: var(--nav); padding: var(--s1); border-radius: var(--s1);
     font-size: var(--small); font-family: var(--mono);

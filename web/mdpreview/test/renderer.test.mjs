@@ -19,6 +19,25 @@ test('renders headings, ordered and unordered lists, and blockquotes', () => {
   assert.match(html, /<blockquote>[\s\S]*?引用内容[\s\S]*?<\/blockquote>/)
 })
 
+test('renders supported callout types, custom titles and folded callouts without hiding content', () => {
+  const html = renderMarkdown('> [!note] 记录提示\n> **正文内容**\n\n> [!WARNING] 边界\n> 保持原样\n\n> [!tip]- 可折叠提示\n> 折叠标记降级为展开显示。')
+
+  assert.match(html, /class="callout callout-note" data-callout="note"/)
+  assert.match(html, /class="callout-title">记录提示<\/div>/)
+  assert.match(html, /<strong>正文内容<\/strong>/)
+  assert.match(html, /class="callout callout-warning" data-callout="warning"/)
+  assert.match(html, /class="callout callout-tip" data-callout="tip"/)
+  assert.match(html, /折叠标记降级为展开显示。/)
+  assert.doesNotMatch(html, /<details|display:\s*none/)
+})
+
+test('escapes callout titles and leaves unsupported callout types as ordinary quotes', () => {
+  const html = renderMarkdown('> [!note] <img src=x onerror=alert(1)>\n> 正文\n\n> [!custom] 自定义\n> 原始内容')
+
+  assert.match(html, /class="callout-title">&lt;img src=x onerror=alert\(1\)&gt;<\/div>/)
+  assert.match(html, /<blockquote>[\s\S]*?\[!custom\] 自定义[\s\S]*?原始内容[\s\S]*?<\/blockquote>/)
+})
+
 test('renders GFM tables and fenced code blocks', () => {
   const html = renderMarkdown('| 名称 | 值 |\n| --- | --- |\n| 条目 | 3 |\n\n```ts\nconst answer = 42\n```')
 

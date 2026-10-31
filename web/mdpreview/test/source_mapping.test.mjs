@@ -22,6 +22,17 @@ test('source blocks preserve marked output and carry original line ranges', () =
   assert.equal((result.html.match(/class="preview-source-block"/g) ?? []).length, 6)
 })
 
+test('callout tokens preserve their full source line range and render through source wrappers', () => {
+  const markdown = '# 标题\n\n> [!tip]- 标题\n> 第一行\n> 第二行\n\n> 普通引用'
+  const result = renderMarkdownWithSourceBlocks(markdown)
+
+  assert.deepEqual(result.blocks.map(({ startLine, endLine }) => [startLine, endLine]), [[1, 1], [3, 5], [7, 7]])
+  assert.match(result.html, /class="callout callout-tip"/)
+  assert.match(result.html, /class="callout-title">标题<\/div>/)
+  assert.match(result.html, /<blockquote>[\s\S]*?普通引用[\s\S]*?<\/blockquote>/)
+  assert.equal(result.blocks.length, marked.lexer(markdown).filter(({ type }) => type !== 'space').length)
+})
+
 test('source block rendering keeps reference links and image blocks intact', () => {
   const markdown = '![图](images/sample.png)\n\n[外链][source]\n\n[source]: https://example.com'
   const result = renderMarkdownWithSourceBlocks(markdown)

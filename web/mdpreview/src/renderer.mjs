@@ -29,8 +29,40 @@ function escapeHtml(value) {
   })
 }
 
+const CALLOUT_LABELS = {
+  note: '提示',
+  warning: '警告',
+  tip: '建议'
+}
+
 marked.use({
   extensions: [
+    {
+      name: 'callout',
+      level: 'block',
+      start(source) {
+        const match = /^ {0,3}>[ \t]*\[!(?:note|warning|tip)\][+-]?(?:[ \t]+[^\r\n]*)?[ \t]*(?:\r?\n|$)/im.exec(source)
+        return match?.index
+      },
+      tokenizer(source) {
+        const match = /^(?: {0,3}>[ \t]?.*(?:\r?\n|$))+/u.exec(source)
+        if (!match) return undefined
+
+        const lines = match[0].replace(/\r\n/g, '\n').split('\n')
+        const header = lines[0].replace(/^ {0,3}>[ \t]?/, '')
+        const headerMatch = /^\[!(note|warning|tip)\]([+-])?(?:[ \t]+(.*))?[ \t]*$/i.exec(header)
+        if (!headerMatch) return undefined
+
+        const type = headerMatch[1].toLowerCase()
+        const title = headerMatch[3]?.trim() || CALLOUT_LABELS[type]
+        const body = lines.slice(1).map((line) => line.replace(/^ {0,3}> ?/, '')).join('\n').replace(/\n+$/, '')
+        return { type: 'callout', raw: match[0], calloutType: type, title, text: body }
+      },
+      renderer(token) {
+        const body = token.text ? marked.parse(token.text) : ''
+        return `<aside class="callout callout-${token.calloutType}" data-callout="${token.calloutType}" role="note"><div class="callout-title">${escapeHtml(token.title)}</div><div class="callout-content">${body}</div></aside>\n`
+      }
+    },
     {
       name: 'mathBlock',
       level: 'block',
