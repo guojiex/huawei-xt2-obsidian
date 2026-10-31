@@ -24,6 +24,14 @@ function fixture(href='file:///repo/docs/prototype/v2/index.html',storage=new Ma
  const run=s=>vm.runInContext(s,context);run(code);
  return {get,run,href:()=>location.href,flush(){while(pending.length)pending.shift()()},event(area,type,event={}){for(const fn of events[area][type]||[])fn(event)},back(){assert(index>0);location=new URL(history[--index]);for(const fn of events.window.popstate||[])fn({})},forward(){assert(index<history.length-1);location=new URL(history[++index]);for(const fn of events.window.popstate||[])fn({})},history};
 }
+test('settings header returns one level at a time in single-pane layouts',()=>{
+ const f=fixture();f.run("setViewport('phone');openSettings();chooseSettings('about',false);$('openHistory').onclick()");
+ assert(f.run('historyOpen'));f.get('closeSettings').onclick();assert(!f.run('historyOpen'));assert(f.run('settingsOpen'));assert(f.get('settingsPage').classList.contains('detail-open'));
+ f.get('closeSettings').onclick();assert(!f.get('settingsPage').classList.contains('detail-open'));assert(f.get('settingsNav-about').focused);
+ f.get('closeSettings').onclick();assert(!f.run('settingsOpen'));
+ f.run("setViewport('wide');openSettings();chooseSettings('about',false)");f.get('closeSettings').onclick();assert(!f.run('settingsOpen'));
+ f.run("setViewport('wide');$('window').classList.add('compact-height');openSettings();chooseSettings('general',false)");f.get('closeSettings').onclick();assert(f.run('settingsOpen'));assert(!f.get('settingsPage').classList.contains('detail-open'));
+});
 test('link round trip restores panes, geometry, theme, sidebar, widths and settings history',()=>{
  const f=fixture();f.run("switchVault('projects');openInPane('projects_inbox','left');openInPane('projects_todo','right');setEditing(true,false);setRightEditing(false,false);setViewport('phone');viewportRotated=true;applyViewportGeometry();document.body.dataset.theme='dark';widths={nav:.4,content:.6};setSidebarView('chapters');openSettings();chooseSettings('about',false);$('openHistory').onclick();syncUrl('push')");
  const g=fixture(f.href());assert.equal(g.run('activeVault'),'projects');assert.equal(g.run('current'),'projects_inbox');assert.equal(g.run('reference'),'projects_todo');assert.equal(g.run('editing'),true);assert.equal(g.run('rightEditing'),false);assert.equal(g.run('viewportPreset'),'phone');assert(g.run('viewportRotated'));assert.equal(g.run('document.body.dataset.theme'),'dark');assert.equal(g.run('activePane'),'right');assert.equal(g.run('sidebarView'),'chapters');assert.equal(g.run('widths.nav'),.4);assert.equal(g.run('widths.content'),.6);assert(g.run('settingsOpen&&historyOpen'));assert.equal(g.run('settingsCategory'),'about');
