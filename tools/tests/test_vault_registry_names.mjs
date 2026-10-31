@@ -22,13 +22,18 @@ const vaultModule = loadModule(readSourceFile(
 const registrySource = readSourceFile(
   new URL('../../entry/src/main/ets/model/VaultRegistry.ets', import.meta.url));
 
-function createRegistry(vaultIds = [], existingPaths = []) {
+function createRegistry(vaultIds = [], existingPaths = [], ioOverrides = {}) {
   const paths = new Set(existingPaths);
   const fileOps = [];
   const fileIo = {
     accessSync(path) { return paths.has(path); },
     mkdirSync(path) { fileOps.push(['mkdir', path]); paths.add(path); },
-    renameSync(source, target) { fileOps.push(['rename', source, target]); }
+    renameSync(source, target) { fileOps.push(['rename', source, target]); },
+    statSync(path) { fileOps.push(['stat', path]); return { isDirectory: () => true }; },
+    listFileSync(path) { fileOps.push(['list', path]); return []; },
+    unlinkSync(path) { fileOps.push(['unlink', path]); paths.delete(path); },
+    rmdirSync(path) { fileOps.push(['rmdir', path]); paths.delete(path); },
+    ...ioOverrides
   };
   const { VaultRegistry } = loadModule(registrySource, {
     DEFAULT_VAULT_ID: vaultModule.DEFAULT_VAULT_ID,
@@ -83,6 +88,57 @@ test('native ID selection checks registered IDs and orphan directories, and rena
   assert.equal(registry.previewRenameId('阅读笔记', '阅读笔记'), '阅读笔记');
   assert.equal(registry.previewRenameId('阅读笔记', '阅读笔记-3'), '阅读笔记-3-2');
   assert.throws(() => registry.previewRenameId('阅读笔记', ' .. '), /库名不能为空/);
+});
+
+test('rename to an occupied name takes the next suffix and leaves the other vault untouched', () => {
+  const { registry, fileOps } = createRegistry(['A', 'A-2'], ['/sandbox/vaults/A', '/sandbox/vaults/A-2']);
+
+  const renamed = registry.rename('A', 'A-2');
+
+  assert.equal(renamed.id, 'A-2-2');
+  assert.equal(registry.state.currentVaultId, 'A-2-2');
+  assert.deepEqual(registry.state.vaults.map((vault) => vault.id), ['A-2-2', 'A-2']);
+  assert.deepEqual(fileOps.filter((op) => op[0] === 'rename'),
+    [['rename', '/sandbox/vaults/A', '/sandbox/vaults/A-2-2']]);
+});
+
+test('rename rejects an illegal name without touching the registry or the filesystem', () => {
+  const { registry, fileOps } = createRegistry(['A'], ['/sandbox/vaults/A']);
+
+  assert.throws(() => registry.rename('A', ' . '), /库名不能为空/);
+  assert.deepEqual(fileOps, []);
+  assert.deepEqual(registry.state.vaults.map((vault) => vault.id), ['A']);
+  assert.equal(registry.state.currentVaultId, 'A');
+});
+
+test('removing the last vault empties the registry and the same name can be created again', () => {
+  const { registry, fileOps } = createRegistry(['A'], ['/sandbox/vaults/A']);
+
+  registry.remove('A');
+  assert.equal(registry.state.vaults.length, 0);
+  assert.equal(registry.state.currentVaultId, '');
+
+  const recreated = registry.createLocal('A');
+  assert.equal(recreated.id, 'A');
+  assert.equal(recreated.type, 'local');
+  assert.equal(registry.state.vaults.length, 1);
+  assert.ok(fileOps.some((op) => op[0] === 'rmdir' && op[1] === '/sandbox/vaults/A'));
+  assert.ok(fileOps.some((op) => op[0] === 'mkdir' && op[1] === '/sandbox/vaults/A'));
+});
+
+test('a failing vault tree removal keeps the entry and the current vault in the registry', () => {
+  const { registry } = createRegistry(['A', 'B'], ['/sandbox/vaults/A', '/sandbox/vaults/B'], {
+    statSync(path) {
+      if (path === '/sandbox/vaults/A') {
+        throw new Error('读取目录失败');
+      }
+      return { isDirectory: () => true };
+    }
+  });
+
+  assert.throws(() => registry.remove('A'), /读取目录失败/);
+  assert.deepEqual(registry.state.vaults.map((vault) => vault.id), ['A', 'B']);
+  assert.equal(registry.state.currentVaultId, 'A');
 });
 
 test('first install creates a personal vault and tutorial vault with the tutorial note pending', () => {
