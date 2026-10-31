@@ -1475,3 +1475,19 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 本机 `@ohos.net.http.d.ts` 的 `HttpRequestOptions.caPath` 从 API10 起可用；不设置时，SDK 声明网络栈使用系统预设 CA，并给出 `/etc/ssl/certs/cacert.pem` 路径。Native libgit2 在 HTTPS 操作前把此路径交给 libgit2/mbedTLS，`caFile` 仅作可选覆盖。API26 模拟器公开 GitHub HTTPS clone 通过；这是 Native 对系统 CA 路径的设备证据，不等同于 API24 / XT2 验收或服务商 HTTPS 认证。
 
 2026-10-31：Native 模块已编入主 App 与 `ohosTest` HAP；API26 模拟器 `Git2Native` Hypium 9/9，包括 Native 模块加载、隔离认证、`xt2` 分支、进度、clone 字节哈希、stage/commit/fetch/push、失败清理、索引写失败保护、`.trash` 排除和非快进拒绝。当前实现没有调用 checkout，也未实现 pull：libgit2 不承诺 checkout 多文件写入/删除的整体原子性或失败/中断整库回滚；`AtomicFile` 不能包裹其原生写入。API24 / XT2、生产 App 页面端到端、AssetStoreKit 真机读令牌和真实服务商 HTTPS 认证仍待验。详见 [v0.3 验收记录](../releases/v0.3/需求文档.md#6-验收记录)。
+
+## T 组：外部目录选择与持久授权（2026-10-31，v1.5 前置核实）
+
+### T1 ✅ API 24 可以用官方 Picker 选目录
+本机 `@ohos.file.picker.d.ts`：`DocumentViewPicker.select()` 自 API9；`DocumentSelectOptions.selectMode` 与 `DocumentSelectMode.FOLDER` 自 API11（syscap `FileManagement.UserFileService.FolderSelection`），均在 API 24 内。`maxSelectNumber` 注释写明目录一次只能选一个；`authMode`（since 12）注释写明只在 2-in-1 设备生效，手机上无效果，不能依赖。
+
+### T2 ⚠️ 持久授权存在，但依赖 ACL 受限权限 `FILE_ACCESS_PERSIST`
+`@ohos.fileshare.d.ts` 的 `persistPermission` / `activatePermission` / `deactivatePermission` / `revokePermission` 自 API11，`checkPersistentPermission` 自 API17，全部 ≤ API 24；`OperationMode` 仅 `READ_MODE`(0b1) 与 `WRITE_MODE`(0b10) 可用（`CREATE_MODE` / `DELETE_MODE` 自 API20，超出范围）。五个接口**全部**要求权限 `ohos.permission.FILE_ACCESS_PERSIST`。官方 FAQ 写明该权限为 **ACL 受限权限、APL 等级 system_basic**，normal 级应用须通过 ACL 跨级申请；且持久授权存在系统数据库里，**应用或设备重启后必须调 `activatePermission()` 激活**。这直接触碰仓库手册硬约束 13（当前只申请 `INTERNET`），属许可边界变更，需用户拍板，不得先落码。
+
+### T3 ❓ 目录 URI 的递归读写尚未验证
+`fileIo.openSync(uri)` 接受 URI、`listFileSync` 支持 `recursion` 是 SDK 声明事实；社区示例用「目录 URI → `openSync` → `listFile`」遍历，但这不是官方保证。未验证：授权是否顺延到子文件与新建文件、`AtomicFile` 能否作用于目录 URI、外部删除 / 移动后的失败形态。
+
+### T4 ❓ 外部变更感知与跨应用共管没有本地证据
+`fileshare` 只描述本应用视角的授权；另一款软件能否管理同一目录取决于目录所在命名空间（如 Download 公共目录），不是本 App 授予的权限。此项须选定场景后设备实测。
+
+来源与逐条证据见 [外部目录授权能力核实记录](qa/2026-10-31_外部目录授权能力_API24.md)；以上依据均为本机 SDK 声明与官方文档，**没有设备实测值**，需在 XT2 / API 24 上跑通后回填。
