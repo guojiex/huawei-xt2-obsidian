@@ -29,6 +29,7 @@ class NavigationHarness {
   ${method('  private isReferenceShown(): boolean {', '\n  private toggleFocus(')}
   ${method('  private toggleFocus(): void {', '\n  private previewActiveNoteInOtherPane(')}
   ${method('  private onHamburger(): void {', '\n  // ===== 库操作')}
+  ${method('  onBackPress(): boolean {', '\n  /** 页面隐藏')}
 
   setActivePane(pane) {
     this.activePane = pane;
@@ -119,6 +120,21 @@ test('md hamburger returns from the reference pane before reopening navigation',
   assert.equal(app.sidebarCollapsed, true);
   assert.equal(app.sidebarProgress, 0);
   assert.deepEqual(app.activePaneChanges, ['left']);
+});
+
+test('back closes expanded wide-screen navigation before leaving the workspace', () => {
+  const app = createHarness({
+    breakpoint: Breakpoint.LG,
+    sidebarCollapsed: false,
+    sidebarProgress: 1,
+    drawerOpen: false,
+    moreMenuOpen: false,
+    quickSwitchOpen: false
+  });
+
+  assert.equal(app.onBackPress(), true);
+  assert.equal(app.sidebarCollapsed, true);
+  assert.equal(app.sidebarProgress, 0);
 });
 
 test('hamburger exits focused md mode, restores navigation, and returns to the left pane', () => {
