@@ -499,7 +499,7 @@ struct SyncPage {
           .margin({ bottom: Space.s3 })
       }
 
-      Text(this.syncMode ? '导入另一个 Git 仓库' : '导入 Git 仓库')
+      Text(this.syncMode ? '导入另一个 Git 仓库' : '仓库地址')
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
         .margin({ bottom: 8 })
