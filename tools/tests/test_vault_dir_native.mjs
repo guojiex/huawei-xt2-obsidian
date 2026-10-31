@@ -44,6 +44,12 @@ function fakeNative(entries, options = {}) {
     message: options.message !== undefined ? options.message : '',
     entries: typeof entries === 'function' ? entries(fd) : entries
   });
+  // 写删改名的返回只有 ok/code/message；不能复用 make()，那会混进遍历的 entries。
+  const io = () => ({
+    ok: options.ok !== undefined ? options.ok : true,
+    code: options.code !== undefined ? options.code : 0,
+    message: options.message !== undefined ? options.message : ''
+  });
   return {
     calls,
     listDirByFd(fd) {
@@ -53,6 +59,25 @@ function fakeNative(entries, options = {}) {
     listDirRecursiveByFd(fd) {
       calls.push(['recursive', fd]);
       return make(fd);
+    },
+    // ---- 写 / 删 / 改名：答复 Q3-Q4 定的 Native 形态 ----
+    readFileByFd(fd, name) {
+      calls.push(['read', fd, name]);
+      const result = io();
+      result.content = options.content !== undefined ? options.content : '# loaded';
+      return result;
+    },
+    writeFileByFd(fd, name, content) {
+      calls.push(['write', fd, name, content]);
+      return io();
+    },
+    deleteByFd(fd, name) {
+      calls.push(['delete', fd, name]);
+      return io();
+    },
+    renameByFd(fd, oldName, newName) {
+      calls.push(['rename', fd, oldName, newName]);
+      return io();
     }
   };
 }
@@ -178,4 +203,60 @@ test('errorCodeOf reads BusinessError.code and falls back to -1', () => {
   assert.equal(vault.VaultDirectoryScanner.errorCodeOf({ code: 13900002 }), 13900002);
   assert.equal(vault.VaultDirectoryScanner.errorCodeOf(new Error('boom')), -1);
   assert.equal(vault.VaultDirectoryScanner.errorCodeOf(undefined), -1);
+});
+
+// ---- VaultDirFileStore：读写删改全部走 Native，且 fd 生命周期自控 ----
+function createStore(native, fs) {
+  return new vault.VaultDirFileStore(native, fs);
+}
+
+test('store.read returns content and closes the borrowed fd', () => {
+  const native = fakeNative([]);
+  const fs = fakeFs();
+  const result = createStore(native, fs).read(DIR_URI, 'notes/a.md');
+  assert.deepEqual(plain(result), { ok: true, code: 0, message: '', content: '# loaded' });
+  assert.deepEqual(native.calls, [['read', 77, 'notes/a.md']]);
+  assert.deepEqual(fs.opened, [DIR_URI]);
+  assert.deepEqual(fs.closed, [77]);
+});
+
+test('store.write delegates to native writeFileByFd with relative name', () => {
+  const native = fakeNative([]);
+  const fs = fakeFs();
+  const result = createStore(native, fs).write(DIR_URI, 'a.md', '# new');
+  assert.equal(result.ok, true);
+  // 关键：传下去的是**相对名**，不是拼出来的 URI —— 官方不保证自拼 URI 可用
+  assert.deepEqual(native.calls, [['write', 77, 'a.md', '# new']]);
+  assert.deepEqual(fs.closed, [77]);
+});
+
+test('store.remove / rename map onto unlinkat / renameat', () => {
+  const native = fakeNative([]);
+  const store = createStore(native, fakeFs());
+  assert.equal(store.remove(DIR_URI, 'old.md').ok, true);
+  assert.equal(store.rename(DIR_URI, 'a.md', 'b.md').ok, true);
+  assert.deepEqual(native.calls, [['delete', 77, 'old.md'], ['rename', 77, 'a.md', 'b.md']]);
+});
+
+test('open failure short-circuits every io call with the errno', () => {
+  const native = fakeNative([]);
+  const store = createStore(native, fakeFs({ openCode: 13900002 }));
+  const read = store.read(DIR_URI, 'a.md');
+  assert.equal(read.ok, false);
+  assert.equal(read.code, 13900002);
+  assert.equal(read.content, '');
+  assert.equal(store.write(DIR_URI, 'a.md', 'x').code, 13900002);
+  assert.equal(store.remove(DIR_URI, 'a.md').code, 13900002);
+  assert.equal(store.rename(DIR_URI, 'a.md', 'b.md').code, 13900002);
+  // 开 fd 就失败了，绝不能带着 -1 去调 native
+  assert.deepEqual(native.calls, []);
+});
+
+test('native write failure surfaces errno instead of throwing', () => {
+  const native = fakeNative([], { ok: false, code: 30, message: 'Read-only file system' });
+  const result = createStore(native, fakeFs()).write(DIR_URI, 'a.md', 'x');
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 30);
+  // 页面上要能看到人话，不能只给一个数字
+  assert.match(result.message, /30|Read-only/);
 });

@@ -189,7 +189,16 @@ const PROBE_STEP_LABELS: Record<string, string> = {
   'list': '递归列出目录',
   'read': '读取已有 Markdown',
   'atomic': 'AtomicFile 更新已有文件',
-  'cleanup': '删除样例临时文件'
+  'cleanup': '删除样例临时文件',
+  // Native 读链路（答复 2026-10-31 第一轮）
+  'native_flat': 'Native fdopendir 单层遍历',
+  'native_recursive': 'Native openat 递归遍历',
+  // Native 写链路（答复 2026-10-31 第二轮）
+  'native_read': 'Native openat 读取已有笔记',
+  'native_write': 'Native 原子写（tmp→renameat）',
+  'native_overwrite': 'Native 覆盖写并校验无残留尾部',
+  'native_rename': 'Native renameat 改名',
+  'native_delete': 'Native unlinkat 删除'
 };
 
 /**

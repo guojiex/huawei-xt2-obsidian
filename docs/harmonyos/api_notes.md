@@ -1575,16 +1575,47 @@ Native 返回约定：相对路径**不带前导斜杠**（与 `listFileSync` �
 按 `endsWith('/')` 区分类型，不必再 `stat`。失败返回 `ok:false + errno` 而非抛异常 —— 抛出去 errno 会被
 ArkTS 的 Error 包装吃掉。
 
-### T6 ❓ 写入链路尚未验证（下一轮核实目标）
-`atomic` 步骤在设备上报 **code=-1**（非 BusinessError），尚未定位。候选原因：
-`AtomicFile` 需要在目标目录创建临时文件，可能不接受 federated URI；也可能 `startWrite`/
-`WriteStream` 在外部 URI 上有别的约束。
+### T6 ✅ `AtomicFile` 对外部 URI 不可用（code=-1），来自 SDK 契约而非用法错
 
-**这一条不解决，v1.5 的「编辑并保存回去」这条产品需求就落不了地**，优先级排在 15.x 之前。
-建议下一步：在核实页加一组「写」的对照探测 —— `uri` 原样 AtomicFile、`uri + '/x.md'` 子文件路径
-AtomicFile、`fs.openSync(子文件, READ_WRITE|CREATE)` + `writeSync`、`fs.copyFileSync`
-（把沙箱里写好的文件拷进去），四种方式各跑一次拿到 errno。
+**已定位并有 SDK 出处**：`AtomicFile(path)` 的 path 参数契约是
+"Application sandbox path of the file"（d.ts L4718），**不收 URI**，
+传目录 URI / 拼接的子文件 URI 都失败，实测 **code=-1**（非 BusinessError，拿不到 errno）。
+官方第二轮答复确认同口径，并明确**ArkTS 侧没有面向外部目录的原子写 API**。
 
-来源与逐条证据见 [外部目录授权能力核实记录](qa/2026-10-31_外部目录授权能力_API24.md) 与
-[目录 URI 遍历答复核验](qa/2026-10-31_目录URI遍历答复核验.md)。T1 / T2 / T3 / T5 均有设备实测支撑；
+同一坑位的还有：`createStream`(L902/948)、`unlink`(L3455)、`rename`(L3009/3044)、
+`createWatcher` —— path 全 Written as 沙箱路径。只有 `open`(L2491/2529/2582) 写的是
+"Application sandbox path **or URI**"。
+
+### T7 ✅ 外部目录的写 / 删 / 改名：**全部走 Native POSIX**（2026-10-31 第二轮答复 + 设备实测）
+
+读写删改统一收敛到 `native/vaultdir_napi`，ArkTS 侧只负责 Picker、`fileShare`
+持久化与激活、把 dirFd 传进去。**关键是全程用相对名字，不拼 URI** ——
+官方明确不保证应用自拼 URI 的可用性（涉及百分号编解码）。
+
+| 动作 | Native 实现 | 实测 |
+| --- | --- | --- |
+| 读笔记 | `openat(dirFd, name, O_RDONLY)` + 循环 read | ✅ |
+| 原子保存 | 写 `name.<pid>.tmp` → `fsync` → `renameat(dirFd, tmp, dirFd, name)` | ✅ 76 字节写后回读一致 |
+| 变短覆盖 | 同上（renameat 是整块替换，天然无残留尾部） | ✅ 76 → 7 字节，回读无旧尾 |
+| 改名 | `renameat(dirFd, old, dirFd, new)` | ✅ 按新名可读 |
+| 删除 | `unlinkat(dirFd, name, 0)` | ✅ 自清理成功（递归仍 31 条，未变 32） |
+
+- **持久化 WRITE_MODE 已覆盖子树的写 / 删 / 改名，系统不再逐次弹窗确认**（答复 Q4）。
+  产品层面要不要加确认对话框是 UX 选择，不是系统要求。
+- `renameat` 之后对 `dirFd` 做一次 `fsync` 让目录项落盘；部分 DFS/FUSE 挂载点会返回
+  `EINVAL`，此时数据本身已在 rename 前 fsync 过，**只降级为软警告，不把写判死**。
+- 不使用 NDK 私有 API，只依赖 POSIX 基线 + 官方文档认可的通路，答复明确**不会因此被上架驳回**。
+- **重激活后写链路仍成立**：杀进程重启 → `activatePermission` → 写 / 覆盖 / 改名 / 删除全部 ✅。
+
+### T8 ✅ 外部目录变更感知：没有官方方案，只能轮询
+
+`fileIo.createWatcher` 的 path 契约是**沙箱路径**，不支持外部目录 URI；
+媒体库观察者只覆盖媒体类文件，`Download` 下的 documents 目录不在范围。
+→ v1.5 若要「用户在 PC 改了 md，App 自动发现」，只能自己轮询（工程建议非官方规范）：
+前台可见时轮询、间隔秒级、**目录 mtime 变化才重新扫描子目录**，其余只 stat 已知文件。
+
+来源与逐条证据见 [外部目录授权能力核实记录](qa/2026-10-31_外部目录授权能力_API24.md)、
+[目录 URI 遍历答复核验](qa/2026-10-31_目录URI遍历答复核验.md) 与
+[目录 URI 写链路答复核验](qa/2026-10-31_目录URI写链路答复核验.md)。
+T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；
 **所有读数来自 API 26 设备（XT2 / 模拟器），目标兼容级别为 API 24，未完成判定跑通前不外推。**

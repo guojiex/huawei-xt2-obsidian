@@ -21,14 +21,25 @@ import {
   ExternalDirProbeRunner, ProbeStep, describeProbeStep, displayNameFromUri, selectProbeMarkdown,
   safeDecodeUriComponent
 } from '../model/ExternalDirProbe';
-import { createDeviceProbeRunner, createVaultDirScanner, supportsFolderSelection } from '../model/ExternalDirProbeDevice';
+import { createDeviceProbeRunner, createVaultDirScanner, createVaultDirFileStore, supportsFolderSelection } from '../model/ExternalDirProbeDevice';
 import {
   describeVaultDirError, selectVaultMarkdown as pickVaultMarkdown,
-  VaultDirEntry, VaultDirScanResult, VaultDirectoryScanner
+  VaultDirEntry, VaultDirScanResult, VaultDirectoryScanner,
+  VaultDirFileStore, VaultDirIoResult, VaultDirReadResult
 } from '../model/VaultDirNative';
 
 const DOMAIN: number = 0x5941;
 const TAG: string = 'ProbeRunner';
+
+/*
+ * 写链路核实只用这一对探针文件：全程新建→改写→改名→删除，末尾自清理。
+ * 选中的目录可能是用户真实的 Download，不能碰任何已有笔记，也不能留垃圾。
+ * 内容用定长可预测的字符串，便于「写后回读是否一致」做严格相等比较。
+ */
+const PROBE_FILE: string = '__yaoshi_probe_write.md';
+const PROBE_FILE_RENAMED: string = '__yaoshi_probe_renamed.md';
+const PROBE_CONTENT_LONG: string = '# 曜石笔记写链路核实\n\n这是一次性探针文件，用于验证 openat 写入。\n0123456789abcdefghijklmnopqrstuvwxyz\n';
+const PROBE_CONTENT_SHORT: string = '# short';
 
 @Entry
 @Component
@@ -40,6 +51,7 @@ struct ExternalDirProbePage {
   private runner: ExternalDirProbeRunner = createDeviceProbeRunner(
     getContext(this) as common.UIAbilityContext);
   private scanner: VaultDirectoryScanner = createVaultDirScanner();
+  private store: VaultDirFileStore = createVaultDirFileStore();
   private currentUri: string = '';
   private firstMarkdown: string = '';
 
@@ -111,6 +123,7 @@ struct ExternalDirProbePage {
         }
         return step.detail;
       });
+      await this.probeNativeWrite(uri);
       await this.diagnoseListFailures(uri);
     } finally {
       this.busy = false;
@@ -147,6 +160,73 @@ struct ExternalDirProbePage {
       }
       const suffix: string = result.ok ? '' : '（部分成功：' + result.message + '）';
       return `递归 ${result.entries.length} 条 / Markdown ${this.markdownCount} 条` + suffix + '｜前几条：' + preview;
+    });
+  }
+
+  /**
+   * Native 写链路核实（第二轮答复给的形态）：tmp → fsync → renameat 覆盖，
+   * 外加 unlinkat / renameat。全部只作用于探针文件 `PROBE_FILE`，
+   * **末尾必须自己删掉** —— 这次选的目录可能是用户真实的 Download，
+   * 不能往里丢垃圾，也不碰任何已有笔记。
+   */
+  private async probeNativeWrite(uri: string): Promise<void> {
+    await this.stepOf('native_read', async () => {
+      if (this.firstMarkdown.length === 0) {
+        return '目录里没有 Markdown，跳过（不影响写链路核实）';
+      }
+      const result: VaultDirReadResult = this.store.read(uri, this.firstMarkdown);
+      if (!result.ok) {
+        throw new Error(describeVaultDirError(result.code) + ' / ' + result.message);
+      }
+      return `读到 ${result.content.length} 字节`;
+    });
+
+    await this.stepOf('native_write', async () => {
+      const written: VaultDirIoResult = this.store.write(uri, PROBE_FILE, PROBE_CONTENT_LONG);
+      if (!written.ok) {
+        throw new Error(describeVaultDirError(written.code) + ' / ' + written.message);
+      }
+      const back: VaultDirReadResult = this.store.read(uri, PROBE_FILE);
+      if (!back.ok || back.content !== PROBE_CONTENT_LONG) {
+        throw new Error('写后回读不一致（期望 ' + PROBE_CONTENT_LONG.length + ' 字节，实得 ' + back.content.length + '）');
+      }
+      return `新建并回读一致（${PROBE_CONTENT_LONG.length} 字节）`;
+    });
+
+    await this.stepOf('native_overwrite', async () => {
+      const written: VaultDirIoResult = this.store.write(uri, PROBE_FILE, PROBE_CONTENT_SHORT);
+      if (!written.ok) {
+        throw new Error(describeVaultDirError(written.code) + ' / ' + written.message);
+      }
+      const back: VaultDirReadResult = this.store.read(uri, PROBE_FILE);
+      if (!back.ok || back.content !== PROBE_CONTENT_SHORT) {
+        throw new Error('覆盖后残留旧内容（实得 ' + back.content.length + ' 字节）');
+      }
+      return `变短覆盖无残留（${PROBE_CONTENT_LONG.length} → ${PROBE_CONTENT_SHORT.length} 字节）`;
+    });
+
+    await this.stepOf('native_rename', async () => {
+      const renamed: VaultDirIoResult = this.store.rename(uri, PROBE_FILE, PROBE_FILE_RENAMED);
+      if (!renamed.ok) {
+        throw new Error(describeVaultDirError(renamed.code) + ' / ' + renamed.message);
+      }
+      const after: VaultDirReadResult = this.store.read(uri, PROBE_FILE_RENAMED);
+      if (!after.ok) {
+        throw new Error('改名后按新名读不到：' + describeVaultDirError(after.code));
+      }
+      return 'renameat 成功，按新名可读';
+    });
+
+    await this.stepOf('native_delete', async () => {
+      const removed: VaultDirIoResult = this.store.remove(uri, PROBE_FILE_RENAMED);
+      if (!removed.ok) {
+        throw new Error(describeVaultDirError(removed.code) + ' / ' + removed.message);
+      }
+      const gone: VaultDirReadResult = this.store.read(uri, PROBE_FILE_RENAMED);
+      if (gone.ok) {
+        throw new Error('删除后仍能读到，unlinkat 未生效');
+      }
+      return 'unlinkat 成功，探针文件已清理';
     });
   }
 
@@ -230,6 +310,9 @@ struct ExternalDirProbePage {
         }
         return '重启后原子写：' + step.detail;
       });
+      // 写链路也要证明「重激活之后仍然成立」—— 这是 v1.5 每次启动都要做的事，
+      // 只验一次会话是不够的。探针文件同样自清理。
+      await this.probeNativeWrite(this.currentUri);
     } finally {
       this.busy = false;
     }

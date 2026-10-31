@@ -20,11 +20,44 @@ export interface VaultDirListResult {
   entries: string[];
 }
 
+/**
+ * 写 / 删 / 改名的结果。**同样不抛异常**，成功与否看 ok，原因看 code(errno)。
+ *
+ * 为什么这些能力必须下沉 Native：ArkTS 侧 AtomicFile / createStream / unlink /
+ * rename 的 path 契约全是「应用沙箱路径」，对目录 URI 拼出的子路径不成立；
+ * 唯一收 URI 的 `fs.open` 又被官方明确不推荐用于自行拼接 URI（涉及百分号编解码，
+ * 系统不保证自拼 URI 可用）。基于已授权的目录 fd 做 openat/unlinkat/renameat
+ * 走的是同一份 ACL，既不拼 URI 也不碰沙箱路径。
+ */
+export interface VaultDirIoResult {
+  ok: boolean;
+  /** 0 成功；否则 POSIX errno（EBADF=9、EACCES=13、ENOENT=2、EROFS=30…）。 */
+  code: number;
+  message: string;
+}
+
+/** 读文件返回：内容与成功与否同体，省掉调用方一次 round-trip。 */
+export interface VaultDirReadResult extends VaultDirIoResult {
+  /** 失败时为 ''。 */
+  content: string;
+}
+
 declare const nativeVaultDir: {
   /** 只列当前一层。 */
   listDirByFd(fd: number): VaultDirListResult;
   /** 递归列出所有层级。 */
   listDirRecursiveByFd(fd: number): VaultDirListResult;
+  /** 读目录下的一个文本文件（名字相对 dirFd）。 */
+  readFileByFd(fd: number, name: string): VaultDirReadResult;
+  /**
+   * **原子**写：同目录写 `name.<pid>.tmp` → fsync → renameat 覆盖。
+   * 崩溃窗口最多留一个 .tmp 残骸，原文件始终完好。
+   */
+  writeFileByFd(fd: number, name: string, content: string): VaultDirIoResult;
+  /** 删除目录下的一个文件（unlinkat）。无需系统二次授权，持久化 WRITE_MODE 已覆盖。 */
+  deleteByFd(fd: number, name: string): VaultDirIoResult;
+  /** 同目录内改名 / 移动（renameat）。 */
+  renameByFd(fd: number, oldName: string, newName: string): VaultDirIoResult;
 };
 
 export default nativeVaultDir;

@@ -22,12 +22,16 @@
 import { fileIo, fileShare, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import nativeVaultDir, { VaultDirListResult } from 'libvaultdir_napi.so';
+import nativeVaultDir, {
+  VaultDirListResult, VaultDirIoResult, VaultDirReadResult
+} from 'libvaultdir_napi.so';
 import {
   FileShareLike, ExternalDirPickerLike, ProbeFsLike, ProbePolicy, ProbeListOptions,
   ProbeWriteError, ExternalDirProbeRunner
 } from './ExternalDirProbe';
-import { VaultDirFsLike, VaultDirNativeLike, VaultDirectoryScanner } from './VaultDirNative';
+import {
+  VaultDirFsLike, VaultDirNativeLike, VaultDirectoryScanner, VaultDirFileStore
+} from './VaultDirNative';
 
 /** 选目录依赖的系统能力；实施前必须用 canIUse 判一遍（P1 前置项的要求）。 */
 export const FOLDER_SELECTION_SYSCAP: string = 'SystemCapability.FileManagement.UserFileService.FolderSelection';
@@ -181,9 +185,30 @@ export class DeviceVaultDirNative implements VaultDirNativeLike {
   listDirRecursiveByFd(fd: number): VaultDirListResult {
     return nativeVaultDir.listDirRecursiveByFd(fd);
   }
+
+  readFileByFd(fd: number, name: string): VaultDirReadResult {
+    return nativeVaultDir.readFileByFd(fd, name);
+  }
+
+  writeFileByFd(fd: number, name: string, content: string): VaultDirIoResult {
+    return nativeVaultDir.writeFileByFd(fd, name, content);
+  }
+
+  deleteByFd(fd: number, name: string): VaultDirIoResult {
+    return nativeVaultDir.deleteByFd(fd, name);
+  }
+
+  renameByFd(fd: number, oldName: string, newName: string): VaultDirIoResult {
+    return nativeVaultDir.renameByFd(fd, oldName, newName);
+  }
 }
 
 /** 组装一个跑在真机上的目录遍历器。 */
 export function createVaultDirScanner(): VaultDirectoryScanner {
   return new VaultDirectoryScanner(new DeviceVaultDirNative(), new DeviceVaultDirFs());
+}
+
+/** 组装一个跑在真机上的文件读写删改入口。 */
+export function createVaultDirFileStore(): VaultDirFileStore {
+  return new VaultDirFileStore(new DeviceVaultDirNative(), new DeviceVaultDirFs());
 }

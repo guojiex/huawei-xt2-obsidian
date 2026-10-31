@@ -284,10 +284,306 @@ static napi_value list_dir_recursive_by_fd(napi_env env, napi_callback_info info
   return vaultdir_list_common(env, info, true);
 }
 
+/* ==================== 写 / 删 / 改名 ==================== */
+/*
+ * 为什么这一段必须存在：ArkTS 侧「由 URI 生成可写目标」的能力是残缺的。
+ * 官方 2026-10-31 的第二轮答复把口径说死了：
+ *   - `AtomicFile(path)` / `createStream` / `unlink` / `rename` 的 path 契约全是
+ *     「Application sandbox path」，对目录 URI 拼出来的子路径不成立
+ *     （AtomicFile 传 URI 实测 code=-1，与答复吻合）；
+ *   - 剩下的可写入口只有 `fs.open(childUri, WRITE_ONLY|CREATE)`，但官方明确
+ *     **不推荐应用自行拼接 URI**（涉及百分号编解码，系统不保证自拼 URI 可用）。
+ * 所以整个写闭环下沉到 Native：拿到的 dirFd 已经是「授权过的目录」，在其上
+ * openat/unlinkat/renameat 走的是同一份 ACL，既不拼 URI 也不碰沙箱路径。
+ */
+
+/** 取任意个数的 JS 参数；个数不足或类型不对返回 false。 */
+static bool vaultdir_args(napi_env env, napi_callback_info info, size_t expected,
+                          napi_value *argv) {
+  size_t argc = expected;
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < expected) {
+    return false;
+  }
+  return true;
+}
+
+/** 从 napi_value 取字符串到堆上 buffer；调用方 free。失败返回 NULL。 */
+static char *vaultdir_to_utf8(napi_env env, napi_value value, size_t *out_len) {
+  size_t length = 0;
+  if (napi_get_value_string_utf8(env, value, NULL, 0, &length) != napi_ok) {
+    return NULL;
+  }
+  char *buffer = (char *)malloc(length + 1);
+  if (buffer == NULL) {
+    return NULL;
+  }
+  if (napi_get_value_string_utf8(env, value, buffer, length + 1, &length) != napi_ok) {
+    free(buffer);
+    return NULL;
+  }
+  buffer[length] = '\0';
+  if (out_len != NULL) {
+    *out_len = length;
+  }
+  return buffer;
+}
+
+/** ok / code / message 三元结果，写删改名都用它。 */
+static napi_value vaultdir_build_simple(napi_env env, int error) {
+  napi_value result = NULL;
+  if (napi_create_object(env, &result) != napi_ok) {
+    return NULL;
+  }
+  napi_value ok_value = NULL;
+  napi_value code_value = NULL;
+  napi_value message_value = NULL;
+  napi_get_boolean(env, error == 0, &ok_value);
+  napi_create_int32(env, error, &code_value);
+  const char *message = error == 0 ? "" : strerror(error);
+  napi_create_string_utf8(env, message, NAPI_AUTO_LENGTH, &message_value);
+  napi_set_named_property(env, result, "ok", ok_value);
+  napi_set_named_property(env, result, "code", code_value);
+  napi_set_named_property(env, result, "message", message_value);
+  return result;
+}
+
+/** { ok, code, message, content } —— 读文本文件专用。 */
+static napi_value vaultdir_build_read(napi_env env, int error, const char *content) {
+  napi_value result = vaultdir_build_simple(env, error);
+  if (result == NULL) {
+    return NULL;
+  }
+  napi_value text_value = NULL;
+  if (napi_create_string_utf8(env, content == NULL ? "" : content, NAPI_AUTO_LENGTH,
+                              &text_value) == napi_ok) {
+    napi_set_named_property(env, result, "content", text_value);
+  }
+  return result;
+}
+
+/* 带 EINTR 重试的完整写：write 可能被信号打断或短写，必须循环。 */
+static bool vaultdir_write_all(int fd, const char *data, size_t length, int *error) {
+  size_t offset = 0;
+  while (offset < length) {
+    ssize_t written = write(fd, data + offset, length - offset);
+    if (written < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      *error = errno;
+      return false;
+    }
+    offset += (size_t)written;
+  }
+  return true;
+}
+
+/*
+ * readFileByFd(dirFd, name) —— 读目录下的一个文本文件。
+ * 对应「打开一篇笔记」；名字是**相对**目录 fd 的，不含任何路径分隔符以外的东西。
+ */
+static napi_value read_file_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[2] = {NULL, NULL};
+  if (!vaultdir_args(env, info, 2, argv)) {
+    return vaultdir_build_read(env, EINVAL, NULL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_read(env, EBADF, NULL);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_read(env, EINVAL, NULL);
+  }
+
+  int file_fd = openat(fd, name, O_RDONLY | O_CLOEXEC);
+  if (file_fd < 0) {
+    int error = errno;
+    free(name);
+    return vaultdir_build_read(env, error, NULL);
+  }
+  free(name);
+
+  /* 一次读到尾。笔记文件量级是 KB~百 KB，不做流式。 */
+  size_t capacity = 8192;
+  size_t length = 0;
+  char *buffer = (char *)malloc(capacity);
+  if (buffer == NULL) {
+    close(file_fd);
+    return vaultdir_build_read(env, ENOMEM, NULL);
+  }
+  int error = 0;
+  while (true) {
+    if (length + 1 >= capacity) {
+      size_t grown = capacity * 2;
+      char *resized = (char *)realloc(buffer, grown);
+      if (resized == NULL) {
+        error = ENOMEM;
+        break;
+      }
+      buffer = resized;
+      capacity = grown;
+    }
+    ssize_t got = read(file_fd, buffer + length, capacity - length - 1);
+    if (got < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      error = errno;
+      break;
+    }
+    if (got == 0) {
+      break;
+    }
+    length += (size_t)got;
+  }
+  close(file_fd);
+
+  if (error != 0) {
+    free(buffer);
+    return vaultdir_build_read(env, error, NULL);
+  }
+  buffer[length] = '\0';
+  napi_value result = vaultdir_build_read(env, 0, buffer);
+  free(buffer);
+  return result;
+}
+
+/*
+ * writeFileByFd(dirFd, name, content) —— **原子**写。
+ *
+ * 官方推荐的形态（答复 Q3(a)）：同目录写 tmp → fsync → renameat 覆盖。
+ * renameat 在同一目录内是 POSIX 原子语义：崩溃窗口里最多留下一个 .tmp 残骸，
+ * 原文件始终完好。这正是 AtomicFile 在沙箱内做的事，只是我们用 fd 重做了一遍。
+ */
+static napi_value write_file_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[3] = {NULL, NULL, NULL};
+  if (!vaultdir_args(env, info, 3, argv)) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_simple(env, EBADF);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  size_t content_len = 0;
+  char *content = vaultdir_to_utf8(env, argv[2], &content_len);
+  if (name == NULL || content == NULL) {
+    free(name);
+    free(content);
+    return vaultdir_build_simple(env, EINVAL);
+  }
+
+  /* tmp 名字带上 pid：同一个目录被两个进程/两次调用并发写时不会互相踩。
+     name 必须活到 renameat，不能在构造 tmp 之后就 free。 */
+  char tmp_name[1024];
+  snprintf(tmp_name, sizeof(tmp_name), "%s.%d.tmp", name, (int)getpid());
+
+  int error = 0;
+  int tmp_fd = openat(fd, tmp_name, O_CREAT | O_WRONLY | O_TRUNC | O_CLOEXEC, 0666);
+  if (tmp_fd < 0) {
+    error = errno;
+    free(content);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+
+  if (!vaultdir_write_all(tmp_fd, content, content_len, &error)) {
+    close(tmp_fd);
+    unlinkat(fd, tmp_name, 0);
+    free(content);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  free(content);
+
+  if (fsync(tmp_fd) != 0) {
+    error = errno;
+    close(tmp_fd);
+    unlinkat(fd, tmp_name, 0);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  close(tmp_fd);
+
+  if (renameat(fd, tmp_name, fd, name) != 0) {
+    error = errno;
+    unlinkat(fd, tmp_name, 0);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+
+  /*
+   * 目录项落盘：renameat 返回成功只保证命名空间已换，断电时目录项可能还在
+   * page cache 里。这一步在某些 DFS/FUSE 挂载点上会返回 EINVAL（不支持对目录
+   * fd 做 fsync）—— 此时数据本身已经在 rename 前 fsync 过了，内容不丢，
+   * 所以只当作软警告，不把整个写判死。
+   */
+  if (fsync(fd) != 0 && errno != EINVAL) {
+    free(name);
+    return vaultdir_build_simple(env, errno);
+  }
+
+  free(name);
+  return vaultdir_build_simple(env, 0);
+}
+
+/** deleteByFd(dirFd, name) —— 删目录下的一个文件，对应 unlink。 */
+static napi_value delete_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[2] = {NULL, NULL};
+  if (!vaultdir_args(env, info, 2, argv)) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_simple(env, EBADF);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int error = 0;
+  if (unlinkat(fd, name, 0) != 0) {
+    error = errno;
+  }
+  free(name);
+  return vaultdir_build_simple(env, error);
+}
+
+/** renameByFd(dirFd, oldName, newName) —— 同目录内改名 / 移动。 */
+static napi_value rename_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[3] = {NULL, NULL, NULL};
+  if (!vaultdir_args(env, info, 3, argv)) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_simple(env, EBADF);
+  }
+  char *old_name = vaultdir_to_utf8(env, argv[1], NULL);
+  char *new_name = vaultdir_to_utf8(env, argv[2], NULL);
+  if (old_name == NULL || new_name == NULL) {
+    free(old_name);
+    free(new_name);
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int error = 0;
+  if (renameat(fd, old_name, fd, new_name) != 0) {
+    error = errno;
+  }
+  free(old_name);
+  free(new_name);
+  return vaultdir_build_simple(env, error);
+}
+
 static napi_value vaultdir_register_module(napi_env env, napi_value exports) {
   napi_property_descriptor properties[] = {
       {"listDirByFd", NULL, list_dir_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"listDirRecursiveByFd", NULL, list_dir_recursive_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"readFileByFd", NULL, read_file_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"writeFileByFd", NULL, write_file_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"deleteByFd", NULL, delete_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"renameByFd", NULL, rename_by_fd, NULL, NULL, NULL, napi_default, NULL},
   };
   if (napi_define_properties(env, exports,
                              sizeof(properties) / sizeof(properties[0]),

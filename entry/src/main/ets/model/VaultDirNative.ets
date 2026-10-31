@@ -27,6 +27,25 @@ export interface VaultDirListResult {
 export interface VaultDirNativeLike {
   listDirByFd(fd: number): VaultDirListResult;
   listDirRecursiveByFd(fd: number): VaultDirListResult;
+  readFileByFd(fd: number, name: string): VaultDirReadResult;
+  writeFileByFd(fd: number, name: string, content: string): VaultDirIoResult;
+  deleteByFd(fd: number, name: string): VaultDirIoResult;
+  renameByFd(fd: number, oldName: string, newName: string): VaultDirIoResult;
+}
+
+/** Native 返回的 { ok, code, message }。失败统一走 struct 而不是 throw。 */
+export interface VaultDirIoResult {
+  ok: boolean;
+  code: number;
+  message: string;
+}
+
+/** readFileByFd 的返回：内容与成功与否同体。 */
+export interface VaultDirReadResult {
+  ok: boolean;
+  code: number;
+  message: string;
+  content: string;
 }
 
 /** 只需要能开目录 fd 并关掉，其余交给 Native。 */
@@ -185,4 +204,95 @@ function hilogWarnOnce(text: string): void {
   // ArkTS 不允许在 import 之外动态 require；核实阶段直接用全局 hilog。
   // 单测注入的 fake fs 不会失败，所以这条分支在 Node 侧不会走到。
   console.warn('[VaultDirectoryScanner] ' + text);
+}
+
+/**
+ * 目录 fd 的一次性借用：开 → 用 → 关。
+ *
+ * 所有文件级操作都复用这一层：上层永远传 URI 与「相对名字」，绝不碰 URI 拼接。
+ * 官方明确说过系统不保证应用自拼 URI 的可用性（涉及百分号编解码），
+ * 所以我们坚持「只在已授权的目录 fd 上做相对操作」这一条路。
+ */
+abstract class VaultDirSession {
+  protected nativeImpl: VaultDirNativeLike;
+  protected fsImpl: VaultDirFsLike;
+
+  constructor(nativeImpl: VaultDirNativeLike, fsImpl: VaultDirFsLike) {
+    this.nativeImpl = nativeImpl;
+    this.fsImpl = fsImpl;
+  }
+
+  /** 在目录 fd 上跑一段逻辑。开 fd 失败时返回 code，而不是把异常抛给页面。 */
+  protected withDirFd<T>(uri: string, action: (fd: number) => T, onOpenFailed: (code: number) => T): T {
+    let fd: number = -1;
+    try {
+      fd = this.fsImpl.openDirFd(uri);
+    } catch (error) {
+      return onOpenFailed(VaultDirectoryScanner.errorCodeOf(error));
+    }
+    try {
+      return action(fd);
+    } finally {
+      try {
+        this.fsImpl.closeFd(fd);
+      } catch (error) {
+        hilogWarnOnce('vault dir fd close failed: ' + VaultDirectoryScanner.errorCodeOf(error));
+      }
+    }
+  }
+
+  protected ioFailure(code: number): VaultDirIoResult {
+    return { ok: false, code: code, message: describeVaultDirError(code) };
+  }
+}
+
+/**
+ * 读写删改的对外入口。对应 v1.5 的四个业务动作：
+ * 打开笔记 / 保存笔记 / 删除笔记 / 重命名笔记。
+ *
+ * 每个方法都返回 struct 而非抛异常 —— 页面要能把 errno 直接显示出来做核实，
+ * 抛出去会被 ArkTS 的 Error 包装吃干净（这是之前 AtomicFile 报 code=-1 时
+ * 我们完全无法定位的原因）。
+ */
+export class VaultDirFileStore extends VaultDirSession {
+  /** 读一篇笔记。名字是**相对于被授权目录**的相对路径，可含子目录分隔符。 */
+  read(uri: string, name: string): VaultDirReadResult {
+    return this.withDirFd<VaultDirReadResult>(
+      uri,
+      (fd: number): VaultDirReadResult => this.nativeImpl.readFileByFd(fd, name),
+      (code: number): VaultDirReadResult => {
+        return { ok: false, code: code, message: describeVaultDirError(code), content: '' };
+      }
+    );
+  }
+
+  /**
+   * 原子保存一篇笔记。Native 侧是「同目录 tmp → fsync → renameat」，
+   * 崩溃时最多留一个 .tmp 残骸，原内容不会半截。
+   */
+  write(uri: string, name: string, content: string): VaultDirIoResult {
+    return this.withDirFd<VaultDirIoResult>(
+      uri,
+      (fd: number): VaultDirIoResult => this.nativeImpl.writeFileByFd(fd, name, content),
+      (code: number): VaultDirIoResult => this.ioFailure(code)
+    );
+  }
+
+  /** 删除。持久化授权里的 WRITE_MODE 已覆盖子树删除，系统不再逐次确认。 */
+  remove(uri: string, name: string): VaultDirIoResult {
+    return this.withDirFd<VaultDirIoResult>(
+      uri,
+      (fd: number): VaultDirIoResult => this.nativeImpl.deleteByFd(fd, name),
+      (code: number): VaultDirIoResult => this.ioFailure(code)
+    );
+  }
+
+  /** 同目录内改名 / 移动。 */
+  rename(uri: string, oldName: string, newName: string): VaultDirIoResult {
+    return this.withDirFd<VaultDirIoResult>(
+      uri,
+      (fd: number): VaultDirIoResult => this.nativeImpl.renameByFd(fd, oldName, newName),
+      (code: number): VaultDirIoResult => this.ioFailure(code)
+    );
+  }
 }
