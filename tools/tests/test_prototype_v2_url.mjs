@@ -181,7 +181,7 @@ test('single-screen overflow contains no focus or dual-layout actions, including
 });
 test('all six preset/rotation combinations use the effective layout for navigation actions',()=>{
  for(const [preset,rotated,isPhone]of [['phone',false,true],['phone',true,false],['double',false,false],['double',true,false],['wide',false,false],['wide',true,false]]){const f=fixture();f.run('viewportRotated='+rotated+';setViewport('+JSON.stringify(preset)+')');assert.equal(f.run('phone'),isPhone);if(isPhone){assert(!f.run('validReferenceDrag()'));assert(!f.get('leftMore').open);assert(!f.get('rightMore').open);}else{f.run('toggleFocus()');assert(f.run('focused'));f.run('toggleFocus()');assert(!f.run('focused'));}}
- const f=fixture();f.run("setViewport('wide');toggleFocus();$('mobileMore').open=true;setViewport('phone')");assert.equal(f.run('focused'),false);assert(!f.get('window').classList.contains('focus'));f.get('rotateViewport').onclick();assert(!f.run('phone'));assert.equal(f.get('mobileMore').open,false);
+ const f=fixture();f.run("setViewport('wide');toggleFocus();$('mobileMore').open=true;setViewport('phone')");assert.equal(f.run('focused'),false);assert(!f.get('window').classList.contains('focus'));f.get('rotateViewport').onclick();assert(!f.run('phone'));assert.equal(f.get('mobileMore').open,true);f.run('applyViewportGeometry()');assert.equal(f.get('mobileMore').open,true); // Workspace menu stays available after leaving the phone layout.
 });
 
 test('phone hamburger stays interactive while the pushed note body is inert and can close navigation',()=>{
