@@ -14,7 +14,7 @@ test('save-success feedback stays hidden until the simulated save succeeds, then
  assert.match(code,/scheduleSaveFeedback\(\).*setTimeout\(\(\)=>\{const feedback=saveFeedback\(\);feedback\.classList\.remove\('hidden'\);saveFeedbackHideTimer=setTimeout\(\(\)=>feedback\.classList\.add\('hidden'\),3500\);\},800\)/);
  assert.match(code,/event\.target===\$\('editor'\)\|\|event\.target===\$\('rightEditor'\)/);
 });
-function fixture(href='file:///repo/docs/prototype/v2/index.html',storage=new Map()){
+function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&vault=reading&left=reading_stream&right=reading_reading_journal',storage=new Map()){
  const nodes=new Map(),events={document:{},window:{}},pending=[];
  const listen=(area,key,fn)=>(events[area][key]??=[]).push(fn);
  const get=id=>{if(!nodes.has(id))nodes.set(id,{clientWidth:1200,clientHeight:300,scrollHeight:1000,scrollTop:0,innerHTML:'',value:'',textContent:'',dataset:{},attrs:{},style:{setProperty(k,v){this[k]=v},removeProperty(k){delete this[k]}},classList:{values:new Set(),contains(k){return this.values.has(k)},add(...keys){keys.forEach(k=>this.values.add(k))},remove(...keys){keys.forEach(k=>this.values.delete(k))},toggle(k,on=!this.values.has(k)){on?this.values.add(k):this.values.delete(k);return on}},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){return[]},listeners:{},addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)},dispatch(type,event){for(const fn of this.listeners[type]||[])fn(event)},getBoundingClientRect(){return this.rect||(/^(formatBtn|rightFormatBtn)$/.test(id)?{left:100,right:148,top:700,bottom:748,width:48,height:48}:id==='formatDialog'?{left:0,right:360,top:0,bottom:400,width:360,height:400}:{left:0,right:1200,top:0,bottom:800,width:1200,height:800})},focus(){this.focused=true},select(){this.selected=true},contains(){return false},removeAttribute(k){delete this.attrs[k];if(k==='src')this.src=''},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=start;this.selectionEnd=start+text.length},show(){this.open=true},showModal(){this.open=true},close(){this.open=false}});return nodes.get(id);};
@@ -43,7 +43,7 @@ test('only allowlisted UI metadata appears in URL, never drafts or file content'
  const f=fixture();f.run("setEditing(true,false);$('editor').value='SECRET_NOTE_BODY';$('editor').oninput();$('feedbackSteps').value='SECRET_FEEDBACK';$('feedbackSteps').oninput();syncUrl('push')");assert(!decodeURIComponent(f.href()).includes('SECRET'));const g=fixture(f.href());assert(!g.run('note(current).text').includes('SECRET_NOTE_BODY'));
 });
 test('invalid or cross-vault note ids and malformed configuration fall back safely',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&vault=projects&left=welcome&right=../../x&preset=bogus&theme=%3Cscript%3E&nw=Infinity&cw=-3&collapsed=oops&panel=fileaction&file=missing');assert.equal(f.run('activeVault'),'projects');assert.equal(f.run('current'),'projects_inbox');assert.equal(f.run('reference'),'projects_todo');assert.equal(f.run('viewportPreset'),'wide');assert.equal(f.run('document.body.dataset.theme'),'light');assert.equal(f.run('widths.nav'),1/3);assert(!f.get('fileActionDialog').open);
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&vault=projects&left=welcome&right=../../x&preset=bogus&theme=%3Cscript%3E&nw=Infinity&cw=-3&collapsed=oops&panel=fileaction&file=missing');assert.equal(f.run('activeVault'),'projects');assert.equal(f.run('current'),'projects_inbox');assert.equal(f.run('reference'),'projects_todo');assert.equal(f.run('viewportPreset'),'wide');assert.equal(f.run('document.body.dataset.theme'),'light');assert.equal(f.run('widths.nav'),1/3);assert(!f.get('fileActionDialog').open);
 });
 test('share format and page, format panel, and non-destructive file action can be reopened from links',()=>{
  const f=fixture();f.get('shareBtn').onclick();f.get('shareScope').value='vault';f.get('shareScope').onchange();f.get('shareFile').onclick();f.run('syncUrl()');const g=fixture(f.href());assert(g.get('shareDialog').open);assert.equal(g.get('shareScope').value,'vault');assert.equal(g.run('shareStage'),'file');assert(g.get('sharePreview').innerHTML.includes('.zip'));
@@ -59,7 +59,7 @@ test('Git share design state exposes scope-specific remote link previews without
   f.get('shareBack').onclick();
  }
  f.run('syncUrl()');const g=fixture(f.href());assert(g.get('shareDialog').open);assert.equal(g.run('gitShareDemo'),true);assert.equal(g.run('shareStage'),'formats');assert(!g.get('shareRemoteLink').classList.contains('hidden'));
- const h=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&gitShareDemo=1&panel=share&scope=vault&stage=link');assert.equal(h.run('shareStage'),'link');assert(h.get('sharePreview').innerHTML.includes('仓库首页链接'));assert.equal(new URL(h.href()).searchParams.get('gitShareDemo'),'1');
+ const h=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&gitShareDemo=1&panel=share&scope=vault&stage=link');assert.equal(h.run('shareStage'),'link');assert(h.get('sharePreview').innerHTML.includes('仓库首页链接'));assert.equal(new URL(h.href()).searchParams.get('gitShareDemo'),'1');
  g.get('gitShareDemo').checked=false;g.get('gitShareDemo').onchange();assert(g.get('shareRemoteLink').classList.contains('hidden'));assert.equal(g.run('shareStage'),'formats');
 });
 test('no-note demo toggle grays out note-scoped controls and restores the selection',()=>{
@@ -124,7 +124,7 @@ test('URL overrides other browser width preferences and keeps collapsed folders 
 });
 
 test('reported phone link renders relative sample images when switched from edit to preview',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&rotate=0&theme=light&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&rm=preview&dual=1&focus=0&side=files&nav=0&nw=0.2582&cw=0.5000&view=notes&settings=general&detail=0&history=0&panel=none&scroll_editor=1135');
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&rotate=0&theme=light&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&rm=preview&dual=1&focus=0&side=files&nav=0&nw=0.2582&cw=0.5000&view=notes&settings=general&detail=0&history=0&panel=none&scroll_editor=1135');
  const source=f.get('editor').value;assert(source.includes('![长图排版示例](../50_Assets/长图排版示例.svg)'));assert(f.run('editing'));f.get('previewTab').onclick();assert(!f.run('editing'));assert.match(f.get('article').innerHTML,/<img[^>]*src="data:image\/svg\+xml;base64,[^"]+"[^>]*alt="长图排版示例">/);assert(!f.get('article').innerHTML.includes('![长图排版示例]'));assert.equal(f.get('editor').value,source);
 });
 test('right pane and share preview resolve images against their own note folder',()=>{
@@ -136,7 +136,7 @@ test('asset lookup handles encoded paths and rejects root escape without reading
 });
 
 test('phone navigation pushes the retained workspace and reverses without losing editing state',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&nav=0');
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&nav=0');
  const editor=f.get('editor'),workspace=f.get('noteWorkspace');editor.value='动画中保留的编辑内容';editor.oninput();editor.setSelectionRange(4,7);editor.scrollTop=120;
  assert.equal(f.get('navSidebar').inert,true);assert.equal(workspace.inert,false);
  for(let i=0;i<3;i++){f.get('menu').onclick();assert.equal(f.get('navSidebar').inert,false);assert.equal(workspace.inert,false);assert.equal(f.get('notePanes').inert,true);assert.equal(f.get('menu').attrs['aria-expanded'],'true');f.get('closeNav').onclick();assert.equal(f.get('navSidebar').inert,true);assert.equal(workspace.inert,false);}
@@ -152,7 +152,7 @@ test('entering the two-pane width collapses navigation when both panes are enabl
 });
 
 test('double layout defaults to two panes and honors an explicit navigation URL state',()=>{
- const closed=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=double&dual=1');assert.equal(closed.run('viewport'),'double');assert.equal(closed.get('window').classList.contains('nav-hidden'),true);assert.equal(closed.run('referenceShown()'),true);const open=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=double&dual=1&nav=1');assert.equal(open.get('window').classList.contains('nav-hidden'),false);assert.equal(open.run('referenceShown()'),false);
+ const closed=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=double&dual=1');assert.equal(closed.run('viewport'),'double');assert.equal(closed.get('window').classList.contains('nav-hidden'),true);assert.equal(closed.run('referenceShown()'),true);const open=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=double&dual=1&nav=1');assert.equal(open.get('window').classList.contains('nav-hidden'),false);assert.equal(open.run('referenceShown()'),false);
 });
 
 test('frontmatter stays editable but is hidden in both previews and share image',()=>{
@@ -170,14 +170,14 @@ test('inline tags render outside code and links, keeping nested/unicode tags and
 });
 
 test('phone hides redundant pane switching for same note and preserves current edit/preview controls',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&vault=reading&left=reading_stream&right=reading_stream&active=right&lm=edit&rm=preview');assert(f.get('switchPane').classList.contains('hidden'));f.get('switchPane').onclick();assert.equal(f.run('activePane'),'right');f.get('rightEditTab').onclick();assert(f.run('rightEditing'));f.get('rightPreviewTab').onclick();assert(!f.run('rightEditing'));assert(f.get('switchPane').classList.contains('hidden'));
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_stream&active=right&lm=edit&rm=preview');assert(f.get('switchPane').classList.contains('hidden'));f.get('switchPane').onclick();assert.equal(f.run('activePane'),'right');f.get('rightEditTab').onclick();assert(f.run('rightEditing'));f.get('rightPreviewTab').onclick();assert(!f.run('rightEditing'));assert(f.get('switchPane').classList.contains('hidden'));
 });
 test('phone offers document switching only for different notes and labels the destination',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&rm=preview');assert(!f.get('switchPane').classList.contains('hidden'));assert(f.get('switchPane').attrs['aria-label'].includes('读书对话练习'));f.get('switchPane').onclick();assert.equal(f.run('activePane'),'right');assert(f.get('switchPane').attrs['aria-label'].includes('基础排版'));assert(f.run('editing'));assert(!f.run('rightEditing'));f.run("openInPane('reading_stream','right')");assert(f.get('switchPane').classList.contains('hidden'));f.run("openInPane('reading_reading_journal','right');setViewport('wide')");assert(f.get('switchPane').classList.contains('hidden'));f.run("setViewport('phone')");assert(!f.get('switchPane').classList.contains('hidden'));f.run("reference='';updatePaneChrome()");assert(f.get('switchPane').classList.contains('hidden'));
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&rm=preview');assert(!f.get('switchPane').classList.contains('hidden'));assert(f.get('switchPane').attrs['aria-label'].includes('读书对话练习'));f.get('switchPane').onclick();assert.equal(f.run('activePane'),'right');assert(f.get('switchPane').attrs['aria-label'].includes('基础排版'));assert(f.run('editing'));assert(!f.run('rightEditing'));f.run("openInPane('reading_stream','right')");assert(f.get('switchPane').classList.contains('hidden'));f.run("openInPane('reading_reading_journal','right');setViewport('wide')");assert(f.get('switchPane').classList.contains('hidden'));f.run("setViewport('phone')");assert(!f.get('switchPane').classList.contains('hidden'));f.run("reference='';updatePaneChrome()");assert(f.get('switchPane').classList.contains('hidden'));
 });
 
 test('single-screen overflow contains no focus or dual-layout actions, including restored legacy links',()=>{
- const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];assert(!menu.includes('mobileFocus'));assert(!menu.includes('mobileDual'));assert(menu.includes('mobileShare'));assert(menu.includes('mobileSettings'));assert(menu.includes('switchPane'));const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&focus=1');assert.equal(f.run('focused'),false);assert(!f.get('window').classList.contains('focus'));const before=f.run('referenceEnabled');f.run('toggleFocus();toggleReference();previewSameNote()');assert.equal(f.run('focused'),false);assert.equal(f.run('referenceEnabled'),before);
+ const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];assert(!menu.includes('mobileFocus'));assert(!menu.includes('mobileDual'));assert(menu.includes('mobileShare'));assert(menu.includes('mobileSettings'));assert(menu.includes('switchPane'));const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&focus=1');assert.equal(f.run('focused'),false);assert(!f.get('window').classList.contains('focus'));const before=f.run('referenceEnabled');f.run('toggleFocus();toggleReference();previewSameNote()');assert.equal(f.run('focused'),false);assert.equal(f.run('referenceEnabled'),before);
 });
 test('all six preset/rotation combinations use the effective layout for navigation actions',()=>{
  for(const [preset,rotated,isPhone]of [['phone',false,true],['phone',true,false],['double',false,false],['double',true,false],['wide',false,false],['wide',true,false]]){const f=fixture();f.run('viewportRotated='+rotated+';setViewport('+JSON.stringify(preset)+')');assert.equal(f.run('phone'),isPhone);if(isPhone){assert(!f.run('validReferenceDrag()'));assert(!f.get('leftMore').open);assert(!f.get('rightMore').open);}else{f.run('toggleFocus()');assert(f.run('focused'));f.run('toggleFocus()');assert(!f.run('focused'));}}
@@ -185,18 +185,18 @@ test('all six preset/rotation combinations use the effective layout for navigati
 });
 
 test('phone hamburger stays interactive while the pushed note body is inert and can close navigation',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&nav=0');f.get('menu').onclick();assert(f.get('window').classList.contains('nav-open'));assert.equal(f.get('noteWorkspace').inert,false);assert.equal(f.get('notePanes').inert,true);assert.equal(f.get('noteFooter').inert,true);assert.equal(f.get('mobileMore').inert,true);assert.notEqual(f.get('menu').inert,true);f.get('menu').onclick();assert(!f.get('window').classList.contains('nav-open'));assert.equal(f.get('notePanes').inert,false);assert.equal(f.get('noteFooter').inert,false);assert.equal(f.get('mobileMore').inert,false);assert.equal(f.get('navSidebar').inert,true);
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&nav=0');f.get('menu').onclick();assert(f.get('window').classList.contains('nav-open'));assert.equal(f.get('noteWorkspace').inert,false);assert.equal(f.get('notePanes').inert,true);assert.equal(f.get('noteFooter').inert,true);assert.equal(f.get('mobileMore').inert,true);assert.notEqual(f.get('menu').inert,true);f.get('menu').onclick();assert(!f.get('window').classList.contains('nav-open'));assert.equal(f.get('notePanes').inert,false);assert.equal(f.get('noteFooter').inert,false);assert.equal(f.get('mobileMore').inert,false);assert.equal(f.get('navSidebar').inert,true);
 });
 
 test('hamburger exits focus and reveals navigation',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=wide&focus=1&nav=0');
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=wide&focus=1&nav=0');
  assert(f.run('focused'));assert(f.get('window').classList.contains('focus'));
  f.get('menu').onclick();
  assert(!f.run('focused'));assert(!f.get('window').classList.contains('focus'));assert(!f.get('window').classList.contains('nav-hidden'));
 });
 
 test('double-screen focus hamburger aligns navigation with the visible left pane',()=>{
- const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&preset=double&vault=reading&focus=1&nav=0&side=chapters&active=right&left=reading_stream&right=reading_reading_journal');
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=double&vault=reading&focus=1&nav=0&side=chapters&active=right&left=reading_stream&right=reading_reading_journal');
  assert(f.run('focused'));assert.equal(f.run('activePane'),'right');
  f.get('menu').onclick();
  assert(!f.run('focused'));assert(!f.get('window').classList.contains('nav-hidden'));
@@ -215,7 +215,7 @@ test('preview scaling is pane-local, hides reset at 100 and leaves source/editor
  const f=fixture();const source=f.get('editor').value;f.run("setEditing(false,false);setRightEditing(false,false);setPreviewZoom('left',125)");assert.equal(f.get('article').style['--preview-scale'],1.25);assert.equal(f.get('reference').style['--preview-scale'],1);assert(!f.get('leftZoomReset').classList.contains('hidden'));assert(f.get('rightZoomReset').classList.contains('hidden'));assert.equal(f.get('editor').style['--preview-scale'],undefined);assert.equal(f.get('editor').value,source);f.get('leftZoomReset').onclick();assert.equal(f.run('previewZoom.left'),100);assert(f.get('leftZoomReset').classList.contains('hidden'));f.run('setEditing(true,false)');assert(f.get('leftZoomControls').classList.contains('hidden'));f.run('setEditing(false,false)');assert(!f.get('leftZoomControls').classList.contains('hidden'));
 });
 test('zoom list and URL restore independent percentages and reject malformed values',()=>{
- const f=fixture();f.get('leftZoom').value='150';f.get('leftZoom').onchange();f.run("setPreviewZoom('right',83);syncUrl()");const g=fixture(f.href());assert.equal(g.run('previewZoom.left'),150);assert.equal(g.run('previewZoom.right'),83);assert(g.get('rightZoom').innerHTML.includes('value="83"'));for(const [value,want]of [['NaN',100],['Infinity',100],['',100],['-1',50],['999',200]]){const h=fixture('file:///repo/index.html?ui=2&lz='+value);assert.equal(h.run('previewZoom.left'),want);}
+ const f=fixture();f.get('leftZoom').value='150';f.get('leftZoom').onchange();f.run("setPreviewZoom('right',83);syncUrl()");const g=fixture(f.href());assert.equal(g.run('previewZoom.left'),150);assert.equal(g.run('previewZoom.right'),83);assert(g.get('rightZoom').innerHTML.includes('value="83"'));for(const [value,want]of [['NaN',100],['Infinity',100],['',100],['-1',50],['999',200]]){const h=fixture('file:///repo/index.html?ui=2&experience=professional&lz='+value);assert.equal(h.run('previewZoom.left'),want);}
 });
 test('two-finger pinch scales only preview and cancellation stops further changes',()=>{
  const f=fixture();f.run('setEditing(false,false)');const scroll=f.get('writingScroll');let prevented=0;const event=d=>({touches:[{clientX:0,clientY:50},{clientX:d,clientY:50}],preventDefault(){prevented++}});scroll.dispatch('touchstart',event(100));scroll.dispatch('touchmove',event(150));assert.equal(f.run('previewZoom.left'),150);assert.equal(f.run('previewZoom.right'),100);assert.equal(prevented,2);scroll.dispatch('touchcancel',{});scroll.dispatch('touchmove',event(200));assert.equal(f.run('previewZoom.left'),150);scroll.dispatch('touchstart',event(100));scroll.dispatch('touchmove',event(1000));assert.equal(f.run('previewZoom.left'),200);scroll.dispatch('touchend',{});f.run('setEditing(true,false)');scroll.dispatch('touchstart',event(100));scroll.dispatch('touchmove',event(50));assert.equal(f.run('previewZoom.left'),200);
@@ -484,4 +484,11 @@ test('import library switches sources and associates a demo directory with safe 
 });
 test('Git import validates HTTPS URL and adds only demo metadata without storing remote details',()=>{
  const f=fixture();f.run('openImportVault()');f.get('importGitTab').onclick();for(const value of ['oops','http://example.com/user/repo','https://secret@example.com/user/repo','https://example.com']){f.get('importGitUrl').value=value;f.get('importGitUrl').oninput();assert(f.get('confirmImportVault').disabled,value);}f.get('importGitUrl').value='https://example.com/user/demo.git';f.get('importGitUrl').oninput();assert(!f.get('confirmImportVault').disabled);f.get('confirmImportVault').onclick();assert.equal(f.run('libraries.find(v=>v.id===activeVault).type'),'git');assert.equal(f.run('libraries.find(v=>v.id===activeVault).name'),'demo');assert(!f.href().includes('example.com'));f.run("openVaultAction('delete',activeVault)");assert(f.get('vaultActionDescription').textContent.includes('远端仓库不受影响'));f.run('openImportVault()');f.event('document','keydown',{key:'Escape',preventDefault(){}});assert(!f.get('importVaultDialog').open);
+});
+
+test('first launch and missing or invalid mode choose simple; explicit professional remains available',()=>{
+ for(const href of ['file:///repo/docs/prototype/v2/index.html','file:///repo/docs/prototype/v2/index.html?ui=2','file:///repo/docs/prototype/v2/index.html?ui=2&experience=invalid']){
+  const f=fixture(href);assert.equal(f.run('experience'),'simple');assert.equal(f.run('referenceShown()'),false);assert(f.get('experienceSimple').checked);assert(f.get('window').classList.contains('simple-mode'));
+ }
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&dual=1');assert.equal(f.run('experience'),'professional');assert(f.get('experienceProfessional').checked);assert.equal(f.run('referenceShown()'),true);
 });
