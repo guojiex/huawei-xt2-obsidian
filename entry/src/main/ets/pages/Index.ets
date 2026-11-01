@@ -2715,17 +2715,26 @@ struct Index {
       !this.editorBridge.ready) {
       return;
     }
+    const vaultId: string = this.currentVaultId;
+    const targetPath: string = this.currentFilePath;
+    const leftRequestId: number = this.leftOpenRequestId;
+    const rightRequestId: number = this.rightOpenRequestId;
+    const isCurrentMirrorTarget = (): boolean => this.currentVaultId === vaultId &&
+      this.currentFilePath === targetPath && this.rightFilePath === targetPath &&
+      this.leftOpenRequestId === leftRequestId && this.rightOpenRequestId === rightRequestId;
     try {
       const text: string = await this.editorBridge.getContent();
-      this.pushRightPreview(text);
-      if (this.activePane === 'left') {
-        this.updateChapterEntries(text, this.currentFilePath);
-      } else {
-        this.updateChapterEntries(text, this.rightFilePath);
+      if (!isCurrentMirrorTarget()) {
+        return;
       }
+      this.pushRightPreview(text);
+      this.updateChapterEntries(text, targetPath);
       if (this.rightEditorBridge.ready && !this.rightComposing) {
         await this.rightEditorBridge.setContent(text);
-        WorkspaceEditGuard.clear('right', this.currentVaultId, this.currentFilePath);
+        if (!isCurrentMirrorTarget()) {
+          return;
+        }
+        WorkspaceEditGuard.clear('right', vaultId, targetPath);
         this.rightEditorDirty = false;
       }
     } catch (error) {
@@ -2738,24 +2747,34 @@ struct Index {
       !this.rightEditorBridge.ready) {
       return;
     }
+    const vaultId: string = this.currentVaultId;
+    const targetPath: string = this.currentFilePath;
+    const leftRequestId: number = this.leftOpenRequestId;
+    const rightRequestId: number = this.rightOpenRequestId;
+    const isCurrentMirrorTarget = (): boolean => this.currentVaultId === vaultId &&
+      this.currentFilePath === targetPath && this.rightFilePath === targetPath &&
+      this.leftOpenRequestId === leftRequestId && this.rightOpenRequestId === rightRequestId;
     try {
       const text: string = await this.rightEditorBridge.getContent();
-      this.pushPreview(text);
-      if (this.rightFilePath === this.currentFilePath) {
-        this.pushRightPreview(text);
+      if (!isCurrentMirrorTarget()) {
+        return;
       }
+      this.pushPreview(text);
+      this.pushRightPreview(text);
       if (this.editorBridge.ready && !this.leftComposing) {
         await this.editorBridge.setContent(text);
-        WorkspaceEditGuard.mark('left', this.currentVaultId, this.currentFilePath);
+        if (!isCurrentMirrorTarget()) {
+          return;
+        }
+        WorkspaceEditGuard.mark('left', vaultId, targetPath);
         this.editorDirty = true;
       }
-      WorkspaceEditGuard.clear('right', this.currentVaultId, this.rightFilePath);
-      this.rightEditorDirty = false;
-      if (this.activePane === 'right') {
-        this.updateChapterEntries(text, this.rightFilePath);
-      } else {
-        this.updateChapterEntries(text, this.currentFilePath);
+      if (!isCurrentMirrorTarget()) {
+        return;
       }
+      WorkspaceEditGuard.clear('right', vaultId, targetPath);
+      this.rightEditorDirty = false;
+      this.updateChapterEntries(text, targetPath);
     } catch (error) {
       hilog.warn(DOMAIN, TAG, '双栏同步左栏失败');
     }

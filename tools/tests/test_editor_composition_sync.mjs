@@ -49,7 +49,10 @@ function createHarness() {
     VaultRegistry: { get: () => ({}) },
     WikiLinkService: { files: () => [] },
     WikiLinkParser: { renderForPreview: (text) => text },
-    WorkspaceEditGuard: { mark() {}, clear() {} },
+    WorkspaceEditGuard: {
+      mark(_pane, vaultId, path) { calls.push('guard-mark:' + vaultId + ':' + path); },
+      clear(_pane, vaultId, path) { calls.push('guard-clear:' + vaultId + ':' + path); }
+    },
     hilog: { warn() {} }
   });
   vm.runInContext(code, context);
@@ -65,9 +68,17 @@ function createHarness() {
     rightComposing: false,
     rightEditorDirty: true,
     editorDirty: false,
-    activePane: 'left'
+    activePane: 'left',
+    leftOpenRequestId: 1,
+    rightOpenRequestId: 1
   });
   return { app, calls };
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 test('left-to-right mirroring does not set content in an editor still composing', async () => {
@@ -120,4 +131,82 @@ test('committed right change synchronizes after composition ended', async () => 
   await app.syncRightContentToLeft();
 
   assert.ok(calls.includes('left-set:right text'));
+});
+
+test('left-to-right mirror drops content when the left note changes during the bridge read', async () => {
+  const { app, calls } = createHarness();
+  const content = deferred();
+  app.editorBridge.getContent = () => {
+    calls.push('left-read');
+    return content.promise;
+  };
+
+  const syncing = app.syncLeftContentToRight();
+  app.currentFilePath = 'next.md';
+  app.leftOpenRequestId += 1;
+  content.resolve('stale left text');
+  await syncing;
+
+  assert.deepEqual(calls, ['left-read']);
+  assert.equal(app.rightEditorDirty, true);
+});
+
+test('right-to-left mirror drops content when the left note changes during the bridge read', async () => {
+  const { app, calls } = createHarness();
+  const content = deferred();
+  app.rightEditorBridge.getContent = () => {
+    calls.push('right-read');
+    return content.promise;
+  };
+
+  const syncing = app.syncRightContentToLeft();
+  app.currentFilePath = 'next.md';
+  app.leftOpenRequestId += 1;
+  content.resolve('stale right text');
+  await syncing;
+
+  assert.deepEqual(calls, ['right-read']);
+  assert.equal(app.editorDirty, false);
+  assert.equal(app.rightEditorDirty, true);
+});
+
+test('left-to-right mirror does not clear target state when its setContent completes late', async () => {
+  const { app, calls } = createHarness();
+  const write = deferred();
+  app.rightEditorBridge.setContent = (text) => {
+    calls.push('right-set:' + text);
+    return write.promise;
+  };
+
+  const syncing = app.syncLeftContentToRight();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(calls.includes('right-set:left text'));
+  app.rightFilePath = 'next.md';
+  app.rightOpenRequestId += 1;
+  write.resolve();
+  await syncing;
+
+  assert.ok(!calls.some((call) => call.startsWith('guard-clear:right:')));
+  assert.equal(app.rightEditorDirty, true);
+});
+
+test('right-to-left mirror does not mark a new left target dirty when its setContent completes late', async () => {
+  const { app, calls } = createHarness();
+  const write = deferred();
+  app.editorBridge.setContent = (text) => {
+    calls.push('left-set:' + text);
+    return write.promise;
+  };
+
+  const syncing = app.syncRightContentToLeft();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(calls.includes('left-set:right text'));
+  app.currentFilePath = 'next.md';
+  app.leftOpenRequestId += 1;
+  write.resolve();
+  await syncing;
+
+  assert.ok(!calls.some((call) => call.startsWith('guard-mark:left:')));
+  assert.equal(app.editorDirty, false);
+  assert.equal(app.rightEditorDirty, true);
 });
