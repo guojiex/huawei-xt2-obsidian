@@ -1929,10 +1929,13 @@ struct Index {
   }
 
   private toggleReference(): void {
-    if (this.focused || this.experienceMode === 'simple') {
+    if (this.experienceMode === 'simple') {
       return;
     }
-    const show: boolean = !this.isReferenceShown();
+    const show: boolean = this.focused || !this.isReferenceShown();
+    if (this.focused) {
+      this.focused = false;
+    }
     this.referenceVisible = show;
     this.scheduleWorkspaceSessionSave();
     if (show && this.breakpoint === Breakpoint.MD) {
@@ -4401,6 +4404,24 @@ struct Index {
   }
 
   @Builder
+  ReferencePaneButton() {
+    Row() {
+      Icon('columns', Space.s5, this.isReferenceShown()
+        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(Radius.icon)
+    .backgroundColor(this.isReferenceShown() ? $r('app.color.brand_bg') : Color.Transparent)
+    .accessibilityText(this.focused ? '退出专注并打开双栏' : this.isReferenceShown() ? '关闭双栏' : '打开双栏')
+    .accessibilityTextHint(this.focused ? '退出专注模式并显示右侧参考栏' : '显示或收起右侧参考栏')
+    .onClick((): void => {
+      this.toggleReference();
+    })
+  }
+
+  @Builder
   GitAheadBadge() {
     if (this.gitAheadCommitCount > 0) {
       Text(this.gitAheadBadgeLabel())
@@ -4988,11 +5009,7 @@ struct Index {
             this.GitSyncButton()
           }
           if (this.experienceMode === 'professional') {
-            this.IconButton('columns', this.isReferenceShown()
-              ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
-              this.toggleReference();
-            }, this.isReferenceShown()
-              ? $r('app.color.brand_bg') : Color.Transparent)
+            this.ReferencePaneButton()
           }
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
