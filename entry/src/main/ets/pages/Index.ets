@@ -4366,6 +4366,24 @@ struct Index {
   }
 
   @Builder
+  FocusModeButton() {
+    Row() {
+      Icon(this.focused ? 'exitFocus' : 'focus', Space.s5,
+        this.focused ? $r('app.color.brand') : $r('app.color.text_secondary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(Radius.icon)
+    .backgroundColor(this.focused ? $r('app.color.brand_bg') : Color.Transparent)
+    .accessibilityText(this.focused ? '退出专注模式' : '进入专注模式')
+    .accessibilityTextHint(this.focused ? '恢复目录和参考栏' : '隐藏目录和参考栏，聚焦当前笔记')
+    .onClick((): void => {
+      this.toggleFocus();
+    })
+  }
+
+  @Builder
   GitAheadBadge() {
     if (this.gitAheadCommitCount > 0) {
       Text(this.gitAheadBadgeLabel())
@@ -4962,10 +4980,7 @@ struct Index {
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
           })
-          this.IconButton('focus', this.focused
-            ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
-            this.toggleFocus();
-          })
+          this.FocusModeButton()
         }
         this.MoreMenuButton()
       } else if (this.topView === 'agent') {

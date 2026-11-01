@@ -103,6 +103,7 @@ docs/harmonyos/
 
 | 日期 | 主题 | 问题数 | 存档 | 关键产出 |
 | --- | --- | --- | --- | --- |
+| 2026-11-01 | v1.8 专注模式入口无障碍名称与提示（本机 API26 SDK 声明核对，非新问答） | 1 组 | — | 见 [api_notes L-15](api_notes.md#l-15-v18-专注模式入口无障碍名称与提示本机-sdk-声明)：accessibilityText 自 API 11、accessibilityTextHint 自 API 12；屏幕阅读器与 API24 / XT2 表现待验 |
 | 2026-11-01 | v0.10 减动效（本机 API26 SDK + 官方公开资料核对，非新问答） | 1 组 | [核对归档](qa/2026-11-01_v0.10减动效SDK与官方文档核对_API24.md) | 见 [api_notes U1](api_notes.md#u-组减少动态效果偏好与arkui-动画)：`getValue` 声明 since 10；缩放项 deprecated since 21；其系统偏好含义与 ArkUI 动画联动仍 ❓，不进入关键路径 |
 | 2026-10-31 | v1.5 前置核实：外部目录选择、持久授权与递归读写（本机 SDK 声明 + 官方文档核对，非新问答） | 4 组能力 | [核实归档](qa/2026-10-31_外部目录授权能力_API24.md) | 结论见 [api_notes T1–T10](api_notes.md#t-组外部目录选择与持久授权2026-10-31v15-前置核实)：选目录 ✅ API 24 可用；持久授权 ✅ XT2 实测 **SYSTEM_GRANT / NORMAL**（用户已拍板申请 `FILE_ACCESS_PERSIST`，不再依赖含 ACL 的 debug profile）；递归读写 ✅ T5–T7 已由官方答复 + 设备实测双向坐实（fdopendir 枚举 / Native POSIX 写删改名）；变更感知 T8 无官方 watcher，只能轮询；T9/T10 为编译侧结论 |
 | 2026-10-31 | 模拟器 AgentKit 动态加载与设备识别答复核对（用户提供的 AI 答复，非官方答复） | 方案与代码片段核对 | [答复核对归档](qa/2026-10-31_模拟器AgentKit动态加载与设备识别答复核对_API24.md) | 见 [api_notes F1](api_notes.md)：`productModel` 门禁与按需动态加载是隔离方向；具体动态组件挂载、缺 HSP 触发行为和 XT2 仍待验证；当前 main 静态导入仍会阻断模拟器启动 |

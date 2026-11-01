@@ -1333,6 +1333,11 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - API 26 TripleFold 当前 unsigned HAP 中，从设置页用 `uitest uiInput keyEvent 2049` 顺序 Tab 到模式按钮，Enter（2054）选中专业模式；Up（2012）将焦点移到简单模式，再按 Enter 选回简单模式。模式选中标志由设置页控件树确认。只验证该模拟器的键盘注入路径，不代表真实实体键盘或 API 24 / XT2。
 - API24 / XT2 的焦点顺序、按键路由和返回设置触发按钮仍待用户手动验收。
 
+### L-15 v1.8 专注模式入口无障碍名称与提示（本机 SDK 声明）✅
+
+- 本机 API 26 SDK 的 `ets/component/common.d.ts` 声明 `accessibilityText(value: string)` 自 API 11 起、`accessibilityTextHint(value: string)` 自 API 12 起，低于工程兼容上限 API 24。专注按钮按当前状态设置“进入专注模式” / “退出专注模式”名称及对应操作提示。
+- 这里只核对 API 声明并据此接入代码；屏幕阅读器播报、键盘焦点和 API24 / XT2 表现仍待设备验收。
+
 ---
 
 ## 落地决策表

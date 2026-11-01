@@ -212,6 +212,36 @@ test('hamburger exits focus and reveals navigation',()=>{
  assert(!f.run('focused'));assert(!f.get('window').classList.contains('focus'));assert(!f.get('window').classList.contains('nav-hidden'));
 });
 
+test('focus button icon and accessible label follow mode changes and Escape',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=wide');
+ f.run('setFocused(false)');
+ assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.equal(f.get('focus').attrs['aria-pressed'],'false');
+ assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
+ f.get('focus').onclick();
+ assert.match(f.get('focus').innerHTML,/M3 8h5V3/);
+ assert.equal(f.get('focus').attrs['aria-pressed'],'true');
+ assert.equal(f.get('focus').attrs['aria-label'],'退出专注模式');
+ assert.equal(f.get('focus').title,'退出专注');
+ f.event('document','keydown',{key:'Escape',preventDefault(){}});
+ assert.equal(f.run('focused'),false);
+ assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
+});
+
+test('restored focus state is announced and compact layout reset updates the button',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=double&focus=1');
+ assert.equal(f.run('focused'),true);
+ assert.match(f.get('focus').innerHTML,/M3 8h5V3/);
+ assert.equal(f.get('focus').attrs['aria-pressed'],'true');
+ assert.equal(f.get('focus').attrs['aria-label'],'退出专注模式');
+ f.run("setViewport('phone')");
+ assert.equal(f.run('focused'),false);
+ assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.equal(f.get('focus').attrs['aria-pressed'],'false');
+ assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
+});
+
 test('double-screen focus hamburger aligns navigation with the visible left pane',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=double&vault=reading&focus=1&nav=0&side=chapters&active=right&left=reading_stream&right=reading_reading_journal');
  assert(f.run('focused'));assert.equal(f.run('activePane'),'right');
