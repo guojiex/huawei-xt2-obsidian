@@ -33,6 +33,54 @@ function frontmatterRange(source: string): SimpleRange | null {
   return match ? { from: 0, to: match[0].length, kind: 'protected' } : null
 }
 
+function appendPatternRanges(source: string, ranges: SimpleRange[], pattern: RegExp): void {
+  const expression = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g')
+  let match: RegExpExecArray | null = expression.exec(source)
+  while (match) {
+    ranges.push({ from: match.index, to: match.index + match[0].length, kind: 'protected' })
+    match = expression.exec(source)
+  }
+}
+
+function directiveBlockRanges(source: string): SimpleRange[] {
+  const ranges: SimpleRange[] = []
+  const lines = source.split(/\r?\n/)
+  let offset = 0
+  let blockStart = -1
+  let depth = 0
+  let blockEnd = -1
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]
+    const closing = /^ {0,3}:{3,}[ \t]*$/.test(line)
+    const opening = /^ {0,3}:{3,}[ \t]*[A-Za-z][A-Za-z0-9_-]*(?:\b[^\n]*)?$/.test(line)
+    if (opening) {
+      if (depth === 0) {
+        blockStart = offset
+      }
+      depth++
+      blockEnd = offset + line.length
+    } else if (closing && depth > 0) {
+      depth--
+      blockEnd = offset + line.length
+      if (depth === 0) {
+        ranges.push({ from: blockStart, to: blockEnd, kind: 'protected' })
+        blockStart = -1
+      }
+    } else if (depth > 0) {
+      blockEnd = offset + line.length
+    }
+
+    const separatorLength = offset + line.length >= source.length ? 0 :
+      (source.startsWith('\r\n', offset + line.length) ? 2 : 1)
+    offset += line.length + separatorLength
+  }
+  if (depth > 0 && blockStart >= 0) {
+    ranges.push({ from: blockStart, to: Math.max(blockEnd, source.length), kind: 'protected' })
+  }
+  return ranges
+}
+
 function customProtectedRanges(source: string): SimpleRange[] {
   const ranges: SimpleRange[] = []
   const lines = source.split(/\r?\n/)
@@ -101,6 +149,17 @@ function customProtectedRanges(source: string): SimpleRange[] {
   if (formulaStart >= 0) {
     ranges.push({ from: formulaStart, to: source.length, kind: 'protected' })
   }
+  ranges.push(...directiveBlockRanges(source))
+  appendPatternRanges(source, ranges, /!?\[\[(?:\\.|[^\]\r\n])+?\]\]/g)
+  appendPatternRanges(source, ranges, /\$\$(?!\$)(?:\\.|[^\\$\r\n])+?\$\$/g)
+  appendPatternRanges(source, ranges, /%%[\s\S]*?(?:%%|$)/g)
+  appendPatternRanges(source, ranges, /==[^=\r\n]+==/g)
+  appendPatternRanges(source, ranges, /~~[^~\r\n]+~~/g)
+  appendPatternRanges(source, ranges, /(?<!~)~[^~\r\n]+~(?!~)/g)
+  appendPatternRanges(source, ranges, /\^[A-Za-z0-9][A-Za-z0-9_-]*\^/g)
+  appendPatternRanges(source, ranges, /\[\^[^\]\r\n]+\]/g)
+  appendPatternRanges(source, ranges, /^\[\^[^\]\r\n]+\]:[^\r\n]*$/gm)
+  appendPatternRanges(source, ranges, /\^[A-Za-z0-9][A-Za-z0-9_-]*[ \t]*$/gm)
   const inlineMath = /\$(?!\$)(?:\\.|[^\\$\n])+?\$/g
   let match: RegExpExecArray | null = inlineMath.exec(source)
   while (match) {
@@ -127,11 +186,13 @@ function isTaskCheckboxReference(state: EditorState, from: number, to: number): 
 export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
   const source = state.doc.toString()
   const protectedRanges: SimpleRange[] = []
+  const opaqueSyntaxRanges: SimpleRange[] = []
+  const customRanges = customProtectedRanges(source)
   const frontmatter = frontmatterRange(source)
   if (frontmatter) {
     protectedRanges.push(frontmatter)
+    opaqueSyntaxRanges.push(frontmatter)
   }
-  protectedRanges.push(...customProtectedRanges(source))
   const tree = ensureSyntaxTree(state, state.doc.length, 100)
   if (!tree) {
     const protectedRange: SimpleRange = { from: 0, to: source.length, kind: 'protected' }
@@ -145,14 +206,21 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
   tree.iterate({
     enter(node) {
       if (node.name === 'FencedCode' || node.name === 'InlineCode' || node.name === 'Link' ||
-        node.name === 'Image' || node.name === 'Table' || node.name === 'HTMLBlock' || node.name === 'HTMLTag') {
+        node.name === 'Image' || node.name === 'LinkReference' || node.name === 'Table' ||
+        node.name === 'HTMLBlock' || node.name === 'HTMLTag') {
         if (node.name === 'Link' && isTaskCheckboxReference(state, node.from, node.to)) {
           return
         }
-        protectedRanges.push({ from: node.from, to: node.to, kind: 'protected' })
+        const range: SimpleRange = { from: node.from, to: node.to, kind: 'protected' }
+        protectedRanges.push(range)
+        opaqueSyntaxRanges.push(range)
       }
     }
   })
+  protectedRanges.push(...customRanges.filter((range) => {
+    return !opaqueSyntaxRanges.some((opaque) => range.from >= opaque.from && range.from < opaque.to &&
+      (range.to <= opaque.to || range.from > opaque.from))
+  }))
   const mergedProtected = mergeProtected(protectedRanges)
   const decorations: SimpleRange[] = []
   tree.iterate({

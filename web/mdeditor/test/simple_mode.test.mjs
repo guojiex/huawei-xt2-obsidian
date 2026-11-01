@@ -32,6 +32,13 @@ const result = await build({
 })
 const simpleMode = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`)
 
+function assertProtectedText(source, expectedText) {
+  const covered = simpleMode.inspect(source).protected.some((range) => {
+    return range.from <= source.indexOf(expectedText) && range.to >= source.indexOf(expectedText) + expectedText.length
+  })
+  assert(covered, `expected protected Markdown source: ${expectedText}`)
+}
+
 test('simple mode keeps Markdown source positions while styling basic blocks', () => {
   const source = '# Heading\n\nText with **bold** and *italic*.\n- bullet\n1. ordered\n- [ ] todo\n> quote\n'
   const result = simpleMode.inspect(source)
@@ -46,13 +53,14 @@ test('simple mode keeps Markdown source positions while styling basic blocks', (
 })
 
 test('frontmatter, code, links, tables, callouts and math are read-only with inline hints', () => {
-  const source = '---\ntitle: demo\n---\nText [link](https://example.com)\n\n`code`\n\n```js\nconst x = 1\n```\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n> [!note] Title\n> body\n\n$$\nx = 1\n$$\n'
+  const source = '---\ntitle: demo\n---\nText [link](https://example.com)\n\n`code`\n\n```js\nconst x = 1\n```\n\n```mermaid\ngraph TD\n  A --> B\n```\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\n> [!note] Title\n> body\n\n$$\nx = 1\n$$\n'
   const result = simpleMode.inspect(source)
   const protectedText = result.protected.map((range) => source.slice(range.from, range.to))
   assert(protectedText.some((text) => text.startsWith('---\ntitle: demo')))
   assert(protectedText.some((text) => text.includes('[link](https://example.com)')))
   assert(protectedText.some((text) => text.includes('`code`')))
   assert(protectedText.some((text) => text.includes('```js')))
+  assert(protectedText.some((text) => text.includes('```mermaid')))
   assert(protectedText.some((text) => text.includes('| a | b |')))
   assert(protectedText.some((text) => text.includes('[!note]')))
   assert(protectedText.some((text) => text.includes('$$')))
@@ -85,4 +93,38 @@ test('BOM frontmatter and inline math retain exact normalized source offsets', (
   assert(frontmatter)
   assert.equal(source.slice(frontmatter.from, frontmatter.to), '\uFEFF---\ntitle: demo\n...\n')
   assert(math)
+})
+
+test('Obsidian wikilinks, embeds and reference definitions keep their complete Markdown source', () => {
+  const source = '[[note#heading|alias]] and ![[assets/photo.png]]\n\n[ref][target]\n\n[target]: https://example.test/path "title"'
+  for (const syntax of ['[[note#heading|alias]]', '![[assets/photo.png]]', '[ref][target]',
+    '[target]: https://example.test/path "title"']) {
+    assertProtectedText(source, syntax)
+  }
+  assert.equal(simpleMode.changeAllowed(source, 0, source.length, 'replacement'), false)
+  assert.equal(simpleMode.changeAllowed(source, 0, 0, 'Safe prefix\n\n'), true)
+})
+
+test('Obsidian comments, highlight, strike, subscript, superscript, footnotes and block IDs are protected', () => {
+  const source = 'Before %%private\ncomment%% after ==highlight== ~~strike~~ ~sub~ ^super^ [^note]\n\n[^note]: footnote text\n\nParagraph ^block-id'
+  for (const syntax of ['%%private\ncomment%%', '==highlight==', '~~strike~~', '~sub~', '^super^', '[^note]',
+    '[^note]: footnote text', '^block-id']) {
+    assertProtectedText(source, syntax)
+  }
+})
+
+test('single-line double-dollar math protects both delimiters and directive blocks fail closed', () => {
+  const math = 'Before $$x + y$$ after'
+  assertProtectedText(math, '$$x + y$$')
+
+  const directive = 'Before\n:::unknown-block\ncontent with **syntax**\n  :::nested\ninner\n  :::\nafter nested\n:::\nAfter'
+  assertProtectedText(directive, ':::unknown-block\ncontent with **syntax**\n  :::nested\ninner\n  :::\nafter nested\n:::')
+  const unclosed = 'Editable paragraph\n\n:::unknown-block\nkeep all remaining source'
+  assertProtectedText(unclosed, ':::unknown-block\nkeep all remaining source')
+  assert.equal(simpleMode.changeAllowed(directive, 0, directive.length, 'replacement'), false)
+  assert.equal(simpleMode.changeAllowed(directive, 0, 0, 'Prefix\n\n'), true)
+
+  const codeExample = '```md\n:::snippet\n%% unmatched marker\n```\n\nEditable paragraph'
+  const editableOffset = codeExample.indexOf('Editable paragraph')
+  assert.equal(simpleMode.changeAllowed(codeExample, editableOffset, editableOffset, '!'), true)
 })
