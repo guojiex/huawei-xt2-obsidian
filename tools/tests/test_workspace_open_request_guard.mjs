@@ -50,11 +50,13 @@ function createContext() {
   const app = new module.exports();
   app.editorBridge = {
     beginDocumentTransition: () => ++transitionRevision,
-    restoreDocumentTransition: (revision) => restoredTransitions.push(revision)
+    restoreDocumentTransition: (revision) => restoredTransitions.push(revision),
+    setNoteContext() {}
   };
   app.rightEditorBridge = {
     beginDocumentTransition: () => ++transitionRevision,
-    restoreDocumentTransition: (revision) => restoredTransitions.push(revision)
+    restoreDocumentTransition: (revision) => restoredTransitions.push(revision),
+    setNoteContext() {}
   };
   return { context, calls, app, restoredTransitions };
 }
@@ -155,6 +157,7 @@ test('a stale bridge setContent completion cannot publish preview or commit its 
     workspaceSessionSavingEnabled: true,
     topView: 'note',
     editorBridge: {
+      setNoteContext() {},
       setContent: (text) => {
         calls.push('set:' + text);
         return new Promise((resolve) => { resolveSetContent = resolve; });
@@ -202,6 +205,7 @@ test('an implicit right-pane refresh cannot publish content after a newer right 
     workspaceSessionSavingEnabled: true,
     topView: 'note',
     rightEditorBridge: {
+      setNoteContext() {},
       setContent: (text) => {
         calls.push('set-right:' + text);
         return new Promise((resolve) => { resolveSetContent = resolve; });

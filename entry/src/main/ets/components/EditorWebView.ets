@@ -20,9 +20,25 @@ const EDITOR_TAG = 'EditorWebView';
 /** 注入到 WebView window.__arkts 的对象：JS -> ArkTS 的唯一入口 */
 class EditorNativeProxy {
   handler: (msg: string) => void = () => {};
+  readAssetHandler: (vaultId: string, relPath: string) => string = (_vaultId: string, _relPath: string) => '';
 
   postMessage(msg: string): void {
     this.handler(msg);
+  }
+
+  readAsset(requestB64: string): string {
+    try {
+      const request = JSON.parse(BridgeCodec.decode(requestB64)) as Record<string, string>;
+      const vaultId: string = request['vaultId'];
+      const relPath: string = request['relPath'];
+      if (typeof vaultId !== 'string' || typeof relPath !== 'string') {
+        return '';
+      }
+      return this.readAssetHandler(vaultId, relPath);
+    } catch {
+      hilog.warn(EDITOR_DOMAIN, EDITOR_TAG, 'readAsset 参数无效');
+      return '';
+    }
   }
 }
 
@@ -55,12 +71,14 @@ class EditorImpl {
     this.readyFlag = true;
   }
 
-  async setContent(text: string, documentRevision: number): Promise<void> {
+  async setContent(text: string, documentRevision: number, vaultId: string, noteDir: string): Promise<void> {
     this.setDocumentRevision(documentRevision);
     // 空串直通（BridgeCodec）：空笔记是常态，util.Base64Helper 对空输入会抛错
     const payload = BridgeCodec.encode(text);
+    const vaultPayload = BridgeCodec.encode(vaultId);
+    const noteDirPayload = BridgeCodec.encode(noteDir);
     // base64 只含 [A-Za-z0-9+/=]，可以直接安全拼进 JS 字符串
-    const script: string = `window.__mdeditor.setContent('${payload}',${documentRevision})`;
+    const script: string = `window.__mdeditor.setContent('${payload}',${documentRevision},'${vaultPayload}','${noteDirPayload}')`;
     if (this.readyFlag) {
       await this.controller.runJavaScript(script);
     } else {
@@ -199,6 +217,8 @@ export class EditorBridge {
   private impl: EditorImpl | undefined = undefined;
   private initialContent: string = '';
   private hasInitialContent: boolean = false;
+  private currentVaultId: string = '';
+  private currentNoteDir: string = '';
   private hasBoundOnce: boolean = false;
   private documentRevision: number = 0;
   private loadedDocumentRevision: number = 0;
@@ -213,7 +233,7 @@ export class EditorBridge {
     this.unavailable = false;
     if (!this.hasBoundOnce && this.hasInitialContent) {
       const revision: number = this.documentRevision;
-      void impl.setContent(this.initialContent, revision).then((): void => {
+      void impl.setContent(this.initialContent, revision, this.currentVaultId, this.currentNoteDir).then((): void => {
         if (this.documentRevision === revision) {
           this.loadedDocumentRevision = revision;
         }
@@ -263,11 +283,17 @@ export class EditorBridge {
     this.documentRevision += 1;
     const revision: number = this.documentRevision;
     if (this.impl) {
-      await this.impl.setContent(text, revision);
+      await this.impl.setContent(text, revision, this.currentVaultId, this.currentNoteDir);
       if (this.documentRevision === revision) {
         this.loadedDocumentRevision = revision;
       }
     }
+  }
+
+  /** Bind local image reads to the exact library and note directory for the next document load. */
+  setNoteContext(vaultId: string, noteDir: string): void {
+    this.currentVaultId = vaultId;
+    this.currentNoteDir = noteDir;
   }
 
   beginDocumentTransition(): number {
@@ -372,6 +398,8 @@ export struct EditorWebView {
   onError: (msg: string) => void = (msg: string) => {};
   /** Web 编辑器请求双链候选，父级返回当前库的少量匹配项。 */
   onLinkCompletion: (id: number, query: string) => void = (_id: number, _query: string) => {};
+  /** 本地图片读取由页面所有者通过 VaultAccess 完成。 */
+  onReadAsset: (vaultId: string, relPath: string) => string = (_vaultId: string, _relPath: string) => '';
   /** 父级通过这个句柄下发内容 / 拉取内容（外部传入同一实例，ready 时内部 bind） */
   bridge: EditorBridge = new EditorBridge();
 
@@ -385,6 +413,9 @@ export struct EditorWebView {
   aboutToAppear(): void {
     this.proxy.handler = (msg: string): void => {
       this.handleMessage(msg);
+    };
+    this.proxy.readAssetHandler = (vaultId: string, relPath: string): string => {
+      return this.onReadAsset(vaultId, relPath);
     };
   }
 
@@ -412,7 +443,7 @@ export struct EditorWebView {
       return;
     }
     try {
-      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['postMessage']);
+      this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['postMessage', 'readAsset']);
       this.proxyRegistered = true;
       hilog.info(EDITOR_DOMAIN, EDITOR_TAG, '__arkts 代理已注册（页面加载前注入，无需 refresh）');
     } catch (error) {

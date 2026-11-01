@@ -67,6 +67,9 @@ const html = `<!doctype html>
   #editor.cm-experience-simple .cm-simple-list-marker { display: inline-block; min-width: var(--s6); color: var(--blue); user-select: none; }
   #editor.cm-experience-simple .cm-simple-task { display: inline-block; min-width: var(--s6); color: var(--blue); cursor: pointer; user-select: none; }
   #editor.cm-experience-simple .cm-simple-protected-hint { color: var(--muted); font-family: var(--font); font-size: var(--caption); padding: 0 var(--s1); border-radius: var(--small-r); background: var(--blue-soft); }
+  #editor.cm-experience-simple .cm-simple-image { display: inline-flex; max-width: 100%; margin: var(--s2) 0; vertical-align: middle; }
+  #editor.cm-experience-simple .cm-simple-image img { display: block; max-width: 100%; max-height: 70vh; object-fit: contain; border-radius: var(--small-r); }
+  #editor.cm-experience-simple .cm-simple-image-fallback { color: var(--muted); font-family: var(--font); font-size: var(--caption); padding: var(--s1) var(--s2); border-radius: var(--small-r); background: var(--blue-soft); }
   /* 关键：让 contenteditable 区域在触屏上正常滚动/长按，不吃系统手势 */
   #editor .cm-scroller { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 </style>

@@ -6,6 +6,7 @@ export interface SimpleRange {
   to: number
   kind: string
   value?: string
+  alt?: string
 }
 
 export interface SimpleModeRanges {
@@ -183,14 +184,81 @@ function isTaskCheckboxReference(state: EditorState, from: number, to: number): 
   return from === checkboxStart && to === checkboxStart + 3
 }
 
+/** Resolve a Markdown image destination to a safe, vault-relative path. */
+export function resolveSimpleModeImagePath(noteDir: string, markdownUrl: string): string {
+  let source = markdownUrl.trim()
+  if (source.startsWith('<') && source.endsWith('>')) {
+    source = source.substring(1, source.length - 1)
+  }
+  source = source.replace(/\\(.)/g, '$1')
+  try {
+    source = decodeURIComponent(source)
+  } catch {
+    // Keep malformed percent escapes intact; the vault read will report it missing.
+  }
+  if (source.length === 0 || source.indexOf('\0') >= 0 || source.startsWith('/') ||
+    source.startsWith('\\\\') || source.startsWith('//') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(source)) {
+    return ''
+  }
+
+  const segments: string[] = []
+  const combined = noteDir.length > 0 ? noteDir + '/' + source : source
+  const parts = combined.split('/')
+  for (let index = 0; index < parts.length; index++) {
+    const segment = parts[index]
+    if (segment.length === 0 || segment === '.') {
+      continue
+    }
+    if (segment === '..') {
+      if (segments.length === 0) {
+        return ''
+      }
+      segments.pop()
+      continue
+    }
+    segments.push(segment)
+  }
+  return segments.join('/')
+}
+
+function imageAltText(source: string, from: number, to: number): string {
+  if (source.slice(from, from + 2) !== '![') {
+    return '图片'
+  }
+  let depth = 0
+  let escaped = false
+  for (let index = from + 2; index < to; index++) {
+    const character = source[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (character === '\\') {
+      escaped = true
+    } else if (character === '[') {
+      depth++
+    } else if (character === ']') {
+      if (depth === 0) {
+        const alt = source.slice(from + 2, index).replace(/\\(.)/g, '$1')
+        return alt.length > 0 ? alt : '图片'
+      }
+      depth--
+    }
+  }
+  return '图片'
+}
+
 export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
   const source = state.doc.toString()
   const protectedRanges: SimpleRange[] = []
+  const hintRanges: SimpleRange[] = []
+  const imageRanges: SimpleRange[] = []
   const opaqueSyntaxRanges: SimpleRange[] = []
   const customRanges = customProtectedRanges(source)
   const frontmatter = frontmatterRange(source)
   if (frontmatter) {
     protectedRanges.push(frontmatter)
+    hintRanges.push(frontmatter)
     opaqueSyntaxRanges.push(frontmatter)
   }
   const tree = ensureSyntaxTree(state, state.doc.length, 100)
@@ -214,13 +282,30 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
         const range: SimpleRange = { from: node.from, to: node.to, kind: 'protected' }
         protectedRanges.push(range)
         opaqueSyntaxRanges.push(range)
+        if (node.name === 'Image') {
+          let imageNode = tree.resolve(node.from + 1, 1)
+          while (imageNode.name !== 'Image' && imageNode.parent !== null) {
+            imageNode = imageNode.parent
+          }
+          const destination = imageNode.name === 'Image' ? imageNode.getChild('URL') : null
+          if (destination) {
+            imageRanges.push({ from: node.from, to: node.to, kind: 'image',
+              value: state.sliceDoc(destination.from, destination.to), alt: imageAltText(source, node.from, node.to) })
+          } else {
+            hintRanges.push(range)
+          }
+        } else {
+          hintRanges.push(range)
+        }
       }
     }
   })
-  protectedRanges.push(...customRanges.filter((range) => {
+  const applicableCustomRanges = customRanges.filter((range) => {
     return !opaqueSyntaxRanges.some((opaque) => range.from >= opaque.from && range.from < opaque.to &&
       (range.to <= opaque.to || range.from > opaque.from))
-  }))
+  })
+  protectedRanges.push(...applicableCustomRanges)
+  hintRanges.push(...applicableCustomRanges)
   const mergedProtected = mergeProtected(protectedRanges)
   const decorations: SimpleRange[] = []
   tree.iterate({
@@ -242,6 +327,10 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
       } else if (node.name === 'QuoteMark') {
         const start = state.doc.lineAt(node.from).from
         decorations.push({ from: start, to: start, kind: 'quote' })
+        if (!overlapsProtected(node.from, node.to, mergedProtected)) {
+          const afterMarker = state.sliceDoc(node.to, Math.min(node.to + 1, state.doc.length))
+          decorations.push({ from: node.from, to: node.to + (afterMarker === ' ' ? 1 : 0), kind: 'hide' })
+        }
       }
     }
   })
@@ -260,7 +349,8 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
       }
     }
   }
-  for (const range of mergedProtected) {
+  decorations.push(...imageRanges)
+  for (const range of mergeProtected(hintRanges)) {
     decorations.push({ from: range.from, to: range.from, kind: 'protected-hint', value: '此内容请在专业模式编辑' })
   }
   return { protected: mergedProtected, decorations }

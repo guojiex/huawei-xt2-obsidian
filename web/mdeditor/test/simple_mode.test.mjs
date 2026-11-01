@@ -10,7 +10,7 @@ const result = await build({
     contents: `
       import { EditorState } from '@codemirror/state'
       import { markdown } from '@codemirror/lang-markdown'
-      import { collectSimpleModeRanges, allowsSimpleModeTransaction } from '../src/simpleMode.ts'
+      import { collectSimpleModeRanges, allowsSimpleModeTransaction, resolveSimpleModeImagePath } from '../src/simpleMode.ts'
       export function inspect(source) {
         const state = EditorState.create({ doc: source, extensions: [markdown()] })
         return collectSimpleModeRanges(state)
@@ -19,6 +19,9 @@ const result = await build({
         const state = EditorState.create({ doc: source, extensions: [markdown()] })
         const transaction = state.update({ changes: { from, to, insert } })
         return allowsSimpleModeTransaction(state, transaction)
+      }
+      export function resolveImagePath(noteDir, source) {
+        return resolveSimpleModeImagePath(noteDir, source)
       }
     `,
     resolveDir: here,
@@ -50,6 +53,10 @@ test('simple mode keeps Markdown source positions while styling basic blocks', (
   assert(result.decorations.some((range) => range.kind === 'list-marker' && range.value === '1.'))
   assert(result.decorations.some((range) => range.kind === 'task' && range.value === '☐'))
   assert(result.decorations.some((range) => range.kind === 'quote'))
+  const quoteMarker = result.decorations.find((range) => range.kind === 'hide' &&
+    source.slice(range.from, range.to).startsWith('>'))
+  assert(quoteMarker)
+  assert.equal(source.slice(quoteMarker.from, quoteMarker.to), '> ')
 })
 
 test('frontmatter, code, links, tables, callouts and math are read-only with inline hints', () => {
@@ -111,6 +118,27 @@ test('Obsidian comments, highlight, strike, subscript, superscript, footnotes an
     '[^note]: footnote text', '^block-id']) {
     assertProtectedText(source, syntax)
   }
+})
+
+test('local images render as widgets while their Markdown source remains protected', () => {
+  const source = 'Before ![示例](<attachments/%E4%B8%AD%E6%96%87%20%E5%9B%BE.png>) after'
+  const result = simpleMode.inspect(source)
+  const image = result.decorations.find((range) => range.kind === 'image')
+  assert(image)
+  assert.equal(image.alt, '示例')
+  assert.equal(source.slice(image.from, image.to), '![示例](<attachments/%E4%B8%AD%E6%96%87%20%E5%9B%BE.png>)')
+  assert(result.protected.some((range) => range.from <= image.from && range.to >= image.to))
+  assert.equal(result.decorations.some((range) => range.kind === 'protected-hint' && range.from === image.from), false)
+  assert.equal(simpleMode.resolveImagePath('notes/chapter', image.value),
+    'notes/chapter/attachments/中文 图.png')
+})
+
+test('simple mode image lookup rejects remote, absolute and vault-escaping paths', () => {
+  assert.equal(simpleMode.resolveImagePath('notes', 'https://example.test/picture.png'), '')
+  assert.equal(simpleMode.resolveImagePath('notes', '/private/picture.png'), '')
+  assert.equal(simpleMode.resolveImagePath('notes', '../../private/picture.png'), '')
+  assert.equal(simpleMode.resolveImagePath('notes/chapter', '../attachments/picture.png'),
+    'notes/attachments/picture.png')
 })
 
 test('single-line double-dollar math protects both delimiters and directive blocks fail closed', () => {

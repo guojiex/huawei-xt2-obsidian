@@ -5,7 +5,7 @@
  *      （照抄 web/gitbridge/build.mjs 的链路，见 AGENTS.md §Web 打包约定）
  *
  * 桥接协议（与 gitbridge 一致，JSON over javaScriptProxy.postMessage）：
- *   ArkTS → Web：window.__mdeditor.setContent(b64, revision) / requestContent(id) / focus() / setTheme(t)
+ *   ArkTS → Web：window.__mdeditor.setContent(b64, revision, vaultIdB64, noteDirB64) / requestContent(id) / focus() / setTheme(t)
  *   Web → ArkTS：postMessage(JSON)
  *     - {type:'event', name:'ready'}                 页面就绪，可以收内容了
  *     - {type:'event', name:'change', len:N, revision:R} 内容变化（debounce 300ms，只报长度与文档代次）
@@ -28,7 +28,8 @@ import { Decoration, DecorationSet, EditorView, Extension, ViewPlugin, ViewUpdat
 import { oneDark } from '@codemirror/theme-one-dark'
 import { preservedScrollTop } from './scrollAnchor'
 import { clampWorkspaceScrollTop, editorWorkspaceScrollContainer } from './workspaceScroll'
-import { allowsSimpleModeTransaction, collectSimpleModeRanges, SimpleModeRanges, SimpleRange } from './simpleMode'
+import { allowsSimpleModeTransaction, collectSimpleModeRanges, resolveSimpleModeImagePath,
+  SimpleModeRanges, SimpleRange } from './simpleMode'
 import {
   hasCodeBlockSelection,
   normalizeEditorText,
@@ -41,7 +42,10 @@ import { createChangeNotificationTimer } from './changeNotification'
 declare global {
   interface Window {
     __mdeditor: MdEditorApi
-    __arkts?: { postMessage: (msg: string) => void }
+    __arkts?: {
+      postMessage: (msg: string) => void
+      readAsset?: (requestB64: string) => string
+    }
   }
 }
 
@@ -54,7 +58,7 @@ declare global {
  * 故内容拉取走 requestContent(reqId) → content 事件往返，不走返回值。
  */
 interface MdEditorApi {
-  setContent(b64: string, documentRevision: number): void
+  setContent(b64: string, documentRevision: number, vaultIdB64: string, noteDirB64: string): void
   /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
   requestContent(reqId: number): void
@@ -266,18 +270,29 @@ let documentLineEnding = '\n'
 const editableCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
 const experienceCompartment = new Compartment()
+let simpleModeVaultId = ''
+let simpleModeNoteDir = ''
 
 class SimpleModeWidget extends WidgetType {
-  constructor(private kind: string, private text: string, private from: number, private to: number) {
+  constructor(private kind: string, private text: string, private from: number, private to: number,
+    private alt: string = '', private vaultId: string = '', private noteDir: string = '') {
     super()
   }
 
   eq(other: WidgetType): boolean {
-    return other instanceof SimpleModeWidget && other.kind === this.kind && other.text === this.text &&
-      other.from === this.from && other.to === this.to
+    if (!(other instanceof SimpleModeWidget)) {
+      return false
+    }
+    const samePosition = this.kind === 'image' || (other.from === this.from && other.to === this.to)
+    return other.kind === this.kind && other.text === this.text &&
+      samePosition && other.alt === this.alt &&
+      other.vaultId === this.vaultId && other.noteDir === this.noteDir
   }
 
   toDOM(): HTMLElement {
+    if (this.kind === 'image') {
+      return this.imageDom()
+    }
     const node = document.createElement('span')
     node.className = 'cm-simple-' + this.kind
     node.textContent = this.text
@@ -291,6 +306,37 @@ class SimpleModeWidget extends WidgetType {
     } else if (this.kind === 'protected-hint') {
       node.setAttribute('role', 'note')
     }
+    return node
+  }
+
+  private imageDom(): HTMLElement {
+    const node = document.createElement('span')
+    node.className = 'cm-simple-image'
+    const label = this.alt.length > 0 ? this.alt : '图片'
+    node.setAttribute('role', 'img')
+    node.setAttribute('aria-label', label)
+    const relPath = resolveSimpleModeImagePath(this.noteDir, this.text)
+    const readAsset = window.__arkts?.readAsset
+    if (relPath.length > 0 && this.vaultId.length > 0 && typeof readAsset === 'function') {
+      try {
+        const requestB64 = b64encode(JSON.stringify({ vaultId: this.vaultId, relPath: relPath }))
+        const dataUri = window.__arkts?.readAsset?.(requestB64) ?? ''
+        if (/^data:image\/(?:png|jpeg|gif|webp|svg\+xml);base64,/i.test(dataUri)) {
+          const image = document.createElement('img')
+          image.alt = label
+          image.draggable = false
+          image.src = dataUri
+          node.appendChild(image)
+          return node
+        }
+      } catch {
+        // Missing or unreadable vault images remain visible as an accessible placeholder.
+      }
+    }
+    const fallback = document.createElement('span')
+    fallback.className = 'cm-simple-image-fallback'
+    fallback.textContent = this.alt.length > 0 ? this.alt + '（图片无法加载）' : '图片无法加载'
+    node.appendChild(fallback)
     return node
   }
 
@@ -319,8 +365,10 @@ function simpleModeDecorations(view: EditorView): DecorationSet {
       decorations.push(Decoration.mark({ class: 'cm-simple-' + range.kind }).range(range.from, range.to))
     } else if (range.kind === 'hide') {
       decorations.push(Decoration.replace({}).range(range.from, range.to))
-    } else if (range.kind === 'list-marker' || range.kind === 'task' || range.kind === 'protected-hint') {
-      const widget = new SimpleModeWidget(range.kind, range.value ?? '', range.from, range.to)
+    } else if (range.kind === 'list-marker' || range.kind === 'task' || range.kind === 'protected-hint' ||
+      range.kind === 'image') {
+      const widget = new SimpleModeWidget(range.kind, range.value ?? '', range.from, range.to, range.alt ?? '',
+        range.kind === 'image' ? simpleModeVaultId : '', range.kind === 'image' ? simpleModeNoteDir : '')
       const decoration = range.kind === 'protected-hint'
         ? Decoration.widget({ widget: widget, side: -1 })
         : Decoration.replace({ widget: widget })
@@ -714,8 +762,10 @@ function applyMarkdownFormat(kind: string): void {
 }
 
 const api: MdEditorApi = {
-  setContent(b64: string, revision: number): void {
+  setContent(b64: string, revision: number, vaultIdB64: string, noteDirB64: string): void {
     documentRevision = Number.isInteger(revision) && revision >= 0 ? revision : 0
+    simpleModeVaultId = b64decode(vaultIdB64)
+    simpleModeNoteDir = b64decode(noteDirB64)
     workspaceScrollRestoreGeneration++
     if (sourceScrollReportFrame !== 0) {
       window.cancelAnimationFrame(sourceScrollReportFrame)
@@ -768,8 +818,11 @@ const api: MdEditorApi = {
     const selection = v.state.selection.main
     v.dispatch({
       changes: { from: selection.from, to: selection.to, insert: inserted },
-      selection: { anchor: selection.from + inserted.length }
+      selection: { anchor: selection.from + inserted.length },
+      scrollIntoView: true,
+      userEvent: 'input'
     })
+    v.focus()
   },
 
   applyFormat(kind: string): void {

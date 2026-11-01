@@ -76,7 +76,7 @@ test('an edit notification carries the document revision captured when it was sc
 
 test('programmatic document replacement cancels pending change before dispatch', () => {
   const source = fs.readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
-  const setContentStart = source.indexOf('  setContent(b64: string, revision: number): void {')
+  const setContentStart = source.indexOf('  setContent(b64: string, revision: number, vaultIdB64: string, noteDirB64: string): void {')
   const setContentEnd = source.indexOf('\n  getContent(): string {', setContentStart)
   assert.ok(setContentStart >= 0 && setContentEnd > setContentStart)
   const setContent = source.slice(setContentStart, setContentEnd)

@@ -2399,6 +2399,8 @@ struct Index {
     this.clearStaleSaveNotice(targetVaultId, relPath);
     this.editorDirty = false;
     this.editorLen = displayText.length;
+    this.editorBridge.setNoteContext(targetVaultId, relPath.indexOf('/') >= 0
+      ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
     await this.editorBridge.setContent(displayText);
     if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
@@ -2501,6 +2503,8 @@ struct Index {
     WorkspaceEditGuard.clear('right', targetVaultId, relPath);
     this.rightEditorDirty = false;
     this.rightEditorLen = displayText.length;
+    this.rightEditorBridge.setNoteContext(targetVaultId, relPath.indexOf('/') >= 0
+      ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
     await this.rightEditorBridge.setContent(displayText);
     if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
@@ -3174,15 +3178,19 @@ struct Index {
   }
 
   /**
-   * 读库内图片 → data URI（PreviewWebView 的 readAsset 桥回调，M3 预览「图片」项）。
-   * 返回空串 = 图片不存在/不支持，Web 侧显示「图片不存在」。
+   * 读库内图片 → data URI，供 PreviewWebView 和简单模式编辑器的 readAsset 桥使用。
+   * 返回空串 = 图片不存在 / 不支持，Web 侧显示图片占位。
    */
   private readVaultAsset(relPath: string): string {
-    if (this.currentVaultId.length === 0 || relPath.length === 0) {
+    return this.readVaultAssetFor(this.currentVaultId, relPath);
+  }
+
+  private readVaultAssetFor(vaultId: string, relPath: string): string {
+    if (vaultId.length === 0 || vaultId !== this.currentVaultId || relPath.length === 0) {
       return '';
     }
     try {
-      return NoteService.readAssetDataUri(VaultRegistry.get(), this.currentVaultId, relPath);
+      return NoteService.readAssetDataUri(VaultRegistry.get(), vaultId, relPath);
     } catch (error) {
       return '';
     }
@@ -5660,6 +5668,9 @@ struct Index {
             bridge: this.rightEditorBridge,
             showLineNumbers: this.showLineNumbers,
             experienceMode: this.experienceMode,
+            onReadAsset: (vaultId: string, relPath: string): string => {
+              return this.readVaultAssetFor(vaultId, relPath);
+            },
             onChange: (len: number): void => {
               this.resetSaveFeedback();
               WorkspaceEditGuard.mark('right', this.currentVaultId, this.rightFilePath);
@@ -5768,6 +5779,9 @@ struct Index {
           bridge: this.editorBridge,
           showLineNumbers: this.showLineNumbers,
           experienceMode: this.experienceMode,
+          onReadAsset: (vaultId: string, relPath: string): string => {
+            return this.readVaultAssetFor(vaultId, relPath);
+          },
           onChange: (len: number): void => {
             // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
             this.resetSaveFeedback();

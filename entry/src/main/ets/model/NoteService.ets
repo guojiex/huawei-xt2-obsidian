@@ -240,10 +240,10 @@ export class NoteService {
 
   /**
    * 读取库内图片等附件 → data URI（M3 预览「图片」项）。
-   * 给 PreviewWebView 的 `readAsset` 桥用：vault 沙箱文件 WebView 拿不到
+   * 给 PreviewWebView / EditorWebView 的 `readAsset` 桥用：vault 沙箱文件 WebView 拿不到
    * （resource://rawfile 跨域被禁，api_notes B4），经 JS→ArkTS 同步桥换成 data URI。
    * 只放行图片扩展名白名单（防笔记里嵌 <img src="笔记.md"> 之类把任意文件泄给页面）；
-   * 读不到 / 不在白名单返回空串，Web 侧显示「图片不存在」。
+   * 读不到 / 不在白名单返回空串，Web 侧显示图片占位。日志不包含库内路径或系统错误内容。
    */
   static readAssetDataUri(registry: VaultRegistry, vaultId: string, relPath: string): string {
     const lower: string = relPath.toLowerCase();
@@ -271,9 +271,8 @@ export class NoteService {
       const helper: util.Base64Helper = new util.Base64Helper();
       const b64: string = helper.encodeToStringSync(bytes);
       return 'data:' + mimes[ext] + ';base64,' + b64;
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取附件失败 %{public}s: %{public}s', relPath, err.message);
+    } catch {
+      hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取附件失败');
       return '';
     }
   }

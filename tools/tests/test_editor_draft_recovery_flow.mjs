@@ -67,10 +67,12 @@ function createHarness(options = {}) {
     rightPreviewScrollTop: 22,
     lastDraftRecoveryNoticeKey: '',
     editorBridge: {
+      setNoteContext() {},
       async setContent(value) { calls.push('left-set'); leftContent.push(value); },
       restoreScrollTop() {}
     },
     rightEditorBridge: {
+      setNoteContext() {},
       async setContent(value) { calls.push('right-set'); rightContent.push(value); },
       restoreScrollTop() {}
     },

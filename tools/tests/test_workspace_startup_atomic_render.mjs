@@ -157,7 +157,7 @@ test('EditorBridge retains the startup note in memory until the first Web page i
   bridge.notifyReady();
   await readyWait;
   assert.equal(becameReady, true);
-  assert.ok(scripts.some((script) => script.includes("setContent('bGFzdCBzZXNzaW9uIHRleHQ=',1)")));
+  assert.ok(scripts.some((script) => script.includes("setContent('bGFzdCBzZXNzaW9uIHRleHQ=',1,'','')")));
 
   holdNextContent = true;
   let contentApplied = false;
@@ -191,7 +191,7 @@ test('document transitions reject stale edits and restore the last loaded revisi
   bridge.restoreDocumentTransition(secondTransition);
   assert.equal(implementation.isCurrentDocumentRevision(1), false);
   assert.equal(implementation.isCurrentDocumentRevision(3), true);
-  assert.ok(scripts.some((script) => script.includes("setContent('bmV4dA==',3)")));
+  assert.ok(scripts.some((script) => script.includes("setContent('bmV4dA==',3,'','')")));
 });
 
 test('native change messages are accepted only for the current editor document revision', () => {
