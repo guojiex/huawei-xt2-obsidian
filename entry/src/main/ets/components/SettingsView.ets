@@ -5,8 +5,7 @@
  * 顶栏返回由 Index 统一处理；单屏分类详情由顶栏返回至分类列表。
  *
  * 内容（照 v2 原型「设置与关于」规格，2026-10-30 对齐 v2 关于卡与通用/数据/问题与建议分类）：
- *  - 关于卡：hero（64vp 图标 + 应用名 + 版本号）+ 定位段落 + 「应用由×××开发，
- *    联系方式」行（署名真源 app_config.json 的 developerName，v0.9 §9.13）+ 开源许可小字；
+ *  - 关于卡：hero（64vp 图标 + 应用名 + 版本号）+ 定位段落 + 反馈邮箱 + 开源许可小字；
  *    **包名行已删**（设计稿 2026-10-21 拍板：那是开发期对 hdc 日志/签名用的诊断值，用户不需要）；
  *    版本号**运行时从自身包信息读出，不在代码写死常量**（api_notes H-1/H-2：
  *    getBundleInfoForSelfSync 在 try/catch 内调用，失败兜底显示占位，读不到也不崩）；
@@ -30,7 +29,7 @@ import { AgentSession, AgentSkillDefault } from '../model/AgentModels';
 import { VaultEntry } from '../model/Vault';
 import { Icon } from '../common/Icons';
 import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
-import { FEEDBACK_EMAIL, DEVELOPER_NAME } from '../model/AppConfig';
+import { FEEDBACK_EMAIL } from '../model/AppConfig';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { EditorExperienceMode } from '../model/EditorExperiencePolicy';
 
@@ -1056,10 +1055,7 @@ export struct SettingsView {
           .width('100%')
           .margin({ bottom: Space.s3 })
         Text() {
-          Span('应用由 ')
-          Span(DEVELOPER_NAME)
-            .fontWeight(FontWeight.Bold)
-          Span(' 开发，联系方式 ')
+          Span('反馈邮箱 ')
           Span(FEEDBACK_EMAIL)
             .fontColor($r('app.color.brand'))
         }

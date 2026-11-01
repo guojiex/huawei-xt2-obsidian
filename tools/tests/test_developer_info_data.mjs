@@ -21,20 +21,20 @@ function prototypeSettingsData() {
   return JSON.parse(line.slice('const settingsData = '.length).replace(/;$/, ''));
 }
 
-test('native about card uses generated developer and feedback configuration', () => {
+test('native about card shows the generated feedback email without a developer name', () => {
   assert.equal(generatedString(nativeConfig, 'DEVELOPER_NAME'), config.developerName);
   assert.equal(generatedString(nativeConfig, 'FEEDBACK_EMAIL'), config.feedbackEmail);
-  assert.match(nativeSettings, /import \{ FEEDBACK_EMAIL, DEVELOPER_NAME \} from '\.\.\/model\/AppConfig';/);
-  assert.match(nativeSettings, /Span\('应用由 '\)[\s\S]*Span\(DEVELOPER_NAME\)[\s\S]*Span\(' 开发，联系方式 '\)[\s\S]*Span\(FEEDBACK_EMAIL\)/);
+  assert.match(nativeSettings, /import \{ FEEDBACK_EMAIL \} from '\.\.\/model\/AppConfig';/);
+  assert.match(nativeSettings, /Span\('反馈邮箱 '\)[\s\S]*Span\(FEEDBACK_EMAIL\)/);
+  assert.doesNotMatch(nativeSettings, /DEVELOPER_NAME|应用由\s*开发/);
 });
 
-test('v2 about card uses generated settings data for the developer and email', () => {
+test('v2 about card shows the generated feedback email and does not render a developer name', () => {
   const settings = prototypeSettingsData();
   assert.equal(settings.developerName, config.developerName);
   assert.equal(settings.feedbackEmail, config.feedbackEmail);
-  assert.match(prototype, /应用由 <strong id="settingsDeveloper"><\/strong> 开发，联系方式 <a id="aboutContactEmail"><\/a>/);
-  assert.match(prototype, /id="settingsDeveloper"/);
+  assert.match(prototype, /反馈邮箱 <a id="aboutContactEmail"><\/a>/);
+  assert.doesNotMatch(prototype, /id="settingsDeveloper"|textContent=settingsData\.developerName/);
   assert.match(prototype, /id="aboutContactEmail"/);
-  assert.match(prototype, /\$\('settingsDeveloper'\)\.textContent=settingsData\.developerName/);
   assert.match(prototype, /\$\('aboutContactEmail'\)\.textContent=settingsData\.feedbackEmail/);
 });
