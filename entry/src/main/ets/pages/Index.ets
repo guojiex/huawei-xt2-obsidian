@@ -207,8 +207,13 @@ struct Index {
   private workspaceSessionSavingEnabled: boolean = false;
   private workspaceSessionSaveTimer: number = -1;
   private workspaceOpenRequests: number = 0;
+  private leftOpenRequestId: number = 0;
+  private rightOpenRequestId: number = 0;
+  private sharedEditabilityGeneration: number = 0;
   private committedLeftPath: string = '';
   private committedRightPath: string = '';
+  private committedLeftVaultId: string = '';
+  private committedRightVaultId: string = '';
   private pendingRestoredChapterOffset: number = -1;
   @State sidebarTab: string = 'files';
   private leftEditorScrollTop: number = 0;
@@ -422,13 +427,39 @@ struct Index {
     if (mode === this.experienceMode) {
       return;
     }
+    if (this.workspaceOpenRequests > 0) {
+      promptAction.showToast({ message: '笔记正在切换，请稍后再切换编辑模式' });
+      return;
+    }
     if (this.leftComposing || this.rightComposing) {
       promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
       return;
     }
+    const targetVaultId: string = this.currentVaultId;
+    const targetLeftPath: string = this.currentFilePath;
+    const targetRightPath: string = this.rightFilePath;
+    const targetLeftRequestId: number = this.leftOpenRequestId;
+    const targetRightRequestId: number = this.rightOpenRequestId;
     if (!await this.flushWorkspaceSaves()) {
+      if (this.leftComposing || this.rightComposing) {
+        promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
+      } else {
+        promptAction.showToast({ message: '笔记状态尚未就绪，编辑模式未更改' });
+      }
       return;
     }
+    if (targetVaultId !== this.currentVaultId || targetLeftPath !== this.currentFilePath ||
+      targetRightPath !== this.rightFilePath || targetLeftRequestId !== this.leftOpenRequestId ||
+      targetRightRequestId !== this.rightOpenRequestId) {
+      promptAction.showToast({ message: '笔记正在切换，请稍后再切换编辑模式' });
+      return;
+    }
+    if (this.leftComposing || this.rightComposing) {
+      promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
+      return;
+    }
+    this.leftOpenRequestId++;
+    this.rightOpenRequestId++;
     this.ensureEditorExperienceStore();
     this.experienceMode = mode;
     void this.refreshSharedEditability();
@@ -584,6 +615,8 @@ struct Index {
         this.rightFilePath = rightPath;
         this.committedLeftPath = '';
         this.committedRightPath = '';
+        this.committedLeftVaultId = '';
+        this.committedRightVaultId = '';
         this.leftEditorScrollTop = session.leftEditorScrollTop;
         this.leftPreviewScrollTop = session.leftPreviewScrollTop;
         this.rightEditorScrollTop = session.rightEditorScrollTop;
@@ -621,6 +654,8 @@ struct Index {
         this.pendingRestoredChapterOffset = -1;
         this.committedLeftPath = '';
         this.committedRightPath = '';
+        this.committedLeftVaultId = '';
+        this.committedRightVaultId = '';
         await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
           await this.readAndPush(path, false), async (): Promise<void> => {
             await this.readAndPush('', false);
@@ -1599,6 +1634,8 @@ struct Index {
       if (!await this.flushWorkspaceSaves()) {
         return;
       }
+      this.leftOpenRequestId++;
+      this.rightOpenRequestId++;
       this.stopWorkspaceSessionSaving();
       this.refreshFromRegistry();
       this.currentFilePath = '';
@@ -1798,6 +1835,7 @@ struct Index {
 
   /** Same-note editing has one active caret; the other editor stays read-only and mirrors content. */
   private async refreshSharedEditability(): Promise<void> {
+    const generation: number = ++this.sharedEditabilityGeneration;
     const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
     const simplePane: string = this.simpleWorkspacePane();
     const leftRequested: boolean = this.experienceMode === 'simple'
@@ -1814,14 +1852,23 @@ struct Index {
     // Revoke the old editor first so a same-note pane switch never leaves two active carets.
     if (!leftEditable && this.editorBridge.ready) {
       await this.editorBridge.setEditable(false);
+      if (generation !== this.sharedEditabilityGeneration) {
+        return;
+      }
       this.editorBridge.blur();
     }
     if (!rightEditable && this.rightEditorBridge.ready) {
       await this.rightEditorBridge.setEditable(false);
+      if (generation !== this.sharedEditabilityGeneration) {
+        return;
+      }
       this.rightEditorBridge.blur();
     }
     if (leftEditable && this.editorBridge.ready) {
       await this.editorBridge.setEditable(true);
+      if (generation !== this.sharedEditabilityGeneration) {
+        return;
+      }
     }
     if (rightEditable && this.rightEditorBridge.ready) {
       await this.rightEditorBridge.setEditable(true);
@@ -2246,30 +2293,53 @@ struct Index {
     this.onSelectFile(relPath);
   }
 
+  private isCurrentLeftOpenTarget(path: string, vaultId: string, requestId: number = -1): boolean {
+    return path === this.currentFilePath && vaultId === this.currentVaultId &&
+      (requestId < 0 || requestId === this.leftOpenRequestId);
+  }
+
+  private isCurrentRightOpenTarget(path: string, vaultId: string, requestId: number = -1): boolean {
+    return vaultId === this.currentVaultId && (requestId < 0 || requestId === this.rightOpenRequestId) &&
+      (path.length === 0 || path === this.rightFilePath);
+  }
+
   /**
    * 读取笔记全文并下发给 Web 编辑器（M0.5 spike 的加载路径）。
    * 读文件在 ArkTS 侧做（组件不碰 IO，硬约束 14）；读取失败返回 false，由切换方保留当前笔记并提示。
    * ⚠️ **先更新 `lastSavedText` 再下发给编辑器**：若 Web 的 setContent 回灌一个 change
    * 事件，guard 才能识别「内容没变」跳过冗余写（否则会被当成新编辑重写一遍）。
    */
-  private async readAndPush(relPath: string, initializeRight: boolean = true): Promise<boolean> {
+  private async readAndPush(relPath: string, initializeRight: boolean = true, requestId: number = -1,
+    requestVaultId: string = '', rightRequestId: number = -1): Promise<boolean> {
+    const targetVaultId: string = requestVaultId.length > 0 ? requestVaultId : this.currentVaultId;
+    const effectiveRequestId: number = requestId < 0 ? this.leftOpenRequestId : requestId;
+    const effectiveRightRequestId: number = rightRequestId < 0 ? this.rightOpenRequestId : rightRequestId;
+    if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     let text: string | null = '';
-    if (this.currentVaultId.length > 0 && relPath.length > 0) {
-      text = NoteService.tryReadNote(VaultRegistry.get(), this.currentVaultId, relPath);
+    if (targetVaultId.length > 0 && relPath.length > 0) {
+      text = NoteService.tryReadNote(VaultRegistry.get(), targetVaultId, relPath);
       if (text === null) {
         return false;
       }
     }
-    WorkspaceEditGuard.clear('left', this.currentVaultId, relPath);
+    if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
+    WorkspaceEditGuard.clear('left', targetVaultId, relPath);
     if (!this.workspaceSessionRestoring && this.committedLeftPath !== relPath) {
       this.leftEditorScrollTop = 0;
       this.leftPreviewScrollTop = 0;
     }
     this.lastSavedText = text;
-    this.clearStaleSaveNotice(this.currentVaultId, relPath);
+    this.clearStaleSaveNotice(targetVaultId, relPath);
     this.editorDirty = false;
     this.editorLen = text.length;
     await this.editorBridge.setContent(text);
+    if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     if (relPath.length > 0 && relPath === this.rightFilePath) {
       this.rightLastSavedText = text;
       this.rightEditorDirty = false;
@@ -2283,17 +2353,31 @@ struct Index {
       this.previewBridge.restoreScrollTop(this.leftPreviewScrollTop);
     }
     if (initializeRight && relPath.length > 0 && this.rightFilePath.length === 0) {
-      this.rightFilePath = relPath;
-      await this.readRightAndPush(relPath);
+      if (effectiveRightRequestId === this.rightOpenRequestId) {
+        this.rightFilePath = relPath;
+        await this.readRightAndPush(relPath, effectiveRightRequestId, targetVaultId);
+      }
     } else if (initializeRight && this.rightFilePath === relPath && relPath.length > 0) {
-      await this.readRightAndPush(relPath);
+      if (effectiveRightRequestId === this.rightOpenRequestId) {
+        await this.readRightAndPush(relPath, effectiveRightRequestId, targetVaultId);
+      }
+    }
+    if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
     }
     if (this.activePane === 'left') {
       this.updateChapterEntries(text, relPath);
     }
     await this.refreshSharedEditability();
+    if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     await this.refreshActiveChaptersFromBridge();
+    if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     this.committedLeftPath = relPath;
+    this.committedLeftVaultId = targetVaultId;
     this.applyRestoredChapterSelection();
     if (!this.workspaceSessionRestoring && relPath.length > 0 && this.topView === 'note') {
       this.workspaceSessionSavingEnabled = true;
@@ -2303,24 +2387,36 @@ struct Index {
     return true;
   }
 
-  private async readRightAndPush(relPath: string): Promise<boolean> {
+  private async readRightAndPush(relPath: string, requestId: number = -1,
+    requestVaultId: string = ''): Promise<boolean> {
+    const targetVaultId: string = requestVaultId.length > 0 ? requestVaultId : this.currentVaultId;
+    const effectiveRequestId: number = requestId < 0 ? this.rightOpenRequestId : requestId;
+    if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     let text: string | null = '';
-    if (this.currentVaultId.length > 0 && relPath.length > 0) {
-      text = NoteService.tryReadNote(VaultRegistry.get(), this.currentVaultId, relPath);
+    if (targetVaultId.length > 0 && relPath.length > 0) {
+      text = NoteService.tryReadNote(VaultRegistry.get(), targetVaultId, relPath);
       if (text === null) {
         return false;
       }
+    }
+    if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
     }
     if (!this.workspaceSessionRestoring && this.committedRightPath !== relPath) {
       this.rightEditorScrollTop = 0;
       this.rightPreviewScrollTop = 0;
     }
     this.rightLastSavedText = text;
-    this.clearStaleSaveNotice(this.currentVaultId, relPath);
-    WorkspaceEditGuard.clear('right', this.currentVaultId, relPath);
+    this.clearStaleSaveNotice(targetVaultId, relPath);
+    WorkspaceEditGuard.clear('right', targetVaultId, relPath);
     this.rightEditorDirty = false;
     this.rightEditorLen = text.length;
     await this.rightEditorBridge.setContent(text);
+    if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     this.rightPreviewBridge.resetDocument();
     this.rightPreviewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
     this.pushRightPreview(text, true);
@@ -2332,8 +2428,15 @@ struct Index {
       this.updateChapterEntries(text, relPath);
     }
     await this.refreshSharedEditability();
+    if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     await this.refreshActiveChaptersFromBridge();
+    if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     this.committedRightPath = relPath;
+    this.committedRightVaultId = targetVaultId;
     this.applyRestoredChapterSelection();
     if (!this.workspaceSessionRestoring && relPath.length > 0 && this.topView === 'note') {
       this.workspaceSessionSavingEnabled = true;
@@ -2348,23 +2451,28 @@ struct Index {
     if (relPath === previousPath) {
       return;
     }
+    const requestId: number = ++this.rightOpenRequestId;
     this.workspaceOpenRequests++;
     try {
       this.resetSaveFeedback();
       if (!await this.flushRightSave(previousPath, vaultId, false)) {
         return;
       }
-      this.resetSaveFeedback();
-      const text: string | null = relPath.length > 0
-        ? NoteService.tryReadNote(VaultRegistry.get(), vaultId, relPath) : '';
-      if (text === null) {
-        promptAction.showToast({ message: '打开笔记失败' });
+      if (!this.isCurrentRightOpenTarget('', vaultId, requestId)) {
         return;
       }
+      this.resetSaveFeedback();
       this.rightFilePath = relPath;
-      this.rightLastSavedText = text;
-      this.rightEditorDirty = false;
-      await this.readRightAndPush(relPath);
+      if (!await this.readRightAndPush(relPath, requestId, vaultId)) {
+        if (this.isCurrentRightOpenTarget(relPath, vaultId, requestId)) {
+          this.rightFilePath = previousPath;
+          promptAction.showToast({ message: '打开笔记失败' });
+        }
+        return;
+      }
+      if (!this.isCurrentRightOpenTarget(relPath, vaultId, requestId)) {
+        return;
+      }
       if (relPath.length > 0) {
         this.ensureRecentOpenStore();
         (this.recentOpenStore as RecentOpenStore).record(vaultId, relPath);
@@ -2387,6 +2495,12 @@ struct Index {
     if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
       return await this.flushSave(targetPath, targetVaultId, this.sharedNoteEditor(), showFeedback);
     }
+    if (targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId) {
+      return false;
+    }
+    const leftRequestId: number = this.leftOpenRequestId;
+    const rightRequestId: number = this.rightOpenRequestId;
+    const savedText: string = this.rightLastSavedText;
     if (this.rightComposing) {
       return false;
     }
@@ -2398,7 +2512,18 @@ struct Index {
       promptAction.showToast({ message: '保存失败，请稍后重试' });
       return false;
     }
-    const savedText: string = targetPath === this.rightFilePath ? this.rightLastSavedText : '';
+    if (this.rightComposing || (targetPath.length > 0 && targetPath === this.currentFilePath &&
+      targetPath === this.rightFilePath && this.leftComposing)) {
+      return false;
+    }
+    if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
+      targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId) {
+      return false;
+    }
+    if (text !== savedText && !this.rightEditorDirty) {
+      promptAction.showToast({ message: '编辑区与已打开笔记不一致，已取消保存' });
+      return false;
+    }
     if (text === savedText) {
       if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
         WorkspaceEditGuard.clear('right', targetVaultId, targetPath);
@@ -2408,6 +2533,12 @@ struct Index {
     }
     try {
       await NoteService.saveNote(VaultRegistry.get(), targetVaultId, targetPath, text, savedText);
+      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
+        targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId ||
+        targetPath !== this.rightFilePath || targetVaultId !== this.currentVaultId) {
+        WorkspaceEditGuard.clear('right', targetVaultId, targetPath);
+        return true;
+      }
       this.clearStaleSaveNotice(targetVaultId, targetPath);
       if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
         this.rightLastSavedText = text;
@@ -2551,29 +2682,52 @@ struct Index {
       this.resetSaveFeedback();
       const prev: string = this.currentFilePath;
       const vaultId: string = this.currentVaultId;
+      const requestId: number = ++this.leftOpenRequestId;
+      const rightRequestId: number = this.rightOpenRequestId;
       const rightSharesPrevious: boolean = this.rightFilePath === prev && prev.length > 0;
       const rightIsActiveEditor: boolean = rightSharesPrevious && !this.leftComposing &&
         (this.rightComposing || this.rightEditorDirty || (this.rightEditing && this.activePane === 'right'));
       this.currentFilePath = relPath;
       if (rightIsActiveEditor && !await this.flushRightSave(prev, vaultId)) {
-        this.currentFilePath = prev;
-        this.scheduleSave();
+        if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+          this.currentFilePath = prev;
+          this.scheduleSave();
+        }
+        return;
+      }
+      if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
         return;
       }
       if (!rightIsActiveEditor && !await this.flushSave(prev, vaultId)) {
-        this.currentFilePath = prev;
-        this.scheduleSave();
+        if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+          this.currentFilePath = prev;
+          this.scheduleSave();
+        }
+        return;
+      }
+      if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
         return;
       }
       if (!rightSharesPrevious && this.rightFilePath.length > 0 &&
         !await this.flushRightSave(this.rightFilePath, vaultId)) {
-        this.currentFilePath = prev;
-        this.scheduleSave();
+        if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+          this.currentFilePath = prev;
+          this.scheduleSave();
+        }
         return;
       }
-      if (!await this.readAndPush(relPath)) {
+      if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+        return;
+      }
+      if (!await this.readAndPush(relPath, true, requestId, vaultId, rightRequestId)) {
+        if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+          return;
+        }
         this.currentFilePath = prev;
         promptAction.showToast({ message: '打开笔记失败' });
+        return;
+      }
+      if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
         return;
       }
       this.ensureRecentOpenStore();
@@ -2612,6 +2766,15 @@ struct Index {
     if (!source.ready) {
       return true;
     }
+    const sourceIsRight: boolean = source === this.rightEditorBridge;
+    const committedPath: string = sourceIsRight ? this.committedRightPath : this.committedLeftPath;
+    const committedVaultId: string = sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId;
+    if (path !== committedPath || vaultId !== committedVaultId) {
+      return false;
+    }
+    const leftRequestId: number = this.leftOpenRequestId;
+    const rightRequestId: number = this.rightOpenRequestId;
+    const expectedText: string = this.lastSavedText;
     const sharedNoteCompositionActive: boolean = path === this.currentFilePath &&
       path === this.rightFilePath && (this.leftComposing || this.rightComposing);
     const sourceCompositionActive: boolean = source === this.rightEditorBridge
@@ -2631,7 +2794,26 @@ struct Index {
       promptAction.showToast({ message: '保存失败，请稍后重试' });
       return false;
     }
-    if (text === this.lastSavedText) {
+    const sharedNoteCompositionStarted: boolean = path === this.currentFilePath &&
+      path === this.rightFilePath && (this.leftComposing || this.rightComposing);
+    const sourceCompositionStarted: boolean = source === this.rightEditorBridge
+      ? this.rightComposing : this.leftComposing;
+    if (sharedNoteCompositionStarted || sourceCompositionStarted) {
+      return false;
+    }
+    if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
+      path !== (sourceIsRight ? this.committedRightPath : this.committedLeftPath) ||
+      vaultId !== (sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId)) {
+      return false;
+    }
+    const sourceDirty: boolean = sourceIsRight ? this.rightEditorDirty : this.editorDirty;
+    const sharedNoteDirty: boolean = path === this.currentFilePath && path === this.rightFilePath &&
+      (this.editorDirty || this.rightEditorDirty);
+    if (text !== expectedText && !sourceDirty && !sharedNoteDirty) {
+      promptAction.showToast({ message: '编辑区与已打开笔记不一致，已取消保存' });
+      return false;
+    }
+    if (text === expectedText) {
       WorkspaceEditGuard.clear('left', vaultId, path);
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
         this.editorDirty = false;
@@ -2643,7 +2825,14 @@ struct Index {
       return true;
     }
     try {
-      await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text, this.lastSavedText);
+      await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text, expectedText);
+      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
+        path !== (sourceIsRight ? this.committedRightPath : this.committedLeftPath) ||
+        vaultId !== (sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId) ||
+        path !== this.currentFilePath || vaultId !== this.currentVaultId) {
+        WorkspaceEditGuard.clear('left', vaultId, path);
+        return true;
+      }
       this.clearStaleSaveNotice(vaultId, path);
       this.lastSavedText = text;
       WorkspaceEditGuard.clear('left', vaultId, path);
@@ -2992,6 +3181,8 @@ struct Index {
       if (editorMounted && !await this.flushWorkspaceSaves()) {
         return;
       }
+      this.leftOpenRequestId++;
+      this.rightOpenRequestId++;
       this.stopWorkspaceSessionSaving();
       VaultRegistry.get().setCurrent(id);
       this.refreshFromRegistry();

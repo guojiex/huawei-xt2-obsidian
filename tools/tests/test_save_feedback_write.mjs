@@ -69,6 +69,12 @@ function createHarness(options = {}) {
     saveFeedbackRevision: 0,
     lastSavedText: options.lastSavedText ?? 'old content',
     editorDirty: true,
+    committedLeftPath: 'note.md',
+    committedLeftVaultId: 'local',
+    committedRightPath: '',
+    committedRightVaultId: '',
+    leftOpenRequestId: 0,
+    rightOpenRequestId: 0,
     topView: 'note',
     editorBridge: editor,
     showSaveFeedback() { calls.push('save-success'); },
@@ -116,6 +122,7 @@ test('a note that changes while the write is pending does not get success feedba
 
   assert.equal(await app.flushSave(), true);
   assert.deepEqual(calls, ['read', 'write']);
+  assert.equal(app.lastSavedText, 'old content');
 });
 
 test('editing while the write is pending invalidates that save feedback', async () => {
