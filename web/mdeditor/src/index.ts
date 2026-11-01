@@ -35,6 +35,7 @@ import {
   serializeEditorText,
   toggleCodeBlock
 } from './codeBlockFormat'
+import { toggleMarkdownFormat, toggleTaskStatus } from './markdownFormat'
 
 declare global {
   interface Window {
@@ -377,16 +378,11 @@ function simpleModeExtensions(): Extension[] {
 function toggleSimpleTask(task: HTMLElement, view: EditorView): boolean {
   const from = Number(task.dataset.simpleTaskFrom)
   const to = Number(task.dataset.simpleTaskTo)
-  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from || to > view.state.doc.length) {
+  const change = toggleTaskStatus(view.state, from, to)
+  if (!change) {
     return false
   }
-  const source = view.state.sliceDoc(from, to)
-  const checked = /\[[xX]\]/.test(source)
-  const next = source.replace(/\[[ xX]\]/, checked ? '[ ]' : '[x]')
-  if (next === source) {
-    return false
-  }
-  view.dispatch({ changes: { from: from, to: to, insert: next }, userEvent: 'input' })
+  view.dispatch({ changes: change.changes, selection: change.selection, userEvent: 'input' })
   view.focus()
   return true
 }
@@ -703,66 +699,14 @@ function applyMarkdownFormat(kind: string): void {
     applyCodeBlockFormat()
     return
   }
-  const state = view.state
-  const value = state.doc.toString()
-  const selection = state.selection.main
-  let start = selection.from
-  let end = selection.to
-  const selected = state.sliceDoc(start, end)
-  let replacement = ''
-  let selectionStart = start
-  let selectionEnd = end
-  const inlineFormats: Record<string, [string, string, string]> = {
-    bold: ['**', '**', '粗体文字'],
-    italic: ['*', '*', '斜体文字'],
-    inlineCode: ['`', '`', '代码'],
-    link: ['[', '](https://example.com)', '链接文字']
-  }
-  const inline = inlineFormats[kind]
-  if (inline) {
-    const text = selected || inline[2]
-    replacement = inline[0] + text + inline[1]
-    selectionStart = start + inline[0].length
-    selectionEnd = selectionStart + text.length
-  } else if (kind === 'paragraph' || /^h[1-6]$/.test(kind)) {
-    const lineStart = state.doc.lineAt(start).from
-    const lineEnd = state.doc.lineAt(end).to
-    const prefix = kind === 'paragraph' ? '' : '#'.repeat(Number(kind.substring(1))) + ' '
-    const lines = state.sliceDoc(lineStart, lineEnd).split('\n')
-    replacement = lines.map((line: string): string =>
-      prefix + line.replace(/^#{1,6} +/, '')).join('\n')
-    start = lineStart
-    end = lineEnd
-    selectionStart = start
-    selectionEnd = start + replacement.length
-  } else {
-    const prefixes: Record<string, string> = {
-      list: '- ',
-      ordered: '1. ',
-      task: '- [ ] ',
-      quote: '> '
-    }
-    let prefix = prefixes[kind]
-    if (prefix) {
-      replacement = (selected || (kind === 'quote' ? '引用文字' : '列表项'))
-        .split('\n').map((line: string, index: number): string =>
-          (kind === 'ordered' ? (index + 1).toString() + '. ' : prefix) + line).join('\n')
-      if (start > 0 && value[start - 1] !== '\n') {
-        replacement = '\n' + replacement
-        selectionStart += 1
-      }
-      if (end < value.length && value[end] !== '\n') {
-        replacement += '\n'
-      }
-      selectionEnd = selectionStart + replacement.length - (start > 0 && value[start - 1] !== '\n' ? 1 : 0) -
-        (end < value.length && value[end] !== '\n' ? 1 : 0)
-    } else {
-      return
-    }
+  const change = toggleMarkdownFormat(view.state, kind)
+  if (!change) {
+    view.focus()
+    return
   }
   view.dispatch({
-    changes: { from: start, to: end, insert: replacement },
-    selection: { anchor: selectionStart, head: selectionEnd },
+    changes: change.changes,
+    selection: change.selection,
     scrollIntoView: true,
     userEvent: 'input'
   })
