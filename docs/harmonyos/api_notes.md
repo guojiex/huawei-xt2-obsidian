@@ -1335,7 +1335,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 
 ### L-15 v1.8 专注模式入口无障碍名称与提示（本机 SDK 声明）✅
 
-- 本机 API 26 SDK 的 `ets/component/common.d.ts` 声明 `accessibilityText(value: string)` 自 API 11 起、`accessibilityTextHint(value: string)` 自 API 12 起，低于工程兼容上限 API 24。专注按钮按当前状态设置“进入专注模式” / “退出专注模式”名称及对应操作提示。
+- 本机 API 26 SDK 的 `ets/component/common.d.ts` 声明 `accessibilityText(value: string)` 与 `accessibilityTextHint(value: string)` 均自 API 12 起，低于工程兼容上限 API 24。专注按钮按当前状态设置“进入专注模式” / “退出专注模式”名称及对应操作提示。
 - 这里只核对 API 声明并据此接入代码；屏幕阅读器播报、键盘焦点和 API24 / XT2 表现仍待设备验收。
 
 ---
