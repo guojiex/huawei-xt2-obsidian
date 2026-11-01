@@ -43,20 +43,27 @@ class EditorImpl {
     return this.readyFlag;
   }
 
-  markReady(): void {
-    this.readyFlag = true;
-    const queue = this.pending;
-    this.pending = [];
-    for (const script of queue) {
-      void this.controller.runJavaScript(script);
+  async markReady(): Promise<void> {
+    while (this.pending.length > 0) {
+      const queue = this.pending;
+      this.pending = [];
+      for (const script of queue) {
+        await this.controller.runJavaScript(script);
+      }
     }
+    this.readyFlag = true;
   }
 
   async setContent(text: string): Promise<void> {
     // 空串直通（BridgeCodec）：空笔记是常态，util.Base64Helper 对空输入会抛错
     const payload = BridgeCodec.encode(text);
     // base64 只含 [A-Za-z0-9+/=]，可以直接安全拼进 JS 字符串
-    this.enqueue(`window.__mdeditor.setContent('${payload}')`);
+    const script: string = `window.__mdeditor.setContent('${payload}')`;
+    if (this.readyFlag) {
+      await this.controller.runJavaScript(script);
+    } else {
+      this.pending.push(script);
+    }
   }
 
   /**
@@ -175,11 +182,21 @@ class EditorImpl {
 /** 父组件持有的句柄：页面就绪前调用会进队列，不会丢 */
 export class EditorBridge {
   private impl: EditorImpl | undefined = undefined;
+  private initialContent: string = '';
+  private hasInitialContent: boolean = false;
+  private hasBoundOnce: boolean = false;
+  private unavailable: boolean = false;
+  private readyWaiters: Array<() => void> = [];
   private workspaceScrollTop: number = 0;
   private hasWorkspaceScrollTop: boolean = false;
 
   bind(impl: EditorImpl): void {
     this.impl = impl;
+    this.unavailable = false;
+    if (!this.hasBoundOnce && this.hasInitialContent) {
+      void impl.setContent(this.initialContent);
+    }
+    this.hasBoundOnce = true;
     if (this.hasWorkspaceScrollTop) {
       impl.restoreScrollTop(this.workspaceScrollTop);
     }
@@ -190,13 +207,42 @@ export class EditorBridge {
     return this.impl?.ready ?? false;
   }
 
+  waitUntilReady(): Promise<void> {
+    if (this.ready || this.unavailable) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve: () => void): void => {
+      this.readyWaiters.push(resolve);
+    });
+  }
+
+  notifyReady(): void {
+    this.unavailable = false;
+    const waiters = this.readyWaiters;
+    this.readyWaiters = [];
+    for (const resolve of waiters) {
+      resolve();
+    }
+  }
+
+  notifyUnavailable(): void {
+    this.unavailable = true;
+    const waiters = this.readyWaiters;
+    this.readyWaiters = [];
+    for (const resolve of waiters) {
+      resolve();
+    }
+  }
+
   async setContent(text: string): Promise<void> {
+    this.initialContent = text;
+    this.hasInitialContent = true;
     await this.impl?.setContent(text);
   }
 
   async getContent(): Promise<string> {
     if (!this.impl) {
-      return '';
+      return this.hasInitialContent ? this.initialContent : '';
     }
     return await this.impl.getContent();
   }
@@ -347,13 +393,19 @@ export struct EditorWebView {
       const impl = new EditorImpl(this.controller);
       this.impl = impl;
       this.bridge.bind(impl);
-      impl.markReady();
       impl.setTheme(this.theme);
       impl.setLineNumbers(this.showLineNumbers);
-      this.pageReady = true;
-      this.loadFailed = false;
-      hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'Web 编辑器页面就绪，桥接已建立');
-      this.onReady();
+      void impl.markReady().then((): void => {
+        this.bridge.notifyReady();
+        this.pageReady = true;
+        this.loadFailed = false;
+        hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'Web 编辑器页面就绪，桥接已建立');
+        this.onReady();
+      }).catch((error: Error): void => {
+        this.bridge.notifyUnavailable();
+        this.loadFailed = true;
+        this.onError('编辑器初始化失败: ' + error.message);
+      });
     } else if (name === 'content') {
       // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContent Promise
       this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
@@ -422,6 +474,7 @@ export struct EditorWebView {
         })
         .onErrorReceive((event) => {
           this.loadFailed = true;
+          this.bridge.notifyUnavailable();
           this.onError('Web 加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
         })
         .width('100%')

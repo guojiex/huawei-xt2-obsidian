@@ -185,6 +185,8 @@ struct Index {
   @State splitDragging: boolean = false;
   /** 首次工作区快照完成前关闭隐式布局动画，避免冷启动先展开再收起。 */
   @State navigationAnimationsEnabled: boolean = false;
+  /** 冷启动恢复期间先遮住默认工作区，待会话与当前可见内容就绪后一帧展示。 */
+  @State workspaceInitialRenderReady: boolean = false;
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
   private editorPreferenceStore: EditorPreferenceStore | null = null;
@@ -368,6 +370,9 @@ struct Index {
     this.syncNavigationForBreakpoint();
     this.ensureWorkspaceSessionStore();
     this.pendingWorkspaceSession = (this.workspaceSessionStore as WorkspaceSessionStore).load();
+    // Restore the session and read note files while ArkWeb initializes; bridges
+    // retain the initial content in memory until their first page is ready.
+    void this.initializeWorkspaceSession();
     this.startExternalVaultPolling();
   }
 
@@ -474,7 +479,7 @@ struct Index {
     }
   }
 
-  /** 首次编辑器桥接就绪后恢复；没有有效快照时沿用原有空工作区启动行为。 */
+  /** 页面出现时先恢复会话与笔记；可见 Web 面板就绪后再揭示首屏。 */
   private async initializeWorkspaceSession(): Promise<void> {
     if (this.workspaceSessionRestoreStarted) {
       return;
@@ -599,7 +604,43 @@ struct Index {
         }
       }
     } finally {
+      try {
+        await this.waitForInitialWorkspaceSurfaces();
+      } catch (error) {
+        // 首屏恢复不能因某个可见 Web 面板异常而永久停在启动遮罩下。
+      }
       this.navigationAnimationsEnabled = true;
+      this.workspaceInitialRenderReady = true;
+    }
+  }
+
+  private async waitForInitialWorkspaceSurfaces(): Promise<void> {
+    const waits: Array<Promise<void>> = [];
+    if (this.notePaneVisible('left')) {
+      waits.push(this.smMode === 'edit'
+        ? this.editorBridge.waitUntilReady() : this.previewBridge.waitUntilReady());
+    }
+    if (this.notePaneVisible('right')) {
+      waits.push(this.rightEditing
+        ? this.rightEditorBridge.waitUntilReady() : this.rightPreviewBridge.waitUntilReady());
+    }
+    await Promise.all(waits);
+  }
+
+  private handleInitialWorkspaceSurfaceError(pane: string, surface: string): void {
+    if (this.workspaceInitialRenderReady || !this.notePaneVisible(pane)) {
+      return;
+    }
+    const expectedSurface: string = pane === 'right'
+      ? (this.rightEditing ? 'edit' : 'preview')
+      : (this.smMode === 'edit' ? 'edit' : 'preview');
+    if (surface !== expectedSurface) {
+      return;
+    }
+    // A visible Web error also starts restoration so the normal gate can
+    // resolve this failed surface and wait for any other visible pane.
+    if (!this.workspaceSessionRestoreStarted) {
+      void this.initializeWorkspaceSession();
     }
   }
 
@@ -2875,6 +2916,8 @@ struct Index {
   }
 
   private async switchVault(id: string): Promise<void> {
+    const previousVaultId: string = this.currentVaultId;
+    const sessionSavingWasEnabled: boolean = this.workspaceSessionSavingEnabled;
     try {
       if (id === this.currentVaultId) {
         return;
@@ -2897,6 +2940,12 @@ struct Index {
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
     } catch (error) {
+      const registryCurrentId: string = VaultRegistry.get().currentId();
+      if (sessionSavingWasEnabled && registryCurrentId === previousVaultId &&
+        this.currentVaultId === previousVaultId) {
+        this.workspaceSessionSavingEnabled = true;
+        this.scheduleWorkspaceSessionSave();
+      }
       this.toastRegistryError('切换库失败', error);
     }
   }
@@ -4317,6 +4366,13 @@ struct Index {
       if (this.shareCaptureActive) {
         this.ShareImageCaptureLayer()
       }
+      if (!this.workspaceInitialRenderReady) {
+        Column() {}
+          .width('100%')
+          .height('100%')
+          .backgroundColor($r('app.color.bg_page'))
+          .onClick((): void => {})
+      }
     }
     .width('100%')
     .height('100%')
@@ -5161,10 +5217,15 @@ struct Index {
               this.provideRightWikiLinkCompletions(id, query);
             },
             onReady: (): void => {
-              void this.readRightAndPush(this.rightFilePath);
+              if (!this.workspaceSessionRestoreStarted) {
+                void this.initializeWorkspaceSession();
+              } else if (this.workspaceInitialRenderReady) {
+                void this.readRightAndPush(this.rightFilePath);
+              }
             },
             onError: (msg: string): void => {
               hilog.error(DOMAIN, TAG, '右栏编辑器 Web: %{public}s', msg);
+              this.handleInitialWorkspaceSurfaceError('right', 'edit');
             }
           })
             .width('100%')
@@ -5176,9 +5237,15 @@ struct Index {
             onScrollPositionChange: (top: number): void => {
               this.updateWorkspaceScroll('right', 'preview', top);
             },
+            onReady: (): void => {
+              if (!this.workspaceSessionRestoreStarted) {
+                void this.initializeWorkspaceSession();
+              }
+            },
             onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
             onError: (msg: string): void => {
               hilog.error(DOMAIN, TAG, '右栏预览 Web: %{public}s', msg);
+              this.handleInitialWorkspaceSurfaceError('right', 'preview');
             }
           })
             .width('100%')
@@ -5262,12 +5329,13 @@ struct Index {
             // 避免把当前笔记覆盖为空文件。
             if (!this.workspaceSessionRestoreStarted) {
               void this.initializeWorkspaceSession();
-            } else {
+            } else if (this.workspaceInitialRenderReady) {
               void this.readAndPush(this.currentFilePath, false);
             }
           },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '编辑器 Web: %{public}s', msg);
+            this.handleInitialWorkspaceSurfaceError('left', 'edit');
           }
         })
 
@@ -5327,11 +5395,17 @@ struct Index {
           onScrollPositionChange: (top: number): void => {
             this.updateWorkspaceScroll('left', 'preview', top);
           },
+          onReady: (): void => {
+            if (!this.workspaceSessionRestoreStarted) {
+              void this.initializeWorkspaceSession();
+            }
+          },
           onWikiLinkClick: (target: string): void => {
             void this.handleWikiLinkClick(target);
           },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '预览 Web: %{public}s', msg);
+            this.handleInitialWorkspaceSurfaceError('left', 'preview');
           }
         })
           .width('100%')

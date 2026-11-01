@@ -31,7 +31,7 @@ const switchCode = transformSync(`class VaultSwitchHarness { ${switchMethod} }\n
   format: 'cjs'
 }).code;
 
-function createHarness({ readable = true, saved = true, onRead = null } = {}) {
+function createHarness({ readable = true, saved = true, onRead = null, onWait = null } = {}) {
   const calls = [];
   const registry = {
     firstInstallNotePath: () => '00_开始/快速上手.md',
@@ -50,8 +50,12 @@ function createHarness({ readable = true, saved = true, onRead = null } = {}) {
   index.workspaceSessionRestoreStarted = false;
   index.pendingWorkspaceSession = null;
   index.navigationAnimationsEnabled = false;
+  index.workspaceInitialRenderReady = false;
   index.splitDragging = false;
   index.currentFilePath = '';
+  index.waitForInitialWorkspaceSurfaces = async () => {
+    if (typeof onWait === 'function') await onWait();
+  };
   index.readAndPush = async (path) => {
     calls.push(`open:${path}`);
     if (typeof onRead === 'function') onRead();
@@ -79,6 +83,7 @@ test('first install opens the tutorial note and clears its marker only after a s
   await index.initializeWorkspaceSession();
 
   assert.equal(index.currentFilePath, '00_开始/快速上手.md');
+  assert.equal(index.workspaceInitialRenderReady, true);
   assert.deepEqual(calls, ['open:00_开始/快速上手.md', 'save-session', 'mark-opened']);
 });
 
@@ -88,6 +93,7 @@ test('failed workspace snapshot leaves the first-install marker for the next lau
   await index.initializeWorkspaceSession();
 
   assert.equal(index.currentFilePath, '00_开始/快速上手.md');
+  assert.equal(index.workspaceInitialRenderReady, true);
   assert.deepEqual(calls, ['open:00_开始/快速上手.md', 'save-session']);
 });
 
@@ -97,7 +103,24 @@ test('missing tutorial note falls back to an empty workspace without clearing it
   await index.initializeWorkspaceSession();
 
   assert.equal(index.currentFilePath, '');
+  assert.equal(index.workspaceInitialRenderReady, true);
   assert.deepEqual(calls, ['open:00_开始/快速上手.md', 'open:']);
+});
+
+test('cold-start workspace stays covered until its visible Web surface is ready', async () => {
+  let finishSurfaceWait;
+  const { index } = createHarness({ onRead: () => {} });
+  index.waitForInitialWorkspaceSurfaces = () => new Promise((resolve) => {
+    finishSurfaceWait = resolve;
+  });
+
+  const restoration = index.initializeWorkspaceSession();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(index.workspaceInitialRenderReady, false);
+
+  finishSurfaceWait();
+  await restoration;
+  assert.equal(index.workspaceInitialRenderReady, true);
 });
 
 test('switching libraries persists the new empty workspace even when the switch starts in a secondary view', async () => {

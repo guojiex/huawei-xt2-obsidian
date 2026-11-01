@@ -28,7 +28,11 @@ function createHarness(options = {}) {
   const state = { currentId: options.registryCurrentId ?? 'local' };
   const registry = {
     currentId() { return state.currentId; },
-    setCurrent(id) { calls.push(`set-current:${id}`); state.currentId = id; },
+    setCurrent(id) {
+      calls.push(`set-current:${id}`);
+      if (options.setCurrentFails) throw new Error('registry write failed');
+      state.currentId = id;
+    },
     createLocal(name) { calls.push(`create:${name}`); return { id: options.createdId ?? 'temporary' }; }
   };
   const context = vm.createContext({
@@ -42,6 +46,7 @@ function createHarness(options = {}) {
     currentFilePath: options.currentFilePath ?? 'left.md',
     rightFilePath: options.rightFilePath ?? 'right.md',
     topView: options.topView ?? 'note',
+    workspaceSessionSavingEnabled: options.workspaceSessionSavingEnabled ?? true,
     quickSwitchOpen: true,
     quickSwitchFiles: ['recent.md'],
     recentOpenPaths: ['recent.md'],
@@ -51,7 +56,11 @@ function createHarness(options = {}) {
       calls.push('flush');
       return options.flushSucceeds ?? true;
     },
-    stopWorkspaceSessionSaving() { calls.push('stop-session'); },
+    stopWorkspaceSessionSaving() {
+      calls.push('stop-session');
+      this.workspaceSessionSavingEnabled = false;
+    },
+    scheduleWorkspaceSessionSave() { calls.push('schedule-session'); },
     refreshFromRegistry() {
       calls.push('refresh');
       this.currentVaultId = registry.currentId();
@@ -101,6 +110,46 @@ test('switching from an open single-screen navigation keeps the new vault file l
   assert.equal(app.rightFilePath, '');
   assert.equal(app.drawerOpen, true);
   assert.deepEqual(calls.slice(-3), ['clear-left:', 'clear-right:', 'save-session:true']);
+});
+
+test('a failed pending save keeps the current vault, note paths, and open navigation intact', async () => {
+  const { app, calls, state } = createHarness({
+    currentFilePath: 'source.md',
+    rightFilePath: 'source-right.md',
+    drawerOpen: true,
+    flushSucceeds: false
+  });
+
+  await app.switchVault('temporary');
+
+  assert.deepEqual(calls, ['flush']);
+  assert.equal(state.currentId, 'local');
+  assert.equal(app.currentVaultId, 'local');
+  assert.equal(app.currentFilePath, 'source.md');
+  assert.equal(app.rightFilePath, 'source-right.md');
+  assert.equal(app.drawerOpen, true);
+  assert.equal(app.workspaceSessionSavingEnabled, true);
+});
+
+test('a registry switch error keeps the old workspace and resumes session saving', async () => {
+  const { app, calls, state } = createHarness({
+    currentFilePath: 'source.md',
+    rightFilePath: 'source-right.md',
+    drawerOpen: true,
+    setCurrentFails: true
+  });
+
+  await app.switchVault('temporary');
+
+  assert.deepEqual(calls, [
+    'flush', 'stop-session', 'set-current:temporary', 'schedule-session', 'toast:切换库失败'
+  ]);
+  assert.equal(state.currentId, 'local');
+  assert.equal(app.currentVaultId, 'local');
+  assert.equal(app.currentFilePath, 'source.md');
+  assert.equal(app.rightFilePath, 'source-right.md');
+  assert.equal(app.drawerOpen, true);
+  assert.equal(app.workspaceSessionSavingEnabled, true);
 });
 
 test('external vault changes clear both persistent editor buffers', async () => {

@@ -74,16 +74,22 @@ class PreviewImpl {
     this.controller = controller;
   }
 
-  markReady(): void {
+  get ready(): boolean {
+    return this.readyFlag;
+  }
+
+  async markReady(): Promise<void> {
     if (this.readyFlag) {
       return;
     }
-    this.readyFlag = true;
-    const queue = this.pending;
-    this.pending = [];
-    for (const script of queue) {
-      void this.controller.runJavaScript(script);
+    while (this.pending.length > 0) {
+      const queue = this.pending;
+      this.pending = [];
+      for (const script of queue) {
+        await this.controller.runJavaScript(script);
+      }
     }
+    this.readyFlag = true;
   }
 
   setContent(text: string): void {
@@ -166,6 +172,8 @@ class PreviewImpl {
 /** 父组件持有的句柄：页面就绪前调用会进队列，不会丢 */
 export class PreviewBridge {
   private impl: PreviewImpl | undefined = undefined;
+  private unavailable: boolean = false;
+  private readyWaiters: Array<() => void> = [];
   private content: string = '';
   private hasContent: boolean = false;
   private workspaceScrollTop: number = 0;
@@ -177,6 +185,7 @@ export class PreviewBridge {
 
   bind(impl: PreviewImpl): void {
     this.impl = impl;
+    this.unavailable = false;
     impl.setNoteDir(this.noteDir);
     impl.setTheme(this.theme);
     if (this.hasContent) {
@@ -184,6 +193,37 @@ export class PreviewBridge {
     }
     if (this.hasWorkspaceScrollTop) {
       impl.restoreScrollTop(this.workspaceScrollTop);
+    }
+  }
+
+  get ready(): boolean {
+    return this.impl?.ready ?? false;
+  }
+
+  waitUntilReady(): Promise<void> {
+    if (this.ready || this.unavailable) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve: () => void): void => {
+      this.readyWaiters.push(resolve);
+    });
+  }
+
+  notifyReady(): void {
+    this.unavailable = false;
+    const waiters = this.readyWaiters;
+    this.readyWaiters = [];
+    for (const resolve of waiters) {
+      resolve();
+    }
+  }
+
+  notifyUnavailable(): void {
+    this.unavailable = true;
+    const waiters = this.readyWaiters;
+    this.readyWaiters = [];
+    for (const resolve of waiters) {
+      resolve();
     }
   }
 
@@ -394,6 +434,23 @@ export struct PreviewWebView {
     }
   }
 
+  private async finishPageInitialization(impl: PreviewImpl): Promise<void> {
+    try {
+      await impl.markReady();
+      impl.watchWikiLinks();
+      this.bridge.notifyReady();
+      this.pageReady = true;
+      this.loadFailed = false;
+      this.onReady();
+      hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '预览页面就绪，桥接已建立');
+    } catch (error) {
+      const err = error as Error;
+      this.bridge.notifyUnavailable();
+      this.loadFailed = true;
+      this.onError('预览初始化失败: ' + err.message);
+    }
+  }
+
   aboutToDisappear(): void {
     this.bridge.setImageViewerOpen(false);
   }
@@ -436,12 +493,7 @@ export struct PreviewWebView {
           // window.__mdpreview 必然存在（构建产物单文件内联，无外链资源）。
           const impl = new PreviewImpl(this.controller);
           this.bridge.bind(impl);
-          impl.markReady();
-          impl.watchWikiLinks();
-          this.pageReady = true;
-          this.loadFailed = false;
-          this.onReady();
-          hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '预览页面就绪，桥接已建立');
+          void this.finishPageInitialization(impl);
         })
         .onConsole((event): boolean => {
           const msg = event?.message?.getMessage() ?? '';
@@ -450,6 +502,7 @@ export struct PreviewWebView {
         })
         .onErrorReceive((event) => {
           this.loadFailed = true;
+          this.bridge.notifyUnavailable();
           this.onError('预览加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
         })
         .width('100%')
