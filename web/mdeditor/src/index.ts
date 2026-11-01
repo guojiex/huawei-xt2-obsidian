@@ -36,6 +36,7 @@ import {
   toggleCodeBlock
 } from './codeBlockFormat'
 import { toggleMarkdownFormat, toggleTaskStatus } from './markdownFormat'
+import { createChangeNotificationTimer } from './changeNotification'
 
 declare global {
   interface Window {
@@ -254,7 +255,10 @@ let sourceScrollReportForced = false
 let scrollReportTimer: number | undefined = undefined
 let workspaceScrollReportSuppressedUntil = 0
 let workspaceScrollRestoreGeneration = 0
-let changeTimer: number | undefined = undefined
+const changeNotification = createChangeNotificationTimer(
+  (callback: () => void, delayMs: number): number => window.setTimeout(callback, delayMs),
+  (timerId: number): void => window.clearTimeout(timerId)
+)
 let isComposing = false
 let applyingContent = false
 let documentLineEnding = '\n'
@@ -636,13 +640,10 @@ function extensionsFor(theme: string) {
         return
       }
       // debounce：连续击键不逐帧过桥（保存/切走时 ArkTS 会主动拉全量）
-      if (changeTimer !== undefined) {
-        window.clearTimeout(changeTimer)
-      }
-      changeTimer = window.setTimeout(() => {
-        changeTimer = undefined
-        postToArkts({ type: 'event', name: 'change', len: update.state.doc.length })
-      }, 300)
+      changeNotification.schedule(
+        () => update.state.doc.length,
+        (len: number): void => postToArkts({ type: 'event', name: 'change', len: len })
+      )
     })
   ]
 }
@@ -669,24 +670,16 @@ function ensureView(): EditorView {
   observeEditorSize(view)
   view.dom.addEventListener('compositionstart', () => {
     isComposing = true
-    if (changeTimer !== undefined) {
-      window.clearTimeout(changeTimer)
-      changeTimer = undefined
-    }
+    changeNotification.cancel()
     postToArkts({ type: 'event', name: 'composition', composing: true })
   })
   view.dom.addEventListener('compositionend', () => {
     isComposing = false
     postToArkts({ type: 'event', name: 'composition', composing: false })
-    if (changeTimer !== undefined) {
-      window.clearTimeout(changeTimer)
-    }
-    changeTimer = window.setTimeout(() => {
-      changeTimer = undefined
-      if (view) {
-        postToArkts({ type: 'event', name: 'change', len: view.state.doc.length })
-      }
-    }, 300)
+    changeNotification.schedule(
+      () => view?.state.doc.length ?? 0,
+      (len: number): void => postToArkts({ type: 'event', name: 'change', len: len })
+    )
   })
   return view
 }
@@ -732,6 +725,9 @@ const api: MdEditorApi = {
     // 诊断：证明 ArkTS→JS 内容下发成功（经 onConsole 进 hilog，tag=EditorWebView）
     console.log('[mdeditor] setContent len=' + text.length)
     const v = ensureView()
+    // A pending edit notification belongs to the document being replaced. Do not let it
+    // mark the newly selected workspace target dirty after this programmatic replacement.
+    changeNotification.cancel()
     // setDoc 会走 undo 栈：用 effects 直接替换，避免用户一次 ctrl+z 撤回到「设置前」
     applyingContent = true
     try {
