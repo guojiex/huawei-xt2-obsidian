@@ -32,6 +32,7 @@ import { Icon } from '../common/Icons';
 import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
 import { FEEDBACK_EMAIL, DEVELOPER_NAME } from '../model/AppConfig';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
+import { EditorExperienceMode } from '../model/EditorExperiencePolicy';
 
 @Component
 export struct SettingsView {
@@ -44,6 +45,7 @@ export struct SettingsView {
   /** 当前库 id（诊断区显示库目录） */
   @Prop currentVaultId: string = '';
   @Prop showLineNumbers: boolean = false;
+  @Prop experienceMode: EditorExperienceMode = 'simple';
   @StorageProp('appTheme') appTheme: string = 'light';
   @Prop vaults: VaultEntry[] = [];
   @Prop @Watch('onSelectedCategoryChanged') selectedCategory: string = 'general';
@@ -52,6 +54,7 @@ export struct SettingsView {
   onOpenHistory: () => void = () => {};
   onResetSplit: () => void = () => {};
   onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
+  onExperienceModeChange: (mode: EditorExperienceMode) => void = (_mode: EditorExperienceMode) => {};
 
   @State versionName: string = '—';
   @State versionCode: number = 0;
@@ -119,6 +122,78 @@ export struct SettingsView {
     if (this.singleScreenLayout && !this.showCategoryList) {
       this.getUIContext().getFocusController().requestFocus('settings-heading-' + category);
     }
+  }
+
+  private focusExperienceMode(mode: EditorExperienceMode): void {
+    this.getUIContext().getFocusController().requestFocus('settings-editor-mode-' + mode);
+  }
+
+  private onExperienceModeKey(mode: EditorExperienceMode, event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_UP || event.keyCode === KeyCode.KEYCODE_DPAD_DOWN) {
+      this.focusExperienceMode(mode === 'simple' ? 'professional' : 'simple');
+      return true;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_ENTER || event.keyCode === KeyCode.KEYCODE_SPACE ||
+      event.keyCode === KeyCode.KEYCODE_DPAD_CENTER) {
+      this.onExperienceModeChange(mode);
+      return true;
+    }
+    return false;
+  }
+
+  private onExperienceModeHeadingKey(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_DOWN || event.keyCode === KeyCode.KEYCODE_ENTER ||
+      event.keyCode === KeyCode.KEYCODE_SPACE || event.keyCode === KeyCode.KEYCODE_DPAD_CENTER) {
+      this.focusExperienceMode(this.experienceMode);
+      return true;
+    }
+    return false;
+  }
+
+  @Builder
+  ExperienceModeRow(mode: EditorExperienceMode, title: string, description: string, icon: string) {
+    Button({ type: ButtonType.Normal, stateEffect: false }) {
+      Row({ space: Space.s3 }) {
+        Icon(icon, Space.s5, this.experienceMode === mode
+          ? $r('app.color.brand') : $r('app.color.text_secondary'))
+        Column({ space: Space.s1 }) {
+          Text(title)
+            .fontSize(FontSize.body2)
+            .fontWeight(this.experienceMode === mode ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.experienceMode === mode ? $r('app.color.brand') : $r('app.color.text_primary'))
+          Text(description)
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        if (this.experienceMode === mode) {
+          Text('✓')
+            .fontSize(FontSize.body1)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.brand'))
+        }
+      }
+    }
+    .width('100%')
+    .height(Size.touch + Space.s6)
+    .padding({ left: Space.s3, right: Space.s3, top: 0, bottom: 0 })
+    .borderRadius(Radius.control)
+    .backgroundColor(this.experienceMode === mode
+      ? $r('app.color.brand_bg') : $r('app.color.bg_card'))
+    .tabStop(true)
+    .accessibilityText(title + '。' + description + (this.experienceMode === mode ? '，已选中' : ''))
+    .id('settings-editor-mode-' + mode)
+    .onKeyEvent((event: KeyEvent): boolean => { return this.onExperienceModeKey(mode, event); })
+    .onClick((): void => { this.onExperienceModeChange(mode); })
   }
 
   private composeFeedbackBody(): string {
@@ -558,6 +633,25 @@ export struct SettingsView {
           .width('100%')
           .margin({ bottom: Space.s3 })
         this.InfoRow('显示主题', this.appTheme === 'dark' ? '深色（跟随系统）' : '浅色（跟随系统）', false)
+      }
+      .width('100%')
+      .padding(Space.s5)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
+      Column() {
+        Text('编辑模式')
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .margin({ bottom: Space.s2 })
+          .focusable(true)
+          .tabStop(true)
+          .onKeyEvent((event: KeyEvent): boolean => { return this.onExperienceModeHeadingKey(event); })
+        this.ExperienceModeRow('simple', '简单模式', '在排版正文中直接输入和设置基础格式。', 'simpleMode')
+        this.ExperienceModeRow('professional', '专业模式', '使用 Markdown 源码、预览和双栏布局。', 'professionalMode')
       }
       .width('100%')
       .padding(Space.s5)

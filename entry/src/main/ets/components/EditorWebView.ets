@@ -157,6 +157,11 @@ class EditorImpl {
     this.enqueue(`window.__mdeditor.setLineNumbers(${show})`);
   }
 
+  setExperience(mode: string): void {
+    const safeMode: string = mode === 'professional' ? 'professional' : 'simple';
+    this.enqueue(`window.__mdeditor.setExperience('${safeMode}')`);
+  }
+
   reportVisibleSourceAnchor(): void {
     this.enqueue('window.__mdeditor.reportVisibleSourceAnchor()');
   }
@@ -292,6 +297,10 @@ export class EditorBridge {
   async setEditable(editable: boolean): Promise<void> {
     await this.impl?.setEditable(editable);
   }
+
+  setExperience(mode: string): void {
+    this.impl?.setExperience(mode);
+  }
 }
 
 /**
@@ -305,6 +314,7 @@ export struct EditorWebView {
   /** 由 EntryAbility 跟随系统颜色模式写入。 */
   @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
   @Prop @Watch('onLineNumbersChanged') showLineNumbers: boolean = false;
+  @Prop @Watch('onExperienceChanged') experienceMode: string = 'simple';
   @State private pageReady: boolean = false;
   @State private loadFailed: boolean = false;
   /** 内容变化通知（debounce 300ms，只报长度；要内容请调 bridge.getContent()） */
@@ -346,6 +356,10 @@ export struct EditorWebView {
 
   onLineNumbersChanged(): void {
     this.impl?.setLineNumbers(this.showLineNumbers);
+  }
+
+  onExperienceChanged(): void {
+    this.impl?.setExperience(this.experienceMode);
   }
 
   /**
@@ -395,6 +409,7 @@ export struct EditorWebView {
       this.bridge.bind(impl);
       impl.setTheme(this.theme);
       impl.setLineNumbers(this.showLineNumbers);
+      impl.setExperience(this.experienceMode);
       void impl.markReady().then((): void => {
         this.bridge.notifyReady();
         this.pageReady = true;

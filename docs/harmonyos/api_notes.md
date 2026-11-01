@@ -1327,6 +1327,12 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 文件树操作菜单快捷键声明：`ets/api/@ohos.multimodalInput.keyCode.d.ts` 的 `KEYCODE_MENU` / `KEYCODE_F10` 均为 since 9；ArkUI `KeyEvent.getModifierKeyState(['Shift'])` 以及 `DismissPopupAction.reason` / `dismiss()` 均为 since 12，`DismissReason.PRESS_BACK` 包含 Esc 与系统 Back。均不高于 API 24；这只是本机 SDK 声明核对，不证明键盘路由、弹层焦点或设备交互。
 - 以上仅核对当前本机 SDK 的声明与可用版本；本轮 HAP 在 API 26 模拟器安装，未实际注入键盘事件，不能据此宣称 API 24 / XT2 键盘行为通过。
 
+### L-14 v1.7 编辑模式设置的键盘选择（SDK 声明 + API 26 模拟器）⚠️
+
+- 本机 API 26 SDK 的 `ets/component/button.d.ts` 声明 `Button` 自定义子组件及 `ButtonType.Normal` 均 since 7；`ets/component/common.d.ts` 声明 `tabStop(boolean)` since 14；`ets/api/@ohos.multimodalInput.keyCode.d.ts` 声明 Tab / DPAD / Enter 键值 since 9。均不高于工程 API 24 兼容上限。
+- API 26 TripleFold 当前 unsigned HAP 中，从设置页用 `uitest uiInput keyEvent 2049` 顺序 Tab 到模式按钮，Enter（2054）选中专业模式；Up（2012）将焦点移到简单模式，再按 Enter 选回简单模式。模式选中标志由设置页控件树确认。只验证该模拟器的键盘注入路径，不代表真实实体键盘或 API 24 / XT2。
+- API24 / XT2 的焦点顺序、按键路由和返回设置触发按钮仍待用户手动验收。
+
 ---
 
 ## 落地决策表

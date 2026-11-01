@@ -21,13 +21,14 @@
 
 import { basicSetup } from 'codemirror'
 import { autocompletion } from '@codemirror/autocomplete'
-import { EditorView } from '@codemirror/view'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, Range, StateField } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { Decoration, DecorationSet, EditorView, Extension, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { preservedScrollTop } from './scrollAnchor'
 import { clampWorkspaceScrollTop, editorWorkspaceScrollContainer } from './workspaceScroll'
+import { allowsSimpleModeTransaction, collectSimpleModeRanges, SimpleModeRanges, SimpleRange } from './simpleMode'
 import {
   hasCodeBlockSelection,
   normalizeEditorText,
@@ -64,6 +65,7 @@ interface MdEditorApi {
   setLineNumbers(show: boolean): void
   reportVisibleSourceAnchor(): void
   setEditable(editable: boolean): void
+  setExperience(mode: string): void
   setLinkCandidatesResult(id: number, b64: string): void
   restoreScrollTop(top: number): void
   onArktsReady(): void
@@ -227,6 +229,7 @@ const DARK_THEME = EditorView.theme(
 
 let themeMode = 'light'
 let lineNumbersVisible = false
+let simpleExperience = false
 
 // ---------- 实例 ----------
 let view: EditorView | null = null
@@ -256,6 +259,137 @@ let applyingContent = false
 let documentLineEnding = '\n'
 const editableCompartment = new Compartment()
 const readOnlyCompartment = new Compartment()
+const experienceCompartment = new Compartment()
+
+class SimpleModeWidget extends WidgetType {
+  constructor(private kind: string, private text: string, private from: number, private to: number) {
+    super()
+  }
+
+  eq(other: WidgetType): boolean {
+    return other instanceof SimpleModeWidget && other.kind === this.kind && other.text === this.text &&
+      other.from === this.from && other.to === this.to
+  }
+
+  toDOM(): HTMLElement {
+    const node = document.createElement('span')
+    node.className = 'cm-simple-' + this.kind
+    node.textContent = this.text
+    if (this.kind === 'task') {
+      node.setAttribute('role', 'checkbox')
+      node.setAttribute('aria-checked', String(this.text === '☑'))
+      node.setAttribute('aria-label', this.text === '☑' ? '已完成待办' : '未完成待办')
+      node.setAttribute('tabindex', '0')
+      node.dataset.simpleTaskFrom = String(this.from)
+      node.dataset.simpleTaskTo = String(this.to)
+    } else if (this.kind === 'protected-hint') {
+      node.setAttribute('role', 'note')
+    }
+    return node
+  }
+
+  ignoreEvent(): boolean {
+    return this.kind !== 'task'
+  }
+}
+
+const simpleModeRangesField = StateField.define<SimpleModeRanges>({
+  create(state: EditorState): SimpleModeRanges {
+    return collectSimpleModeRanges(state)
+  },
+  update(value: SimpleModeRanges, transaction): SimpleModeRanges {
+    return transaction.docChanged || transaction.selectionSet
+      ? collectSimpleModeRanges(transaction.state) : value
+  }
+})
+
+function simpleModeDecorations(view: EditorView): DecorationSet {
+  const model: SimpleModeRanges = view.state.field(simpleModeRangesField)
+  const decorations: Range<Decoration>[] = []
+  for (const range of model.decorations) {
+    if (range.kind.startsWith('heading-') || range.kind === 'quote') {
+      decorations.push(Decoration.line({ attributes: { class: 'cm-simple-' + range.kind } }).range(range.from))
+    } else if (range.kind === 'strong' || range.kind === 'emphasis') {
+      decorations.push(Decoration.mark({ class: 'cm-simple-' + range.kind }).range(range.from, range.to))
+    } else if (range.kind === 'hide') {
+      decorations.push(Decoration.replace({}).range(range.from, range.to))
+    } else if (range.kind === 'list-marker' || range.kind === 'task' || range.kind === 'protected-hint') {
+      const widget = new SimpleModeWidget(range.kind, range.value ?? '', range.from, range.to)
+      const decoration = range.kind === 'protected-hint'
+        ? Decoration.widget({ widget: widget, side: -1 })
+        : Decoration.replace({ widget: widget })
+      decorations.push(decoration.range(range.from, range.to))
+    }
+  }
+  return Decoration.set(decorations, true)
+}
+
+const simpleModePlugin = ViewPlugin.fromClass(class {
+  decorations: DecorationSet
+
+  constructor(view: EditorView) {
+    this.decorations = simpleModeDecorations(view)
+  }
+
+  update(update: ViewUpdate): void {
+    if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      this.decorations = simpleModeDecorations(update.view)
+    }
+  }
+}, { decorations: (plugin) => plugin.decorations })
+
+function simpleModeExtensions(): Extension[] {
+  return [
+    simpleModeRangesField,
+    EditorState.changeFilter.of((transaction) => {
+      const model = transaction.startState.field(simpleModeRangesField)
+      return allowsSimpleModeTransaction(transaction.startState, transaction, model.protected)
+    }),
+    simpleModePlugin,
+    EditorView.domEventHandlers({
+      click(event: MouseEvent, view: EditorView): boolean {
+        const target = event.target
+        if (!(target instanceof HTMLElement)) {
+          return false
+        }
+        const task = target.closest('.cm-simple-task') as HTMLElement | null
+        return task ? toggleSimpleTask(task, view) : false
+      },
+      keydown(event: KeyboardEvent, view: EditorView): boolean {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return false
+        }
+        const target = event.target
+        if (!(target instanceof HTMLElement)) {
+          return false
+        }
+        const task = target.closest('.cm-simple-task') as HTMLElement | null
+        if (!task) {
+          return false
+        }
+        event.preventDefault()
+        return toggleSimpleTask(task, view)
+      }
+    })
+  ]
+}
+
+function toggleSimpleTask(task: HTMLElement, view: EditorView): boolean {
+  const from = Number(task.dataset.simpleTaskFrom)
+  const to = Number(task.dataset.simpleTaskTo)
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from || to > view.state.doc.length) {
+    return false
+  }
+  const source = view.state.sliceDoc(from, to)
+  const checked = /\[[xX]\]/.test(source)
+  const next = source.replace(/\[[ xX]\]/, checked ? '[ ]' : '[x]')
+  if (next === source) {
+    return false
+  }
+  view.dispatch({ changes: { from: from, to: to, insert: next }, userEvent: 'input' })
+  view.focus()
+  return true
+}
 let isEditable = true
 
 let reportedCodeBlockState = false
@@ -486,6 +620,7 @@ function extensionsFor(theme: string) {
     theme === 'dark' ? [DARK_THEME, oneDark] : [LIGHT_THEME],
     editableCompartment.of(EditorView.editable.of(isEditable)),
     readOnlyCompartment.of(EditorState.readOnly.of(!isEditable)),
+    experienceCompartment.of(simpleExperience ? simpleModeExtensions() : []),
     EditorView.lineWrapping,
     autocompletion({ override: [wikiLinkCompletion], closeOnBlur: true }),
     // ⚠️ change 上报监听必须放进 extensionsFor 跟着每次 state 重建（2026-10-18 崩溃排查
@@ -533,6 +668,7 @@ function ensureView(): EditorView {
     extensions: extensionsFor(themeMode)
   })
   view = new EditorView({ state, parent })
+  parent.classList.toggle('cm-experience-simple', simpleExperience)
   setLineNumberVisibility(lineNumbersVisible)
   observeEditorSize(view)
   view.dom.addEventListener('compositionstart', () => {
@@ -745,6 +881,13 @@ const api: MdEditorApi = {
 
   setLineNumbers(show: boolean): void {
     setLineNumberVisibility(show)
+  },
+
+  setExperience(mode: string): void {
+    simpleExperience = mode === 'simple'
+    const editor = ensureView()
+    editor.dom.parentElement?.classList.toggle('cm-experience-simple', simpleExperience)
+    editor.dispatch({ effects: experienceCompartment.reconfigure(simpleExperience ? simpleModeExtensions() : []) })
   },
 
   reportVisibleSourceAnchor(): void {

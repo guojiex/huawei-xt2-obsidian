@@ -49,6 +49,8 @@ import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
+import { EditorExperienceMode, DEFAULT_EDITOR_EXPERIENCE } from '../model/EditorExperiencePolicy';
+import { EditorExperienceStore } from '../model/EditorExperienceStore';
 import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from '../model/PreviewFollowPolicy';
 import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
@@ -164,6 +166,7 @@ struct Index {
   @State agentHamburgerSeq: number = 0;
   @State agentRenameSeq: number = 0;
   @State moreMenuOpen: boolean = false;
+  @State focusMoreMenuOnAppear: boolean = false;
   @State formatMenuOpen: boolean = false;
   @State formatMenuPane: string = 'left';
   @State formatPopupPlacement: Placement = Placement.Top;
@@ -190,6 +193,7 @@ struct Index {
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
   private editorPreferenceStore: EditorPreferenceStore | null = null;
+  private editorExperienceStore: EditorExperienceStore | null = null;
   private agentKitLoadStarted: boolean = false;
   private readonly agentKitUnavailableInSimulator: boolean =
     deviceInfo.productModel.toLowerCase().indexOf('emulator') >= 0;
@@ -228,6 +232,7 @@ struct Index {
   @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
   @State showLineNumbers: boolean = false;
   @State followPreviewEnabled: boolean = true;
+  @State experienceMode: EditorExperienceMode = DEFAULT_EDITOR_EXPERIENCE;
   private previewFollowPairKey: string = '';
   private previewFollowPane: string = '';
   @State @Watch('onFormatContextChanged') activePane: string = 'left';
@@ -361,6 +366,8 @@ struct Index {
     this.ensureEditorPreferenceStore();
     this.showLineNumbers = (this.editorPreferenceStore as EditorPreferenceStore).showLineNumbers();
     this.followPreviewEnabled = (this.editorPreferenceStore as EditorPreferenceStore).followPreview();
+    this.ensureEditorExperienceStore();
+    this.experienceMode = (this.editorExperienceStore as EditorExperienceStore).load();
     this.synchronizePreviewFollowContext();
     this.ensureRecentOpenStore();
     this.ensureSplitLayoutStore();
@@ -405,6 +412,31 @@ struct Index {
     }
   }
 
+  private ensureEditorExperienceStore(): void {
+    if (this.editorExperienceStore === null) {
+      this.editorExperienceStore = new EditorExperienceStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private async selectEditorExperience(mode: EditorExperienceMode): Promise<void> {
+    if (mode === this.experienceMode) {
+      return;
+    }
+    if (this.leftComposing || this.rightComposing) {
+      promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
+      return;
+    }
+    if (!await this.flushWorkspaceSaves()) {
+      return;
+    }
+    this.ensureEditorExperienceStore();
+    this.experienceMode = mode;
+    void this.refreshSharedEditability();
+    if (!(this.editorExperienceStore as EditorExperienceStore).save(mode)) {
+      promptAction.showToast({ message: '模式已切换，但偏好保存失败；重启后无法保证保留本次选择' });
+    }
+  }
+
   private setShowLineNumbers(show: boolean): void {
     this.showLineNumbers = show;
     this.ensureEditorPreferenceStore();
@@ -419,7 +451,8 @@ struct Index {
       rightPath: this.rightFilePath,
       leftEditing: this.smMode === 'edit',
       rightEditing: this.rightEditing,
-      bothPanesVisible: !this.isSingleScreenLayout() && this.isReferenceShown()
+      bothPanesVisible: this.experienceMode === 'professional' &&
+        !this.isSingleScreenLayout() && this.isReferenceShown()
     });
   }
 
@@ -617,11 +650,11 @@ struct Index {
   private async waitForInitialWorkspaceSurfaces(): Promise<void> {
     const waits: Array<Promise<void>> = [];
     if (this.notePaneVisible('left')) {
-      waits.push(this.smMode === 'edit'
+      waits.push(this.experienceMode === 'simple' || this.smMode === 'edit'
         ? this.editorBridge.waitUntilReady() : this.previewBridge.waitUntilReady());
     }
     if (this.notePaneVisible('right')) {
-      waits.push(this.rightEditing
+      waits.push(this.experienceMode === 'simple' || this.rightEditing
         ? this.rightEditorBridge.waitUntilReady() : this.rightPreviewBridge.waitUntilReady());
     }
     await Promise.all(waits);
@@ -632,8 +665,8 @@ struct Index {
       return;
     }
     const expectedSurface: string = pane === 'right'
-      ? (this.rightEditing ? 'edit' : 'preview')
-      : (this.smMode === 'edit' ? 'edit' : 'preview');
+      ? (this.experienceMode === 'simple' || this.rightEditing ? 'edit' : 'preview')
+      : (this.experienceMode === 'simple' || this.smMode === 'edit' ? 'edit' : 'preview');
     if (surface !== expectedSurface) {
       return;
     }
@@ -845,6 +878,9 @@ struct Index {
   }
 
   private notePaneWidth(pane: string): Length {
+    if (this.experienceMode === 'simple') {
+      return this.simpleWorkspacePane() === pane ? '100%' : 0;
+    }
     if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane ? '100%' : 0;
     }
@@ -864,6 +900,9 @@ struct Index {
   }
 
   private notePaneVisible(pane: string): boolean {
+    if (this.experienceMode === 'simple') {
+      return this.simpleWorkspacePane() === pane;
+    }
     if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane;
     }
@@ -1313,7 +1352,7 @@ struct Index {
     if (activePreview.closeImageViewer()) {
       return true;
     }
-    if (this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
+    if (this.experienceMode === 'professional' && this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
       this.smMode = 'edit';
       this.scheduleWorkspaceSessionSave();
       return true;
@@ -1341,6 +1380,7 @@ struct Index {
         return;
       }
       this.topView = this.settingsReturnView;
+      this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     } else if (this.topView === 'vaults') {
       this.topView = this.vaultManagerReturnView;
     } else {
@@ -1352,6 +1392,7 @@ struct Index {
   private returnFromSettings(): void {
     this.settingsDetail = false;
     this.topView = this.settingsReturnView;
+    this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     this.scheduleWorkspaceSessionSave();
   }
 
@@ -1508,6 +1549,7 @@ struct Index {
 
   private openSettings(fromView: string, initialTab: string): void {
     this.moreMenuOpen = false;
+    this.focusMoreMenuOnAppear = fromView === 'note';
     this.settingsReturnView = fromView;
     this.settingsCategory = initialTab;
     this.settingsDetail = this.isSingleScreenLayout() && fromView === 'agent';
@@ -1593,18 +1635,22 @@ struct Index {
   }
 
   private activeFilePath(): string {
-    return this.activePane === 'right' ? this.rightFilePath : this.currentFilePath;
+    const pane: string = this.experienceMode === 'simple' ? this.simpleWorkspacePane() : this.activePane;
+    return pane === 'right' ? this.rightFilePath : this.currentFilePath;
   }
 
   private activeEditorBridge(): EditorBridge {
-    return this.activePane === 'right' ? this.rightEditorBridge : this.editorBridge;
+    const pane: string = this.experienceMode === 'simple' ? this.simpleWorkspacePane() : this.activePane;
+    return pane === 'right' ? this.rightEditorBridge : this.editorBridge;
   }
 
   private sharedNoteEditor(): EditorBridge {
     if (this.leftComposing) {
       return this.editorBridge;
     }
-    if (this.rightComposing || this.rightEditorDirty || (this.rightEditing && this.activePane === 'right')) {
+    if (this.rightComposing || this.rightEditorDirty ||
+      (this.experienceMode === 'simple' ? this.simpleWorkspacePane() === 'right' :
+        this.rightEditing && this.activePane === 'right')) {
       return this.rightEditorBridge;
     }
     return this.editorBridge;
@@ -1753,12 +1799,17 @@ struct Index {
   /** Same-note editing has one active caret; the other editor stays read-only and mirrors content. */
   private async refreshSharedEditability(): Promise<void> {
     const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
-    const leftRequested: boolean = this.smMode === 'edit';
-    const rightRequested: boolean = this.rightEditing;
+    const simplePane: string = this.simpleWorkspacePane();
+    const leftRequested: boolean = this.experienceMode === 'simple'
+      ? simplePane === 'left' : this.smMode === 'edit';
+    const rightRequested: boolean = this.experienceMode === 'simple'
+      ? simplePane === 'right' : this.rightEditing;
     const leftEditable: boolean = this.leftComposing || (leftRequested &&
-      (!sharedNote || (!this.rightComposing && this.activePane === 'left')));
+      (!sharedNote || (!this.rightComposing && (this.experienceMode === 'simple'
+        ? simplePane === 'left' : this.activePane === 'left'))));
     const rightEditable: boolean = this.rightComposing || (rightRequested &&
-      (!sharedNote || (!this.leftComposing && this.activePane === 'right')));
+      (!sharedNote || (!this.leftComposing && (this.experienceMode === 'simple'
+        ? simplePane === 'right' : this.activePane === 'right'))));
 
     // Revoke the old editor first so a same-note pane switch never leaves two active carets.
     if (!leftEditable && this.editorBridge.ready) {
@@ -1789,7 +1840,7 @@ struct Index {
   }
 
   private toggleReference(): void {
-    if (this.focused) {
+    if (this.focused || this.experienceMode === 'simple') {
       return;
     }
     const show: boolean = !this.isReferenceShown();
@@ -1806,7 +1857,7 @@ struct Index {
   }
 
   private isReferenceShown(): boolean {
-    if (!this.referenceVisible || this.focused) {
+    if (this.experienceMode === 'simple' || !this.referenceVisible || this.focused) {
       return false;
     }
     if (this.breakpoint === Breakpoint.SM) {
@@ -1847,6 +1898,15 @@ struct Index {
 
   private isPaneEditable(pane: string): boolean {
     const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
+    if (this.experienceMode === 'simple') {
+      const selectedPane: string = this.simpleWorkspacePane();
+      if (pane === 'right') {
+        return this.rightEditorBridge.ready && (this.rightComposing ||
+          (selectedPane === 'right' && (!sharedNote || !this.leftComposing)));
+      }
+      return this.editorBridge.ready && (this.leftComposing ||
+        (selectedPane === 'left' && (!sharedNote || !this.rightComposing)));
+    }
     if (pane === 'right') {
       return this.rightEditorBridge.ready && (this.rightComposing || (this.rightEditing &&
         (!sharedNote || (!this.leftComposing && this.activePane === 'right'))));
@@ -3996,6 +4056,19 @@ struct Index {
     return label === '编辑' ? editing : !editing;
   }
 
+  private simpleWorkspacePane(): string {
+    if (this.activePane === 'right' && this.rightFilePath.length > 0) {
+      return 'right';
+    }
+    if (this.activePane === 'left' && this.currentFilePath.length > 0) {
+      return 'left';
+    }
+    if (this.currentFilePath.length > 0) {
+      return 'left';
+    }
+    return this.rightFilePath.length > 0 ? 'right' : this.activePane;
+  }
+
   @Builder
   PaneModeButton(pane: string, label: string) {
     Row() {
@@ -4277,37 +4350,49 @@ struct Index {
 
   @Builder
   NoteBody() {
-    Row() {
+    if (this.experienceMode === 'simple') {
       Column() {
-        this.LeftWorkspacePane(false)
+        if (this.simpleWorkspacePane() === 'right') {
+          this.RightWorkspacePane()
+        } else {
+          this.LeftWorkspacePane(false)
+        }
       }
-      .width(this.notePaneWidth('left'))
+      .width('100%')
       .height('100%')
-      .visibility(this.notePaneVisible('left') ? Visibility.Visible : Visibility.Hidden)
+    } else {
+      Row() {
+        Column() {
+          this.LeftWorkspacePane(false)
+        }
+        .width(this.notePaneWidth('left'))
+        .height('100%')
+        .visibility(this.notePaneVisible('left') ? Visibility.Visible : Visibility.Hidden)
 
-      SplitHandle({
-        dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
-        dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
-        dragEnded: (): void => { this.endSplitDrag(); },
-        resetRequested: (): void => { this.resetSplitLayout(); }
-      })
-        .width(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible ? Space.s4 : 0)
-        .margin(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
-          ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
-        .enabled(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible)
-        .visibility(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
-          ? Visibility.Visible : Visibility.Hidden)
+        SplitHandle({
+          dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
+          dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
+          dragEnded: (): void => { this.endSplitDrag(); },
+          resetRequested: (): void => { this.resetSplitLayout(); }
+        })
+          .width(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible ? Space.s4 : 0)
+          .margin(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
+            ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
+          .enabled(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible)
+          .visibility(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
+            ? Visibility.Visible : Visibility.Hidden)
 
-      Column() {
-        this.RightWorkspacePane()
+        Column() {
+          this.RightWorkspacePane()
+        }
+        .width(this.notePaneWidth('right'))
+        .height('100%')
+        .enabled(this.notePaneWidth('right') !== 0)
+        .visibility(this.notePaneVisible('right') ? Visibility.Visible : Visibility.Hidden)
       }
-      .width(this.notePaneWidth('right'))
+      .width('100%')
       .height('100%')
-      .enabled(this.notePaneWidth('right') !== 0)
-      .visibility(this.notePaneVisible('right') ? Visibility.Visible : Visibility.Hidden)
     }
-    .width('100%')
-    .height('100%')
   }
 
   build() {
@@ -4518,28 +4603,26 @@ struct Index {
           }
           .margin({ left: Space.s1, right: Space.s1 })
         }
-        if (this.isSingleScreenLayout()) {
-          this.MoreMenuButton()
-        } else {
+        if (!this.isSingleScreenLayout()) {
           if (this.currentVaultIsGit()) {
             this.GitSyncButton()
           }
-          this.IconButton('columns', this.isReferenceShown()
-            ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
-            this.toggleReference();
-          }, this.isReferenceShown()
-            ? $r('app.color.brand_bg') : Color.Transparent)
+          if (this.experienceMode === 'professional') {
+            this.IconButton('columns', this.isReferenceShown()
+              ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
+              this.toggleReference();
+            }, this.isReferenceShown()
+              ? $r('app.color.brand_bg') : Color.Transparent)
+          }
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
-          })
-          this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
-            this.openSettings('note', 'general');
           })
           this.IconButton('focus', this.focused
             ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
             this.toggleFocus();
           })
         }
+        this.MoreMenuButton()
       } else if (this.topView === 'agent') {
         this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
           this.openSettings('agent', 'agent');
@@ -4572,7 +4655,15 @@ struct Index {
     .width(Size.touch)
     .height(Size.touch)
     .borderRadius(Radius.icon)
+    .focusable(true)
+    .id('workspace-more-button')
     .onClick(() => { this.moreMenuOpen = !this.moreMenuOpen; })
+    .onAppear((): void => {
+      if (this.focusMoreMenuOnAppear) {
+        this.getUIContext().getFocusController().requestFocus('workspace-more-button');
+        this.focusMoreMenuOnAppear = false;
+      }
+    })
     .bindPopup(this.moreMenuOpen, {
       builder: this.MoreMenu(),
       placement: Placement.BottomRight,
@@ -4591,6 +4682,13 @@ struct Index {
   @Builder
   MoreMenu() {
     Column() {
+      Text('编辑模式')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s1 })
+      this.ExperienceMenuItem('simple', '简单模式', 'simpleMode')
+      this.ExperienceMenuItem('professional', '专业模式', 'professionalMode')
       if (this.currentVaultIsGit()) {
         Row() {
           Text('同步到 Git')
@@ -4655,7 +4753,7 @@ struct Index {
         this.moreMenuOpen = false;
         this.toggleBacklinks(this.activePane);
       })
-      if (this.currentFilePath.length > 0 && this.rightFilePath.length > 0 &&
+      if (this.experienceMode === 'professional' && this.currentFilePath.length > 0 && this.rightFilePath.length > 0 &&
         this.currentFilePath !== this.rightFilePath) {
         Row() {
           Text('切换到 ' + (this.activePane === 'left'
@@ -4682,6 +4780,36 @@ struct Index {
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
     .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
+  }
+
+  @Builder
+  ExperienceMenuItem(mode: EditorExperienceMode, label: string, icon: string) {
+    Row({ space: Space.s2 }) {
+      Icon(icon, Space.s4, this.experienceMode === mode
+        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      Text(label)
+        .fontSize(FontSize.body2)
+        .fontColor(this.experienceMode === mode ? $r('app.color.brand') : $r('app.color.text_primary'))
+        .fontWeight(this.experienceMode === mode ? FontWeight.Medium : FontWeight.Normal)
+        .layoutWeight(1)
+      if (this.experienceMode === mode) {
+        Text('✓')
+          .fontSize(FontSize.body2)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.brand'))
+      }
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .borderRadius(Radius.control)
+    .backgroundColor(this.experienceMode === mode ? $r('app.color.brand_bg') : Color.Transparent)
+    .focusable(true)
+    .accessibilityText(label + (this.experienceMode === mode ? '，已选中' : ''))
+    .onClick((): void => {
+      this.moreMenuOpen = false;
+      void this.selectEditorExperience(mode);
+    })
   }
 
   @Builder
@@ -4933,13 +5061,15 @@ struct Index {
       }
       .width('100%')
       .height('100%')
-      .visibility(this.smMode === 'edit' ? Visibility.Visible : Visibility.Hidden)
+      .visibility(this.experienceMode === 'simple' || this.smMode === 'edit'
+        ? Visibility.Visible : Visibility.Hidden)
       Column() {
         this.PreviewPane()
       }
       .width('100%')
       .height('100%')
-      .visibility(this.smMode === 'preview' ? Visibility.Visible : Visibility.Hidden)
+      .visibility(this.experienceMode === 'professional' && this.smMode === 'preview'
+        ? Visibility.Visible : Visibility.Hidden)
     }
     .width('100%')
     .height('100%')
@@ -5180,8 +5310,10 @@ struct Index {
   @Builder
   RightWorkspacePane() {
     Column() {
-      this.PaneHead({ pane: 'right' })
-      this.PaneTitle({ pane: 'right' })
+      if (this.experienceMode === 'professional') {
+        this.PaneHead({ pane: 'right' })
+        this.PaneTitle({ pane: 'right' })
+      }
       if (!this.rightEditing && this.backlinksExpanded && this.backlinksPane === 'right') {
         this.BacklinkPanel()
       }
@@ -5190,6 +5322,7 @@ struct Index {
           EditorWebView({
             bridge: this.rightEditorBridge,
             showLineNumbers: this.showLineNumbers,
+            experienceMode: this.experienceMode,
             onChange: (len: number): void => {
               this.resetSaveFeedback();
               WorkspaceEditGuard.mark('right', this.currentVaultId, this.rightFilePath);
@@ -5230,7 +5363,8 @@ struct Index {
           })
             .width('100%')
             .height('100%')
-            .visibility(this.rightEditing ? Visibility.Visible : Visibility.Hidden)
+            .visibility(this.experienceMode === 'simple' || this.rightEditing
+              ? Visibility.Visible : Visibility.Hidden)
           PreviewWebView({
             bridge: this.rightPreviewBridge,
             onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
@@ -5250,7 +5384,8 @@ struct Index {
           })
             .width('100%')
             .height('100%')
-            .visibility(this.rightEditing ? Visibility.Hidden : Visibility.Visible)
+            .visibility(this.experienceMode === 'professional' && !this.rightEditing
+              ? Visibility.Visible : Visibility.Hidden)
           if (this.rightFilePath.length === 0) {
             this.EmptyPane()
           }
@@ -5258,7 +5393,7 @@ struct Index {
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
-        if (this.rightEditing && this.rightFilePath.length > 0) {
+        if ((this.experienceMode === 'simple' || this.rightEditing) && this.rightFilePath.length > 0) {
           this.FormatToolbar('right')
         }
       }
@@ -5283,8 +5418,10 @@ struct Index {
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      this.PaneHead({ pane: 'left' })
-      this.PaneTitle({ pane: 'left' })
+      if (this.experienceMode === 'professional') {
+        this.PaneHead({ pane: 'left' })
+        this.PaneTitle({ pane: 'left' })
+      }
 
       Stack({ alignContent: Alignment.Bottom }) {
         Stack() {
@@ -5293,6 +5430,7 @@ struct Index {
         EditorWebView({
           bridge: this.editorBridge,
           showLineNumbers: this.showLineNumbers,
+          experienceMode: this.experienceMode,
           onChange: (len: number): void => {
             // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
             this.resetSaveFeedback();
@@ -5359,7 +5497,7 @@ struct Index {
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
-        if (this.smMode === 'edit' && this.currentFilePath.length > 0) {
+        if ((this.experienceMode === 'simple' || this.smMode === 'edit') && this.currentFilePath.length > 0) {
           this.FormatToolbar('left')
         }
       }
@@ -5524,6 +5662,7 @@ struct Index {
       currentVaultId: this.currentVaultId,
       vaults: this.vaults,
       showLineNumbers: this.showLineNumbers,
+      experienceMode: this.experienceMode,
       selectedCategory: this.settingsCategory,
       showCategoryList: this.isSingleScreenLayout() && !this.settingsDetail,
       onSelectCategory: (category: string): void => {
@@ -5534,7 +5673,8 @@ struct Index {
       },
       onOpenHistory: (): void => { this.topView = 'history'; },
       onResetSplit: (): void => { this.resetSplitLayout(); },
-      onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); }
+      onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); },
+      onExperienceModeChange: (mode: EditorExperienceMode): void => { void this.selectEditorExperience(mode); }
     })
   }
 

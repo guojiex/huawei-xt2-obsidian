@@ -54,6 +54,19 @@ const html = `<!doctype html>
   #editor { height: 100%; }
   #editor .cm-gutter.cm-lineNumbers { display: none !important; }
   #editor.cm-show-line-numbers .cm-gutter.cm-lineNumbers { display: flex !important; }
+  #editor.cm-experience-simple .cm-content { font-family: var(--font); line-height: var(--leading); padding: var(--s4) var(--s4) calc(var(--touch) + var(--s8) + var(--s5)); }
+  #editor.cm-experience-simple .cm-simple-heading-1 { font-size: var(--heading); font-weight: 700; }
+  #editor.cm-experience-simple .cm-simple-heading-2,
+  #editor.cm-experience-simple .cm-simple-heading-3,
+  #editor.cm-experience-simple .cm-simple-heading-4,
+  #editor.cm-experience-simple .cm-simple-heading-5,
+  #editor.cm-experience-simple .cm-simple-heading-6 { font-size: var(--large); font-weight: 600; }
+  #editor.cm-experience-simple .cm-simple-strong { font-weight: 700; }
+  #editor.cm-experience-simple .cm-simple-emphasis { font-style: italic; }
+  #editor.cm-experience-simple .cm-line.cm-simple-quote { border-left: var(--stroke) solid var(--blue); padding-left: var(--s3); color: var(--muted); }
+  #editor.cm-experience-simple .cm-simple-list-marker { display: inline-block; min-width: var(--s6); color: var(--blue); user-select: none; }
+  #editor.cm-experience-simple .cm-simple-task { display: inline-block; min-width: var(--s6); color: var(--blue); cursor: pointer; user-select: none; }
+  #editor.cm-experience-simple .cm-simple-protected-hint { color: var(--muted); font-family: var(--font); font-size: var(--caption); padding: 0 var(--s1); border-radius: var(--small-r); background: var(--blue-soft); }
   /* 关键：让 contenteditable 区域在触屏上正常滚动/长按，不吃系统手势 */
   #editor .cm-scroller { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 </style>

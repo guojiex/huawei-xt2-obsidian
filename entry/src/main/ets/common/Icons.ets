@@ -59,6 +59,8 @@ const P_COLUMNS: string = 'M6 4H18C19.66 4 21 5.34 21 7V17C21 18.66 19.66 20 18 
 // 文件行尾「在另一栏打开」（v2 icons.columns）：外框相同，分隔线按原型落在 x=11
 const P_FILE_REFERENCE: string = 'M6 4H18C19.66 4 21 5.34 21 7V17C21 18.66 19.66 20 18 20H6C4.34 20 3 18.66 3 17V7C3 5.34 4.34 4 6 4M11 4v16';
 const P_FOCUS: string = 'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5';
+const P_SIMPLE_MODE: string = 'M4 6h16M4 12h11M4 18h16';
+const P_PROFESSIONAL_MODE: string = 'M4 4h16v16H4zM8 9l3 3-3 3M13 15h3';
 
 /** 名字 → 路径；未知名字返回空串（画不出东西，但不会崩） */
 function pathOf(name: string): string {
@@ -116,6 +118,10 @@ function pathOf(name: string): string {
     return P_FILE_REFERENCE;
   } else if (name === 'focus') {
     return P_FOCUS;
+  } else if (name === 'simpleMode') {
+    return P_SIMPLE_MODE;
+  } else if (name === 'professionalMode') {
+    return P_PROFESSIONAL_MODE;
   }
   return '';
 }
