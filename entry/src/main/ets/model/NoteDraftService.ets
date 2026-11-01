@@ -44,6 +44,9 @@ export class NoteDraftService {
         }
         return true;
       }
+      if (existing === null && NoteDraftService.draftFileExists(registry, vaultId, relPath)) {
+        return false;
+      }
       // 旧草稿内容已成为当前正式基线时可更新；其他基线冲突不静默覆盖。
       if (existing !== null && existing.baseText !== baseText && existing.content !== baseText) {
         return false;
@@ -58,14 +61,17 @@ export class NoteDraftService {
     });
   }
 
-  /** 仅正式内容仍等于草稿基线时恢复；相同内容的残留草稿会被清理。 */
+  /** 仅正式内容仍等于草稿基线时恢复；内容冲突或草稿不可解析时保留原文件。 */
   static async recover(registry: VaultRegistry, vaultId: string, relPath: string,
     formalText: string): Promise<NoteDraftRecovery> {
     await NoteDraftService.writeChain;
     const record: NoteDraftRecord | null = NoteDraftService.readRecord(registry, vaultId, relPath);
     if (record === null) {
-      NoteDraftService.removeDraftFile(registry, vaultId, relPath);
-      return { recovered: false, conflict: false, content: formalText };
+      return {
+        recovered: false,
+        conflict: NoteDraftService.draftFileExists(registry, vaultId, relPath),
+        content: formalText
+      };
     }
     if (record.content === formalText) {
       NoteDraftService.removeDraftFile(registry, vaultId, relPath);
@@ -74,8 +80,7 @@ export class NoteDraftService {
     if (record.baseText === formalText) {
       return { recovered: true, conflict: false, content: record.content };
     }
-    // 没有手动冲突处理界面；丢弃基线已过期的草稿，避免下次打开重复提示或误恢复。
-    NoteDraftService.removeDraftFile(registry, vaultId, relPath);
+    // 没有冲突解决界面；保留草稿，避免把尚未恢复的用户内容静默删除。
     return { recovered: false, conflict: true, content: formalText };
   }
 
@@ -230,6 +235,15 @@ export class NoteDraftService {
       return record;
     } catch (error) {
       return null;
+    }
+  }
+
+  /** Unknown or unreadable draft files are treated as occupied so a new snapshot cannot replace them. */
+  private static draftFileExists(registry: VaultRegistry, vaultId: string, relPath: string): boolean {
+    try {
+      return fileIo.accessSync(registry.absoluteDraftIn(vaultId, relPath));
+    } catch (error) {
+      return true;
     }
   }
 

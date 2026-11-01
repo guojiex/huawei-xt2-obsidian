@@ -24,6 +24,7 @@ const code = transformSync(`
 class PaneLayoutHarness {
   ${method('  private notePaneWidth(pane: string): Length {', '\n  private notePaneVisible(')}
   ${method('  private notePaneVisible(pane: string): boolean {', '\n  private startNavigationDrag(')}
+  simpleWorkspacePane() { return this.activePane; }
 }
 module.exports = PaneLayoutHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
@@ -34,6 +35,7 @@ function createHarness(overrides = {}) {
   const app = new module.exports();
   Object.assign(app, {
     breakpoint: Breakpoint.SM,
+    experienceMode: 'professional',
     focused: false,
     singleLandscape: false,
     activePane: 'left',
@@ -55,9 +57,17 @@ test('NoteBody keeps each workspace pane in one stable layout position', () => {
   assert.ok(start >= 0 && end > start, 'could not find NoteBody builder');
   const body = source.slice(start, end);
 
-  assert.equal((body.match(/this\.LeftWorkspacePane\(/g) ?? []).length, 1);
-  assert.equal((body.match(/this\.RightWorkspacePane\(/g) ?? []).length, 1);
-  assert.equal((body.match(/SplitHandle\(/g) ?? []).length, 1);
+  const simpleStart = body.indexOf("if (this.experienceMode === 'simple') {");
+  const professionalStart = body.indexOf('    } else {\n      Row() {', simpleStart);
+  assert.ok(simpleStart >= 0 && professionalStart > simpleStart);
+  const simple = body.slice(simpleStart, professionalStart);
+  const professional = body.slice(professionalStart);
+  assert.equal((simple.match(/this\.LeftWorkspacePane\(/g) ?? []).length, 1);
+  assert.equal((simple.match(/this\.RightWorkspacePane\(/g) ?? []).length, 1);
+  assert.equal((simple.match(/SplitHandle\(/g) ?? []).length, 0);
+  assert.equal((professional.match(/this\.LeftWorkspacePane\(/g) ?? []).length, 1);
+  assert.equal((professional.match(/this\.RightWorkspacePane\(/g) ?? []).length, 1);
+  assert.equal((professional.match(/SplitHandle\(/g) ?? []).length, 1);
 });
 
 test('NoteWorkspaceShell keeps one workspace tree under every breakpoint', () => {

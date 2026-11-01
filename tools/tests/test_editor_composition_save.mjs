@@ -16,6 +16,7 @@ function extract(startMarker, endMarker) {
 }
 
 const methods = [
+  extract('  private async persistEditorDraftSnapshot(', '\n  private async refreshBacklinks()'),
   extract('  private async flushRightSave(', '\n  private scheduleRightSave()'),
   extract('  private async flushSave(', '\n  /** Persist visible workspace content')
 ];
@@ -27,8 +28,9 @@ const code = transformSync(`class IndexHarness {
   format: 'cjs'
 }).code;
 
-function createHarness() {
+function createHarness(options = {}) {
   const calls = [];
+  const draftCalls = [];
   const leftEditor = {
     ready: true,
     async getContent() { calls.push('left-read'); return 'uncommitted candidate'; }
@@ -44,6 +46,16 @@ function createHarness() {
     DOMAIN: 0,
     TAG: 'test',
     NoteService: { async saveNote(...args) { writes.push(args); } },
+    NoteDraftService: {
+      async persist(...args) {
+        draftCalls.push(['persist', ...args.slice(1)]);
+        if (options.draftPersist !== undefined) {
+          return await options.draftPersist(...args);
+        }
+        return options.draftPersistResult === undefined ? true : options.draftPersistResult;
+      },
+      async clearIfMatches(...args) { draftCalls.push(['clear', ...args.slice(1)]); }
+    },
     VaultRegistry: { get: () => ({}) },
     WorkspaceEditGuard: { clear() {} },
     shouldShowSaveFeedback: () => false,
@@ -55,6 +67,7 @@ function createHarness() {
   Object.assign(app, {
     context,
     calls,
+    draftCalls,
     writes,
     currentFilePath: 'left.md',
     currentVaultId: 'local',
@@ -76,7 +89,11 @@ function createHarness() {
     rightLastSavedText: 'saved-right',
     editorDirty: true,
     rightEditorDirty: true,
-    topView: 'note'
+    topView: 'note',
+    clearStaleSaveNotice() {},
+    showSaveFeedback() {},
+    refreshBacklinks() {},
+    handleEditorSaveError() { calls.push('save-error'); }
   });
   return app;
 }
@@ -99,6 +116,45 @@ test('right autosave does not read or write while its IME composition is active'
   assert.deepEqual(app.calls, []);
   assert.deepEqual(app.writes, []);
   assert.equal(app.rightLastSavedText, 'saved-right');
+});
+
+test('right pane saves a recovery draft before the vault write and clears it after success', async () => {
+  const app = createHarness();
+
+  assert.equal(await app.flushRightSave(), true);
+  assert.equal(app.writes.length, 1);
+  assert.deepEqual(app.draftCalls.map((call) => [call[0], ...call.slice(1, 3)]), [
+    ['persist', 'local', 'right.md'],
+    ['clear', 'local', 'right.md']
+  ]);
+  assert.equal(app.draftCalls[0][3], 'saved-right');
+  assert.equal(app.draftCalls[0][4], 'uncommitted candidate');
+  assert.equal(app.rightLastSavedText, 'uncommitted candidate');
+  assert.equal(app.rightEditorDirty, false);
+});
+
+test('right pane keeps pending edits when the recovery draft cannot be persisted', async () => {
+  const app = createHarness({ draftPersistResult: false });
+
+  assert.equal(await app.flushRightSave(), false);
+  assert.deepEqual(app.calls, ['right-read']);
+  assert.deepEqual(app.writes, []);
+  assert.equal(app.rightLastSavedText, 'saved-right');
+  assert.equal(app.rightEditorDirty, true);
+});
+
+test('right pane keeps its persisted recovery draft when the formal write fails', async () => {
+  const app = createHarness();
+  app.context.NoteService.saveNote = async (...args) => {
+    app.writes.push(args);
+    throw new Error('controlled vault write failure');
+  };
+
+  assert.equal(await app.flushRightSave(), false);
+  assert.deepEqual(app.draftCalls.map((call) => call[0]), ['persist']);
+  assert.equal(app.rightLastSavedText, 'saved-right');
+  assert.equal(app.rightEditorDirty, true);
+  assert.deepEqual(app.calls, ['right-read', 'save-error']);
 });
 
 test('a shared note is not saved from either pane while either pane composes', async () => {
@@ -196,6 +252,25 @@ test('a save read that becomes stale during a note switch cannot write or replac
   app.leftOpenRequestId++;
   app.lastSavedText = 'next baseline';
   resolveContent('old pane candidate');
+
+  assert.equal(await saving, false);
+  assert.deepEqual(app.writes, []);
+  assert.equal(app.lastSavedText, 'next baseline');
+});
+
+test('a target change during draft persistence prevents the old save from reaching the vault', async () => {
+  let finishDraft;
+  const app = createHarness({
+    draftPersist: () => new Promise((resolve) => { finishDraft = resolve; })
+  });
+
+  const saving = app.flushSave();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  app.currentFilePath = 'next.md';
+  app.committedLeftPath = 'next.md';
+  app.leftOpenRequestId++;
+  app.lastSavedText = 'next baseline';
+  finishDraft(true);
 
   assert.equal(await saving, false);
   assert.deepEqual(app.writes, []);

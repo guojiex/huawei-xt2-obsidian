@@ -9,6 +9,7 @@ const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
 const methodNames = [
   ['sharedNoteEditor', '  private sharedNoteEditor(): EditorBridge {', '\n  private parseChapterEntries('],
+  ['simpleWorkspacePane', '  private simpleWorkspacePane(): string {', '\n  @Builder\n  PaneModeButton('],
   ['refreshSharedEditability', '  private async refreshSharedEditability(): Promise<void> {', '\n  private toggleActivePane()'],
   ['isPaneEditable', '  private isPaneEditable(pane: string): boolean {', '\n  private isImagePickerBusy(']
 ];
@@ -45,12 +46,14 @@ function createHarness(overrides = {}) {
   Object.assign(app, {
     currentFilePath: 'shared.md',
     rightFilePath: 'shared.md',
+    experienceMode: 'professional',
     activePane: 'left',
     smMode: 'edit',
     rightEditing: true,
     rightEditorDirty: false,
     leftComposing: false,
     rightComposing: false,
+    sharedEditabilityGeneration: 0,
     editorBridge: bridge('left'),
     rightEditorBridge: bridge('right'),
     ...overrides

@@ -65,6 +65,7 @@ import { NoteShareService } from '../model/NoteShareService';
 import { NoteImageShareService } from '../model/NoteImageShareService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteImageService } from '../model/NoteImageService';
+import { NoteDraftService, NoteDraftRecovery } from '../model/NoteDraftService';
 import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
 import { ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
 import { ShareLinkService, ShareLinkScope } from '../model/ShareLinkService';
@@ -326,6 +327,7 @@ struct Index {
   private externalVaultAccessErrorShown: boolean = false;
   private externalVaultNoteReadErrorKeys: string[] = [];
   private staleSaveNoticeKeys: string[] = [];
+  private lastDraftRecoveryNoticeKey: string = '';
 
   /**
    * M3 预览（3.1/3.2）：marked 渲染器跑在 PreviewWebView 里，本页做「编辑 → 预览」联动。
@@ -1292,6 +1294,46 @@ struct Index {
       return;
     }
     this.toastRegistryError('保存失败', error);
+  }
+
+  /** Keep a recoverable snapshot in the app-private store before attempting the vault write. */
+  private async persistEditorDraftSnapshot(vaultId: string, path: string,
+    baseText: string, content: string): Promise<boolean> {
+    try {
+      const persisted: boolean = await NoteDraftService.persist(VaultRegistry.get(), vaultId,
+        path, baseText, content);
+      if (!persisted) {
+        promptAction.showToast({ message: '恢复草稿无法安全更新，已暂停保存' });
+      }
+      return persisted;
+    } catch (error) {
+      promptAction.showToast({ message: '恢复草稿写入失败，笔记尚未保存' });
+      return false;
+    }
+  }
+
+  /** The formal note is already safe; a stale private draft can be cleaned on the next open. */
+  private async clearEditorDraftAfterSave(vaultId: string, path: string, content: string): Promise<void> {
+    try {
+      await NoteDraftService.clearIfMatches(VaultRegistry.get(), vaultId, path, content);
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, '笔记已保存，恢复草稿清理将在后续重试');
+    }
+  }
+
+  private reportDraftRecovery(vaultId: string, path: string, recovery: NoteDraftRecovery): void {
+    if (!recovery.recovered && !recovery.conflict) {
+      return;
+    }
+    const state: string = recovery.recovered ? 'restored' : 'conflict';
+    const key: string = vaultId + '\u0000' + path + '\u0000' + state + '\u0000' +
+      this.leftOpenRequestId.toString() + ':' + this.rightOpenRequestId.toString();
+    if (key === this.lastDraftRecoveryNoticeKey) {
+      return;
+    }
+    this.lastDraftRecoveryNoticeKey = key;
+    promptAction.showToast({ message: recovery.recovered
+      ? '已恢复上次未保存的修改' : '恢复草稿无法安全应用，已保留草稿' });
   }
 
   private async refreshBacklinks(): Promise<void> {
@@ -2327,6 +2369,27 @@ struct Index {
     if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
+    let displayText: string = text;
+    let draftRecovered: boolean = false;
+    if (targetVaultId.length > 0 && relPath.length > 0) {
+      try {
+        const recovery: NoteDraftRecovery = await NoteDraftService.recover(
+          VaultRegistry.get(), targetVaultId, relPath, text);
+        if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+          return false;
+        }
+        displayText = recovery.content;
+        draftRecovered = recovery.recovered;
+        this.reportDraftRecovery(targetVaultId, relPath, recovery);
+      } catch (error) {
+        if (this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+          promptAction.showToast({ message: '恢复草稿读取失败，已打开正式笔记' });
+        }
+      }
+    }
+    if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     WorkspaceEditGuard.clear('left', targetVaultId, relPath);
     if (!this.workspaceSessionRestoring && this.committedLeftPath !== relPath) {
       this.leftEditorScrollTop = 0;
@@ -2335,19 +2398,20 @@ struct Index {
     this.lastSavedText = text;
     this.clearStaleSaveNotice(targetVaultId, relPath);
     this.editorDirty = false;
-    this.editorLen = text.length;
-    await this.editorBridge.setContent(text);
+    this.editorLen = displayText.length;
+    await this.editorBridge.setContent(displayText);
     if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
+    this.editorDirty = draftRecovered;
     if (relPath.length > 0 && relPath === this.rightFilePath) {
       this.rightLastSavedText = text;
-      this.rightEditorDirty = false;
+      this.rightEditorDirty = draftRecovered;
     }
     // M3 联动：文件加载后预览同步本页内容 + 告知笔记目录（相对图片引用的解析基准）
     this.previewBridge.resetDocument();
     this.previewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
-    this.pushPreview(text, true);
+    this.pushPreview(displayText, true);
     if (!this.workspaceSessionRestoring) {
       this.editorBridge.restoreScrollTop(this.leftEditorScrollTop);
       this.previewBridge.restoreScrollTop(this.leftPreviewScrollTop);
@@ -2366,7 +2430,7 @@ struct Index {
       return false;
     }
     if (this.activePane === 'left') {
-      this.updateChapterEntries(text, relPath);
+      this.updateChapterEntries(displayText, relPath);
     }
     await this.refreshSharedEditability();
     if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
@@ -2383,6 +2447,9 @@ struct Index {
       this.workspaceSessionSavingEnabled = true;
     }
     this.scheduleWorkspaceSessionSave();
+    if (draftRecovered) {
+      this.scheduleSave();
+    }
     void this.refreshBacklinks();
     return true;
   }
@@ -2404,6 +2471,27 @@ struct Index {
     if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
+    let displayText: string = text;
+    let draftRecovered: boolean = false;
+    if (targetVaultId.length > 0 && relPath.length > 0) {
+      try {
+        const recovery: NoteDraftRecovery = await NoteDraftService.recover(
+          VaultRegistry.get(), targetVaultId, relPath, text);
+        if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+          return false;
+        }
+        displayText = recovery.content;
+        draftRecovered = recovery.recovered;
+        this.reportDraftRecovery(targetVaultId, relPath, recovery);
+      } catch (error) {
+        if (this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+          promptAction.showToast({ message: '恢复草稿读取失败，已打开正式笔记' });
+        }
+      }
+    }
+    if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
+      return false;
+    }
     if (!this.workspaceSessionRestoring && this.committedRightPath !== relPath) {
       this.rightEditorScrollTop = 0;
       this.rightPreviewScrollTop = 0;
@@ -2412,20 +2500,21 @@ struct Index {
     this.clearStaleSaveNotice(targetVaultId, relPath);
     WorkspaceEditGuard.clear('right', targetVaultId, relPath);
     this.rightEditorDirty = false;
-    this.rightEditorLen = text.length;
-    await this.rightEditorBridge.setContent(text);
+    this.rightEditorLen = displayText.length;
+    await this.rightEditorBridge.setContent(displayText);
     if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
+    this.rightEditorDirty = draftRecovered;
     this.rightPreviewBridge.resetDocument();
     this.rightPreviewBridge.setNoteDir(relPath.indexOf('/') >= 0 ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
-    this.pushRightPreview(text, true);
+    this.pushRightPreview(displayText, true);
     if (!this.workspaceSessionRestoring) {
       this.rightEditorBridge.restoreScrollTop(this.rightEditorScrollTop);
       this.rightPreviewBridge.restoreScrollTop(this.rightPreviewScrollTop);
     }
     if (this.activePane === 'right') {
-      this.updateChapterEntries(text, relPath);
+      this.updateChapterEntries(displayText, relPath);
     }
     await this.refreshSharedEditability();
     if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
@@ -2442,6 +2531,13 @@ struct Index {
       this.workspaceSessionSavingEnabled = true;
     }
     this.scheduleWorkspaceSessionSave();
+    if (draftRecovered) {
+      if (relPath === this.currentFilePath) {
+        this.scheduleSave();
+      } else {
+        this.scheduleRightSave();
+      }
+    }
     return true;
   }
 
@@ -2532,7 +2628,15 @@ struct Index {
       return true;
     }
     try {
+      if (!await this.persistEditorDraftSnapshot(targetVaultId, targetPath, savedText, text)) {
+        return false;
+      }
+      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
+        targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId) {
+        return false;
+      }
       await NoteService.saveNote(VaultRegistry.get(), targetVaultId, targetPath, text, savedText);
+      await this.clearEditorDraftAfterSave(targetVaultId, targetPath, text);
       if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
         targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId ||
         targetPath !== this.rightFilePath || targetVaultId !== this.currentVaultId) {
@@ -2825,7 +2929,16 @@ struct Index {
       return true;
     }
     try {
+      if (!await this.persistEditorDraftSnapshot(vaultId, path, expectedText, text)) {
+        return false;
+      }
+      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
+        path !== (sourceIsRight ? this.committedRightPath : this.committedLeftPath) ||
+        vaultId !== (sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId)) {
+        return false;
+      }
       await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text, expectedText);
+      await this.clearEditorDraftAfterSave(vaultId, path, text);
       if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
         path !== (sourceIsRight ? this.committedRightPath : this.committedLeftPath) ||
         vaultId !== (sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId) ||

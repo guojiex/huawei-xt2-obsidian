@@ -18,6 +18,7 @@ function extract(startMarker, endMarker) {
 const methods = [
   extract('  private isCurrentLeftOpenTarget(', '\n  private isCurrentRightOpenTarget('),
   extract('  private isCurrentRightOpenTarget(', '\n  /**\n   * 读取笔记全文'),
+  extract('  private reportDraftRecovery(', '\n  private async refreshBacklinks()'),
   extract('  private async readAndPush(', '\n  private async readRightAndPush('),
   extract('  private async readRightAndPush(', '\n  private async loadRightFile('),
   extract('  private async loadFile(', '\n  /**\n   * 立刻把编辑器当前内容落盘')
@@ -33,6 +34,11 @@ function createContext() {
     module,
     JSON,
     NoteService: { tryReadNote: (_registry, vault, path) => `${vault}:${path}` },
+    NoteDraftService: {
+      async recover(_registry, _vaultId, _path, formalText) {
+        return { recovered: false, conflict: false, content: formalText };
+      }
+    },
     VaultRegistry: { get: () => ({}) },
     WorkspaceEditGuard: { clear() {}, mark() {} },
     promptAction: { showToast: ({ message }) => calls.push('toast:' + message) }
@@ -114,6 +120,7 @@ test('a stale bridge setContent completion cannot publish preview or commit its 
   context.WorkspaceEditGuard = { clear: () => calls.push('guard-clear') };
 
   const opening = app.readAndPush('a.md', false);
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(calls, ['guard-clear', 'set:local:a.md']);
   app.currentFilePath = 'b.md';
   app.leftOpenRequestId = 5;
@@ -159,6 +166,7 @@ test('an implicit right-pane refresh cannot publish content after a newer right 
   context.WorkspaceEditGuard = { clear: () => calls.push('guard-clear') };
 
   const opening = app.readRightAndPush('right-a.md');
+  await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(calls, ['guard-clear', 'set-right:local:right-a.md']);
   app.rightFilePath = 'right-b.md';
   app.rightOpenRequestId = 5;

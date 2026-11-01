@@ -211,7 +211,7 @@ test('native bridges and workspace connect source anchors, manual pause, and per
   assert.match(fs.readFileSync(new URL('../../web/mdpreview/src/index.ts', import.meta.url), 'utf8'),
     /sourceFollowAnchor = null[\s\S]*window\.cancelAnimationFrame\(sourceFollowFrame\)/);
   assert.match(previewBridgeSource, /scrollToSourceLine\(anchor: PreviewFollowAnchor\)/);
-  assert.match(indexSource, /bothPanesVisible: !this\.isSingleScreenLayout\(\) && this\.isReferenceShown\(\)/);
+  assert.match(indexSource, /bothPanesVisible: this\.experienceMode === 'professional' &&\s*!this\.isSingleScreenLayout\(\) && this\.isReferenceShown\(\)/);
   assert.match(indexSource, /onSourceScrollChange: \(anchor: PreviewFollowAnchor\)/);
   assert.match(indexSource, /saveFollowPreview\(enabled\)/);
   assert.match(indexSource, /editorBridgeForPane\(pair\.sourcePane\)\.reportVisibleSourceAnchor\(\)/);
