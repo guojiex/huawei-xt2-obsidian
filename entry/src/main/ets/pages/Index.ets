@@ -183,6 +183,8 @@ struct Index {
   @State sidebarProgress: number = 1;
   @State drawerProgress: number = 0;
   @State splitDragging: boolean = false;
+  /** 首次工作区快照完成前关闭隐式布局动画，避免冷启动先展开再收起。 */
+  @State navigationAnimationsEnabled: boolean = false;
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
   private editorPreferenceStore: EditorPreferenceStore | null = null;
@@ -478,122 +480,126 @@ struct Index {
       return;
     }
     this.workspaceSessionRestoreStarted = true;
-    const session: WorkspaceSession | null = this.pendingWorkspaceSession;
-    if (session === null) {
-      const registry: VaultRegistry = VaultRegistry.get();
-      const initialNotePath: string = registry.firstInstallNotePath();
-      if (initialNotePath.length > 0 && registry.currentId() === SAMPLE_VAULT_ID) {
-        this.currentFilePath = initialNotePath;
-        if (await this.readAndPush(initialNotePath)) {
-          if (this.flushWorkspaceSessionSave()) {
-            registry.markFirstInstallNoteOpened();
+    try {
+      const session: WorkspaceSession | null = this.pendingWorkspaceSession;
+      if (session === null) {
+        const registry: VaultRegistry = VaultRegistry.get();
+        const initialNotePath: string = registry.firstInstallNotePath();
+        if (initialNotePath.length > 0 && registry.currentId() === SAMPLE_VAULT_ID) {
+          this.currentFilePath = initialNotePath;
+          if (await this.readAndPush(initialNotePath)) {
+            if (this.flushWorkspaceSessionSave()) {
+              registry.markFirstInstallNoteOpened();
+            }
+          } else {
+            this.currentFilePath = '';
+            await this.readAndPush('');
           }
-        } else {
-          this.currentFilePath = '';
-          await this.readAndPush('');
+          return;
         }
+        await this.readAndPush(this.currentFilePath);
         return;
       }
-      await this.readAndPush(this.currentFilePath);
-      return;
-    }
 
-    this.workspaceSessionRestoring = true;
-    this.workspaceSessionSavingEnabled = false;
-    let leftOpened: boolean = false;
-    let rightOpened: boolean = false;
-    try {
-      const registry: VaultRegistry = VaultRegistry.get();
-      const hasVault: boolean = registry.list().some((entry: VaultEntry): boolean => entry.id === session.vaultId);
-      if (!hasVault) {
-        leftOpened = await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
-          await this.readAndPush(path, false), async (): Promise<void> => {
+      this.workspaceSessionRestoring = true;
+      this.workspaceSessionSavingEnabled = false;
+      let leftOpened: boolean = false;
+      let rightOpened: boolean = false;
+      try {
+        const registry: VaultRegistry = VaultRegistry.get();
+        const hasVault: boolean = registry.list().some((entry: VaultEntry): boolean => entry.id === session.vaultId);
+        if (!hasVault) {
+          leftOpened = await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
+            await this.readAndPush(path, false), async (): Promise<void> => {
+              this.currentFilePath = '';
+              await this.readAndPush('', false);
+            });
+          rightOpened = await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
+            await this.readRightAndPush(path), async (): Promise<void> => {
+              this.rightFilePath = '';
+              await this.readRightAndPush('');
+            });
+          return;
+        }
+        if (registry.currentId() !== session.vaultId) {
+          registry.setCurrent(session.vaultId);
+          this.refreshFromRegistry();
+        }
+
+        const validPaths: string[] = FileTree.allNotesOf(registry.accessFor(session.vaultId));
+        const desiredPaths = workspaceSessionPaths(session, this.isSingleScreenLayout(), validPaths);
+        const leftPath: string = desiredPaths.leftPath;
+        const rightPath: string = desiredPaths.rightPath;
+
+        this.referenceVisible = session.referenceVisible;
+        this.focused = session.focused;
+        this.setSidebarCollapsed(session.sidebarCollapsed);
+        this.setDrawerOpen(this.breakpoint === Breakpoint.SM && session.drawerOpen);
+        this.smMode = session.leftMode;
+        this.rightEditing = session.rightEditing;
+        this.activePane = session.activePane;
+        this.sidebarTab = session.sidebarTab;
+        this.selectedChapterIndex = -1;
+        this.chapterPath = '';
+        this.pendingRestoredChapterOffset = session.selectedChapterOffset;
+        this.currentFilePath = leftPath;
+        this.rightFilePath = rightPath;
+        this.committedLeftPath = '';
+        this.committedRightPath = '';
+        this.leftEditorScrollTop = session.leftEditorScrollTop;
+        this.leftPreviewScrollTop = session.leftPreviewScrollTop;
+        this.rightEditorScrollTop = session.rightEditorScrollTop;
+        this.rightPreviewScrollTop = session.rightPreviewScrollTop;
+        if (this.isSingleScreenLayout()) {
+          if (session.activePane === 'right') {
+            this.leftEditorScrollTop = 0;
+            this.leftPreviewScrollTop = 0;
+          } else {
+            this.rightEditorScrollTop = 0;
+            this.rightPreviewScrollTop = 0;
+          }
+        }
+
+        leftOpened = await restoreWorkspacePane(leftPath,
+          async (path: string): Promise<boolean> => await this.readAndPush(path, false),
+          async (): Promise<void> => {
             this.currentFilePath = '';
             await this.readAndPush('', false);
           });
-        rightOpened = await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
-          await this.readRightAndPush(path), async (): Promise<void> => {
+        rightOpened = await restoreWorkspacePane(rightPath,
+          async (path: string): Promise<boolean> => await this.readRightAndPush(path),
+          async (): Promise<void> => {
             this.rightFilePath = '';
             await this.readRightAndPush('');
           });
-        return;
-      }
-      if (registry.currentId() !== session.vaultId) {
-        registry.setCurrent(session.vaultId);
-        this.refreshFromRegistry();
-      }
-
-      const validPaths: string[] = FileTree.allNotesOf(registry.accessFor(session.vaultId));
-      const desiredPaths = workspaceSessionPaths(session, this.isSingleScreenLayout(), validPaths);
-      const leftPath: string = desiredPaths.leftPath;
-      const rightPath: string = desiredPaths.rightPath;
-
-      this.referenceVisible = session.referenceVisible;
-      this.focused = session.focused;
-      this.setSidebarCollapsed(session.sidebarCollapsed);
-      this.setDrawerOpen(this.breakpoint === Breakpoint.SM && session.drawerOpen);
-      this.smMode = session.leftMode;
-      this.rightEditing = session.rightEditing;
-      this.activePane = session.activePane;
-      this.sidebarTab = session.sidebarTab;
-      this.selectedChapterIndex = -1;
-      this.chapterPath = '';
-      this.pendingRestoredChapterOffset = session.selectedChapterOffset;
-      this.currentFilePath = leftPath;
-      this.rightFilePath = rightPath;
-      this.committedLeftPath = '';
-      this.committedRightPath = '';
-      this.leftEditorScrollTop = session.leftEditorScrollTop;
-      this.leftPreviewScrollTop = session.leftPreviewScrollTop;
-      this.rightEditorScrollTop = session.rightEditorScrollTop;
-      this.rightPreviewScrollTop = session.rightPreviewScrollTop;
-      if (this.isSingleScreenLayout()) {
-        if (session.activePane === 'right') {
-          this.leftEditorScrollTop = 0;
-          this.leftPreviewScrollTop = 0;
-        } else {
-          this.rightEditorScrollTop = 0;
-          this.rightPreviewScrollTop = 0;
+        this.restoreWorkspaceScrollPositions();
+        this.applyRestoredChapterSelection();
+      } catch (error) {
+        leftOpened = false;
+        rightOpened = false;
+        this.currentFilePath = '';
+        this.rightFilePath = '';
+        this.sidebarTab = 'files';
+        this.pendingRestoredChapterOffset = -1;
+        this.committedLeftPath = '';
+        this.committedRightPath = '';
+        await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
+          await this.readAndPush(path, false), async (): Promise<void> => {
+            await this.readAndPush('', false);
+          });
+        await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
+          await this.readRightAndPush(path), async (): Promise<void> => {
+            await this.readRightAndPush('');
+          });
+      } finally {
+        this.workspaceSessionRestoring = false;
+        this.workspaceSessionSavingEnabled = leftOpened || rightOpened;
+        if (this.workspaceSessionSavingEnabled) {
+          this.scheduleWorkspaceSessionSave();
         }
       }
-
-      leftOpened = await restoreWorkspacePane(leftPath,
-        async (path: string): Promise<boolean> => await this.readAndPush(path, false),
-        async (): Promise<void> => {
-          this.currentFilePath = '';
-          await this.readAndPush('', false);
-        });
-      rightOpened = await restoreWorkspacePane(rightPath,
-        async (path: string): Promise<boolean> => await this.readRightAndPush(path),
-        async (): Promise<void> => {
-          this.rightFilePath = '';
-          await this.readRightAndPush('');
-        });
-      this.restoreWorkspaceScrollPositions();
-      this.applyRestoredChapterSelection();
-    } catch (error) {
-      leftOpened = false;
-      rightOpened = false;
-      this.currentFilePath = '';
-      this.rightFilePath = '';
-      this.sidebarTab = 'files';
-      this.pendingRestoredChapterOffset = -1;
-      this.committedLeftPath = '';
-      this.committedRightPath = '';
-      await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
-        await this.readAndPush(path, false), async (): Promise<void> => {
-          await this.readAndPush('', false);
-        });
-      await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
-        await this.readRightAndPush(path), async (): Promise<void> => {
-          await this.readRightAndPush('');
-        });
     } finally {
-      this.workspaceSessionRestoring = false;
-      this.workspaceSessionSavingEnabled = leftOpened || rightOpened;
-      if (this.workspaceSessionSavingEnabled) {
-        this.scheduleWorkspaceSessionSave();
-      }
+      this.navigationAnimationsEnabled = true;
     }
   }
 
@@ -878,6 +884,10 @@ struct Index {
     this.sidebarCollapsed = collapsed;
     this.sidebarProgress = collapsed ? 0 : 1;
     this.scheduleWorkspaceSessionSave();
+  }
+
+  private workspaceTransitionDuration(): number {
+    return this.navigationAnimationsEnabled && !this.splitDragging ? Motion.durNav : 0;
   }
 
   private setDrawerOpen(open: boolean): void {
@@ -2856,6 +2866,14 @@ struct Index {
     void this.switchVault(id);
   }
 
+  /** 单屏文件导航切库后留在文件列表；宽屏沿用原导航收起处理。 */
+  private switchVaultFromNavigation(id: string): void {
+    if (!this.isSingleScreenLayout()) {
+      this.closeNoteNavigation();
+    }
+    this.doSwitchVault(id);
+  }
+
   private async switchVault(id: string): Promise<void> {
     try {
       if (id === this.currentVaultId) {
@@ -2873,7 +2891,6 @@ struct Index {
       this.quickSwitchOpen = false;
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
-      this.drawerOpen = false;
       this.smMode = 'edit';
       await this.readAndPush('');
       await this.readRightAndPush('');
@@ -4148,7 +4165,7 @@ struct Index {
           .translate({ x: -this.drawerNavigationWidth() *
             (1 - (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress())) })
           .enabled(this.breakpoint === Breakpoint.SM ? this.drawerOpen : !this.sidebarCollapsed)
-          .animation({ duration: Motion.durNav, curve: Motion.navCurve })
+          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           Column() {
             this.NoteWorkspaceContent()
@@ -4157,7 +4174,7 @@ struct Index {
           .height('100%')
           .translate({ x: this.drawerNavigationWidth() *
             (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress()) })
-          .animation({ duration: Motion.durNav, curve: Motion.navCurve })
+          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
         }
         .width('100%')
         .height('100%')
@@ -4173,7 +4190,7 @@ struct Index {
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
           .margin({ left: -this.noteNavigationWidth() * (1 - this.noteNavigationProgress()) })
           .enabled(!this.sidebarCollapsed && !this.focused)
-          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           SplitHandle({
             dragStarted: (): void => { this.startNavigationDrag(false); },
@@ -4185,14 +4202,14 @@ struct Index {
             .margin({ left: -Space.s2 * this.noteNavigationProgress(),
               right: -Space.s2 * this.noteNavigationProgress() })
             .enabled(!this.sidebarCollapsed && !this.focused)
-            .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+            .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           Column() {
             this.NoteWorkspaceContent()
           }
           .width(this.noteContentWidth())
           .height('100%')
-          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
         }
         .width('100%')
         .height('100%')
@@ -4634,8 +4651,7 @@ struct Index {
         }
       },
       onSwitchVault: (id: string): void => {
-        this.closeNoteNavigation();
-        this.doSwitchVault(id);
+        this.switchVaultFromNavigation(id);
       },
       onManageVaults: (): void => {
         this.closeNoteNavigation();
@@ -4702,7 +4718,7 @@ struct Index {
       .height('100%')
       .margin({ left: -Size.drawerW * (1 - this.drawerProgress) })
       .enabled(this.drawerOpen)
-      .animation({ duration: Motion.durNav, curve: Motion.navCurve })
+      .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
       Stack({ alignContent: Alignment.Start }) {
         Column() {
@@ -4721,7 +4737,7 @@ struct Index {
       .width('100%')
       .height('100%')
       .translate({ x: Size.drawerW * this.drawerProgress })
-      .animation({ duration: Motion.durNav, curve: Motion.navCurve })
+      .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
     }
     .width('100%')
     .height('100%')
@@ -4738,7 +4754,7 @@ struct Index {
       .height('100%')
       .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
       .enabled(!this.sidebarCollapsed)
-      .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+      .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
       SplitHandle({
         dragStarted: (): void => { this.startNavigationDrag(false); },
@@ -4750,7 +4766,7 @@ struct Index {
         .margin({ left: -Space.s2 * this.sidebarProgress,
           right: -Space.s2 * this.sidebarProgress })
         .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
       Stack({ alignContent: Alignment.Start }) {
         Column() {
@@ -4786,7 +4802,7 @@ struct Index {
         .height('100%')
         .margin({ left: -this.windowWidthVp * 0.5 * (1 - this.sidebarProgress) })
         .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
         Column() {
           this.LeftWorkspacePane(false)
@@ -4799,7 +4815,7 @@ struct Index {
         }
         .width(this.windowWidthVp * 0.5 * (1 - this.sidebarProgress))
         .height('100%')
-        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
       } else {
         Column() {
           this.NoteNavigation(false)
@@ -4808,7 +4824,7 @@ struct Index {
         .height('100%')
         .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
         .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
         SplitHandle({
           dragStarted: (): void => { this.startNavigationDrag(false); },
@@ -4820,14 +4836,14 @@ struct Index {
           .margin({ left: -Space.s2 * this.sidebarProgress,
             right: -Space.s2 * this.sidebarProgress })
           .enabled(!this.sidebarCollapsed)
-          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
         Column() {
           this.LeftWorkspacePane(false)
         }
         .width(this.noteContentWidth() * this.noteContentRatio())
         .height('100%')
-        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
         SplitHandle({
           dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
@@ -4837,7 +4853,7 @@ struct Index {
         })
           .width(Space.s4)
           .margin({ left: -Space.s2, right: -Space.s2 })
-          .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
         Column() {
           this.RightWorkspacePane()
@@ -4845,7 +4861,7 @@ struct Index {
         .width(this.noteContentWidth() * (1 - this.noteContentRatio()))
         .height('100%')
         .border({ width: { left: 1 }, color: $r('app.color.line') })
-        .animation({ duration: this.splitDragging ? 0 : Motion.durNav, curve: Motion.navCurve })
+        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
       }
     }
     .width('100%')

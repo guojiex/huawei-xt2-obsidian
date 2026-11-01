@@ -518,8 +518,9 @@ export struct FileTreeView {
                   .width(14)
                   .height(14)
               }
-              Icon(n.isDir ? 'folder' : 'doc', 18,
-                n.isDir ? $r('app.color.brand') : $r('app.color.text_secondary'))
+              Icon(n.isDir ? 'folder' : 'note', Size.treeIcon,
+                n.isDir ? $r('app.color.brand') : n.relPath === this.currentFilePath
+                  ? $r('app.color.brand') : $r('app.color.text_secondary'), 1.7)
             if (this.referenceOnly && !n.isDir) {
               Column() {
                 Text(this.displayName(n))
@@ -577,7 +578,7 @@ export struct FileTreeView {
               })
             } else if (!n.isDir && !this.referenceOnly && !this.hideOtherPane) {
               Row() {
-                Icon('swap', 16, $r('app.color.text_secondary'))
+                Icon('fileReference', Space.s5, $r('app.color.text_secondary'), 1.7)
               }
               .width(Size.touch)
               .height(Size.touch)

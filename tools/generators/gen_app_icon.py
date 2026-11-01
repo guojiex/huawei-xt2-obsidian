@@ -13,6 +13,7 @@
 
 import math
 import os
+import shutil
 
 from PIL import Image, ImageDraw, ImageFilter
 
@@ -127,8 +128,10 @@ def make_foreground():
 
 
 def main():
-    bg = make_background()
-    fg = make_foreground()
+    # Approved light-blue artwork is the app source. The procedural purple
+    # helpers above remain available only for the separate legacy agent avatar.
+    assets = os.path.join(ROOT, "docs", "assets")
+    source = os.path.join(assets, "app_icon_1024.png")
 
     targets = [
         os.path.join(ROOT, "AppScope", "resources", "base", "media"),
@@ -136,14 +139,14 @@ def main():
     ]
     for t in targets:
         os.makedirs(t, exist_ok=True)
-        bg.save(os.path.join(t, "background.png"))
-        fg.save(os.path.join(t, "foreground.png"))
+        shutil.copyfile(os.path.join(assets, "app_icon_background.png"), os.path.join(t, "background.png"))
+        shutil.copyfile(os.path.join(assets, "app_icon_foreground.png"), os.path.join(t, "foreground.png"))
+        shutil.copyfile(source, os.path.join(t, "app_icon_1024.png"))
         print("write", os.path.join(t, "background.png"))
         print("write", os.path.join(t, "foreground.png"))
 
     # 启动窗口图标 = 背景 + 前景合成
-    start = bg.copy().convert("RGBA")
-    start.alpha_composite(fg)
+    start = Image.open(source).convert("RGBA")
     start = start.resize((152, 152), Image.LANCZOS)
     p = os.path.join(targets[1], "startIcon.png")
     start.save(p)

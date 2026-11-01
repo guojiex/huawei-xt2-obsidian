@@ -67,6 +67,8 @@ export class Size {
   static readonly touch: number = 48;
   /** 目录树每级缩进（1.5）—— 原实现 32/48/64/80 级差 16 太窄 */
   static readonly treeIndent: number = 24;
+  /** 文件树图标尺寸：映射 v2 `--tree-icon`。 */
+  static readonly treeIcon: number = 18;
   /** 内容页限宽（4.9）：三屏 1061vp 下不把设置项拉成一整行 */
   static readonly contentMaxW: number = 760;
   /**

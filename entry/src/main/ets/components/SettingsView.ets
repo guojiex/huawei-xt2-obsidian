@@ -935,18 +935,11 @@ export struct SettingsView {
         .margin({ bottom: Space.s4 })
       Column() {
         Row() {
-          Text('曜')
-            .fontSize(FontSize.heading)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.on_brand'))
+          Image($r('app.media.app_icon_1024'))
             .width(Space.s16)
             .height(Space.s16)
-            .textAlign(TextAlign.Center)
-            .borderRadius(Radius.card)
-            .linearGradient({
-              angle: 180,
-              colors: [[$r('app.color.brand'), 0], [$r('app.color.brand_press'), 1]]
-            })
+            .objectFit(ImageFit.Contain)
+            .borderRadius(Radius.menu)
           Column() {
             Text('曜石笔记')
               .fontSize(FontSize.s3)

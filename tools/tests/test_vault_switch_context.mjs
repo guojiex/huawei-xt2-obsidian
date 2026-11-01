@@ -45,7 +45,7 @@ function createHarness(options = {}) {
     quickSwitchOpen: true,
     quickSwitchFiles: ['recent.md'],
     recentOpenPaths: ['recent.md'],
-    drawerOpen: true,
+    drawerOpen: options.drawerOpen ?? false,
     smMode: 'preview',
     async flushWorkspaceSaves() {
       calls.push('flush');
@@ -90,6 +90,17 @@ test('switching vaults clears both persistent editor buffers, including from a s
   assert.deepEqual(Array.from(app.recentOpenPaths), []);
   assert.equal(app.drawerOpen, false);
   assert.equal(app.smMode, 'edit');
+});
+
+test('switching from an open single-screen navigation keeps the new vault file list open', async () => {
+  const { app, calls, state } = createHarness({ topView: 'note', drawerOpen: true });
+  await app.switchVault('temporary');
+
+  assert.equal(state.currentId, 'temporary');
+  assert.equal(app.currentFilePath, '');
+  assert.equal(app.rightFilePath, '');
+  assert.equal(app.drawerOpen, true);
+  assert.deepEqual(calls.slice(-3), ['clear-left:', 'clear-right:', 'save-session:true']);
 });
 
 test('external vault changes clear both persistent editor buffers', async () => {

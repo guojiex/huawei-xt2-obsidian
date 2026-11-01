@@ -365,18 +365,11 @@ export struct VaultSidebar {
   build() {
     Column() {
       Row({ space: Space.s3 }) {
-        Row() {
-          Text('曜')
-            .fontSize(FontSize.s3)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.on_brand'))
-        }
-        .width(Space.s8)
-        .height(Space.s8)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
+        Image($r('app.media.app_icon_1024'))
+        .width(Space.s10)
+        .height(Space.s10)
+        .objectFit(ImageFit.Contain)
         .borderRadius(Radius.control)
-        .backgroundColor($r('app.color.brand'))
 
         Text('曜石笔记')
           .fontSize(FontSize.body1)

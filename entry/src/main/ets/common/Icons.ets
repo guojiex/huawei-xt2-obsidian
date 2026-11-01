@@ -16,9 +16,8 @@
  * 而 `.width(size)` 的 size 是 **vp**。直接按 24→size 缩放的话，图标只会占容器的一小部分
  * （实测在 460dpi 屏上只有 35% 大小，看起来像个点）。所以系数 = `vp2px(size) / 24`。
  *
- * 所有图标只用直线命令（M/L/H/V/Z，**不用弧线 a/A**）：这样路径里每个数字都是坐标，
- * 可以安全整体乘系数；弧线命令里的 flag 是 0/1，缩放会破坏语义。
- * 约定：**新增图标一律不许用弧线**。
+ * 路径不用椭圆弧命令（a/A）：其中包含 0/1 flag，整体缩放会破坏语义；直线命令与三次贝塞尔
+ * （C）的数字全是坐标，可由 `scalePath` 安全缩放。新增圆角图标用 C 控制点逼近，勿直接用弧命令。
  */
 
 /**
@@ -35,6 +34,8 @@ const P_SEARCH: string = 'M10.8 4.3L13.29 4.79L15.39 6.21L16.81 8.31L17.3 10.8L1
 const P_COLLAPSE: string = 'M11 5l-5 7 5 7M18 5l-5 7 5 7';
 const P_FOLDER: string = 'M3 6h6l2 2h10v11H3z';
 const P_DOC: string = 'M7 3h6l4 4v14H7zM13 3v7h4';
+// 文件树笔记（按 v2 icons.note 绘制；圆角用三次贝塞尔代替椭圆弧，缩放参数无 flag 歧义）。
+const P_NOTE: string = 'M14 3H6C4.9 3 4 3.9 4 5V19C4 20.1 4.9 21 6 21H18C19.1 21 20 20.1 20 19V9ZM14 3V9H20M8 13H16M8 17H13';
 const P_PLUS: string = 'M12 5v14M5 12h14';
 const P_RENAME: string = 'M4 20h4L19 9l-4-4L4 16zM14 6l4 4';
 const P_MOVE: string = 'M4 12h16M9 7l-5 5 5 5M15 7l5 5-5 5';
@@ -55,6 +56,8 @@ const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 const P_SWAP: string = 'M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4';
 // 双栏（对齐 v2 showRef）：圆角外框（rx=3，四角用三次贝塞尔逼近）+ 中央分隔线，避免 A 命令 flag 被 scalePath 缩放
 const P_COLUMNS: string = 'M6 4H18C19.66 4 21 5.34 21 7V17C21 18.66 19.66 20 18 20H6C4.34 20 3 18.66 3 17V7C3 5.34 4.34 4 6 4M12 4v16';
+// 文件行尾「在另一栏打开」（v2 icons.columns）：外框相同，分隔线按原型落在 x=11
+const P_FILE_REFERENCE: string = 'M6 4H18C19.66 4 21 5.34 21 7V17C21 18.66 19.66 20 18 20H6C4.34 20 3 18.66 3 17V7C3 5.34 4.34 4 6 4M11 4v16';
 const P_FOCUS: string = 'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5';
 
 /** 名字 → 路径；未知名字返回空串（画不出东西，但不会崩） */
@@ -77,6 +80,8 @@ function pathOf(name: string): string {
     return P_FOLDER;
   } else if (name === 'doc') {
     return P_DOC;
+  } else if (name === 'note') {
+    return P_NOTE;
   } else if (name === 'plus') {
     return P_PLUS;
   } else if (name === 'rename') {
@@ -107,6 +112,8 @@ function pathOf(name: string): string {
     return P_SWAP;
   } else if (name === 'columns') {
     return P_COLUMNS;
+  } else if (name === 'fileReference') {
+    return P_FILE_REFERENCE;
   } else if (name === 'focus') {
     return P_FOCUS;
   }

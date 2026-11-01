@@ -266,7 +266,8 @@ test('active workspace shell animates single-screen translation and wide-screen 
   assert.match(shellSource, /if \(this\.isSingleScreenLayout\(\)\)/);
   assert.match(shellSource, /\.translate\(\{ x: -this\.drawerNavigationWidth\(\) \*/);
   assert.match(shellSource, /\.translate\(\{ x: this\.drawerNavigationWidth\(\) \*/);
-  assert.match(shellSource, /\.animation\(\{ duration: Motion\.durNav, curve: Motion\.navCurve \}\)/);
+  assert.match(shellSource, /\.animation\(\{ duration: this\.workspaceTransitionDuration\(\), curve: Motion\.navCurve \}\)/);
+  assert.match(source, /return this\.navigationAnimationsEnabled && !this\.splitDragging \? Motion\.durNav : 0;/);
   assert.match(shellSource, /\.width\(this\.noteContentWidth\(\)\)/);
   assert.doesNotMatch(shellSource, /visibility\(.*(?:drawerOpen|sidebarCollapsed)/);
   assert.match(bodySource, /\.enabled\(this\.notePaneWidth\('right'\) !== 0\)/);

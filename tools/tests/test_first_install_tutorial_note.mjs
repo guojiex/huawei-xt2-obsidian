@@ -12,7 +12,12 @@ const end = source.indexOf('\n  private restoreWorkspaceScrollPositions(): void 
 assert.ok(start >= 0 && end > start, 'could not find workspace initialization method');
 const method = source.slice(start, end).replace('  private async initializeWorkspaceSession()',
   '  async initializeWorkspaceSession()');
-const code = transformSync(`class IndexHarness { ${method} }\nmodule.exports = IndexHarness;`, {
+const durationStart = source.indexOf('  private workspaceTransitionDuration(): number {');
+const durationEnd = source.indexOf('\n  private setDrawerOpen(', durationStart);
+assert.ok(durationStart >= 0 && durationEnd > durationStart, 'could not find workspace transition duration method');
+const durationMethod = source.slice(durationStart, durationEnd).replace('  private workspaceTransitionDuration()',
+  '  workspaceTransitionDuration()');
+const code = transformSync(`class IndexHarness { ${durationMethod} ${method} }\nmodule.exports = IndexHarness;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;
@@ -26,7 +31,7 @@ const switchCode = transformSync(`class VaultSwitchHarness { ${switchMethod} }\n
   format: 'cjs'
 }).code;
 
-function createHarness({ readable = true, saved = true } = {}) {
+function createHarness({ readable = true, saved = true, onRead = null } = {}) {
   const calls = [];
   const registry = {
     firstInstallNotePath: () => '00_开始/快速上手.md',
@@ -36,18 +41,37 @@ function createHarness({ readable = true, saved = true } = {}) {
   const context = vm.createContext({
     module: { exports: {} },
     VaultRegistry: { get: () => registry },
-    SAMPLE_VAULT_ID: 'tutorial'
+    SAMPLE_VAULT_ID: 'tutorial',
+    Motion: { durNav: 240 }
   });
   vm.runInContext(code, context);
   const IndexHarness = context.module.exports;
   const index = new IndexHarness();
   index.workspaceSessionRestoreStarted = false;
   index.pendingWorkspaceSession = null;
+  index.navigationAnimationsEnabled = false;
+  index.splitDragging = false;
   index.currentFilePath = '';
-  index.readAndPush = async (path) => { calls.push(`open:${path}`); return path.length === 0 || readable; };
+  index.readAndPush = async (path) => {
+    calls.push(`open:${path}`);
+    if (typeof onRead === 'function') onRead();
+    return path.length === 0 || readable;
+  };
   index.flushWorkspaceSessionSave = () => { calls.push('save-session'); return saved; };
   return { index, calls };
 }
+
+test('workspace navigation stays unanimated through first-session restore, then enables normal transitions', async () => {
+  const observedDurations = [];
+  const { index } = createHarness({ onRead: () => observedDurations.push(index.workspaceTransitionDuration()) });
+
+  assert.equal(index.workspaceTransitionDuration(), 0);
+  await index.initializeWorkspaceSession();
+
+  assert.deepEqual(observedDurations, [0]);
+  assert.equal(index.navigationAnimationsEnabled, true);
+  assert.equal(index.workspaceTransitionDuration(), 240);
+});
 
 test('first install opens the tutorial note and clears its marker only after a saved workspace snapshot', async () => {
   const { index, calls } = createHarness();
