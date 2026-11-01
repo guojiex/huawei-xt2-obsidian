@@ -1958,7 +1958,24 @@ struct Index {
     return true;
   }
 
+  private canToggleFocus(): boolean {
+    if (this.focused) {
+      return true;
+    }
+    const activeNoteOpen: boolean = this.activePane === 'right'
+      ? this.rightFilePath.length > 0 : this.currentFilePath.length > 0;
+    if (this.isSingleScreenLayout() || !activeNoteOpen) {
+      return false;
+    }
+    const navigationVisible: boolean = !this.sidebarCollapsed;
+    const referenceVisible: boolean = this.experienceMode === 'professional' && this.isReferenceShown();
+    return navigationVisible || referenceVisible;
+  }
+
   private toggleFocus(): void {
+    if (!this.focused && !this.canToggleFocus()) {
+      return;
+    }
     this.focused = !this.focused;
     this.scheduleWorkspaceSessionSave();
     this.moreMenuOpen = false;
@@ -4980,6 +4997,8 @@ struct Index {
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
           })
+        }
+        if (this.canToggleFocus()) {
           this.FocusModeButton()
         }
         this.MoreMenuButton()
