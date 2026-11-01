@@ -122,7 +122,7 @@ export class TrashService {
     }
     FullTextSearchService.noteRemoved(vaultId, relPath, false);
     WikiLinkService.pathRemoved(vaultId);
-    hilog.info(TRASH_DOMAIN, TRASH_TAG, '移入回收站 %{public}s → %{public}s', relPath, target);
+    hilog.info(TRASH_DOMAIN, TRASH_TAG, '项目已移入回收站');
     return target;
   }
 
@@ -287,7 +287,7 @@ export class TrashService {
       fileIo.unlinkSync(registry.absoluteInTrash(vaultId, trashRel));
       FullTextSearchService.noteRestored(registry, vaultId, trashRel);
       WikiLinkService.pathAdded(vaultId);
-      hilog.info(TRASH_DOMAIN, TRASH_TAG, '恢复 %{public}s', trashRel);
+      hilog.info(TRASH_DOMAIN, TRASH_TAG, '回收站项目已恢复');
       return trashRel;
     });
   }
@@ -411,9 +411,8 @@ export class TrashService {
     let names: string[] = [];
     try {
       names = fileIo.listFileSync(absDir);
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(TRASH_DOMAIN, TRASH_TAG, '列回收站目录失败 %{public}s: %{public}s', relDir, err.message);
+    } catch (_error) {
+      hilog.warn(TRASH_DOMAIN, TRASH_TAG, '列回收站目录失败');
       return;
     }
     for (let i = 0; i < names.length; i++) {

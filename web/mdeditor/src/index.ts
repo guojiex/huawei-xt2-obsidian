@@ -780,8 +780,6 @@ const api: MdEditorApi = {
     const normalizedText = normalizeEditorText(b64decode(b64))
     documentLineEnding = normalizedText.lineEnding
     const text = normalizedText.text
-    // 诊断：证明 ArkTS→JS 内容下发成功（经 onConsole 进 hilog，tag=EditorWebView）
-    console.log('[mdeditor] setContent len=' + text.length)
     const v = ensureView()
     // A pending edit notification belongs to the document being replaced. Do not let it
     // mark the newly selected workspace target dirty after this programmatic replacement.
@@ -808,7 +806,6 @@ const api: MdEditorApi = {
   requestContent(reqId: number): void {
     const v = ensureView()
     const b64 = b64encode(serializeEditorText(v.state.doc.toString(), documentLineEnding))
-    console.log('[mdeditor] requestContent id=' + reqId + ' len=' + v.state.doc.length)
     postToArkts({ type: 'event', name: 'content', id: reqId, b64: b64 })
   },
 

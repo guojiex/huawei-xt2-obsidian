@@ -190,8 +190,7 @@ export struct FileTreeView {
     }
     const store: ExpandStore = this.store as ExpandStore;
     this.expanded = store.load(this.vaultId);
-    hilog.info(TREE_DOMAIN, TREE_TAG, '扫描库 %{public}s，已展开 %{public}d 个目录',
-      this.vaultId, this.expanded.length);
+    hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描开始');
     this.rescan();
   }
 
@@ -205,8 +204,7 @@ export struct FileTreeView {
     // VaultAccess 负责遍历（沙箱 fileIo / 外部 Native POSIX），这里只做剪枝与排版。
     const access: VaultAccess = VaultRegistry.get().accessFor(this.vaultId);
     this.applyNodes(FileTree.scan(access, this.expanded));
-    hilog.info(TREE_DOMAIN, TREE_TAG, '扫描 %{public}s：%{public}d 行可见 | %{public}s',
-      this.vaultId, this.nodes.length, FileTree.describe(this.nodes));
+    hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成，可见项=%{public}d', this.nodes.length);
   }
 
   private isExpanded(relPath: string): boolean {
@@ -414,7 +412,7 @@ export struct FileTreeView {
       .alignItems(VerticalAlign.Center)
       .backgroundColor($r('app.color.brand_bg'))
       .onClick(() => {
-        hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-重命名：%{public}s', n.relPath);
+        hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：重命名');
         this.onRenamePath(n.relPath, n.isDir);
       })
       Row() {
@@ -428,7 +426,7 @@ export struct FileTreeView {
       .alignItems(VerticalAlign.Center)
       .backgroundColor($r('app.color.brand_bg'))
       .onClick(() => {
-        hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-移动：%{public}s', n.relPath);
+        hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：移动');
         this.onMovePath(n.relPath, n.isDir);
       })
       Row() {
@@ -442,7 +440,7 @@ export struct FileTreeView {
       .alignItems(VerticalAlign.Center)
       .backgroundColor($r('app.color.danger'))
       .onClick(() => {
-        hilog.info(TREE_DOMAIN, TREE_TAG, '左滑-删除：%{public}s', n.relPath);
+        hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：删除');
         this.onDeletePath(n.relPath, n.isDir);
       })
     }
@@ -573,7 +571,7 @@ export struct FileTreeView {
               .alignItems(VerticalAlign.Center)
               .borderRadius(Radius.icon)
               .onClick(() => {
-              hilog.info(TREE_DOMAIN, TREE_TAG, '行内新建：目录 %{public}s', n.relPath);
+              hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：新建子目录');
               this.onCreateInDir(n.relPath);
               })
             } else if (!n.isDir && !this.referenceOnly && !this.hideOtherPane) {
@@ -648,7 +646,7 @@ export struct FileTreeView {
             actionAreaDistance: this.referenceOnly ? 0 : Size.swipeDelExtra,
             onAction: (): void => {
               if (!this.referenceOnly && !n.isDir) {
-                hilog.info(TREE_DOMAIN, TREE_TAG, '滑到底删除：%{public}s', n.relPath);
+                hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：滑动删除');
                 this.onSwipeDelete(n.relPath);
               }
             }

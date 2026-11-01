@@ -14,7 +14,6 @@
  */
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { sanitizeVaultName } from './Vault';
 import { VaultRegistry } from './VaultRegistry';
 import { FileTree } from './FileTree';
@@ -109,7 +108,7 @@ export class NoteService {
     }
     NoteService.ensureParentDirectories(registry, vaultId, relPath);
     await NoteService.enqueueSaveNote(registry, vaultId, relPath, content, null, true);
-    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', relPath);
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记');
   }
 
   /**
@@ -124,7 +123,7 @@ export class NoteService {
     registry.accessFor(vaultId).createEmptyNote(target);
     FullTextSearchService.noteSaved(vaultId, target, '');
     WikiLinkService.pathAdded(vaultId);
-    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', target);
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记');
     return target;
   }
 
@@ -138,8 +137,8 @@ export class NoteService {
 
   /**
    * 读取笔记全文（M3 预览 / M2 编辑器加载用）。
-   * 读失败返回空串而不是抛错：调用方是 UI 层，读不到时给个空编辑器比崩掉好，
-   * 详情进 hilog。⚠️ 二进制/超大文件不在此考虑范围内（库只收 md，人为上限）。
+   * 读失败返回空串而不是抛错：调用方是 UI 层，读不到时给个空编辑器比崩掉好。
+   * 诊断日志只记录结果，不记录库内路径、正文或长度。
    */
   static readNote(registry: VaultRegistry, vaultId: string, relPath: string): string {
     const text: string | null = NoteService.tryReadNote(registry, vaultId, relPath);
@@ -150,11 +149,10 @@ export class NoteService {
   static tryReadNote(registry: VaultRegistry, vaultId: string, relPath: string): string | null {
     try {
       const text: string = registry.accessFor(vaultId).readText(relPath);
-      hilog.info(NOTE_DOMAIN, NOTE_TAG, '读取笔记 %{public}s（%{public}d 字）', relPath, text.length);
+      hilog.info(NOTE_DOMAIN, NOTE_TAG, '读取笔记成功');
       return text;
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取笔记失败 %{public}s: %{public}s', relPath, err.message);
+    } catch (_error) {
+      hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取笔记失败');
       return null;
     }
   }
@@ -230,7 +228,7 @@ export class NoteService {
       FullTextSearchService.noteRemoved(vaultId, relPath, false);
       WikiLinkService.pathRemoved(vaultId);
       await NoteDraftService.discardPath(registry, vaultId, relPath);
-      hilog.info(NOTE_DOMAIN, NOTE_TAG, '撤销创建笔记 %{public}s', relPath);
+      hilog.info(NOTE_DOMAIN, NOTE_TAG, '撤销创建笔记');
     });
     NoteService.saveChain = job.then((): void => {
     }, (): void => {
@@ -333,7 +331,7 @@ export class NoteService {
       registry.accessFor(vaultId).ensureDir(dirRel);
     }
     registry.accessFor(vaultId).ensureDir(target);
-    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建文件夹 %{public}s', target);
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建文件夹');
     return target;
   }
 
@@ -358,7 +356,7 @@ export class NoteService {
     FullTextSearchService.noteRemoved(vaultId, relPath, stat.isDir);
     WikiLinkService.pathRemoved(vaultId);
     await NoteDraftService.discardPath(registry, vaultId, relPath);
-    hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除 %{public}s', relPath);
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除笔记或文件夹');
   }
 
   // ===== 1.6 左滑三档：重命名 / 移动 =====
@@ -412,7 +410,7 @@ export class NoteService {
       registry, vaultId, relPath, unique, isDir, async (path: string, content: string): Promise<void> => {
         await NoteService.saveNote(registry, vaultId, path, content);
       });
-    hilog.info(NOTE_DOMAIN, NOTE_TAG, '重命名 %{public}s → %{public}s', relPath, unique);
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '重命名完成');
     return { path: unique, referenceUpdates: referenceUpdates };
   }
 
@@ -466,7 +464,7 @@ export class NoteService {
       registry, vaultId, relPath, unique, isDir, async (path: string, content: string): Promise<void> => {
         await NoteService.saveNote(registry, vaultId, path, content);
       });
-    hilog.info(NOTE_DOMAIN, NOTE_TAG, '移动 %{public}s → %{public}s', relPath, unique);
+    hilog.info(NOTE_DOMAIN, NOTE_TAG, '移动完成');
     return { path: unique, referenceUpdates: referenceUpdates };
   }
 }

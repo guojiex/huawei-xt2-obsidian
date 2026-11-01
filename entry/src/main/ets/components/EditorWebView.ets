@@ -457,8 +457,9 @@ export struct EditorWebView {
     try {
       msg = JSON.parse(json) as Record<string, string | number>;
     } catch (error) {
-      hilog.error(EDITOR_DOMAIN, EDITOR_TAG, '桥接消息解析失败: %{public}s', json);
-      this.onError('桥接消息解析失败: ' + json);
+      // Bridge payloads may contain the complete note body; never include them in logs or UI errors.
+      hilog.error(EDITOR_DOMAIN, EDITOR_TAG, '桥接消息解析失败');
+      this.onError('桥接消息解析失败');
       return;
     }
     if (msg['type'] !== 'event') {
@@ -549,14 +550,11 @@ export struct EditorWebView {
             'window.__mdeditor && window.__mdeditor.onArktsReady ? window.__mdeditor.onArktsReady() : 0').then(() => {
             hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'onArktsReady() called');
           }).catch((e: Error) => {
-            hilog.error(EDITOR_DOMAIN, EDITOR_TAG, 'onArktsReady failed: %{public}s', e.message);
+            hilog.error(EDITOR_DOMAIN, EDITOR_TAG, 'onArktsReady failed');
           });
         })
-        .onConsole((event): boolean => {
-          // Web 页面 console 输出：spike 排查期的主要证据来源
-          // 返回值 true = 不再走系统默认打印（我们只用 hilog 收）
-          const msg = event?.message?.getMessage() ?? '';
-          hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'console: %{public}s', msg);
+        .onConsole((_event): boolean => {
+          // Web console may contain note data; suppress it instead of forwarding it to hilog.
           return true;
         })
         .onErrorReceive((event) => {

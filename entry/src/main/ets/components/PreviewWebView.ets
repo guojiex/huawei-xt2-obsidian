@@ -495,9 +495,8 @@ export struct PreviewWebView {
           this.bridge.bind(impl);
           void this.finishPageInitialization(impl);
         })
-        .onConsole((event): boolean => {
-          const msg = event?.message?.getMessage() ?? '';
-          hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, 'console: %{public}s', msg);
+        .onConsole((_event): boolean => {
+          // Rendered note text can appear in Web console messages; do not forward it to hilog.
           return true;
         })
         .onErrorReceive((event) => {

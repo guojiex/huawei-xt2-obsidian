@@ -2307,7 +2307,6 @@ struct Index {
    * 默认意图是「看/改它」，而不是开抽屉也不看 preview。
    */
   private onSelectFile(relPath: string): void {
-    hilog.info(DOMAIN, TAG, '选中文件 %{public}s', relPath);
     if (this.isSingleScreenLayout()) {
       this.setDrawerOpen(false);
       if (this.isSingleLandscape()) {
@@ -2942,10 +2941,9 @@ struct Index {
     let text: string = '';
     try {
       text = await source.getContent();
-    } catch (error) {
+    } catch (_error) {
       // 拉不到内容：放弃这次保存（拿空串落盘会清空文件），但绝不让异常外泄挡住调用方
-      const err = error as BusinessError;
-      hilog.warn(DOMAIN, TAG, 'flushSave 拉取编辑器内容失败，跳过保存: %{public}s', err.message);
+      hilog.warn(DOMAIN, TAG, 'flushSave 拉取编辑器内容失败，跳过保存');
       promptAction.showToast({ message: '保存失败，请稍后重试' });
       return false;
     }
@@ -3189,9 +3187,8 @@ struct Index {
     let text: string = '';
     try {
       text = await this.editorBridge.getContent();
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(DOMAIN, TAG, '预览拉取编辑器内容失败: %{public}s', err.message);
+    } catch (_error) {
+      hilog.warn(DOMAIN, TAG, '预览拉取编辑器内容失败');
       return;
     }
     this.pushPreview(text, force);
@@ -3395,9 +3392,8 @@ struct Index {
       if (before !== undefined && before.type === 'git') {
         try {
           GitCredentialStore.migrateToken(id, renamed.id);
-        } catch (error) {
-          const err = error as BusinessError;
-          hilog.warn(DOMAIN, TAG, '令牌迁移失败 vault=%{public}s: %{public}s', id, err.message);
+        } catch (_error) {
+          hilog.warn(DOMAIN, TAG, '令牌迁移失败');
           promptAction.showToast({ message: '改名成功，但令牌迁移失败，下次同步需重新填写' });
         }
       }
@@ -3556,10 +3552,9 @@ struct Index {
     }
   }
 
-  /** 注册表操作失败：固定文案 toast + 详细原因进 hilog（不把异常原文弹给用户） */
+  /** 注册表操作失败：固定文案 toast；异常可能包含用户路径，因此不写入日志。 */
   private toastRegistryError(prefix: string, error: Object): void {
-    const err = error as Error;
-    hilog.warn(DOMAIN, TAG, '%{public}s: %{public}s', prefix, err.message ?? JSON.stringify(error));
+    hilog.warn(DOMAIN, TAG, '%{public}s', prefix);
     promptAction.showToast({ message: prefix });
   }
 
@@ -4223,9 +4218,8 @@ struct Index {
     let dirs: string[] = [];
     try {
       dirs = FileTree.allDirsOf(VaultRegistry.get().accessFor(this.currentVaultId));
-    } catch (error) {
-      const err = error as Error;
-      hilog.warn(0x0001, 'Index', '列目录失败：%{public}s', err.message);
+    } catch (_error) {
+      hilog.warn(0x0001, 'Index', '列目录失败');
       dirs = [];
     }
     this.createNoteCtl = new CustomDialogController({
@@ -4319,9 +4313,8 @@ struct Index {
       } else {
         dirs = all;
       }
-    } catch (error) {
-      const err = error as Error;
-      hilog.warn(DOMAIN, TAG, '列目录失败：%{public}s', err.message);
+    } catch (_error) {
+      hilog.warn(DOMAIN, TAG, '列目录失败');
       dirs = [];
     }
     this.movePathCtl = new CustomDialogController({
@@ -4916,7 +4909,7 @@ struct Index {
           this.resolveShareCaptureReady();
         },
         onError: (msg: string): void => {
-          hilog.error(DOMAIN, TAG, '分享预览加载错误: %{public}s', msg);
+          hilog.error(DOMAIN, TAG, '分享预览加载错误');
           this.rejectShareCaptureReady(new Error('分享预览加载失败，请重试'));
         }
       })
@@ -5756,7 +5749,7 @@ struct Index {
               }
             },
             onError: (msg: string): void => {
-              hilog.error(DOMAIN, TAG, '右栏编辑器 Web: %{public}s', msg);
+              hilog.error(DOMAIN, TAG, '右栏编辑器 Web 加载失败');
               this.handleInitialWorkspaceSurfaceError('right', 'edit');
             }
           })
@@ -5777,7 +5770,7 @@ struct Index {
             },
             onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
             onError: (msg: string): void => {
-              hilog.error(DOMAIN, TAG, '右栏预览 Web: %{public}s', msg);
+              hilog.error(DOMAIN, TAG, '右栏预览 Web 加载失败');
               this.handleInitialWorkspaceSurfaceError('right', 'preview');
             }
           })
@@ -5874,7 +5867,7 @@ struct Index {
             }
           },
           onError: (msg: string): void => {
-            hilog.error(DOMAIN, TAG, '编辑器 Web: %{public}s', msg);
+            hilog.error(DOMAIN, TAG, '编辑器 Web 加载失败');
             this.handleInitialWorkspaceSurfaceError('left', 'edit');
           }
         })
@@ -5944,7 +5937,7 @@ struct Index {
             void this.handleWikiLinkClick(target);
           },
           onError: (msg: string): void => {
-            hilog.error(DOMAIN, TAG, '预览 Web: %{public}s', msg);
+            hilog.error(DOMAIN, TAG, '预览 Web 加载失败');
             this.handleInitialWorkspaceSurfaceError('left', 'preview');
           }
         })
