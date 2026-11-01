@@ -2387,6 +2387,9 @@ struct Index {
     if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
       return await this.flushSave(targetPath, targetVaultId, this.sharedNoteEditor(), showFeedback);
     }
+    if (this.rightComposing) {
+      return false;
+    }
     const feedbackRevision: number = this.saveFeedbackRevision;
     let text: string = '';
     try {
@@ -2523,17 +2526,11 @@ struct Index {
   private onLeftCompositionChange(composing: boolean): void {
     this.leftComposing = composing;
     void this.refreshSharedEditability();
-    if (!composing) {
-      void this.syncLeftContentToRight();
-    }
   }
 
   private onRightCompositionChange(composing: boolean): void {
     this.rightComposing = composing;
     void this.refreshSharedEditability();
-    if (!composing) {
-      void this.syncRightContentToLeft();
-    }
   }
 
   /**
@@ -2614,6 +2611,15 @@ struct Index {
     // 编辑器未就绪时 getContent 返回 ''，此时落盘会把真实文件清空 —— 必须跳过
     if (!source.ready) {
       return true;
+    }
+    const sharedNoteCompositionActive: boolean = path === this.currentFilePath &&
+      path === this.rightFilePath && (this.leftComposing || this.rightComposing);
+    const sourceCompositionActive: boolean = source === this.rightEditorBridge
+      ? this.rightComposing : this.leftComposing;
+    if (sharedNoteCompositionActive || sourceCompositionActive) {
+      // IME 的 compositionend 与最终 input/change 可能不是同一时刻；不要把候选串写盘。
+      // 提交后的 change 事件会重新安排自动保存。
+      return false;
     }
     let text: string = '';
     try {

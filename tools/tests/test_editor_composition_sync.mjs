@@ -92,22 +92,32 @@ test('right-to-left mirroring does not set content in an editor still composing'
   assert.equal(app.rightEditorDirty, false);
 });
 
-test('ending composition synchronizes the latest left source to the right editor', async () => {
+test('composition end alone does not mirror a possibly uncommitted input event', async () => {
   const { app, calls } = createHarness();
   app.leftComposing = true;
 
   app.onLeftCompositionChange(false);
   await new Promise((resolve) => setImmediate(resolve));
 
+  assert.ok(!calls.some((call) => call.startsWith('right-set:')));
+});
+
+test('committed left change synchronizes after composition ended', async () => {
+  const { app, calls } = createHarness();
+  app.leftComposing = true;
+
+  app.onLeftCompositionChange(false);
+  await app.syncLeftContentToRight();
+
   assert.ok(calls.includes('right-set:left text'));
 });
 
-test('ending composition synchronizes the latest right source to the left editor', async () => {
+test('committed right change synchronizes after composition ended', async () => {
   const { app, calls } = createHarness();
   app.rightComposing = true;
 
   app.onRightCompositionChange(false);
-  await new Promise((resolve) => setImmediate(resolve));
+  await app.syncRightContentToLeft();
 
   assert.ok(calls.includes('left-set:right text'));
 });
