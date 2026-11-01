@@ -2,6 +2,18 @@
   "schemaVersion": 1,
   "entries": [
     {
+      "version": "1.6.0",
+      "date": "2026-11-01",
+      "status": "in_progress",
+      "title": "单屏知识库切换后停留在文件列表",
+      "changes": [
+        "单屏文件导航切换知识库后保留新库文件列表；选择笔记后再进入工作区。"
+      ],
+      "notes": [
+        "功能已实现；定向回归 8/8、全仓 Node 435/435、arm64-v8a unsigned HAP 构建通过。API26 模拟器交互仍待完成；API24 / XT2 真机验收由用户手动执行；未发布。"
+      ]
+    },
+    {
       "version": "1.5.0",
       "date": "2026-10-31",
       "status": "in_progress",

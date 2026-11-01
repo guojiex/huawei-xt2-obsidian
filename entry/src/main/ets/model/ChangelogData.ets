@@ -6,6 +6,7 @@ export interface ChangelogEntry {
   changes: string[];
 }
 export const CHANGELOG_ENTRIES: ChangelogEntry[] = [
+  {"version": "1.6.0", "date": "2026-11-01", "title": "单屏知识库切换后停留在文件列表", "changes": ["单屏文件导航切换知识库后保留新库文件列表；选择笔记后再进入工作区。"]},
   {"version": "1.4.0", "date": "2026-10-31", "title": "预览提示块（callout）渲染", "changes": ["Obsidian 风格提示块在预览中渲染为带类型标识的提示块，不再显示原始 [!note] 语法。", "覆盖 13 类提示块、[!类型]- / [!类型]+ 折叠三态与别名归一化，普通引用渲染不受影响。"]},
   {"version": "1.3.0", "date": "2026-10-19", "title": "丰富 Markdown 内容", "changes": ["从相册插入图片到当前库并在预览中显示，折叠切换后附件引用仍正确。", "公式与 Mermaid 图可渲染，错误输入安全降级。"]},
   {"version": "1.2.0", "date": "2026-10-19", "title": "双链与反链", "changes": ["支持插入并打开 [[笔记]] 链接，目标笔记可查看反链。", "重命名或移动目标笔记后，引用不静默指向错误文件。"]},

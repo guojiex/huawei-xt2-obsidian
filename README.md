@@ -4,11 +4,11 @@
 
 ## 共享样例库与当前优先级
 
-[sample_vault](sample_vault/README.md) 是原型、首次安装与渲染回归的共用内容源。修改 Markdown 后运行 `python3 tools/generators/build_sample_vault.py`，用 `--check` 检查产物一致性。2026-10-25 排期：v0.5 样例与渲染基线 → **v0.7 Agent 对话与本地 mock（优先）** → **v0.8 笔记 / 文件夹 / 知识库分享** → v1.0 本地体验收口 → v1.1 全文搜索 → v1.2 双链与反链 → v1.3 丰富 Markdown；小艺与 Git 统一排在末尾外部依赖队列，条件未解除前不领取。版本号不代表执行顺序。
+[sample_vault](sample_vault/README.md) 是原型、首次安装与渲染回归的共用内容源。修改 Markdown 后运行 `python3 tools/generators/build_sample_vault.py`，用 `--check` 检查产物一致性。当前优先任务、实现进度与验收缺口统一见[实施总清单](docs/releases/实施总清单.md)；版本规则与需求入口见[版本索引](docs/releases/README.md)，不在此重复维护容易过时的排期。
 
 ## Agent 工程版本
 
-Agent 的 loop、上下文、Tools/Skills、提示词与运行恢复使用[独立需求清单](docs/agent/requirements_backlog.md)和[版本线](docs/agent/README.md)。App v0.7 集成 Agent v0.1；真实小艺接入仍后置，两者不共用发布编号。
+Agent 的 loop、上下文、Tools/Skills、提示词与运行恢复使用[独立需求清单](docs/agent/requirements_backlog.md)和[版本线](docs/agent/README.md)。本地 Agent View 不属于当前 App 范围；小艺接入已由用户确认完成，不再作为待办。该确认不新增平台发布、API 24 或 XT2 验收证据；Agent 工程版本与 App 版本仍分别管理。
 
 ## 版本记录
 
