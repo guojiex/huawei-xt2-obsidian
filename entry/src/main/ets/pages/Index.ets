@@ -2548,10 +2548,12 @@ struct Index {
       return;
     }
     const requestId: number = ++this.rightOpenRequestId;
+    const documentTransition: number = this.rightEditorBridge.beginDocumentTransition();
     this.workspaceOpenRequests++;
     try {
       this.resetSaveFeedback();
       if (!await this.flushRightSave(previousPath, vaultId, false)) {
+        this.rightEditorBridge.restoreDocumentTransition(documentTransition);
         return;
       }
       if (!this.isCurrentRightOpenTarget('', vaultId, requestId)) {
@@ -2562,6 +2564,7 @@ struct Index {
       if (!await this.readRightAndPush(relPath, requestId, vaultId)) {
         if (this.isCurrentRightOpenTarget(relPath, vaultId, requestId)) {
           this.rightFilePath = previousPath;
+          this.rightEditorBridge.restoreDocumentTransition(documentTransition);
           promptAction.showToast({ message: '打开笔记失败' });
         }
         return;
@@ -2788,6 +2791,7 @@ struct Index {
       const vaultId: string = this.currentVaultId;
       const requestId: number = ++this.leftOpenRequestId;
       const rightRequestId: number = this.rightOpenRequestId;
+      const documentTransition: number = this.editorBridge.beginDocumentTransition();
       const rightSharesPrevious: boolean = this.rightFilePath === prev && prev.length > 0;
       const rightIsActiveEditor: boolean = rightSharesPrevious && !this.leftComposing &&
         (this.rightComposing || this.rightEditorDirty || (this.rightEditing && this.activePane === 'right'));
@@ -2795,6 +2799,7 @@ struct Index {
       if (rightIsActiveEditor && !await this.flushRightSave(prev, vaultId)) {
         if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
           this.currentFilePath = prev;
+          this.editorBridge.restoreDocumentTransition(documentTransition);
           this.scheduleSave();
         }
         return;
@@ -2805,6 +2810,7 @@ struct Index {
       if (!rightIsActiveEditor && !await this.flushSave(prev, vaultId)) {
         if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
           this.currentFilePath = prev;
+          this.editorBridge.restoreDocumentTransition(documentTransition);
           this.scheduleSave();
         }
         return;
@@ -2816,6 +2822,7 @@ struct Index {
         !await this.flushRightSave(this.rightFilePath, vaultId)) {
         if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
           this.currentFilePath = prev;
+          this.editorBridge.restoreDocumentTransition(documentTransition);
           this.scheduleSave();
         }
         return;
@@ -2828,6 +2835,7 @@ struct Index {
           return;
         }
         this.currentFilePath = prev;
+        this.editorBridge.restoreDocumentTransition(documentTransition);
         promptAction.showToast({ message: '打开笔记失败' });
         return;
       }

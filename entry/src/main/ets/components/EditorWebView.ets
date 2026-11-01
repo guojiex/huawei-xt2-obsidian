@@ -30,6 +30,7 @@ class EditorNativeProxy {
 class EditorImpl {
   private controller: webview.WebviewController;
   private readyFlag: boolean = false;
+  private documentRevision: number = 0;
   private pending: string[] = [];
   /** getContent 往返：reqId → 回调（Web 侧以 content 事件回内容，不走 runJavaScript 返回值） */
   private contentWaiters: Map<number, (b64: string) => void> = new Map();
@@ -54,16 +55,25 @@ class EditorImpl {
     this.readyFlag = true;
   }
 
-  async setContent(text: string): Promise<void> {
+  async setContent(text: string, documentRevision: number): Promise<void> {
+    this.setDocumentRevision(documentRevision);
     // 空串直通（BridgeCodec）：空笔记是常态，util.Base64Helper 对空输入会抛错
     const payload = BridgeCodec.encode(text);
     // base64 只含 [A-Za-z0-9+/=]，可以直接安全拼进 JS 字符串
-    const script: string = `window.__mdeditor.setContent('${payload}')`;
+    const script: string = `window.__mdeditor.setContent('${payload}',${documentRevision})`;
     if (this.readyFlag) {
       await this.controller.runJavaScript(script);
     } else {
       this.pending.push(script);
     }
+  }
+
+  setDocumentRevision(documentRevision: number): void {
+    this.documentRevision = documentRevision;
+  }
+
+  isCurrentDocumentRevision(documentRevision: number): boolean {
+    return Number.isInteger(documentRevision) && documentRevision === this.documentRevision;
   }
 
   /**
@@ -190,6 +200,8 @@ export class EditorBridge {
   private initialContent: string = '';
   private hasInitialContent: boolean = false;
   private hasBoundOnce: boolean = false;
+  private documentRevision: number = 0;
+  private loadedDocumentRevision: number = 0;
   private unavailable: boolean = false;
   private readyWaiters: Array<() => void> = [];
   private workspaceScrollTop: number = 0;
@@ -197,9 +209,15 @@ export class EditorBridge {
 
   bind(impl: EditorImpl): void {
     this.impl = impl;
+    impl.setDocumentRevision(this.documentRevision);
     this.unavailable = false;
     if (!this.hasBoundOnce && this.hasInitialContent) {
-      void impl.setContent(this.initialContent);
+      const revision: number = this.documentRevision;
+      void impl.setContent(this.initialContent, revision).then((): void => {
+        if (this.documentRevision === revision) {
+          this.loadedDocumentRevision = revision;
+        }
+      });
     }
     this.hasBoundOnce = true;
     if (this.hasWorkspaceScrollTop) {
@@ -242,7 +260,28 @@ export class EditorBridge {
   async setContent(text: string): Promise<void> {
     this.initialContent = text;
     this.hasInitialContent = true;
-    await this.impl?.setContent(text);
+    this.documentRevision += 1;
+    const revision: number = this.documentRevision;
+    if (this.impl) {
+      await this.impl.setContent(text, revision);
+      if (this.documentRevision === revision) {
+        this.loadedDocumentRevision = revision;
+      }
+    }
+  }
+
+  beginDocumentTransition(): number {
+    this.documentRevision += 1;
+    this.impl?.setDocumentRevision(this.documentRevision);
+    return this.documentRevision;
+  }
+
+  restoreDocumentTransition(transitionRevision: number): void {
+    if (this.documentRevision !== transitionRevision) {
+      return;
+    }
+    this.documentRevision = this.loadedDocumentRevision;
+    this.impl?.setDocumentRevision(this.documentRevision);
   }
 
   async getContent(): Promise<string> {
@@ -425,7 +464,9 @@ export struct EditorWebView {
       // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContent Promise
       this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
     } else if (name === 'change') {
-      this.onChange((msg['len'] as number) ?? 0);
+      if (this.impl?.isCurrentDocumentRevision(msg['revision'] as number)) {
+        this.onChange((msg['len'] as number) ?? 0);
+      }
     } else if (name === 'composition') {
       this.onCompositionChange((msg['composing'] as boolean) ?? false);
     } else if (name === 'codeBlockState') {

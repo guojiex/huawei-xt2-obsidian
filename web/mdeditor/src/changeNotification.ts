@@ -1,5 +1,6 @@
 export interface ChangeNotificationTimer {
-  schedule(getLength: () => number, notify: (length: number) => void): void
+  schedule(getLength: () => number, documentRevision: number,
+    notify: (length: number, documentRevision: number) => void): void
   cancel(): void
 }
 
@@ -18,11 +19,13 @@ export function createChangeNotificationTimer(
   }
 
   return {
-    schedule(getLength: () => number, notify: (length: number) => void): void {
+    schedule(getLength: () => number, documentRevision: number,
+      notify: (length: number, documentRevision: number) => void): void {
       cancel()
+      const scheduledRevision = documentRevision
       timerId = setTimer((): void => {
         timerId = undefined
-        notify(getLength())
+        notify(getLength(), scheduledRevision)
       }, delayMs)
     },
     cancel

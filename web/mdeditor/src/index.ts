@@ -5,10 +5,10 @@
  *      （照抄 web/gitbridge/build.mjs 的链路，见 AGENTS.md §Web 打包约定）
  *
  * 桥接协议（与 gitbridge 一致，JSON over javaScriptProxy.postMessage）：
- *   ArkTS → Web：window.__mdeditor.setContent(b64) / requestContent(id) / focus() / setTheme(t)
+ *   ArkTS → Web：window.__mdeditor.setContent(b64, revision) / requestContent(id) / focus() / setTheme(t)
  *   Web → ArkTS：postMessage(JSON)
  *     - {type:'event', name:'ready'}                 页面就绪，可以收内容了
- *     - {type:'event', name:'change', len:N}          内容变化（debounce 300ms，只报长度）
+ *     - {type:'event', name:'change', len:N, revision:R} 内容变化（debounce 300ms，只报长度与文档代次）
  *     - {type:'event', name:'content', id:N, b64:S}   requestContent 的回复（全量内容）
  *
  * ⚠️ 为什么 change 只报长度不报内容：编辑中每次击键都过桥会把大文本反复序列化，
@@ -54,7 +54,7 @@ declare global {
  * 故内容拉取走 requestContent(reqId) → content 事件往返，不走返回值。
  */
 interface MdEditorApi {
-  setContent(b64: string): void
+  setContent(b64: string, documentRevision: number): void
   /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
   requestContent(reqId: number): void
@@ -80,6 +80,7 @@ interface WikiLinkCandidate {
 
 const linkCompletionWaiters = new Map<number, (candidates: WikiLinkCandidate[]) => void>()
 let nextLinkCompletionId = 1
+let documentRevision = 0
 
 function wikiLinkCompletion(context: any): Promise<any> | null {
   const before = context.matchBefore(/\[\[[^\]\n]*/)
@@ -642,7 +643,10 @@ function extensionsFor(theme: string) {
       // debounce：连续击键不逐帧过桥（保存/切走时 ArkTS 会主动拉全量）
       changeNotification.schedule(
         () => update.state.doc.length,
-        (len: number): void => postToArkts({ type: 'event', name: 'change', len: len })
+        documentRevision,
+        (len: number, revision: number): void => postToArkts({
+          type: 'event', name: 'change', len: len, revision: revision
+        })
       )
     })
   ]
@@ -678,7 +682,10 @@ function ensureView(): EditorView {
     postToArkts({ type: 'event', name: 'composition', composing: false })
     changeNotification.schedule(
       () => view?.state.doc.length ?? 0,
-      (len: number): void => postToArkts({ type: 'event', name: 'change', len: len })
+      documentRevision,
+      (len: number, revision: number): void => postToArkts({
+        type: 'event', name: 'change', len: len, revision: revision
+      })
     )
   })
   return view
@@ -707,7 +714,8 @@ function applyMarkdownFormat(kind: string): void {
 }
 
 const api: MdEditorApi = {
-  setContent(b64: string): void {
+  setContent(b64: string, revision: number): void {
+    documentRevision = Number.isInteger(revision) && revision >= 0 ? revision : 0
     workspaceScrollRestoreGeneration++
     if (sourceScrollReportFrame !== 0) {
       window.cancelAnimationFrame(sourceScrollReportFrame)

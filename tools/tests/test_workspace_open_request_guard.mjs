@@ -21,6 +21,7 @@ const methods = [
   extract('  private reportDraftRecovery(', '\n  private async refreshBacklinks()'),
   extract('  private async readAndPush(', '\n  private async readRightAndPush('),
   extract('  private async readRightAndPush(', '\n  private async loadRightFile('),
+  extract('  private async loadRightFile(', '\n  private async flushRightSave('),
   extract('  private async loadFile(', '\n  /**\n   * 立刻把编辑器当前内容落盘')
 ];
 const code = transformSync(`class IndexHarness {
@@ -30,6 +31,8 @@ const code = transformSync(`class IndexHarness {
 function createContext() {
   const module = { exports: {} };
   const calls = [];
+  const restoredTransitions = [];
+  let transitionRevision = 0;
   const context = vm.createContext({
     module,
     JSON,
@@ -44,11 +47,20 @@ function createContext() {
     promptAction: { showToast: ({ message }) => calls.push('toast:' + message) }
   });
   vm.runInContext(code, context);
-  return { context, calls, app: new module.exports() };
+  const app = new module.exports();
+  app.editorBridge = {
+    beginDocumentTransition: () => ++transitionRevision,
+    restoreDocumentTransition: (revision) => restoredTransitions.push(revision)
+  };
+  app.rightEditorBridge = {
+    beginDocumentTransition: () => ++transitionRevision,
+    restoreDocumentTransition: (revision) => restoredTransitions.push(revision)
+  };
+  return { context, calls, app, restoredTransitions };
 }
 
 test('a slower earlier left-pane open cannot publish its note after a newer request', async () => {
-  const { app, calls } = createContext();
+  const { app, calls, restoredTransitions } = createContext();
   const flushes = new Map();
   const reads = [];
   Object.assign(app, {
@@ -82,6 +94,51 @@ test('a slower earlier left-pane open cannot publish its note after a newer requ
   assert.equal(app.currentFilePath, 'c.md');
   assert.equal(app.workspaceOpenRequests, 0);
   assert.deepEqual(calls, ['recent:c.md']);
+  assert.deepEqual(restoredTransitions, []);
+});
+
+test('a failed left-pane open rolls the editor notification revision back with the visible note', async () => {
+  const { app, restoredTransitions } = createContext();
+  Object.assign(app, {
+    currentVaultId: 'local',
+    currentFilePath: 'a.md',
+    rightFilePath: '',
+    leftOpenRequestId: 0,
+    rightOpenRequestId: 0,
+    workspaceOpenRequests: 0,
+    resetSaveFeedback() {},
+    flushSave: async () => false,
+    flushRightSave: async () => true,
+    scheduleSave() {},
+    scheduleWorkspaceSessionSave() {}
+  });
+
+  await app.loadFile('b.md');
+
+  assert.equal(app.currentFilePath, 'a.md');
+  assert.deepEqual(restoredTransitions, [1]);
+  assert.equal(app.workspaceOpenRequests, 0);
+});
+
+test('a failed right-pane open rolls the editor notification revision back with the visible note', async () => {
+  const { app, restoredTransitions } = createContext();
+  Object.assign(app, {
+    currentVaultId: 'local',
+    currentFilePath: 'left.md',
+    rightFilePath: 'right-a.md',
+    leftOpenRequestId: 0,
+    rightOpenRequestId: 0,
+    workspaceOpenRequests: 0,
+    resetSaveFeedback() {},
+    flushRightSave: async () => false,
+    scheduleWorkspaceSessionSave() {}
+  });
+
+  await app.loadRightFile('right-b.md');
+
+  assert.equal(app.rightFilePath, 'right-a.md');
+  assert.deepEqual(restoredTransitions, [1]);
+  assert.equal(app.workspaceOpenRequests, 0);
 });
 
 test('a stale bridge setContent completion cannot publish preview or commit its old path', async () => {

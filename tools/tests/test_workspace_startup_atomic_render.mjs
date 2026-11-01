@@ -157,7 +157,7 @@ test('EditorBridge retains the startup note in memory until the first Web page i
   bridge.notifyReady();
   await readyWait;
   assert.equal(becameReady, true);
-  assert.ok(scripts.some((script) => script.includes("setContent('bGFzdCBzZXNzaW9uIHRleHQ=')")));
+  assert.ok(scripts.some((script) => script.includes("setContent('bGFzdCBzZXNzaW9uIHRleHQ=',1)")));
 
   holdNextContent = true;
   let contentApplied = false;
@@ -167,4 +167,38 @@ test('EditorBridge retains the startup note in memory until the first Web page i
   releaseScript();
   await nextContent;
   assert.equal(contentApplied, true);
+});
+
+test('document transitions reject stale edits and restore the last loaded revision on rollback', async () => {
+  const scripts = [];
+  const controller = { runJavaScript: (script) => { scripts.push(script); return Promise.resolve(''); } };
+  const bridge = new EditorBridge();
+  const implementation = new EditorImpl(controller);
+  bridge.bind(implementation);
+  await implementation.markReady();
+  await bridge.setContent('previous');
+
+  assert.equal(implementation.isCurrentDocumentRevision(1), true);
+  const transitionRevision = bridge.beginDocumentTransition();
+  assert.equal(implementation.isCurrentDocumentRevision(1), false);
+  assert.equal(implementation.isCurrentDocumentRevision(transitionRevision), true);
+
+  bridge.restoreDocumentTransition(transitionRevision);
+  assert.equal(implementation.isCurrentDocumentRevision(1), true);
+
+  const secondTransition = bridge.beginDocumentTransition();
+  await bridge.setContent('next');
+  bridge.restoreDocumentTransition(secondTransition);
+  assert.equal(implementation.isCurrentDocumentRevision(1), false);
+  assert.equal(implementation.isCurrentDocumentRevision(3), true);
+  assert.ok(scripts.some((script) => script.includes("setContent('bmV4dA==',3)")));
+});
+
+test('native change messages are accepted only for the current editor document revision', () => {
+  const changeBranchStart = editorSource.indexOf("} else if (name === 'change') {");
+  const changeBranchEnd = editorSource.indexOf("} else if (name === 'composition') {", changeBranchStart);
+  assert.ok(changeBranchStart >= 0 && changeBranchEnd > changeBranchStart);
+  const branch = editorSource.slice(changeBranchStart, changeBranchEnd);
+  assert.match(branch, /isCurrentDocumentRevision\(msg\['revision'\] as number\)/);
+  assert.match(branch, /this\.onChange\(\(msg\['len'\] as number\) \?\? 0\)/);
 });
