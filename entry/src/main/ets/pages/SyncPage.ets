@@ -8,6 +8,7 @@ import { GitNativeService } from '../git/GitNativeService';
 import { Git2ActionOptions, Git2CloneOptions, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { sanitizeVaultName, VaultEntry } from '../model/Vault';
+import { GitImportDraft, GitImportDraftStore } from '../model/GitImportDraftStore';
 import { FontSize, Space } from '../common/Tokens';
 
 /** 旧版把令牌明文存在这个 preferences store（v0.3 起令牌只进 Asset Store Kit，进页一次性清除） */
@@ -75,6 +76,14 @@ struct SyncPage {
   aboutToAppear(): void {
     this.context = getContext(this) as common.UIAbilityContext;
     this.cleanupLegacyToken();
+    const draft: GitImportDraft | null = GitImportDraftStore.consume();
+    if (draft !== null) {
+      this.repoUrl = draft.remote;
+      this.branch = draft.branch.length > 0 ? draft.branch : 'main';
+      this.username = draft.username;
+      this.token = draft.token;
+      return;
+    }
     const current: VaultEntry | null = VaultRegistry.get().currentEntry();
     if (current !== null && current.type === 'git') {
       this.syncMode = true;
@@ -417,7 +426,7 @@ struct SyncPage {
     Column() {
       Row() {
         Text('‹ 返回')
-          .fontSize(16)
+          .fontSize(FontSize.body1)
           .onClick(() => {
             if (!this.busy) {
               router.back();
@@ -425,15 +434,15 @@ struct SyncPage {
           })
         Blank()
         Text(this.syncMode ? 'Git 同步' : '导入 Git 仓库')
-          .fontSize(18)
+          .fontSize(FontSize.s2)
           .fontWeight(FontWeight.Bold)
         Blank()
         Text('‹ 返回')
-          .fontSize(16)
+          .fontSize(FontSize.body1)
           .fontColor(Color.Transparent)
       }
       .width('100%')
-      .margin({ bottom: 16 })
+      .margin({ bottom: Space.s4 })
 
       // v1.5 前置核实的临时入口（2026-10-31）：真机上跑一遍「选目录 → 持久化 →
       // 递归列出 → 读写」，把 api_notes T1–T4 的 ❓ 换成实测值。正式实现落地后移除。
@@ -500,39 +509,39 @@ struct SyncPage {
       }
 
       Text(this.syncMode ? '导入另一个 Git 仓库' : '仓库地址')
-        .fontSize(16)
+        .fontSize(FontSize.body1)
         .fontWeight(FontWeight.Bold)
-        .margin({ bottom: 8 })
+        .margin({ bottom: Space.s2 })
 
       TextInput({ placeholder: 'https://github.com/owner/repo.git', text: this.repoUrl })
         .onChange((value: string) => {
           this.repoUrl = value;
         })
-        .margin({ bottom: 8 })
+        .margin({ bottom: Space.s2 })
 
       Text('将导入为：vaults/' + (this.repoUrl.trim().length > 0 ? this.previewVaultId() : '（填写地址后推导）'))
-        .fontSize(12)
+        .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_secondary'))
-        .margin({ bottom: 8 })
+        .margin({ bottom: Space.s2 })
 
       TextInput({ placeholder: '分支（main / master）', text: this.branch })
         .onChange((value: string) => {
           this.branch = value;
         })
-        .margin({ bottom: 8 })
+        .margin({ bottom: Space.s2 })
 
       TextInput({ placeholder: '私有库填 Access Token（GitHub / Gitee 通用）', text: this.token })
         .type(InputType.Password)
         .onChange((value: string) => {
           this.token = value;
         })
-        .margin({ bottom: 8 })
+        .margin({ bottom: Space.s2 })
 
       TextInput({ placeholder: '用户名（仅 Gitee / 自建 GitLab 私有库需要）', text: this.username })
         .onChange((value: string) => {
           this.username = value;
         })
-        .margin({ bottom: 12 })
+        .margin({ bottom: Space.s3 })
 
       Row() {
         Button(this.busy ? '导入中…' : '导入为本机笔记库')
@@ -541,22 +550,22 @@ struct SyncPage {
             this.doClone();
           })
       }
-      .margin({ bottom: 12 })
+      .margin({ bottom: Space.s3 })
 
       Text(this.progressText)
-        .fontSize(12)
-        .margin({ bottom: 8 })
+        .fontSize(FontSize.caption)
+        .margin({ bottom: Space.s2 })
 
       Scroll() {
         Text(this.logText)
-          .fontSize(11)
+          .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_secondary'))
       }
       .layoutWeight(1)
       .align(Alignment.TopStart)
 
     }
-    .padding(16)
+    .padding(Space.s4)
     .width('100%')
     .height('100%')
   }

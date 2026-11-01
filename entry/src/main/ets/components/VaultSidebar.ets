@@ -69,11 +69,8 @@ export struct VaultSidebar {
   onOpenSearch: () => void = () => {};
   /** 从当前库下拉菜单分享整个知识库。 */
   onShareVault: () => void = () => {};
-  /**
-   * 「导入 Git 仓库…」回调（原型 vault-menu 第二个动作项，走「导入仓库」页）。
-   * Git 同步是 v0.3 能力，此处只做导航跳转。
-   */
-  onImportGit: () => void = () => {};
+  /** 统一导入库入口：本地目录或 Git 仓库。 */
+  onImportVault: () => void = () => {};
   /**
    * 「新建笔记」回调（父级拉起新建笔记对话框）。
    * 原型侧栏底部的「新建」在这里落成**新建笔记** —— 新建库要去「库管理」页，
@@ -245,14 +242,10 @@ export struct VaultSidebar {
     return true;
   }
 
-  /**
-   * 库类型徽标（照原型 .vbadge）：全圆胶囊（--r-full）、fs-caption、Medium；
-   * local = brand 字 + brand_bg 底（.vbadge.local），git = success 字 + success_bg 底（.vbadge.git）。
-   * 与选中态无关 —— 原型里徽标颜色只由库类型决定。
-   */
+  /** 库来源徽标：沙箱本地、已关联目录与 Git 分别显示。 */
   @Builder
   VaultBadge(v: VaultEntry) {
-    Text(v.type === 'git' ? 'Git' : '本地')
+    Text(v.rootKind === 'external' ? '目录' : (v.type === 'git' ? 'Git' : '本地'))
       .fontSize(FontSize.caption)
       .fontWeight(FontWeight.Medium)
       .fontColor(v.type === 'git' ? $r('app.color.success') : $r('app.color.brand'))
@@ -320,7 +313,7 @@ export struct VaultSidebar {
       })
 
       Row() {
-        Text('导入 Git 仓库…')
+        Text('导入库…')
           .fontSize(FontSize.body1)
           .fontColor($r('app.color.text_primary'))
           .layoutWeight(1)
@@ -331,7 +324,7 @@ export struct VaultSidebar {
       .borderRadius(Radius.control)
       .onClick(() => {
         this.menuOpen = false;
-        this.onImportGit();
+        this.onImportVault();
       })
 
       Row() {
@@ -362,7 +355,8 @@ export struct VaultSidebar {
   private vaultTypeLabel(): string {
     for (let i: number = 0; i < this.vaults.length; i++) {
       if (this.vaults[i].id === this.currentVaultId) {
-        return this.vaults[i].type === 'git' ? 'Git 库' : '本地库';
+        return this.vaults[i].rootKind === 'external'
+          ? '外部目录库' : (this.vaults[i].type === 'git' ? 'Git 库' : '本地库');
       }
     }
     return '本地库';

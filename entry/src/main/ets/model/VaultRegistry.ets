@@ -327,6 +327,66 @@ export class VaultRegistry {
     return entry;
   }
 
+  /**
+   * 登记用户授权的既有 Markdown 目录（v1.5 15.2）。
+   * 这里只保存 URI 元数据；目录读写仍必须经 accessFor()，注册本身不复制或改写用户文件。
+   * 调用方须先通过 ExternalVaultAuthorizationService 完成持久授权，并在本方法失败时撤销该授权。
+   */
+  registerExternal(displayName: string, rootUri: string, grantedAt: number): VaultEntry {
+    if (!rootUri.startsWith('file://') || rootUri.length <= 'file://'.length) {
+      throw new Error('外部库目录授权 URI 无效');
+    }
+    if (!Number.isFinite(grantedAt) || grantedAt <= 0) {
+      throw new Error('外部库授权时间无效');
+    }
+    for (let i = 0; i < this.state.vaults.length; i++) {
+      const existing: VaultEntry = this.state.vaults[i];
+      if (this.isExternalEntry(existing) && existing.rootUri === rootUri) {
+        throw new Error('该目录已经关联为知识库');
+      }
+    }
+
+    const sanitized: string = sanitizeVaultName(displayName);
+    if (sanitized.length === 0) {
+      throw new Error('目录名称不可用，请为知识库指定名称');
+    }
+    const access: VaultAccess = createExternalVaultAccess(rootUri);
+    const snapshot = access.snapshot();
+    let markdownCount: number = 0;
+    for (let i = 0; i < snapshot.length; i++) {
+      if (!snapshot[i].isDir && snapshot[i].name.toLowerCase().endsWith('.md')) {
+        markdownCount++;
+      } else if (!snapshot[i].isDir && snapshot[i].name.toLowerCase().endsWith('.markdown')) {
+        markdownCount++;
+      }
+    }
+    if (markdownCount === 0) {
+      throw new Error('所选目录中没有可见的 Markdown 笔记');
+    }
+
+    const id: string = this.uniqueVaultId(sanitized, '');
+    const entry: VaultEntry = {
+      id: id,
+      vaultKey: this.newVaultKey(),
+      type: 'local',
+      createdAt: Date.now(),
+      rootKind: 'external',
+      rootUri: rootUri,
+      grantedAt: grantedAt
+    };
+    this.state.vaults.push(entry);
+    try {
+      this.persist(true);
+    } catch (error) {
+      this.state.vaults.pop();
+      this.persist();
+      const err = error as BusinessError;
+      throw new Error(err.message);
+    }
+    this.accessCache.set(id, access);
+    return entry;
+  }
+
   /** 记录前台 Git 同步完成时间；不保存令牌或提交内容。 */
   recordGitSync(id: string, timestamp: number): void {
     const entry: VaultEntry | null = this.findEntry(id);
@@ -490,10 +550,12 @@ export class VaultRegistry {
     if (target === null) {
       throw new Error('库不存在: ' + id);
     }
-    if (!this.isExternalEntry(target)) {
+    const isExternal: boolean = this.isExternalEntry(target);
+    if (!isExternal) {
       this.removeVaultTree(id, '');
     }
-    this.removePrivateData(target);
+    const previousVaults: VaultEntry[] = this.state.vaults;
+    const previousCurrentVaultId: string = this.state.currentVaultId;
     const kept: VaultEntry[] = [];
     for (let i = 0; i < this.state.vaults.length; i++) {
       if (this.state.vaults[i].id !== id) {
@@ -505,6 +567,25 @@ export class VaultRegistry {
       // 删除当前库 → 回落列表第一个；空列表为理论不可达，仍以空串兜底（spec.md Edge Cases）
       this.state.currentVaultId = this.state.vaults.length > 0 ? this.state.vaults[0].id : '';
     }
+
+    if (isExternal) {
+      // 外部授权已由调用方先释放。先确保解除关联确实写入 Preferences，再删除沙箱私有数据；
+      // 落盘失败时恢复内存注册表并保留 trash/drafts，避免一次存储错误丢失可恢复内容。
+      try {
+        this.persist(true);
+      } catch (error) {
+        this.state.vaults = previousVaults;
+        this.state.currentVaultId = previousCurrentVaultId;
+        this.forgetAccess(id);
+        const err = error as Error;
+        throw new Error(err.message);
+      }
+      this.forgetAccess(id);
+      this.removePrivateData(target);
+      return;
+    }
+
+    this.removePrivateData(target);
     this.forgetAccess(id);
     this.persist();
   }
@@ -515,10 +596,10 @@ export class VaultRegistry {
    * 这两样现在都在沙箱里按 `vaultKey` 分目录（15.6），跟用户文件已经是两回事，
    * 所以**沙箱库和外部库一视同仁地清** —— 用户的笔记在 15.5 里原封不动留着，
    * 但 App 自己的回收站与草稿没有理由在「删库」之后还赖在磁盘上。
-   * **刻意做成 best-effort**：这个阶段库目录（沙箱库）已经删掉了，如果回收站 / 草稿
-   * 清理失败就往外抛，会留下「文件系统已删、注册表还在」的半状态 —— 那比留几个孤儿
-   * 私有目录严重得多。孤儿草稿本来就有启动自愈（NoteDraftService.cleanupOrphans），
-   * 回收站残留下次由同类清理带走；失败只记日志。
+   * **刻意做成 best-effort**：沙箱库目录已删除，或外部库关联已从注册表持久移除；
+   * 如果回收站 / 草稿清理失败再抛错，会把一个已经完成的移除操作报告成失败。失败只记日志，
+   * 避免出现「移除已完成但界面仍按操作失败处理」的半状态。孤儿草稿可由启动清理发现；
+   * 回收站若残留则仍在沙箱内，不会触碰授权目录。
    * 必须在 `target` 还在注册表里时调用：出表后就查不到 vaultKey 了。
    */
   private removePrivateData(target: VaultEntry): void {

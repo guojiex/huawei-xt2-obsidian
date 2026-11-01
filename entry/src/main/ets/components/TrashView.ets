@@ -24,29 +24,47 @@ export struct TrashView {
   @State items: TrashItem[] = [];
   @State expandedVaultIds: string[] = [];
   @State loadFailed: boolean = false;
+  @State legacyMigrationFailed: boolean = false;
+  private reloadGeneration: number = 0;
 
   aboutToAppear(): void {
-    this.reload();
+    void this.reload();
   }
 
   private onVaultChanged(): void {
-    this.reload();
+    void this.reload();
   }
 
   private onRefresh(): void {
-    this.reload();
+    void this.reload();
   }
 
-  private reload(): void {
+  private async reload(): Promise<void> {
+    const generation: number = ++this.reloadGeneration;
+    const requestedVaultId: string = this.vaultId;
     this.loadFailed = false;
-    if (this.vaultId.length === 0) {
+    this.legacyMigrationFailed = false;
+    if (requestedVaultId.length === 0) {
       this.items = [];
       return;
     }
+    const registry: VaultRegistry = VaultRegistry.get();
+    let migrationFailed: boolean = false;
     try {
-      this.items = TrashService.list(VaultRegistry.get(), this.vaultId);
+      await TrashService.migrateLegacyTrash(registry, requestedVaultId);
+    } catch (error) {
+      const err = error as Error;
+      hilog.warn(TRASH_VIEW_DOMAIN, TRASH_VIEW_TAG, '旧回收站复制未完成，原目录保留: %{public}s', err.message);
+      migrationFailed = true;
+    }
+    if (generation !== this.reloadGeneration || requestedVaultId !== this.vaultId) {
+      return;
+    }
+    this.legacyMigrationFailed = migrationFailed;
+    try {
+      this.items = TrashService.list(registry, requestedVaultId);
       if (this.items.length === 0) {
-        this.expandedVaultIds = this.expandedVaultIds.filter((id: string) => id !== this.vaultId);
+        this.expandedVaultIds = this.expandedVaultIds.filter((id: string) => id !== requestedVaultId);
       }
     } catch (error) {
       const err = error as Error;
@@ -139,7 +157,7 @@ export struct TrashView {
 
   build() {
     Column() {
-      if (this.items.length > 0 || this.loadFailed) {
+      if (this.items.length > 0 || this.loadFailed || this.legacyMigrationFailed) {
         Row({ space: Space.s2 }) {
           Icon(this.isExpanded() ? 'chevronDown' : 'chevronRight',
             14, $r('app.color.text_tertiary'))
@@ -169,6 +187,13 @@ export struct TrashView {
               .width('100%')
               .padding({ left: Space.s8, right: Space.s2, top: Space.s2, bottom: Space.s2 })
           } else {
+            if (this.legacyMigrationFailed) {
+              Text('旧回收站尚未完全复制，原目录已保留')
+                .fontSize(FontSize.caption)
+                .fontColor($r('app.color.text_tertiary'))
+                .width('100%')
+                .padding({ left: Space.s8, right: Space.s2, top: Space.s2, bottom: Space.s2 })
+            }
             Scroll() {
               Column() {
                 ForEach(this.items, (item: TrashItem) => {

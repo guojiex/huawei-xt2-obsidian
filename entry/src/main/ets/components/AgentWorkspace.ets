@@ -34,7 +34,7 @@ export struct AgentWorkspace {
   onNotesChanged: () => void = () => {};
   onSwitchVault: (id: string) => void = (id: string) => {};
   onManageVaults: () => void = () => {};
-  onImportGit: () => void = () => {};
+  onImportVault: () => void = () => {};
   onNavigationDragStart: () => void = () => {};
   onNavigationDrag: (offsetX: number) => void = (offsetX: number) => {};
   onSplitDragEnd: () => void = () => {};
@@ -698,7 +698,7 @@ export struct AgentWorkspace {
         refreshSeq: this.refreshSeq,
         onSwitchVault: (id: string): void => { this.onSwitchVault(id); },
         onManageVaults: (): void => { this.onManageVaults(); },
-        onImportGit: (): void => { this.onImportGit(); },
+        onImportVault: (): void => { this.onImportVault(); },
         onReferenceNote: (path: string, sourceVaultId: string): void => {
           this.addReference(path, sourceVaultId);
         }

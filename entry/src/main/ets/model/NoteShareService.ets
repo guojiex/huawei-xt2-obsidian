@@ -281,6 +281,7 @@ export class NoteShareService {
   static async prepareNote(registry: VaultRegistry, vaultId: string, notePath: string,
     markdownSnapshot: string): Promise<PreparedNoteShare> {
     NoteShareService.pruneExpired(registry);
+    const vaultAccess = registry.accessFor(vaultId);
     const references: MarkdownImageReference[] = NoteShareService.scanMarkdownImages(markdownSnapshot);
     const resolved: ResolvedImage[] = [];
     const missing: string[] = [];
@@ -298,18 +299,15 @@ export class NoteShareService {
         }
         continue;
       }
-      let exists: boolean = false;
-      try {
-        const imageStat: fileIo.Stat = fileIo.lstatSync(registry.absoluteIn(vaultId, sourcePath));
-        exists = imageStat.isFile() && !imageStat.isSymbolicLink();
-      } catch (error) {
-        exists = false;
-      }
-      if (!exists) {
+      const imageStat = vaultAccess.stat(sourcePath);
+      if (imageStat === null) {
         if (missing.indexOf(ref.source) < 0) {
           missing.push(ref.source);
         }
         continue;
+      }
+      if (imageStat.isDir || imageStat.isSymbolicLink) {
+        throw new Error('本地图片不是普通文件，未生成分享文件：' + ref.source);
       }
       if (NoteShareService.findResolved(resolved, sourcePath) < 0) {
         resolved.push({ sourcePath: sourcePath, sharePath: '' });
@@ -351,8 +349,8 @@ export class NoteShareService {
         const assetPath: string = 'assets/share-image-' + (i + 1).toString() + ext;
         resolved[i].sharePath = assetPath;
         archiveImages.set(resolved[i].sourcePath, assetPath);
-        fileIo.copyFileSync(registry.absoluteIn(vaultId, resolved[i].sourcePath),
-          registry.sharePath(shareId + '/payload/' + assetPath));
+        NoteShareService.writeBinaryOutput(registry.sharePath(shareId + '/payload/' + assetPath),
+          vaultAccess.readBytes(resolved[i].sourcePath));
       }
       const packagedMarkdown: string = NoteShareService.rewriteMarkdownImages(markdownSnapshot, notePath,
         archiveImages);
@@ -396,6 +394,44 @@ export class NoteShareService {
       NoteShareService.removeTree(registry, relativePath + '/' + children[i]);
     }
     fileIo.rmdirSync(path);
+  }
+
+  /** Write already-read library bytes to this service's private cache directory. */
+  static writeBinaryOutput(path: string, bytes: Uint8Array): void {
+    let fd: number = -1;
+    try {
+      const output: fileIo.File = fileIo.openSync(path,
+        fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      fd = output.fd;
+      let offset: number = 0;
+      while (offset < bytes.length) {
+        const chunk: Uint8Array = bytes.slice(offset);
+        const written: number = fileIo.writeSync(fd, chunk.buffer);
+        if (written <= 0) {
+          throw new Error('分享附件写入未完成');
+        }
+        offset += written;
+      }
+      fileIo.closeSync(fd);
+      fd = -1;
+      if (fileIo.statSync(path).size !== bytes.length) {
+        throw new Error('分享附件大小校验失败');
+      }
+    } catch (error) {
+      if (fd >= 0) {
+        try {
+          fileIo.closeSync(fd);
+        } catch (closeError) {
+          // Keep the original write error.
+        }
+      }
+      try {
+        fileIo.unlinkSync(path);
+      } catch (cleanupError) {
+        // The cache parent is owned by this failed share preparation.
+      }
+      throw error instanceof Error ? error : new Error('分享附件写入失败');
+    }
   }
 
   private static findResolved(images: ResolvedImage[], sourcePath: string): number {

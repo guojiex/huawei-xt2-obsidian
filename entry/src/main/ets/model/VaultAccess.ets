@@ -38,6 +38,14 @@ export interface VaultFileStat {
   size: number;
   mtimeSec: number;
   isDir: boolean;
+  isSymbolicLink: boolean;
+}
+
+/** A picker-authorized binary source. Each adapter chooses the verified transfer path it supports. */
+export interface VaultBinaryImportSource {
+  byteLength: number;
+  copyToPath(destinationPath: string): Promise<void>;
+  readBytes(): Uint8Array;
 }
 
 /** 认作笔记的后缀，必须与 FileTree / VaultDirNative 同口径。 */
@@ -63,6 +71,18 @@ export function isVaultNoteName(name: string): boolean {
     }
   }
   return false;
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let i = 0; i < left.length; i++) {
+    if (left[i] !== right[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** 排序口径保持与 FileTree 一致：字典序，目录排在文件之前。 */
@@ -143,6 +163,10 @@ export interface VaultAccess {
   /** 一次遍历的全树快照（受 VAULT_SCAN_MAX_DEPTH / MAX_NODES 保护）。 */
   snapshot(): VaultDirChild[];
 
+  /** List all non-hidden content in one directory, including attachments and other files. */
+  /** List all non-hidden content; includeHidden is reserved for controlled migrations. */
+  listAll(relDir: string, includeHidden?: boolean): VaultDirChild[];
+
   /** 列一层可见子节点（已过滤隐藏项；只保留目录与笔记文件），目录在前、字典序。 */
   listDir(relDir: string): VaultDirChild[];
 
@@ -161,6 +185,9 @@ export interface VaultAccess {
 
   /** 读原始字节：附件转 base64 / dataUri 那条路要用。 */
   readBytes(relPath: string): Uint8Array;
+
+  /** Import bytes into a newly named attachment; existing paths are rejected. */
+  writeNewBinary(relPath: string, source: VaultBinaryImportSource): Promise<void>;
 
   /** 建一个空文件（新建笔记）。父目录由实现保证或由调用方先 ensureDir。 */
   createEmptyNote(relPath: string): void;
@@ -205,6 +232,7 @@ export interface SandboxFsLike {
   rmdirSync(abs: string): void;
   readTextSync(abs: string): string;
   statSync(abs: string): SandboxStatLike;
+  lstatSync(abs: string): SandboxStatLike;
   openSync(abs: string, mode: number): SandboxFileHandle;
   writeSync(fd: number, data: string): number;
   readSync(fd: number, buffer: Uint8Array): number;
@@ -216,16 +244,16 @@ export interface SandboxStatLike {
   size: number;
   mtime: number;
   isDirectory(): boolean;
+  isSymbolicLink(): boolean;
 }
 
 export interface SandboxFileHandle {
   fd: number;
 }
 
-/** AtomicFile / WriteStream 的形状：fs 只有回调式 write/close，没有 writeSync/closeSync。 */
+/** AtomicFile / WriteStream 的形状：落盘由回调式 write + finishWrite 收尾。 */
 export interface SandboxWriteStreamLike {
   write(content: string, encoding: string, callback: (err?: Error) => void): void;
-  close(callback: () => void): void;
 }
 
 export interface SandboxAtomicFileLike {
@@ -260,18 +288,68 @@ export class SandboxVaultAccess implements VaultAccess {
     return this.root.resolve(relPath);
   }
 
+  /** Reject existing symlink parents before fileIo can follow them outside this library. */
+  private assertNoSymlinkPath(relPath: string, includeFinal: boolean): void {
+    if (relPath.length === 0) {
+      return;
+    }
+    const segments: string[] = relPath.split('/');
+    let current: string = '';
+    const count: number = includeFinal ? segments.length : segments.length - 1;
+    for (let i = 0; i < count; i++) {
+      current = joinVaultPath(current, segments[i]);
+      let meta: SandboxStatLike;
+      try {
+        meta = this.fsImpl.lstatSync(this.abs(current));
+      } catch (error) {
+        const failure: ErrorCodeCarrier = error as ErrorCodeCarrier;
+        const code: number = failure !== undefined && failure !== null && typeof failure.code === 'number'
+          ? failure.code : -1;
+        if (code === 2 || code === 13900002) {
+          return;
+        }
+        throw error instanceof Error ? error : new Error('检查库路径失败');
+      }
+      if (meta.isSymbolicLink()) {
+        throw new Error('库路径不能经过符号链接');
+      }
+      if (i < count - 1 && !meta.isDirectory()) {
+        throw new Error('库路径父级不是目录');
+      }
+      if (i === count - 1 && includeFinal && !meta.isDirectory()) {
+        throw new Error('目标不是目录');
+      }
+    }
+  }
+
   listDir(relDir: string): VaultDirChild[] {
-    const names: string[] = this.rawChildNames(this.abs(relDir));
+    const all: VaultDirChild[] = this.listAll(relDir);
+    const out: VaultDirChild[] = [];
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].isDir || isVaultNoteName(all[i].name)) {
+        out.push(all[i]);
+      }
+    }
+    return out;
+  }
+
+  listAll(relDir: string, includeHidden: boolean = false): VaultDirChild[] {
+    this.assertNoSymlinkPath(relDir, true);
+    const names: string[] = this.rawChildNames(this.abs(relDir), includeHidden);
     const dirs: string[] = [];
     const files: string[] = [];
     for (let i = 0; i < names.length; i++) {
       const name: string = names[i];
-      if (isVaultHiddenName(name)) {
+      if (!includeHidden && isVaultHiddenName(name)) {
         continue;
       }
-      if (this.isDirectory(relDir, name)) {
+      const meta: VaultFileStat | null = this.stat(joinVaultPath(relDir, name));
+      if (meta === null || meta.isSymbolicLink) {
+        continue;
+      }
+      if (meta.isDir) {
         dirs.push(name);
-      } else if (isVaultNoteName(name)) {
+      } else {
         files.push(name);
       }
     }
@@ -319,40 +397,94 @@ export class SandboxVaultAccess implements VaultAccess {
   }
 
   exists(relPath: string): boolean {
-    try {
-      return this.fsImpl.accessSync(this.abs(relPath));
-    } catch (error) {
-      return false;
-    }
+    return this.stat(relPath) !== null;
   }
 
   stat(relPath: string): VaultFileStat | null {
+    this.assertNoSymlinkPath(relPath, false);
     try {
-      const raw: SandboxStatLike = this.fsImpl.statSync(this.abs(relPath));
-      return { size: raw.size, mtimeSec: raw.mtime, isDir: raw.isDirectory() };
+      const raw: SandboxStatLike = this.fsImpl.lstatSync(this.abs(relPath));
+      return {
+        size: raw.size,
+        mtimeSec: raw.mtime,
+        isDir: raw.isDirectory(),
+        isSymbolicLink: raw.isSymbolicLink()
+      };
     } catch (error) {
       return null;
     }
   }
 
   readText(relPath: string): string {
+    const meta: VaultFileStat | null = this.stat(relPath);
+    if (meta !== null && meta.isSymbolicLink) {
+      throw new Error('不读取符号链接');
+    }
     return this.fsImpl.readTextSync(this.abs(relPath));
   }
 
   readBytes(relPath: string): Uint8Array {
+    const meta: VaultFileStat | null = this.stat(relPath);
+    if (meta !== null && meta.isSymbolicLink) {
+      throw new Error('不读取符号链接');
+    }
     const abs: string = this.abs(relPath);
     const size: number = this.sizeOf(abs);
     const handle: SandboxFileHandle = this.fsImpl.openSync(abs, VAULT_OPEN_READ_ONLY);
     try {
       const buffer: Uint8Array = new Uint8Array(size);
-      this.fsImpl.readSync(handle.fd, buffer);
+      let offset: number = 0;
+      while (offset < buffer.length) {
+        const chunk: Uint8Array = new Uint8Array(buffer.length - offset);
+        const count: number = this.fsImpl.readSync(handle.fd, chunk);
+        const copied: number = Math.min(count, chunk.length);
+        if (copied <= 0) {
+          throw new Error('附件读取未完成');
+        }
+        buffer.set(chunk.subarray(0, copied), offset);
+        offset += copied;
+      }
       return buffer;
     } finally {
       this.fsImpl.closeSync(handle.fd);
     }
   }
 
+  async writeNewBinary(relPath: string, source: VaultBinaryImportSource): Promise<void> {
+    this.assertNoSymlinkPath(parentDirOf(relPath), true);
+    if (this.exists(relPath)) {
+      throw new Error('附件目标已存在');
+    }
+    this.ensureDir(parentDirOf(relPath));
+    const abs: string = this.abs(relPath);
+    try {
+      const sourceBytes: Uint8Array = source.readBytes();
+      if (sourceBytes.length !== source.byteLength || sourceBytes.length === 0) {
+        throw new Error('所选图片读取不完整');
+      }
+      await source.copyToPath(abs);
+      const copied: VaultFileStat | null = this.stat(relPath);
+      if (copied === null || copied.isDir || copied.size !== source.byteLength ||
+        !sameBytes(sourceBytes, this.readBytes(relPath))) {
+        throw new Error('附件副本字节校验失败');
+      }
+    } catch (error) {
+      try {
+        if (this.exists(relPath)) {
+          this.remove(relPath);
+        }
+      } catch (cleanupError) {
+        // Preserve the transfer failure; callers report cleanup separately if needed.
+      }
+      throw error instanceof Error ? error : new Error('附件导入失败');
+    }
+  }
+
   createEmptyNote(relPath: string): void {
+    this.ensureDir(parentDirOf(relPath));
+    if (this.exists(relPath)) {
+      throw new Error('目标已存在');
+    }
     const abs: string = this.abs(relPath);
     const handle: SandboxFileHandle = this.fsImpl.openSync(abs, VAULT_OPEN_WRITE_ONLY | VAULT_OPEN_CREATE);
     try {
@@ -367,39 +499,86 @@ export class SandboxVaultAccess implements VaultAccess {
       return;
     }
     const abs: string = this.abs(relDir);
+    this.assertNoSymlinkPath(relDir, true);
+    const meta: VaultFileStat | null = this.stat(relDir);
+    if (meta !== null && meta.isSymbolicLink) {
+      throw new Error('不进入符号链接目录');
+    }
     if (!this.fsImpl.accessSync(abs)) {
       this.fsImpl.mkdirSync(abs, true);
     }
   }
 
   writeAtomic(relPath: string, content: string): Promise<void> {
+    this.assertNoSymlinkPath(parentDirOf(relPath), true);
+    const existing: VaultFileStat | null = this.stat(relPath);
+    if (existing !== null && existing.isSymbolicLink) {
+      return Promise.reject(new Error('不覆盖符号链接'));
+    }
     const atomicFile: SandboxAtomicFileLike = this.fsImpl.openAtomic(this.abs(relPath));
     return new Promise<void>((resolve: (v: void) => void, reject: (e: Error) => void): void => {
+      let settled: boolean = false;
+      let timerId: number = -1;
+      const fail = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.failWrite();
+        } catch (rollbackError) {
+          // Preserve the original failure if rollback itself fails.
+        }
+        reject(error);
+      };
+      const finish = (): void => {
+        if (settled) {
+          return;
+        }
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.finishWrite();
+        } catch (error) {
+          fail(error instanceof Error ? error : new Error('原子写提交失败'));
+          return;
+        }
+        settled = true;
+        resolve(undefined);
+      };
       try {
         const stream: SandboxWriteStreamLike = atomicFile.startWrite();
+        if (content.length === 0) {
+          finish();
+          return;
+        }
+        timerId = setTimeout((): void => {
+          fail(new Error('write 回调 3s 未触发'));
+        }, 3000);
         stream.write(content, 'utf-8', (writeError?: Error): void => {
-          if (writeError !== undefined) {
-            atomicFile.failWrite();
-            reject(writeError);
-            return;
+          if (writeError !== undefined && writeError !== null) {
+            fail(writeError);
+          } else {
+            finish();
           }
-          stream.close((): void => {
-            atomicFile.finishWrite();
-            resolve(undefined);
-          });
         });
       } catch (error) {
-        atomicFile.failWrite();
-        reject(error instanceof Error ? error : new Error('原子写失败'));
+        fail(error instanceof Error ? error : new Error('原子写失败'));
       }
     });
   }
 
   remove(relPath: string): void {
+    this.assertNoSymlinkPath(parentDirOf(relPath), true);
     this.fsImpl.unlinkSync(this.abs(relPath));
   }
 
   removeDir(relPath: string): void {
+    this.assertNoSymlinkPath(relPath, true);
     const abs: string = this.abs(relPath);
     const names: string[] = this.rawChildNames(abs);
     for (let i = 0; i < names.length; i++) {
@@ -414,23 +593,30 @@ export class SandboxVaultAccess implements VaultAccess {
   }
 
   rename(from: string, to: string): void {
+    this.assertNoSymlinkPath(parentDirOf(from), true);
+    this.assertNoSymlinkPath(parentDirOf(to), true);
     this.fsImpl.renameSync(this.abs(from), this.abs(to));
   }
 
   /* --- 内部 --- */
 
   /** 原始子项名（不做过滤）；列不到就当空目录，避免把 UI 拖崩。 */
-  private rawChildNames(absDir: string): string[] {
+  private rawChildNames(absDir: string, throwOnError: boolean = false): string[] {
     try {
       return this.fsImpl.listFileSync(absDir);
     } catch (error) {
+      if (throwOnError) {
+        const err = error as Error;
+        throw new Error(err.message);
+      }
       return [];
     }
   }
 
   private isDirectory(relDir: string, name: string): boolean {
     try {
-      return this.fsImpl.statSync(this.abs(joinVaultPath(relDir, name))).isDirectory();
+      const meta: SandboxStatLike = this.fsImpl.lstatSync(this.abs(joinVaultPath(relDir, name)));
+      return !meta.isSymbolicLink() && meta.isDirectory();
     } catch (error) {
       return false;
     }
@@ -508,6 +694,7 @@ export interface ExternalStatResult extends ExternalIoStatus {
   size: number;
   mtime: number;
   isDir: boolean;
+  isSymbolicLink: boolean;
 }
 
 export interface ExternalFdResult extends ExternalIoStatus {
@@ -521,6 +708,7 @@ export interface ExternalNativeLike {
   readFileByFd(fd: number, name: string): ExternalReadResult;
   readBinaryByFd(fd: number, name: string): ExternalBinaryResult;
   writeFileByFd(fd: number, name: string, content: string): ExternalIoResult;
+  writeBinaryByFd(fd: number, name: string, bytes: Uint8Array): ExternalIoResult;
   deleteByFd(fd: number, name: string): ExternalIoResult;
   renameByFd(fd: number, oldName: string, newName: string): ExternalIoResult;
   statByFd(fd: number, name: string): ExternalStatResult;
@@ -602,7 +790,19 @@ export class ExternalVaultAccess implements VaultAccess {
   }
 
   listDir(relDir: string): VaultDirChild[] {
-    return this.withRoot<VaultDirChild[]>((fd: number): VaultDirChild[] => this.listChildrenAt(fd, relDir));
+    const all: VaultDirChild[] = this.listAll(relDir);
+    const out: VaultDirChild[] = [];
+    for (let i = 0; i < all.length; i++) {
+      if (all[i].isDir || isVaultNoteName(all[i].name)) {
+        out.push(all[i]);
+      }
+    }
+    return out;
+  }
+
+  listAll(relDir: string, includeHidden: boolean = false): VaultDirChild[] {
+    return this.withRoot<VaultDirChild[]>((fd: number): VaultDirChild[] =>
+      this.listChildrenAt(fd, relDir, true, includeHidden));
   }
 
   allDirs(): string[] {
@@ -637,9 +837,12 @@ export class ExternalVaultAccess implements VaultAccess {
     return this.withRoot<VaultFileStat | null>((fd: number): VaultFileStat | null => {
       const raw: ExternalStatResult = this.nativeImpl.statByFd(fd, relPath);
       if (!raw.ok) {
-        return null;
+        if (raw.code === 2) {
+          return null;
+        }
+        throwExternalFailure(raw, '检查文件');
       }
-      return { size: raw.size, mtimeSec: raw.mtime, isDir: raw.isDir };
+      return { size: raw.size, mtimeSec: raw.mtime, isDir: raw.isDir, isSymbolicLink: raw.isSymbolicLink };
     });
   }
 
@@ -665,6 +868,9 @@ export class ExternalVaultAccess implements VaultAccess {
 
   createEmptyNote(relPath: string): void {
     this.ensureDir(parentDirOf(relPath));
+    if (this.exists(relPath)) {
+      throw new Error('目标已存在');
+    }
     this.writeAtomicSync(relPath, '');
   }
 
@@ -691,6 +897,41 @@ export class ExternalVaultAccess implements VaultAccess {
         reject(error instanceof Error ? error : new VaultAccessError(-1, '原子写失败'));
       }
     });
+  }
+
+  async writeNewBinary(relPath: string, source: VaultBinaryImportSource): Promise<void> {
+    if (this.exists(relPath)) {
+      throw new Error('附件目标已存在');
+    }
+    this.ensureDir(parentDirOf(relPath));
+    const bytes: Uint8Array = source.readBytes();
+    if (bytes.length !== source.byteLength || bytes.length === 0) {
+      throw new Error('所选图片读取不完整');
+    }
+    let createdByThisCall: boolean = false;
+    try {
+      this.withRoot<void>((fd: number): void => {
+        const raw: ExternalIoResult = this.nativeImpl.writeBinaryByFd(fd, relPath, bytes);
+        if (!raw.ok) {
+          throwExternalFailure(raw, '写入附件');
+        }
+      });
+      createdByThisCall = true;
+      const copied: VaultFileStat | null = this.stat(relPath);
+      if (copied === null || copied.isDir || copied.size !== source.byteLength ||
+        !sameBytes(bytes, this.readBytes(relPath))) {
+        throw new Error('附件副本字节校验失败');
+      }
+    } catch (error) {
+      try {
+        if (createdByThisCall && this.exists(relPath)) {
+          this.remove(relPath);
+        }
+      } catch (cleanupError) {
+        // Retain the transfer error; the unique target may remain as an unreferenced partial.
+      }
+      throw error instanceof Error ? error : new Error('附件导入失败');
+    }
   }
 
   remove(relPath: string): void {
@@ -766,14 +1007,16 @@ export class ExternalVaultAccess implements VaultAccess {
     }
   }
 
-  private listChildrenAt(fd: number, relDir: string): VaultDirChild[] {
+  private listChildrenAt(fd: number, relDir: string, includeAll: boolean = false,
+    includeHidden: boolean = false): VaultDirChild[] {
     if (relDir.length === 0) {
-      return this.collectChildren(fd);
+      return this.collectChildren(fd, includeAll, includeHidden);
     }
-    return this.withSub<VaultDirChild[]>(fd, relDir, (dirFd: number): VaultDirChild[] => this.collectChildren(dirFd));
+    return this.withSub<VaultDirChild[]>(fd, relDir, (dirFd: number): VaultDirChild[] =>
+      this.collectChildren(dirFd, includeAll, includeHidden));
   }
 
-  private collectChildren(dirFd: number): VaultDirChild[] {
+  private collectChildren(dirFd: number, includeAll: boolean, includeHidden: boolean = false): VaultDirChild[] {
     const raw: ExternalStringResult = this.nativeImpl.listDirByFd(dirFd);
     if (!raw.ok) {
       throwExternalFailure(raw, '列出目录');
@@ -782,12 +1025,12 @@ export class ExternalVaultAccess implements VaultAccess {
     const files: string[] = [];
     for (let i = 0; i < raw.entries.length; i++) {
       const child: VaultDirChild = parseExternalEntry(raw.entries[i]);
-      if (isVaultHiddenName(child.name)) {
+      if (!includeHidden && isVaultHiddenName(child.name)) {
         continue;
       }
       if (child.isDir) {
         dirs.push(child.name);
-      } else if (isVaultNoteName(child.name)) {
+      } else if (includeAll || isVaultNoteName(child.name)) {
         files.push(child.name);
       }
     }

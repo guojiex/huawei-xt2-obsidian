@@ -53,3 +53,8 @@ test('already absent credentials do not prevent reset', async () => {
 test('system reset rejection is returned to the UI instead of claiming success', async () => {
   const f = fixture({ clearError: true }); await assert.rejects(f.reset(), /injected clear failure/);
 });
+
+test('reset has no external vault traversal or directory deletion path', () => {
+  assert.doesNotMatch(source, /VaultRegistry|rootUri|removeDirByFd|unlinkSync|fileIo\./);
+  assert.match(source, /clearUpApplicationData\(\)/);
+});

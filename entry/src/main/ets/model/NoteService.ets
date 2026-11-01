@@ -6,13 +6,12 @@
  * 两者写在一起，M2 的保存 / M3 的读取 / 1.6 的重命名移动删除都会往同一个类里堆，
  * 很快变成什么都管的 God Object。分层依据 AGENTS.md「单一职责」。
  *
- * 路径铁律（硬约束 #14）：本文件**不拼任何沙箱路径**，
- * 绝对路径一律经 `VaultRegistry.absoluteIn()`（内部才是唯一的 VaultPathResolver）。
+ * 路径铁律（硬约束 #14）：正式库 IO 一律经 `VaultRegistry.accessFor()`，
+ * 上层只传库内相对路径，不接触沙箱绝对路径或外部授权 URI。
  *
  * 本文件当前实现：新建（M1 验证前提）、读取（M2/M3 共用）、**保存（M2 自动保存，
  * AtomicFile 原子写，C1 硬约束）**、重命名 / 移动 / 删除（1.6 / 方案 A 已落）。
  */
-import { fileIo } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
@@ -71,7 +70,7 @@ export class NoteService {
   /** 目标笔记是否已存在（用于重名加后缀与「不再-path exists」判定） */
   static exists(registry: VaultRegistry, vaultId: string, relPath: string): boolean {
     try {
-      return fileIo.accessSync(registry.absoluteIn(vaultId, relPath));
+      return registry.accessFor(vaultId).exists(relPath);
     } catch (error) {
       return false;
     }
@@ -122,15 +121,7 @@ export class NoteService {
     const target: string = NoteService.uniqueRelPath(registry, vaultId, relPath);
     NoteService.ensureParentDirectories(registry, vaultId, target);
 
-    // API 24 的 openSync 返回 **File 对象**（不是 fd number，早期版本才是 number）；
-    // closeSync 两个都收，writeSync 只收 fd → 从 file.fd 取。
-    const abs: string = registry.absoluteIn(vaultId, target);
-    const file: fileIo.File = fileIo.openSync(abs, fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE);
-    try {
-      fileIo.writeSync(file.fd, '');
-    } finally {
-      fileIo.closeSync(file);
-    }
+    registry.accessFor(vaultId).createEmptyNote(target);
     FullTextSearchService.noteSaved(vaultId, target, '');
     WikiLinkService.pathAdded(vaultId);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建笔记 %{public}s', target);
@@ -141,10 +132,7 @@ export class NoteService {
     const segs: string[] = relPath.split('/');
     for (let i = 1; i < segs.length; i++) {
       const dirRel: string = segs.slice(0, i).join('/');
-      const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
-      if (!fileIo.accessSync(dirAbs)) {
-        fileIo.mkdirSync(dirAbs);
-      }
+      registry.accessFor(vaultId).ensureDir(dirRel);
     }
   }
 
@@ -161,8 +149,7 @@ export class NoteService {
   /** 与 readNote 相同，但保留失败状态，供 v0.4 只记录成功打开项。 */
   static tryReadNote(registry: VaultRegistry, vaultId: string, relPath: string): string | null {
     try {
-      const abs: string = registry.absoluteIn(vaultId, relPath);
-      const text: string = fileIo.readTextSync(abs);
+      const text: string = registry.accessFor(vaultId).readText(relPath);
       hilog.info(NOTE_DOMAIN, NOTE_TAG, '读取笔记 %{public}s（%{public}d 字）', relPath, text.length);
       return text;
     } catch (error) {
@@ -189,8 +176,9 @@ export class NoteService {
    * - 失败 `failWrite()` 回滚不留 .tmp 残留；崩溃/中断时原文件完好。
    * 返回 Promise：flushSave await 它，失败 reject `Error`（调用方据此 toast）。
    */
-  static saveNote(registry: VaultRegistry, vaultId: string, relPath: string, content: string): Promise<void> {
-    return NoteService.enqueueSaveNote(registry, vaultId, relPath, content, null, false);
+  static saveNote(registry: VaultRegistry, vaultId: string, relPath: string, content: string,
+    expectedContent: string | null = null): Promise<void> {
+    return NoteService.enqueueSaveNote(registry, vaultId, relPath, content, expectedContent, false);
   }
 
   /**
@@ -204,7 +192,6 @@ export class NoteService {
 
   private static enqueueSaveNote(registry: VaultRegistry, vaultId: string, relPath: string,
     content: string, expectedContent: string | null, mustBeNew: boolean): Promise<void> {
-    const abs: string = registry.absoluteIn(vaultId, relPath);
     const job: Promise<void> = NoteService.saveChain.then((): Promise<void> => {
       if (mustBeNew && NoteService.exists(registry, vaultId, relPath)) {
         throw new Error('CREATE_CONFLICT：目标笔记路径已被占用，未覆盖现有文件。');
@@ -215,7 +202,7 @@ export class NoteService {
           throw new Error('STALE_CONTENT：笔记已变化，未覆盖新内容。');
         }
       }
-      return NoteService.runAtomicSave(abs, relPath, content);
+      return registry.accessFor(vaultId).writeAtomic(relPath, content);
     }).then((): void => {
       FullTextSearchService.noteSaved(vaultId, relPath, content);
       WikiLinkService.noteSaved(vaultId, relPath, content);
@@ -235,12 +222,11 @@ export class NoteService {
       if (current === null || current !== expectedContent) {
         throw new Error('UNDO_CONFLICT：笔记已有后续修改，未删除。');
       }
-      const abs: string = registry.absoluteIn(vaultId, relPath);
-      const stat: fileIo.Stat = fileIo.statSync(abs);
-      if (stat.isDirectory()) {
+      const stat = registry.accessFor(vaultId).stat(relPath);
+      if (stat === null || stat.isDir) {
         throw new Error('UNDO_CONFLICT：目标已不是笔记文件，未删除。');
       }
-      fileIo.unlinkSync(abs);
+      registry.accessFor(vaultId).remove(relPath);
       FullTextSearchService.noteRemoved(vaultId, relPath, false);
       WikiLinkService.pathRemoved(vaultId);
       await NoteDraftService.discardPath(registry, vaultId, relPath);
@@ -250,69 +236,6 @@ export class NoteService {
     }, (): void => {
     });
     return job;
-  }
-
-  /** 单次原子写（saveNote 经 saveChain 串行调用）；resolve=已落盘，reject=已回滚 */
-  private static runAtomicSave(abs: string, relPath: string, content: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(abs);
-      let settled: boolean = false;
-      let timerId: number = -1;
-      const fail = (msg: string): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.failWrite();
-        } catch (e) {
-          hilog.warn(NOTE_DOMAIN, NOTE_TAG, 'runAtomicSave 回滚 failWrite 失败（忽略）');
-        }
-        hilog.error(NOTE_DOMAIN, NOTE_TAG, '保存笔记失败 %{public}s: %{public}s', relPath, msg);
-        reject(new Error('保存笔记失败: ' + msg));
-      };
-      const commit = (): void => {
-        if (settled) {
-          return;
-        }
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.finishWrite();
-        } catch (error) {
-          const err = error as BusinessError;
-          fail(err.message);
-          return;
-        }
-        settled = true;
-        hilog.info(NOTE_DOMAIN, NOTE_TAG, '保存笔记 %{public}s（%{public}d 字）', relPath, content.length);
-        resolve();
-      };
-      try {
-        const stream: fileIo.WriteStream = atomicFile.startWrite();
-        timerId = setTimeout((): void => {
-          fail('write 回调 3s 未触发');
-        }, 3000);
-        if (content.length === 0) {
-          commit();
-        } else {
-          stream.write(content, 'utf-8', (err?: BusinessError): void => {
-            if (err !== undefined && err !== null) {
-              fail(err.message);
-              return;
-            }
-            commit();
-          });
-        }
-      } catch (error) {
-        const err = error as BusinessError;
-        fail(err.message);
-      }
-    });
   }
 
   /**
@@ -344,18 +267,10 @@ export class NoteService {
       '.svg': 'image/svg+xml'
     };
     try {
-      const abs: string = registry.absoluteIn(vaultId, relPath);
-      const file: fileIo.File = fileIo.openSync(abs, fileIo.OpenMode.READ_ONLY);
-      try {
-        const size: number = fileIo.statSync(abs).size;
-        const buf: ArrayBuffer = new ArrayBuffer(size);
-        fileIo.readSync(file.fd, buf);
-        const helper: util.Base64Helper = new util.Base64Helper();
-        const b64: string = helper.encodeToStringSync(new Uint8Array(buf));
-        return 'data:' + mimes[ext] + ';base64,' + b64;
-      } finally {
-        fileIo.closeSync(file);
-      }
+      const bytes: Uint8Array = registry.accessFor(vaultId).readBytes(relPath);
+      const helper: util.Base64Helper = new util.Base64Helper();
+      const b64: string = helper.encodeToStringSync(bytes);
+      return 'data:' + mimes[ext] + ';base64,' + b64;
     } catch (error) {
       const err = error as BusinessError;
       hilog.warn(NOTE_DOMAIN, NOTE_TAG, '读取附件失败 %{public}s: %{public}s', relPath, err.message);
@@ -416,15 +331,9 @@ export class NoteService {
     const segs: string[] = target.split('/');
     for (let i = 1; i < segs.length; i++) {
       const dirRel: string = segs.slice(0, i).join('/');
-      const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
-      if (!fileIo.accessSync(dirAbs)) {
-        fileIo.mkdirSync(dirAbs);
-      }
+      registry.accessFor(vaultId).ensureDir(dirRel);
     }
-    const abs: string = registry.absoluteIn(vaultId, target);
-    if (!fileIo.accessSync(abs)) {
-      fileIo.mkdirSync(abs);
-    }
+    registry.accessFor(vaultId).ensureDir(target);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '新建文件夹 %{public}s', target);
     return target;
   }
@@ -435,18 +344,19 @@ export class NoteService {
    * ⚠️ 不可恢复 —— 调用方必须先过确认对话框；回收站是需求池 B 组，v0.2 没有。
    */
   static async deletePath(registry: VaultRegistry, vaultId: string, relPath: string): Promise<void> {
-    const abs: string = registry.absoluteIn(vaultId, relPath);
-    const stat = fileIo.statSync(abs);
-    if (stat.isDirectory()) {
-      const names: string[] = fileIo.listFileSync(abs);
-      for (let i = 0; i < names.length; i++) {
-        await NoteService.deletePath(registry, vaultId, relPath + '/' + names[i]);
-      }
-      fileIo.rmdirSync(abs);
-    } else {
-      fileIo.unlinkSync(abs);
+    const access = registry.accessFor(vaultId);
+    const stat = access.stat(relPath);
+    if (stat === null) {
+      throw new Error('目标不存在或当前无法访问');
     }
-    FullTextSearchService.noteRemoved(vaultId, relPath, stat.isDirectory());
+    if (stat.isDir) {
+      // Both adapters remove the complete subtree, including hidden entries and attachments,
+      // matching the existing confirmed permanent-delete behavior.
+      access.removeDir(relPath);
+    } else {
+      access.remove(relPath);
+    }
+    FullTextSearchService.noteRemoved(vaultId, relPath, stat.isDir);
     WikiLinkService.pathRemoved(vaultId);
     await NoteDraftService.discardPath(registry, vaultId, relPath);
     hilog.info(NOTE_DOMAIN, NOTE_TAG, '删除 %{public}s', relPath);
@@ -484,8 +394,7 @@ export class NoteService {
     const copiedDrafts: boolean = await NoteDraftService.copySubtree(
       registry, vaultId, relPath, vaultId, unique, isDir);
     try {
-      fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
-        registry.absoluteIn(vaultId, unique));
+      registry.accessFor(vaultId).rename(relPath, unique);
     } catch (error) {
       if (copiedDrafts) {
         NoteDraftService.cleanupOrphans(registry);
@@ -530,10 +439,7 @@ export class NoteService {
       const segs: string[] = destDir.split('/');
       for (let i = 1; i <= segs.length; i++) {
         const dirRel: string = segs.slice(0, i).join('/');
-        const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
-        if (!fileIo.accessSync(dirAbs)) {
-          fileIo.mkdirSync(dirAbs);
-        }
+        registry.accessFor(vaultId).ensureDir(dirRel);
       }
     }
     const unique: string = isDir
@@ -542,8 +448,7 @@ export class NoteService {
     const copiedDrafts: boolean = await NoteDraftService.copySubtree(
       registry, vaultId, relPath, vaultId, unique, isDir);
     try {
-      fileIo.renameSync(registry.absoluteIn(vaultId, relPath),
-        registry.absoluteIn(vaultId, unique));
+      registry.accessFor(vaultId).rename(relPath, unique);
     } catch (error) {
       if (copiedDrafts) {
         NoteDraftService.cleanupOrphans(registry);

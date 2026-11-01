@@ -57,6 +57,15 @@ function lineNumberHarness() {
   const helperEnd = webSource.indexOf('\n}', helperStart) + 2;
   assert.ok(helperStart >= 0 && helperEnd > helperStart, 'could not find line-number visibility function');
   const helper = webSource.slice(helperStart, helperEnd);
+  const classes = new Set();
+  const host = {
+    classList: {
+      toggle(name, enabled) {
+        if (enabled) classes.add(name);
+        else classes.delete(name);
+      }
+    }
+  };
   const code = transformSync(`
     let lineNumbersVisible = false;
     let view = null;
@@ -65,8 +74,12 @@ function lineNumberHarness() {
       getState: () => ({ lineNumbersVisible, view }) };
   `, { loader: 'ts', format: 'cjs' }).code;
   const module = { exports: {} };
-  vm.runInContext(code, vm.createContext({ module, exports: module.exports }));
-  return module.exports;
+  vm.runInContext(code, vm.createContext({
+    module,
+    exports: module.exports,
+    document: { getElementById: (id) => id === 'editor' ? host : null }
+  }));
+  return { ...module.exports, classes };
 }
 
 test('line numbers default off, persist across reloads, and are shared by all vaults', () => {
@@ -94,16 +107,13 @@ test('missing, malformed, or unavailable preferences safely keep line numbers of
 
 test('CodeMirror line-number visibility changes only a CSS class and keeps the current editor state', () => {
   const harness = lineNumberHarness();
-  const classes = new Set();
+  const classes = harness.classes;
   const state = { doc: 'first\nsecond', selection: { anchor: 9 } };
   const view = {
     state,
     dom: {
       classList: {
-        toggle(name, enabled) {
-          if (enabled) classes.add(name);
-          else classes.delete(name);
-        }
+        toggle() { assert.fail('line-number state must live on the stable #editor host'); }
       }
     }
   };
@@ -121,7 +131,7 @@ test('CodeMirror line-number visibility changes only a CSS class and keeps the c
 
 test('bundled CSS hides CodeMirror’s forced gutter and the theme change restores the selected visibility', () => {
   assert.match(editorBuildSource, /#editor \.cm-gutter\.cm-lineNumbers \{ display: none !important; \}/);
-  assert.match(editorBuildSource, /#editor \.cm-editor\.cm-show-line-numbers \.cm-gutter\.cm-lineNumbers \{ display: flex !important; \}/);
+  assert.match(editorBuildSource, /#editor\.cm-show-line-numbers \.cm-gutter\.cm-lineNumbers \{ display: flex !important; \}/);
 
   const themeStart = webSource.indexOf('  setTheme(theme: string): void {');
   const lineNumbersStart = webSource.indexOf('  setLineNumbers(show: boolean): void {', themeStart);

@@ -56,6 +56,95 @@ static char *vaultdir_dup(const char *text) {
   return copy;
 }
 
+/*
+ * 打开相对路径的父目录，逐段使用 O_NOFOLLOW。
+ *
+ * 单次 openat(rootFd, "a/b/file", O_NOFOLLOW) 只约束最后一段，a 或 b 若是符号链接仍
+ * 会越出用户授权的目录。所有文件级操作都经此函数把中间段逐个固定为目录 fd。
+ * 返回值始终是新 fd，调用方负责关闭；leaf 是单独分配的末段名。
+ */
+static int vaultdir_open_parent(int root_fd, const char *relative, char **leaf, int *error) {
+  *leaf = NULL;
+  *error = 0;
+  if (relative == NULL || relative[0] == '\0' || relative[0] == '/') {
+    *error = EINVAL;
+    return -1;
+  }
+  char *copy = vaultdir_dup(relative);
+  if (copy == NULL) {
+    *error = ENOMEM;
+    return -1;
+  }
+  int current = dup(root_fd);
+  if (current < 0) {
+    *error = errno;
+    free(copy);
+    return -1;
+  }
+  char *segment = copy;
+  while (true) {
+    char *slash = strchr(segment, '/');
+    if (slash == NULL) {
+      if (segment[0] == '\0' || strcmp(segment, ".") == 0 || strcmp(segment, "..") == 0) {
+        *error = EINVAL;
+        close(current);
+        free(copy);
+        return -1;
+      }
+      *leaf = vaultdir_dup(segment);
+      if (*leaf == NULL) {
+        *error = ENOMEM;
+        close(current);
+        free(copy);
+        return -1;
+      }
+      free(copy);
+      return current;
+    }
+    *slash = '\0';
+    if (segment[0] == '\0' || strcmp(segment, ".") == 0 || strcmp(segment, "..") == 0) {
+      *error = EINVAL;
+      close(current);
+      free(copy);
+      return -1;
+    }
+    int next = openat(current, segment, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    if (next < 0) {
+      *error = errno;
+      close(current);
+      free(copy);
+      return -1;
+    }
+    close(current);
+    current = next;
+    segment = slash + 1;
+  }
+}
+
+static unsigned long vaultdir_temp_counter = 0;
+
+/* Unique hidden temp name; O_EXCL ensures a leftover temp is never truncated. */
+static int vaultdir_open_temp(int parent_fd, char *name, size_t capacity, int *error) {
+  for (int attempt = 0; attempt < 64; attempt++) {
+    unsigned long serial = __sync_add_and_fetch(&vaultdir_temp_counter, 1);
+    int length = snprintf(name, capacity, ".vaultdir-%d-%lu.tmp", (int)getpid(), serial);
+    if (length < 0 || (size_t)length >= capacity) {
+      *error = ENAMETOOLONG;
+      return -1;
+    }
+    int fd = openat(parent_fd, name, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
+    if (fd >= 0) {
+      return fd;
+    }
+    if (errno != EEXIST) {
+      *error = errno;
+      return -1;
+    }
+  }
+  *error = EEXIST;
+  return -1;
+}
+
 static void vaultdir_vec_free(vaultdir_vec *vec) {
   if (vec == NULL) {
     return;
@@ -98,12 +187,13 @@ static bool vaultdir_vec_push(vaultdir_vec *vec, const char *text, int *error) {
  * dirent.d_type 在部分文件系统上是 DT_UNKNOWN，所以统一用 fstatat 兜底，
  * 且在传进来的父 fd 上做（相对路径语义，不依赖任何绝对路径）。
  */
-static bool vaultdir_is_dirat(int parent_fd, const char *name, int *error) {
+static bool vaultdir_is_dirat(int parent_fd, const char *name, bool *is_symlink, int *error) {
   struct stat info;
   if (fstatat(parent_fd, name, &info, AT_SYMLINK_NOFOLLOW) != 0) {
     *error = errno;
     return false;
   }
+  *is_symlink = S_ISLNK(info.st_mode);
   return S_ISDIR(info.st_mode);
 }
 
@@ -147,7 +237,17 @@ static void vaultdir_scan(int dir_fd, const char *prefix, int depth,
     }
     snprintf(relative, relative_len, "%s%s", prefix, entry->d_name);
 
-    if (vaultdir_is_dirat(dir_fd, entry->d_name, error)) {
+    bool is_symlink = false;
+    bool is_directory = vaultdir_is_dirat(dir_fd, entry->d_name, &is_symlink, error);
+    if (*error != 0) {
+      free(relative);
+      break;
+    }
+    if (is_symlink) {
+      free(relative);
+      continue;
+    }
+    if (is_directory) {
       size_t marked_len = strlen(relative) + 2;
       char *marked = (char *)malloc(marked_len);
       if (marked == NULL) {
@@ -173,11 +273,12 @@ static void vaultdir_scan(int dir_fd, const char *prefix, int depth,
         }
         snprintf(child_prefix, child_prefix_len, "%s/", relative);
 
-        int child_fd = openat(dir_fd, entry->d_name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        int child_fd = openat(dir_fd, entry->d_name,
+                              O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
         if (child_fd >= 0) {
           vaultdir_scan(child_fd, child_prefix, depth + 1, recursive, out, error);
           close(child_fd);
-        } else if (errno != EACCES) {
+        } else if (errno != EACCES && errno != ELOOP) {
           /* EACCES 只表示这一个子目录进不去，其他兄弟继续；别的错误停下报原因 */
           *error = errno;
         }
@@ -442,9 +543,18 @@ static napi_value read_file_by_fd(napi_env env, napi_callback_info info) {
     return vaultdir_build_read(env, EINVAL, NULL);
   }
 
-  int file_fd = openat(fd, name, O_RDONLY | O_CLOEXEC);
+  int error = 0;
+  char *leaf = NULL;
+  int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+  if (parent_fd < 0) {
+    free(name);
+    return vaultdir_build_read(env, error, NULL);
+  }
+  int file_fd = openat(parent_fd, leaf, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  free(leaf);
+  close(parent_fd);
   if (file_fd < 0) {
-    int error = errno;
+    error = errno;
     free(name);
     return vaultdir_build_read(env, error, NULL);
   }
@@ -452,7 +562,6 @@ static napi_value read_file_by_fd(napi_env env, napi_callback_info info) {
 
   char *buffer = NULL;
   size_t length = 0;
-  int error = 0;
   if (!vaultdir_read_all(file_fd, &buffer, &length, &error)) {
     close(file_fd);
     return vaultdir_build_read(env, error, NULL);
@@ -489,24 +598,30 @@ static napi_value write_file_by_fd(napi_env env, napi_callback_info info) {
     return vaultdir_build_simple(env, EINVAL);
   }
 
-  /* tmp 名字带上 pid：同一个目录被两个进程/两次调用并发写时不会互相踩。
-     name 必须活到 renameat，不能在构造 tmp 之后就 free。 */
-  char tmp_name[1024];
-  snprintf(tmp_name, sizeof(tmp_name), "%s.%d.tmp", name, (int)getpid());
-
   int error = 0;
-  int tmp_fd = openat(fd, tmp_name, O_CREAT | O_WRONLY | O_TRUNC | O_CLOEXEC, 0666);
-  if (tmp_fd < 0) {
-    error = errno;
+  char *leaf = NULL;
+  int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+  if (parent_fd < 0) {
     free(content);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  char tmp_name[128];
+  int tmp_fd = vaultdir_open_temp(parent_fd, tmp_name, sizeof(tmp_name), &error);
+  if (tmp_fd < 0) {
+    free(content);
+    free(leaf);
+    close(parent_fd);
     free(name);
     return vaultdir_build_simple(env, error);
   }
 
   if (!vaultdir_write_all(tmp_fd, content, content_len, &error)) {
     close(tmp_fd);
-    unlinkat(fd, tmp_name, 0);
+    unlinkat(parent_fd, tmp_name, 0);
     free(content);
+    free(leaf);
+    close(parent_fd);
     free(name);
     return vaultdir_build_simple(env, error);
   }
@@ -515,15 +630,19 @@ static napi_value write_file_by_fd(napi_env env, napi_callback_info info) {
   if (fsync(tmp_fd) != 0) {
     error = errno;
     close(tmp_fd);
-    unlinkat(fd, tmp_name, 0);
+    unlinkat(parent_fd, tmp_name, 0);
+    free(leaf);
+    close(parent_fd);
     free(name);
     return vaultdir_build_simple(env, error);
   }
   close(tmp_fd);
 
-  if (renameat(fd, tmp_name, fd, name) != 0) {
+  if (renameat(parent_fd, tmp_name, parent_fd, leaf) != 0) {
     error = errno;
-    unlinkat(fd, tmp_name, 0);
+    unlinkat(parent_fd, tmp_name, 0);
+    free(leaf);
+    close(parent_fd);
     free(name);
     return vaultdir_build_simple(env, error);
   }
@@ -534,11 +653,94 @@ static napi_value write_file_by_fd(napi_env env, napi_callback_info info) {
    * fd 做 fsync）—— 此时数据本身已经在 rename 前 fsync 过了，内容不丢，
    * 所以只当作软警告，不把整个写判死。
    */
-  if (fsync(fd) != 0 && errno != EINVAL) {
+  if (fsync(parent_fd) != 0 && errno != EINVAL) {
+    error = errno;
+    free(leaf);
+    close(parent_fd);
     free(name);
-    return vaultdir_build_simple(env, errno);
+    return vaultdir_build_simple(env, error);
   }
 
+  free(leaf);
+  close(parent_fd);
+  free(name);
+  return vaultdir_build_simple(env, 0);
+}
+
+/*
+ * writeBinaryByFd(dirFd, name, bytes) —— 新建图片附件的字节写入。
+ *
+ * 新附件用 O_EXCL 建立目标，防止覆盖同名文件；write-all/fsync 失败时清理本次目标。
+ * 不把图片字节经 UTF-8 字符串转换。调用方完成后会按字节回读校验，再插入 Markdown 引用。
+ */
+static napi_value write_binary_by_fd(napi_env env, napi_callback_info info) {
+  napi_value argv[3] = {NULL, NULL, NULL};
+  if (!vaultdir_args(env, info, 3, argv)) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  int32_t fd = 0;
+  if (napi_get_value_int32(env, argv[0], &fd) != napi_ok || fd < 0) {
+    return vaultdir_build_simple(env, EBADF);
+  }
+  char *name = vaultdir_to_utf8(env, argv[1], NULL);
+  if (name == NULL) {
+    return vaultdir_build_simple(env, EINVAL);
+  }
+  napi_typedarray_type type = napi_uint8_array;
+  size_t length = 0;
+  void *bytes = NULL;
+  napi_value arraybuffer = NULL;
+  size_t byte_offset = 0;
+  if (napi_get_typedarray_info(env, argv[2], &type, &length, &bytes, &arraybuffer,
+                               &byte_offset) != napi_ok || type != napi_uint8_array) {
+    free(name);
+    return vaultdir_build_simple(env, EINVAL);
+  }
+
+  int error = 0;
+  char *leaf = NULL;
+  int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+  if (parent_fd < 0) {
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  /* 图片目标必须是唯一新文件；O_EXCL 防止外部并发创建后被覆盖。 */
+  int target_fd = openat(parent_fd, leaf, O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
+  if (target_fd < 0) {
+    error = errno;
+    free(leaf);
+    close(parent_fd);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  if (!vaultdir_write_all(target_fd, (const char *)bytes, length, &error)) {
+    close(target_fd);
+    unlinkat(parent_fd, leaf, 0);
+    free(leaf);
+    close(parent_fd);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  if (fsync(target_fd) != 0) {
+    error = errno;
+    close(target_fd);
+    unlinkat(parent_fd, leaf, 0);
+    free(leaf);
+    close(parent_fd);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  close(target_fd);
+  if (fsync(parent_fd) != 0 && errno != EINVAL) {
+    error = errno;
+    unlinkat(parent_fd, leaf, 0);
+    free(leaf);
+    close(parent_fd);
+    free(name);
+    return vaultdir_build_simple(env, error);
+  }
+  free(leaf);
+  close(parent_fd);
   free(name);
   return vaultdir_build_simple(env, 0);
 }
@@ -558,8 +760,14 @@ static napi_value delete_by_fd(napi_env env, napi_callback_info info) {
     return vaultdir_build_simple(env, EINVAL);
   }
   int error = 0;
-  if (unlinkat(fd, name, 0) != 0) {
-    error = errno;
+  char *leaf = NULL;
+  int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+  if (parent_fd >= 0) {
+    if (unlinkat(parent_fd, leaf, 0) != 0) {
+      error = errno;
+    }
+    free(leaf);
+    close(parent_fd);
   }
   free(name);
   return vaultdir_build_simple(env, error);
@@ -583,9 +791,18 @@ static napi_value rename_by_fd(napi_env env, napi_callback_info info) {
     return vaultdir_build_simple(env, EINVAL);
   }
   int error = 0;
-  if (renameat(fd, old_name, fd, new_name) != 0) {
+  char *old_leaf = NULL;
+  char *new_leaf = NULL;
+  int old_parent = vaultdir_open_parent(fd, old_name, &old_leaf, &error);
+  int new_parent = old_parent < 0 ? -1 : vaultdir_open_parent(fd, new_name, &new_leaf, &error);
+  if (old_parent >= 0 && new_parent >= 0 &&
+      renameat(old_parent, old_leaf, new_parent, new_leaf) != 0) {
     error = errno;
   }
+  free(old_leaf);
+  free(new_leaf);
+  if (old_parent >= 0) close(old_parent);
+  if (new_parent >= 0) close(new_parent);
   free(old_name);
   free(new_name);
   return vaultdir_build_simple(env, error);
@@ -614,12 +831,15 @@ static napi_value vaultdir_build_stat(napi_env env, int error, const struct stat
   napi_value size_value = NULL;
   napi_value mtime_value = NULL;
   napi_value is_dir_value = NULL;
+  napi_value is_symlink_value = NULL;
   napi_create_double(env, info == NULL ? 0.0 : (double)info->st_size, &size_value);
   napi_create_double(env, info == NULL ? 0.0 : (double)info->st_mtime, &mtime_value);
   napi_get_boolean(env, info != NULL && S_ISDIR(info->st_mode), &is_dir_value);
+  napi_get_boolean(env, info != NULL && S_ISLNK(info->st_mode), &is_symlink_value);
   napi_set_named_property(env, result, "size", size_value);
   napi_set_named_property(env, result, "mtime", mtime_value);
   napi_set_named_property(env, result, "isDir", is_dir_value);
+  napi_set_named_property(env, result, "isSymbolicLink", is_symlink_value);
   return result;
 }
 
@@ -650,8 +870,16 @@ static napi_value stat_by_fd(napi_env env, napi_callback_info info) {
     if (fstat(fd, &meta) != 0) {
       error = errno;
     }
-  } else if (fstatat(fd, name, &meta, 0) != 0) {
-    error = errno;
+  } else {
+    char *leaf = NULL;
+    int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+    if (parent_fd >= 0) {
+      if (fstatat(parent_fd, leaf, &meta, AT_SYMLINK_NOFOLLOW) != 0) {
+        error = errno;
+      }
+      free(leaf);
+      close(parent_fd);
+    }
   }
   free(name);
   return vaultdir_build_stat(env, error, error == 0 ? &meta : NULL);
@@ -665,6 +893,10 @@ static napi_value stat_by_fd(napi_env env, napi_callback_info info) {
  * 下一步 openat 带 O_DIRECTORY 会报 ENOTDIR，不会悄悄干掉用户文件。
  */
 static int vaultdir_mkdir_all(int root_fd, const char *rel, int *error) {
+  if (rel == NULL || rel[0] == '\0' || rel[0] == '/' || rel[strlen(rel) - 1] == '/') {
+    *error = EINVAL;
+    return 0;
+  }
   char *rest = vaultdir_dup(rel);
   if (rest == NULL) {
     *error = ENOMEM;
@@ -688,6 +920,12 @@ static int vaultdir_mkdir_all(int root_fd, const char *rel, int *error) {
     char slash = rest[pos];
     rest[pos] = '\0';
     const char *seg = rest + start;
+    if (seg[0] == '\0' || strcmp(seg, ".") == 0 || strcmp(seg, "..") == 0) {
+      *error = EINVAL;
+      ok = 0;
+      rest[pos] = slash;
+      break;
+    }
 
     if (mkdirat(current, seg, 0777) != 0 && errno != EEXIST) {
       *error = errno;
@@ -695,7 +933,7 @@ static int vaultdir_mkdir_all(int root_fd, const char *rel, int *error) {
       rest[pos] = slash;
       break;
     }
-    int next = openat(current, seg, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    int next = openat(current, seg, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
     if (next < 0) {
       *error = errno;
       ok = 0;
@@ -774,7 +1012,7 @@ static bool vaultdir_clear_dir(int dir_fd, int *error) {
 
 /* 删除 parent_fd 下的 name：目录递归清，普通文件直接 unlink。 */
 static bool vaultdir_rm_all(int parent_fd, const char *name, int *error) {
-  int child = openat(parent_fd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+  int child = openat(parent_fd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
   if (child < 0) {
     if (errno == ENOTDIR) {
       if (unlinkat(parent_fd, name, 0) != 0) {
@@ -821,9 +1059,15 @@ static napi_value remove_dir_by_fd(napi_env env, napi_callback_info info) {
   int error = 0;
   if (name[0] == '\0') {
     error = EINVAL;
-  } else if (!vaultdir_rm_all(fd, name, &error)) {
-    if (error == 0) {
-      error = EIO;
+  } else {
+    char *leaf = NULL;
+    int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+    if (parent_fd >= 0) {
+      if (!vaultdir_rm_all(parent_fd, leaf, &error) && error == 0) {
+        error = EIO;
+      }
+      free(leaf);
+      close(parent_fd);
     }
   }
   free(name);
@@ -870,9 +1114,15 @@ static napi_value open_dir_by_fd(napi_env env, napi_callback_info info) {
   if (name[0] == '\0') {
     error = EINVAL;
   } else {
-    opened = openat(fd, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (opened < 0) {
-      error = errno;
+    char *leaf = NULL;
+    int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+    if (parent_fd >= 0) {
+      opened = openat(parent_fd, leaf, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+      if (opened < 0) {
+        error = errno;
+      }
+      free(leaf);
+      close(parent_fd);
     }
   }
   free(name);
@@ -929,9 +1179,18 @@ static napi_value read_binary_by_fd(napi_env env, napi_callback_info info) {
   if (name == NULL) {
     return vaultdir_build_binary(env, EINVAL, NULL, 0);
   }
-  int file_fd = openat(fd, name, O_RDONLY | O_CLOEXEC);
+  int error = 0;
+  char *leaf = NULL;
+  int parent_fd = vaultdir_open_parent(fd, name, &leaf, &error);
+  if (parent_fd < 0) {
+    free(name);
+    return vaultdir_build_binary(env, error, NULL, 0);
+  }
+  int file_fd = openat(parent_fd, leaf, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+  free(leaf);
+  close(parent_fd);
   if (file_fd < 0) {
-    int error = errno;
+    error = errno;
     free(name);
     return vaultdir_build_binary(env, error, NULL, 0);
   }
@@ -939,7 +1198,6 @@ static napi_value read_binary_by_fd(napi_env env, napi_callback_info info) {
 
   char *buffer = NULL;
   size_t length = 0;
-  int error = 0;
   if (!vaultdir_read_all(file_fd, &buffer, &length, &error)) {
     close(file_fd);
     return vaultdir_build_binary(env, error, NULL, 0);
@@ -957,6 +1215,7 @@ static napi_value vaultdir_register_module(napi_env env, napi_value exports) {
       {"listDirRecursiveByFd", NULL, list_dir_recursive_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"readFileByFd", NULL, read_file_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"writeFileByFd", NULL, write_file_by_fd, NULL, NULL, NULL, napi_default, NULL},
+      {"writeBinaryByFd", NULL, write_binary_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"deleteByFd", NULL, delete_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"renameByFd", NULL, rename_by_fd, NULL, NULL, NULL, napi_default, NULL},
       {"statByFd", NULL, stat_by_fd, NULL, NULL, NULL, napi_default, NULL},

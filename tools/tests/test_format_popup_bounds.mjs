@@ -49,7 +49,9 @@ function layout(options) {
     formatMenuMaxHeight: 500,
     paneFilePath: () => 'note.md',
     isPaneEditable: () => true,
+    isSingleScreenLayout: () => options.breakpoint === 'sm',
     isReferenceShown: () => true,
+    notePaneVisible: () => options.rightVisible ?? true,
     keyboardInsetVp: () => options.keyboardInsetVp ?? 0,
     closeFormatMenu() { this.formatMenuOpen = false; }
   });
@@ -96,6 +98,33 @@ test('a right-pane popup offset is measured from its right-aligned placement and
   assert.equal(app.formatMenuWidth, 360);
   assert.equal(app.formatPopupOffsetX, -3);
   assert.equal(app.formatMenuOpen, true);
+});
+
+test('an active right pane can open its format popup in a single-screen layout', () => {
+  const app = layout({
+    pane: 'right',
+    breakpoint: 'sm',
+    rightPaneArea: [0, 100, 350, 650],
+    rightAnchorArea: [150, 600, 48, 48],
+    windowArea: [0, 39, 350, 737]
+  });
+
+  assert.equal(app.formatMenuWidth, 334);
+  assert.equal(app.formatPopupPlacement, 'top-left');
+  assert.equal(app.formatPopupOffsetX, 0);
+  assert.equal(app.formatMenuOpen, true);
+});
+
+test('a hidden right pane cannot keep a format popup open', () => {
+  const app = layout({
+    pane: 'right',
+    rightVisible: false,
+    rightPaneArea: [728, 95, 379, 650],
+    rightAnchorArea: [783, 338, 48, 48],
+    windowArea: [0, 39, 1107, 737]
+  });
+
+  assert.equal(app.formatMenuOpen, false);
 });
 
 test('a popup below the anchor uses the available space when the upper space is smaller', () => {

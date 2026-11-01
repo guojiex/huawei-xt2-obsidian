@@ -3,8 +3,8 @@
  *
  * 以内容区整体替换形态挂载在 Index 内容区（T013 接线）。
  * 返回走 Index 顶栏返回箭头（2.7 硬要求，2.7c 起本组件不再自带返回入口）。
- * 卡片列表：当前库高亮；每卡「设为当前 / 改名 / 删除」。
- * 铁律：无 Git 导入入口（v0.3）；删除按钮直接拉起不可逆确认对话框（文案在 VaultDialogs）。
+ * 卡片列表：当前库高亮；每卡「设为当前 / 改名 / 删除或解除关联」。
+ * v1.5：本地目录库与沙箱库并列显示；「导入库」入口由 Index 拉起统一来源对话框。
  *
  * 视觉：token 化 + **内容页限宽 760vp 居中**（需求 4.9 —— 三屏 1061vp 下不把设置项拉成一整行）。
  */
@@ -33,6 +33,7 @@ export struct VaultManagerView {
   onRename: (id: string) => void = (id: string) => {};
   onDelete: (id: string) => void = (id: string) => {};
   onCreate: () => void = () => {};
+  onImportVault: () => void = () => {};
 
   @Builder
   Tag(text: string, active: boolean) {
@@ -67,14 +68,17 @@ export struct VaultManagerView {
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .layoutWeight(1)
-                  this.Tag('本地', true)
+                  this.Tag(v.rootKind === 'external' ? '本地目录' : (v.type === 'git' ? 'Git' : '本地'),
+                    v.rootKind === 'external' || v.type !== 'git')
                   if (v.id === this.currentVaultId) {
                     this.Tag('当前', false)
                   }
                 }
                 .width('100%')
 
-                Text('vaults/' + v.id + ' · 不参与同步')
+                Text(v.rootKind === 'external'
+                  ? '已关联原目录 · 直接读写，不复制文件'
+                  : 'vaults/' + v.id + (v.type === 'git' ? ' · Git 仓库' : ' · 不参与同步'))
                   .fontSize(FontSize.body3)
                   .fontColor($r('app.color.text_tertiary'))
                   .width('100%')
@@ -94,9 +98,11 @@ export struct VaultManagerView {
                     .onClick(() => {
                       this.onRename(v.id);
                     })
-                  Text('删除')
-                    .actionBtn($r('app.color.danger'))
-                    .backgroundColor($r('app.color.danger_bg'))
+                  Text(v.rootKind === 'external' ? '解除关联' : '删除')
+                    .actionBtn(v.rootKind === 'external'
+                      ? $r('app.color.text_primary') : $r('app.color.danger'))
+                    .backgroundColor(v.rootKind === 'external'
+                      ? $r('app.color.bg_secondary') : $r('app.color.danger_bg'))
                     .onClick(() => {
                       this.onDelete(v.id);
                     })
@@ -120,7 +126,7 @@ export struct VaultManagerView {
           .width('100%')
           .margin({ bottom: Space.s4 })
 
-          // 新建入口（无 Git 导入——v0.3 才有）
+          // 本地库新建与两种来源统一导入入口
           Text('+ 新建本地笔记库')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.text_secondary'))
@@ -133,12 +139,23 @@ export struct VaultManagerView {
               this.onCreate();
             })
 
-          // 底部说明（照原型 last 框，去掉 Git 相关行——v0.1 无 Git 库）
+          Text('+ 导入库')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+            .height(Size.itemH)
+            .textAlign(TextAlign.Center)
+            .borderRadius(Radius.card)
+            .border({ width: 1, color: $r('app.color.line_strong'), style: BorderStyle.Dashed })
+            .margin({ top: Space.s2 })
+            .onClick(() => { this.onImportVault(); })
+
+          // 解除关联只移除 App 记录，外部目录和原文件保留
           Column({ space: Space.s1 }) {
-            Text('名称即目录名：改名会连 vaults/ 下的目录一起改。')
+            Text('本地库改名会改 vaults/ 目录名；外部库改名只改 App 内显示名称。')
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_tertiary'))
-            Text('删除语义：本地库连内容永久删除，不可恢复。')
+            Text('删除本地库会清除其内容；解除外部目录关联会保留原目录与文件。')
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_tertiary'))
           }

@@ -224,6 +224,7 @@ export struct DeleteVaultDialog {
   controller?: CustomDialogController;
   /** 待删库 id（= 目录名 = 显示名，由 Index 在拉起时传入） */
   vaultId: string = '';
+  isExternal: boolean = false;
   onConfirm: () => void = () => {};
 
   private confirm(): void {
@@ -233,15 +234,17 @@ export struct DeleteVaultDialog {
 
   build() {
     Column() {
-      Text('删除本地笔记？')
+      Text(this.isExternal ? '解除外部目录关联？' : '删除本地笔记？')
         .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
-      Text('将永久删除该库的全部笔记，以及该库的 Agent 对话（含归档和未发送草稿）、运行记录及撤销数据；不会删除远端 Git 仓库。此操作无法撤销。正在运行的 Agent 会阻止删除。')
+      Text(this.isExternal
+        ? '仅移除曜石笔记中的关联和本地私有数据；原目录与其中的文件会保留。其他应用仍可使用原目录。'
+        : '将永久删除该库的全部笔记，以及该库的 Agent 对话（含归档和未发送草稿）、运行记录及撤销数据；不会删除远端 Git 仓库。此操作无法撤销。正在运行的 Agent 会阻止删除。')
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_secondary'))
         .margin({ top: Space.s2, bottom: Space.s3 })
-      Text('vaults/' + this.vaultId)
+      Text(this.isExternal ? this.vaultId : 'vaults/' + this.vaultId)
         .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
@@ -262,7 +265,7 @@ export struct DeleteVaultDialog {
           .onClick(() => {
             this.controller?.close();
           })
-        Text('确认删除')
+        Text(this.isExternal ? '解除关联' : '确认删除')
           .fontSize(FontSize.body3)
           .fontColor($r('app.color.danger'))
           .height(30)

@@ -22,6 +22,7 @@ const code = transformSync(`class IndexHarness { ${resetSaveFeedbackMethod} ${fl
 
 function createHarness(options = {}) {
   const calls = [];
+  const expectedVersions = [];
   let app;
   const editor = {
     ready: true,
@@ -39,8 +40,9 @@ function createHarness(options = {}) {
     TAG: 'test',
     VaultRegistry: { get: () => ({}) },
     NoteService: {
-      async saveNote() {
+      async saveNote(registry, vaultId, path, content, expectedContent) {
         calls.push('write');
+        expectedVersions.push(expectedContent);
         if (options.onWrite) {
           options.onWrite(app);
         }
@@ -71,17 +73,20 @@ function createHarness(options = {}) {
     editorBridge: editor,
     showSaveFeedback() { calls.push('save-success'); },
     hideSaveFeedback() { calls.push('hide-success'); },
+    clearStaleSaveNotice() {},
+    handleEditorSaveError() { calls.push('toast:保存失败'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
     refreshBacklinks() {}
   });
-  return { app, calls };
+  return { app, calls, expectedVersions };
 }
 
 test('successful changed content shows feedback only after the note write resolves', async () => {
-  const { app, calls } = createHarness();
+  const { app, calls, expectedVersions } = createHarness();
 
   assert.equal(await app.flushSave(), true);
   assert.deepEqual(calls, ['read', 'write', 'save-success']);
+  assert.deepEqual(expectedVersions, ['old content']);
   assert.equal(app.lastSavedText, 'new content');
 });
 

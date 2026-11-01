@@ -1,9 +1,51 @@
-import { ArgumentMatchers, afterAll, afterEach, beforeAll, describe, expect, it, MockKit, when } from '@ohos/hypium';
-import { FileTree } from '../main/ets/model/FileTree';
+import { afterEach, beforeAll, describe, expect, it } from '@ohos/hypium';
+import { VaultAccess } from '../main/ets/model/VaultAccess';
 import { VaultRegistry } from '../main/ets/model/VaultRegistry';
 import { WikiLinkService } from '../main/ets/model/WikiLinkService';
 
+class WikiLinkTestAccess {
+  private vaultId: string;
+  private filesByRoot: Map<string, string[]>;
+  private contentsByPath: Map<string, string>;
+  private failedRoots: Set<string>;
+
+  constructor(vaultId: string, filesByRoot: Map<string, string[]>, contentsByPath: Map<string, string>,
+    failedRoots: Set<string>) {
+    this.vaultId = vaultId;
+    this.filesByRoot = filesByRoot;
+    this.contentsByPath = contentsByPath;
+    this.failedRoots = failedRoots;
+  }
+
+  allNotes(): string[] {
+    const root: string = 'wiki-test-root-' + this.vaultId;
+    if (this.failedRoots.has(root)) {
+      throw new Error('可控索引扫描失败');
+    }
+    const files: string[] | undefined = this.filesByRoot.get(root);
+    return files === undefined ? [] : files.slice();
+  }
+
+  readText(path: string): string {
+    const content: string | undefined = this.contentsByPath.get('wiki-test-file-' + this.vaultId + '/' + path);
+    if (content === undefined) {
+      throw new Error('测试文件不存在');
+    }
+    return content;
+  }
+}
+
 class WikiLinkTestRegistry {
+  private filesByRoot: Map<string, string[]>;
+  private contentsByPath: Map<string, string>;
+  private failedRoots: Set<string>;
+
+  constructor(filesByRoot: Map<string, string[]>, contentsByPath: Map<string, string>, failedRoots: Set<string>) {
+    this.filesByRoot = filesByRoot;
+    this.contentsByPath = contentsByPath;
+    this.failedRoots = failedRoots;
+  }
+
   vaultDirOf(vaultId: string): string {
     return 'wiki-test-root-' + vaultId;
   }
@@ -11,49 +53,29 @@ class WikiLinkTestRegistry {
   absoluteIn(vaultId: string, path: string): string {
     return 'wiki-test-file-' + vaultId + '/' + path;
   }
+
+  accessFor(vaultId: string): VaultAccess {
+    return new WikiLinkTestAccess(vaultId, this.filesByRoot, this.contentsByPath, this.failedRoots) as Object as VaultAccess;
+  }
 }
 
 export default function wikiLinkServiceTest(): void {
   describe('current-vault backlink index and reference updates', () => {
     let registry: VaultRegistry;
-    let mock: MockKit;
     let filesByRoot: Map<string, string[]>;
     let contentsByPath: Map<string, string>;
     let failedRoots: Set<string>;
 
     beforeAll((): void => {
-      registry = new WikiLinkTestRegistry() as Object as VaultRegistry;
       filesByRoot = new Map<string, string[]>();
       contentsByPath = new Map<string, string>();
       failedRoots = new Set<string>();
-      mock = new MockKit();
-      const listMock: Function = mock.mockPrivateFunc(FileTree as Object, 'allMarkdownFiles');
-      when(listMock)(ArgumentMatchers.any).afterAction((root: string): string[] => {
-        if (failedRoots.has(root)) {
-          throw new Error('可控索引扫描失败');
-        }
-        const files: string[] | undefined = filesByRoot.get(root);
-        return files === undefined ? [] : files.slice();
-      });
-      const readMock: Function = mock.mockPrivateFunc(WikiLinkService as Object, 'readMarkdown');
-      when(readMock)(ArgumentMatchers.any, ArgumentMatchers.any, ArgumentMatchers.any)
-        .afterAction((_registry: Object, vaultId: string, path: string): string => {
-          const content: string | undefined = contentsByPath.get('wiki-test-file-' + vaultId + '/' + path);
-          if (content === undefined) {
-            throw new Error('测试文件不存在');
-          }
-          return content;
-        });
+      registry = new WikiLinkTestRegistry(filesByRoot, contentsByPath, failedRoots) as Object as VaultRegistry;
     });
 
     afterEach((): void => {
       WikiLinkService.discardVault('a');
       WikiLinkService.discardVault('b');
-    });
-
-    afterAll((): void => {
-      mock.ignoreMock(FileTree as Object, 'allMarkdownFiles');
-      mock.ignoreMock(WikiLinkService as Object, 'readMarkdown');
     });
 
     it('rebuilds per-vault backlinks, applies saves and path changes, and reports partial rewrites', 0,

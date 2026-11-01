@@ -296,6 +296,24 @@ test('design switch opens Aa directly, stays open for layout controls and reflec
 test('design format switch targets active right pane and closes phone navigation before opening',()=>{
  const f=fixture();f.run("setViewport('phone');activatePane('right',true);$('window').classList.add('nav-open');applySplits()");f.get('formatFollowDemo').checked=true;f.get('formatFollowDemo').onchange();assert(f.run('rightEditing'));assert.equal(f.run('formatTarget.pane'),'right');assert(f.get('formatDialog').open);assert(!f.get('window').classList.contains('nav-open'));assert(f.get('formatFollowDemo').checked);
 });
+test('open Aa panel stays within its visible pane while phone navigation pushes and returns the workspace',()=>{
+ const f=fixture();f.run("setViewport('phone');setEditing(true,false);$('window').classList.remove('nav-open')");
+ f.get('window').rect={left:0,right:380,top:0,bottom:780,width:380,height:780};
+ f.get('leftPane').rect={left:0,right:380,top:0,bottom:780,width:380,height:780};
+ f.get('formatBtn').rect={left:100,right:148,top:700,bottom:748,width:48,height:48};
+ f.run("window.visualViewport={offsetLeft:0,offsetTop:0,width:380,height:780};openFormat('left')");
+ const panel=f.get('formatDialog');assert(panel.open);assert.equal(panel.style.width,'360px');assert.equal(panel.classList.contains('compact'),false);
+ f.get('window').rect={left:300,right:680,top:0,bottom:780,width:380,height:780};
+ f.get('leftPane').rect={left:300,right:680,top:0,bottom:780,width:380,height:780};
+ f.get('formatBtn').rect={left:400,right:448,top:700,bottom:748,width:48,height:48};
+ f.event('document','pointerdown',{target:f.get('menu')});f.get('menu').onclick();assert(f.get('window').classList.contains('nav-open'));
+ assert(panel.open);assert.equal(f.run('formatTarget.pane'),'left');assert.equal(panel.style.width,'64px');assert.equal(panel.style.left,'308px');assert.equal(panel.classList.contains('compact'),true);assert(f.get('formatFollowDemo').checked);
+ f.get('window').rect={left:0,right:380,top:0,bottom:780,width:380,height:780};
+ f.get('leftPane').rect={left:0,right:380,top:0,bottom:780,width:380,height:780};
+ f.get('formatBtn').rect={left:100,right:148,top:700,bottom:748,width:48,height:48};
+ f.event('document','pointerdown',{target:f.get('closeNav')});f.get('closeNav').onclick();assert(!f.get('window').classList.contains('nav-open'));
+ assert(panel.open);assert.equal(panel.style.width,'360px');assert.equal(panel.classList.contains('compact'),false);assert(f.get('formatFollowDemo').checked);
+});
 
 test('same-note preview exposes the follow preference only in its pane menu and persists it',()=>{
  const f=fixture();f.run("openInPane('reading_stream','left');openInPane('reading_stream','right');setEditing(true,false);setRightEditing(false,false);activatePane('left')");

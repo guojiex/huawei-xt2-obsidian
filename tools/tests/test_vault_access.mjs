@@ -31,7 +31,7 @@ function loadModule(source) {
     loader: 'ts',
     format: 'cjs'
   }).code;
-  const context = vm.createContext({ module: { exports: {} } });
+  const context = vm.createContext({ module: { exports: {} }, setTimeout, clearTimeout });
   vm.runInContext(code, context);
   return context.module.exports;
 }
@@ -47,6 +47,10 @@ const ROOT = '/files/vaults/v1';
  */
 function fakeFs(tree) {
   const files = { ...tree };
+  const bytesOf = (value) => value instanceof Uint8Array
+    ? Buffer.from(value)
+    : Buffer.from(String(value), 'utf8');
+  const sizeOf = (value) => value === null ? 0 : bytesOf(value).length;
   // 真实文件系统里父目录是隐含存在的：fixture 只写 `sub/b.md` 时，`sub` 必须也能
   // 被 listFileSync/statSync 命中，否则会伪装出一个「子目录凭空 ENOENT」的假失败。
   for (const key of Object.keys(tree)) {
@@ -62,6 +66,7 @@ function fakeFs(tree) {
   const calls = [];
   const openNames = new Map();
   let nextFd = 100;
+  let latestAtomicRecord = null;
 
   const childrenOf = (abs) => {
     const prefix = abs.endsWith('/') ? abs : abs + '/';
@@ -78,10 +83,13 @@ function fakeFs(tree) {
   return {
     calls,
     files,
+    get latestAtomicRecord() { return latestAtomicRecord; },
     listFileSync(abs) {
       calls.push(['list', abs]);
       if (!Object.prototype.hasOwnProperty.call(files, abs)) {
-        throw new Error('ENOENT ' + abs);
+        const error = new Error('ENOENT ' + abs);
+        error.code = 2;
+        throw error;
       }
       return childrenOf(abs);
     },
@@ -92,6 +100,13 @@ function fakeFs(tree) {
     mkdirSync(abs, recursive) {
       calls.push(['mkdir', abs, recursive === true]);
       files[abs] = null;
+      if (recursive === true) {
+        let parent = abs.slice(0, abs.lastIndexOf('/'));
+        while (parent.length > ROOT.length) {
+          files[parent] = null;
+          parent = parent.slice(0, parent.lastIndexOf('/'));
+        }
+      }
     },
     renameSync(from, to) {
       calls.push(['rename', from, to]);
@@ -113,13 +128,31 @@ function fakeFs(tree) {
     statSync(abs) {
       calls.push(['stat', abs]);
       if (!Object.prototype.hasOwnProperty.call(files, abs)) {
-        throw new Error('ENOENT ' + abs);
+        const error = new Error('ENOENT ' + abs);
+        error.code = 2;
+        throw error;
       }
       const value = files[abs];
       return {
-        size: value === null ? 0 : String(value).length,
+        size: sizeOf(value),
         mtime: 1700000000,
-        isDirectory: () => value === null
+        isDirectory: () => value === null,
+        isSymbolicLink: () => false
+      };
+    },
+    lstatSync(abs) {
+      calls.push(['lstat', abs]);
+      if (!Object.prototype.hasOwnProperty.call(files, abs)) {
+        const error = new Error('ENOENT ' + abs);
+        error.code = 2;
+        throw error;
+      }
+      const value = files[abs];
+      return {
+        size: sizeOf(value),
+        mtime: 1700000000,
+        isDirectory: () => value === null,
+        isSymbolicLink: () => value !== null && typeof value === 'object' && value.symbolicLink === true
       };
     },
     openSync(abs, mode) {
@@ -133,7 +166,7 @@ function fakeFs(tree) {
       return String(data).length;
     },
     readSync(fd, buffer) {
-      const raw = Buffer.from(String(files[openNames.get(fd)]), 'utf8');
+      const raw = bytesOf(files[openNames.get(fd)]);
       raw.copy(Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength));
       return raw.length;
     },
@@ -142,7 +175,8 @@ function fakeFs(tree) {
       openNames.delete(fd);
     },
     openAtomic(abs) {
-      const record = { finish: 0, fail: 0, wrote: '' };
+      const record = { finish: 0, fail: 0, close: 0, wrote: '' };
+      latestAtomicRecord = record;
       calls.push(['atomic', abs]);
       return {
         record,
@@ -155,6 +189,7 @@ function fakeFs(tree) {
               callback(this.writeError);
             },
             close(callback) {
+              record.close++;
               callback();
             }
           };
@@ -199,6 +234,25 @@ test('listDir hides dotfiles, keeps only dirs and notes, dirs first then sorted'
   ]);
 });
 
+test('controlled hidden-tree listing can read legacy trash while normal listings still hide it', () => {
+  const { vault } = createAccess({
+    [ROOT + '/.trash']: null,
+    [ROOT + '/.trash/old.md']: 'legacy',
+    [ROOT + '/.trash/.nested']: null,
+    [ROOT + '/.trash/.nested/hidden.markdown']: 'hidden legacy'
+  });
+  assert.deepEqual(plain(vault.listAll('.trash').map((child) => child.name)), ['old.md']);
+  assert.deepEqual(plain(vault.listAll('.trash', true).map((child) => child.name)), ['.nested', 'old.md']);
+  assert.equal(vault.readText('.trash/.nested/hidden.markdown'), 'hidden legacy');
+});
+
+test('controlled hidden-tree listing surfaces sandbox enumeration errors for migration retry', () => {
+  const { vault, fs } = createAccess({ [ROOT + '/.trash']: null });
+  fs.listFileSync = () => { throw new Error('controlled list failure'); };
+  assert.throws(() => vault.listAll('.trash', true), /controlled list failure/);
+  assert.deepEqual(plain(vault.listAll('.trash')), []);
+});
+
 test('note suffix detection is case insensitive over both suffixes', () => {
   assert.equal(access.isVaultNoteName('a.md'), true);
   assert.equal(access.isVaultNoteName('A.MD'), true);
@@ -209,7 +263,7 @@ test('note suffix detection is case insensitive over both suffixes', () => {
 test('listDir asks the resolver for children, never composes its own root', () => {
   const { vault, root } = createAccess({ [ROOT + '/sub/b.md']: 'b' });
   vault.listDir('sub');
-  assert.deepEqual(root.calls, ['sub', 'sub/b.md']);
+  assert.deepEqual(root.calls, ['sub', 'sub', 'sub', 'sub/b.md']);
 });
 
 test('allDirs walks visible dirs only and respects depth guard', () => {
@@ -235,9 +289,9 @@ test('exists/stat resolve through the resolver and tolerate missing files', () =
   assert.equal(vault.exists('a.md'), true);
   assert.equal(vault.exists('nope.md'), false);
   const stat = vault.stat('a.md');
-  assert.deepEqual({ ...stat }, { size: 5, mtimeSec: 1700000000, isDir: false });
+  assert.deepEqual({ ...stat }, { size: 5, mtimeSec: 1700000000, isDir: false, isSymbolicLink: false });
   assert.equal(vault.stat('nope.md'), null);
-  assert.equal(fs.calls.filter((c) => c[0] === 'stat').length >= 1, true);
+  assert.equal(fs.calls.filter((c) => c[0] === 'lstat').length >= 1, true);
 });
 
 test('readText returns the file body', () => {
@@ -271,10 +325,26 @@ test('ensureDir is a no-op at root and uses recursive mkdir elsewhere', () => {
   vault.ensureDir('');
   assert.deepEqual(fs.calls, [], '根目录不该产生任何 syscall');
   vault.ensureDir('a/b');
-  assert.deepEqual(fs.calls, [['access', ROOT + '/a/b'], ['mkdir', ROOT + '/a/b', true]]);
+  assert.deepEqual(fs.calls, [
+    ['lstat', ROOT + '/a'], ['lstat', ROOT + '/a'], ['lstat', ROOT + '/a/b'],
+    ['access', ROOT + '/a/b'], ['mkdir', ROOT + '/a/b', true]
+  ]);
   fs.calls.length = 0;
   vault.ensureDir('a/b');
-  assert.deepEqual(fs.calls, [['access', ROOT + '/a/b']]);
+  assert.deepEqual(fs.calls, [
+    ['lstat', ROOT + '/a'], ['lstat', ROOT + '/a/b'], ['lstat', ROOT + '/a'],
+    ['lstat', ROOT + '/a/b'], ['access', ROOT + '/a/b']
+  ]);
+});
+
+test('sandbox traversal rejects an existing symlink parent before listing outside content', () => {
+  const { vault, fs } = createAccess({
+    [ROOT + '/link']: { symbolicLink: true },
+    [ROOT + '/outside.md']: 'outside'
+  });
+  assert.throws(() => vault.listAll('link'), /符号链接/);
+  assert.throws(() => vault.readText('link/outside.md'), /符号链接/);
+  assert.equal(fs.calls.some((call) => call[0] === 'list' && call[1] === ROOT + '/link'), false);
 });
 
 test('remove/rename map onto absolute paths from the resolver', () => {
@@ -308,6 +378,16 @@ test('writeAtomic finishes the AtomicFile and resolves', async () => {
   const atomicCalls = fs.calls.filter((c) => c[0] === 'atomic');
   assert.equal(atomicCalls.length, 1);
   assert.equal(atomicCalls[0][1], ROOT + '/a.md');
+  assert.equal(fs.latestAtomicRecord.close, 0, 'AtomicFile 的 WriteStream 不能显式 close');
+  assert.equal(fs.latestAtomicRecord.finish, 1);
+});
+
+test('writeAtomic commits an empty file without calling WriteStream.write', async () => {
+  const { vault, fs } = createAccess({ [ROOT + '/a.md']: 'old' });
+  await vault.writeAtomic('a.md', '');
+  assert.equal(fs.latestAtomicRecord.finish, 1);
+  assert.equal(fs.latestAtomicRecord.wrote, '');
+  assert.equal(fs.latestAtomicRecord.close, 0);
 });
 
 test('writeAtomic rolls back with failWrite when the stream reports an error', async () => {
@@ -363,12 +443,15 @@ function fakeNative(tree = {}) {
 
   const childrenOf = (relDir) => {
     const prefix = relDir.length === 0 ? '' : relDir + '/';
-    const names = new Set();
+    const names = new Map();
     for (const key of Object.keys(files)) {
       if (!key.startsWith(prefix) || key.length <= prefix.length) continue;
-      names.add(key.slice(prefix.length).split('/')[0] + (key.slice(prefix.length).includes('/') ? '/' : ''));
+      const remainder = key.slice(prefix.length);
+      const name = remainder.split('/')[0];
+      const isDir = remainder.includes('/') || files[prefix + name] === null;
+      names.set(name, names.get(name) === true || isDir);
     }
-    return [...names];
+    return [...names].map(([name, isDir]) => name + (isDir ? '/' : ''));
   };
 
   return {
@@ -416,12 +499,20 @@ function fakeNative(tree = {}) {
       calls.push(['readBin', fd, name]);
       const full = resolveSelf(fd, name);
       if (!Object.prototype.hasOwnProperty.call(files, full)) return fail(ENOENT);
+      if (files[full] instanceof Uint8Array) {
+        return { ...okSimple(), ok: true, bytes: files[full].slice() };
+      }
       const raw = Buffer.from(String(files[full]), 'utf8');
       return { ...okSimple(), ok: true, bytes: new Uint8Array(raw) };
     },
     writeFileByFd(fd, name, content) {
       calls.push(['write', fd, name, content]);
       files[resolveSelf(fd, name)] = String(content);
+      return okSimple();
+    },
+    writeBinaryByFd(fd, name, bytes) {
+      calls.push(['writeBin', fd, name, Array.from(bytes)]);
+      files[resolveSelf(fd, name)] = new Uint8Array(bytes);
       return okSimple();
     },
     deleteByFd(fd, name) {
@@ -443,10 +534,13 @@ function fakeNative(tree = {}) {
     statByFd(fd, name) {
       calls.push(['stat', fd, name]);
       const full = resolveSelf(fd, name);
-      if (name.length === 0) return { ...okSimple(), ok: true, isDir: true, size: 0 };
+      if (name.length === 0) return { ...okSimple(), ok: true, isDir: true, isSymbolicLink: false, size: 0 };
       const isDir = Object.keys(files).some((k) => k.startsWith(full + '/'));
       if (!isDir && !Object.prototype.hasOwnProperty.call(files, full)) return fail(ENOENT);
-      return { ...okSimple(), ok: true, size: 4, mtime: 1700000000, isDir };
+      const value = files[full];
+      const size = value instanceof Uint8Array ? value.length : 4;
+      return { ...okSimple(), ok: true, size, mtime: 1700000000, isDir,
+        isSymbolicLink: value !== null && typeof value === 'object' && value.symbolicLink === true };
     },
     mkdirByFd(fd, name) {
       calls.push(['mkdir', fd, name]);
@@ -514,6 +608,19 @@ test('external listDir at root filters hidden entries and non-note files', () =>
   ]);
 });
 
+test('controlled external hidden-tree listing exposes old trash without changing normal filters', () => {
+  fdMap.set(60, { rel: '' });
+  const { vault } = createExternalAccess({
+    '.trash': null,
+    '.trash/old.md': 'old',
+    '.trash/.nested': null,
+    '.trash/.nested/hidden.markdown': 'hidden old'
+  });
+  assert.deepEqual(plain(vault.listAll('.trash').map((child) => child.name)), ['old.md']);
+  assert.deepEqual(plain(vault.listAll('.trash', true).map((child) => child.name)), ['.nested', 'old.md']);
+  assert.equal(vault.readText('.trash/.nested/hidden.markdown'), 'hidden old');
+});
+
 test('external allDirs / allNotes come from one recursive scan with hidden layers cut', () => {
   fdMap.set(60, { rel: '' });
   const { vault, native } = createExternalAccess({
@@ -557,6 +664,73 @@ test('external createEmptyNote makes the parent directory first', () => {
   assert.equal(kinds[0], 'mkdir', '必须先建父目录，否则 openat 直接 ENOENT');
   assert.deepEqual(native.calls[0].slice(1), [60, 'nested/deep']);
   assert.equal(native.files['nested/deep/new.md'], '');
+});
+
+test('sandbox writeNewBinary copies to its resolved unique target and verifies size', async () => {
+  const { vault, fs } = createAccess({ [ROOT + '/attachments']: null });
+  const source = {
+    byteLength: 4,
+    async copyToPath(path) { fs.files[path] = 'data'; },
+    readBytes() { return new Uint8Array(Buffer.from('data')); }
+  };
+  await vault.writeNewBinary('attachments/image.png', source);
+  assert.equal(fs.files[ROOT + '/attachments/image.png'], 'data');
+});
+
+test('sandbox writeNewBinary verifies exact binary bytes after copy', async () => {
+  const { vault, fs } = createAccess({ [ROOT + '/attachments']: null });
+  const bytes = new Uint8Array([0, 128, 255, 10, 13]);
+  const source = {
+    byteLength: bytes.length,
+    async copyToPath(path) { fs.files[path] = bytes.slice(); },
+    readBytes() { return bytes.slice(); }
+  };
+  await vault.writeNewBinary('attachments/image.png', source);
+  assert.deepEqual(Array.from(vault.readBytes('attachments/image.png')), Array.from(bytes));
+});
+
+test('sandbox writeNewBinary leaves an existing collision untouched and skips copying', async () => {
+  const original = new Uint8Array([3, 2, 1]);
+  const { vault, fs } = createAccess({
+    [ROOT + '/attachments']: null,
+    [ROOT + '/attachments/image.png']: original.slice()
+  });
+  let copied = false;
+  const source = {
+    byteLength: 3,
+    async copyToPath(path) { copied = true; fs.files[path] = new Uint8Array([9, 9, 9]); },
+    readBytes() { return new Uint8Array([7, 7, 7]); }
+  };
+  await assert.rejects(() => vault.writeNewBinary('attachments/image.png', source), /附件目标已存在/);
+  assert.equal(copied, false);
+  assert.deepEqual(Array.from(fs.files[ROOT + '/attachments/image.png']), Array.from(original));
+});
+
+test('sandbox writeNewBinary removes its own target after exact-byte verification fails', async () => {
+  const { vault, fs } = createAccess({ [ROOT + '/attachments']: null });
+  const source = {
+    byteLength: 3,
+    async copyToPath(path) { fs.files[path] = new Uint8Array([1, 2, 4]); },
+    readBytes() { return new Uint8Array([1, 2, 3]); }
+  };
+  await assert.rejects(() => vault.writeNewBinary('attachments/image.png', source), /附件副本字节校验失败/);
+  assert.equal(Object.hasOwn(fs.files, ROOT + '/attachments/image.png'), false);
+});
+
+test('external writeNewBinary writes raw bytes exclusively and verifies exact contents', async () => {
+  fdMap.set(60, { rel: '' });
+  const { vault, native } = createExternalAccess({ 'attachments': null });
+  const bytes = new Uint8Array([0, 128, 255, 10]);
+  let readCount = 0;
+  const source = {
+    byteLength: bytes.length,
+    async copyToPath() { throw new Error('external access must write through Native'); },
+    readBytes() { readCount++; return bytes; }
+  };
+  await vault.writeNewBinary('attachments/image.png', source);
+  assert.deepEqual(Array.from(native.files['attachments/image.png']), Array.from(bytes));
+  assert.equal(readCount, 1);
+  assert.equal(native.calls.some((call) => call[0] === 'writeBin'), true);
 });
 
 test('external remove picks removeDirByFd for directories and deleteByFd for files', () => {
@@ -604,6 +778,16 @@ test('external failures carry errno so the UI can tell ENOENT from EACCES', () =
     'ENOENT 的用户提示要指向「重新关联」，而不是丢一个 errno 数字'
   );
   assert.equal(access.ExternalVaultAccess.describe(EACCES).includes('权限'), true);
+});
+
+test('external stat treats only ENOENT as absent and preserves permission failures', () => {
+  fdMap.set(60, { rel: '' });
+  const { vault, native } = createExternalAccess({});
+  assert.equal(vault.stat('gone.md'), null);
+  native.statByFd = () => ({ ok: false, code: EACCES, message: 'permission denied', size: 0, mtime: 0,
+    isDir: false });
+  assert.throws(() => vault.stat('private.md'), (error) => error.code === EACCES,
+    'permission failures must not look like missing notes to private-draft cleanup');
 });
 
 test('rootAlive is false when opening the directory fd itself fails', () => {

@@ -1,6 +1,7 @@
 import { zlib } from '@kit.BasicServicesKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { NoteShareService } from './NoteShareService';
+import { VaultAccess } from './VaultAccess';
 import { VaultRegistry } from './VaultRegistry';
 
 export interface ShareSnapshot {
@@ -34,9 +35,10 @@ export class ShareArchiveService {
   static async prepareZip(registry: VaultRegistry, vaultId: string, folderPath: string,
     snapshot: ShareSnapshot | null): Promise<PreparedArchiveShare> {
     NoteShareService.pruneExpired(registry);
+    const vaultAccess = registry.accessFor(vaultId);
     const files: VaultFile[] = [];
     const directories: string[] = [];
-    ShareArchiveService.collectScope(registry, vaultId, folderPath, files, directories);
+    ShareArchiveService.collectScope(vaultAccess, folderPath, files, directories);
 
     const included: string[] = [];
     for (let i = 0; i < files.length; i++) {
@@ -52,7 +54,7 @@ export class ShareArchiveService {
         continue;
       }
       noteCount++;
-      const markdown: string = await ShareArchiveService.readSnapshot(registry, vaultId, item.path, snapshot);
+      const markdown: string = await ShareArchiveService.readSnapshot(vaultAccess, item.path, snapshot);
       const references = NoteShareService.scanMarkdownImages(markdown);
       for (let j = 0; j < references.length; j++) {
         const source: string = references[j].source;
@@ -65,14 +67,11 @@ export class ShareArchiveService {
         } catch (error) {
           throw new Error('图片路径越界或属于内部目录，未生成分享文件：' + source);
         }
-        const imageAbs: string = registry.absoluteIn(vaultId, imagePath);
-        let imageStat: fileIo.Stat;
-        try {
-          imageStat = fileIo.lstatSync(imageAbs);
-        } catch (error) {
+        const imageStat = vaultAccess.stat(imagePath);
+        if (imageStat === null) {
           throw new Error('缺少本地图片，未生成分享文件：' + source);
         }
-        if (!imageStat.isFile() || imageStat.isSymbolicLink()) {
+        if (imageStat.isDir || imageStat.isSymbolicLink) {
           throw new Error('本地图片不是普通文件，未生成分享文件：' + source);
         }
         if (included.indexOf(imagePath) >= 0) {
@@ -117,15 +116,15 @@ export class ShareArchiveService {
         if (item.isMarkdown) {
           await NoteShareService.writeAtomic(output, rewrittenMarkdown.get(item.path) ?? '');
         } else {
-          fileIo.copyFileSync(registry.absoluteIn(vaultId, item.path), output);
+          NoteShareService.writeBinaryOutput(output, vaultAccess.readBytes(item.path));
         }
       }
       for (let i = 0; i < externalImages.length; i++) {
         const sourcePath: string = externalImages[i];
         const targetPath: string = archiveImages.get(sourcePath) ?? '';
         ShareArchiveService.ensureParent(registry, payloadRel, targetPath, createdDirectories);
-        fileIo.copyFileSync(registry.absoluteIn(vaultId, sourcePath),
-          registry.sharePath(payloadRel + '/' + targetPath));
+        NoteShareService.writeBinaryOutput(registry.sharePath(payloadRel + '/' + targetPath),
+          vaultAccess.readBytes(sourcePath));
       }
       const name: string = ShareArchiveService.archiveName(vaultId, folderPath);
       const zipName: string = name + '.zip';
@@ -153,7 +152,7 @@ export class ShareArchiveService {
   static countScope(registry: VaultRegistry, vaultId: string, folderPath: string): ShareScopeCount {
     const files: VaultFile[] = [];
     const directories: string[] = [];
-    ShareArchiveService.collectScope(registry, vaultId, folderPath, files, directories);
+    ShareArchiveService.collectScope(registry.accessFor(vaultId), folderPath, files, directories);
     let noteCount: number = 0;
     for (let i = 0; i < files.length; i++) {
       if (files[i].isMarkdown) {
@@ -191,57 +190,48 @@ export class ShareArchiveService {
     return false;
   }
 
-  private static collect(registry: VaultRegistry, vaultId: string, directory: string, files: VaultFile[],
-    directories: string[], depth: number): void {
+  private static collect(vaultAccess: VaultAccess, directory: string,
+    files: VaultFile[], directories: string[], depth: number): void {
     if (depth > ShareArchiveService.MAX_DEPTH) {
       throw new Error('文件夹层级超过分享上限，未生成分享文件');
     }
-    const absolute: string = directory.length === 0
-      ? registry.vaultDirOf(vaultId) : registry.absoluteIn(vaultId, directory);
-    const children: string[] = fileIo.listFileSync(absolute);
-    children.sort((a: string, b: string): number => a < b ? -1 : (a > b ? 1 : 0));
+    const children = vaultAccess.listAll(directory);
     for (let i = 0; i < children.length; i++) {
-      const name: string = children[i];
+      const name: string = children[i].name;
       const relativePath: string = directory.length === 0 ? name : directory + '/' + name;
       if (NoteShareService.isExcludedVaultPath(relativePath)) {
         continue;
       }
-      const childAbsolute: string = registry.absoluteIn(vaultId, relativePath);
-      const stat: fileIo.Stat = fileIo.lstatSync(childAbsolute);
-      if (stat.isSymbolicLink()) {
-        continue;
-      }
-      if (stat.isDirectory()) {
+      if (children[i].isDir) {
         directories.push(relativePath);
-        ShareArchiveService.collect(registry, vaultId, relativePath, files, directories, depth + 1);
-      } else if (stat.isFile()) {
+        ShareArchiveService.collect(vaultAccess, relativePath, files, directories, depth + 1);
+      } else {
         files.push({ path: relativePath, isMarkdown: /\.(?:md|markdown)$/i.test(name) });
       }
     }
   }
 
-  private static collectScope(registry: VaultRegistry, vaultId: string, folderPath: string, files: VaultFile[],
-    directories: string[]): void {
+  private static collectScope(vaultAccess: VaultAccess, folderPath: string,
+    files: VaultFile[], directories: string[]): void {
     if (folderPath.length > 0) {
-      const folderAbs: string = registry.absoluteIn(vaultId, folderPath);
-      const folderStat: fileIo.Stat = fileIo.lstatSync(folderAbs);
-      if (!folderStat.isDirectory() || folderStat.isSymbolicLink()) {
+      const folderStat = vaultAccess.stat(folderPath);
+      if (folderStat === null || !folderStat.isDir || folderStat.isSymbolicLink) {
         throw new Error('所选路径不是可分享的文件夹');
       }
       directories.push(folderPath);
-      ShareArchiveService.collect(registry, vaultId, folderPath, files, directories, 0);
+      ShareArchiveService.collect(vaultAccess, folderPath, files, directories, 0);
     } else {
-      ShareArchiveService.collect(registry, vaultId, '', files, directories, 0);
+      ShareArchiveService.collect(vaultAccess, '', files, directories, 0);
     }
   }
 
-  private static async readSnapshot(registry: VaultRegistry, vaultId: string, path: string,
+  private static async readSnapshot(vaultAccess: VaultAccess, path: string,
     snapshot: ShareSnapshot | null): Promise<string> {
     if (snapshot !== null && snapshot.path === path) {
       return snapshot.markdown;
     }
     // Avoid NoteService.tryReadNote here: its diagnostic log includes note paths.
-    return fileIo.readTextSync(registry.absoluteIn(vaultId, path));
+    return vaultAccess.readText(path);
   }
 
   private static ensureDirectory(registry: VaultRegistry, payloadRel: string, relativeDirectory: string,

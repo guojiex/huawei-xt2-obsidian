@@ -1,4 +1,3 @@
-import { fileIo } from '@kit.CoreFileKit';
 import { FileTree } from './FileTree';
 import { VaultRegistry } from './VaultRegistry';
 import { WikiLinkParser, WikiLinkReference, WikiLinkResolution } from './WikiLinkParser';
@@ -303,7 +302,7 @@ export class WikiLinkService {
   }
 
   private static readMarkdown(registry: VaultRegistry, vaultId: string, path: string): string {
-    return fileIo.readTextSync(registry.absoluteIn(vaultId, path));
+    return registry.accessFor(vaultId).readText(path);
   }
 
   private static isRetargetedPath(path: string, oldPath: string, isDirectory: boolean): boolean {

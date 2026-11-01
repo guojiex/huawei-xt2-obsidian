@@ -518,7 +518,9 @@ function extensionsFor(theme: string) {
 
 function setLineNumberVisibility(show: boolean): void {
   lineNumbersVisible = show
-  view?.dom.classList.toggle('cm-show-line-numbers', show)
+  // CodeMirror may rewrite the EditorView root classes while processing document
+  // updates. Keep this preference class on our stable host instead.
+  document.getElementById('editor')?.classList.toggle('cm-show-line-numbers', show)
 }
 
 function ensureView(): EditorView {

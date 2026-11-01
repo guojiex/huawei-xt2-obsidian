@@ -35,12 +35,15 @@ const code = transformSync(
 function createHarness(existingPaths) {
   const paths = new Set(existingPaths);
   const context = vm.createContext({
-    module: { exports: {} },
-    fileIo: { accessSync: (path) => paths.has(path) }
+    module: { exports: {} }
   });
   vm.runInContext(code, context);
   const NoteService = context.module.exports;
-  const registry = { absoluteIn: (vaultId, relPath) => `/vault/${vaultId}/${relPath}` };
+  const registry = {
+    accessFor(vaultId) {
+      return { exists: (relPath) => paths.has(`/vault/${vaultId}/${relPath}`) };
+    }
+  };
   return { NoteService, registry };
 }
 

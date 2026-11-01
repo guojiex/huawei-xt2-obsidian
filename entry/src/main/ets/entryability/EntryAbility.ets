@@ -10,6 +10,10 @@ import { AgentConfigStore } from '../model/AgentConfigStore';
 import { AgentRuntime } from '../model/AgentRuntime';
 import { NoteDraftService } from '../model/NoteDraftService';
 import { SampleVaultInstaller } from '../model/SampleVaultInstaller';
+import {
+  ExternalVaultAuthorizationService, ExternalPermissionStatus
+} from '../model/ExternalVaultAuthorization';
+import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
 
 const DOMAIN = 0x0000;
 const TAG = 'EntryAbility';
@@ -26,6 +30,9 @@ interface ColorModeObserver {
 
 export default class EntryAbility extends UIAbility {
   private mainWindow: window.Window | null = null;
+  private vaultRegistry: VaultRegistry | null = null;
+  private externalVaultAuthorization: ExternalVaultAuthorizationService | null = null;
+  private restoringExternalPermissions: boolean = false;
   /** onCreate 保留启动 Want —— 调试直达参数在这里面（见 resolveInitialPage）。 */
   private debugLaunchWant: Want | null = null;
   private colorModeObserverRegistered: boolean = false;
@@ -77,6 +84,8 @@ export default class EntryAbility extends UIAbility {
 
     // 库注册表单例初始化：必须先于 loadContent，页面侧才能直接 VaultRegistry.get()
     const registry: VaultRegistry = VaultRegistry.initialize(this.context);
+    this.vaultRegistry = registry;
+    this.externalVaultAuthorization = createExternalVaultAuthorization(this.context);
     AgentConfigStore.initialize(this.context);
     AgentMemoryStore.initialize(registry);
     AgentRuntime.initialize(registry);
@@ -123,7 +132,8 @@ export default class EntryAbility extends UIAbility {
 
     void SampleVaultInstaller.install(registry).catch((error: Error): void => {
       hilog.error(DOMAIN, TAG, '样例库预置失败，保留已写入内容，不自动重试: %{public}s', error.message);
-    }).then((): void => {
+    }).then(async (): Promise<void> => {
+      await this.restoreExternalVaultPermissions();
       windowStage.loadContent(this.resolveInitialPage(), (err) => {
         if (err.code) {
           hilog.error(DOMAIN, TAG, 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
@@ -169,6 +179,26 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // Ability has brought to foreground
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onForeground');
+    void this.restoreExternalVaultPermissions();
+  }
+
+  /** 文件授权跨应用 / 设备重启后需显式激活；失败只发布状态，不影响应用启动或删除注册记录。 */
+  private async restoreExternalVaultPermissions(): Promise<void> {
+    const registry: VaultRegistry | null = this.vaultRegistry;
+    const authorization: ExternalVaultAuthorizationService | null = this.externalVaultAuthorization;
+    if (registry === null || authorization === null || this.restoringExternalPermissions) {
+      return;
+    }
+    this.restoringExternalPermissions = true;
+    try {
+      const statuses: ExternalPermissionStatus[] = await authorization.restoreRegistered(registry.list());
+      AppStorage.setOrCreate('externalVaultAuthorizationStatuses', JSON.stringify(statuses));
+    } catch (error) {
+      // restoreRegistered 已逐库捕获系统错误；此兜底确保授权异常不会阻断正常库启动。
+      AppStorage.setOrCreate('externalVaultAuthorizationStatuses', '[]');
+    } finally {
+      this.restoringExternalPermissions = false;
+    }
   }
 
   onBackground(): void {

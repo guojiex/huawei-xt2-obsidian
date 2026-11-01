@@ -50,6 +50,8 @@ export interface VaultDirStatResult extends VaultDirIoResult {
   mtime: number;
   /** 是否是目录；失败为 false。 */
   isDir: boolean;
+  /** 是否是符号链接；stat 使用 AT_SYMLINK_NOFOLLOW。 */
+  isSymbolicLink: boolean;
 }
 
 /** readBinaryByFd 的返回。图片附件必须走这条，不能走 readFileByFd。 */
@@ -75,6 +77,8 @@ declare const nativeVaultDir: {
    * 崩溃窗口最多留一个 .tmp 残骸，原文件始终完好。
    */
   writeFileByFd(fd: number, name: string, content: string): VaultDirIoResult;
+  /** 按字节写入唯一命名的新附件；O_EXCL 防止并发覆盖已有目标，失败时清理本次目标。 */
+  writeBinaryByFd(fd: number, name: string, bytes: Uint8Array): VaultDirIoResult;
   /** 删除目录下的一个文件（unlinkat）。无需系统二次授权，持久化 WRITE_MODE 已覆盖。 */
   deleteByFd(fd: number, name: string): VaultDirIoResult;
   /** 同目录内改名 / 移动（renameat）。 */

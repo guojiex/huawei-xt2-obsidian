@@ -4,6 +4,7 @@ import { dataSharePredicates } from '@kit.ArkData';
 import { fileIo } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { VaultRegistry } from './VaultRegistry';
+import { VaultBinaryImportSource, VaultAccess } from './VaultAccess';
 
 export interface NoteImageImportResult {
   markdownReference: string;
@@ -15,8 +16,39 @@ interface NoteImageSelectedAsset {
   displayName: string;
 }
 
+class SelectedImageBinarySource implements VaultBinaryImportSource {
+  byteLength: number;
+  private sourceFd: number;
+  private uri: string;
+
+  constructor(uri: string, sourceFd: number, byteLength: number) {
+    this.uri = uri;
+    this.sourceFd = sourceFd;
+    this.byteLength = byteLength;
+  }
+
+  async copyToPath(destinationPath: string): Promise<void> {
+    await fileIo.copyFile(this.sourceFd, destinationPath);
+  }
+
+  readBytes(): Uint8Array {
+    const file: fileIo.File = fileIo.openSync(this.uri, fileIo.OpenMode.READ_ONLY);
+    try {
+      const buffer: ArrayBuffer = new ArrayBuffer(this.byteLength);
+      const read: number = fileIo.readSync(file.fd, buffer);
+      if (read !== this.byteLength) {
+        throw new Error('所选图片读取不完整');
+      }
+      return new Uint8Array(buffer);
+    } finally {
+      fileIo.closeSync(file);
+    }
+  }
+}
+
 export class NoteImageService {
   private static readonly IMAGE_EXTENSIONS: string[] = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'];
+  private static filenameSequence: number = 0;
 
   /** Picker URIs are resolved through PhotoAccessHelper's temporary authorization. */
   private static async selectedAsset(context: common.UIAbilityContext, uri: string):
@@ -55,67 +87,45 @@ export class NoteImageService {
     }
 
     let phase: string = '读取所选图片信息';
-    let attachmentDirAbs: string = '';
-    let createdAttachmentDir: boolean = false;
-    let targetAbs: string = '';
-    let copyStarted: boolean = false;
-    let source: fileIo.File | undefined = undefined;
+    let selectedFile: fileIo.File | undefined = undefined;
     try {
       const asset: NoteImageSelectedAsset = await NoteImageService.selectedAsset(context, uri);
       const extension: string = NoteImageService.imageExtension(asset.displayName);
       const noteDir: string = NoteImageService.parentDirectory(notePath);
       const attachmentDir: string = noteDir.length > 0 ? noteDir + '/attachments' : 'attachments';
-      attachmentDirAbs = registry.absoluteIn(vaultId, attachmentDir);
+      const access: VaultAccess = registry.accessFor(vaultId);
       phase = '创建附件目录';
-      if (!fileIo.accessSync(attachmentDirAbs)) {
-        fileIo.mkdirSync(attachmentDirAbs);
-        createdAttachmentDir = true;
-      } else if (!fileIo.statSync(attachmentDirAbs).isDirectory()) {
+      if (!access.exists(attachmentDir)) {
+        access.ensureDir(attachmentDir);
+      } else if (access.stat(attachmentDir)?.isDir !== true) {
         throw new Error('附件目录位置已被文件占用');
       }
 
       const filename: string = NoteImageService.uniqueFilename(registry, vaultId, attachmentDir,
         asset.displayName, extension);
       const assetPath: string = attachmentDir + '/' + filename;
+      const markdownReference: string = NoteImageService.markdownReference(notePath, assetPath);
       phase = '打开所选图片';
       const sourceFile: fileIo.File = fileIo.openSync(asset.uri, fileIo.OpenMode.READ_ONLY);
-      source = sourceFile;
+      selectedFile = sourceFile;
       phase = '读取图片大小';
       const size: number = fileIo.statSync(sourceFile.fd).size;
       if (size <= 0) {
         throw new Error('所选图片内容为空');
       }
-      targetAbs = registry.absoluteIn(vaultId, assetPath);
+      const binarySource: VaultBinaryImportSource = new SelectedImageBinarySource(asset.uri, sourceFile.fd, size);
       phase = '复制图片';
-      copyStarted = true;
-      await fileIo.copyFile(sourceFile.fd, targetAbs);
-      phase = '校验图片副本';
-      const copiedSize: number = fileIo.statSync(targetAbs).size;
-      NoteImageService.validateCopiedSize(size, copiedSize);
+      await access.writeNewBinary(assetPath, binarySource);
       return {
-        markdownReference: NoteImageService.markdownReference(notePath, assetPath),
+        markdownReference: markdownReference,
         assetPath: assetPath
       };
     } catch (error) {
-      if (copyStarted && targetAbs.length > 0) {
-        try {
-          fileIo.unlinkSync(targetAbs);
-        } catch (cleanupError) {
-          // A failed copy may not have created a destination file.
-        }
-      }
-      if (createdAttachmentDir && attachmentDirAbs.length > 0) {
-        try {
-          fileIo.rmdirSync(attachmentDirAbs);
-        } catch (cleanupError) {
-          // The directory may no longer be empty; leave unrelated content intact.
-        }
-      }
       const err = error as Error;
       throw new Error(phase + '失败：' + err.message);
     } finally {
-      if (source !== undefined) {
-        fileIo.closeSync(source);
+      if (selectedFile !== undefined) {
+        fileIo.closeSync(selectedFile);
       }
     }
   }
@@ -123,7 +133,7 @@ export class NoteImageService {
   /** Remove only the exact attachment created by this import when the note changed meanwhile. */
   static removeImportedImage(registry: VaultRegistry, vaultId: string, assetPath: string): void {
     try {
-      fileIo.unlinkSync(registry.absoluteIn(vaultId, assetPath));
+      registry.accessFor(vaultId).remove(assetPath);
     } catch (error) {
       // Best effort; callers report that the note changed and do not insert a stale reference.
     }
@@ -177,7 +187,9 @@ export class NoteImageService {
       stem = stem.substring(0, 120);
     }
 
-    const base: string = 'image-' + Date.now().toString() + '-' + stem;
+    NoteImageService.filenameSequence++;
+    const base: string = 'image-' + Date.now().toString() + '-' +
+      NoteImageService.filenameSequence.toString() + '-' + stem;
     let suffix: number = 1;
     let candidate: string = base + '.' + extension;
     while (NoteImageService.pathExists(registry, vaultId, attachmentDir + '/' + candidate)) {
@@ -189,7 +201,7 @@ export class NoteImageService {
 
   private static pathExists(registry: VaultRegistry, vaultId: string, relativePath: string): boolean {
     try {
-      return fileIo.accessSync(registry.absoluteIn(vaultId, relativePath));
+      return registry.accessFor(vaultId).exists(relativePath);
     } catch (error) {
       return false;
     }

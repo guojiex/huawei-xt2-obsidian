@@ -1,5 +1,4 @@
 /** Builds a current-library in-memory index from Markdown. The index is derived and never persisted. */
-import { fileIo } from '@kit.CoreFileKit';
 import { FileTree } from './FileTree';
 import { VaultRegistry } from './VaultRegistry';
 import { SearchIndex, FullTextSearchResult } from './SearchIndex';
@@ -120,7 +119,7 @@ export class FullTextSearchService {
   }
 
   private static readMarkdown(registry: VaultRegistry, vaultId: string, path: string): string {
-    return fileIo.readTextSync(registry.absoluteIn(vaultId, path));
+    return registry.accessFor(vaultId).readText(path);
   }
 
   private static ensureIndex(registry: VaultRegistry, vaultId: string,

@@ -2,7 +2,7 @@
  * SettingsView.ets —— 设置与关于（原型「设置与关于」面板，v0.2 §4.x）
  *
  * 以内容区整体替换形态挂载在 Index 内容区（与 VaultManagerView 同级）。
- * 顶栏返回由 Index 处理；单屏分类详情另提供返回分类入口。
+ * 顶栏返回由 Index 统一处理；单屏分类详情由顶栏返回至分类列表。
  *
  * 内容（照 v2 原型「设置与关于」规格，2026-10-30 对齐 v2 关于卡与通用/数据/问题与建议分类）：
  *  - 关于卡：hero（64vp 图标 + 应用名 + 版本号）+ 定位段落 + 「应用由×××开发，
@@ -48,9 +48,7 @@ export struct SettingsView {
   @Prop vaults: VaultEntry[] = [];
   @Prop @Watch('onSelectedCategoryChanged') selectedCategory: string = 'general';
   @Prop showCategoryList: boolean = false;
-  @Prop showCategoryBack: boolean = false;
   onSelectCategory: (category: string) => void = (category: string) => {};
-  onBackToCategories: () => void = () => {};
   onOpenHistory: () => void = () => {};
   onResetSplit: () => void = () => {};
   onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
@@ -514,20 +512,6 @@ export struct SettingsView {
   CategoryContent() {
     Scroll() {
       Column() {
-        if (this.showCategoryBack) {
-          Row() {
-            Button('← 设置分类')
-              .fontSize(FontSize.body2)
-              .fontColor($r('app.color.brand'))
-              .backgroundColor(Color.Transparent)
-              .height(Size.touch)
-              .padding({ left: 0, right: Space.s2 })
-              .onClick(this.onBackToCategories)
-          }
-          .width('100%')
-          .justifyContent(FlexAlign.Start)
-          .margin({ bottom: Space.s4 })
-        }
         if (this.selectedTab === 'general') {
           this.GeneralTab()
         } else if (this.selectedTab === 'data') {

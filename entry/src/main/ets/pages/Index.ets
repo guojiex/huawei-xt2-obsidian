@@ -22,6 +22,7 @@ import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { SAMPLE_VAULT_ID, VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { VaultDirChild } from '../model/VaultAccess';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
 import { AgentRuntime } from '../model/AgentRuntime';
 import { NotePathMutationResult, NoteService } from '../model/NoteService';
@@ -34,11 +35,13 @@ import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
+import { ImportVaultDialog } from '../components/ImportVaultDialog';
 import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } from '../components/NoteDialogs';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
 import { GitCredentialStore } from '../git/GitCredentialStore';
+import { GitNativeService } from '../git/GitNativeService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import { PreviewWebView, PreviewBridge, PreviewCaptureResult } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
@@ -65,6 +68,11 @@ import { ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService
 import { ShareLinkService, ShareLinkScope } from '../model/ShareLinkService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { FullTextSearchResult } from '../model/SearchIndex';
+import {
+  ExternalDirectoryGrant, ExternalDirectorySelection, ExternalVaultAuthorizationService
+} from '../model/ExternalVaultAuthorization';
+import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
+import { GitImportDraft, GitImportDraftStore } from '../model/GitImportDraftStore';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
 import { fileUri } from '@kit.CoreFileKit';
@@ -73,6 +81,7 @@ import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
+const EXTERNAL_VAULT_POLL_MS: number = 5000;
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -130,6 +139,8 @@ struct Index {
   @State @Watch('onFormatContextChanged') currentVaultId: string = '';
   /** 当前库内 Markdown 笔记数量（随注册表和文件树刷新） */
   @State currentVaultNoteCount: number = 0;
+  /** 当前 Git 库相对 origin/xt2 的本地超前提交数（仅前台查询，不触发网络）。 */
+  @State gitAheadCommitCount: number = 0;
   /** v0.4 快切面板及当前库候选/最近打开项 */
   @State quickSwitchOpen: boolean = false;
   @State quickSwitchFiles: string[] = [];
@@ -146,6 +157,9 @@ struct Index {
   @State settingsReturnView: string = 'note';
   @State settingsCategory: string = 'general';
   @State settingsDetail: boolean = false;
+  @State importDirectoryName: string = '';
+  @State importHasDirectorySelection: boolean = false;
+  @State importVaultBusy: boolean = false;
   @State agentTitle: string = '新对话';
   @State agentHamburgerSeq: number = 0;
   @State agentRenameSeq: number = 0;
@@ -291,6 +305,13 @@ struct Index {
   private saveFeedbackTimer: number = -1;
   private saveFeedbackFadeTimer: number = -1;
   private saveFeedbackRevision: number = 0;
+  private externalVaultPollTimer: number = -1;
+  private externalVaultPolling: boolean = false;
+  private externalVaultSnapshotId: string = '';
+  private externalVaultSnapshotKey: string = '';
+  private externalVaultAccessErrorShown: boolean = false;
+  private externalVaultNoteReadErrorKeys: string[] = [];
+  private staleSaveNoticeKeys: string[] = [];
 
   /**
    * M3 预览（3.1/3.2）：marked 渲染器跑在 PreviewWebView 里，本页做「编辑 → 预览」联动。
@@ -305,6 +326,8 @@ struct Index {
 
   /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
+  private importVaultCtl: CustomDialogController | null = null;
+  private pendingExternalDirectory: ExternalDirectorySelection | null = null;
   private renameDialogCtl: CustomDialogController | null = null;
   private deleteDialogCtl: CustomDialogController | null = null;
   private createNoteCtl: CustomDialogController | null = null;
@@ -343,6 +366,7 @@ struct Index {
     this.syncNavigationForBreakpoint();
     this.ensureWorkspaceSessionStore();
     this.pendingWorkspaceSession = (this.workspaceSessionStore as WorkspaceSessionStore).load();
+    this.startExternalVaultPolling();
   }
 
   private async loadAgentKitSlot(): Promise<void> {
@@ -885,6 +909,7 @@ struct Index {
     }
     this.currentVaultId = reg.currentId();
     this.refreshCurrentVaultNoteCount();
+    this.refreshGitAheadCommitCount();
   }
 
   private refreshCurrentVaultNoteCount(): void {
@@ -899,6 +924,249 @@ struct Index {
     this.treeSeq++;
     void this.refreshBacklinks();
     void this.refreshActiveChaptersFromBridge();
+  }
+
+  private startExternalVaultPolling(): void {
+    if (this.externalVaultPolling) {
+      return;
+    }
+    this.externalVaultPolling = true;
+    this.externalVaultSnapshotId = '';
+    this.externalVaultSnapshotKey = '';
+    this.scheduleExternalVaultPoll();
+  }
+
+  private stopExternalVaultPolling(): void {
+    this.externalVaultPolling = false;
+    if (this.externalVaultPollTimer !== -1) {
+      clearTimeout(this.externalVaultPollTimer);
+      this.externalVaultPollTimer = -1;
+    }
+    this.externalVaultSnapshotId = '';
+    this.externalVaultSnapshotKey = '';
+  }
+
+  private scheduleExternalVaultPoll(): void {
+    if (!this.externalVaultPolling || this.externalVaultPollTimer !== -1) {
+      return;
+    }
+    this.externalVaultPollTimer = setTimeout((): void => {
+      this.externalVaultPollTimer = -1;
+      void this.pollExternalVault();
+    }, EXTERNAL_VAULT_POLL_MS);
+  }
+
+  private snapshotKey(entries: VaultDirChild[]): string {
+    const parts: string[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      parts.push((entries[i].isDir ? 'd:' : 'f:') + entries[i].name);
+    }
+    return parts.join('\u0000');
+  }
+
+  private snapshotHasFile(entries: VaultDirChild[], path: string): boolean {
+    for (let i = 0; i < entries.length; i++) {
+      if (!entries[i].isDir && entries[i].name === path) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async pollExternalVault(): Promise<void> {
+    try {
+      if (this.externalVaultPolling && this.topView === 'note' && this.currentVaultId.length > 0) {
+        const vaultId: string = this.currentVaultId;
+        const snapshot: VaultDirChild[] = VaultRegistry.get().accessFor(vaultId).snapshot();
+        const key: string = this.snapshotKey(snapshot);
+        if (this.externalVaultSnapshotId === vaultId && this.externalVaultSnapshotKey !== key) {
+          this.refreshFileTree();
+        }
+        this.externalVaultSnapshotId = vaultId;
+        this.externalVaultSnapshotKey = key;
+        this.externalVaultAccessErrorShown = false;
+
+        const leftPath: string = this.currentFilePath;
+        const rightPath: string = this.rightFilePath;
+        if (leftPath.length > 0) {
+          await this.refreshOpenVaultNote(vaultId, leftPath, 'left', snapshot);
+        }
+        if (rightPath.length > 0 && rightPath !== leftPath) {
+          await this.refreshOpenVaultNote(vaultId, rightPath, 'right', snapshot);
+        }
+      }
+    } catch (error) {
+      if (!this.externalVaultAccessErrorShown) {
+        this.externalVaultAccessErrorShown = true;
+        promptAction.showToast({ message: '知识库暂时无法访问，请检查目录是否仍可用以及授权状态' });
+      }
+    } finally {
+      this.scheduleExternalVaultPoll();
+    }
+  }
+
+  private async refreshOpenVaultNote(vaultId: string, path: string, pane: string,
+    snapshot: VaultDirChild[]): Promise<void> {
+    const shared: boolean = this.currentFilePath === path && this.rightFilePath === path;
+    const editor: EditorBridge = shared ? this.sharedNoteEditor()
+      : pane === 'right' ? this.rightEditorBridge : this.editorBridge;
+    if (!editor.ready) {
+      return;
+    }
+    const inSnapshot: boolean = this.snapshotHasFile(snapshot, path);
+    const externalText: string | null = inSnapshot
+      ? NoteService.tryReadNote(VaultRegistry.get(), vaultId, path) : null;
+    let editorText: string;
+    try {
+      editorText = await editor.getContent();
+    } catch (error) {
+      return;
+    }
+    if (vaultId !== this.currentVaultId || this.topView !== 'note' ||
+      (pane === 'right' ? this.rightFilePath : this.currentFilePath) !== path) {
+      return;
+    }
+
+    const baseline: string = shared ? this.lastSavedText
+      : pane === 'right' ? this.rightLastSavedText : this.lastSavedText;
+    const localDirty: boolean = shared
+      ? this.editorDirty || this.rightEditorDirty || this.leftComposing || this.rightComposing ||
+        editorText !== baseline
+      : pane === 'right'
+        ? this.rightEditorDirty || this.rightComposing || editorText !== baseline
+        : this.editorDirty || this.leftComposing || editorText !== baseline;
+    if (!inSnapshot || externalText === null) {
+      if (inSnapshot) {
+        const readErrorKey: string = this.staleSaveNoticeKey(vaultId, path);
+        if (this.externalVaultNoteReadErrorKeys.indexOf(readErrorKey) < 0) {
+          this.externalVaultNoteReadErrorKeys.push(readErrorKey);
+          promptAction.showToast({ message: '知识库笔记读取失败，请检查目录授权后重试' });
+        }
+        return;
+      }
+      if (localDirty) {
+        this.showStaleSaveConflict(vaultId, path,
+          '当前笔记已在外部删除或移动；本地未保存内容仍保留在编辑器中。请先复制内容，再决定如何处理。');
+        return;
+      }
+      await this.clearMissingOpenVaultNote(vaultId, path, pane);
+      promptAction.showToast({ message: '当前笔记已在外部删除或移动，已清除失效的编辑目标' });
+      return;
+    }
+    this.clearExternalVaultNoteReadError(vaultId, path);
+    if (externalText === baseline) {
+      this.clearStaleSaveNotice(vaultId, path);
+      return;
+    }
+    if (localDirty) {
+      this.showStaleSaveConflict(vaultId, path,
+        '笔记已在外部变化；本地未保存内容仍保留，保存会被阻止以保护外部版本。请先复制本地内容再处理。');
+      return;
+    }
+
+    if (pane === 'right') {
+      await this.readRightAndPush(path);
+    } else {
+      await this.readAndPush(path, false);
+      if (this.rightFilePath === path && this.currentFilePath === path) {
+        await this.readRightAndPush(path);
+      }
+    }
+    this.clearStaleSaveNotice(vaultId, path);
+    promptAction.showToast({ message: '打开的笔记已从外部更新并重新载入' });
+  }
+
+  private async clearMissingOpenVaultNote(vaultId: string, path: string, pane: string): Promise<void> {
+    if (pane === 'right') {
+      if (vaultId === this.currentVaultId && this.rightFilePath === path) {
+        this.rightFilePath = '';
+        await this.readRightAndPush('');
+      }
+      return;
+    }
+    if (vaultId !== this.currentVaultId || this.currentFilePath !== path) {
+      return;
+    }
+    this.currentFilePath = '';
+    if (this.rightFilePath === path) {
+      this.rightFilePath = '';
+      await this.readRightAndPush('');
+    }
+    await this.readAndPush('', false);
+  }
+
+  private staleSaveNoticeKey(vaultId: string, path: string): string {
+    return vaultId + '\u0000' + path;
+  }
+
+  private clearStaleSaveNotice(vaultId: string, path: string): void {
+    const key: string = this.staleSaveNoticeKey(vaultId, path);
+    const index: number = this.staleSaveNoticeKeys.indexOf(key);
+    if (index >= 0) {
+      this.staleSaveNoticeKeys.splice(index, 1);
+    }
+  }
+
+  private clearExternalVaultNoteReadError(vaultId: string, path: string): void {
+    const key: string = this.staleSaveNoticeKey(vaultId, path);
+    const index: number = this.externalVaultNoteReadErrorKeys.indexOf(key);
+    if (index >= 0) {
+      this.externalVaultNoteReadErrorKeys.splice(index, 1);
+    }
+  }
+
+  private showStaleSaveConflict(vaultId: string, path: string, message: string): void {
+    const key: string = this.staleSaveNoticeKey(vaultId, path);
+    if (this.staleSaveNoticeKeys.indexOf(key) >= 0) {
+      return;
+    }
+    this.staleSaveNoticeKeys.push(key);
+    void this.getUIContext().getPromptAction().showDialog({
+      title: '笔记已在编辑器外发生变化',
+      message: message + '\n\n重新载入会丢弃当前编辑器中的未保存内容；如需保留，请先复制本地内容。',
+      buttons: [
+        { text: '继续保留', color: $r('app.color.text_secondary') },
+        { text: '放弃本地内容并重载', color: $r('app.color.brand') }
+      ]
+    }).then((result): void => {
+      if (result.index === 1) {
+        void this.reloadStaleVaultNote(vaultId, path);
+      }
+    });
+  }
+
+  private async reloadStaleVaultNote(vaultId: string, path: string): Promise<void> {
+    if (vaultId !== this.currentVaultId || this.topView !== 'note' ||
+      (this.currentFilePath !== path && this.rightFilePath !== path)) {
+      return;
+    }
+    const externalText: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, path);
+    if (externalText === null) {
+      await this.clearMissingOpenVaultNote(vaultId, path,
+        this.currentFilePath === path ? 'left' : 'right');
+      promptAction.showToast({ message: '笔记已不存在或无法读取，请从文件树重新选择' });
+      return;
+    }
+    if (this.currentFilePath === path) {
+      await this.readAndPush(path, false);
+    }
+    if (this.rightFilePath === path) {
+      await this.readRightAndPush(path);
+    }
+    this.clearStaleSaveNotice(vaultId, path);
+    promptAction.showToast({ message: '已载入外部版本' });
+  }
+
+  private handleEditorSaveError(vaultId: string, path: string, error: Object): void {
+    const err = error as Error;
+    const message: string = err.message ?? JSON.stringify(error);
+    if (message.indexOf('STALE_CONTENT：') === 0 || message.indexOf('STALE_CONTENT:') === 0) {
+      hilog.warn(DOMAIN, TAG, '保存因笔记版本已变化而拒绝，保留本地编辑器内容');
+      this.showStaleSaveConflict(vaultId, path,
+        '写入前发现笔记内容已变化；本次本地编辑未保存，也没有覆盖外部版本。');
+      return;
+    }
+    this.toastRegistryError('保存失败', error);
   }
 
   private async refreshBacklinks(): Promise<void> {
@@ -1004,6 +1272,7 @@ struct Index {
 
   /** 页面隐藏（应用退到后台）：立刻落盘，兜底「杀进程重进内容还在」（2.3） */
   onPageHide(): void {
+    this.stopExternalVaultPolling();
     if (this.topView === 'note') {
       void this.flushWorkspaceSaves().then((): void => {
         this.resetSaveFeedback();
@@ -1048,13 +1317,134 @@ struct Index {
     return entry !== null && entry.type === 'git';
   }
 
-  private async openGitSyncPage(): Promise<void> {
+  /** 首页角标仅查询本地 Git 状态；失败或非 Git 库时清掉旧数值，不做后台同步。 */
+  private refreshGitAheadCommitCount(): void {
+    if (this.currentVaultId.length === 0 || !this.currentVaultIsGit()) {
+      this.gitAheadCommitCount = 0;
+      return;
+    }
+    try {
+      const repositoryPath: string = VaultRegistry.get().vaultDirOf(this.currentVaultId);
+      const aheadCount: number = GitNativeService.repositoryState(repositoryPath).aheadCount;
+      this.gitAheadCommitCount = aheadCount > 0 ? aheadCount : 0;
+    } catch (_error) {
+      this.gitAheadCommitCount = 0;
+    }
+  }
+
+  private gitAheadBadgeLabel(): string {
+    return this.gitAheadCommitCount > 99 ? '99+' : this.gitAheadCommitCount.toString();
+  }
+
+  private async openGitSyncPage(draft: GitImportDraft | null = null): Promise<void> {
     if (!await this.flushWorkspaceSaves()) {
       promptAction.showToast({ message: '当前笔记未保存，暂不能打开 Git 同步' });
       return;
     }
     this.moreMenuOpen = false;
+    if (draft === null) {
+      GitImportDraftStore.clear();
+    } else {
+      // 令牌只在进程内交接，不进路由参数、日志或 preferences。
+      GitImportDraftStore.set(draft);
+    }
     router.pushUrl({ url: 'pages/SyncPage' });
+  }
+
+  /** 统一导入入口：文件树选择器与库管理页共用。 */
+  private async openImportVaultDialog(): Promise<void> {
+    if (!await this.flushWorkspaceSaves()) {
+      promptAction.showToast({ message: '当前笔记未保存，暂不能导入知识库' });
+      return;
+    }
+    this.pendingExternalDirectory = null;
+    this.importDirectoryName = '';
+    this.importHasDirectorySelection = false;
+    this.importVaultBusy = false;
+    this.importVaultCtl = new CustomDialogController({
+      builder: ImportVaultDialog({
+        directoryName: this.importDirectoryName,
+        hasDirectorySelection: this.importHasDirectorySelection,
+        busy: this.importVaultBusy,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onChooseDirectory: (): void => { void this.chooseExternalDirectory(); },
+        onAssociateDirectory: (): void => { void this.associateExternalDirectory(); },
+        onContinueGit: (draft: GitImportDraft): void => {
+          void this.openGitSyncPage(draft);
+        },
+        onCancel: (): void => {
+          this.pendingExternalDirectory = null;
+          this.importDirectoryName = '';
+          this.importHasDirectorySelection = false;
+        }
+      }),
+      autoCancel: true,
+      customStyle: true
+    });
+    this.importVaultCtl.open();
+  }
+
+  private async chooseExternalDirectory(): Promise<void> {
+    if (this.importVaultBusy) {
+      return;
+    }
+    this.importVaultBusy = true;
+    try {
+      const authorization: ExternalVaultAuthorizationService =
+        createExternalVaultAuthorization(VaultRegistry.get().abilityContext());
+      const selection: ExternalDirectorySelection | null = await authorization.pickDirectory();
+      if (selection === null) {
+        return;
+      }
+      this.pendingExternalDirectory = selection;
+      this.importDirectoryName = selection.displayName.length > 0 ? selection.displayName : '已选择目录';
+      this.importHasDirectorySelection = true;
+    } catch (error) {
+      const err = error as Error;
+      promptAction.showToast({ message: err.message.length > 0 ? err.message : '选择目录失败，请重试' });
+    } finally {
+      this.importVaultBusy = false;
+    }
+  }
+
+  private async associateExternalDirectory(): Promise<void> {
+    const selection: ExternalDirectorySelection | null = this.pendingExternalDirectory;
+    if (selection === null || this.importVaultBusy) {
+      return;
+    }
+    this.importVaultBusy = true;
+    const authorization: ExternalVaultAuthorizationService =
+      createExternalVaultAuthorization(VaultRegistry.get().abilityContext());
+    let grant: ExternalDirectoryGrant | null = null;
+    let registered: VaultEntry | null = null;
+    try {
+      grant = await authorization.persistSelection(selection);
+      registered = VaultRegistry.get().registerExternal(grant.displayName, grant.uri, grant.grantedAt);
+    } catch (error) {
+      if (grant !== null) {
+        try {
+          await authorization.revoke(grant.uri);
+        } catch (revokeError) {
+          // 注册失败时尽力回收授权；不删除也不改写原目录。
+        }
+      }
+      const err = error as Error;
+      promptAction.showToast({ message: err.message.length > 0 ? err.message : '关联目录失败，请重试' });
+      this.importVaultBusy = false;
+      return;
+    }
+
+    this.pendingExternalDirectory = null;
+    this.importDirectoryName = '';
+    this.importHasDirectorySelection = false;
+    this.importVaultCtl?.close();
+    this.refreshFromRegistry();
+    promptAction.showToast({ message: '目录已关联为知识库' });
+    if (registered !== null) {
+      void this.switchVault(registered.id);
+    }
+    this.importVaultBusy = false;
   }
 
   private async openAgent(): Promise<void> {
@@ -1101,10 +1491,13 @@ struct Index {
    * （v0.3 导入完成自动切库）—— 与本地 currentVaultId 不一致时对齐上下文。
    */
   onPageShow(): void {
+    this.startExternalVaultPolling();
     const regId: string = VaultRegistry.get().currentId();
     if (regId.length > 0 && regId !== this.currentVaultId) {
       void this.adoptExternalVaultSwitch();
+      return;
     }
+    this.refreshGitAheadCommitCount();
   }
 
   /** 外部入口切换了当前库：落盘旧库编辑后按 switchVault 的重置序列对齐本页状态。 */
@@ -1592,7 +1985,7 @@ struct Index {
     if (this.topView !== 'note' || this.activePane !== pane ||
       this.currentVaultId !== this.formatMenuSourceVaultId ||
       this.paneFilePath(pane) !== this.formatMenuSourcePath || !this.isPaneEditable(pane) ||
-      (pane === 'right' && (this.breakpoint === Breakpoint.SM || this.focused || !this.isReferenceShown()))) {
+      (pane === 'right' && !this.notePaneVisible(pane))) {
       this.closeFormatMenu();
       return;
     }
@@ -1762,6 +2155,7 @@ struct Index {
       this.leftPreviewScrollTop = 0;
     }
     this.lastSavedText = text;
+    this.clearStaleSaveNotice(this.currentVaultId, relPath);
     this.editorDirty = false;
     this.editorLen = text.length;
     await this.editorBridge.setContent(text);
@@ -1811,6 +2205,7 @@ struct Index {
       this.rightPreviewScrollTop = 0;
     }
     this.rightLastSavedText = text;
+    this.clearStaleSaveNotice(this.currentVaultId, relPath);
     WorkspaceEditGuard.clear('right', this.currentVaultId, relPath);
     this.rightEditorDirty = false;
     this.rightEditorLen = text.length;
@@ -1898,7 +2293,8 @@ struct Index {
       return true;
     }
     try {
-      await NoteService.saveNote(VaultRegistry.get(), targetVaultId, targetPath, text);
+      await NoteService.saveNote(VaultRegistry.get(), targetVaultId, targetPath, text, savedText);
+      this.clearStaleSaveNotice(targetVaultId, targetPath);
       if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
         this.rightLastSavedText = text;
         WorkspaceEditGuard.clear('right', targetVaultId, targetPath);
@@ -1921,7 +2317,7 @@ struct Index {
       }
       return true;
     } catch (error) {
-      this.toastRegistryError('保存失败', error);
+      this.handleEditorSaveError(targetVaultId, targetPath, error);
       return false;
     }
   }
@@ -2130,7 +2526,8 @@ struct Index {
       return true;
     }
     try {
-      await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text);
+      await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text, this.lastSavedText);
+      this.clearStaleSaveNotice(vaultId, path);
       this.lastSavedText = text;
       WorkspaceEditGuard.clear('left', vaultId, path);
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
@@ -2161,7 +2558,7 @@ struct Index {
       }
       return true;
     } catch (error) {
-      this.toastRegistryError('保存失败', error);
+      this.handleEditorSaveError(vaultId, path, error);
       return false;
     }
   }
@@ -2536,7 +2933,12 @@ struct Index {
         async (): Promise<void> => {
           await AgentMemoryStore.removeVaultData(id);
         },
-        (): void => {
+        async (): Promise<void> => {
+          if (target !== undefined && target.rootKind === 'external' && target.rootUri !== undefined) {
+            const authorization: ExternalVaultAuthorizationService =
+              createExternalVaultAuthorization(reg.abilityContext());
+            await authorization.release(target.rootUri);
+          }
           AgentRuntime.forgetVault(id, reg);
           reg.remove(id);
           FullTextSearchService.discardVault(id);
@@ -2675,7 +3077,7 @@ struct Index {
   /**
    * 把文件移入回收站（滑到底直接删 / 删除确认框的「确认删除」，文件分支）。
    * 顺序：删的是当前文件 → 先 flush 落盘再移（与 doDeletePath 同一条铁律）；
-   * 然后 TrashService.moveToTrash（renameSync 原子移动）→ 刷树/回收站 → 弹 5 秒撤销条。
+   * 然后把正式笔记复制校验到沙箱回收站，再经 VaultAccess 移除源笔记 → 刷树/回收站。
    * 快照记 wasCurrent：撤销后若是「删的正是这篇」就重新加载它（原型 snap.wasCurrent）。
    */
   private async doTrashFile(relPath: string): Promise<void> {
@@ -2692,7 +3094,7 @@ struct Index {
         this.resetSaveFeedback();
       }
       const reg: VaultRegistry = VaultRegistry.get();
-      const trashRel: string = TrashService.moveToTrash(reg, this.currentVaultId, relPath);
+      const trashRel: string = await TrashService.moveToTrash(reg, this.currentVaultId, relPath);
       if (wasCurrent) {
         this.currentFilePath = '';
       }
@@ -2741,14 +3143,14 @@ struct Index {
   }
 
   /** 撤销条「撤销」：从回收站恢复；原位置重名 → 换一条无按钮提示条告知原因（原型同款） */
-  private undoTrashRestore(): void {
+  private async undoTrashRestore(): Promise<void> {
     const snap: UndoSnap | null = this.undoSnap;
     this.hideUndo();
     if (snap === null) {
       return;
     }
     try {
-      TrashService.restore(VaultRegistry.get(), snap.vaultId, snap.relPath);
+      await TrashService.restore(VaultRegistry.get(), snap.vaultId, snap.relPath);
       this.refreshFileTree();
       this.trashSeq++;
       // 删的正是当时在编辑的那篇 → 撤销后重新加载（内容就是删除前 flush 落盘的那份）
@@ -2765,12 +3167,12 @@ struct Index {
   }
 
   /** 回收站视图「恢复」（1.8）：与撤销共用 TrashService.restore；重名 toast 原因 */
-  private doRestoreFromTrash(relPath: string): void {
+  private async doRestoreFromTrash(relPath: string): Promise<void> {
     if (this.currentVaultId.length === 0) {
       return;
     }
     try {
-      TrashService.restore(VaultRegistry.get(), this.currentVaultId, relPath);
+      await TrashService.restore(VaultRegistry.get(), this.currentVaultId, relPath);
       this.refreshFileTree();
       this.trashSeq++;
     } catch (error) {
@@ -3464,6 +3866,8 @@ struct Index {
     this.deleteDialogCtl = new CustomDialogController({
       builder: DeleteVaultDialog({
         vaultId: id,
+        isExternal: this.vaults.some((vault: VaultEntry): boolean =>
+          vault.id === id && vault.rootKind === 'external'),
         onConfirm: (): void => {
           void this.doDeleteVault(id);
         }
@@ -3488,6 +3892,37 @@ struct Index {
     .borderRadius(Radius.icon)
     .backgroundColor(bgColor)
     .onClick(onTap)
+  }
+
+  @Builder
+  GitAheadBadge() {
+    if (this.gitAheadCommitCount > 0) {
+      Text(this.gitAheadBadgeLabel())
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.on_brand'))
+        .padding({ left: Space.s1, right: Space.s1, top: Space.s1, bottom: Space.s1 })
+        .borderRadius(Radius.full)
+        .backgroundColor($r('app.color.brand'))
+    }
+  }
+
+  @Builder
+  GitSyncButton() {
+    Stack({ alignContent: Alignment.TopEnd }) {
+      Row() {
+        Icon('sync', Space.s5, $r('app.color.text_secondary'))
+      }
+      .width(Size.touch)
+      .height(Size.touch)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(Radius.icon)
+      this.GitAheadBadge()
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .onClick((): void => {
+      void this.openGitSyncPage();
+    })
   }
 
   private isPaneModeSelected(pane: string, label: string): boolean {
@@ -3896,7 +4331,7 @@ struct Index {
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.snack_action'))
           .onClick(() => {
-            this.undoTrashRestore();
+            void this.undoTrashRestore();
           })
       }
     }
@@ -3966,7 +4401,11 @@ struct Index {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
         this.IconButton('back', $r('app.color.text_primary'), (): void => {
           if (this.topView === 'settings') {
-            this.returnFromSettings();
+            if (this.isSingleScreenLayout() && this.settingsDetail && this.settingsReturnView !== 'agent') {
+              this.settingsDetail = false;
+            } else {
+              this.returnFromSettings();
+            }
           } else {
             this.leaveSecondaryView();
           }
@@ -4010,9 +4449,7 @@ struct Index {
           this.MoreMenuButton()
         } else {
           if (this.currentVaultIsGit()) {
-            this.IconButton('sync', $r('app.color.text_secondary'), (): void => {
-              void this.openGitSyncPage();
-            })
+            this.GitSyncButton()
           }
           this.IconButton('columns', this.isReferenceShown()
             ? $r('app.color.brand') : $r('app.color.text_secondary'), (): void => {
@@ -4047,12 +4484,20 @@ struct Index {
 
   @Builder
   MoreMenuButton() {
-    Row() {
-      Icon('more', Space.s5, $r('app.color.text_secondary'))
+    Stack({ alignContent: Alignment.TopEnd }) {
+      Row() {
+        Icon('more', Space.s5, $r('app.color.text_secondary'))
+      }
+      .width(Size.touch)
+      .height(Size.touch)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(Radius.icon)
+      if (this.currentVaultIsGit()) {
+        this.GitAheadBadge()
+      }
     }
     .width(Size.touch)
     .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
     .borderRadius(Radius.icon)
     .onClick(() => { this.moreMenuOpen = !this.moreMenuOpen; })
     .bindPopup(this.moreMenuOpen, {
@@ -4079,6 +4524,12 @@ struct Index {
             .fontSize(FontSize.body2)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
+          if (this.gitAheadCommitCount > 0) {
+            Text(this.gitAheadCommitCount.toString() + ' 个待推送')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.brand'))
+              .maxLines(1)
+          }
         }
         .width('100%')
         .height(Size.touch)
@@ -4198,9 +4649,9 @@ struct Index {
         this.closeNoteNavigation();
         this.openShareVault();
       },
-      onImportGit: (): void => {
+      onImportVault: (): void => {
         this.closeNoteNavigation();
-        void this.openGitSyncPage();
+        void this.openImportVaultDialog();
       },
       onCreateNote: (): void => {
         this.closeNoteNavigation();
@@ -4231,7 +4682,7 @@ struct Index {
         void this.doTrashFile(relPath);
       },
       onRestoreTrash: (relPath: string): void => {
-        this.doRestoreFromTrash(relPath);
+        void this.doRestoreFromTrash(relPath);
       },
       onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
       onSidebarTabChange: (tab: string): void => { this.setSidebarTab(tab); },
@@ -4964,6 +5415,9 @@ struct Index {
       },
       onCreate: (): void => {
         this.openCreateDialog();
+      },
+      onImportVault: (): void => {
+        void this.openImportVaultDialog();
       }
     })
   }
@@ -4982,14 +5436,12 @@ struct Index {
       showLineNumbers: this.showLineNumbers,
       selectedCategory: this.settingsCategory,
       showCategoryList: this.isSingleScreenLayout() && !this.settingsDetail,
-      showCategoryBack: this.isSingleScreenLayout() && this.settingsDetail && this.settingsReturnView !== 'agent',
       onSelectCategory: (category: string): void => {
         this.settingsCategory = category;
         if (this.isSingleScreenLayout()) {
           this.settingsDetail = true;
         }
       },
-      onBackToCategories: (): void => { this.settingsDetail = false; },
       onOpenHistory: (): void => { this.topView = 'history'; },
       onResetSplit: (): void => { this.resetSplitLayout(); },
       onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); }
@@ -5016,7 +5468,7 @@ struct Index {
       onOpenNote: (path: string): void => { this.openAgentNote(path); },
       onSwitchVault: (id: string): void => { this.doSwitchVault(id); },
       onManageVaults: (): void => { void this.openVaultManager('agent'); },
-      onImportGit: (): void => { void this.openGitSyncPage(); },
+      onImportVault: (): void => { void this.openImportVaultDialog(); },
       onNavigationDragStart: (): void => { this.startNavigationDrag(true); },
       onNavigationDrag: (offsetX: number): void => { this.updateNavigationDrag(offsetX, true); },
       onSplitDragEnd: (): void => { this.endSplitDrag(); },

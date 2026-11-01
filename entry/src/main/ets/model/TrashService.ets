@@ -24,6 +24,7 @@ import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { VaultRegistry } from './VaultRegistry';
+import { VaultAccess, VaultDirChild, isVaultNoteName } from './VaultAccess';
 import { FullTextSearchService } from './FullTextSearchService';
 import { WikiLinkService } from './WikiLinkService';
 
@@ -53,6 +54,9 @@ export interface UndoSnap {
 }
 
 export class TrashService {
+  private static mutationChain: Promise<void> = Promise.resolve();
+  private static legacyMigrationCompleted: Set<string> = new Set<string>();
+
   /**
    * 把文件移入回收站（1.7 主路径：左滑滑到底 / 删除确认框的「确认删除」）。
    * - 逐级补建回收站里的父目录（镜像结构）；
@@ -63,7 +67,16 @@ export class TrashService {
    * 返回**回收站内的实际相对路径**（同路径二次删除会被加 -2 后缀，
    * 调用方拿它做恢复快照 —— 撤销/恢复都以它为准，不能拿入参当恢复目标）。
    */
-  static moveToTrash(registry: VaultRegistry, vaultId: string, relPath: string): string {
+  static moveToTrash(registry: VaultRegistry, vaultId: string, relPath: string): Promise<string> {
+    return TrashService.enqueue<string>(async (): Promise<string> => {
+      const access = registry.accessFor(vaultId);
+      const content: string = access.readText(relPath);
+      return TrashService.moveTextToPrivateTrash(registry, vaultId, relPath, content, access);
+    });
+  }
+
+  private static async moveTextToPrivateTrash(registry: VaultRegistry, vaultId: string,
+    relPath: string, content: string, access: VaultAccess): Promise<string> {
     let target: string = relPath;
     if (TrashService.existsInTrash(registry, vaultId, relPath)) {
       const dot: number = relPath.lastIndexOf('.');
@@ -76,20 +89,155 @@ export class TrashService {
         target = stem + '-' + n + ext;
       }
     }
-    // 回收站根必须先建：顶层文件没有父段可补建（ensureTrashParents 循环不跑），
-    // 嵌套文件的第一级 mkdir 也因根缺失而 ENOENT —— renameSync 必失败。
+    // 回收站根必须先建：顶层文件没有父段可补建（ensureTrashParents 循环不跑）。
     const trashRoot: string = registry.trashDirOf(vaultId);
     if (!fileIo.accessSync(trashRoot)) {
       fileIo.mkdirSync(trashRoot);
     }
     TrashService.ensureTrashParents(registry, vaultId, target);
-    const src: string = registry.absoluteIn(vaultId, relPath);
     const dst: string = registry.absoluteInTrash(vaultId, target);
-    fileIo.renameSync(src, dst);
+    await TrashService.writePrivateAtomic(dst, content);
+    if (fileIo.readTextSync(dst) !== content) {
+      TrashService.removePrivateCopy(dst);
+      throw new Error('回收站副本校验失败，原笔记未删除');
+    }
+    if (access.readText(relPath) !== content) {
+      TrashService.removePrivateCopy(dst);
+      throw new Error('笔记在删除过程中已变化，已保留原文件');
+    }
+    try {
+      access.remove(relPath);
+    } catch (error) {
+      // If the source is still readable and unchanged, discard the redundant backup.
+      // If access was lost or the source changed, retain the private copy as a recovery path.
+      try {
+        if (access.readText(relPath) === content) {
+          TrashService.removePrivateCopy(dst);
+        }
+      } catch (readError) {
+        // Keep the verified private copy when source state cannot be established.
+      }
+      const err = error as Error;
+      throw new Error(err.message);
+    }
     FullTextSearchService.noteRemoved(vaultId, relPath, false);
     WikiLinkService.pathRemoved(vaultId);
     hilog.info(TRASH_DOMAIN, TRASH_TAG, '移入回收站 %{public}s → %{public}s', relPath, target);
     return target;
+  }
+
+  /**
+   * Import legacy in-vault `.trash` notes into the private trash on first access.
+   * The original directory is intentionally retained. Copy is atomic and read-back
+   * verified; identical destination content makes retries idempotent, while collisions
+   * receive a numbered name instead of overwriting an existing recovery copy.
+   */
+  static migrateLegacyTrash(registry: VaultRegistry, vaultId: string): Promise<void> {
+    return TrashService.enqueue<void>(async (): Promise<void> => {
+      if (TrashService.legacyMigrationCompleted.has(vaultId)) {
+        return;
+      }
+      const access: VaultAccess = registry.accessFor(vaultId);
+      const legacyRoot = access.stat('.trash');
+      if (legacyRoot === null) {
+        TrashService.legacyMigrationCompleted.add(vaultId);
+        return;
+      }
+      if (!legacyRoot.isDir || legacyRoot.isSymbolicLink) {
+        throw new Error('旧回收站不是安全目录，原目录已保留');
+      }
+
+      let visited: number = 0;
+      const copyDirectory = async (sourceDir: string, targetDir: string, depth: number): Promise<void> => {
+        if (depth > 64) {
+          throw new Error('旧回收站目录层级超限，已保留原目录；可稍后重试');
+        }
+        const children: VaultDirChild[] = access.listAll(sourceDir, true);
+        for (let i = 0; i < children.length; i++) {
+          visited++;
+          if (visited > 20000) {
+            throw new Error('旧回收站条目超限，已保留原目录；可稍后重试');
+          }
+          const child: VaultDirChild = children[i];
+          const sourcePath: string = sourceDir + '/' + child.name;
+          const targetPath: string = targetDir.length === 0 ? child.name : targetDir + '/' + child.name;
+          const sourceStat = access.stat(sourcePath);
+          if (sourceStat === null || sourceStat.isSymbolicLink) {
+            throw new Error('旧回收站条目无法安全读取，已保留原目录');
+          }
+          if (child.isDir) {
+            if (!sourceStat.isDir) {
+              throw new Error('旧回收站目录状态发生变化，已保留原目录');
+            }
+            await copyDirectory(sourcePath, targetPath, depth + 1);
+            continue;
+          }
+          // The legacy trash only accepted Markdown notes. Leave any foreign files in place.
+          if (!isVaultNoteName(child.name)) {
+            continue;
+          }
+          if (sourceStat.isDir) {
+            throw new Error('旧回收站文件状态发生变化，已保留原目录');
+          }
+          const content: string = access.readText(sourcePath);
+          let destination: string = TrashService.findLegacyTrashDestination(registry, vaultId, targetPath,
+            content);
+          if (destination.length === 0) {
+            continue;
+          }
+          const trashRoot: string = registry.trashDirOf(vaultId);
+          if (!fileIo.accessSync(trashRoot)) {
+            fileIo.mkdirSync(trashRoot);
+          }
+          TrashService.ensureTrashParents(registry, vaultId, destination);
+          const destinationAbs: string = registry.absoluteInTrash(vaultId, destination);
+          await TrashService.writePrivateAtomic(destinationAbs, content);
+          if (fileIo.readTextSync(destinationAbs) !== content) {
+            TrashService.removePrivateCopy(destinationAbs);
+            throw new Error('旧回收站副本校验失败，原目录已保留');
+          }
+        }
+      };
+
+      await copyDirectory('.trash', '', 0);
+      TrashService.legacyMigrationCompleted.add(vaultId);
+      hilog.info(TRASH_DOMAIN, TRASH_TAG, '旧回收站已复制并校验，源目录保留');
+    });
+  }
+
+  private static findLegacyTrashDestination(registry: VaultRegistry, vaultId: string,
+    relPath: string, content: string): string {
+    const slash: number = relPath.lastIndexOf('/');
+    const parent: string = slash >= 0 ? relPath.substring(0, slash + 1) : '';
+    const name: string = slash >= 0 ? relPath.substring(slash + 1) : relPath;
+    const dot: number = name.lastIndexOf('.');
+    const stem: string = dot > 0 ? name.substring(0, dot) : name;
+    const extension: string = dot > 0 ? name.substring(dot) : '';
+    let candidate: string = relPath;
+    let suffix: number = 2;
+    while (true) {
+      const abs: string = registry.absoluteInTrash(vaultId, candidate);
+      let existing: fileIo.Stat;
+      try {
+        existing = fileIo.lstatSync(abs);
+      } catch (error) {
+        const err = error as BusinessError;
+        const code: number = typeof err.code === 'number' ? err.code : -1;
+        if (code === 2 || code === 13900002) {
+          return candidate;
+        }
+        throw new Error(err.message);
+      }
+      try {
+        if (!existing.isDirectory() && !existing.isSymbolicLink() && fileIo.readTextSync(abs) === content) {
+          return '';
+        }
+      } catch (error) {
+        // A directory or unreadable existing path is a collision; keep searching.
+      }
+      candidate = parent + stem + '-' + suffix.toString() + extension;
+      suffix++;
+    }
   }
 
   /**
@@ -113,26 +261,35 @@ export class TrashService {
    * 原型语义（restoreTrashItem 的「原位置已有同名文件，请先处理重名」）。
    * 成功返回恢复后的库内相对路径（= trashRel 本身）。
    */
-  static restore(registry: VaultRegistry, vaultId: string, trashRel: string): string {
-    if (TrashService.existsAtOrigin(registry, vaultId, trashRel)) {
-      throw new Error('原位置已有同名文件，请先处理重名');
-    }
-    // 恢复目标可能建在（已被删掉的）多层子目录里，逐级补建
-    const segs: string[] = trashRel.split('/');
-    for (let i = 1; i < segs.length; i++) {
-      const dirRel: string = segs.slice(0, i).join('/');
-      const dirAbs: string = registry.absoluteIn(vaultId, dirRel);
-      if (!fileIo.accessSync(dirAbs)) {
-        fileIo.mkdirSync(dirAbs);
+  static restore(registry: VaultRegistry, vaultId: string, trashRel: string): Promise<string> {
+    return TrashService.enqueue<string>(async (): Promise<string> => {
+      if (TrashService.existsAtOrigin(registry, vaultId, trashRel)) {
+        throw new Error('原位置已有同名文件，请先处理重名');
       }
-    }
-    const src: string = registry.absoluteInTrash(vaultId, trashRel);
-    const dst: string = registry.absoluteIn(vaultId, trashRel);
-    fileIo.renameSync(src, dst);
-    FullTextSearchService.noteRestored(registry, vaultId, trashRel);
-    WikiLinkService.pathAdded(vaultId);
-    hilog.info(TRASH_DOMAIN, TRASH_TAG, '恢复 %{public}s', trashRel);
-    return trashRel;
+      const content: string = fileIo.readTextSync(registry.absoluteInTrash(vaultId, trashRel));
+      const access = registry.accessFor(vaultId);
+      access.ensureDir(TrashService.parentDirectory(trashRel));
+      // Recheck just before the write; the private recovery source remains untouched until
+      // the formal target has been written and read back exactly.
+      if (TrashService.existsAtOrigin(registry, vaultId, trashRel)) {
+        throw new Error('原位置已有同名文件，请先处理重名');
+      }
+      await access.writeAtomic(trashRel, content);
+      let restored: string;
+      try {
+        restored = access.readText(trashRel);
+      } catch (error) {
+        throw new Error('恢复副本校验失败，回收站原件仍保留');
+      }
+      if (restored !== content) {
+        throw new Error('恢复副本校验失败，回收站原件仍保留');
+      }
+      fileIo.unlinkSync(registry.absoluteInTrash(vaultId, trashRel));
+      FullTextSearchService.noteRestored(registry, vaultId, trashRel);
+      WikiLinkService.pathAdded(vaultId);
+      hilog.info(TRASH_DOMAIN, TRASH_TAG, '恢复 %{public}s', trashRel);
+      return trashRel;
+    });
   }
 
   private static existsInTrash(registry: VaultRegistry, vaultId: string, relPath: string): boolean {
@@ -146,7 +303,7 @@ export class TrashService {
   /** 原位置（库内，不在回收站）是否已有同名文件（restore 拒绝覆盖的判定） */
   private static existsAtOrigin(registry: VaultRegistry, vaultId: string, relPath: string): boolean {
     try {
-      return fileIo.accessSync(registry.absoluteIn(vaultId, relPath));
+      return registry.accessFor(vaultId).exists(relPath);
     } catch (error) {
       return false;
     }
@@ -162,6 +319,88 @@ export class TrashService {
         fileIo.mkdirSync(dirAbs);
       }
     }
+  }
+
+  private static parentDirectory(relPath: string): string {
+    const slash: number = relPath.lastIndexOf('/');
+    return slash > 0 ? relPath.substring(0, slash) : '';
+  }
+
+  private static removePrivateCopy(path: string): void {
+    try {
+      fileIo.unlinkSync(path);
+    } catch (error) {
+      // Best effort: a verified recovery copy is safer to retain than to lose.
+    }
+  }
+
+  private static enqueue<T>(action: () => Promise<T>): Promise<T> {
+    const job: Promise<T> = TrashService.mutationChain.then(action);
+    TrashService.mutationChain = job.then((): void => {
+    }, (): void => {
+    });
+    return job;
+  }
+
+  /** Write a private copy with AtomicFile; the source note remains untouched until verification. */
+  private static writePrivateAtomic(path: string, content: string): Promise<void> {
+    return new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {
+      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(path);
+      let settled: boolean = false;
+      let timerId: number = -1;
+      const fail = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.failWrite();
+        } catch (rollbackError) {
+          // Preserve the initial write error.
+        }
+        reject(error);
+      };
+      const finish = (): void => {
+        if (settled) {
+          return;
+        }
+        if (timerId !== -1) {
+          clearTimeout(timerId);
+        }
+        try {
+          atomicFile.finishWrite();
+        } catch (error) {
+          const err = error as BusinessError;
+          fail(new Error(err.message));
+          return;
+        }
+        settled = true;
+        resolve();
+      };
+      try {
+        const stream: fileIo.WriteStream = atomicFile.startWrite();
+        if (content.length === 0) {
+          finish();
+          return;
+        }
+        timerId = setTimeout((): void => {
+          fail(new Error('回收站写入回调 3s 未触发'));
+        }, 3000);
+        stream.write(content, 'utf-8', (error?: BusinessError): void => {
+          if (error !== undefined && error !== null) {
+            fail(new Error(error.message));
+          } else {
+            finish();
+          }
+        });
+      } catch (error) {
+        const err = error as BusinessError;
+        fail(new Error(err.message));
+      }
+    });
   }
 
   /** 递归收集回收站文件；relDir 为镜像的库内相对目录（'' = 回收站根） */

@@ -17,7 +17,7 @@ function extractMethod(signature, nextMarker, modifier = 'private async') {
 
 const deletePathMethod = extractMethod('doDeletePath(relPath: string): Promise<void> {', '\n  /** 注册表操作失败');
 const trashFileMethod = extractMethod('doTrashFile(relPath: string): Promise<void> {', '\n  /** 撤销条：弹出');
-const undoRestoreMethod = extractMethod('undoTrashRestore(): void {', '\n  /** 回收站视图「恢复」', 'private');
+const undoRestoreMethod = extractMethod('undoTrashRestore(): Promise<void> {', '\n  /** 回收站视图「恢复」', 'private async');
 const classSource = `class IndexHarness { ${deletePathMethod}\n${trashFileMethod}\n${undoRestoreMethod} }; module.exports = IndexHarness;`;
 const code = transformSync(classSource, { loader: 'ts', format: 'cjs' }).code;
 
@@ -33,11 +33,11 @@ function createHarness(options = {}) {
       }
     },
     TrashService: {
-      moveToTrash(_registry, vaultId, path) {
+      async moveToTrash(_registry, vaultId, path) {
         calls.push(`trash:${vaultId}:${path}`);
         return path;
       },
-      restore(_registry, vaultId, path) {
+      async restore(_registry, vaultId, path) {
         calls.push(`restore:${vaultId}:${path}`);
         if (options.restoreFails) {
           throw new Error('controlled restore conflict');
@@ -96,7 +96,7 @@ test('moving the selected right note to trash clears its editor while preserving
   assert.equal(app.undoSnap.wasCurrent, false);
   assert.equal(app.undoSnap.wasRight, true);
 
-  app.undoTrashRestore();
+  await app.undoTrashRestore();
   assert.deepEqual(calls, [
     'flush', 'reset-feedback', 'trash:local:folder/current.md', 'clear-right:', 'refresh-tree', 'show-undo',
     'hide-undo', 'restore:local:folder/current.md', 'refresh-tree', 'load-right:folder/current.md'
@@ -112,10 +112,10 @@ test('deleting an unrelated path leaves both editor buffers alone', async () => 
   assert.equal(app.rightFilePath, 'also-keep.md');
 });
 
-test('undoing a right-only note deletion restores that note in the right pane', () => {
+test('undoing a right-only note deletion restores that note in the right pane', async () => {
   const { app, calls } = createHarness({ currentFilePath: 'keep.md' });
   app.undoSnap = { vaultId: 'local', relPath: 'folder/removed.md', wasCurrent: false, wasRight: true };
-  app.undoTrashRestore();
+  await app.undoTrashRestore();
 
   assert.deepEqual(calls, [
     'hide-undo', 'restore:local:folder/removed.md', 'refresh-tree', 'load-right:folder/removed.md'
@@ -123,19 +123,19 @@ test('undoing a right-only note deletion restores that note in the right pane', 
   assert.equal(app.trashSeq, 1);
 });
 
-test('undoing a note shared by both panes reopens it through the left shared-note path once', () => {
+test('undoing a note shared by both panes reopens it through the left shared-note path once', async () => {
   const { app, calls } = createHarness();
   app.undoSnap = { vaultId: 'local', relPath: 'shared.md', wasCurrent: true, wasRight: true };
-  app.undoTrashRestore();
+  await app.undoTrashRestore();
 
   assert.deepEqual(calls, ['hide-undo', 'restore:local:shared.md', 'refresh-tree', 'load-left:shared.md']);
 });
 
-test('a restore conflict keeps the file untouched and replaces undo with a no-action notice', () => {
+test('a restore conflict keeps the file untouched and replaces undo with a no-action notice', async () => {
   const { app, calls, shownUndos } = createHarness({ restoreFails: true });
   app.undoSnap = { vaultId: 'local', relPath: 'folder/removed.md', wasCurrent: true, wasRight: false };
 
-  app.undoTrashRestore();
+  await app.undoTrashRestore();
 
   assert.deepEqual(calls, ['hide-undo', 'restore:local:folder/removed.md', 'show-undo']);
   assert.deepEqual(shownUndos, [{ message: '原位置已有同名文件，请先处理重名', snapshot: null }]);

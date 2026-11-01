@@ -22,7 +22,12 @@ const vaultModule = loadModule(readSourceFile(
 const registrySource = readSourceFile(
   new URL('../../entry/src/main/ets/model/VaultRegistry.ets', import.meta.url));
 
-function createRegistry(vaultIds = [], existingPaths = [], ioOverrides = {}) {
+function createRegistry(vaultIds = [], existingPaths = [], ioOverrides = {}, externalAccessFactory = () => ({
+  snapshot: () => [
+    { name: 'note.md', isDir: false },
+    { name: 'attachments', isDir: true }
+  ]
+})) {
   const paths = new Set(existingPaths);
   const fileOps = [];
   const fileIo = {
@@ -39,6 +44,7 @@ function createRegistry(vaultIds = [], existingPaths = [], ioOverrides = {}) {
     DEFAULT_VAULT_ID: vaultModule.DEFAULT_VAULT_ID,
     SAMPLE_VAULT_ID: vaultModule.SAMPLE_VAULT_ID,
     sanitizeVaultName: vaultModule.sanitizeVaultName,
+    createExternalVaultAccess: externalAccessFactory,
     fileIo,
     hilog: { warn() {}, info() {}, error() {}, debug() {} }
   });
@@ -96,6 +102,64 @@ test('native ID selection checks registered IDs and orphan directories, and rena
   assert.throws(() => registry.previewRenameId('阅读笔记', ' .. '), /库名不能为空/);
 });
 
+test('external registration stores the picker URI without copying or resolving it as a sandbox path', () => {
+  const snapshots = [];
+  const { registry, fileOps } = createRegistry([], [], {}, (uri) => ({
+    snapshot() {
+      snapshots.push(uri);
+      return [
+        { name: '嵌套/笔记.MARKDOWN', isDir: false },
+        { name: '附件', isDir: true }
+      ];
+    }
+  }));
+
+  const entry = registry.registerExternal('My Notes', 'file://docs/picked/My%20Notes', 12345);
+
+  assert.deepEqual(snapshots, ['file://docs/picked/My%20Notes']);
+  assert.equal(entry.id, 'My Notes');
+  assert.equal(entry.type, 'local');
+  assert.equal(entry.rootKind, 'external');
+  assert.equal(entry.rootUri, 'file://docs/picked/My%20Notes');
+  assert.equal(entry.grantedAt, 12345);
+  assert.equal(registry.accessCache.get(entry.id) !== undefined, true);
+  assert.deepEqual(fileOps, [['persist']]);
+});
+
+test('external registration rejects a folder with no visible Markdown before changing registry state', () => {
+  const { registry, fileOps } = createRegistry([], [], {}, () => ({ snapshot: () => [
+    { name: 'attachments', isDir: true }
+  ] }));
+
+  assert.throws(() => registry.registerExternal('Empty', 'file://docs/empty', 12345), /没有可见的 Markdown/);
+  assert.equal(registry.state.vaults.length, 0);
+  assert.deepEqual(fileOps, []);
+});
+
+test('external registration rejects duplicate URIs and invalid URI or grant time', () => {
+  const { registry } = createRegistry();
+  registry.state.vaults.push({
+    id: 'Existing', vaultKey: 'existing-key', type: 'local', createdAt: 1,
+    rootKind: 'external', rootUri: 'file://docs/existing', grantedAt: 1
+  });
+
+  assert.throws(() => registry.registerExternal('Again', 'file://docs/existing', 2), /已经关联/);
+  assert.throws(() => registry.registerExternal('Bad', '/ordinary/path', 2), /URI 无效/);
+  assert.throws(() => registry.registerExternal('Bad', 'file://docs/bad', 0), /授权时间无效/);
+  assert.equal(registry.state.vaults.length, 1);
+});
+
+test('external registration persistence failure rolls back the entry and accessor cache', () => {
+  const { registry } = createRegistry();
+  registry.persist = (mustSucceed = false) => {
+    if (mustSucceed) throw new Error('preferences flush failed');
+  };
+
+  assert.throws(() => registry.registerExternal('Failure', 'file://docs/failure', 12345), /preferences flush failed/);
+  assert.equal(registry.state.vaults.length, 0);
+  assert.equal(registry.accessCache.size, 0);
+});
+
 test('rename to an occupied name takes the next suffix and leaves the other vault untouched', () => {
   const { registry, fileOps } = createRegistry(['A', 'A-2'], ['/sandbox/vaults/A', '/sandbox/vaults/A-2']);
 
@@ -145,6 +209,62 @@ test('removing a vault also clears its trash and drafts directories', () => {
     '删库必须清掉该库的回收站');
   assert.ok(fileOps.some((op) => op[0] === 'rmdir' && op[1] === '/sandbox/drafts/key-0'),
     '删库必须清掉该库的草稿');
+});
+
+test('external vault removal persists detachment before clearing sandbox-private data', () => {
+  const { registry, paths, fileOps } = createRegistry([], [
+    '/sandbox/trash/external-key',
+    '/sandbox/drafts/external-key'
+  ]);
+  registry.state.vaults.push({
+    id: 'External', vaultKey: 'external-key', type: 'local', createdAt: 1,
+    rootKind: 'external', rootUri: 'file://docs/external', grantedAt: 1
+  });
+  registry.state.currentVaultId = 'External';
+  registry.persist = (mustSucceed = false) => {
+    assert.equal(mustSucceed, true);
+    fileOps.push(['persist-external-detach']);
+    return true;
+  };
+
+  registry.remove('External');
+
+  assert.equal(registry.state.vaults.length, 0);
+  assert.ok(fileOps.findIndex((op) => op[0] === 'persist-external-detach') <
+    fileOps.findIndex((op) => op[0] === 'rmdir' && op[1] === '/sandbox/trash/external-key'));
+  assert.equal(paths.has('/sandbox/trash/external-key'), false);
+  assert.equal(paths.has('/sandbox/drafts/external-key'), false);
+  assert.equal(fileOps.some((op) => op[1] === '/sandbox/vaults/External'), false,
+    '解除外部关联不得递归删除授权目录');
+});
+
+test('external vault removal persistence failure preserves private data and restores registry state', () => {
+  const { registry, paths, fileOps } = createRegistry([], [
+    '/sandbox/trash/external-key',
+    '/sandbox/drafts/external-key'
+  ]);
+  const entry = {
+    id: 'External', vaultKey: 'external-key', type: 'local', createdAt: 1,
+    rootKind: 'external', rootUri: 'file://docs/external', grantedAt: 1
+  };
+  registry.state.vaults.push(entry);
+  registry.state.currentVaultId = 'External';
+  registry.accessCache.set('External', {});
+  registry.persist = () => {
+    fileOps.push(['persist-external-detach-failed']);
+    throw new Error('preferences flush failed');
+  };
+
+  assert.throws(() => registry.remove('External'), /preferences flush failed/);
+
+  assert.deepEqual(registry.state.vaults, [entry]);
+  assert.equal(registry.state.currentVaultId, 'External');
+  assert.equal(registry.accessCache.has('External'), false,
+    '调用方已释放系统授权，失败时应忘记旧访问器');
+  assert.equal(paths.has('/sandbox/trash/external-key'), true);
+  assert.equal(paths.has('/sandbox/drafts/external-key'), true);
+  assert.equal(fileOps.some((op) => op[0] === 'rmdir'), false,
+    'Preferences 落盘失败时不得清除可恢复私有数据');
 });
 
 test('a failing private data cleanup does not resurrect a half-removed registry', () => {

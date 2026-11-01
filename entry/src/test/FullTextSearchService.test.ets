@@ -1,10 +1,43 @@
-import { ArgumentMatchers, afterAll, afterEach, beforeAll, describe, expect, it, MockKit, when } from '@ohos/hypium';
-import { FileTree } from '../main/ets/model/FileTree';
+import { afterEach, beforeAll, describe, expect, it } from '@ohos/hypium';
 import { FullTextSearchResult } from '../main/ets/model/SearchIndex';
 import { FullTextSearchService } from '../main/ets/model/FullTextSearchService';
+import { VaultAccess } from '../main/ets/model/VaultAccess';
 import { VaultRegistry } from '../main/ets/model/VaultRegistry';
 
+class SearchTestAccess {
+  private vaultId: string;
+  private filesByRoot: Map<string, string[]>;
+  private contentsByPath: Map<string, string>;
+
+  constructor(vaultId: string, filesByRoot: Map<string, string[]>, contentsByPath: Map<string, string>) {
+    this.vaultId = vaultId;
+    this.filesByRoot = filesByRoot;
+    this.contentsByPath = contentsByPath;
+  }
+
+  allNotes(): string[] {
+    const paths: string[] | undefined = this.filesByRoot.get('search-test-root-' + this.vaultId);
+    return paths === undefined ? [] : paths.slice();
+  }
+
+  readText(path: string): string {
+    const content: string | undefined = this.contentsByPath.get('search-test-file-' + this.vaultId + '/' + path);
+    if (content === undefined) {
+      throw new Error('测试文件不存在');
+    }
+    return content;
+  }
+}
+
 class SearchTestRegistry {
+  private filesByRoot: Map<string, string[]>;
+  private contentsByPath: Map<string, string>;
+
+  constructor(filesByRoot: Map<string, string[]>, contentsByPath: Map<string, string>) {
+    this.filesByRoot = filesByRoot;
+    this.contentsByPath = contentsByPath;
+  }
+
   vaultDirOf(vaultId: string): string {
     return 'search-test-root-' + vaultId;
   }
@@ -12,45 +45,27 @@ class SearchTestRegistry {
   absoluteIn(vaultId: string, path: string): string {
     return 'search-test-file-' + vaultId + '/' + path;
   }
+
+  accessFor(vaultId: string): VaultAccess {
+    return new SearchTestAccess(vaultId, this.filesByRoot, this.contentsByPath) as Object as VaultAccess;
+  }
 }
 
 export default function fullTextSearchServiceTest(): void {
   describe('FullTextSearchService current-vault lifecycle', () => {
     let registry: VaultRegistry;
-    let mock: MockKit;
     let filesByRoot: Map<string, string[]>;
     let contentsByPath: Map<string, string>;
 
     beforeAll((): void => {
-      registry = new SearchTestRegistry() as Object as VaultRegistry;
       filesByRoot = new Map<string, string[]>();
       contentsByPath = new Map<string, string>();
-      mock = new MockKit();
-
-      const listMock: Function = mock.mockPrivateFunc(FileTree as Object, 'allMarkdownFiles');
-      when(listMock)(ArgumentMatchers.any).afterAction((vaultDir: string): string[] => {
-        const paths: string[] | undefined = filesByRoot.get(vaultDir);
-        return paths === undefined ? [] : paths;
-      });
-      const readMock: Function = mock.mockPrivateFunc(FullTextSearchService as Object, 'readMarkdown');
-      when(readMock)(ArgumentMatchers.any, ArgumentMatchers.any, ArgumentMatchers.any)
-        .afterAction((_registry: Object, vaultId: string, path: string): string => {
-          const content: string | undefined = contentsByPath.get('search-test-file-' + vaultId + '/' + path);
-          if (content === undefined) {
-            throw new Error('测试文件不存在');
-          }
-          return content;
-        });
+      registry = new SearchTestRegistry(filesByRoot, contentsByPath) as Object as VaultRegistry;
     });
 
     afterEach((): void => {
       FullTextSearchService.discardVault('a');
       FullTextSearchService.discardVault('b');
-    });
-
-    afterAll((): void => {
-      mock.ignoreMock(FileTree as Object, 'allMarkdownFiles');
-      mock.ignoreMock(FullTextSearchService as Object, 'readMarkdown');
     });
 
     it('keeps save, rename, delete, vault switching, and failed-build retry aligned with source files', 0,

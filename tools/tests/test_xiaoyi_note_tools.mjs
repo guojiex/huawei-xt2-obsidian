@@ -98,7 +98,14 @@ assert.ok(noteService.includes('requireExistingNote(vaultId, path)'));
 assert.ok(noteService.includes('NoteService.saveNoteIfUnchanged'));
 assert.ok(noteService.includes('NoteService.deleteNoteIfUnchanged'));
 assert.ok(noteService.includes('WorkspaceEditGuard.isUnsaved(vaultId, path)'));
-assert.ok(noteStorage.includes('new fileIo.AtomicFile('), 'existing-note writes must use AtomicFile');
+assert.ok(noteStorage.includes('registry.accessFor(vaultId).writeAtomic(relPath, content)'),
+  'existing-note writes must go through the unified VaultAccess');
+const vaultAccess = fs.readFileSync(new URL('../../entry/src/main/ets/model/VaultAccess.ets', import.meta.url), 'utf8');
+const vaultAccessDevice = fs.readFileSync(new URL('../../entry/src/main/ets/model/VaultAccessDevice.ets', import.meta.url), 'utf8');
+assert.ok(vaultAccessDevice.includes('return new fileIo.AtomicFile(abs)'),
+  'sandbox writes must retain AtomicFile');
+assert.ok(!vaultAccess.includes('stream.close((): void => {\n            atomicFile.finishWrite()'),
+  'AtomicFile must not close its WriteStream before finishWrite');
 assert.ok(index.includes("import('../components/AgentKitSlot')"), 'the note workspace must load the platform component');
 assert.ok(agentKitSlot.includes('FunctionComponent({'), 'the AgentKit slot must expose the platform component');
 assert.ok(agentKitSlot.includes("this.controller.on('agentDialogClosed'"), 'closing the panel must be observed');

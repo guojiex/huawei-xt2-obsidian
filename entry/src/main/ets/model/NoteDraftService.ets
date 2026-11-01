@@ -317,7 +317,7 @@ export class NoteDraftService {
         }
       } else if (name.endsWith(NoteDraftService.SUFFIX)) {
         const notePath: string = childRel.substring(0, childRel.length - NoteDraftService.SUFFIX.length);
-        if (!fileIo.accessSync(registry.absoluteIn(vaultId, notePath))) {
+        if (!registry.accessFor(vaultId).exists(notePath)) {
           fileIo.unlinkSync(childPath);
         }
       }

@@ -1444,7 +1444,9 @@ Share Kit 接受图片文件 URI，但现有文档与 SDK 证据尚未确定如�
 
 本机 API 26 `@ohos.file.photoAccessHelper.d.ts` 声明 `PhotoViewPicker`、`PhotoSelectOptions`、`PhotoSelectResult.photoUris` 和 `PhotoAsset.displayName` 均早于 API 24；其中 `photoUris` 注释明确要求通过 `PhotoAccessHelper.getAssets()` 的临时授权使用。`getAssets()` 的通用声明带 `ohos.permission.READ_IMAGEVIDEO` 标注，但华为 Media Library 文档说明，通过 Photo Picker 访问用户明确选择的媒体可不申请图库读取权限。实现仅用 Picker URI 查询所选 `PhotoAsset`，不枚举相册，也不新增 `READ_IMAGEVIDEO`；原始 URI 不直接交给文件 API。官方 FAQ 有直接 `openSync(photoUris[0])` 的示例，与当前 SDK 对 `photoUris` 的限定不一致，因此以 SDK 声明为准。
 
-`PhotoAsset.uri` 为媒体 URI；`fileIo.openSync(path, READ_ONLY)` 接受 URI，二者 API 起始版本均不高于 API 24。当前 `NoteImageService` 在 `getAssets()` 返回所选资产后打开资产 URI，再以 `fileIo.copyFile(sourceFd, uniqueTargetPath)` 复制到库内；源、目标大小核对成功后才插入 Markdown。该复制方式已在 API 26 模拟器跑通，API 24 / XT2 仍待验。Picker URI 授权与元数据查询的上述声明/文档差异仍按 Q1 保留。
+`PhotoAsset.uri` 为媒体 URI；`fileIo.openSync(path, READ_ONLY)` 接受 URI，二者 API 起始版本均不高于 API 24。当前 `NoteImageService` 在 `getAssets()` 返回所选资产后打开资产 URI，再以 `fileIo.copyFile(sourceFd, uniqueTargetPath)` 复制到库内；`VaultAccess.writeNewBinary` 先校验非空长度，复制后逐字节比较源副本，不只比较文件大小，通过后才返回并插入 Markdown。相关代码和字节相等/冲突/失败回归见 v1.3 §6。
+
+本机 API 26 SDK 的 `copyFile` 声明仅支持 `mode=0`，语义是覆盖并截断同名目标，没有不覆盖选项；`@since 9` 标注只证明声明层级，不证明 API 24 / XT2 运行时。沙箱侧先检查路径并为同一进程的并发导入加入序号，减少生成同名路径；这不能提供跨进程 TOCTOU 原子排他。外部目录 Native 写入使用 `O_CREAT | O_EXCL`。复制失败或字节校验失败会尽力删除本次目标；若删除本身失败，未被笔记引用的孤立文件可能留在库中，应用不扫描后自动删除附件，以免误删用户数据。API 26 图片插入 / 预览已有交互记录，API 24 / XT2 仍待验。Picker URI 授权与元数据查询的上述声明/文档差异仍按 Q1 保留。
 
 **2026-10-27 API 26 运行复验**：`copyFile` 复制到唯一命名附件后，检查目标文件大小与源 fd 相同；第一次交互因包内编辑器 rawfile 过期而未插入 Markdown，重新打包 `web/mdeditor` 并安装后，第二次交互成功插入相对引用并在预览显示 JPEG。确认插入失败时源代码已有 `insertText`、但 rawfile 未更新；这不是 `copyFile` 失败。当前图片导入不走 `AtomicFile`；半成品清理是复制失败后的尽力删除，并不具有 AtomicFile 回滚保证。API24 / XT2 尚未实测。
 
@@ -1663,6 +1665,8 @@ model 层再无结构类型混用）。
 `napi_callback_info info` 同名，clang 报 `redefinition of 'info' with a different type`。
 局部变量统一改名 `meta`。
 
+> **2026-11-01 实现补记（保留上表作为 2026-10-31 的初始能力记录）**：当前代码已将相对路径父目录改为逐段 `openat(O_DIRECTORY | O_NOFOLLOW)`，拒绝绝对路径、空段、`.` / `..`，避免中间目录符号链接逃出已授权根；`statByFd` 末段使用 `fstatat(..., AT_SYMLINK_NOFOLLOW)` 并标记链接，递归扫描跳过链接。二进制附件目标用 `O_CREAT | O_EXCL`，写入与 `fsync` 失败会清理本次新建目标；ArkTS 侧完成读回逐字节验证后才写 Markdown 引用。本机 API 24 Native SDK 的 `native_api.h` 声明 `napi_get_typedarray_info`，arm64-v8a Native + ArkTS HAP 编译通过；Node 回归覆盖路径 / 冲突保护。**这些是源码、单测和编译证据；本补记中的加固没有新的 XT2 / 模拟器运行时实测。**
+
 ### T8 ✅ 外部目录变更感知：没有官方方案，只能轮询
 
 `fileIo.createWatcher` 的 path 契约是**沙箱路径**，不支持外部目录 URI；
@@ -1676,3 +1680,11 @@ model 层再无结构类型混用）。
 T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机编译 + 既有设备通路支撑，
 尚未单独上机跑验收用例。
 **所有读数来自 API 26 设备（XT2 / 模拟器），目标兼容级别为 API 24，未完成判定跑通前不外推。**
+
+> **2026-11-01 v1.5 轮询实现选择**：页面处于前台时每 5 秒经 `VaultAccess.snapshot()` 比较可见树，并逐字读取当前打开的最多两篇笔记；路径集合变化时刷新文件树，内容变化时按编辑器是否有本地改动决定自动重载或显示冲突。实现使用现有、深度和节点数有上限的统一快照，避免为每个已知目录 / 文件分别打开关闭外部根 fd；它偏向可验证的简单性。这个具体间隔与扫描策略是工程选择，不是 HarmonyOS 官方承诺，仍需在 API24 / XT2 上观察性能与响应时间。
+
+## U 组：减少动态效果偏好与 ArkUI 动画
+
+### U1 ❓ `ANIMATOR_DURATION_SCALE` 不能作为系统减动效偏好的已证实接口（2026-11-01）
+
+本机 SDK `@ohos.settings.d.ts` 声明 `settings.display.ANIMATOR_DURATION_SCALE` 自 API 7 起，且标记 deprecated since 21；Stage `settings.getValue(context, name)` 自 API 10 起。声明只描述动画时长缩放因子，没有证明其代表无障碍“减少动态效果”偏好，也没有证明系统缩放会联动 ArkUI 属性动画。官方公开资料核对范围、结论与限制见[本机 SDK 与官方文档核对记录](qa/2026-11-01_v0.10减动效SDK与官方文档核对_API24.md)。**不在 v0.10 关键路径调用该候选项；API 24 / XT2 运行行为仍未验证。**

@@ -87,6 +87,10 @@ export class DeviceSandboxFs implements SandboxFsLike {
     return fileIo.statSync(abs);
   }
 
+  lstatSync(abs: string): SandboxStatLike {
+    return fileIo.lstatSync(abs);
+  }
+
   openSync(abs: string, mode: number): SandboxFileHandle {
     return fileIo.openSync(abs, mode);
   }
@@ -141,6 +145,10 @@ export class DeviceExternalNative implements ExternalNativeLike {
 
   writeFileByFd(fd: number, name: string, content: string): ExternalIoResult {
     return nativeVaultDir.writeFileByFd(fd, name, content) as VaultDirIoResult;
+  }
+
+  writeBinaryByFd(fd: number, name: string, bytes: Uint8Array): ExternalIoResult {
+    return nativeVaultDir.writeBinaryByFd(fd, name, bytes) as VaultDirIoResult;
   }
 
   deleteByFd(fd: number, name: string): ExternalIoResult {
