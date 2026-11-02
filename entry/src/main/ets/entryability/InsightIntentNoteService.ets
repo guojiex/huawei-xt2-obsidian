@@ -1,13 +1,83 @@
 import { AgentOperationStorage, AgentOperationStatus, AgentStoredOperation } from '../model/AgentOperationStorage';
 import { AgentRunConfig } from '../model/AgentModels';
+import { compareVaultNames } from '../model/VaultAccess';
 import { FileTree } from '../model/FileTree';
+import { FullTextSearchService } from '../model/FullTextSearchService';
 import { NoteService } from '../model/NoteService';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { WikiLinkParser, WikiLinkReference, WikiLinkResolution } from '../model/WikiLinkParser';
+import { WikiLinkService } from '../model/WikiLinkService';
 import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 
 interface NoteMatch {
   name: string;
   path: string;
+}
+
+/** v1.16 只读搜索的一条命中（16.1）。 */
+interface SearchHit {
+  path: string;
+  title: string;
+  line: number;
+  snippet: string;
+  matchIn: string;
+}
+
+/** v1.16 目录浏览的一个条目（16.1）。 */
+interface TreeEntry {
+  path: string;
+  name: string;
+  type: string;
+  depth: number;
+  childCount: number;
+  mtime: string;
+}
+
+/** v1.16 大纲模式的一条标题（16.1）。 */
+interface OutlineItem {
+  level: number;
+  title: string;
+  line: number;
+  offset: number;
+}
+
+/** v1.16 分段读取的切分结果（UTF-16 码元偏移，与 ArkTS 字符串索引一致）。 */
+interface ChunkPlan {
+  start: number;
+  end: number;
+  hasMore: boolean;
+}
+
+/** v1.16 出链条目（16.1）。 */
+interface OutLink {
+  target: string;
+  resolvedPath: string;
+  status: string;
+  alias: string;
+}
+
+/** v1.16 反链条目（16.1）。 */
+interface InLink {
+  path: string;
+  title: string;
+  context: string;
+}
+
+/**
+ * 只读工具的默认值集合。
+ * 数值是 v1.16 的候选默认值，待 [探针实验](../../../../docs/releases/v1.16/探针实验设计.md) 实测后统一调整；
+ * 输出预算（outputBudgetChars）未实现，仅做条数与片段长度限制。
+ */
+class XiaoyiToolLimits {
+  static readonly searchDefaultLimit: number = 8;
+  static readonly searchMaxLimit: number = 20;
+  static readonly snippetMaxChars: number = 160;
+  static readonly listTreeDefaultLimit: number = 50;
+  static readonly listTreeMaxLimit: number = 100;
+  static readonly listTreeMaxDepth: number = 3;
+  static readonly readChunkDefaultChars: number = 4000;
+  static readonly readChunkMaxChars: number = 8000;
+  static readonly linksMaxItems: number = 30;
 }
 
 /** 小艺后台端插件的本地笔记工具。vaultId 可省略，省略时定位用户当前选择的知识库。 */
@@ -29,6 +99,15 @@ export class InsightIntentNoteService {
     }
     if (name === 'ReadNote') {
       return this.readNote(params);
+    }
+    if (name === 'SearchNotes') {
+      return await this.searchNotes(params);
+    }
+    if (name === 'ListTree') {
+      return this.listTree(params);
+    }
+    if (name === 'GetLinks') {
+      return await this.getLinks(params);
     }
     if (name === 'CreateNote') {
       return await this.createNote(params);
@@ -79,10 +158,218 @@ export class InsightIntentNoteService {
       throw new Error('READ_FAILED：笔记不存在或读取失败。');
     }
     const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
-    result['content'] = content;
     result['contentHash'] = AgentOperationStorage.hashText(content);
     result['path'] = path;
+    result['totalChars'] = content.length.toString();
+    const mode: string = this.optionalString(params, 'mode', 'text');
+    if (mode === 'outline') {
+      const items: OutlineItem[] = InsightIntentNoteService.buildOutline(content);
+      result['mode'] = 'outline';
+      result['content'] = '';
+      result['outlineJson'] = JSON.stringify(items);
+      result['offset'] = '0';
+      result['returnedChars'] = '0';
+      result['hasMore'] = 'false';
+      result['nextOffset'] = content.length.toString();
+      result['message'] = '已列出「' + path + '」的 ' + items.length.toString() + ' 条标题，未返回正文。';
+      return result;
+    }
+    if (mode !== 'text') {
+      throw new Error('INVALID_PARAMETER：mode 只支持 text 或 outline。');
+    }
+    // 兼容旧契约：未显式传 offset / length 时仍整篇返回（平台旧工具版本不变）。
+    const segmented: boolean = params['offset'] !== undefined || params['length'] !== undefined;
+    const offset: number = segmented ? InsightIntentNoteService.parseOffset(params['offset']) : 0;
+    const length: number = segmented ? InsightIntentNoteService.parseLimit(params['length'],
+      XiaoyiToolLimits.readChunkDefaultChars, XiaoyiToolLimits.readChunkMaxChars, 'length') : content.length;
+    const plan: ChunkPlan = InsightIntentNoteService.planChunk(content, offset, length);
+    result['mode'] = 'text';
+    result['content'] = content.substring(plan.start, plan.end);
+    result['offset'] = plan.start.toString();
+    result['returnedChars'] = (plan.end - plan.start).toString();
+    result['hasMore'] = plan.hasMore ? 'true' : 'false';
+    result['nextOffset'] = plan.end.toString();
     result['message'] = '已读取知识库「' + vaultId + '」中的「' + path + '」。';
+    return result;
+  }
+
+  /**
+   * v1.16 只读搜索（16.1）：名称 / 全文 / 两者，带分页与截断标记。
+   * 全文候选复用 FullTextSearchService（v1.1 语义），不自建索引；索引不可用时报错而不编造结果。
+   */
+  private async searchNotes(params: Record<string, Object>): Promise<Record<string, Object>> {
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
+    const query: string = this.requiredString(params, 'query');
+    const scope: string = this.optionalString(params, 'scope', 'both');
+    if (scope !== 'name' && scope !== 'content' && scope !== 'both') {
+      throw new Error('INVALID_PARAMETER：scope 只支持 name、content 或 both。');
+    }
+    const folder: string = this.optionalString(params, 'folder', '');
+    const limit: number = InsightIntentNoteService.parseLimit(params['limit'],
+      XiaoyiToolLimits.searchDefaultLimit, XiaoyiToolLimits.searchMaxLimit, 'limit');
+    const cursor: number = InsightIntentNoteService.parseCursor(params['cursor']);
+    this.requireVault(vaultId);
+    const access = this.registry.accessFor(vaultId);
+    if (folder.length > 0 && FileTree.allDirsOf(access).indexOf(folder) < 0) {
+      throw new Error('OUT_OF_SCOPE：folder 不属于指定知识库或不存在。');
+    }
+    const scoped: string[] = InsightIntentNoteService.inFolder(FileTree.allNotesOf(access), folder);
+    const lowered: string = query.trim().toLocaleLowerCase();
+    const nameHits: string[] = [];
+    for (let i = 0; i < scoped.length; i++) {
+      const path: string = scoped[i];
+      const name: string = InsightIntentNoteService.lastSegment(path);
+      if (scope !== 'content' && name.toLocaleLowerCase().indexOf(lowered) >= 0) {
+        nameHits.push(path);
+      }
+    }
+    const contentHits: string[] = [];
+    if (scope !== 'name') {
+      let matched: string[] = [];
+      try {
+        const results = await FullTextSearchService.search(this.registry, vaultId, query, (): void => {
+        });
+        for (let i = 0; i < results.length; i++) {
+          matched.push(results[i].path);
+        }
+      } catch (error) {
+        throw new Error('INDEX_UNAVAILABLE：全文索引暂不可用，请改用 scope=name 或稍后重试。');
+      }
+      for (let i = 0; i < matched.length; i++) {
+        const path: string = matched[i];
+        if (nameHits.indexOf(path) < 0 && scoped.indexOf(path) >= 0) {
+          contentHits.push(path);
+        }
+      }
+    }
+    nameHits.sort((left: string, right: string): number => compareVaultNames(left, right));
+    contentHits.sort((left: string, right: string): number => compareVaultNames(left, right));
+    const ordered: string[] = nameHits.concat(contentHits);
+    const page: string[] = ordered.slice(cursor, cursor + limit);
+    const hits: SearchHit[] = [];
+    for (let i = 0; i < page.length; i++) {
+      const path: string = page[i];
+      const matchIn: string = nameHits.indexOf(path) >= 0 ? 'name' : 'content';
+      let line: number = 1;
+      let snippet: string = '';
+      if (matchIn === 'content') {
+        const content: string | null = NoteService.tryReadNote(this.registry, vaultId, path);
+        if (content !== null) {
+          const matchAt: number = content.toLocaleLowerCase().indexOf(lowered);
+          line = InsightIntentNoteService.lineOfOffset(content, matchAt < 0 ? 0 : matchAt);
+          snippet = InsightIntentNoteService.buildSnippet(content, matchAt, lowered.length);
+        }
+      }
+      hits.push({ path: path, title: InsightIntentNoteService.lastSegment(path), line: line,
+        snippet: snippet, matchIn: matchIn });
+    }
+    const end: number = cursor + page.length;
+    const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
+    result['hitsJson'] = JSON.stringify(hits);
+    result['total'] = ordered.length.toString();
+    result['nextCursor'] = end < ordered.length ? InsightIntentNoteService.encodeCursor(end) : '';
+    result['truncated'] = end < ordered.length ? 'true' : 'false';
+    result['message'] = '在知识库「' + vaultId + '」找到 ' + ordered.length.toString() +
+      ' 篇候选笔记，本次返回 ' + page.length.toString() + ' 篇。';
+    return result;
+  }
+
+  /** v1.16 目录浏览（16.1）：目录先于笔记，各自字典序，深度与条数受限。 */
+  private listTree(params: Record<string, Object>): Record<string, Object> {
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
+    const root: string = this.optionalString(params, 'path', '');
+    const depth: number = InsightIntentNoteService.parseLimit(params['depth'], 1,
+      XiaoyiToolLimits.listTreeMaxDepth, 'depth');
+    const limit: number = InsightIntentNoteService.parseLimit(params['limit'],
+      XiaoyiToolLimits.listTreeDefaultLimit, XiaoyiToolLimits.listTreeMaxLimit, 'limit');
+    const cursor: number = InsightIntentNoteService.parseCursor(params['cursor']);
+    this.requireVault(vaultId);
+    const access = this.registry.accessFor(vaultId);
+    const dirs: string[] = FileTree.allDirsOf(access);
+    const notes: string[] = FileTree.allNotesOf(access);
+    if (root.length > 0 && dirs.indexOf(root) < 0) {
+      throw new Error('OUT_OF_SCOPE：起始目录不属于指定知识库或不存在。');
+    }
+    const entries: TreeEntry[] = InsightIntentNoteService.collectTreeEntries(dirs, notes, root, depth);
+    for (let i = 0; i < entries.length; i++) {
+      const stat = access.stat(entries[i].path);
+      entries[i].mtime = stat === null ? '' : InsightIntentNoteService.isoDate(stat.mtimeSec);
+    }
+    const page: TreeEntry[] = entries.slice(cursor, cursor + limit);
+    const end: number = cursor + page.length;
+    const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
+    result['entriesJson'] = JSON.stringify(page);
+    result['total'] = entries.length.toString();
+    result['nextCursor'] = end < entries.length ? InsightIntentNoteService.encodeCursor(end) : '';
+    result['truncated'] = end < entries.length ? 'true' : 'false';
+    result['message'] = '知识库「' + vaultId + '」该层共 ' + entries.length.toString() +
+      ' 个条目，本次返回 ' + page.length.toString() + ' 个。';
+    return result;
+  }
+
+  /** v1.16 链接关系（16.1）：出链用 v1.2 解析语义，反链复用 WikiLinkService 的图。 */
+  private async getLinks(params: Record<string, Object>): Promise<Record<string, Object>> {
+    const vaultId: string = InsightIntentNoteService.resolveVaultId(params, this.registry.currentId());
+    const path: string = this.requiredString(params, 'path');
+    const direction: string = this.optionalString(params, 'direction', 'both');
+    if (direction !== 'out' && direction !== 'in' && direction !== 'both') {
+      throw new Error('INVALID_PARAMETER：direction 只支持 out、in 或 both。');
+    }
+    const limit: number = InsightIntentNoteService.parseLimit(params['limit'],
+      XiaoyiToolLimits.linksMaxItems, XiaoyiToolLimits.linksMaxItems, 'limit');
+    this.requireVault(vaultId);
+    this.requireExistingNote(vaultId, path);
+    if (WorkspaceEditGuard.isUnsaved(vaultId, path)) {
+      throw new Error('UNSAVED_EDITOR：目标笔记仍有未保存编辑，请先保存后再读取链接。');
+    }
+    const content: string | null = NoteService.tryReadNote(this.registry, vaultId, path);
+    if (content === null) {
+      throw new Error('READ_FAILED：笔记不存在或读取失败。');
+    }
+    const files: string[] = WikiLinkService.files(this.registry, vaultId);
+    const outgoing: OutLink[] = [];
+    let outTotal: number = 0;
+    if (direction !== 'in') {
+      const references: WikiLinkReference[] = WikiLinkParser.parse(content);
+      const seen: Set<string> = new Set<string>();
+      for (let i = 0; i < references.length; i++) {
+        const reference: WikiLinkReference = references[i];
+        if (seen.has(reference.target)) {
+          continue;
+        }
+        seen.add(reference.target);
+        const resolution: WikiLinkResolution = WikiLinkService.resolve(reference.target, path, files);
+        outTotal++;
+        if (outgoing.length < limit) {
+          outgoing.push({ target: reference.target, resolvedPath: resolution.path,
+            status: resolution.status, alias: reference.alias });
+        }
+      }
+    }
+    const incoming: InLink[] = [];
+    let inTotal: number = 0;
+    if (direction !== 'out') {
+      const sources: string[] = await WikiLinkService.backlinks(this.registry, vaultId, path);
+      for (let i = 0; i < sources.length; i++) {
+        inTotal++;
+        if (incoming.length >= limit) {
+          continue;
+        }
+        const sourcePath: string = sources[i];
+        const source: string | null = NoteService.tryReadNote(this.registry, vaultId, sourcePath);
+        incoming.push({ path: sourcePath, title: InsightIntentNoteService.lastSegment(sourcePath),
+          context: source === null ? '' :
+            InsightIntentNoteService.linkContext(source, sourcePath, path, files) });
+      }
+    }
+    const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
+    result['outJson'] = JSON.stringify(outgoing);
+    result['inJson'] = JSON.stringify(incoming);
+    result['outTotal'] = outTotal.toString();
+    result['inTotal'] = inTotal.toString();
+    result['truncated'] = (outTotal > outgoing.length || inTotal > incoming.length) ? 'true' : 'false';
+    result['message'] = '「' + path + '」有出链 ' + outTotal.toString() + ' 条、反链 ' +
+      inTotal.toString() + ' 条。';
     return result;
   }
 
@@ -412,6 +699,16 @@ export class InsightIntentNoteService {
     return value as string;
   }
 
+  /** 可选字符串参数：缺失、非字符串或空白都取缺省值。 */
+  private optionalString(params: Record<string, Object>, key: string, fallback: string): string {
+    const value: Object = params[key];
+    if (typeof value !== 'string') {
+      return fallback;
+    }
+    const trimmed: string = (value as string).trim();
+    return trimmed.length === 0 ? fallback : trimmed;
+  }
+
   /** vaultId 缺省解析：显式传入优先；否则用用户当前选择的知识库；两者皆无则拒绝执行。 */
   private static resolveVaultId(params: Record<string, Object>, currentVaultId: string): string {
     const provided: Object = params['vaultId'];
@@ -443,5 +740,279 @@ export class InsightIntentNoteService {
       throw new Error('ANCHOR_NOT_UNIQUE：原文锚点不存在或出现多次，未写入。');
     }
     return before.substring(0, start) + replacement + before.substring(start + anchor.length);
+  }
+
+  /** 分页上限：缺失取缺省；非正整数报 INVALID_ARGUMENT；超过 max 报 LIMIT_EXCEEDED。 */
+  private static parseLimit(raw: Object, fallback: number, max: number, label: string): number {
+    let text: string = '';
+    if (typeof raw === 'string') {
+      text = (raw as string).trim();
+    } else if (typeof raw === 'number') {
+      text = (raw as number).toString();
+    } else if (raw !== undefined && raw !== null) {
+      throw new Error('INVALID_ARGUMENT：' + label + ' 必须是正整数。');
+    }
+    if (text.length === 0) {
+      return fallback;
+    }
+    const parsed: number = Number.parseInt(text, 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      throw new Error('INVALID_ARGUMENT：' + label + ' 必须是正整数。');
+    }
+    if (parsed > max) {
+      throw new Error('LIMIT_EXCEEDED：' + label + ' 不得超过 ' + max.toString() + '。');
+    }
+    return parsed;
+  }
+
+  /** 分段起始偏移：必须是非负整数，缺省 0。 */
+  private static parseOffset(raw: Object): number {
+    let text: string = '';
+    if (typeof raw === 'string') {
+      text = (raw as string).trim();
+    } else if (typeof raw === 'number') {
+      text = (raw as number).toString();
+    } else if (raw !== undefined && raw !== null) {
+      throw new Error('INVALID_ARGUMENT：offset 必须是非负整数。');
+    }
+    if (text.length === 0) {
+      return 0;
+    }
+    const parsed: number = Number.parseInt(text, 10);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      throw new Error('INVALID_ARGUMENT：offset 必须是非负整数。');
+    }
+    return parsed;
+  }
+
+  /** 游标是不透明字符串：解码失败要求模型从头翻页，不猜测含义。 */
+  private static parseCursor(raw: Object): number {
+    if (raw === undefined || raw === null) {
+      return 0;
+    }
+    if (typeof raw !== 'string') {
+      throw new Error('INVALID_ARGUMENT：cursor 无法识别，请重新从第一页开始。');
+    }
+    const text: string = (raw as string).trim();
+    if (text.length === 0) {
+      return 0;
+    }
+    if (!text.startsWith('xyo')) {
+      throw new Error('INVALID_ARGUMENT：cursor 无法识别，请重新从第一页开始。');
+    }
+    const parsed: number = Number.parseInt(text.substring(3), 36);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      throw new Error('INVALID_ARGUMENT：cursor 无法识别，请重新从第一页开始。');
+    }
+    return parsed;
+  }
+
+  private static encodeCursor(offset: number): string {
+    return 'xyo' + offset.toString(36);
+  }
+
+  /** 以命中为中心的片段：命中词不被截断，超长用省略号标示。 */
+  private static buildSnippet(content: string, matchAt: number, matchLength: number): string {
+    if (matchAt < 0) {
+      return '';
+    }
+    const max: number = XiaoyiToolLimits.snippetMaxChars;
+    if (matchLength >= max || content.length <= max) {
+      const head: string = content.length <= max ? content : content.substring(matchAt, matchAt + max);
+      return (matchAt > 0 && content.length > max ? '…' : '') + head.replace(/\s+/g, ' ').trim() +
+        (content.length > max ? '…' : '');
+    }
+    let start: number = matchAt - Math.floor((max - matchLength) / 2);
+    if (start < 0) {
+      start = 0;
+    }
+    let end: number = start + max;
+    if (end > content.length) {
+      end = content.length;
+      start = Math.max(0, end - max);
+    }
+    const prefix: string = start > 0 ? '…' : '';
+    const suffix: string = end < content.length ? '…' : '';
+    return prefix + content.substring(start, end).replace(/\s+/g, ' ').trim() + suffix;
+  }
+
+  /** 行号从 1 起；offset 越界时按末尾计算。 */
+  private static lineOfOffset(content: string, offset: number): number {
+    let line: number = 1;
+    const end: number = Math.min(offset, content.length);
+    for (let i = 0; i < end; i++) {
+      if (content.charAt(i) === '\n') {
+        line++;
+      }
+    }
+    return line;
+  }
+
+  /** 大纲：跳过 frontmatter 与围栏代码块内的标题，给出层级、行号与字符偏移。 */
+  private static buildOutline(content: string): OutlineItem[] {
+    const lines: string[] = content.split('\n');
+    const items: OutlineItem[] = [];
+    let offset: number = 0;
+    let inFence: boolean = false;
+    let inFrontmatter: boolean = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line: string = lines[i];
+      const trimmed: string = line.trim();
+      if (i === 0 && trimmed === '---') {
+        inFrontmatter = true;
+        offset += line.length + 1;
+        continue;
+      }
+      if (inFrontmatter) {
+        if (trimmed === '---') {
+          inFrontmatter = false;
+        }
+        offset += line.length + 1;
+        continue;
+      }
+      if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+        inFence = !inFence;
+        offset += line.length + 1;
+        continue;
+      }
+      if (!inFence) {
+        const matched = line.match(/^(#{1,6})\s+(.*)$/);
+        if (matched !== null) {
+          items.push({ level: matched[1].length, title: matched[2].trim(), line: i + 1, offset: offset });
+        }
+      }
+      offset += line.length + 1;
+    }
+    return items;
+  }
+
+  /** 分段切分：优先把结束点对齐到换行；没有换行可用时按字符硬切。 */
+  private static planChunk(content: string, offset: number, length: number): ChunkPlan {
+    const total: number = content.length;
+    let start: number = offset < 0 ? 0 : offset;
+    if (start > total) {
+      start = total;
+    }
+    if (start > 0 && start < total) {
+      const code: number = content.charCodeAt(start);
+      if (code >= 0xDC00 && code <= 0xDFFF) {
+        start = start - 1;
+      }
+    }
+    let end: number = Math.min(total, start + length);
+    if (end < total) {
+      const newline: number = content.lastIndexOf('\n', end - 1);
+      if (newline > start) {
+        end = newline + 1;
+      }
+    }
+    return { start: start, end: end, hasMore: end < total };
+  }
+
+  /** 目录浏览条目（纯逻辑）：目录先于笔记，各自按名称字典序，深度从起始目录的下一层起算。 */
+  private static collectTreeEntries(dirs: string[], notes: string[], root: string,
+    depth: number): TreeEntry[] {
+    const prefix: string = root.length === 0 ? '' : root + '/';
+    const entries: TreeEntry[] = [];
+    for (let i = 0; i < dirs.length; i++) {
+      const dir: string = dirs[i];
+      if (!InsightIntentNoteService.withinDepth(dir, prefix, depth)) {
+        continue;
+      }
+      entries.push({ path: dir, name: InsightIntentNoteService.lastSegment(dir), type: 'dir',
+        depth: InsightIntentNoteService.relativeDepth(dir, prefix),
+        childCount: InsightIntentNoteService.countNotesUnder(notes, dir), mtime: '' });
+    }
+    for (let i = 0; i < notes.length; i++) {
+      const note: string = notes[i];
+      if (!InsightIntentNoteService.withinDepth(note, prefix, depth)) {
+        continue;
+      }
+      entries.push({ path: note, name: InsightIntentNoteService.lastSegment(note), type: 'note',
+        depth: InsightIntentNoteService.relativeDepth(note, prefix), childCount: 0, mtime: '' });
+    }
+    entries.sort((left: TreeEntry, right: TreeEntry): number => {
+      if (left.type !== right.type) {
+        return left.type === 'dir' ? -1 : 1;
+      }
+      return compareVaultNames(left.path, right.path);
+    });
+    return entries;
+  }
+
+  private static withinDepth(path: string, prefix: string, depth: number): boolean {
+    if (prefix.length > 0 && !path.startsWith(prefix)) {
+      return false;
+    }
+    return InsightIntentNoteService.relativeDepth(path, prefix) <= depth;
+  }
+
+  private static relativeDepth(path: string, prefix: string): number {
+    const rest: string = path.substring(prefix.length);
+    let count: number = 1;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest.charAt(i) === '/') {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private static countNotesUnder(notes: string[], dir: string): number {
+    const prefix: string = dir + '/';
+    let count: number = 0;
+    for (let i = 0; i < notes.length; i++) {
+      if (notes[i].startsWith(prefix)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /** 按目录前缀收窄候选；folder 为空表示整库。 */
+  private static inFolder(paths: string[], folder: string): string[] {
+    if (folder.length === 0) {
+      return paths;
+    }
+    const prefix: string = folder + '/';
+    const kept: string[] = [];
+    for (let i = 0; i < paths.length; i++) {
+      if (paths[i].startsWith(prefix)) {
+        kept.push(paths[i]);
+      }
+    }
+    return kept;
+  }
+
+  private static lastSegment(path: string): string {
+    const slash: number = path.lastIndexOf('/');
+    return slash < 0 ? path : path.substring(slash + 1);
+  }
+
+  /** 只精确到天，避免把精确时间戳带进返回体。 */
+  private static isoDate(seconds: number): string {
+    return new Date(seconds * 1000).toISOString().substring(0, 10);
+  }
+
+  /** 反链上下文：引用所在行的原文片段，长度受 snippetMaxChars 限制。 */
+  private static linkContext(source: string, sourcePath: string, targetPath: string,
+    files: string[]): string {
+    const references: WikiLinkReference[] = WikiLinkParser.parse(source);
+    for (let i = 0; i < references.length; i++) {
+      const reference: WikiLinkReference = references[i];
+      const resolution: WikiLinkResolution = WikiLinkService.resolve(reference.target, sourcePath, files);
+      if (resolution.status !== 'resolved' || resolution.path !== targetPath) {
+        continue;
+      }
+      const start: number = source.lastIndexOf('\n', reference.start - 1) + 1;
+      let end: number = source.indexOf('\n', reference.start);
+      if (end < 0) {
+        end = source.length;
+      }
+      const line: string = source.substring(start, end).trim();
+      return line.length > XiaoyiToolLimits.snippetMaxChars
+        ? line.substring(0, XiaoyiToolLimits.snippetMaxChars) : line;
+    }
+    return '';
   }
 }

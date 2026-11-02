@@ -1,0 +1,149 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import { createRequire } from 'node:module';
+
+const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
+const { transformSync } = require('esbuild');
+const source = fs.readFileSync(new URL('../../entry/src/main/ets/entryability/InsightIntentNoteService.ets', import.meta.url),
+  'utf8');
+
+function extractStaticMethod(name) {
+  const start = source.indexOf(`private static ${name}(`);
+  assert.ok(start >= 0, `could not find ${name}`);
+  const open = source.indexOf('{', start);
+  assert.ok(open > start, `could not find ${name} body`);
+  let depth = 1;
+  let end = open + 1;
+  while (depth > 0 && end < source.length) {
+    if (source[end] === '{') depth++;
+    if (source[end] === '}') depth--;
+    end++;
+  }
+  assert.equal(depth, 0, `could not parse ${name} body`);
+  return source.slice(start, end).replace(`private static ${name}`, `function ${name}`);
+}
+
+const names = ['parseLimit', 'parseOffset', 'parseCursor', 'encodeCursor', 'buildSnippet', 'lineOfOffset',
+  'buildOutline', 'planChunk', 'collectTreeEntries', 'withinDepth', 'relativeDepth', 'countNotesUnder',
+  'inFolder', 'lastSegment', 'isoDate'];
+const methods = names.map(extractStaticMethod).join('\n').replace(/InsightIntentNoteService\./g, '');
+
+const limitsStart = source.indexOf('class XiaoyiToolLimits');
+assert.ok(limitsStart >= 0, 'could not find XiaoyiToolLimits');
+const limitsEnd = source.indexOf('\n}', limitsStart);
+const limits = source.slice(limitsStart, limitsEnd + 2);
+
+const code = transformSync(`${limits}\n${methods}`, { loader: 'ts', format: 'cjs' }).code +
+  `\nmodule.exports = { ${names.join(', ')} };`;
+const module = { exports: {} };
+const compareVaultNames = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+vm.runInContext(code, vm.createContext({ module, exports: module.exports, Error, Date, compareVaultNames }));
+const { parseLimit, parseOffset, parseCursor, encodeCursor, buildSnippet, lineOfOffset, buildOutline,
+  planChunk, collectTreeEntries, withinDepth, relativeDepth, countNotesUnder, inFolder, lastSegment,
+  isoDate } = module.exports;
+
+/** vm realm 产出的数组与宿主数组结构相同但引用不等，比较前先做一次 JSON 往返。 */
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
+// 分页与游标
+assert.equal(parseLimit(undefined, 8, 20, 'limit'), 8);
+assert.equal(parseLimit('3', 8, 20, 'limit'), 3);
+assert.equal(parseLimit(' 12 ', 8, 20, 'limit'), 12);
+assert.throws(() => parseLimit('0', 8, 20, 'limit'), /INVALID_ARGUMENT/);
+assert.throws(() => parseLimit('x', 8, 20, 'limit'), /INVALID_ARGUMENT/);
+assert.throws(() => parseLimit('21', 8, 20, 'limit'), /LIMIT_EXCEEDED/);
+assert.equal(parseOffset(undefined), 0);
+assert.equal(parseOffset(''), 0);
+assert.equal(parseOffset('24'), 24);
+assert.throws(() => parseOffset('-1'), /INVALID_ARGUMENT/);
+assert.equal(parseCursor(undefined), 0);
+assert.equal(parseCursor(''), 0);
+assert.equal(parseCursor(encodeCursor(11)), 11);
+assert.throws(() => parseCursor('nonsense'), /INVALID_ARGUMENT/);
+assert.throws(() => parseCursor('xyo!!'), /INVALID_ARGUMENT/);
+
+// 片段：命中词不被截断
+const long = `${'甲'.repeat(200)}关键词${'乙'.repeat(200)}`;
+const snippet = buildSnippet(long, 200, 3);
+assert.ok(snippet.includes('关键词'), 'snippet must keep the matched term');
+assert.ok(snippet.length <= 165, `snippet too long: ${snippet.length}`);
+assert.ok(snippet.startsWith('…') && snippet.endsWith('…'), 'both sides must be marked as trimmed');
+assert.equal(buildSnippet('短文本', 0, 2), '短文本');
+assert.equal(buildSnippet('短文本', -1, 2), '');
+
+// 行号
+assert.equal(lineOfOffset('a\nb\nc', 0), 1);
+assert.equal(lineOfOffset('a\nb\nc', 3), 2);
+assert.equal(lineOfOffset('a\nb\nc', 99), 3);
+
+// 大纲：frontmatter 与围栏内的标题不计数
+const markdown = ['---', 'title: 笔记', '---', '# 一级', '正文', '```', '# 代码里的井号', '```', '## 二级'].join('\n');
+const outline = buildOutline(markdown);
+assert.deepEqual(plain(outline.map((item) => item.title)), ['一级', '二级']);
+assert.deepEqual(plain(outline.map((item) => item.level)), [1, 2]);
+assert.equal(outline[1].offset, markdown.indexOf('## 二级'));
+
+// 分段：换行对齐、末尾、代理对保护
+const doc = `${'第一行内容\n'.repeat(3)}结尾`;
+const first = planChunk(doc, 0, 12);
+assert.equal(first.end, 12, 'chunk end must align to a line break');
+assert.equal(doc.substring(first.start, first.end), '第一行内容\n第一行内容\n');
+assert.equal(first.hasMore, true);
+assert.equal(planChunk(doc, 3, 12).end, 12, 'a chunk started mid-line still ends on a line break');
+const tail = planChunk(doc, 18, 12);
+assert.equal(tail.hasMore, false);
+assert.equal(doc.substring(tail.start, tail.end), '结尾');
+const emoji = '😀abc';
+assert.equal(planChunk(emoji, 1, 10).start, 0, 'offset inside a surrogate pair must step back');
+assert.equal(planChunk(doc, 999, 10).start, doc.length);
+
+// 目录浏览
+const dirs = ['工作', '工作/周报', '工作/周报/归档'];
+const notes = ['工作/计划.md', '工作/周报/第一篇.md', '工作/周报/归档/旧的.md', '收件箱.md'];
+const shallow = collectTreeEntries(dirs, notes, '', 1);
+assert.deepEqual(plain(shallow.map((entry) => entry.path)), ['工作', '收件箱.md']);
+assert.deepEqual(plain(shallow.map((entry) => entry.type)), ['dir', 'note']);
+assert.equal(shallow[0].childCount, 3);
+assert.equal(shallow[0].name, '工作');
+assert.equal(shallow[1].childCount, 0);
+const deep = collectTreeEntries(dirs, notes, '', 2);
+assert.deepEqual(plain(deep.map((entry) => entry.path)), ['工作', '工作/周报', '工作/计划.md', '收件箱.md']);
+assert.deepEqual(plain(deep.map((entry) => entry.depth)), [1, 2, 2, 1]);
+const scoped = collectTreeEntries(dirs, notes, '工作', 1);
+assert.deepEqual(plain(scoped.map((entry) => entry.path)), ['工作/周报', '工作/计划.md']);
+assert.deepEqual(plain(scoped.map((entry) => entry.depth)), [1, 1]);
+assert.equal(withinDepth('工作/周报', '工作/', 1), true);
+assert.equal(withinDepth('工作/周报/归档', '工作/', 1), false);
+assert.equal(withinDepth('工作/周报/归档', '工作/', 2), true);
+assert.equal(relativeDepth('工作/周报/归档', '工作/'), 2);
+assert.equal(countNotesUnder(notes, '工作/周报'), 2);
+assert.deepEqual(plain(inFolder(notes, '工作/周报')), ['工作/周报/第一篇.md', '工作/周报/归档/旧的.md']);
+assert.deepEqual(plain(inFolder(notes, '')), notes);
+assert.equal(lastSegment('工作/计划.md'), '计划.md');
+assert.equal(isoDate(0), '1970-01-01');
+
+// 源码接线：新只读工具已路由，但不在平台意图清单里（绑定不在本版范围）
+const executor = fs.readFileSync(new URL('../../entry/src/main/ets/entryability/InsightIntentExecutorImpl.ets',
+  import.meta.url), 'utf8');
+const profile = JSON.parse(fs.readFileSync(new URL('../../entry/src/main/resources/base/profile/insight_intent.json',
+  import.meta.url), 'utf8'));
+for (const name of ['SearchNotes', 'ListTree', 'GetLinks']) {
+  assert.ok(source.includes(`name === '${name}'`), `${name} must be dispatched by the note service`);
+  assert.ok(executor.includes(`'${name}'`), `${name} must be routed by the executor`);
+  assert.ok(!profile.insightIntents.some((intent) => intent.intentName === name),
+    `${name} must not be registered as a platform intent in this release`);
+}
+for (const method of ['searchNotes', 'listTree', 'getLinks']) {
+  const start = source.search(new RegExp(`private (?:async )?${method}\\(`));
+  assert.ok(start >= 0, `missing ${method}`);
+  assert.ok(source.slice(start, start + 300).includes('InsightIntentNoteService.resolveVaultId(params, this.registry.currentId())'),
+    `${method} must resolve vaultId with an explicit-current fallback`);
+}
+assert.ok(source.includes('const segmented: boolean ='), 'ReadNote must keep whole-note output when no chunk is requested');
+assert.ok(source.includes('result[\'contentHash\'] = AgentOperationStorage.hashText(content)'),
+  'baseHash must stay a whole-note hash even for a chunk');
+assert.ok(!source.includes('hilog'), 'note content must never reach logs');
+assert.ok(!source.includes('console.'), 'note content must never reach logs');
+
+console.log('v1.16 只读导航工具分页、分段、大纲、目录与链接接线检查通过（不代表平台调用或设备验收）');

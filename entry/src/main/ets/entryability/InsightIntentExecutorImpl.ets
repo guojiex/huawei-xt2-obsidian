@@ -14,8 +14,11 @@ interface VaultSummary {
 export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
   async onExecuteInUIAbilityBackgroundMode(name: string,
     param: Record<string, Object>): Promise<insightIntent.ExecuteResult> {
+    // v1.16：SearchNotes / ListTree / GetLinks 为端侧只读路由；平台工具创建与绑定不在本版范围
+    // （见 docs/releases/v1.16/需求文档.md §3），未登记进 insight_intent.json 前不会被平台调用。
     const isNoteTool: boolean = name === 'QueryNotes' || name === 'ReadNote' || name === 'CreateNote' ||
-      name === 'AppendNote' || name === 'EditNote' || name === 'UndoLastEdit';
+      name === 'AppendNote' || name === 'EditNote' || name === 'UndoLastEdit' ||
+      name === 'SearchNotes' || name === 'ListTree' || name === 'GetLinks';
     if (name !== 'ListVaults' && name !== 'CreateVault' && !isNoteTool) {
       return {
         code: -1,
