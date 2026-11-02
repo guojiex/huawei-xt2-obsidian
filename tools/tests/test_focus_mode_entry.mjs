@@ -9,6 +9,16 @@ const buttonStart = indexSource.indexOf('  FocusModeButton() {');
 const buttonEnd = indexSource.indexOf('\n  @Builder', buttonStart);
 assert.ok(buttonStart >= 0 && buttonEnd > buttonStart, 'could not find FocusModeButton');
 const focusButton = indexSource.slice(buttonStart, buttonEnd);
+const referenceToggleStart = indexSource.indexOf('  private toggleReference(): void {');
+const referenceToggleEnd = indexSource.indexOf('\n  private isReferenceShown(): boolean {', referenceToggleStart);
+assert.ok(referenceToggleStart >= 0 && referenceToggleEnd > referenceToggleStart,
+  'could not find toggleReference');
+const referenceToggle = indexSource.slice(referenceToggleStart, referenceToggleEnd);
+const referenceButtonStart = indexSource.indexOf('  ReferencePaneButton() {');
+const referenceButtonEnd = indexSource.indexOf('\n  @Builder', referenceButtonStart);
+assert.ok(referenceButtonStart >= 0 && referenceButtonEnd > referenceButtonStart,
+  'could not find ReferencePaneButton');
+const referenceButton = indexSource.slice(referenceButtonStart, referenceButtonEnd);
 
 test('native focus entry switches its custom icon, accessible name, hint and selected token', () => {
   assert.match(focusButton, /Icon\(this\.focused \? 'exitFocus' : 'focus'/);
@@ -25,9 +35,13 @@ test('custom icon is used and focus entry replaces split entry for an active two
   assert.match(indexSource, /if \(this\.canToggleFocus\(\)\) \{\s*this\.FocusModeButton\(\)/);
   assert.match(indexSource, /private canToggleFocus\(\): boolean \{\s*if \(this\.focused\) \{\s*return true;/);
   assert.match(indexSource, /const bothPanesOpen: boolean = this\.currentFilePath\.length > 0 && this\.rightFilePath\.length > 0;/);
-  assert.match(indexSource, /if \(this\.isSingleScreenLayout\(\) \|\| this\.experienceMode !== 'professional' \|\| !bothPanesOpen\) \{\s*return false;/);
+  assert.match(indexSource, /if \(this\.isSingleScreenLayout\(\) \|\| !bothPanesOpen\) \{\s*return false;/);
   assert.match(indexSource, /return this\.isReferenceShown\(\);/);
   assert.match(indexSource, /WorkspaceLayoutButton\(\) \{\s*if \(this\.canToggleFocus\(\)\) \{\s*this\.FocusModeButton\(\)\s*\} else if \(!this\.isSingleScreenLayout\(\)\) \{\s*this\.ReferencePaneButton\(\)/);
+  assert.doesNotMatch(indexSource, /openProfessionalReferencePane/);
+  assert.doesNotMatch(referenceToggle, /experienceMode|selectEditorExperience/);
+  assert.doesNotMatch(referenceButton, /experienceMode|切换到专业/);
+  assert.match(indexSource, /private isReferenceShown\(\): boolean \{\s*if \(!this\.referenceVisible \|\| this\.focused\)/);
 });
 
 test('focus preference restoration, explicit toggle, and its current API floor remain wired', () => {

@@ -127,8 +127,14 @@ test('a writeNewBinary name conflict preserves the pre-existing attachment and r
   assert.equal(result, undefined, 'a failed copy must not return a Markdown reference');
 
   const indexSource = fs.readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
-  const importAwaitIndex = indexSource.indexOf('const imported = await NoteImageService.importPickedImage(');
-  const insertReferenceIndex = indexSource.indexOf('bridge.insertText(imported.markdownReference);');
-  assert.ok(importAwaitIndex >= 0 && insertReferenceIndex > importAwaitIndex,
-    'the editor inserts a Markdown reference only after the import promise resolves');
+  const importStart = indexSource.indexOf('  private async pickImageForCurrentNote(');
+  const importEnd = indexSource.indexOf('\n  private statusRightText(', importStart);
+  assert.ok(importStart >= 0 && importEnd > importStart, 'could not find image insertion handler');
+  const imageHandler = indexSource.slice(importStart, importEnd);
+  const importAwaitIndex = imageHandler.indexOf('const imported = await NoteImageService.importPickedImage(');
+  const previewInsertIndex = imageHandler.indexOf('previewBridge.insertText(imported.markdownReference);');
+  const editorInsertIndex = imageHandler.indexOf('editorBridge.insertText(imported.markdownReference);');
+  assert.ok(importAwaitIndex >= 0 && previewInsertIndex > importAwaitIndex && editorInsertIndex > importAwaitIndex,
+    'simple and professional editors insert a Markdown reference only after the import promise resolves');
+  assert.match(imageHandler, /if \(this\.experienceMode === 'simple'\) \{\s*previewBridge\.insertText/);
 });

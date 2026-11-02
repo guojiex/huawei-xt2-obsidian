@@ -520,17 +520,26 @@ struct Index {
   }
 
   private async flushSimplePreviewChanges(): Promise<boolean> {
-    const pane = this.simpleWorkspacePane();
-    const notePath = pane === 'right' ? this.rightFilePath : this.currentFilePath;
-    if (notePath.length === 0) return true;
-    if (!this.previewBridgeForPane(pane).ready) return false;
-    try {
-      await (pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit);
-      const content = await this.previewBridgeForPane(pane).requestEditableContent();
-      return await this.commitSimplePreviewContent(pane, content);
-    } catch {
-      return false;
+    for (const pane of ['left', 'right']) {
+      const notePath = pane === 'right' ? this.rightFilePath : this.currentFilePath;
+      if (notePath.length === 0) {
+        continue;
+      }
+      const preview = this.previewBridgeForPane(pane);
+      if (!preview.ready) {
+        return false;
+      }
+      try {
+        await (pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit);
+        const content = await preview.requestEditableContent();
+        if (!await this.commitSimplePreviewContent(pane, content)) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
     }
+    return true;
   }
 
   private handleSimplePreviewEdit(pane: string, content: string): void {
@@ -781,12 +790,14 @@ struct Index {
   private async waitForInitialWorkspaceSurfaces(): Promise<void> {
     const waits: Array<Promise<void>> = [];
     if (this.notePaneVisible('left')) {
-      waits.push(this.experienceMode === 'simple' || this.smMode === 'edit'
-        ? this.editorBridge.waitUntilReady() : this.previewBridge.waitUntilReady());
+      waits.push(this.experienceMode === 'simple'
+        ? this.previewBridge.waitUntilReady()
+        : this.smMode === 'edit' ? this.editorBridge.waitUntilReady() : this.previewBridge.waitUntilReady());
     }
     if (this.notePaneVisible('right')) {
-      waits.push(this.experienceMode === 'simple' || this.rightEditing
-        ? this.rightEditorBridge.waitUntilReady() : this.rightPreviewBridge.waitUntilReady());
+      waits.push(this.experienceMode === 'simple'
+        ? this.rightPreviewBridge.waitUntilReady()
+        : this.rightEditing ? this.rightEditorBridge.waitUntilReady() : this.rightPreviewBridge.waitUntilReady());
     }
     await Promise.all(waits);
   }
@@ -796,8 +807,8 @@ struct Index {
       return;
     }
     const expectedSurface: string = pane === 'right'
-      ? (this.experienceMode === 'simple' || this.rightEditing ? 'edit' : 'preview')
-      : (this.experienceMode === 'simple' || this.smMode === 'edit' ? 'edit' : 'preview');
+      ? (this.experienceMode === 'simple' || !this.rightEditing ? 'preview' : 'edit')
+      : (this.experienceMode === 'simple' || this.smMode === 'preview' ? 'preview' : 'edit');
     if (surface !== expectedSurface) {
       return;
     }
@@ -1009,9 +1020,6 @@ struct Index {
   }
 
   private notePaneWidth(pane: string): Length {
-    if (this.experienceMode === 'simple') {
-      return this.simpleWorkspacePane() === pane ? '100%' : 0;
-    }
     if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane ? '100%' : 0;
     }
@@ -1031,9 +1039,6 @@ struct Index {
   }
 
   private notePaneVisible(pane: string): boolean {
-    if (this.experienceMode === 'simple') {
-      return this.simpleWorkspacePane() === pane;
-    }
     if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane;
     }
@@ -1915,7 +1920,9 @@ struct Index {
     }
     const chapter: ChapterEntry = this.chapterEntries[index];
     this.selectedChapterIndex = index;
-    if (this.activePane === 'right') {
+    if (this.experienceMode === 'simple') {
+      this.previewBridgeForPane(this.simpleWorkspacePane()).scrollToHeading(index);
+    } else if (this.activePane === 'right') {
       if (this.rightEditing) {
         this.rightEditorBridge.scrollToOffset(chapter.offset);
       } else {
@@ -2023,10 +2030,6 @@ struct Index {
   }
 
   private toggleReference(): void {
-    if (this.experienceMode === 'simple') {
-      void this.openProfessionalReferencePane();
-      return;
-    }
     const show: boolean = this.focused || !this.isReferenceShown();
     if (this.focused) {
       this.focused = false;
@@ -2043,21 +2046,8 @@ struct Index {
     }
   }
 
-  private async openProfessionalReferencePane(): Promise<void> {
-    await this.selectEditorExperience('professional');
-    if (this.experienceMode !== 'professional') {
-      return;
-    }
-    this.focused = false;
-    this.referenceVisible = true;
-    if (this.breakpoint === Breakpoint.MD) {
-      this.setSidebarCollapsed(true);
-    }
-    this.scheduleWorkspaceSessionSave();
-  }
-
   private isReferenceShown(): boolean {
-    if (this.experienceMode === 'simple' || !this.referenceVisible || this.focused) {
+    if (!this.referenceVisible || this.focused) {
       return false;
     }
     if (this.breakpoint === Breakpoint.SM) {
@@ -2074,7 +2064,7 @@ struct Index {
       return true;
     }
     const bothPanesOpen: boolean = this.currentFilePath.length > 0 && this.rightFilePath.length > 0;
-    if (this.isSingleScreenLayout() || this.experienceMode !== 'professional' || !bothPanesOpen) {
+    if (this.isSingleScreenLayout() || !bothPanesOpen) {
       return false;
     }
     return this.isReferenceShown();
@@ -2111,16 +2101,11 @@ struct Index {
   }
 
   private isPaneEditable(pane: string): boolean {
-    const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
     if (this.experienceMode === 'simple') {
-      const selectedPane: string = this.simpleWorkspacePane();
-      if (pane === 'right') {
-        return this.rightEditorBridge.ready && (this.rightComposing ||
-          (selectedPane === 'right' && (!sharedNote || !this.leftComposing)));
-      }
-      return this.editorBridge.ready && (this.leftComposing ||
-        (selectedPane === 'left' && (!sharedNote || !this.rightComposing)));
+      return this.previewBridgeForPane(pane).ready && this.simplePreviewEditable(pane) &&
+        this.paneFilePath(pane).length > 0;
     }
+    const sharedNote: boolean = this.currentFilePath.length > 0 && this.currentFilePath === this.rightFilePath;
     if (pane === 'right') {
       return this.rightEditorBridge.ready && (this.rightComposing || (this.rightEditing &&
         (!sharedNote || (!this.leftComposing && this.activePane === 'right'))));
@@ -4554,10 +4539,8 @@ struct Index {
     .justifyContent(FlexAlign.Center)
     .borderRadius(Radius.icon)
     .backgroundColor(this.isReferenceShown() ? $r('app.color.brand_bg') : Color.Transparent)
-    .accessibilityText(this.focused ? '退出专注并打开双栏' : this.experienceMode === 'simple'
-      ? '切换到专业双栏模式' : this.isReferenceShown() ? '关闭双栏' : '打开双栏')
-    .accessibilityTextHint(this.focused ? '退出专注模式并显示右侧参考栏' : this.experienceMode === 'simple'
-      ? '切换到专业模式并显示右侧参考栏' : '显示或收起右侧参考栏')
+    .accessibilityText(this.isReferenceShown() ? '关闭双栏' : '打开双栏')
+    .accessibilityTextHint('显示或收起右侧参考栏')
     .onClick((): void => {
       this.toggleReference();
     })
@@ -4619,6 +4602,15 @@ struct Index {
       return 'left';
     }
     return this.rightFilePath.length > 0 ? 'right' : this.activePane;
+  }
+
+  private simplePreviewEditable(pane: string): boolean {
+    if (this.experienceMode !== 'simple') {
+      return false;
+    }
+    const sameNote: boolean = this.currentFilePath.length > 0 &&
+      this.currentFilePath === this.rightFilePath;
+    return !sameNote || this.activePane === pane;
   }
 
   @Builder
@@ -4902,49 +4894,37 @@ struct Index {
 
   @Builder
   NoteBody() {
-    if (this.experienceMode === 'simple') {
+    Row() {
       Column() {
-        if (this.simpleWorkspacePane() === 'right') {
-          this.RightWorkspacePane()
-        } else {
-          this.LeftWorkspacePane(false)
-        }
+        this.LeftWorkspacePane(false)
       }
-      .width('100%')
+      .width(this.notePaneWidth('left'))
       .height('100%')
-    } else {
-      Row() {
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width(this.notePaneWidth('left'))
-        .height('100%')
-        .visibility(this.notePaneVisible('left') ? Visibility.Visible : Visibility.Hidden)
+      .visibility(this.notePaneVisible('left') ? Visibility.Visible : Visibility.Hidden)
 
-        SplitHandle({
-          dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
-          dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
-          dragEnded: (): void => { this.endSplitDrag(); },
-          resetRequested: (): void => { this.resetSplitLayout(); }
-        })
-          .width(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible ? Space.s4 : 0)
-          .margin(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
-            ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
-          .enabled(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible)
-          .visibility(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
-            ? Visibility.Visible : Visibility.Hidden)
+      SplitHandle({
+        dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
+        dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
+        dragEnded: (): void => { this.endSplitDrag(); },
+        resetRequested: (): void => { this.resetSplitLayout(); }
+      })
+        .width(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible ? Space.s4 : 0)
+        .margin(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
+          ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
+        .enabled(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible)
+        .visibility(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
+          ? Visibility.Visible : Visibility.Hidden)
 
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width(this.notePaneWidth('right'))
-        .height('100%')
-        .enabled(this.notePaneWidth('right') !== 0)
-        .visibility(this.notePaneVisible('right') ? Visibility.Visible : Visibility.Hidden)
+      Column() {
+        this.RightWorkspacePane()
       }
-      .width('100%')
+      .width(this.notePaneWidth('right'))
       .height('100%')
+      .enabled(this.notePaneWidth('right') !== 0)
+      .visibility(this.notePaneVisible('right') ? Visibility.Visible : Visibility.Hidden)
     }
+    .width('100%')
+    .height('100%')
   }
 
   build() {
@@ -5912,7 +5892,7 @@ struct Index {
               ? Visibility.Visible : Visibility.Hidden)
           PreviewWebView({
             bridge: this.rightPreviewBridge,
-            editable: this.experienceMode === 'simple',
+            editable: this.simplePreviewEditable('right'),
             componentId: 'note-right-preview-web',
             onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
             onScrollPositionChange: (top: number): void => {
@@ -6092,7 +6072,7 @@ struct Index {
       Stack() {
         PreviewWebView({
           bridge: this.previewBridge,
-          editable: this.experienceMode === 'simple',
+          editable: this.simplePreviewEditable('left'),
           componentId: 'note-left-preview-web',
           onReadAsset: (relPath: string): string => {
             return this.readVaultAsset(relPath);

@@ -538,4 +538,25 @@ test('first launch and missing or invalid mode choose simple; explicit professio
   const f=fixture(href);assert.equal(f.run('experience'),'simple');assert.equal(f.run('referenceShown()'),false);assert(f.get('experienceSimple').checked);assert(f.get('window').classList.contains('simple-mode'));
  }
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&dual=1');assert.equal(f.run('experience'),'professional');assert(f.get('experienceProfessional').checked);assert.equal(f.run('referenceShown()'),true);
+ const simpleDual=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=simple&preset=wide&dual=1');assert.equal(simpleDual.run('experience'),'simple');assert.equal(simpleDual.run('referenceShown()'),true);
+});
+
+test('simple split and focus controls change layout without changing editing mode',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=simple&preset=wide&dual=0&vault=reading&left=reading_stream&right=reading_reading_journal&active=left');
+ assert.equal(f.run('experience'),'simple');assert.equal(f.run('referenceShown()'),false);
+ f.get('showRef').onclick();
+ assert.equal(f.run('experience'),'simple');assert.equal(f.run('referenceShown()'),true);
+ assert(f.get('focus').classList.contains('hidden')===false);
+ f.get('focus').onclick();
+ assert(f.run('focused'));assert.equal(f.run('experience'),'simple');
+ f.get('focus').onclick();
+ assert(!f.run('focused'));assert.equal(f.run('experience'),'simple');assert.equal(f.run('referenceShown()'),true);
+});
+
+test('switching to simple mode preserves the open split layout',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=wide&dual=1&vault=reading&left=reading_stream&right=reading_reading_journal&active=left');
+ f.run("changeExperience('simple')");
+ assert.equal(f.run('experience'),'simple');assert.equal(f.run('referenceShown()'),true);
+ f.run("changeExperience('professional')");
+ assert.equal(f.run('experience'),'professional');assert.equal(f.run('referenceShown()'),true);
 });

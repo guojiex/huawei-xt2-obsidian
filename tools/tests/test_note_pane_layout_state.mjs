@@ -24,7 +24,7 @@ const code = transformSync(`
 class PaneLayoutHarness {
   ${method('  private notePaneWidth(pane: string): Length {', '\n  private notePaneVisible(')}
   ${method('  private notePaneVisible(pane: string): boolean {', '\n  private startNavigationDrag(')}
-  simpleWorkspacePane() { return this.activePane; }
+  ${method('  private simplePreviewEditable(pane: string): boolean {', '\n  @Builder\n  PaneModeButton(')}
 }
 module.exports = PaneLayoutHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
@@ -51,23 +51,16 @@ function createHarness(overrides = {}) {
   return app;
 }
 
-test('NoteBody keeps each workspace pane in one stable layout position', () => {
+test('NoteBody uses the same pane layout in simple and professional modes', () => {
   const start = source.indexOf('  NoteBody() {');
   const end = source.indexOf('\n  build() {', start);
   assert.ok(start >= 0 && end > start, 'could not find NoteBody builder');
   const body = source.slice(start, end);
 
-  const simpleStart = body.indexOf("if (this.experienceMode === 'simple') {");
-  const professionalStart = body.indexOf('    } else {\n      Row() {', simpleStart);
-  assert.ok(simpleStart >= 0 && professionalStart > simpleStart);
-  const simple = body.slice(simpleStart, professionalStart);
-  const professional = body.slice(professionalStart);
-  assert.equal((simple.match(/this\.LeftWorkspacePane\(/g) ?? []).length, 1);
-  assert.equal((simple.match(/this\.RightWorkspacePane\(/g) ?? []).length, 1);
-  assert.equal((simple.match(/SplitHandle\(/g) ?? []).length, 0);
-  assert.equal((professional.match(/this\.LeftWorkspacePane\(/g) ?? []).length, 1);
-  assert.equal((professional.match(/this\.RightWorkspacePane\(/g) ?? []).length, 1);
-  assert.equal((professional.match(/SplitHandle\(/g) ?? []).length, 1);
+  assert.doesNotMatch(body, /experienceMode/);
+  assert.equal((body.match(/this\.LeftWorkspacePane\(/g) ?? []).length, 1);
+  assert.equal((body.match(/this\.RightWorkspacePane\(/g) ?? []).length, 1);
+  assert.equal((body.match(/SplitHandle\(/g) ?? []).length, 1);
 });
 
 test('NoteWorkspaceShell keeps one workspace tree under every breakpoint', () => {
@@ -102,6 +95,28 @@ test('sm and focused modes keep only the active pane visible at full width', () 
   assert.equal(focused.notePaneWidth('right'), 0);
   assert.equal(focused.notePaneVisible('left'), true);
   assert.equal(focused.notePaneVisible('right'), false);
+});
+
+test('simple mode can split distinct notes and keeps one editable preview for the same note', () => {
+  const split = createHarness({
+    breakpoint: Breakpoint.LG,
+    experienceMode: 'simple',
+    currentFilePath: 'left.md',
+    rightFilePath: 'right.md',
+    referenceVisible: true
+  });
+  assert(split.notePaneWidth('left') > 0);
+  assert(split.notePaneWidth('right') > 0);
+  assert.equal(split.simplePreviewEditable('left'), true);
+  assert.equal(split.simplePreviewEditable('right'), true);
+
+  split.rightFilePath = split.currentFilePath;
+  split.activePane = 'right';
+  assert.equal(split.simplePreviewEditable('left'), false);
+  assert.equal(split.simplePreviewEditable('right'), true);
+
+  split.experienceMode = 'professional';
+  assert.equal(split.simplePreviewEditable('right'), false);
 });
 
 test('md animates from one available pane to two panes as navigation collapses', () => {

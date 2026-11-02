@@ -238,12 +238,17 @@ test('navigation widths interpolate with sidebar progress and focused mode resto
     sidebarProgress: 0.5,
     focused: false,
     referenceVisible: true,
-    activePane: 'left'
+    activePane: 'left',
+    experienceMode: 'simple'
   });
 
   assert.equal(app.noteNavigationProgress(), 0.5);
   assert.equal(app.noteContentWidth(), 1020);
   assert.equal(app.notePaneWidth('left') + app.notePaneWidth('right'), 1020);
+  assert(app.notePaneWidth('left') > 0);
+  assert(app.notePaneWidth('right') > 0);
+  assert.equal(app.notePaneVisible('left'), true);
+  assert.equal(app.notePaneVisible('right'), true);
   assert.equal(app.drawerNavigationWidth(), 300);
 
   app.focused = true;

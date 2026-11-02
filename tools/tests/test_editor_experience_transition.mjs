@@ -18,6 +18,7 @@ function extract(startMarker, endMarker) {
 const methods = [
   extract('  private async selectEditorExperience(', '\n  private setShowLineNumbers('),
   extract('  private async refreshSharedEditability(): Promise<void> {', '\n  private toggleActivePane()'),
+  extract('  private previewBridgeForPane(pane: string): PreviewBridge {', '\n  private synchronizePreviewFollowContext('),
   extract('  private simpleWorkspacePane(): string {', '\n  @Builder\n  PaneModeButton('),
   extract('  private activeFilePath(): string {', '\n  private activeEditorBridge(): EditorBridge {')
 ];
@@ -51,9 +52,27 @@ function createHarness() {
     rightEditing: false,
     editorExperienceStore: { save: (mode) => { calls.push('save:' + mode); return true; } },
     flushWorkspaceSaves: async () => { calls.push('flush'); return true; },
+    refreshPreviewsForExperienceMode: async () => {},
     refreshSharedEditability: async () => { calls.push('refresh'); },
-    editorBridge: { ready: true, setEditable: async () => {}, blur() {} },
-    rightEditorBridge: { ready: true, setEditable: async () => {}, blur() {} }
+    notePaneWidth: () => 500,
+    editorBridge: {
+      ready: true,
+      getContent: async () => 'left source',
+      replaceContentFromPreview: async () => {},
+      setEditable: async () => {},
+      blur() {}
+    },
+    rightEditorBridge: {
+      ready: true,
+      getContent: async () => 'right source',
+      replaceContentFromPreview: async () => {},
+      setEditable: async () => {},
+      blur() {}
+    },
+    previewBridge: { ready: true, requestEditableContent: async () => 'left source' },
+    rightPreviewBridge: { ready: true, requestEditableContent: async () => 'right source' },
+    leftSimplePreviewCommit: Promise.resolve(),
+    rightSimplePreviewCommit: Promise.resolve()
   });
   return app;
 }
