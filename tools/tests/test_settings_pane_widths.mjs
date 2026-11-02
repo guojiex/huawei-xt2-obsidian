@@ -6,14 +6,34 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
+// md 分支的宽度由 PaneLayout.mdPaneWidths 统一计算，这里加载真实实现而不是复制一份公式。
+const paneLayoutRaw = fs.readFileSync(
+  new URL('../../entry/src/main/ets/model/PaneLayout.ets', import.meta.url), 'utf8');
+const paneLayoutCode = transformSync(
+  paneLayoutRaw.replace(/^import[\s\S]*?from\s+'[^']+';\s*$/gm, ''),
+  { loader: 'ts', format: 'cjs' }
+).code;
+const paneLayoutSandbox = {
+  module: { exports: {} },
+  Size: { paneMinW: 240 },
+  Space: { s4: 16 },
+  Breakpoint: { SM: 'sm', MD: 'md', LG: 'lg', MD_THRESHOLD_VP: 600, LG_THRESHOLD_VP: 840 }
+};
+vm.runInContext(paneLayoutCode, vm.createContext(paneLayoutSandbox));
+const { mdPaneWidths } = paneLayoutSandbox.module.exports;
+
 const indexSource = fs.readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
 const methodStart = indexSource.indexOf('  private settingsPaneWidthSummary(): string {');
-const methodEnd = indexSource.indexOf('\n  private notePaneWidth(', methodStart);
+const methodEnd = indexSource.indexOf('\n  private mdPaneWidth(', methodStart);
 assert.ok(methodStart >= 0 && methodEnd > methodStart, 'could not find Index.settingsPaneWidthSummary');
 const method = indexSource.slice(methodStart, methodEnd).trim();
 const code = transformSync(`class SettingsWidthHarness {
   noteNavigationWidth() { return this.navigationWidth; }
   noteContentRatio() { return this.contentRatio; }
+  mdPaneWidth() {
+    return mdPaneWidths(this.windowWidthVp, this.noteNavigationWidth(),
+      this.sidebarProgress, this.contentRatio);
+  }
   isSingleScreenLayout() { return this.breakpoint === Breakpoint.SM || this.singleLandscape; }
   ${method}
 }; module.exports = SettingsWidthHarness;`, {
@@ -24,7 +44,7 @@ const code = transformSync(`class SettingsWidthHarness {
 const Breakpoint = { SM: 'sm', MD: 'md', LG: 'lg' };
 
 function createHarness(options = {}) {
-  const context = vm.createContext({ module: { exports: {} }, Breakpoint });
+  const context = vm.createContext({ module: { exports: {} }, Breakpoint, mdPaneWidths });
   vm.runInContext(code, context);
   const app = new context.module.exports();
   Object.assign(app, {
@@ -94,7 +114,9 @@ test('medium navigation transition reports the currently visible pane widths', (
     sidebarProgress: 0.5,
     navigationWidth: 304
   });
-  assert.equal(app.settingsPaneWidthSummary(), '目录 19.0% · 左栏 56.0% · 右栏 25.0%');
+  // 目录推入到一半：目录占 152/800，剩余 648 按等分再按「推入进度」收右栏 ——
+  // 以前右栏按窗口宽算（200），现在按剩余内容宽算（162），三段始终守恒。
+  assert.equal(app.settingsPaneWidthSummary(), '目录 19.0% · 左栏 60.8% · 右栏 20.3%');
 });
 
 test('a single visible wide pane reports the unused right column as zero', () => {

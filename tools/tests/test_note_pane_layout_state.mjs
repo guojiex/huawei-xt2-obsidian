@@ -5,8 +5,25 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
+import fs from 'node:fs';
 import { readSourceFile } from './lib/source.mjs';
 const source = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+
+// md 分支的宽度现在由 PaneLayout.mdPaneWidths 统一计算，测试跑真实实现而非复制公式。
+const paneLayoutCode = transformSync(
+  readSourceFile(new URL('../../entry/src/main/ets/model/PaneLayout.ets', import.meta.url))
+    .replace(/^import[\s\S]*?from\s+'[^']+';\s*$/gm, ''),
+  { loader: 'ts', format: 'cjs' }
+).code;
+const paneLayoutModule = { exports: {} };
+vm.runInContext(paneLayoutCode, vm.createContext({
+  module: paneLayoutModule,
+  exports: paneLayoutModule.exports,
+  Size: { paneMinW: 240 },
+  Space: { s4: 16 },
+  Breakpoint: { SM: 'sm', MD: 'md', LG: 'lg', MD_THRESHOLD_VP: 600, LG_THRESHOLD_VP: 840 }
+}));
+const { mdPaneWidths } = paneLayoutModule.exports;
 const breakpointSource = readSourceFile(new URL('../../entry/src/main/ets/model/Breakpoint.ets', import.meta.url));
 const breakpointCode = transformSync(breakpointSource, { loader: 'ts', format: 'cjs' }).code;
 const breakpointModule = { exports: {} };
@@ -22,6 +39,10 @@ function method(startMarker, endMarker) {
 
 const code = transformSync(`
 class PaneLayoutHarness {
+  mdPaneWidth() {
+    return mdPaneWidths(this.windowWidthVp, this.navigationWidthVp,
+      this.sidebarProgress, this.noteContentRatio());
+  }
   ${method('  private notePaneWidth(pane: string): Length {', '\n  private notePaneVisible(')}
   ${method('  private notePaneVisible(pane: string): boolean {', '\n  private startNavigationDrag(')}
   ${method('  private simplePreviewEditable(pane: string): boolean {', '\n  @Builder\n  PaneModeButton(')}
@@ -31,7 +52,8 @@ module.exports = PaneLayoutHarness;
 
 function createHarness(overrides = {}) {
   const module = { exports: {} };
-  vm.runInContext(code, vm.createContext({ module, exports: module.exports, Breakpoint }));
+  vm.runInContext(code,
+    vm.createContext({ module, exports: module.exports, Breakpoint, mdPaneWidths }));
   const app = new module.exports();
   Object.assign(app, {
     breakpoint: Breakpoint.SM,
@@ -126,9 +148,11 @@ test('md animates from one available pane to two panes as navigation collapses',
   assert.equal(withNavigation.notePaneVisible('left'), true);
   assert.equal(withNavigation.notePaneVisible('right'), true);
 
+  // 目录收起后 md 也按 contentRatio 分栏（0.4）：以前是硬编码 500/500，
+  // 不读偏好，所以设置页的「恢复等分栏宽」在双屏下点了没有反应。
   const split = createHarness({ breakpoint: Breakpoint.MD, sidebarCollapsed: true, sidebarProgress: 0 });
-  assert.equal(split.notePaneWidth('left'), 500);
-  assert.equal(split.notePaneWidth('right'), 500);
+  assert.equal(split.notePaneWidth('left'), 400);
+  assert.equal(split.notePaneWidth('right'), 600);
   assert.equal(split.notePaneVisible('left'), true);
   assert.equal(split.notePaneVisible('right'), true);
 

@@ -55,7 +55,7 @@ import { EditorExperienceStore } from '../model/EditorExperienceStore';
 import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from '../model/PreviewFollowPolicy';
 import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
-  DEFAULT_CONTENT_RATIO, clampContentRatio, clampNavigationWidth,
+  DEFAULT_CONTENT_RATIO, MdPaneWidths, clampContentRatio, clampNavigationWidth, mdPaneWidths,
   isSingleLandscapeWindow, navigationWidth
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
@@ -996,6 +996,7 @@ struct Index {
       return '—';
     }
     const singleScreenLayout: boolean = this.isSingleScreenLayout();
+    const mdWidths: MdPaneWidths = this.mdPaneWidth();
     const navigationVisible: boolean = !singleScreenLayout &&
       !this.sidebarCollapsed && !this.focused;
     const sidebarWidth: number = navigationVisible
@@ -1007,8 +1008,8 @@ struct Index {
       leftWidth = this.activePane === 'left' ? totalWidth : 0;
       rightWidth = this.activePane === 'right' ? totalWidth : 0;
     } else if (this.breakpoint === Breakpoint.MD) {
-      rightWidth = this.referenceVisible ? totalWidth * 0.5 * (1 - this.sidebarProgress) : 0;
-      leftWidth = Math.max(0, contentWidth - rightWidth);
+      leftWidth = this.referenceVisible ? mdWidths.left : contentWidth;
+      rightWidth = this.referenceVisible ? mdWidths.right : 0;
     } else if (this.breakpoint === Breakpoint.LG && this.referenceVisible) {
       leftWidth = contentWidth * this.noteContentRatio();
       rightWidth = contentWidth - leftWidth;
@@ -1017,17 +1018,38 @@ struct Index {
     return '目录 ' + percent(sidebarWidth) + ' · 左栏 ' + percent(leftWidth) + ' · 右栏 ' + percent(rightWidth);
   }
 
+  /**
+   * md（物理双屏）等屏布局的三段宽度：NoteBody 的两栏宽度、
+   * settingsPaneWidthSummary 的「当前栏宽」共用同一算法，
+   * 避免「显示的数字」和「实际的栏宽」两套结果。
+   *
+   * ⚠️ 这里以前是硬编码「右栏 = 窗口宽 × 50% ×(1-目录进度)」，完全不读 contentRatio，
+   * 所以设置页的「恢复等分栏宽」在双屏下点了毫无变化（2026-11-02 修复）。
+   */
+  private mdPaneWidth(): MdPaneWidths {
+    return mdPaneWidths(this.windowWidthVp, this.noteNavigationWidth(),
+      this.sidebarProgress, this.contentRatio);
+  }
+
+  /**
+   * 正文分隔条是否可用：双屏（md）与三屏（lg）都能拖动左右栏比例。
+   * md 以前只有硬编码 50%，既不能拖，设置页的「恢复等分栏宽」也就无从恢复。
+   */
+  private contentHandleVisible(): boolean {
+    return (this.breakpoint === Breakpoint.LG || this.breakpoint === Breakpoint.MD) &&
+      !this.focused && this.referenceVisible;
+  }
+
   private notePaneWidth(pane: string): Length {
     if (this.isSingleScreenLayout() || this.focused) {
       return this.activePane === pane ? '100%' : 0;
     }
     if (this.breakpoint === Breakpoint.MD) {
-      const rightWidth: number = this.referenceVisible
-        ? this.windowWidthVp * 0.5 * (1 - this.sidebarProgress) : 0;
+      const widths: MdPaneWidths = this.mdPaneWidth();
       if (pane === 'right') {
-        return rightWidth;
+        return this.referenceVisible ? widths.right : 0;
       }
-      return this.referenceVisible ? this.noteContentWidth() - rightWidth : this.noteContentWidth();
+      return this.referenceVisible ? widths.left : this.noteContentWidth();
     }
     if (pane === 'right') {
       return this.referenceVisible ? this.noteContentWidth() * (1 - this.noteContentRatio()) : 0;
@@ -1087,11 +1109,16 @@ struct Index {
   }
 
   private resetSplitLayout(): void {
+    const alreadyDefault: boolean = this.navigationRatio < 0 &&
+      Math.abs(this.contentRatio - DEFAULT_CONTENT_RATIO) < 0.001;
     this.navigationRatio = -1;
     this.contentRatio = DEFAULT_CONTENT_RATIO;
     this.ensureSplitLayoutStore();
     (this.splitLayoutStore as SplitLayoutStore).reset();
     this.scheduleWorkspaceSessionSave();
+    // 重置发生在设置页（内容区被整体替换），栏宽变化当场看不见，必须给反馈，
+    // 否则「点了没反应」和「点了没生效」无法区分。
+    promptAction.showToast({ message: alreadyDefault ? '栏宽已是等分' : '已恢复等分栏宽' });
   }
 
   private setSidebarCollapsed(collapsed: boolean): void {
@@ -4904,12 +4931,10 @@ struct Index {
         dragEnded: (): void => { this.endSplitDrag(); },
         resetRequested: (): void => { this.resetSplitLayout(); }
       })
-        .width(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible ? Space.s4 : 0)
-        .margin(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
-          ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
-        .enabled(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible)
-        .visibility(this.breakpoint === Breakpoint.LG && !this.focused && this.referenceVisible
-          ? Visibility.Visible : Visibility.Hidden)
+        .width(this.contentHandleVisible() ? Space.s4 : 0)
+        .margin(this.contentHandleVisible() ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
+        .enabled(this.contentHandleVisible())
+        .visibility(this.contentHandleVisible() ? Visibility.Visible : Visibility.Hidden)
 
       Column() {
         this.RightWorkspacePane()
@@ -5412,168 +5437,6 @@ struct Index {
       onSelectChapter: (index: number): void => { this.selectChapter(index); },
       onOpenOtherPane: (relPath: string): void => { this.openFileInOtherPane(relPath); }
     })
-  }
-
-  /** Single-screen note navigation pushes the full-width editor/preview rail. */
-  @Builder
-  SmContent() {
-    Row() {
-      Column() {
-        this.NoteNavigation(true)
-      }
-      .width(Size.drawerW)
-      .height('100%')
-      .margin({ left: -Size.drawerW * (1 - this.drawerProgress) })
-      .enabled(this.drawerOpen)
-      .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-      Stack({ alignContent: Alignment.Start }) {
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
-      }
-      .width('100%')
-      .height('100%')
-      .translate({ x: Size.drawerW * this.drawerProgress })
-      .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-    }
-    .width('100%')
-    .height('100%')
-    .clip(true)
-  }
-
-  @Builder
-  SingleLandscapeContent() {
-    Row() {
-      Column() {
-        this.NoteNavigation(false)
-      }
-      .width(this.noteNavigationWidth())
-      .height('100%')
-      .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
-      .enabled(!this.sidebarCollapsed)
-      .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-      SplitHandle({
-        dragStarted: (): void => { this.startNavigationDrag(false); },
-        dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
-        dragEnded: (): void => { this.endSplitDrag(); },
-        resetRequested: (): void => { this.resetSplitLayout(); }
-      })
-        .width(Space.s4 * this.sidebarProgress)
-        .margin({ left: -Space.s2 * this.sidebarProgress,
-          right: -Space.s2 * this.sidebarProgress })
-        .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-      Stack({ alignContent: Alignment.Start }) {
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'left' ? Visibility.Visible : Visibility.Hidden)
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width('100%')
-        .height('100%')
-        .visibility(this.activePane === 'right' ? Visibility.Visible : Visibility.Hidden)
-      }
-      .width(Math.max(0, this.windowWidthVp - this.noteNavigationWidth() * this.sidebarProgress))
-      .height('100%')
-      .clip(true)
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  /** md/lg：物理双屏保留等屏布局，lg 使用共享导航和内容分隔条。 */
-  @Builder
-  WideContent() {
-    Row() {
-      if (this.breakpoint === Breakpoint.MD) {
-        Column() {
-          this.NoteNavigation(false)
-        }
-        .width('50%')
-        .height('100%')
-        .margin({ left: -this.windowWidthVp * 0.5 * (1 - this.sidebarProgress) })
-        .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width(this.windowWidthVp * 0.5)
-        .height('100%')
-
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width(this.windowWidthVp * 0.5 * (1 - this.sidebarProgress))
-        .height('100%')
-        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-      } else {
-        Column() {
-          this.NoteNavigation(false)
-        }
-        .width(this.noteNavigationWidth())
-        .height('100%')
-        .margin({ left: -this.noteNavigationWidth() * (1 - this.sidebarProgress) })
-        .enabled(!this.sidebarCollapsed)
-        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-        SplitHandle({
-          dragStarted: (): void => { this.startNavigationDrag(false); },
-          dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
-          dragEnded: (): void => { this.endSplitDrag(); },
-          resetRequested: (): void => { this.resetSplitLayout(); }
-        })
-          .width(Space.s4 * this.sidebarProgress)
-          .margin({ left: -Space.s2 * this.sidebarProgress,
-            right: -Space.s2 * this.sidebarProgress })
-          .enabled(!this.sidebarCollapsed)
-          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-        Column() {
-          this.LeftWorkspacePane(false)
-        }
-        .width(this.noteContentWidth() * this.noteContentRatio())
-        .height('100%')
-        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-        SplitHandle({
-          dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
-          dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
-          dragEnded: (): void => { this.endSplitDrag(); },
-          resetRequested: (): void => { this.resetSplitLayout(); }
-        })
-          .width(Space.s4)
-          .margin({ left: -Space.s2, right: -Space.s2 })
-          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-
-        Column() {
-          this.RightWorkspacePane()
-        }
-        .width(this.noteContentWidth() * (1 - this.noteContentRatio()))
-        .height('100%')
-        .border({ width: { left: 1 }, color: $r('app.color.line') })
-        .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
-      }
-    }
-    .width('100%')
-    .height('100%')
-    .clip(true)
   }
 
   @Builder
