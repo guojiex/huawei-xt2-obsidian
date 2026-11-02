@@ -33,7 +33,7 @@ test('v2 about card shows the generated feedback email and does not render a dev
   const settings = prototypeSettingsData();
   assert.equal(settings.developerName, config.developerName);
   assert.equal(settings.feedbackEmail, config.feedbackEmail);
-  assert.match(prototype, /反馈邮箱 <a id="aboutContactEmail"><\/a>/);
+  assert.match(prototype, /反馈邮箱<\/span>[\s\S]*?<a id="aboutContactEmail"/);
   assert.doesNotMatch(prototype, /id="settingsDeveloper"|textContent=settingsData\.developerName/);
   assert.match(prototype, /id="aboutContactEmail"/);
   assert.match(prototype, /\$\('aboutContactEmail'\)\.textContent=settingsData\.feedbackEmail/);
