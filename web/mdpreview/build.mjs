@@ -174,6 +174,8 @@ const html = `<!doctype html>
   #content a { color: var(--blue); text-decoration: none; }
   #content input[type="checkbox"] { accent-color: var(--blue); width: 15px; height: 15px; vertical-align: -2px; margin-right: var(--s1); }
   #content .empty { color: var(--muted); font-size: var(--small); text-align: center; margin-top: var(--s10); }
+  #content .empty[contenteditable="true"] { min-height: var(--body); }
+  #content .empty:empty::before { content: attr(data-placeholder); }
 </style>
 <style>
 ${katexCss}

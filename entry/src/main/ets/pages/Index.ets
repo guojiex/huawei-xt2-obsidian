@@ -240,6 +240,8 @@ struct Index {
   @State showLineNumbers: boolean = false;
   @State followPreviewEnabled: boolean = true;
   @State experienceMode: EditorExperienceMode = DEFAULT_EDITOR_EXPERIENCE;
+  private leftSimplePreviewCommit: Promise<void> = Promise.resolve();
+  private rightSimplePreviewCommit: Promise<void> = Promise.resolve();
   private previewFollowPairKey: string = '';
   private previewFollowPane: string = '';
   @State @Watch('onFormatContextChanged') activePane: string = 'left';
@@ -438,6 +440,10 @@ struct Index {
       promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
       return;
     }
+    if (this.experienceMode === 'simple' && !await this.flushSimplePreviewChanges()) {
+      promptAction.showToast({ message: '简单模式的正文尚未同步，编辑模式未更改' });
+      return;
+    }
     const targetVaultId: string = this.currentVaultId;
     const targetLeftPath: string = this.currentFilePath;
     const targetRightPath: string = this.rightFilePath;
@@ -465,9 +471,96 @@ struct Index {
     this.rightOpenRequestId++;
     this.ensureEditorExperienceStore();
     this.experienceMode = mode;
+    void this.refreshPreviewsForExperienceMode();
     void this.refreshSharedEditability();
     if (!(this.editorExperienceStore as EditorExperienceStore).save(mode)) {
       promptAction.showToast({ message: '模式已切换，但偏好保存失败；重启后无法保证保留本次选择' });
+    }
+  }
+
+  private async commitSimplePreviewContent(pane: string, content: string): Promise<boolean> {
+    if (this.experienceMode !== 'simple') return false;
+    const vaultId = this.currentVaultId;
+    const notePath = pane === 'right' ? this.rightFilePath : this.currentFilePath;
+    const requestId = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    if (vaultId.length === 0 || notePath.length === 0) return false;
+    const editor = this.editorBridgeForPane(pane);
+    let current: string = '';
+    try {
+      current = await editor.getContent();
+    } catch {
+      return false;
+    }
+    if (vaultId !== this.currentVaultId || notePath !== (pane === 'right' ? this.rightFilePath : this.currentFilePath) ||
+      requestId !== (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) ||
+      this.experienceMode !== 'simple') {
+      return false;
+    }
+    if (current === content) return true;
+    await editor.replaceContentFromPreview(content);
+    if (vaultId !== this.currentVaultId || notePath !== (pane === 'right' ? this.rightFilePath : this.currentFilePath) ||
+      requestId !== (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) ||
+      this.experienceMode !== 'simple') {
+      return false;
+    }
+    this.resetSaveFeedback();
+    WorkspaceEditGuard.mark(pane, vaultId, notePath);
+    if (pane === 'right') {
+      this.rightEditorDirty = true;
+      this.rightEditorLen = content.length;
+      this.scheduleRightSave();
+      void this.syncRightContentToLeft();
+    } else {
+      this.editorDirty = true;
+      this.editorLen = content.length;
+      this.scheduleSave();
+      void this.syncLeftContentToRight();
+    }
+    return true;
+  }
+
+  private async flushSimplePreviewChanges(): Promise<boolean> {
+    const pane = this.simpleWorkspacePane();
+    const notePath = pane === 'right' ? this.rightFilePath : this.currentFilePath;
+    if (notePath.length === 0) return true;
+    if (!this.previewBridgeForPane(pane).ready) return false;
+    try {
+      await (pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit);
+      const content = await this.previewBridgeForPane(pane).requestEditableContent();
+      return await this.commitSimplePreviewContent(pane, content);
+    } catch {
+      return false;
+    }
+  }
+
+  private handleSimplePreviewEdit(pane: string, content: string): void {
+    const previous = pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit;
+    const next = previous.then(async (): Promise<void> => {
+      await this.commitSimplePreviewContent(pane, content);
+    }).catch((): void => {
+      hilog.warn(DOMAIN, TAG, '简单模式正文同步失败');
+    });
+    if (pane === 'right') {
+      this.rightSimplePreviewCommit = next;
+    } else {
+      this.leftSimplePreviewCommit = next;
+    }
+  }
+
+  private async refreshPreviewsForExperienceMode(): Promise<void> {
+    if (this.currentFilePath.length > 0 && this.editorBridge.ready) {
+      try {
+        this.pushPreview(await this.editorBridge.getContent(), true);
+      } catch {
+        hilog.warn(DOMAIN, TAG, '切换编辑模式后刷新左侧预览失败');
+      }
+    }
+    if (this.rightFilePath.length > 0 && this.rightEditorBridge.ready) {
+      try {
+        this.pushRightPreview(await this.rightEditorBridge.getContent(), true);
+      } catch {
+        hilog.warn(DOMAIN, TAG, '切换编辑模式后刷新右侧预览失败');
+      }
     }
   }
 
@@ -2289,6 +2382,14 @@ struct Index {
     if (!this.isPaneEditable(pane)) {
       return;
     }
+    if (this.experienceMode === 'simple') {
+      if (kind === 'inlineCode' || kind === 'code' || kind === 'link') {
+        promptAction.showToast({ message: '此格式请在专业模式编辑' });
+        return;
+      }
+      this.previewBridgeForPane(pane).applyFormat(kind);
+      return;
+    }
     const bridge: EditorBridge = pane === 'right' ? this.rightEditorBridge : this.editorBridge;
     bridge.applyFormat(kind);
   }
@@ -2739,9 +2840,10 @@ struct Index {
     this.rightLastPreviewText = text;
     if (this.currentVaultId.length > 0 && this.rightFilePath.length > 0) {
       const files: string[] = WikiLinkService.files(VaultRegistry.get(), this.currentVaultId);
-      this.rightPreviewBridge.setContent(WikiLinkParser.renderForPreview(text, this.rightFilePath, files));
+      const rendered = WikiLinkParser.renderForPreviewWithSourceMap(text, this.rightFilePath, files);
+      this.rightPreviewBridge.setContent(rendered.markdown, text, rendered.edits);
     } else {
-      this.rightPreviewBridge.setContent(text);
+      this.rightPreviewBridge.setContent(text, text);
     }
   }
 
@@ -3078,9 +3180,10 @@ struct Index {
     this.lastPreviewText = text;
     if (this.currentVaultId.length > 0 && this.currentFilePath.length > 0) {
       const files: string[] = WikiLinkService.files(VaultRegistry.get(), this.currentVaultId);
-      this.previewBridge.setContent(WikiLinkParser.renderForPreview(text, this.currentFilePath, files));
+      const rendered = WikiLinkParser.renderForPreviewWithSourceMap(text, this.currentFilePath, files);
+      this.previewBridge.setContent(rendered.markdown, text, rendered.edits);
     } else {
-      this.previewBridge.setContent(text);
+      this.previewBridge.setContent(text, text);
     }
   }
 
@@ -3229,7 +3332,8 @@ struct Index {
   private async pickImageForCurrentNote(pane: string = 'left'): Promise<void> {
     const isRight: boolean = pane === 'right';
     const notePath: string = isRight ? this.rightFilePath : this.currentFilePath;
-    const bridge: EditorBridge = isRight ? this.rightEditorBridge : this.editorBridge;
+    const editorBridge: EditorBridge = isRight ? this.rightEditorBridge : this.editorBridge;
+    const previewBridge: PreviewBridge = isRight ? this.rightPreviewBridge : this.previewBridge;
     if (this.imagePickerBusy || this.rightImagePickerBusy) {
       return;
     }
@@ -3237,7 +3341,7 @@ struct Index {
       promptAction.showToast({ message: '请先打开一篇笔记' });
       return;
     }
-    if (!bridge.ready) {
+    if (this.experienceMode === 'simple' ? !previewBridge.ready : !editorBridge.ready) {
       promptAction.showToast({ message: '编辑器尚未就绪，请稍后重试' });
       return;
     }
@@ -3274,7 +3378,11 @@ struct Index {
         promptAction.showToast({ message: '笔记已切换，图片未插入' });
         return;
       }
-      bridge.insertText(imported.markdownReference);
+      if (this.experienceMode === 'simple') {
+        previewBridge.insertText(imported.markdownReference);
+      } else {
+        editorBridge.insertText(imported.markdownReference);
+      }
     } catch (error) {
       const err = error as BusinessError;
       promptAction.showToast({ message: err.message.length > 0 ? '图片导入失败：' + err.message : '图片导入失败' });
@@ -5495,14 +5603,14 @@ struct Index {
       }
       .width('100%')
       .height('100%')
-      .visibility(this.experienceMode === 'simple' || this.smMode === 'edit'
+      .visibility(this.experienceMode === 'professional' && this.smMode === 'edit'
         ? Visibility.Visible : Visibility.Hidden)
       Column() {
         this.PreviewPane()
       }
       .width('100%')
       .height('100%')
-      .visibility(this.experienceMode === 'professional' && this.smMode === 'preview'
+      .visibility(this.experienceMode === 'simple' || this.smMode === 'preview'
         ? Visibility.Visible : Visibility.Hidden)
     }
     .width('100%')
@@ -5800,10 +5908,12 @@ struct Index {
           })
             .width('100%')
             .height('100%')
-            .visibility(this.experienceMode === 'simple' || this.rightEditing
+            .visibility(this.experienceMode === 'professional' && this.rightEditing
               ? Visibility.Visible : Visibility.Hidden)
           PreviewWebView({
             bridge: this.rightPreviewBridge,
+            editable: this.experienceMode === 'simple',
+            componentId: 'note-right-preview-web',
             onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
             onScrollPositionChange: (top: number): void => {
               this.updateWorkspaceScroll('right', 'preview', top);
@@ -5814,6 +5924,15 @@ struct Index {
               }
             },
             onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
+            onEditableContentChange: (content: string): void => {
+              this.handleSimplePreviewEdit('right', content);
+            },
+            onCompositionChange: (composing: boolean): void => {
+              this.onRightCompositionChange(composing);
+            },
+            onLockedContentTap: (): void => {
+              promptAction.showToast({ message: '此内容请在专业模式编辑' });
+            },
             onError: (msg: string): void => {
               hilog.error(DOMAIN, TAG, '右栏预览 Web 加载失败');
               this.handleInitialWorkspaceSurfaceError('right', 'preview');
@@ -5821,7 +5940,7 @@ struct Index {
           })
             .width('100%')
             .height('100%')
-            .visibility(this.experienceMode === 'professional' && !this.rightEditing
+            .visibility(this.experienceMode === 'simple' || !this.rightEditing
               ? Visibility.Visible : Visibility.Hidden)
           if (this.rightFilePath.length === 0) {
             this.EmptyPane()
@@ -5916,6 +6035,10 @@ struct Index {
             this.handleInitialWorkspaceSurfaceError('left', 'edit');
           }
         })
+          .width('100%')
+          .height('100%')
+          .visibility(this.experienceMode === 'professional' && this.smMode === 'edit'
+            ? Visibility.Visible : Visibility.Hidden)
 
         if (showHingeWarning) {
           // 被内容横跨的折痕：红色虚线竖标（零宽 Column + 左边框）
@@ -5959,14 +6082,18 @@ struct Index {
   @Builder
   PreviewPane() {
     Column() {
-      this.PaneHead({ pane: 'left' })
-      this.PaneTitle({ pane: 'left' })
+      if (this.experienceMode === 'professional') {
+        this.PaneHead({ pane: 'left' })
+        this.PaneTitle({ pane: 'left' })
+      }
       if (this.backlinksExpanded && this.backlinksPane === 'left') {
         this.BacklinkPanel()
       }
       Stack() {
         PreviewWebView({
           bridge: this.previewBridge,
+          editable: this.experienceMode === 'simple',
+          componentId: 'note-left-preview-web',
           onReadAsset: (relPath: string): string => {
             return this.readVaultAsset(relPath);
           },
@@ -5981,6 +6108,15 @@ struct Index {
           onWikiLinkClick: (target: string): void => {
             void this.handleWikiLinkClick(target);
           },
+          onEditableContentChange: (content: string): void => {
+            this.handleSimplePreviewEdit('left', content);
+          },
+          onCompositionChange: (composing: boolean): void => {
+            this.onLeftCompositionChange(composing);
+          },
+          onLockedContentTap: (): void => {
+            promptAction.showToast({ message: '此内容请在专业模式编辑' });
+          },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '预览 Web 加载失败');
             this.handleInitialWorkspaceSurfaceError('left', 'preview');
@@ -5994,6 +6130,9 @@ struct Index {
       }
       .layoutWeight(1)
       .width('100%')
+      if (this.experienceMode === 'simple' && this.currentFilePath.length > 0) {
+        this.FormatToolbar('left')
+      }
     }
     .width('100%')
     .height('100%')

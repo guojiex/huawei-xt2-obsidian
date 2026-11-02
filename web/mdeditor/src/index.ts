@@ -59,6 +59,7 @@ declare global {
  */
 interface MdEditorApi {
   setContent(b64: string, documentRevision: number, vaultIdB64: string, noteDirB64: string): void
+  replaceContentFromPreview(b64: string, expectedRevision: number): void
   /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
   requestContent(reqId: number): void
@@ -790,6 +791,23 @@ const api: MdEditorApi = {
       v.dispatch({
         changes: { from: 0, to: v.state.doc.length, insert: text },
         // 设置内容不是用户编辑，不进 undo 历史
+        annotations: []
+      })
+    } finally {
+      applyingContent = false
+    }
+  },
+
+  replaceContentFromPreview(b64: string, expectedRevision: number): void {
+    if (expectedRevision !== documentRevision) return
+    const normalizedText = normalizeEditorText(b64decode(b64))
+    documentLineEnding = normalizedText.lineEnding
+    const v = ensureView()
+    changeNotification.cancel()
+    applyingContent = true
+    try {
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: normalizedText.text },
         annotations: []
       })
     } finally {

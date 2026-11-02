@@ -19,6 +19,18 @@ export interface WikiLinkCandidate {
   insertTarget: string;
 }
 
+export interface WikiLinkPreviewEdit {
+  displayStart: number;
+  displayEnd: number;
+  sourceStart: number;
+  sourceEnd: number;
+}
+
+export interface WikiLinkPreviewContent {
+  markdown: string;
+  edits: WikiLinkPreviewEdit[];
+}
+
 /** Parser and resolver for the v1.2 current-vault wikilink subset. */
 export class WikiLinkParser {
   static parse(markdown: string): WikiLinkReference[] {
@@ -189,10 +201,19 @@ export class WikiLinkParser {
   }
 
   static renderForPreview(markdown: string, sourcePath: string, files: string[]): string {
+    return WikiLinkParser.renderForPreviewWithSourceMap(markdown, sourcePath, files).markdown;
+  }
+
+  static renderForPreviewWithSourceMap(markdown: string, sourcePath: string,
+    files: string[]): WikiLinkPreviewContent {
     const references: WikiLinkReference[] = WikiLinkParser.parse(markdown);
-    let result: string = markdown;
-    for (let i = references.length - 1; i >= 0; i--) {
+    let result: string = '';
+    let sourceCursor: number = 0;
+    const edits: WikiLinkPreviewEdit[] = [];
+    for (let i = 0; i < references.length; i++) {
       const reference: WikiLinkReference = references[i];
+      result += markdown.substring(sourceCursor, reference.start);
+      const displayStart: number = result.length;
       const resolution: WikiLinkResolution = WikiLinkParser.resolve(reference.target, sourcePath, files);
       const label: string = reference.alias.length > 0
         ? reference.alias : WikiLinkParser.displayLabel(reference.target);
@@ -211,9 +232,13 @@ export class WikiLinkParser {
           WikiLinkParser.escapeHtml(label) + '</a>' +
           (state.length > 0 ? '<small class="wiki-link-state">' + state + '</small>' : '');
       }
-      result = result.substring(0, reference.start) + html + result.substring(reference.end);
+      result += html;
+      edits.push({ displayStart: displayStart, displayEnd: result.length,
+        sourceStart: reference.start, sourceEnd: reference.end });
+      sourceCursor = reference.end;
     }
-    return result;
+    result += markdown.substring(sourceCursor);
+    return { markdown: result, edits: edits };
   }
 
   private static displayLabel(target: string): string {

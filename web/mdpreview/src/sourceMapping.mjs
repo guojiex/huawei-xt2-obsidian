@@ -10,11 +10,24 @@ function trimTrailingLineBreaks(text) {
 }
 
 /** Render each visible top-level Markdown token in a layout-transparent source wrapper. */
-export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0) {
+function sourcePositionForDisplayOffset(displayOffset, edits, isEnd) {
+  let delta = 0
+  for (const edit of edits) {
+    if (displayOffset <= edit.displayStart) return displayOffset - delta
+    if (displayOffset < edit.displayEnd) return isEnd ? edit.sourceEnd : edit.sourceStart
+    if (displayOffset === edit.displayEnd) return edit.sourceEnd
+    delta += (edit.displayEnd - edit.displayStart) - (edit.sourceEnd - edit.sourceStart)
+  }
+  return displayOffset - delta
+}
+
+export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceOffset = 0,
+  sourceEdits = [], displayOffset = 0) {
   const tokens = marked.lexer(markdown)
   const htmlParts = []
   const blocks = []
   let line = Math.max(0, Math.floor(lineOffset)) + 1
+  let sourceOffsetInBody = 0
 
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]
@@ -29,12 +42,19 @@ export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0) {
       tokenList.links = tokens.links
       const html = marked.parser(tokenList)
       if (html.trim().length > 0) {
+        const displayStart = displayOffset + sourceOffsetInBody
+        const displayEnd = displayStart + raw.length
+        const sourceStart = sourceEdits.length > 0
+          ? sourcePositionForDisplayOffset(displayStart, sourceEdits, false) : sourceOffset + sourceOffsetInBody
+        const sourceEnd = sourceEdits.length > 0
+          ? sourcePositionForDisplayOffset(displayEnd, sourceEdits, true) : sourceStart + raw.length
         htmlParts.push(`<div class="preview-source-block" data-source-start-line="${startLine}" data-source-end-line="${endLine}">${html}</div>`)
-        blocks.push({ tokenIndex: index, startLine, endLine })
+        blocks.push({ tokenIndex: index, startLine, endLine, sourceStart, sourceEnd, type: token.type })
       }
     }
 
     line += lineBreaks(raw)
+    sourceOffsetInBody += raw.length
   }
 
   return { html: htmlParts.join(''), blocks }

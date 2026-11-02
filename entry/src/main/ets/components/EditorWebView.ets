@@ -86,6 +86,16 @@ class EditorImpl {
     }
   }
 
+  async replaceContentFromPreview(text: string, documentRevision: number): Promise<void> {
+    const payload = BridgeCodec.encode(text);
+    const script = `window.__mdeditor.replaceContentFromPreview('${payload}',${documentRevision})`;
+    if (this.readyFlag) {
+      await this.controller.runJavaScript(script);
+    } else {
+      this.pending.push(script);
+    }
+  }
+
   setDocumentRevision(documentRevision: number): void {
     this.documentRevision = documentRevision;
   }
@@ -287,6 +297,14 @@ export class EditorBridge {
       if (this.documentRevision === revision) {
         this.loadedDocumentRevision = revision;
       }
+    }
+  }
+
+  async replaceContentFromPreview(text: string): Promise<void> {
+    this.initialContent = text;
+    this.hasInitialContent = true;
+    if (this.impl) {
+      await this.impl.replaceContentFromPreview(text, this.documentRevision);
     }
   }
 

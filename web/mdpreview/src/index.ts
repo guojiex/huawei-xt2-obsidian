@@ -26,13 +26,21 @@ declare global {
       onImageViewerChange?: (state: string) => void
       onShareCaptureResult?: (payload: string) => void
       onWorkspaceScroll?: (top: number) => void
+    onEditableContentChange?: (contentB64: string) => void
+    onEditableContent?: (id: number, contentB64: string) => void
+    onCompositionChange?: (state: string) => void
+      onLockedContentTap?: () => void
     }
   }
 }
 
 /** 给 ArkTS 侧看的 API 面（setContent/setNoteDir 走 base64，避免引号/换行转义地狱） */
 interface MdPreviewApi {
-  setContent(b64: string): void
+  setContent(b64: string, sourceB64?: string, sourceMapB64?: string): void
+  setEditable(editable: boolean): void
+  applyFormat(kind: string): void
+  insertText(b64: string): void
+  flushEditableContent(id: number): void
   setNoteDir(b64: string): void
   setTheme(theme: string): void
   resetDocument(): void
@@ -67,6 +75,12 @@ function b64decode(b64: string): string {
 
 /** 当前笔记所在目录（库内相对，'' = 根目录）—— 相对图片引用的解析基准 */
 let noteDir = ''
+let sourceText = ''
+let sourceEdits: Array<{ displayStart: number; displayEnd: number; sourceStart: number; sourceEnd: number }> = []
+let editable = false
+let editableChangeTimer: number | undefined
+let editableComposing = false
+let savedEditableSelection: Range | null = null
 let mermaidRender: Promise<void> = Promise.resolve()
 let mermaidRenderGeneration = 0
 
@@ -455,6 +469,229 @@ function nextRenderedFrame(): Promise<void> {
   })
 }
 
+function notifyEditableContentChange(): void {
+  if (!editable || editableComposing) return
+  if (editableChangeTimer !== undefined) window.clearTimeout(editableChangeTimer)
+  editableChangeTimer = window.setTimeout(() => {
+    editableChangeTimer = undefined
+    const arkts = window.__arkts
+    if (arkts && typeof arkts.onEditableContentChange === 'function') {
+      arkts.onEditableContentChange(b64encode(sourceText))
+    }
+  }, 180)
+}
+
+function markdownText(text: string): string {
+  return text.replace(/([\\`*_{}\[\]<>#+.!|~])/g, '\\$1')
+}
+
+function serializeInline(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return markdownText(node.textContent ?? '')
+  if (!(node instanceof HTMLElement)) return ''
+  if (node.dataset.sourceMarkdown) return node.dataset.sourceMarkdown
+  if (node.tagName === 'INPUT') return ''
+  if (node.tagName === 'BR') return '  \n'
+  const children = Array.from(node.childNodes).map((child) => serializeInline(child)).join('')
+  if (node.tagName === 'STRONG' || node.tagName === 'B') return `**${children}**`
+  if (node.tagName === 'EM' || node.tagName === 'I') return `*${children}*`
+  if (node.tagName === 'DEL' || node.tagName === 'S') return `~~${children}~~`
+  return children
+}
+
+function serializeList(list: HTMLElement, ordered: boolean): string {
+  const items = list.querySelectorAll(':scope > li')
+  const rows: string[] = []
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index]
+    const checkbox = item.querySelector(':scope > input[type="checkbox"]') as HTMLInputElement | null
+    const nested = item.querySelector(':scope > ul, :scope > ol') as HTMLElement | null
+    const clone = item.cloneNode(true) as HTMLElement
+    clone.querySelector(':scope > input[type="checkbox"]')?.remove()
+    clone.querySelector(':scope > ul, :scope > ol')?.remove()
+    const text = serializeInline(clone).trim()
+    const marker = checkbox ? (checkbox.checked ? '- [x] ' : '- [ ] ') :
+      (ordered ? `${index + 1}. ` : '- ')
+    rows.push(marker + text)
+    if (nested) {
+      rows.push(...serializeList(nested, nested.tagName === 'OL').split('\n').map((line) => '  ' + line))
+    }
+  }
+  return rows.join('\n')
+}
+
+function serializeEditedBlock(block: HTMLElement): string {
+  const children = Array.from(block.children).filter((child) => !child.classList.contains('preview-edit-hint'))
+  if (children.length === 0) return serializeInline(block).trim()
+  const rendered = children.map((child) => {
+    const element = child as HTMLElement
+    if (/^H[1-6]$/.test(element.tagName)) {
+      return `${'#'.repeat(Number(element.tagName.slice(1)))} ${serializeInline(element).trim()}`
+    }
+    if (element.tagName === 'UL' || element.tagName === 'OL') {
+      return serializeList(element, element.tagName === 'OL')
+    }
+    if (element.tagName === 'BLOCKQUOTE') {
+      return serializeEditedBlock(element).split('\n').map((line) => `> ${line}`).join('\n')
+    }
+    if (element.tagName === 'P') return serializeInline(element).trim()
+    if (element.tagName === 'DIV') return serializeInline(element).trim()
+    return serializeInline(element).trim()
+  }).filter((text) => text.length > 0)
+  return rendered.join('\n\n')
+}
+
+function containsLockedSyntax(block: HTMLElement): boolean {
+  const from = Number(block.dataset.sourceFrom)
+  const to = Number(block.dataset.sourceTo)
+  const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from
+    ? sourceText.slice(from, to) : ''
+  return block.textContent?.includes('[[') === true ||
+    block.querySelector('a, img, code, pre, details, .callout, .math-error, .mermaid-block') !== null ||
+    /%%|\[\^[^\]]+\]|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m.test(raw)
+}
+
+function editableElementFor(block: HTMLElement): HTMLElement | null {
+  if (block.classList.contains('empty')) return block
+  const child = block.firstElementChild
+  if (!(child instanceof HTMLElement)) return null
+  if (/^(P|H[1-6]|UL|OL|BLOCKQUOTE|DIV)$/.test(child.tagName)) return child
+  return null
+}
+
+function sourceBlockForNode(node: Node | null): HTMLElement | null {
+  const element = node instanceof HTMLElement ? node : node?.parentElement
+  return element?.closest('.preview-source-block, .empty[data-source-from]') as HTMLElement | null;
+}
+
+function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
+  const previousEditables = root.querySelectorAll('[data-simple-editable="true"]')
+  for (let index = 0; index < previousEditables.length; index++) {
+    const element = previousEditables[index] as HTMLElement
+    element.removeAttribute('contenteditable')
+    element.removeAttribute('aria-label')
+    element.removeAttribute('data-simple-editable')
+  }
+  const blocks = root.querySelectorAll('.preview-source-block')
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index] as HTMLElement
+    block.removeAttribute('contenteditable')
+    block.removeAttribute('aria-label')
+    block.removeAttribute('data-edit-locked')
+    const type = block.dataset.sourceType ?? ''
+    const supported = type === 'paragraph' || type === 'heading' || type === 'list' || type === 'blockquote'
+    if (!editable) continue
+    if (!supported || containsLockedSyntax(block)) {
+      block.dataset.editLocked = 'true'
+      block.setAttribute('aria-label', '此内容请在专业模式编辑')
+      continue
+    }
+    if (editableElementFor(block)) {
+      block.setAttribute('contenteditable', 'true')
+      block.setAttribute('data-simple-editable', 'true')
+      block.setAttribute('aria-label', '可编辑正文')
+    }
+  }
+
+  let empty = root.querySelector('.empty') as HTMLElement | null
+  if (editable && !empty && root.querySelector('.preview-source-block') === null) {
+    empty = document.createElement('div')
+    empty.className = 'empty'
+    empty.dataset.placeholder = '在此输入正文'
+    empty.dataset.simpleGenerated = 'true'
+    root.appendChild(empty)
+  } else if (!editable && empty?.dataset.simpleGenerated === 'true') {
+    empty.remove()
+    return
+  }
+  if (empty && editable) {
+    empty.setAttribute('contenteditable', 'true')
+    empty.setAttribute('data-simple-editable', 'true')
+    empty.dataset.sourceFrom = String(bodyOffset)
+    empty.dataset.sourceTo = String(sourceText.length)
+    empty.dataset.sourceType = 'paragraph'
+  } else if (empty) {
+    empty.removeAttribute('contenteditable')
+    empty.removeAttribute('data-simple-editable')
+    delete empty.dataset.sourceFrom
+    delete empty.dataset.sourceTo
+    delete empty.dataset.sourceType
+  }
+}
+
+function replaceSourceBlock(block: HTMLElement): void {
+  const from = Number(block.dataset.sourceFrom)
+  const to = Number(block.dataset.sourceTo)
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from || to > sourceText.length) return
+  const previous = sourceText.slice(from, to)
+  const suffix = /(?:\r?\n)*$/.exec(previous)?.[0] ?? ''
+  const replacement = serializeEditedBlock(block).replace(/(?:\r?\n)*$/, '') + suffix
+  sourceText = sourceText.slice(0, from) + replacement + sourceText.slice(to)
+  const delta = replacement.length - (to - from)
+  block.dataset.sourceTo = String(from + replacement.length)
+  const blocks = document.querySelectorAll('.preview-source-block, .empty[data-source-from]')
+  for (let index = 0; index < blocks.length; index++) {
+    const other = blocks[index] as HTMLElement
+    if (other === block) continue
+    const otherFrom = Number(other.dataset.sourceFrom)
+    const otherTo = Number(other.dataset.sourceTo)
+    if (otherFrom >= to) {
+      other.dataset.sourceFrom = String(otherFrom + delta)
+      other.dataset.sourceTo = String(otherTo + delta)
+    }
+  }
+  notifyEditableContentChange()
+}
+
+contentElement.addEventListener('compositionstart', (): void => {
+  if (!editable) return
+  editableComposing = true
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onCompositionChange === 'function') arkts.onCompositionChange('start')
+})
+contentElement.addEventListener('compositionend', (): void => {
+  if (!editable) return
+  editableComposing = false
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onCompositionChange === 'function') arkts.onCompositionChange('end')
+  const target = sourceBlockForNode(window.getSelection()?.anchorNode ?? document.activeElement)
+  if (target) replaceSourceBlock(target)
+  else notifyEditableContentChange()
+})
+contentElement.addEventListener('beforeinput', (event: InputEvent): void => {
+  if (!editable) return
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  const startBlock = sourceBlockForNode(range.startContainer)
+  const endBlock = sourceBlockForNode(range.endContainer)
+  if (startBlock !== endBlock) event.preventDefault()
+})
+contentElement.addEventListener('input', (event: Event): void => {
+  if (!editable || editableComposing) return
+  const target = event.target instanceof HTMLElement
+    ? event.target.closest('.preview-source-block, .empty[data-source-from]') as HTMLElement | null : null
+  if (target) replaceSourceBlock(target)
+})
+document.addEventListener('selectionchange', (): void => {
+  if (!editable) return
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return
+  const range = selection.getRangeAt(0)
+  if (sourceBlockForNode(range.startContainer)) {
+    savedEditableSelection = range.cloneRange()
+  }
+})
+
+contentElement.addEventListener('click', (event: MouseEvent): void => {
+  if (!editable || !(event.target instanceof HTMLElement)) return
+  if (event.target.closest('a, input, img, button')) return
+  const lockedBlock = event.target.closest('.preview-source-block[data-edit-locked="true"]')
+  const arkts = window.__arkts
+  if (lockedBlock && arkts && typeof arkts.onLockedContentTap === 'function') {
+    arkts.onLockedContentTap()
+  }
+})
+
 async function renderMermaidBlocks(root: HTMLElement, generation: number): Promise<void> {
   const blocks = root.querySelectorAll('.mermaid-block')
   for (let i = 0; i < blocks.length; i++) {
@@ -484,8 +721,14 @@ async function renderMermaidBlocks(root: HTMLElement, generation: number): Promi
 marked.setOptions({ gfm: true, breaks: false })
 
 const api: MdPreviewApi = {
-  setContent(b64: string): void {
+  setContent(b64: string, sourceB64?: string, sourceMapB64?: string): void {
     const text = b64decode(b64)
+    sourceText = sourceB64 === undefined ? text : b64decode(sourceB64)
+    try {
+      sourceEdits = sourceMapB64 === undefined ? [] : JSON.parse(b64decode(sourceMapB64))
+    } catch {
+      sourceEdits = []
+    }
     const el = document.getElementById('content') as HTMLElement
     workspaceScrollRestoreGeneration++
     workspaceScrollRestorePending = false
@@ -494,24 +737,37 @@ const api: MdPreviewApi = {
       workspaceScrollTimer = undefined
     }
     const split = splitFrontmatter(text)
+    const sourceSplit = splitFrontmatter(sourceText)
     const tagsHtml = renderNoteTags(text)
-    const bodyOffset = text.substring(0, text.length - split.body.length).split('\n').length - 1
+    const bodyOffset = text.length - split.body.length
+    const bodyLineOffset = text.substring(0, bodyOffset).split('\n').length - 1
+    const sourceBodyOffset = sourceText.length - sourceSplit.body.length
     const renderedBody = split.body.trim().length === 0
       ? { html: '', blocks: [] }
-      : renderMarkdownWithSourceBlocks(split.body, bodyOffset)
+      : renderMarkdownWithSourceBlocks(split.body, bodyLineOffset, sourceBodyOffset, sourceEdits, bodyOffset)
     const bodyHtml = renderedBody.html
     if (tagsHtml.length === 0 && bodyHtml.length === 0) {
       mermaidRenderGeneration++
       mermaidRender = Promise.resolve()
-      el.innerHTML = '<div class="empty">空笔记</div>'
+      el.innerHTML = '<div class="empty" data-placeholder="空笔记"></div>'
       sourceBlockGeometry = []
       observeSourceBlocks()
+      configureEditableBlocks(el, bodyOffset)
       updateImageBounds()
       console.log('[mdpreview] setContent: empty')
       return
     }
     el.innerHTML = tagsHtml + bodyHtml
+    const sourceBlocks = el.querySelectorAll('.preview-source-block')
+    for (let index = 0; index < sourceBlocks.length && index < renderedBody.blocks.length; index++) {
+      const block = sourceBlocks[index] as HTMLElement
+      const source = renderedBody.blocks[index]
+      block.dataset.sourceFrom = String(source.sourceStart)
+      block.dataset.sourceTo = String(source.sourceEnd)
+      block.dataset.sourceType = source.type
+    }
     observeSourceBlocks()
+    configureEditableBlocks(el, bodyOffset)
     const headings = el.querySelectorAll('h1,h2,h3,h4,h5,h6')
     for (let i = 0; i < headings.length; i++) {
       headings[i].setAttribute('data-chapter-index', String(i))
@@ -525,6 +781,114 @@ const api: MdPreviewApi = {
 
   setNoteDir(b64: string): void {
     noteDir = b64decode(b64)
+  },
+
+  setEditable(value: boolean): void {
+    editable = value
+    const split = splitFrontmatter(sourceText)
+    const bodyOffset = sourceText.length - split.body.length
+    configureEditableBlocks(contentElement, bodyOffset)
+  },
+
+  applyFormat(kind: string): void {
+    if (!editable || editableComposing) return
+    const allowed = ['paragraph', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'list', 'ordered', 'task', 'quote']
+    if (!allowed.includes(kind)) return
+    const selection = window.getSelection()
+    if (!selection) return
+    if (savedEditableSelection) {
+      selection.removeAllRanges()
+      selection.addRange(savedEditableSelection)
+    }
+    const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+    const start = range?.startContainer instanceof HTMLElement ? range.startContainer : range?.startContainer.parentElement
+    const block = sourceBlockForNode(start ?? null)
+    const target = block ? editableElementFor(block) : null
+    if (!block || !target || !target.isContentEditable) return
+    const commands: Record<string, string> = {
+      paragraph: 'P', h1: 'H1', h2: 'H2', h3: 'H3', h4: 'H4', h5: 'H5', h6: 'H6', quote: 'BLOCKQUOTE'
+    }
+    if (kind === 'task') {
+      let item = start?.closest('li') as HTMLElement | null
+      if (!item) {
+        document.execCommand('insertUnorderedList')
+        const current = window.getSelection()?.anchorNode
+        item = (current instanceof HTMLElement ? current : current?.parentElement)?.closest('li') as HTMLElement | null
+      }
+      if (item) {
+        let checkbox = item.querySelector(':scope > input[type="checkbox"]') as HTMLInputElement | null
+        if (!checkbox) {
+          checkbox = document.createElement('input')
+          checkbox.type = 'checkbox'
+          checkbox.disabled = true
+          item.insertBefore(checkbox, item.firstChild)
+        } else {
+          checkbox.checked = !checkbox.checked
+        }
+      }
+    } else if (kind === 'bold') document.execCommand('bold')
+    else if (kind === 'italic') document.execCommand('italic')
+    else if (kind === 'list') document.execCommand('insertUnorderedList')
+    else if (kind === 'ordered') document.execCommand('insertOrderedList')
+    else document.execCommand('formatBlock', false, commands[kind])
+    const updatedTarget = editableElementFor(block)
+    replaceSourceBlock(block)
+    if (updatedTarget) block.focus()
+  },
+
+  insertText(b64: string): void {
+    if (!editable || editableComposing) return
+    const text = b64decode(b64)
+    const selection = window.getSelection()
+    if (!selection) return
+    if (savedEditableSelection) {
+      selection.removeAllRanges()
+      selection.addRange(savedEditableSelection)
+    }
+    if (selection.rangeCount === 0) return
+    const range = selection.getRangeAt(0)
+    const block = sourceBlockForNode(range.startContainer)
+    const target = block ? editableElementFor(block) : null
+    if (!block || !target || !target.isContentEditable) return
+    const imageMatch = /^!\[([^\]]*)\]\((.+)\)$/.exec(text)
+    if (imageMatch) {
+      range.deleteContents()
+      const wrapper = document.createElement('span')
+      wrapper.className = 'preview-simple-inserted-image'
+      wrapper.contentEditable = 'false'
+      wrapper.dataset.sourceMarkdown = text
+      const image = document.createElement('img')
+      image.alt = imageMatch[1]
+      image.src = imageMatch[2]
+      wrapper.appendChild(image)
+      range.insertNode(wrapper)
+      range.setStartAfter(wrapper)
+      range.collapse(true)
+      selection.removeAllRanges()
+      selection.addRange(range)
+      localizeImages(block)
+      replaceSourceBlock(block)
+      return
+    }
+    range.deleteContents()
+    const node = document.createTextNode(text)
+    range.insertNode(node)
+    range.setStartAfter(node)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    replaceSourceBlock(block)
+  },
+
+  flushEditableContent(id: number): void {
+    if (editableChangeTimer !== undefined) {
+      window.clearTimeout(editableChangeTimer)
+      editableChangeTimer = undefined
+    }
+    const arkts = window.__arkts
+    if (arkts && typeof arkts.onEditableContent === 'function') {
+      arkts.onEditableContent(id, b64encode(sourceText))
+    }
   },
 
   setTheme(theme: string): void {

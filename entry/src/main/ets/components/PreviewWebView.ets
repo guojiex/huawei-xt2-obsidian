@@ -17,6 +17,7 @@ import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BridgeCodec } from '../common/BridgeCodec';
 import { FontSize } from '../common/Tokens';
 import { PreviewFollowAnchor } from '../model/PreviewFollowPolicy';
+import { WikiLinkPreviewEdit } from '../model/WikiLinkParser';
 
 export interface PreviewCaptureResult {
   scrollHeight: number;
@@ -31,6 +32,12 @@ interface CaptureWaiter {
   timerId: number;
 }
 
+interface ContentWaiter {
+  resolve: (content: string) => void;
+  reject: (error: Error) => void;
+  timerId: number;
+}
+
 const PREVIEW_DOMAIN = 0x0000;
 const PREVIEW_TAG = 'PreviewWebView';
 
@@ -41,6 +48,10 @@ class PreviewNativeProxy {
   shareCaptureHandler: (payload: string) => void = (payload: string) => {};
   wikiLinkClickHandler: (targetB64: string) => void = (_targetB64: string) => {};
   workspaceScrollHandler: (top: number) => void = (_top: number) => {};
+  editableContentHandler: (contentB64: string) => void = (_contentB64: string) => {};
+  editableContentRequestHandler: (id: number, contentB64: string) => void = (_id: number, _contentB64: string) => {};
+  compositionHandler: (state: string) => void = (_state: string) => {};
+  lockedContentTapHandler: () => void = () => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -60,6 +71,22 @@ class PreviewNativeProxy {
 
   onWorkspaceScroll(top: number): void {
     this.workspaceScrollHandler(top);
+  }
+
+  onEditableContentChange(contentB64: string): void {
+    this.editableContentHandler(contentB64);
+  }
+
+  onEditableContent(id: number, contentB64: string): void {
+    this.editableContentRequestHandler(id, contentB64);
+  }
+
+  onCompositionChange(state: string): void {
+    this.compositionHandler(state);
+  }
+
+  onLockedContentTap(): void {
+    this.lockedContentTapHandler();
   }
 
 }
@@ -92,10 +119,30 @@ class PreviewImpl {
     this.readyFlag = true;
   }
 
-  setContent(text: string): void {
+  setContent(text: string, sourceText: string, sourceEdits: WikiLinkPreviewEdit[]): void {
     // 空串直通（BridgeCodec）：空笔记是常态，util.Base64Helper 对空输入会抛错
     const payload = BridgeCodec.encode(text);
-    this.enqueue(`window.__mdpreview.setContent('${payload}')`);
+    const sourcePayload = BridgeCodec.encode(sourceText);
+    const mapPayload = BridgeCodec.encode(JSON.stringify(sourceEdits));
+    this.enqueue(`window.__mdpreview.setContent('${payload}','${sourcePayload}','${mapPayload}')`);
+  }
+
+  setEditable(editable: boolean): void {
+    this.enqueue(`window.__mdpreview.setEditable(${editable})`);
+  }
+
+  applyFormat(kind: string): void {
+    const allowed = ['paragraph', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'list', 'ordered', 'task', 'quote'];
+    if (allowed.includes(kind)) this.enqueue(`window.__mdpreview.applyFormat('${kind}')`);
+  }
+
+  insertText(text: string): void {
+    const payload = BridgeCodec.encode(text);
+    this.enqueue(`window.__mdpreview.insertText('${payload}')`);
+  }
+
+  requestEditableContent(id: number): void {
+    this.enqueue(`window.__mdpreview.flushEditableContent(${id})`);
   }
 
   resetDocument(): void {
@@ -175,6 +222,9 @@ export class PreviewBridge {
   private unavailable: boolean = false;
   private readyWaiters: Array<() => void> = [];
   private content: string = '';
+  private sourceContent: string = '';
+  private sourceEdits: WikiLinkPreviewEdit[] = [];
+  private editable: boolean = false;
   private hasContent: boolean = false;
   private workspaceScrollTop: number = 0;
   private hasWorkspaceScrollTop: boolean = false;
@@ -182,14 +232,20 @@ export class PreviewBridge {
   private theme: string = 'light';
   private captureWaiters: Map<number, CaptureWaiter> = new Map<number, CaptureWaiter>();
   private nextCaptureId: number = 1;
+  private contentWaiters: Map<number, ContentWaiter> = new Map<number, ContentWaiter>();
+  private nextContentId: number = 1;
+  onEditableContentChange: (content: string) => void = (_content: string) => {};
+  onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
+  onLockedContentTap: () => void = () => {};
 
   bind(impl: PreviewImpl): void {
     this.impl = impl;
     this.unavailable = false;
     impl.setNoteDir(this.noteDir);
     impl.setTheme(this.theme);
+    impl.setEditable(this.editable);
     if (this.hasContent) {
-      impl.setContent(this.content);
+      impl.setContent(this.content, this.sourceContent, this.sourceEdits);
     }
     if (this.hasWorkspaceScrollTop) {
       impl.restoreScrollTop(this.workspaceScrollTop);
@@ -227,10 +283,65 @@ export class PreviewBridge {
     }
   }
 
-  setContent(text: string): void {
+  setContent(text: string, sourceText: string = text, sourceEdits: WikiLinkPreviewEdit[] = []): void {
     this.content = text;
+    this.sourceContent = sourceText;
+    this.sourceEdits = sourceEdits;
     this.hasContent = true;
-    this.impl?.setContent(text);
+    this.impl?.setContent(text, sourceText, sourceEdits);
+  }
+
+  setEditable(editable: boolean): void {
+    this.editable = editable;
+    this.impl?.setEditable(editable);
+  }
+
+  applyFormat(kind: string): void {
+    this.impl?.applyFormat(kind);
+  }
+
+  insertText(text: string): void {
+    this.impl?.insertText(text);
+  }
+
+  requestEditableContent(): Promise<string> {
+    const id = this.nextContentId++;
+    return new Promise<string>((resolve: (content: string) => void, reject: (error: Error) => void): void => {
+      const timerId = setTimeout((): void => {
+        this.contentWaiters.delete(id);
+        reject(new Error('等待正文编辑内容超时'));
+      }, 3000);
+      this.contentWaiters.set(id, { resolve: resolve, reject: reject, timerId: timerId });
+      this.impl?.requestEditableContent(id);
+    });
+  }
+
+  handleEditableContent(id: number, contentB64: string): void {
+    const waiter = this.contentWaiters.get(id);
+    if (!waiter) return;
+    this.contentWaiters.delete(id);
+    clearTimeout(waiter.timerId);
+    try {
+      const content = BridgeCodec.decode(contentB64);
+      this.sourceContent = content;
+      waiter.resolve(content);
+    } catch {
+      waiter.reject(new Error('读取正文编辑内容失败'));
+    }
+  }
+
+  handleEditableContentChange(contentB64: string): void {
+    try {
+      const content = BridgeCodec.decode(contentB64);
+      this.sourceContent = content;
+      this.onEditableContentChange(content);
+    } catch {
+      hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '正文编辑内容解码失败');
+    }
+  }
+
+  handleCompositionChange(state: string): void {
+    this.onCompositionChange(state === 'start');
   }
 
   setNoteDir(dir: string): void {
@@ -370,6 +481,7 @@ export class PreviewBridge {
 export struct PreviewWebView {
   /** 由 EntryAbility 跟随系统颜色模式写入。 */
   @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
+  @Prop @Watch('onEditableChanged') editable: boolean = false;
   @State private pageReady: boolean = false;
   @State private loadFailed: boolean = false;
   /** 读库内图片 → data URI（找不到/读失败返回空串，Web 侧显示「图片不存在」） */
@@ -382,6 +494,9 @@ export struct PreviewWebView {
   onScrollPositionChange: (top: number) => void = (top: number) => {};
   /** Web 页面桥接就绪。 */
   onReady: () => void = () => {};
+  onEditableContentChange: (content: string) => void = (_content: string) => {};
+  onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
+  onLockedContentTap: () => void = () => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
   componentId: string = 'note-preview-web';
   /** 父级通过这个句柄下发渲染内容 / 笔记目录 / 主题 */
@@ -406,6 +521,25 @@ export struct PreviewWebView {
     this.proxy.workspaceScrollHandler = (top: number): void => {
       this.onScrollPositionChange(top);
     };
+    this.proxy.editableContentHandler = (contentB64: string): void => {
+      this.bridge.handleEditableContentChange(contentB64);
+    };
+    this.proxy.editableContentRequestHandler = (id: number, contentB64: string): void => {
+      this.bridge.handleEditableContent(id, contentB64);
+    };
+    this.proxy.compositionHandler = (state: string): void => {
+      this.bridge.handleCompositionChange(state);
+    };
+    this.proxy.lockedContentTapHandler = (): void => {
+      this.onLockedContentTap();
+    };
+    this.bridge.onEditableContentChange = (content: string): void => {
+      this.onEditableContentChange(content);
+    };
+    this.bridge.onCompositionChange = (composing: boolean): void => {
+      this.onCompositionChange(composing);
+    };
+    this.bridge.setEditable(this.editable);
     // JS 桥收的是 base64（避免引号/换行转义），这里解开再交给父级回调
     this.proxy.readAssetHandler = (relB64: string): string => {
       try {
@@ -423,6 +557,10 @@ export struct PreviewWebView {
 
   onThemeChanged(): void {
     this.bridge.setTheme(this.theme);
+  }
+
+  onEditableChanged(): void {
+    this.bridge.setEditable(this.editable);
   }
 
   private handleWikiLinkClick(targetB64: string): void {
@@ -465,7 +603,8 @@ export struct PreviewWebView {
     }
     try {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
-        ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll']);
+        ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
+          'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (error) {
