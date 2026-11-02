@@ -1,16 +1,16 @@
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 
-export interface ShareImagePreviewPage {
+export interface ShareImagePreviewImage {
   uri: string;
   aspectRatio: number;
-  pageNumber: number;
+  scaled: boolean;
 }
 
 @CustomDialog
 export struct ShareImagePreviewDialog {
   controller?: CustomDialogController;
   itemName: string = '';
-  pages: ShareImagePreviewPage[] = [];
+  image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
   onConfirm: () => void = () => {};
   onCancel: () => void = () => {};
 
@@ -26,34 +26,31 @@ export struct ShareImagePreviewDialog {
 
   build() {
     Column({ space: Space.s3 }) {
-      Text('分享图片预览')
+      Text('长图预览')
         .fontSize(FontSize.s3)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      Text(this.itemName + ' · ' + this.pages.length.toString() + ' 张')
+      Text(this.itemName + ' · 1 张长图')
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.image.scaled) {
+        Text('为保留全文，长图已整体按比例缩小')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+      }
       Scroll() {
-        Column({ space: Space.s3 }) {
-          ForEach(this.pages, (page: ShareImagePreviewPage) => {
-            Column({ space: Space.s1 }) {
-              Text('第 ' + page.pageNumber.toString() + ' 张')
-                .fontSize(FontSize.caption)
-                .fontColor($r('app.color.text_tertiary'))
-                .width('100%')
-              Image(page.uri)
-                .width('100%')
-                .aspectRatio(page.aspectRatio)
-                .objectFit(ImageFit.Contain)
-                .borderRadius(Radius.control)
-                .backgroundColor($r('app.color.bg_secondary'))
-            }
+        Column() {
+          Image(this.image.uri)
             .width('100%')
-          }, (page: ShareImagePreviewPage) => page.pageNumber.toString())
+            .aspectRatio(this.image.aspectRatio)
+            .objectFit(ImageFit.Contain)
+            .borderRadius(Radius.control)
+            .backgroundColor($r('app.color.bg_secondary'))
         }
         .width('100%')
         .padding({ right: Space.s1 })

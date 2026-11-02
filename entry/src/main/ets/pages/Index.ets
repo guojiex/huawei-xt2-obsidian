@@ -19,6 +19,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
+import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { SAMPLE_VAULT_ID, VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
@@ -59,10 +60,10 @@ import {
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
 import { ShareNoteDialog, ShareFormatOption } from '../components/ShareNoteDialog';
-import { ShareImagePreviewDialog, ShareImagePreviewPage } from '../components/ShareImagePreviewDialog';
+import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
 import { NoteShareService } from '../model/NoteShareService';
-import { NoteImageShareService } from '../model/NoteImageShareService';
+import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteImageService } from '../model/NoteImageService';
 import { NoteDraftService, NoteDraftRecovery } from '../model/NoteDraftService';
@@ -365,7 +366,7 @@ struct Index {
   private shareImagePreviewTitle: string = '';
   @State shareCaptureActive: boolean = false;
   @State shareCaptureStatus: string = '正在准备分享图片…';
-  @State shareImagePreviewPages: ShareImagePreviewPage[] = [];
+  @State shareImagePreviewImage: ShareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
 
   aboutToAppear(): void {
     void this.loadAgentKitSlot();
@@ -3861,7 +3862,7 @@ struct Index {
 
     const options: ShareFormatOption[] = [];
     if (scope === 'note') {
-      options.push({ value: 'image', label: '排版图片', detail: '覆盖全文与本地图片；长文会分图并显示页数。' });
+      options.push({ value: 'image', label: '排版图片', detail: '整篇笔记与本地图片合成一张长图；超出尺寸时整体缩小。' });
       options.push({ value: 'file', label: 'Markdown / ZIP', detail: '无本地图片分享 Markdown；有本地图片时自动打包 ZIP。' });
       options.push({ value: 'text', label: '文本', detail: '预览并编辑标题与正文；图片和复杂格式按提示降级。' });
     } else {
@@ -4063,57 +4064,90 @@ struct Index {
     this.shareCaptureStatus = '正在渲染笔记…';
     this.shareCaptureActive = true;
     let sessionId: string = '';
+    let longImage: image.PixelMap | null = null;
     try {
       const ready: Promise<void> = this.waitForShareCaptureReady();
       await ready;
       const initial: PreviewCaptureResult = await bridge.requestShareCaptureMetrics();
-      const pageTops: number[] = NoteImageShareService.pageTops(initial.scrollHeight, initial.viewportHeight);
-      const paged: PreviewCaptureResult = await bridge.prepareShareCapturePages(pageTops.length);
-      if (paged.viewportHeight <= 0 || paged.viewportWidth <= 0 ||
-        paged.scrollHeight < pageTops.length * paged.viewportHeight) {
-        throw new Error('分享预览分页尺寸不足，无法覆盖全文');
+      const captureTops: number[] = NoteImageShareService.pageTops(initial.scrollHeight, initial.viewportHeight);
+      const prepared: PreviewCaptureResult = await bridge.prepareShareCapturePages(captureTops.length);
+      if (prepared.viewportHeight <= 0 || prepared.viewportWidth <= 0 ||
+        prepared.scrollHeight < captureTops.length * prepared.viewportHeight) {
+        throw new Error('长图分段尺寸不足，无法覆盖全文');
       }
       sessionId = NoteImageShareService.createSession(registry);
-      const pages: ShareImagePreviewPage[] = [];
-      for (let i = 0; i < pageTops.length; i++) {
+      let geometry: NoteImageShareGeometry | null = null;
+      let captureWidth: number = 0;
+      let captureHeight: number = 0;
+      for (let i = 0; i < captureTops.length; i++) {
         if (this.shareCaptureCancelled) {
           throw new Error('分享图片生成已取消');
         }
-        this.shareCaptureStatus = '正在生成图片 ' + (i + 1).toString() + ' / ' + pageTops.length.toString();
-        const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(pageTops[i]);
-        if (Math.abs(positioned.scrollTop - pageTops[i]) > 1) {
-          throw new Error('分享预览无法滚动到第 ' + (i + 1).toString() + ' 张图片的位置');
+        this.shareCaptureStatus = '正在合成长图 ' + (i + 1).toString() + ' / ' + captureTops.length.toString();
+        const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(captureTops[i]);
+        if (Math.abs(positioned.scrollTop - captureTops[i]) > 1) {
+          throw new Error('分享预览无法定位到第 ' + (i + 1).toString() + ' 个渲染分段');
         }
-        const pixelMap = await this.getUIContext().getComponentSnapshot().get(this.shareCaptureComponentId,
+        if (Math.abs(positioned.viewportWidth - initial.viewportWidth) > 1 ||
+          Math.abs(positioned.viewportHeight - initial.viewportHeight) > 1) {
+          throw new Error('分享预览尺寸发生变化，请重新生成长图');
+        }
+        const segment = await this.getUIContext().getComponentSnapshot().get(this.shareCaptureComponentId,
           { waitUntilRenderFinished: true });
-        const imageInfo = await pixelMap.getImageInfo();
-        const remainingHeight: number = Math.min(initial.viewportHeight, initial.scrollHeight - pageTops[i]);
-        const cropHeight: number = Math.max(1,
-          Math.min(imageInfo.size.height, Math.round(imageInfo.size.height * remainingHeight / initial.viewportHeight)));
-        if (cropHeight < imageInfo.size.height) {
-          await pixelMap.crop({
-            x: 0,
-            y: 0,
-            size: { width: imageInfo.size.width, height: cropHeight }
-          });
+        try {
+          const imageInfo = await segment.getImageInfo();
+          let segmentGeometry: NoteImageShareGeometry;
+          if (geometry === null) {
+            captureWidth = imageInfo.size.width;
+            captureHeight = imageInfo.size.height;
+            segmentGeometry = NoteImageShareService.longImageGeometry(imageInfo.size.width, imageInfo.size.height,
+              initial.scrollHeight, initial.viewportHeight);
+            geometry = segmentGeometry;
+            longImage = NoteImageShareService.createLongImage(segmentGeometry);
+          } else if (imageInfo.size.width !== captureWidth || imageInfo.size.height !== captureHeight) {
+            throw new Error('长图渲染期间视口尺寸发生变化，请重新生成');
+          } else {
+            segmentGeometry = geometry;
+          }
+          const segmentEnd: number = Math.min(initial.scrollHeight, captureTops[i] + initial.viewportHeight);
+          const destinationTop: number = Math.round(captureTops[i] * segmentGeometry.pixelsPerVp * segmentGeometry.scale);
+          const destinationBottom: number = i === captureTops.length - 1 ? segmentGeometry.height :
+            Math.round(segmentEnd * segmentGeometry.pixelsPerVp * segmentGeometry.scale);
+          const destinationHeight: number = destinationBottom - destinationTop;
+          const remainingHeight: number = segmentEnd - captureTops[i];
+          const cropHeight: number = Math.max(1, Math.min(imageInfo.size.height,
+            Math.round(imageInfo.size.height * remainingHeight / initial.viewportHeight)));
+          if (cropHeight < imageInfo.size.height) {
+            await segment.crop({ x: 0, y: 0, size: { width: imageInfo.size.width, height: cropHeight } });
+          }
+          if (longImage === null || destinationHeight <= 0) {
+            throw new Error('长图分段输出尺寸无效');
+          }
+          await NoteImageShareService.appendSegment(segment, longImage, destinationTop,
+            segmentGeometry.width, destinationHeight);
+        } finally {
+          await segment.release();
         }
-        const croppedInfo = await pixelMap.getImageInfo();
-        const filePath: string = NoteImageShareService.pagePath(registry, sessionId, i);
-        await NoteImageShareService.writeJpeg(filePath, pixelMap);
-        pages.push({
-          uri: fileUri.getUriFromPath(filePath),
-          aspectRatio: croppedInfo.size.width / croppedInfo.size.height,
-          pageNumber: i + 1
-        });
       }
       if (this.shareCaptureCancelled) {
         throw new Error('分享图片生成已取消');
       }
+      if (geometry === null || longImage === null) {
+        throw new Error('没有生成可分享的长图');
+      }
+      const filePath: string = NoteImageShareService.imagePath(registry, sessionId);
+      const completedImage: image.PixelMap = longImage;
+      longImage = null;
+      await NoteImageShareService.writeJpeg(filePath, completedImage);
       this.shareCaptureActive = false;
       this.shareImagePreviewSessionId = sessionId;
       this.shareImagePreviewTitle = itemName;
-      this.shareImagePreviewPages = pages;
-      this.openShareImagePreview(itemName, pages, notePath);
+      this.shareImagePreviewImage = {
+        uri: fileUri.getUriFromPath(filePath),
+        aspectRatio: geometry.width / geometry.height,
+        scaled: geometry.scale < 1
+      };
+      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath);
     } catch (error) {
       this.shareCaptureActive = false;
       bridge.cancelShareCaptureRequests('分享图片生成已结束');
@@ -4129,6 +4163,9 @@ struct Index {
         throw new Error(err.message);
       }
     } finally {
+      if (longImage !== null) {
+        await longImage.release();
+      }
       if (this.shareCaptureReadyTimer >= 0) {
         clearTimeout(this.shareCaptureReadyTimer);
         this.shareCaptureReadyTimer = -1;
@@ -4138,17 +4175,17 @@ struct Index {
     }
   }
 
-  private openShareImagePreview(itemName: string, pages: ShareImagePreviewPage[], notePath: string): void {
+  private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string): void {
     this.shareImagePreviewCtl = new CustomDialogController({
       builder: ShareImagePreviewDialog({
         itemName: itemName,
-        pages: pages,
+        image: previewImage,
         onConfirm: (): void => {
-          const sharePages: ShareImagePreviewPage[] = this.shareImagePreviewPages.slice();
+          const image: ShareImagePreviewImage = this.shareImagePreviewImage;
           const title: string = this.shareImagePreviewTitle;
           this.shareImagePreviewSessionId = '';
-          this.shareImagePreviewPages = [];
-          void this.shareImagePages(sharePages, title, VaultRegistry.get());
+          this.shareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
+          void this.shareImage(image, title, VaultRegistry.get());
         },
         onCancel: (): void => {
           this.cleanupShareImagePreview();
@@ -4164,7 +4201,7 @@ struct Index {
   private cleanupShareImagePreview(): void {
     const sessionId: string = this.shareImagePreviewSessionId;
     this.shareImagePreviewSessionId = '';
-    this.shareImagePreviewPages = [];
+    this.shareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
     if (sessionId.length === 0) {
       return;
     }
@@ -4175,26 +4212,17 @@ struct Index {
     }
   }
 
-  private async shareImagePages(pages: ShareImagePreviewPage[], title: string, registry: VaultRegistry): Promise<void> {
-    if (pages.length === 0 || pages.length > NoteImageShareService.MAX_PAGES) {
-      promptAction.showToast({ message: '分享图片数量无效，请重新生成' });
+  private async shareImage(previewImage: ShareImagePreviewImage, title: string, registry: VaultRegistry): Promise<void> {
+    if (previewImage.uri.length === 0) {
+      promptAction.showToast({ message: '长图文件无效，请重新生成' });
       return;
     }
-    const first: ShareImagePreviewPage = pages[0];
     const shared = new systemShare.SharedData({
       utd: uniformTypeDescriptor.UniformDataType.JPEG,
-      uri: first.uri,
+      uri: previewImage.uri,
       title: title,
       label: 'IMAGE'
     });
-    for (let i = 1; i < pages.length; i++) {
-      shared.addRecord({
-        utd: uniformTypeDescriptor.UniformDataType.JPEG,
-        uri: pages[i].uri,
-        title: title + ' · ' + pages[i].pageNumber.toString(),
-        label: 'IMAGE'
-      });
-    }
     try {
       await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
     } catch (error) {

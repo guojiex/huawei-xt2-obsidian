@@ -1435,9 +1435,14 @@ F4 仍为未充分核实的平台生命周期记录；不能据此声称支持�
 - 本机 `@ohos.zlib` 声明 `compressFile(inFile, outFile, options)` since 9，可将沙箱文件或目录压缩成文件；`compressFiles(inFiles, outFile, options)` since 12。API 24 可用前者打包准备好的临时目录。需以解压后文件集合、相对路径和中文 / 空格文件名测试确认实际产物。
 - `Options.keepTopLevelFolder` 标注 since 26，API 24 不能配置；实现不得引用此新选项。临时源目录和 zip 路径仍必须由 Context 属性取得并经统一路径解析层生成。
 
-### O3 ⚠️ 排版长图输出链路仍待核实
+### O3 ✅ PixelMap 可拼接为单张长图 / ⚠️ 设备与接收限制待验
 
-Share Kit 接受图片文件 URI，但现有文档与 SDK 证据尚未确定如何将当前 ArkWeb Markdown 预览完整、分段地输出为图片，也没有确认长图像素 / 文件大小限制。不得据此把单张截图或静默裁切写成满足 v0.8 的长文分图能力；先核实输出链路并对产物做全文完整性检查。
+来源：本机 DevEco SDK 26.0.0.105，`openharmony/ets/api/@ohos.multimedia.image.d.ts`（2026-11-01 核对）；工程兼容 API 24。以下仅证明 SDK 声明范围，不代表 API 24 / XT2 运行已验。
+
+- `PixelMap.readPixels(area)` / `writePixels(area)` 声明起始 API 7，支持用 `PositionArea` 在指定区域读取、写入 BGRA_8888 数据；`image.createPixelMapSync(options)` 空 PixelMap 重载起始 API 12，`InitializationOptions.editable` 可设为 `true`；`PixelMap.scale(x, y)` 起始 API 9；`ImagePacker.packToFile(PixelMap, fd, options)` 起始 API 11。可在 API 24 范围内按视口截取、写入同一个可编辑 PixelMap，并编码为单张 JPEG。
+- PixelMap 类型声明的说明给出序列化大小上限 128 MB（宽 × 高 × 每像素字节数）；分配仍可能因平台资源不足而失败。v1.9 将目标图限制在 96 MiB 作为工程安全预算，超限时整体等比缩小；仍低于最小输出宽度时明确拒绝，不分拆、不截断。该 96 MiB 是项目策略，不是平台上限。
+- 已落地 v1.9 的视口级捕获与 BGRA_8888 合成流程，最后只保存一个 JPEG 并交给单条 Share Kit JPEG record；当前 API 声明与源码状态不构成编译、运行或接收验收。
+- 官方声明未给出本工程 API 24 / XT2 的实际 PixelMap 分配余量、长图 JPEG 接收大小、系统分享接收应用的最大尺寸或内容展示能力。需分别记录目标设备生成、保存和接收端可读取 / 显示结果；Share Kit 面板可达仍不能证明接收成功。
 
 
 ## P 组：系统主题变更通知（2026-10-27 本机 SDK 声明核对）

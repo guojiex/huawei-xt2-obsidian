@@ -382,7 +382,7 @@ export struct PreviewWebView {
   onScrollPositionChange: (top: number) => void = (top: number) => {};
   /** Web 页面桥接就绪。 */
   onReady: () => void = () => {};
-  /** Web 组件标识，供分享图片分页截图定位。 */
+  /** Web 组件标识，供单张长图的视口分段截图定位。 */
   componentId: string = 'note-preview-web';
   /** 父级通过这个句柄下发渲染内容 / 笔记目录 / 主题 */
   bridge: PreviewBridge = new PreviewBridge();
