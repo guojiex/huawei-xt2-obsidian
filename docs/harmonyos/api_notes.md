@@ -603,12 +603,33 @@ let secret = asset.querySync(query)[0].get(asset.Tag.SECRET) as Uint8Array;
 - **ALIAS 与含 DATA_LABEL 的属性不加密**，敏感数据只能放 `SECRET`
 - 多库场景下 token 按库存 → **ALIAS 用 `vault:<库id>:token`**
 
-### C4 备份 ✅（体积上限 ❓）
+### C4 备份 ✅（体积上限 ❓，判定依据已于 2026-11-02 核实）
 
-`backup_config.json` 的 `includes` 支持目录与通配符，可覆盖含子目录的整个文件树。体积上限未记载。
+`backup_config.json` 的 `includes` 支持目录与通配符，可覆盖含子目录的整个文件树。**体积上限仍未记载**（官方答复确认文档无总量与单文件数字）；唯一相邻数字是应用数据迁移「单个应用最长 15 分钟」，那是时限不是体积。
 
-> ⚠️ **设备差异**：**PC/2in1 不支持备份恢复；Tablet 开启自由多窗后也不生效。**
-> 我们的 `deviceTypes` 含 `2in1` → 备份不能作为唯一的数据保命通道，**导出 zip 仍要做**。
+- **判定按运行时设备能力，不按应用声明** ✅：官方原文为「设备不支持任务保留（比如 PC/2in1 设备），则备份恢复机制不生效」。
+  ~~我们的 `deviceTypes` 含 `2in1` → 备份会整体失效~~ → ❌ 已修正（2026-11-02）：声明 `["phone","tablet","2in1"]` **不会**让 phone 上的备份失效。但**导出 zip 照做不撤**——应用真跑在 PC/2in1 上时备份确实不生效，结论方向不变、理由换成「运行形态」。
+- **XT2 三形态可用性 ⚠️ / 自由多窗 ❓**：折叠形态不改 `deviceType = phone`，推断不受影响；但「Tablet 开自由多窗后不生效」在 phone + 自由多窗下**未记载**，须 XT2 真机在三形态 × 自由多窗开关两态实测。
+- **恢复要求应用已安装** ✅（官方验证指导：恢复侧未安装待测应用 → 恢复失败）；由系统框架在数据克隆 / 换机流程调度，**不是装机即恢复**。应用侧只能靠 `BackupExtensionAbility.onRestore(bundleVersion)` 感知执行，**「恢复完成 / 失败」的结果回调未记载** ❓。
+- **无应用侧主动触发备份的公开 API** ✅（答复：只能被动响应）→ 保命通道仍以导出 zip 为主。
+
+来源：[2026-11-02 六组问答归档](qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md) §二。
+
+### C5 TaskPool 子线程文件 IO ✅（AtomicFile 部分 ⚠️）
+
+官方两篇最佳实践（I/O 密集型任务开发指导、多线程操作密集型文件读写）直接在 `@Concurrent` 函数内使用 `fileIo.open/write/close` 与 `fileIo.statSync/readSync` → **子线程做文件 IO 是官方推荐模式，无限制记载**。
+
+- `fs.listFileSync` / `renameSync` / `copyFile` / `statSync` / `mkdirSync` / `accessSync`：模块未声明「仅主线程」，子线程可用 ✅。
+- 「耗时 IO 请用异步接口避免崩溃」那条提示**针对主线程**；在 taskpool 里用 `*Sync` 正是推荐写法，无死锁类记载 ✅。
+- ⚠️ `fileIo.AtomicFile`（`@ohos.file.atomicFile`）**未单独声明线程约束**，官方答复自标为推断（该模块基于 fs 实现）。落子线程写前按本条自证：本机 `@ohos.file.atomicFile.d.ts` 无「仅主线程」注记 + XT2 真机中断实验。
+
+### C6 子线程取沙箱路径与 IO 限流 ✅
+
+- **不能把 context 传进 taskpool**（不可序列化对象）✅。官方做法：主线程取 `context.filesDir` 拼好路径，把**字符串**作为任务参数传入；确需传上下文相关对象才用 `@Sendable`。与硬约束 14 一致 —— 路径解析仍只走一层。
+- **限流用 `taskpool.AsyncRunner`**（本机版本表 `since 18` → API 24 可用 ✅）：构造时指定并发数与队列容量，`runner.execute(task)` 提交；**队列满时最早任务被丢弃并报 10200054**，必须捕获或按容量提交。工作线程数取决于物理核数、系统动态扩缩，**无固定数值记载** ❓。优先级 `taskpool.Priority.HIGH/MEDIUM/LOW` ✅。
+- ⚠️ **跨线程读写同一文件官方不保证**：答复明确未给一致性声明，同一 fd/路径并发行为未定义。→ 本工程做法：**同一 vault 的写操作收敛到单一任务队列**（配合 C1 的 AtomicFile 语义），别指望文件系统兜底；真机验证前不进关键路径。
+
+来源：[2026-11-02 六组问答归档](qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md) §一。
 
 ---
 
@@ -695,12 +716,13 @@ ohpm publish yourlib.har
 
 2026-10-27 平台 Agent“曜石笔记助手”已创建为单 Agent 草稿；预览普通问答可返回，询问本地库访问时也明确回答无法访问。当前角色指令为空、插件数为 0；六项“曜石笔记”插件草稿尚未绑定该 Agent，AGC 应用关联状态未核实。因此现有验证只证明平台预览可对话，不证明端插件执行或 App 接入。API 24 / XT2、AgentKit 系统依赖、真机调试与审核/发布仍待验；不自动恢复 v0.6 排期。
 
-### F2 意图声明：`@InsightIntentEntry` 装饰器 ⚠️
+### F2 意图声明：`@InsightIntentEntry` 装饰器 ✅（数组形式仍 ❓）
 
 意图执行器用 `@InsightIntentEntry({...})` 装饰，参数用 **JSON Schema 内联声明**；
 执行文件在 `insight_intent.json` 里用 `insightIntentsSrcEntry` 声明。
-⚠️ 官方自己也不确定该字段是否支持**数组形式**（答复用「若不支持请以 IDE 编译提示为准」带过）。
-→ 落码前先建一个单文件最小样例跑通编译，再决定怎么组织。
+
+- **装饰器与基类 `InsightIntentEntryExecutor` 首批接口 `@since 20`、仅 Stage 模型** → **API 24 可用**，2026-11-02 本机 SDK 版本表坐实（`device-define/api-version/AbilityKit.json`：`since 20`，syscap `Ability.AbilityRuntime.Core`；`@ohos.app.ability.InsightIntentDecorator.d.ts` 内所有成员均 `@since 20`，`executeMode` 声明为 `insightIntent.ExecuteMode[]`）。导入：`import { InsightIntentEntry, InsightIntentEntryExecutor } from '@kit.AbilityKit'`。
+- ⚠️→❓ **`insightIntentsSrcEntry` 是否支持数组：仍未定**。官方答复 2026-11-02 改称「文档记载为单个路径字符串」，但**本机 openharmony `ets/api` 全量声明里检索不到该标识** —— 它是 `insight_intent.json` 的 JSON 字段，d.ts 无法证伪。→ 落码前建单文件最小样例跑通编译，或直接查 DevEco 对该 JSON 的 schema 校验；两种组织方式二选一：各执行器被一个入口文件 import、`insightIntentsSrcEntry` 只指入口，或每个意图在 `insightIntents[].srcEntry` 分别指定。
 
 ### F3 参数传递：同名属性自动注入 ⚠️
 
@@ -781,6 +803,8 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 
 不能由 helper 的版本反推 API 24 不支持端 A2A。API 24 的完整收发/鉴权与报文处理路径仍需逐项核对 SDK / 协议和最小编译，并在 API 24 / XT2 联调。本次未执行这些验证；A2A 任务状态与流式能力也不提供后台常驻资格，继续见 N 组。
 
+> **2026-11-02 本机版本表坐实**：`device-define/api-version/AgentFrameworkKit.json` 里 `@hms.ai.A2A` 的 `createA2AServer` **`since 26.0.0`**，且 `deviceTypes` 的 phone / tablet 均 `since 26.0.0` → **API 24 拿不到 A2A helper**，不能当作可直接落码的程序化通道。同时 `AgentExtensionAbility`（AgentRuntime 体系，syscap `Ability.AgentRuntime.Core`）**`since 24`** 声明存在，另有同名 `partnerAgent.AgentExtensionAbility`（`since 23`，syscap `Communication.FusionConnectivity.Core`）—— 两个不是一回事，核对时按 syscap 区分。有 Ability 声明但没有 helper 支持，仍不构成 API 24 的完整收发路径，F13 的 ❓ 结论不变。
+
 ---
 
 ### F12 单 Agent + 端插件可形成托管工具链 ✅ 文档明确 / ⚠️ 项目未联调
@@ -810,6 +834,30 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 2026-10-28 项目进展：仓库已为平台 `ListVaults` 0.1.0 增加配置映射及后台 `InsightIntentExecutor`，把 `VaultRegistry.list()` 投影为知识库 id/name/type/isCurrent 字段。其他六项工具、FunctionComponent 接线、平台调用与 API 24 / XT2 运行仍未验；本次代码只说明本机 SDK 编译目标上的接线实现，不代表设备闭环。平台代码页提供的是 ai_plugin JSON / OpenAPI YAML 声明，不是 App 的完整 ArkTS 业务实现；早期六项草稿配置不等于已经能读写设备笔记。核对来源见 [当日归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。
 
 2026-10-30 实施更新：本工程 `Index` 已在笔记工作区顶栏接入 `FunctionComponent` 并监听关闭事件刷新文件；`insight_intent.json` 增加 `QueryNotes`、`ReadNote`、`CreateNote`、`AppendNote`、`EditNote`、`UndoLastEdit` / `0.1.0` 后台映射，统一执行器复用 `VaultRegistry`、`FileTree`、`NoteService`、`AgentOperationStorage` 与 `AtomicFile`。源码级工具契约/文本规则测试及 API 26 SDK 目标 HAP 构建通过。平台 Agent 仍是草稿，测试组、平台真实调用、API 24 / XT2 与发布审核尚未验证；SDK 构建不能表述为设备或端到端成功，详见 [v0.6 验收记录](../releases/v0.6/验收记录.md)。
+
+### F17 意图配置位置、权限与 `executeMode`（2026-11-02 官方答复 + 本机 SDK 坐实）
+
+- **配置文件位置 ✅**：`entry/src/main/resources/base/profile/insight_intent.json`（经 module.json5 的 profile 引用）；HSP/HAR 可各自声明意图配置。**资源限定词目录不需要冗余** —— 意图配置非本地化资源，本地化文案走意图的 `displayName` 等字段。
+- **权限 ✅ 无需任何权限**：端侧意图体系未声明权限要求，非受限权限、无 ACL（硬约束 13 不因意图功能松动）。module.json5 侧除引用 profile 外无额外配置项。
+- **`executeMode` 取值 ✅**：`foreground` → `onExecuteInUIAbilityForegroundMode`（startAbility 启动）；`background` → `onExecuteInUIAbilityBackgroundMode`（**Call 调用**启动，不创建 window）。本机声明 `insightIntent.ExecuteMode` = `UI_ABILITY_FOREGROUND(0)` / `UI_ABILITY_BACKGROUND(1)`；随体系 `@since 20` 引入 → **API 24 可用 ✅**。
+- ❓ **两处都写以哪处为准「未记载」**（JSON 的 `"executeMode": ["foreground"]` vs 装饰器的 `executeMode: [insightIntent.ExecuteMode.…]`）。→ **工程规则：同一意图只用一种声明方式，保持单一来源。** 本工程现有意图走 JSON + `InsightIntentExecutor` 基类，就不要再加装饰器。
+- **超时与延迟回传 ✅**：官方未给回调最长执行时长（❓），但给了出路 —— `insightIntentProvider.sendIntentResult(instanceId: number, result: insightIntent.IntentResult<T>): Promise<void>`，本机版本表 **`since 23` → API 24 可用**，配合 `InsightIntentContext.instanceId` 可在先返回后主动回传结果。**这是长任务在 API 24 上的官方推荐形态，优先于自造「假后台」。**
+- ⚠️ **后台态能力边界（全部待真机）**：(a) 不创建 window → 需 UIContext/窗口的 Toast/Dialog 类推断**不可用**，失败只能靠日志与稍后通知；(b) 网络、沙箱读写、Native NAPI 推断**可用**（回调跑在应用进程内），本工程 libgit2 NAPI 属此列；(c)(d)(e) 见 N 组与归档 §4。
+- ❓ **仍未问过**：**不经小艺、如何用 hdc / DevEco 直接触发一次端侧意图执行并断点观察**（触发命令形式、`onExecuteInUIAbilityBackgroundMode` 运行在哪个进程/线程、该看哪些日志 tag）。本轮提问清单把这一项漏掉了，官方也就没答。真机联调意图前必须补问或自行实测；F10 只记载了端 A2A 用 DevEco HiLog 看 `onData` 回包，不能替代意图调试路径。
+- ❓ **校验 `insight_intent.json` 的工具/规则 ID** 官方答「未检索到」，只能靠编译期 schema 报错自证。
+
+来源：[2026-11-02 六组问答归档](qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md) §三、§四、§2 表。
+
+### F18 自建智能体：个人开发者资格与审核边界（2026-11-02 官方答复）
+
+- ✅ **个人账号可创建智能体**：DevEco 侧「生成意图插件和创建小艺智能体」需登录个人账号并完成**实名认证**（可切团队账号）；小艺开放平台的创建流程为登录 → 创建智能体 → 名称/头像/描述/分类/**运行设备**。
+- ✅ **真机调试与端插件开发需 HarmonyOS 5.1.0 Release 及以上设备**（与既有 F10 的「API 24 及以上」前置并存，不冲突）。
+- ❓ **「是否必须已上架、有无企业资质要求」官方检索不到明文**；「仅发布到我自己的智能体是否免人工审核」**未记载** —— 已记载的只有「审核通过的 Skill 才能被其他用户搜索并使用」，反推仅自己可见可能不走公开审核，属**推断**，端插件本身是否单独审核同样未记载。**不许按免审押宝。**
+- ✅ 公开分发/上架升级必须过 Agent 上架审核，未通过则线上保留上一通过版本；⏱ **审核检查项与周期未记载** ❓；华为侧协议保留内容审查权，可要求修改直至终止服务。
+- ❓ **AGC 项目 / 小艺智能体 / 端插件三者的绑定字段与配置位置未检索到明文**；可确认的只有「绑定流程可在 DevEco 内发起」。bundleName / appId 一致性、应用未上架能否先绑定并在真机调通 —— 均 ❓，只能实跑一遍创建流程取证。
+- 与既有排期的关系：这些未记载项不改变 v0.6/v1.16 的现状（本地端插件链路已落码、平台侧仍为草稿），也**不构成**任何上架承诺；发布前若要走小艺入口，需按本节实测补证据。
+
+来源：[2026-11-02 六组问答归档](qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md) §五。
 
 ---
 
@@ -1403,21 +1451,43 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 全链路逻辑由 mock 单测验证，禁止为了测试而清空已有设备数据。用户在 App 内主动确认的重置功能与主动制造崩溃实验不同。
 
 
-## N 组：Agent 后台与通知（2026-10-25 SDK 声明核对）
+## N 组：Agent 后台与通知（2026-10-25 SDK 声明核对 → 2026-11-02 官方问答坐实）
 
-来源：[本机 SDK 核对记录](qa/2026-10-25_API24_Agent后台与通知_SDK核对.md)。SDK 实际为 API26；下列只按 @since 检查声明，不等于 API24/XT2 运行验证。官方核实**尚未提问**，要问的是 7 项：① 小艺有无程序化发送历史/提示词/引用、收流式消息与结构化工具调用并回传结果的通道；② Agent loop 由平台还是 App 控制，自有聊天 UI、动态系统提示词、会话隔离、请求取消/恢复；③ 本地 `QueryNotes` / `ReadNote` / `CreateNote` / `AppendNote` / `EditNote` / `UndoLastEdit` 的声明、稳定调用 ID、重复投递与失败语义；④ XT2 phone 切后台/锁屏后单次生成与多轮工具循环各自的合规执行路径；⑤ 短时/长时任务时限、权限/ACL、申请与系统撤销条件、进程回收后的结果获取；⑥ 运行中与完成/失败通知各需什么权限和 API，拒绝/移除通知与点击回到指定对话；⑦ 个人开发者需开通什么能力、有无审核要求，哪些可先 SDK 核对、哪些必须 API 24 / XT2 实测。
+来源：[本机 SDK 核对记录](qa/2026-10-25_API24_Agent后台与通知_SDK核对.md) 与 [2026-11-02 六组问答归档](qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md)。SDK 实际为 API26；@since 只证明声明范围，不等于 API24/XT2 运行验证。
 
-### N1 ⚠️ 短时/长时接口存在，Agent 场景资格未确认
+> ~~官方核实**尚未提问**，要问的是 7 项~~ → ✅ 已于 2026-11-02 全部提问（提问清单见归档 §0）。回收情况：⑤ 短时/长时任务拿到明文数值；⑦ 拿到「可 SDK 定论 / 必须真机」的分界与开通要求；①②③④⑥ 官方对**核心语义一律答「未记载」**，只有旁证（A2A helper、`instanceId`、通知授权流程）。
+> ⚠️ **原 7 项里漏问了一条**：不经小艺、如何用 hdc / DevEco 直接触发并断点观察一次端侧意图执行 —— 本轮没问、官方也没答，见 [F17](#f17-意图配置位置权限与-executemode2026-11-02-官方答复--本机-sdk-坐实)。真机联调意图前必须补。
 
-`requestSuspendDelay`（since 9）、`startBackgroundRunning(context, ContinuousTaskRequest)`（since 21）在本机声明中存在。短时任务不保证整个 Agent loop 完成；长时任务需匹配适用类别与权限。`MODE_DATA_TRANSFER` 描述上传/下载与进度更新，不能把所有网络推理自动归入；phone 上持续计算/特殊场景有受限权限条件。XT2 大屏不改变 phone 身份。是否允许本应用的 Agent 后台执行仍为 ❓，默认前台，不开启假后台模式。
+### N1 ✅ 短时/长时任务数值与权限已明确；「AI 编辑」无对应长时类型 → 不开假后台
 
-### N2 ⚠️ 通知声明覆盖 ≤24，授权与设备表现待验
+短时任务（官方 2026-11-02 明文 ✅）：`requestSuspendDelay(reason, callback)` 返回 `DelaySuspendInfo{requestId, actualDelayTime}`，实际时长由系统分配；约束是**应用退后台后 5 秒内**才允许申请、同时**不超过 3 个**、有每日配额且耗尽不再放行；**无续期接口** ❌，超时前 callback 收到即将超时通知，应主动 `cancelSuspendDelay`，剩余时间用 `getRemainingDelayTime` 查询，每日配额具体数值 ❓（运行时 `getTransientTaskInfo` 读 remainingQuota）。→ 短时任务**不足以覆盖整轮 Agent loop**，只能给「退后台瞬间收尾一次保存」兜底。
 
-本机声明 `notificationManager.publish(request)` since 9、`isNotificationEnabled()` since 11、带 UIAbilityContext 的 `requestEnableNotification(context, callback)` since 10。授权申请需 UI 已加载，拒绝后不可反复弹同一申请。仅证明声明范围，尚未执行系统授权或发通知。完成通知与长时任务系统通知分开处理；通知权限不等于后台运行资格。通知正文不包含笔记内容或文件信息。
+长时任务（✅）：API 24 三种申请形态 `startBackgroundRunning(context, bgMode, wantAgent)`（since 9）、`(..., bgModes: string[], wantAgent)`（since 12）、`ContinuousTaskRequest`（since 21）；**同一时间最多 10 个**；需 `ohos.permission.KEEP_BACKGROUND_RUNNING`（normal 级、system_grant，无需 ACL）。
 
-### N3 ❓ 小艺后台意图不等于自有 Agent loop 可后台常驻
+> ⚠️ **本轮最有约束力的结论（✅ 官方明文）**：长时任务面向**用户可感知场景**（音频播放、导航、录音、数据传输等）。「本地笔记的 AI 编辑 / 多轮工具调用」**没有对应类型** —— 纯文本编辑不属媒体处理，**归进任何一类都属超范围使用**。`MODE_SPECIAL_SCENARIO_PROCESSING`（本机枚举值 **13**，子模式 `SUBMODE_MEDIA_PROCESS_NORMAL_NOTIFICATION` = 9）需 `KEEP_BACKGROUND_RUNNING_SPECIAL_SCENARIO` 或 `KEEP_BACKGROUND_RUNNING_SYSTEM` 的 **ACL**，还要承诺场景说明并遵守接入规范 —— 不为纯文本编辑去申请。
+> → 「默认前台、不开启假后台模式」由 ⚠️ 推断升级为 ✅ 有官方依据。采纳的形态：**前台执行 + 意图回调内快速返回 + `sendIntentResult` 延迟回传**（见 F17）。
+> 撤销：错误码 9800005（申请校验失败）/ 9800006（通知校验失败）、用户移除通知栏长时任务通知即取消 ✅；**应用侧撤销回调 ❓ 未记载**；**进程回收后的任务结果恢复通道 ❓ 未记载** → 应用自行把进度持久化到沙箱、重启后自恢复。
+
+### N2 ✅ 通知授权流程明确；⚠️ 答复推荐的 `openNotificationSettingsWithResult` 在 API 24 用不了
+
+本机声明 `publish(request)` since 9、`isNotificationEnabled()` since 11（`…Sync` since 12）、`requestEnableNotification(context, cb)` since 10 —— 均为**用户授权**，非受限权限、无 ACL ✅；拒绝判定错误码 **1600004** ✅。授权申请需 UI 已加载，被拒后 `requestEnableNotification` **无法再次拉起弹窗** ✅，再次申请的间隔要求 ❓ 未记载。
+
+- ❌ **已推翻（2026-11-02）**：~~答复建议「拒绝后改用 `openNotificationSettingsWithResult` 拉通知管理半模态」~~ → 本机版本表 `since **26.0.0**`（syscap `Notification.NotificationSettings`），**高于本工程 API 24，不能用**。API 24 上的替代是 `openNotificationSettings(context)`（**since 13** ✅，无返回值），配合 `isNotificationEnabled` 自行判断结果。
+- **两条通知并存 ✅**：长时任务自身发系统通知栏消息（无提示音），与应用自己 `publish` 的是**不同 id 的两条独立通知**；`ContinuousTaskRequest.combinedTaskNotification = true` 可合并（此时对应通知 id 必填，本机声明坐实）；数据传输类型与其他类型混用时系统发 **2 条**长时任务通知。意图后台执行期发通知无特殊限制记载 ✅。
+- 点击通知回指定 UIAbility：`wantAgent.getWantAgent` 配 `WantAgentInfo.wants`（bundleName + abilityName）与 `OperationType.START_ABILITY`，长时任务申请时即传入 ✅；回「指定对话」在 want parameters 带自定义参数、`onCreate`/`onNewWant` 解析路由（官方未直接记载该玩法，属常规 want 路由，⚠️）。
+- 通知内容：普通 `publish` 未检索到禁止条款，但**本工程红线不变** —— 通知正文不含笔记内容或文件信息（硬约束 16）。
+
+### N3 ❓ 小艺后台意图不等于自有 Agent loop 可后台常驻（API 24 无程序化通道）
 
 F4 仍为未充分核实的平台生命周期记录；不能据此声称支持持续模型请求、工具循环、流式回调或进程回收后的恢复。Worker/脱离 Web 的原生 Runner 也不提供系统运行许可。v0.7 mock 独立推进；v0.6 等待正式消息/工具协议、背景资格与通知路径核实，不因本组声明核对恢复实施。
+
+2026-11-02 问答回收（**核心语义全部 ❓ 未记载**，不改变上述决定）：
+- **App 主动发提示词 / 收流式回复 / 回传工具结果的程序化通道：官方答「未记载」**。`FunctionComponent` 仍只是 UI 入口（`@Component`，本机 `since 6.0.0(20)` ✅）。A2A 方向有 `AgentExtensionAbility`（since 24）但 `createA2AServer` helper **since 26.0.0** → **API 24 走不通**，见 F11。
+- **Agent loop 控制粒度（自有 UI、动态系统提示词、会话隔离、取消/恢复）：未记载** ❓。与 F13「未找到完整公开协议」一致。
+- **工具调用语义：去重、稳定调用 ID、失败/超时语义、多轮最大轮数与超时值全部未记载** ❓。唯一可用对账线索 ✅：`InsightIntentContext.instanceId`（`instanceId: number`，本机声明存在）+ `sendIntentResult(instanceId, result)`（since 23）。
+- **XT2 切后台 / 锁屏 / 熄屏后的对话与流式行为：未记载，必须真机实测** ❓（归档 §4）。
+- 官方自给的定论分界 ✅：一/三/四组大部分、短时数值、长时接口与权限、通知授权流程可靠 SDK+文档定论；1-4 跨线程并发、2-2 XT2 三形态备份、4-3 后台态边界、①②③、5-4 绑定流程**必须真机**。
+
 
 
 ## O 组：本地文件分享与 ZIP 打包（2026-10-26 官方文档 / 本机 SDK 声明核对）
@@ -1784,3 +1854,14 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - **本机 SDK 声明**（`sdk/default/openharmony/ets/component/gesture.d.ts`，2026-11-02 重新读取）：`interface PinchGestureInterface extends GestureInterface<PinchGestureInterface>` 标注 `@since 7`、`@syscap SystemCapability.ArkUI.ArkUI.Full`；其 `onActionUpdate(event: (event: GestureEvent) => void): PinchGestureInterface` 同样 `@since 7`。声明注释给出参数语义：`fingers` 最小触发指数为 2–5（默认 2，越界回落到默认值），`distance` 为最小识别距离、单位 vp、默认 5。→ **起始版本远低于 API 24 兼容下限，声明层面无障碍。**
 - **声明不能证明的事**（这条才是 v1.12 的实际卡点）：ArkWeb 组件内部的滚动、DOM 层触摸事件与 ArkUI 手势识别之间的**竞争/优先级关系**没有任何记载；`pinch` 构造器本身不在本文件的核对范围内（未单独取到 `@since`，不在此断言）。
 - **状态**：⚠️ 未进入关键路径。v1.12 当前**不接入双指或 Ctrl+滚轮**，等正常交互验证与需求评估；本轮同样**没有 API 24 / XT2 运行时证据**。
+
+## X 组：半模态面板 bindSheet（2026-11-02，v1.18 块属性面板前置核实）
+
+### X1 ✅ bindSheet 适合作为「块属性面板」的载体，官方默认形态就是底部半屏 + 拖拽条 + 关闭图标
+
+- **官方 API 参考**（[Sheet Transition](https://developer.huawei.com/consumer/cn/doc/harmonyos-references/ts-universal-attributes-sheet-transition)，最后更新 2026-09-08）：`bindSheet(isShow, builder, options?: SheetOptions)` 自 **API 10** 起支持，仅 stage 模型、不支持路由跳转；`isShow` 自 API 10 起支持 `$$` 双向绑定（API 18 起 `!!`）。→ **起始版本远低于 API 24 兼容下限，声明层面无障碍。**
+- **SheetOptions（继承 BindOptions）中与本项目相关者**：`height`（默认 `LARGE`，可取 `SheetSize.MEDIUM` / `LARGE` / `FIT_CONTENT` 或具体 Length；**底部半模态竖屏最大高度距状态栏 8vp**；设了 `detents` 时该属性失效）、`detents`（API 11+，多档位，元组首个为初始高度）、`dragBar`（控制条 / 拖拽条显隐）、`showClose`（关闭图标，默认显示）、`title`（API 11+，`SheetTitleOptions { title, subtitle }`）、`radius`（圆角）、`backgroundColor` / `maskColor` / `blurStyle`、`preferType`、`enableOutsideInteractive`、`onWillDismiss`（API 12+，可拦截关闭）。
+- **关闭方式**（官方 Modal Page Overview 对 semi-modal 的描述）：侧滑、点遮罩、点关闭按钮、下拉四种；生命周期 `onWillAppear → onAppear → onWillDisappear → onDisappear`；面板内滚动默认嵌套策略 `{Forward: PARENT_FIRST, Backward: SELF_FIRST}`。
+- **两个坑**：① 未用 `$$` 双向绑定时，**拖拽关闭不会改变 `isShow` 的值**（必须 `$$`）；② 宿主节点未挂载时设 `isShow=true` **不会显示**，建议在 `onAppear` 之后再弹。
+- **本项目判断**：块属性面板用 `bindSheet` 单档 `SheetSize.MEDIUM`（约半屏）+ `dragBar: true` + `showClose: true` + `title: { title: <块类型名> }`；**不用多档 `detents`** —— 它是设置面板，不需要在半屏 / 全屏之间拖拽切换，多档反而会让内容高度不确定。
+- **状态**：⚠️ 仅官方文档核对，**没有 API 24 / XT2 运行时证据**，v1.18 尚未落码。原型 `docs/prototype/v2/index.html` 已按该形态给出 HTML 示意（顶部拖拽条、右上关闭图标、遮罩、分组列表行），**原型不能代替原生外观与设备验收**。
