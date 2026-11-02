@@ -475,6 +475,13 @@ nativePort.onMessageEvent((result: WebMessage) => {
 → **通道选型定案**：控制指令走 `runJavaScript` / `javaScriptProxy`；**大文本与 packfile 走 MessagePort + ArrayBuffer + 分块**。
 → 真机需实测：上限具体多少、分块大小取多少最稳（列入 M0.5 spike）。
 
+### B9 关于页在线隐私政策查看（2026-11-02，本机 SDK 声明核对）
+
+- ✅ API 26 SDK 声明：`Web` / `javaScriptAccess` / `onPageBegin` / `onPageEnd` 最低 `@since 8`；`WebviewController.loadUrl(url)` 为 `@since 9`。
+- ✅ `onErrorReceive` / `onHttpErrorReceive` 的新事件类型为 `@since 12`，`WebResourceRequest.isMainFrame()` 为 `@since 8`；`onSslErrorEventReceive` 为 `@since 12`，无参 `SslErrorHandler.handleCancel()` 为 `@since 9`。带 boolean 的重载为 API 20，本实现不使用。
+- ✅ 版本注解均不高于工程 API 24 兼容下限；工程已有 `ohos.permission.INTERNET`，无需新增权限。
+- ⚠️ 以上仅为本机 API 26 SDK 声明核对与构建类型检查，不证明 API 24 / XT2 运行时行为。核对明细见 [2026-11-02 SDK 记录](qa/2026-11-02_ArkWeb隐私政策查看SDK核对_API24.md)。
+
 ---
 
 ## C 组：文件系统与存储

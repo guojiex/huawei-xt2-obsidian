@@ -15,6 +15,7 @@
  * 视觉：token 化 + 内容页限宽 760vp 居中（需求 4.9）。
  */
 import { bundleManager, common, Want } from '@kit.AbilityKit';
+import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { ResetDataDialog } from './ResetDataDialog';
@@ -49,7 +50,10 @@ export struct SettingsView {
   @Prop vaults: VaultEntry[] = [];
   @Prop @Watch('onSelectedCategoryChanged') selectedCategory: string = 'general';
   @Prop showCategoryList: boolean = false;
+  @Prop showPrivacyPolicy: boolean = false;
   onSelectCategory: (category: string) => void = (category: string) => {};
+  onOpenPrivacyPolicy: () => void = () => {};
+  onClosePrivacyPolicy: () => void = () => {};
   onOpenHistory: () => void = () => {};
   onResetSplit: () => void = () => {};
   onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
@@ -584,27 +588,33 @@ export struct SettingsView {
 
   @Builder
   CategoryContent() {
-    Scroll() {
-      Column() {
-        if (this.selectedTab === 'general') {
-          this.GeneralTab()
-        } else if (this.selectedTab === 'data') {
-          this.DataTab()
-        } else if (this.selectedTab === 'feedback') {
-          this.FeedbackTab()
-        } else {
-          this.AboutTab()
+    if (this.showPrivacyPolicy) {
+      PrivacyPolicyView({ onClose: this.onClosePrivacyPolicy })
+        .width('100%')
+        .height('100%')
+    } else {
+      Scroll() {
+        Column() {
+          if (this.selectedTab === 'general') {
+            this.GeneralTab()
+          } else if (this.selectedTab === 'data') {
+            this.DataTab()
+          } else if (this.selectedTab === 'feedback') {
+            this.FeedbackTab()
+          } else {
+            this.AboutTab()
+          }
         }
+        .width('100%')
+        .constraintSize({ maxWidth: Size.contentMaxW })
+        .padding({ left: Space.s5, right: Space.s5, top: Space.s4, bottom: Space.s8 })
       }
+      .layoutWeight(1)
       .width('100%')
-      .constraintSize({ maxWidth: Size.contentMaxW })
-      .padding({ left: Space.s5, right: Space.s5, top: Space.s4, bottom: Space.s8 })
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+      .backgroundColor($r('app.color.bg_page'))
     }
-    .layoutWeight(1)
-    .width('100%')
-    .align(Alignment.Top)
-    .scrollBar(BarState.Off)
-    .backgroundColor($r('app.color.bg_page'))
   }
 
   @Builder
@@ -1063,6 +1073,24 @@ export struct SettingsView {
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ bottom: Space.s3 })
+        Button({ type: ButtonType.Normal, stateEffect: false }) {
+          Row() {
+            Text('隐私政策')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .layoutWeight(1)
+              .textAlign(TextAlign.Start)
+            Icon('chevronRight', 16, $r('app.color.text_tertiary'))
+          }
+          .width('100%')
+          .height('100%')
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: 0, right: 0 })
+        .backgroundColor(Color.Transparent)
+        .accessibilityText('查看隐私政策')
+        .onClick((): void => { this.onOpenPrivacyPolicy(); })
         Text('开源 · MIT。含 isomorphic-git、CodeMirror 等 MIT 组件。')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))

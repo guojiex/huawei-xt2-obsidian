@@ -161,6 +161,7 @@ struct Index {
   @State settingsReturnView: string = 'note';
   @State settingsCategory: string = 'general';
   @State settingsDetail: boolean = false;
+  @State settingsPrivacyPolicyOpen: boolean = false;
   @State importDirectoryName: string = '';
   @State importHasDirectorySelection: boolean = false;
   @State importVaultBusy: boolean = false;
@@ -1551,6 +1552,10 @@ struct Index {
     if (this.topView === 'history') {
       this.topView = 'settings';
     } else if (this.topView === 'settings') {
+      if (this.settingsPrivacyPolicyOpen) {
+        this.settingsPrivacyPolicyOpen = false;
+        return;
+      }
       if (this.isSingleScreenLayout() && this.settingsDetail) {
         this.settingsDetail = false;
         return;
@@ -1567,6 +1572,7 @@ struct Index {
 
   private returnFromSettings(): void {
     this.settingsDetail = false;
+    this.settingsPrivacyPolicyOpen = false;
     this.topView = this.settingsReturnView;
     this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     this.scheduleWorkspaceSessionSave();
@@ -1729,6 +1735,7 @@ struct Index {
     this.settingsReturnView = fromView;
     this.settingsCategory = initialTab;
     this.settingsDetail = this.isSingleScreenLayout() && fromView === 'agent';
+    this.settingsPrivacyPolicyOpen = false;
     this.topView = 'settings';
   }
 
@@ -5091,7 +5098,10 @@ struct Index {
         // 次级视图顶栏返回是硬要求（api_notes I3），不依赖系统返回可否拦截
         this.IconButton('back', $r('app.color.text_primary'), (): void => {
           if (this.topView === 'settings') {
-            if (this.isSingleScreenLayout() && this.settingsDetail && this.settingsReturnView !== 'agent') {
+            if (this.settingsPrivacyPolicyOpen) {
+              this.settingsPrivacyPolicyOpen = false;
+            } else if (this.isSingleScreenLayout() && this.settingsDetail &&
+              this.settingsReturnView !== 'agent') {
               this.settingsDetail = false;
             } else {
               this.returnFromSettings();
@@ -6224,12 +6234,18 @@ struct Index {
       experienceMode: this.experienceMode,
       selectedCategory: this.settingsCategory,
       showCategoryList: this.isSingleScreenLayout() && !this.settingsDetail,
+      showPrivacyPolicy: this.settingsPrivacyPolicyOpen,
       onSelectCategory: (category: string): void => {
         this.settingsCategory = category;
+        if (category !== 'about') {
+          this.settingsPrivacyPolicyOpen = false;
+        }
         if (this.isSingleScreenLayout()) {
           this.settingsDetail = true;
         }
       },
+      onOpenPrivacyPolicy: (): void => { this.settingsPrivacyPolicyOpen = true; },
+      onClosePrivacyPolicy: (): void => { this.settingsPrivacyPolicyOpen = false; },
       onOpenHistory: (): void => { this.topView = 'history'; },
       onResetSplit: (): void => { this.resetSplitLayout(); },
       onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); },
