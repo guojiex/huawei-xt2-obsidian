@@ -65,6 +65,8 @@ export class Size {
   static readonly formatMenuW: number = 360;  // Aa 浮层宽度（v2 --format-width）
   /** 触控热区下限：图标按钮视觉 24，热区必须 ≥48（v0.1 遗留缺陷，4.x 修正） */
   static readonly touch: number = 48;
+  /** 浮层最大高度：映射 v2 `--window-min`，用于 vault-menu 这类可滚动下拉（超出即内部滚动） */
+  static readonly menuMaxH: number = 620;
   /** 目录树每级缩进（1.5）—— 原实现 32/48/64/80 级差 16 太窄 */
   static readonly treeIndent: number = 24;
   /** 文件树图标尺寸：映射 v2 `--tree-icon`。 */

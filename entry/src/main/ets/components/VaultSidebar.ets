@@ -242,22 +242,15 @@ export struct VaultSidebar {
     return true;
   }
 
-  /** 库来源徽标：沙箱本地、已关联目录与 Git 分别显示。 */
-  @Builder
-  VaultBadge(v: VaultEntry) {
-    Text(v.rootKind === 'external' ? '目录' : (v.type === 'git' ? 'Git' : '本地'))
-      .fontSize(FontSize.caption)
-      .fontWeight(FontWeight.Medium)
-      .fontColor(v.type === 'git' ? $r('app.color.success') : $r('app.color.brand'))
-      .padding({ top: 2, bottom: 2, left: Space.s2, right: Space.s2 })
-      .borderRadius(Radius.full)
-      .backgroundColor(v.type === 'git' ? $r('app.color.success_bg') : $r('app.color.brand_bg'))
-  }
-
   /**
-   * 库切换下拉菜单内容（照原型 vault-menu：库项 + 分隔线 + 「管理库…」+「导入 Git 仓库…」）。
-   * 逐条对原型：容器 padding --sp-2 / 圆角 --r-menu / elev-3；行 --vitem：48 高、
-   * padding 8/12、圆角 --r-control、字号 --fs-body1；选中 = brand 字 + --brand-bg 底 + 500。
+   * 库切换下拉菜单内容（照原型 vault-menu）：
+   * 「切换知识库」标签 + 库项（folder 图标 + 名称，当前项尾部对勾）+ 分隔线 + 蓝色文字动作。
+   *
+   * 逐条对原型 .vault-menu / .vault-menu-label / .vault-option / .vault-menu-actions：
+   * 容器 padding --s2 / 圆角 --r / 1px line / --float-shadow / max-height --window-min（超出内部滚动）；
+   * 行高 --touch、padding --s2、圆角 --small-r、字号继承 --small(=body2)；
+   * 选中 = --blue-soft 底 + --blue 字与图标；动作区通栏分隔线 + --blue 文字。
+   * 库类型不在这里重复：卡片副标题已有「本地 / Git 库 / 外部目录库 · N 篇」。
    *
    * ⚠️ 为什么走 bindPopup 而不是「Stack 内 offset 溢出的普通 Column」：
    * 后者是页面内普通子节点，而侧栏里文件树在它之后声明 —— ArkUI 同级组件
@@ -267,80 +260,114 @@ export struct VaultSidebar {
   @Builder
   VaultMenu() {
     Column() {
-      ForEach(this.vaults, (v: VaultEntry) => {
-        Row({ space: Space.s2 }) {
-          Text(v.id)
-            .fontSize(FontSize.body1)
-            .fontWeight(v.id === this.currentVaultId ? FontWeight.Medium : FontWeight.Normal)
-            .fontColor(v.id === this.currentVaultId
-              ? $r('app.color.brand') : $r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-          this.VaultBadge(v)
+      // 内容可滚：库多时不顶出屏幕（原型 max-height: var(--window-min); overflow:auto）
+      Scroll() {
+        Column() {
+          // 原型 .vault-menu-label
+          Text('切换知识库')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .textAlign(TextAlign.Start)
+            .width('100%')
+            .padding(Space.s2)
+
+          if (this.vaults.length === 0) {
+            // 原型 .vault-empty（库可被全部删除，此时菜单仍要能打开去新建）
+            Text('暂无知识库')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_tertiary'))
+              .textAlign(TextAlign.Start)
+              .width('100%')
+              .padding(Space.s2)
+          }
+
+          ForEach(this.vaults, (v: VaultEntry) => {
+            Row({ space: Space.s2 }) {
+              // 原型 .vault-option > svg：未选中 muted，选中 --blue
+              Icon('folder', 18, v.id === this.currentVaultId
+                ? $r('app.color.brand') : $r('app.color.text_tertiary'))
+              Text(v.id)
+                .fontSize(FontSize.body2)
+                .fontWeight(v.id === this.currentVaultId ? FontWeight.Medium : FontWeight.Normal)
+                .fontColor(v.id === this.currentVaultId
+                  ? $r('app.color.brand') : $r('app.color.text_primary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+              if (v.id === this.currentVaultId) {
+                // 原型仅当前库带尾部对勾
+                Icon('check', 18, $r('app.color.brand'))
+              }
+            }
+            .width('100%')
+            .height(Size.touch)
+            .padding(Space.s2)
+            .borderRadius(Radius.control)
+            .backgroundColor(v.id === this.currentVaultId
+              ? $r('app.color.brand_bg') : Color.Transparent)
+            .onClick(() => {
+              this.menuOpen = false;
+              this.onSwitchVault(v.id);
+            })
+          }, (v: VaultEntry) => v.id)
+
+          // 原型 .vault-menu-actions：通栏分隔线（原型 border-top 不带左右内缩）
+          Divider()
+            .color($r('app.color.line'))
+            .margin({ top: Space.s2 })
+
+          Row() {
+            Text('管理库…')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(Size.touch)
+          .padding(Space.s2)
+          .borderRadius(Radius.control)
+          .onClick(() => {
+            this.menuOpen = false;
+            this.onManageVaults();
+          })
+
+          Row() {
+            Text('＋ 导入库…')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(Size.touch)
+          .padding(Space.s2)
+          .borderRadius(Radius.control)
+          .onClick(() => {
+            this.menuOpen = false;
+            this.onImportVault();
+          })
+
+          Row() {
+            Text('分享知识库…')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(Size.touch)
+          .padding(Space.s2)
+          .borderRadius(Radius.control)
+          .onClick(() => {
+            this.menuOpen = false;
+            this.onShareVault();
+          })
         }
         .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .borderRadius(Radius.control)
-        .backgroundColor(v.id === this.currentVaultId
-          ? $r('app.color.brand_bg') : Color.Transparent)
-        .onClick(() => {
-          this.menuOpen = false;
-          this.onSwitchVault(v.id);
-        })
-      }, (v: VaultEntry) => v.id)
-
-      // 分隔线（原型 .sep：1px line，上下 --sp-1 / 左右 --sp-2 边距）
-      Divider()
-        .color($r('app.color.line'))
-        .margin({ top: Space.s1, bottom: Space.s1, left: Space.s2, right: Space.s2 })
-
-      // 动作项（原型 data-act 行：纯文字，不带图标）
-      Row() {
-        Text('管理库…')
-          .fontSize(FontSize.body1)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
       }
       .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .borderRadius(Radius.control)
-      .onClick(() => {
-        this.menuOpen = false;
-        this.onManageVaults();
-      })
-
-      Row() {
-        Text('导入库…')
-          .fontSize(FontSize.body1)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .borderRadius(Radius.control)
-      .onClick(() => {
-        this.menuOpen = false;
-        this.onImportVault();
-      })
-
-      Row() {
-        Text('分享知识库…')
-          .fontSize(FontSize.body1)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .borderRadius(Radius.control)
-      .onClick(() => {
-        this.menuOpen = false;
-        this.onShareVault();
-      })
+      .align(Alignment.TopStart)
+      .scrollBar(BarState.Auto)
+      // 620 是含 padding 的外框上限，内容区要扣掉上下 --s2
+      .constraintSize({ maxHeight: Size.menuMaxH - Space.s2 * 2 })
     }
     // 与库切换卡片同宽（原型 left:0; right:0），实测宽由卡片 onAreaChange 回填
     .width(this.menuW)

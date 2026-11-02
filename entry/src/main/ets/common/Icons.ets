@@ -33,6 +33,8 @@ const P_CHEVRON_RIGHT: string = 'M9 5l7 7-7 7';
 const P_SEARCH: string = 'M10.8 4.3L13.29 4.79L15.39 6.21L16.81 8.31L17.3 10.8L16.81 13.29L15.39 15.39L13.29 16.81L10.8 17.3L8.31 16.81L6.21 15.39L4.79 13.29L4.3 10.8L4.79 8.31L6.21 6.21L8.31 4.79Z M16 16L20.5 20.5';
 const P_COLLAPSE: string = 'M11 5l-5 7 5 7M18 5l-5 7 5 7';
 const P_FOLDER: string = 'M3 6h6l2 2h10v11H3z';
+// 对勾（v2 vault-menu 选中库的尾部标记：`m5 12 4 4 10-10`）
+const P_CHECK: string = 'M5 12L9 16L19 6';
 const P_DOC: string = 'M7 3h6l4 4v14H7zM13 3v7h4';
 // 文件树笔记（按 v2 icons.note 绘制；圆角用三次贝塞尔代替椭圆弧，缩放参数无 flag 歧义）。
 const P_NOTE: string = 'M14 3H6C4.9 3 4 3.9 4 5V19C4 20.1 4.9 21 6 21H18C19.1 21 20 20.1 20 19V9ZM14 3V9H20M8 13H16M8 17H13';
@@ -81,6 +83,8 @@ function pathOf(name: string): string {
     return P_COLLAPSE;
   } else if (name === 'folder') {
     return P_FOLDER;
+  } else if (name === 'check') {
+    return P_CHECK;
   } else if (name === 'doc') {
     return P_DOC;
   } else if (name === 'note') {
