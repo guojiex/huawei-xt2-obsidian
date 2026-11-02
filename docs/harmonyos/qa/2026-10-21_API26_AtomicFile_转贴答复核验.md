@@ -19,7 +19,7 @@
 - SDK 包：`/Applications/DevEco-Studio.app/Contents/sdk/default/sdk-pkg.json`，`apiVersion` 为 `26`，版本 `26.0.0.105`。
 - 声明：`/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/ets/api/@ohos.file.fs.d.ts`。`AtomicFile` 类和 `startWrite()` 标注 `@since 15`；`startWrite()` 异常列表为 13900001、13900002、13900012、13900027、13900042，没有 13900020。
 - `13900020` 在该 SDK 的其他文件操作声明中出现为 `Invalid argument`；该含义只适用于对应方法的声明，不足以确定 `AtomicFile.startWrite()` 的错误原因。
-- 本机 API 26 模拟器上目标不存在、父目录存在且为目录时多次复现 `startWrite()` 返回 13900020；详细设备和请求证据见 [v0.3 §6](../../releases/v0.3/需求文档.md) 与 [原始提问记录](../prompts/2026-10-20_API26_AtomicFile_startWrite_13900020.md)。
+- 本机 API 26 模拟器上目标不存在、父目录存在且为目录时多次复现 `startWrite()` 返回 13900020；详细设备和请求证据见 [v0.3 §6](../../releases/v0.3/需求文档.md)。原始提问（2026-10-20，就 13900020 的具体触发条件发问）不再入库，问的是哪件事见下文核验表「问题」列。
 
 ## 结论
 
@@ -38,4 +38,4 @@
 | 用普通 stream/open/unlink 做路径写入诊断 | 不采用。答复未给出 API 24 证据，且该做法绕过仓库要求的 `AtomicFile` 写入约束，可能修改实际目标或留下副作用；不据此在应用中实现诊断写入。 |
 | 4096 字符路径上限、API 24 与 API 26 错误码体系一致、所有 File IO API 跨版本兼容 | 没有来源或 API 24 SDK 证据，保持未确认，不作为工程事实。 |
 
-因此第二份答复没有提供可用于改码的新核实结论，也没有解除 v0.3 非空 clone 阻塞。仅保留原文和上述核验；追问出处的提示词见 [`来源与诊断方案追问`](../prompts/2026-10-21_API26_AtomicFile_来源与诊断方案追问.md)。
+因此第二份答复没有提供可用于改码的新核实结论，也没有解除 v0.3 非空 clone 阻塞。仅保留原文和上述核验。2026-10-21 的追问不再入库，当时问的是 6 项、每项都要官方文档直链（无来源就写「未记载」）：`AtomicFile` / `startWrite()` 的官方最低 API 版本与本机 SDK `@since 15` 的冲突、13900020 的触发条件、父目录/路径规范化/并发限制的出处、API 24 侧声明证据、`createWriteStreamSync` 与 `statSync` 错误码、无副作用的诊断步骤。

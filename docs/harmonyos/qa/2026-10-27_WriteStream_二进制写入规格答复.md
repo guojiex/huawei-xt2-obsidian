@@ -2,7 +2,7 @@
 
 - 接收日期：2026-10-27
 - 来源：用户转贴的官方支持回复，称已由领域专家确认；未附工单号、文档直链或适用版本范围。
-- 原问题：[API 26 AtomicFile 写入追问](../prompts/2026-10-22_API26_AtomicFile_clone_.git_config.md)
+- 原问题（2026-10-22，提问原文不再入库；问的是这 5 项）：① `AtomicFile.startWrite()` 返回的 `WriteStream` 是否可用 `write(Uint8Array, encoding?, callback)` 写二进制；② `Uint8Array` chunk 是否必须省略 `encoding`，可传哪些合法编码；③ native 日志 `GetWriteArg: Illegal write buffer or encoding` / `WriteExec: Failed to resolve buf and options` 与 `13900020` 有无官方对应；④ 给一个 API 24 可用、严格用 `AtomicFile` 完整写入任意 `Uint8Array` 并在成功/失败分别收尾的示例；⑤ API 声明与 API 26 模拟器运行结果矛盾时有无官方支持渠道、需要哪些最小诊断材料。
 - 工程行为结论见 [api_notes.md C1](../api_notes.md#c1-原子写--用官方-atomicfile-替换自研-tmprename)。
 
 ## 回复原文

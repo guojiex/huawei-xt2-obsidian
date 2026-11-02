@@ -2,7 +2,7 @@
 
 ## 来源与核验边界
 
-本记录整理用户带回的 HarmonyOS 开发答复，回应 [`AtomicFile.startWrite() 正确用法提示词`](../prompts/2026-10-21_API24_AtomicFile_startWrite_正确用法与失败处理.md)。答复称依据《@ohos.file.fs（文件管理）》及文件管理错误码，包含 1–10 的脚注编号，但粘贴内容没有附逐项直链或工单编号。以下保留其结论，并与本机 API 26 SDK 声明交叉核对；未能独立确认的细节仍标明来源边界。
+本记录整理用户带回的 HarmonyOS 开发答复，回应 2026-10-21 关于 `AtomicFile.startWrite()` 正确用法与失败处理的提问（提问原文不再入库，问了哪几项见下表「问题」列）。答复称依据《@ohos.file.fs（文件管理）》及文件管理错误码，包含 1–10 的脚注编号，但粘贴内容没有附逐项直链或工单编号。以下保留其结论，并与本机 API 26 SDK 声明交叉核对；未能独立确认的细节仍标明来源边界。
 
 工程 `compatibleSdkVersion` 为 `6.1.1(24)`。本机 DevEco Studio `26.0.0.851`，HarmonyOS SDK `26.0.0.105`。13900020 故障目前只在 Huawei_TripleFold API 26 arm64 模拟器的非空 Git clone 集成路径复现；API 24 运行时和 XT2 真机尚未测试。
 

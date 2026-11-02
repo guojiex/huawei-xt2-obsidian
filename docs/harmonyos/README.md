@@ -19,24 +19,23 @@ docs/harmonyos/
 ├── README.md          ← 本文件：规则 + 索引（唯一入口）
 ├── api_notes.md       ← 【单一真源】按主题分组的核实结论，长期维护
 ├── 真机运行.md        ← 上真机的操作手册（开发者模式 / 自动签名 / hdc 安装 / 坑）
-├── qa/                ← 每次问答的存档（原始/要点，一问一文件）
-│   ├── 2026-10-17_首批回答_API24.md
-│   ├── 2026-10-17_B组追问_Web组件.md
-│   ├── 2026-10-17_小艺智能体_端侧意图框架.md
-│   └── 2026-10-17_埋点与事件打点.md
-└── prompts/           ← 每次发出去的提问原文（可复用的模板）
-    └── 2026-10-17_首批提问_API24.md
+└── qa/                ← 每次问答的存档（原始/要点，一问一文件）
+    ├── 2026-10-17_首批回答_API24.md
+    ├── 2026-10-17_B组追问_Web组件.md
+    ├── 2026-10-17_小艺智能体_端侧意图框架.md
+    └── 2026-10-17_埋点与事件打点.md
 ```
 
 | 文件 | 放什么 | 谁写 |
 | --- | --- | --- |
 | `api_notes.md` | **提炼后的结论**，按主题分组、带置信度标记、可直接照着落码 | Agent（拿到回答后） |
 | `qa/*.md` | 这次问答**问了哪些问题、官方怎么答的**（要点清单，用于**防重复提问**） | Agent（拿到回答后） |
-| `prompts/*.md` | 提问原文（含本机 API 版本 + 防编造约束），下次可直接复制改 | Agent（提问前） |
+
+> **`prompts/` 已取消（2026-11-02 用户决定）**：提问原文不再单独入库，历史 12 份已删除（Git 历史可查）。提问的「问了什么」记在 `qa/` 存档里即可，**问题措辞决定了答案覆盖面这一点仍要在 qa 里写清楚**。
 
 ---
 
-## 五条铁律
+## 四条铁律
 
 ### 1. `api_notes.md` 是唯一真源，别处只准链接，不准复制
 
@@ -51,18 +50,13 @@ docs/harmonyos/
 - **API 版本变了**（升级 `compatibleSdkVersion` 后旧结论全部待复核）；
 - 需要**追问细节**（原答太笼统）。
 
-### 3. 每次提问都要留下 prompt 原文
-
-从 `prompts/` 里最近一份复制改名，保留头部的**本机版本信息**和末尾的**防编造约束**（约束比问题本身更重要）。
-命名：`prompts/YYYY-MM-DD_主题_APIxx.md`。
-
-### 4. 不删旧结论，只标记推翻
+### 3. 不删旧结论，只标记推翻
 
 被后续问答或真机实测推翻的结论，**保留原文加删除线**，写成：
 `~~旧结论~~ → ❌ 已推翻（YYYY-MM-DD）：<原因>；新结论见 <位置>`。
 理由：防止下一个 Agent 又走回同一条死路（我们已经在 `FoldSplitContainer` 上踩过一次）。
 
-### 5. 置信度标记（落码前必看）
+### 4. 置信度标记（落码前必看）
 
 | 标记 | 含义 | 能不能直接落码 |
 | --- | --- | --- |
@@ -81,13 +75,13 @@ docs/harmonyos/
 ### A. 要问一个新问题
 
 1. 查 `api_notes.md` 和下方索引表 → 确认没问过（见铁律 2）
-2. 从 `prompts/` 最新一份复制 → 改名 `prompts/YYYY-MM-DD_主题_APIxx.md` → 改问题
-3. 粘给鸿蒙官方 Agent / DevEco AI
+2. 组织问题：正文里带上**本机 API / SDK 版本与设备**，末尾带上**防编造约束**（"查不到就回答未记载，不要猜接口名"）——这两条决定答复能不能用，跟存不存档无关
+3. 粘给鸿蒙官方 Agent / DevEco AI（提问原文不再入库）
 4. 拿到回答后走 B
 
 ### B. 拿到官方回答
 
-1. **先存档**：`qa/YYYY-MM-DD_主题_APIxx.md`，逐条记「问了什么 → 官方怎么答 → 标记」。逐字原文能留就留，留不下就写要点清单并注明。
+1. **先存档**：`qa/YYYY-MM-DD_主题_APIxx.md`，逐条记「问了什么 → 官方怎么答 → 标记」。逐字原文能留就留，留不下就写要点清单并注明。**「问了什么」必须写到能复现提问的粒度（问题条目 + 关键限定条件）**——提问原文不再单独入库，这一栏是判断「当时到底问没问过某一点」的唯一依据。
 2. **再提炼**：把结论写进 `api_notes.md` 对应主题组，**每条必须带置信度标记**（✅/⚠️/❓）。
 3. **更新索引**：在本文件底部索引表加一行。
 4. **回填影响面**：结论推翻了既有设计，同步改 `docs/mvp_design.md` / 代码，并在 `api_notes.md` 的落地上表里记一笔。
@@ -112,18 +106,18 @@ docs/harmonyos/
 | 2026-10-31 | 模拟器 AgentKit 动态加载与设备识别答复核对（用户提供的 AI 答复，非官方答复） | 方案与代码片段核对 | [答复核对归档](qa/2026-10-31_模拟器AgentKit动态加载与设备识别答复核对_API24.md) | 见 [api_notes F1](api_notes.md)：`productModel` 门禁与按需动态加载是隔离方向；具体动态组件挂载、缺 HSP 触发行为和 XT2 仍待验证；当前 main 静态导入仍会阻断模拟器启动 |
 | 2026-10-27 | 客服智能体 / Skill 接入建议与官方文档核对 | 2 条路线 | [核对归档](qa/2026-10-27_客服智能体与Skill接入建议_API24.md) | 见 [api_notes F16](api_notes.md)：推荐沿用托管 Agent + 端插件；Skill 亦可接端插件，但不自动解决入口、端执行器与设备条件；不恢复排期 |
 | 2026-10-27 | WriteStream 二进制写入规格与需求反馈 | 领域专家回复 | [答复原文与需求草稿](qa/2026-10-27_WriteStream_二进制写入规格答复.md)；结论见 [api_notes.md C1](api_notes.md#c1-原子写--用官方-atomicfile-替换自研-tmprename) | 用户带回答复；适用版本范围未提供，需求草稿未提交 |
-| 2026-10-27 | API 24 新建图片附件的写入方案与 AtomicFile 是否强制 | 4 项核实 | **提问原文未入库** —— `prompts/` 下没有 `2026-10-27_API24_应用附件写入方案与AtomicFile要求.md`（2026-11-02 链接核查时发现，Git 历史亦从未提交该文件） | 官方提问仍未发（区分平台要求、推荐方案和应用自身的工程约束）。**工程侧结论已定**：`AtomicFile` 是本项目的完整性策略而非平台强制 API，新建唯一附件按 [api_notes C1](api_notes.md#c1-原子写--用官方-atomicfile-替换自研-tmprename) 与 [Q1](api_notes.md#q1-picker-uri-的授权范围与-sdk-声明存在不同表述) 处理，见 `AGENTS.md` 硬约束 10 |
+| 2026-10-27 | API 24 新建图片附件的写入方案与 AtomicFile 是否强制 | 4 项核实 | **官方提问仍未发**（区分平台要求、推荐方案和应用自身的工程约束） | **工程侧结论已定**：`AtomicFile` 是本项目的完整性策略而非平台强制 API，新建唯一附件按 [api_notes C1](api_notes.md#c1-原子写--用官方-atomicfile-替换自研-tmprename) 与 [Q1](api_notes.md#q1-picker-uri-的授权范围与-sdk-声明存在不同表述) 处理，见 `AGENTS.md` 硬约束 10 |
 | 2026-10-26 | Share Kit / 本地 ZIP 官方文档与 SDK 声明核对（非新问答） | 3 组 API 边界 | [核对归档](qa/2026-10-26_ShareKit与本地打包_API24.md) | 结论见 [api_notes O1–O3](api_notes.md)：API 起始版本满足 API 24；接收授权生命周期及 Markdown 长图输出仍待验证 |
 | 2026-10-26 | 小艺开放平台官方文档对照（非新问答） | 两份待问清单对照 | [核对归档](qa/2026-10-26_小艺开放平台文档对照_API24.md) | 结论见 [api_notes F1 / F9–F11](api_notes.md)：入口、通信方向、配置前置和版本边界；保留未解问题，不恢复实施排期 |
 | 2026-10-26 | 小艺自绘按钮拉起答复与官方 API 对照（社区答复） | 3 项入口问题 | [核对归档](qa/2026-10-26_小艺自绘按钮拉起答复_API24.md) | 结论见 [api_notes F1](api_notes.md)：两条答复对“无自绘按钮启动 API”结论一致；Stack 叠放是未验证建议，原按钮接线仍无公开依据 |
-| 2026-10-22 | **API 24/26 AtomicFile.startWrite 用法与失败处理** | 5 | [答复归档](qa/2026-10-22_API24_AtomicFile_startWrite_用法答复.md)；[提问原文](prompts/2026-10-21_API24_AtomicFile_startWrite_正确用法与失败处理.md) | 写入成功用 `finishWrite()`、失败用 `failWrite()`；答复称同步异常的 catch 也调用同一实例 `failWrite()`；不显式关闭返回流。13900020 通用含义已明确，具体触发原因仍未知，详见 [`api_notes.md`](api_notes.md) |
+| 2026-10-22 | **API 24/26 AtomicFile.startWrite 用法与失败处理** | 5 | [答复归档](qa/2026-10-22_API24_AtomicFile_startWrite_用法答复.md)（「问题」列即当时的提问清单） | 写入成功用 `finishWrite()`、失败用 `failWrite()`；答复称同步异常的 catch 也调用同一实例 `failWrite()`；不显式关闭返回流。13900020 通用含义已明确，具体触发原因仍未知，详见 [`api_notes.md`](api_notes.md) |
 | 2026-10-17 | 首批核实（三折叠 / Web 组件 / 文件存储 / HAR 发布 / 权限网络） | 20 | [`qa/2026-10-17_首批回答_API24.md`](qa/2026-10-17_首批回答_API24.md) | 三折叠恒为 `phone`；折痕接口只返回**单个 Rect**；`FoldSplitContainer` **已否决**；原子写改用 `AtomicFile`；令牌存 `@kit.AssetStoreKit`；`runJavaScript` 长度未记载 → 大数据走 `WebMessagePort`；前台 clone/push 无需额外权限 |
 | 2026-10-17 | **B 组追问**（Web 组件六问） | 6 | [`qa/2026-10-17_B组追问_Web组件.md`](qa/2026-10-17_B组追问_Web组件.md) | **拦截方案 ❌ 否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**NodeContainer 卸载会重载页面 → 推翻**，改 `visibility(Hidden)` 常驻；`WebMessagePort` 在 rawfile 可用、支持 ArrayBuffer、上限未记载（分块 4MB）；Worker 可用且 **port 可 transfer 进去**；中文输入法仍 ❓ 且**建议 textarea，与 CodeMirror 6 冲突** |
 | 2026-10-17 | **原生埋点能力**（hiAppEvent / UIObserver 做展示·点击·页面上报） | 6 | [`qa/2026-10-17_埋点与事件打点.md`](qa/2026-10-17_埋点与事件打点.md) | **无需第三方 SDK**：曝光 `onVisibleAreaApproximateChange`(17+) / 点击 `UIObserver.on('willClick')`(12+) / 页面 `navDestinationSwitch`(12+)，**API 24 全部可用**；`hiAppEvent.write` 落盘 + `addWatcher` 累积触发批量 `takeNext()` 上报；**全局无侵入**方案（组件只声明 `.id()`/`.customProperty()`，Ability 层统一监听）最匹配文件树；⚠️ 可见区域计算**不支持遮挡与旋转**；🔴 **笔记内容一律禁止进埋点** |
 | 2026-10-17 | **小艺智能体 + 端侧意图**（Insight Intent 做笔记编辑） | 9 | [`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md) | 方案骨架：`FunctionComponent` 拉起自建智能体 + `@InsightIntentEntry` 端侧执行 + git 版本底座；**锚点定位法**是细粒度修改的关键；⚠️ **`onCreate → onExecute` 不建 window → 后台执行时 Web 组件不存在 → 我们的 Web 内 git 无法 commit**（架构冲突，出路待拍板）；⚠️ 官方示例用 TRUNC 覆盖写，**须改 `AtomicFile`** |
 | 2026-10-17 | **折痕接口追问**（带五态真机实测反馈） | 5 | [`qa/2026-10-17_折痕接口追问_实测反馈.md`](qa/2026-10-17_折痕接口追问_实测反馈.md) | 官方**无法定性**「两条中心相同 + 五态不变」，倾向系统侧实现限制；**`getLiveCreaseRegion()`（@since 20）为首选替代**（⚠️ 官方示例写错：是 `Display` **实例方法**，须 `getDefaultDisplaySync().getLiveCreaseRegion()`）；**断点方案 = 官方最佳实践**（印证 A3）；「左/右两屏 FS 都=1」**符合预期**（印证 A1）；无设备级常量；`FoldSplitContainer` 措辞修正为「三分栏语义 + 预设比例都不匹配」 |
 
-> **历史提示词（2026-10-25）**：[API 24 小艺本地操作接入核实](prompts/2026-10-25_API24_小艺本地笔记操作接入核实.md)当时尚未发送。2026-10-27 客服答复与官方文档已明确托管 Agent + FunctionComponent + 端插件路径；未解决的 API 24 执行细节、绑定、设备和审核条件见 F 组，不要原样重发历史提示词。
+> **2026-10-25 的 API 24 小艺本地操作接入提问**当时尚未发送。2026-10-27 客服答复与官方文档已明确托管 Agent + FunctionComponent + 端插件路径；未解决的 API 24 执行细节、绑定、设备和审核条件见 F 组，**不要按当时那份未发送的问题原样重发**。
 
 > **2026-10-26 核对增量**：上段 F-A 的接口存在性已补证据，后续不重复提问；其余缺口按 [本次归档](qa/2026-10-26_小艺开放平台文档对照_API24.md) 收敛。F-C 的历史优先级不再适用于首期无 Web/git 的本地操作；真实接入排期保持暂缓。
 
@@ -134,7 +128,7 @@ docs/harmonyos/
 | # | 问题 | 卡住什么 | 状态 |
 | --- | --- | --- | --- |
 | ~~A-3~~ | ~~除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案~~ | ~~若有，可省掉自绘 + 真机校准~~ | ✅ **已答**（2026-10-17 折痕追问 Q4）：**没有**。官方立场是「布局适配优先基于响应式断点」，`FoldSplitContainer` 只有 `PresetSplitRatio` 三档预设且不对齐折痕 → **自绘等分是官方认可路线**，不必再找 |
-| **C1-API26** | API 26 模拟器 clone 写 `.git/config` 时 `AtomicFile` 返回流的 `WriteStream.write(Uint8Array, ...)` 报 13900020 | v0.3 clone | 🟡 实时 hilog 记录 `Illegal write buffer or encoding` / `Failed to resolve buf and options`；旧 `startWrite failed` UI 标签由共享 `try/catch` 误标，分阶段捕获后定位到 `WriteStream.write()` 参数解析路径。`utf8`、不传 encoding、复制字节数组仍复现；具体原因未知，只在 API 26 模拟器实测，API 24 / XT2 未测试。见 [`api_notes.md`](api_notes.md)、[v0.3 §6](../releases/v0.3/需求文档.md) 与[更新后的追问提示词](prompts/2026-10-22_API26_AtomicFile_clone_.git_config.md) |
+| **C1-API26** | API 26 模拟器 clone 写 `.git/config` 时 `AtomicFile` 返回流的 `WriteStream.write(Uint8Array, ...)` 报 13900020 | v0.3 clone | 🟡 实时 hilog 记录 `Illegal write buffer or encoding` / `Failed to resolve buf and options`；旧 `startWrite failed` UI 标签由共享 `try/catch` 误标，分阶段捕获后定位到 `WriteStream.write()` 参数解析路径。`utf8`、不传 encoding、复制字节数组仍复现；具体原因未知，只在 API 26 模拟器实测，API 24 / XT2 未测试。见 [`api_notes.md`](api_notes.md)、[v0.3 §6](../releases/v0.3/需求文档.md)；就此追问过官方「返回流的二进制 `write()` 规格」，答复见 [2026-10-27 WriteStream 答复](qa/2026-10-27_WriteStream_二进制写入规格答复.md) |
 | ~~B-1~~ | ~~`onInterceptRequest` 能否拿到 POST body~~ | ~~同步层能否简化为拦截~~ | ✅ **已解决**：能拿到但是 `string`，**拦截方案否决**，转发为最终方案 |
 | ~~B-2~~ | ~~`WebMessagePort` 在 rawfile 页面能否建立~~ | ~~大数据通道选型~~ | ✅ **已解决**：可用、支持 ArrayBuffer；剩「上限多少」只能真机测 |
 | B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |
@@ -165,7 +159,7 @@ docs/harmonyos/
 
 > 升级 `compatibleSdkVersion` 后：旧结论一律视为「待复核」，在 `api_notes.md` 顶部加一行版本提示，不要直接删。
 
-> Agent 后台与通知：已做 [SDK 声明核对](qa/2026-10-25_API24_Agent后台与通知_SDK核对.md)，结论见 api_notes N1–N3；[官方核实提示词](prompts/2026-10-25_API24_Agent_loop_后台与通知核实.md)待问，不阻塞 v0.7 本地 mock。
+> Agent 后台与通知：已做 [SDK 声明核对](qa/2026-10-25_API24_Agent后台与通知_SDK核对.md)，结论见 api_notes N1–N3；官方核实提问**尚未发出**，要问的 7 项已列在 api_notes **N 组抬头**，不阻塞 v0.7 本地 mock。
 
 > 应用反馈能力：见 [2026-10-27 核实记录](qa/2026-10-27_应用反馈能力核实_API24.md) 与 api_notes R1–R3；独立 Feedback Kit 说法已撤回，最终产品方案采用配置化反馈邮箱。
 

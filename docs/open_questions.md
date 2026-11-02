@@ -202,7 +202,7 @@ Q2 的早期后置决定保留在下文；内容导出已分配 [v0.8](releases/
 
 ### Q9. v0.3 是否把已有 Git 库的手机 pull/checkout 纳入本版验收？—— ✅ 已决定（2026-11-01）
 
-[v0.3 需求 2.1](releases/v0.3/需求文档.md) 明确 commit + push；2.2 规定远端前进时由 PC 解决、手机不做合并 UI。Native 实现提示词另将安全 pull 作为恢复边界成立后的条件项。现有代码没有调用已有库 checkout，因此不会部分覆盖用户工作区。
+[v0.3 需求 2.1](releases/v0.3/需求文档.md) 明确 commit + push；2.2 规定远端前进时由 PC 解决、手机不做合并 UI。v0.3 的 Native 开发约束另将安全 pull 作为恢复边界成立后的条件项。现有代码没有调用已有库 checkout，因此不会部分覆盖用户工作区。
 
 | 选项 | 说明 | 影响 |
 | --- | --- | --- |
@@ -215,7 +215,7 @@ Q2 的早期后置决定保留在下文；内容导出已分配 [v0.8](releases/
 
 ### Q11. 应用内检测更新走哪条能力路线？—— ✅ 已定：**方向 A**（2026-11-02）；实现细节仍待拍板
 
-需求池 I 节条目已分配 [v1.17](releases/v1.17/需求文档.md)，排首发之后。2026-11-02 官方答复 + 本机 HMS SDK 声明核对完成，结论见 [api_notes V1–V12](harmonyos/api_notes.md#v-组应用内检测更新appgallery-kit-updatemanager2026-11-02) 与[答复核对归档](harmonyos/qa/2026-11-02_应用内检测更新能力答复_API24.md)；提问原文留档 [prompts/2026-11-02_API24_应用内检测更新能力核实.md](harmonyos/prompts/2026-11-02_API24_应用内检测更新能力核实.md)。
+需求池 I 节条目已分配 [v1.17](releases/v1.17/需求文档.md)，排首发之后。2026-11-02 官方答复 + 本机 HMS SDK 声明核对完成，结论见 [api_notes V1–V12](harmonyos/api_notes.md#v-组应用内检测更新appgallery-kit-updatemanager2026-11-02) 与[答复核对归档](harmonyos/qa/2026-11-02_应用内检测更新能力答复_API24.md)（问了哪 7 项见该文件表格「问题」列）。
 
 | 方向 | 内容 | 结论 |
 | --- | --- | --- |
