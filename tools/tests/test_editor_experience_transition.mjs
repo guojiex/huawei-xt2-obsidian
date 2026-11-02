@@ -31,7 +31,13 @@ function createHarness() {
   const calls = [];
   const context = vm.createContext({
     module: { exports: {} },
-    promptAction: { showToast: ({ message }) => calls.push('toast:' + message) }
+    promptAction: { showToast: ({ message }) => calls.push('toast:' + message) },
+    hilog: { warn: () => {}, error: () => {}, info: () => {} },
+    WorkspaceEditGuard: { mark: () => {} },
+    DOMAIN: 0,
+    TAG: 'IndexHarness',
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id)
   });
   vm.runInContext(code, context);
   const app = new context.module.exports();
@@ -54,6 +60,11 @@ function createHarness() {
     flushWorkspaceSaves: async () => { calls.push('flush'); return true; },
     refreshPreviewsForExperienceMode: async () => {},
     refreshSharedEditability: async () => { calls.push('refresh'); },
+    resetSaveFeedback: () => {},
+    scheduleSave: () => {},
+    scheduleRightSave: () => {},
+    syncLeftContentToRight: async () => {},
+    syncRightContentToLeft: async () => {},
     notePaneWidth: () => 500,
     editorBridge: {
       ready: true,
@@ -109,6 +120,55 @@ test('composition that starts while flushing keeps the current mode and reports 
 
   assert.equal(app.experienceMode, 'simple');
   assert.deepEqual(app.calls, ['flush', 'toast:请先完成当前输入，再切换编辑模式']);
+});
+
+test('a preview that never becomes ready cannot block a mode switch', async () => {
+  const app = createHarness();
+  app.previewBridge = { ready: false, waitUntilReady: async () => {} };
+  app.rightPreviewBridge = { ready: false, waitUntilReady: async () => {} };
+
+  await app.selectEditorExperience('professional');
+
+  assert.equal(app.experienceMode, 'professional');
+  assert.deepEqual(app.calls, ['flush', 'refresh', 'save:professional']);
+});
+
+test('a preview that does not answer without pending edits cannot block a mode switch', async () => {
+  const app = createHarness();
+  app.previewBridge = { ready: true, requestEditableContent: async () => { throw new Error('timeout'); } };
+
+  await app.selectEditorExperience('professional');
+
+  assert.equal(app.experienceMode, 'professional');
+  assert.deepEqual(app.calls, ['flush', 'refresh', 'save:professional']);
+});
+
+test('pending preview edits that cannot be flushed still block the switch and name the pane', async () => {
+  const app = createHarness();
+  app.leftSimplePreviewDirty = true;
+  app.previewBridge = { ready: true, requestEditableContent: async () => { throw new Error('timeout'); } };
+
+  await app.selectEditorExperience('professional');
+
+  assert.equal(app.experienceMode, 'simple');
+  assert.deepEqual(app.calls, ['toast:简单模式的正文尚未同步：左栏预览未回传正文（页面可能不可见），编辑模式未更改']);
+});
+
+test('failing to read the editor text is no reason to refuse a mode switch', async () => {
+  const app = createHarness();
+  const written = [];
+  app.editorBridge = {
+    ready: true,
+    getContent: async () => { throw new Error('getContent 超时'); },
+    replaceContentFromPreview: async (content) => { written.push(content); }
+  };
+  app.previewBridge = { ready: true, requestEditableContent: async () => 'left edited' };
+
+  await app.selectEditorExperience('professional');
+
+  assert.equal(app.experienceMode, 'professional');
+  assert.deepEqual(written, ['left edited']);
+  assert.deepEqual(app.calls, ['flush', 'refresh', 'save:professional']);
 });
 
 test('switching mode retains the active note and leaves its text and scroll state untouched', async () => {

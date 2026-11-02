@@ -240,6 +240,12 @@ struct Index {
   @State experienceMode: EditorExperienceMode = DEFAULT_EDITOR_EXPERIENCE;
   private leftSimplePreviewCommit: Promise<void> = Promise.resolve();
   private rightSimplePreviewCommit: Promise<void> = Promise.resolve();
+  /**
+   * 该栏预览里存在「还没回写进编辑器」的改动。预览可编辑时的每次编辑都会异步回写，
+   * 回写完清标记；切换编辑模式时只有带标记的栏才必须同步成功，没有改动就不该拦住用户。
+   */
+  private leftSimplePreviewDirty: boolean = false;
+  private rightSimplePreviewDirty: boolean = false;
   private previewFollowPairKey: string = '';
   private previewFollowPane: string = '';
   @State @Watch('onFormatContextChanged') activePane: string = 'left';
@@ -438,9 +444,12 @@ struct Index {
       promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
       return;
     }
-    if (this.experienceMode === 'simple' && !await this.flushSimplePreviewChanges()) {
-      promptAction.showToast({ message: '简单模式的正文尚未同步，编辑模式未更改' });
-      return;
+    if (this.experienceMode === 'simple') {
+      const syncFailure: string = await this.flushSimplePreviewChanges();
+      if (syncFailure.length > 0) {
+        promptAction.showToast({ message: '简单模式的正文尚未同步：' + syncFailure + '，编辑模式未更改' });
+        return;
+      }
     }
     const targetVaultId: string = this.currentVaultId;
     const targetLeftPath: string = this.currentFilePath;
@@ -469,6 +478,9 @@ struct Index {
     this.rightOpenRequestId++;
     this.ensureEditorExperienceStore();
     this.experienceMode = mode;
+    // 同步已经收尾（或确认无需同步），清掉标记，避免下次切回简单模式时拿旧标记拦人。
+    this.setSimplePreviewDirty('left', false);
+    this.setSimplePreviewDirty('right', false);
     void this.refreshPreviewsForExperienceMode();
     void this.refreshSharedEditability();
     if (!(this.editorExperienceStore as EditorExperienceStore).save(mode)) {
@@ -483,24 +495,32 @@ struct Index {
     const requestId = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
     if (vaultId.length === 0 || notePath.length === 0) return false;
     const editor = this.editorBridgeForPane(pane);
+    // 编辑器当前内容只用于「内容没变就跳过回写」这一个优化：
+    // 拿不到（页面不可见时 ArkWeb 可能不回内容）不该判成同步失败，直接按有差异走回写。
+    let hasCurrent: boolean = false;
     let current: string = '';
     try {
       current = await editor.getContent();
+      hasCurrent = true;
     } catch {
-      return false;
+      hilog.warn(DOMAIN, TAG, '读取编辑器内容失败，按有差异处理预览回写');
     }
     if (vaultId !== this.currentVaultId || notePath !== (pane === 'right' ? this.rightFilePath : this.currentFilePath) ||
       requestId !== (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) ||
       this.experienceMode !== 'simple') {
       return false;
     }
-    if (current === content) return true;
+    if (hasCurrent && current === content) {
+      this.setSimplePreviewDirty(pane, false);
+      return true;
+    }
     await editor.replaceContentFromPreview(content);
     if (vaultId !== this.currentVaultId || notePath !== (pane === 'right' ? this.rightFilePath : this.currentFilePath) ||
       requestId !== (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) ||
       this.experienceMode !== 'simple') {
       return false;
     }
+    this.setSimplePreviewDirty(pane, false);
     this.resetSaveFeedback();
     WorkspaceEditGuard.mark(pane, vaultId, notePath);
     if (pane === 'right') {
@@ -517,30 +537,89 @@ struct Index {
     return true;
   }
 
-  private async flushSimplePreviewChanges(): Promise<boolean> {
+  private setSimplePreviewDirty(pane: string, dirty: boolean): void {
+    if (pane === 'right') {
+      this.rightSimplePreviewDirty = dirty;
+    } else {
+      this.leftSimplePreviewDirty = dirty;
+    }
+  }
+
+  /** 等预览页就绪（上限 1.5s）：页面刚起来 / 后台刚回到前台时，同步前先给它一个就绪的机会。 */
+  private waitForPreviewReady(preview: PreviewBridge, timeoutMs: number = 1500): Promise<void> {
+    return new Promise<void>((resolve: () => void): void => {
+      let settled: boolean = false;
+      const finish = (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        resolve();
+      };
+      const timerId: number = setTimeout(finish, timeoutMs);
+      preview.waitUntilReady().then((): void => {
+        clearTimeout(timerId);
+        finish();
+      });
+    });
+  }
+
+  private simplePreviewDirty(pane: string): boolean {
+    return pane === 'right' ? this.rightSimplePreviewDirty : this.leftSimplePreviewDirty;
+  }
+
+  /**
+   * 把预览里最后一次（可能还在防抖里没上报的）编辑回写进编辑器源码。
+   * @returns 空串＝同步完成；非空＝失败原因，直接进 toast，用户能看出卡在哪一栏哪一步。
+   */
+  private async flushSimplePreviewChanges(): Promise<string> {
     for (const pane of ['left', 'right']) {
+      const label: string = pane === 'right' ? '右栏' : '左栏';
       const notePath = pane === 'right' ? this.rightFilePath : this.currentFilePath;
       if (notePath.length === 0) {
         continue;
       }
+      // 预览不可编辑（同篇双开时的非活动栏等）时内容不可能被改动，没有可同步的东西。
+      if (!this.simplePreviewEditable(pane)) {
+        continue;
+      }
       const preview = this.previewBridgeForPane(pane);
       if (!preview.ready) {
-        return false;
+        // 页面还没就绪就去等它就绪，而不是直接判失败把用户挡在模式切换外面。
+        await this.waitForPreviewReady(preview);
       }
+      // 等完仍未就绪＝这一栏的预览根本没挂载，内存里不存在可编辑内容，无需同步。
+      if (!preview.ready) {
+        continue;
+      }
+      const dirty: boolean = this.simplePreviewDirty(pane);
       try {
         await (pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit);
-        const content = await preview.requestEditableContent();
-        if (!await this.commitSimplePreviewContent(pane, content)) {
-          return false;
+        let content: string = '';
+        try {
+          content = await preview.requestEditableContent();
+        } catch {
+          // 页面不可见时预览可能不回内容：没改动就放弃这次收尾同步，有改动才拦住切换。
+          hilog.warn(DOMAIN, TAG, '%{public}s预览未回传正文', label);
+          if (dirty) {
+            return label + '预览未回传正文（页面可能不可见）';
+          }
+          continue;
         }
-      } catch {
-        return false;
+        if (!await this.commitSimplePreviewContent(pane, content)) {
+          return label + '正文回写编辑器失败';
+        }
+      } catch (error) {
+        const err = error as BusinessError;
+        hilog.error(DOMAIN, TAG, '%{public}s预览同步异常，错误码 %{public}d', label, err?.code ?? -1);
+        return label + '预览同步异常（code=' + (err?.code ?? -1).toString() + '）';
       }
     }
-    return true;
+    return '';
   }
 
   private handleSimplePreviewEdit(pane: string, content: string): void {
+    this.setSimplePreviewDirty(pane, true);
     const previous = pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit;
     const next = previous.then(async (): Promise<void> => {
       await this.commitSimplePreviewContent(pane, content);
