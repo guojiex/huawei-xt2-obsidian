@@ -89,6 +89,18 @@
 
 /* The workspace more menu is shared by every breakpoint. */
 .topbar>.mobile-top-more{display:block}.experience-quick{padding:var(--s2) 0;margin:var(--s1) 0;border-top:var(--stroke) solid var(--line);border-bottom:var(--stroke) solid var(--line)}.experience-quick p{margin:0;padding:var(--s1) var(--s4);font-size:var(--caption);color:var(--muted)}.experience-quick button{display:flex;align-items:center;justify-content:space-between;gap:var(--s6)}.experience-quick .mode-check{visibility:hidden;color:var(--blue)}.experience-quick button[aria-pressed=true]{color:var(--blue);background:var(--blue-soft)}.experience-quick button[aria-pressed=true] .mode-check{visibility:visible}
+
+/* 2026-11-02 review fixes: markdown coverage, simple-mode hint density, floating zoom */
+.article ol{padding-left:var(--s6);margin:0 0 var(--s5)}
+.article li[data-depth="1"]{margin-left:var(--s6);list-style-type:circle}
+.article li[data-depth="2"]{margin-left:calc(var(--s6) * 2);list-style-type:square}
+.article li[data-depth="3"]{margin-left:calc(var(--s6) * 3);list-style-type:square}
+.article del{color:var(--muted)}
+.md-table th{padding:var(--s2);border:var(--stroke) solid var(--line);background:var(--nav);font-weight:600;text-align:left}
+.md-table td,.md-table th{overflow-wrap:anywhere;vertical-align:top}
+.simple-protected:has(+ .simple-protected)::after{display:none}
+.preview-zoom{transition:opacity var(--ease, .2s)}
+.preview-zoom.is-scrolling{opacity:0;pointer-events:none}
 </style></head><body>
 <div class="showcase"><header class="intro"><div><div class="eyebrow">OBSIDIAN NOTES / DESIGN EXPLORATION 02</div><h1>把空间，留给思考。</h1><p>曜石笔记 · 鸿蒙风格概念稿 · 原创样例，编辑仅保留在本页</p></div><div class="controls" id="designControls"><div class="seg" aria-label="窗口预设"><button id="wide" aria-pressed="true">三屏</button><button id="double" aria-pressed="false">双屏</button><button id="phone" aria-pressed="false">单屏</button></div><button id="rotateViewport" class="icon" aria-label="旋转预览窗口90度" title="旋转 90°" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V3m0 0h5M4 3l4 4M20 16v5m0 0h-5m5 0-4-4"/><rect x="8" y="5" width="8" height="14" rx="2"/></svg></button><label class="demo-toggle" title="直接展开当前栏的 Aa 面板，拖动分隔条或旋转观察跟随"><input id="formatFollowDemo" type="checkbox" role="switch" aria-controls="formatDialog">格式面板跟手</label><label class="demo-toggle"><input id="trashDemo" type="checkbox" role="switch">回收站有内容</label><label class="demo-toggle" title="仅展示 Git 库的分享格式，不连接远端"><input id="gitShareDemo" type="checkbox" role="switch">Git 分享示意</label><label class="demo-toggle" title="预览左侧未选中任何笔记的空态：编辑/预览与分享置灰不可点"><input id="noNoteDemo" type="checkbox" role="switch">未选笔记</label><span id="viewportLabel" class="muted"></span><button id="theme" aria-label="切换深色模式" class="icon" title="切换浅色 / 深色"></button></div></header>
 <main class="window" id="window" data-mode-style="outline"><aside class="sidebar" id="navSidebar"><div class="brand"><img class="brand-mark" src="../../assets/app_icon_1024.png" width="40" height="40" alt="" aria-hidden="true">曜石笔记<button class="close-nav icon" id="closeNav" aria-label="返回笔记">×</button></div><details class="vault" id="vaultPicker"><summary id="vaultTrigger" aria-label="切换知识库"><span class="vault-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16M13 9h3M13 13h3"/></svg></span><span class="vault-copy"><strong id="vaultName"></strong><small id="vaultMeta"></small></span><svg class="vault-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div class="vault-menu" aria-label="可切换的知识库"><div class="vault-menu-label">切换知识库</div><div id="vaultOptions"></div><div class="vault-menu-actions"><button id="importVaultMenu" type="button">＋ 导入库</button><button id="manageVaults" type="button">管理库…</button></div></div></details><div class="sidebar-tabs" role="group" aria-label="侧栏内容"><button id="filesTab" aria-pressed="true" aria-controls="filesPanel">文件</button><button id="chaptersTab" aria-pressed="false" aria-controls="chaptersPanel">章节</button></div><section id="filesPanel" class="sidebar-panel"><div class="nav-head"><div class="nav-label" id="libraryCount"></div><button id="newAtRoot" class="nav-icon" aria-label="在根目录新建笔记或文件夹" title="在根目录新建"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><button id="openQuickSearch" class="nav-icon" aria-label="快切与搜索" title="搜索当前知识库"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2"/></svg></button></div><nav class="note-list" id="notes" aria-label="文件夹与笔记列表"></nav><div class="tree-help">左滑文件可操作 · 拖动行尾图标到任一栏</div><details id="trashFolder" class="trash-folder hidden"><summary id="openTrash" class="tree-row folder-row" style="--depth:0" title="展开当前知识库回收站"><span class="tree-caret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg><span class="tree-name">回收站</span><small id="trashCount"></small></summary><div id="trashList" class="trash-list" aria-label="已删除笔记"></div></details></section><section id="chaptersPanel" class="sidebar-panel hidden"><div class="nav-label chapter-title" id="chapterTitle"></div><nav id="chapters" class="chapter-list" aria-label="当前笔记章节列表"></nav></section><div class="sidebar-bottom"><span></span>本地概念演示 · 刷新恢复样例</div></aside><div id="navSplitter" class="split-control hidden" role="separator" aria-orientation="vertical" aria-label="调整目录栏宽度" aria-controls="notes" tabindex="0" title="拖动调整目录宽度；双击恢复默认；方向键微调"><span></span></div>
@@ -151,7 +163,7 @@ function tagText(text){const pattern=/(^|[\s(（])#([\p{L}\p{N}\p{M}\p{S}_/-]+)/
 function frontmatterTags(text){const body=markdownBody(text);if(!body.offset)return [];const lines=text.slice(0,body.offset).replace(/^\uFEFF/,'').split(/\r?\n/);let values=[],reading=false;for(const line of lines.slice(1,-1)){const key=line.match(/^tags:[ \t]*(.*)$/);if(key){reading=true;const inline=key[1].replace(/[ \t]+#.*$/,'').trim();if(inline.startsWith('[')&&inline.endsWith(']'))values.push(...(inline.slice(1,-1).match(/"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|[^,]+/g)||[]));continue;}if(reading){const item=line.match(/^[ \t]*-[ \t]+(.*)$/);if(item)values.push(item[1]);else if(/^[^ \t#]/.test(line))reading=false;}}const tags=[],seen=new Set();for(let value of values){value=value.trim();if(value.startsWith('"')&&value.endsWith('"')){try{value=JSON.parse(value);}catch(_){continue;}}else if(value.startsWith("'")&&value.endsWith("'"))value=value.slice(1,-1).replace(/''/g,"'");else value=value.replace(/[ \t]+#.*$/,'');value=value.replace(/^#/,'');if(validTag(value)&&!seen.has(value.toLowerCase())){seen.add(value.toLowerCase());tags.push(value);}}return tags;}
 function tagProperties(text){const tags=frontmatterTags(text);return tags.length?'<div class="note-tags" aria-label="笔记标签">'+tags.map(tagChip).join('')+'</div>':'';}
 function isMarkdownEscaped(text,index){let count=0;for(let cursor=index-1;cursor>=0&&text[cursor]==='\\';cursor--)count++;return count%2===1;}
-function inline(s,n=note(current)){const pattern=/`([^`]+)`|!\[([^\]]*)\]\(([^)]+)\)|\[\[([^\]]+)\]\]|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;let html='',last=0;for(const match of s.matchAll(pattern)){html+=tagText(s.slice(last,match.index));const [all,code,alt,path,wiki,label,url,bold,italic]=match;if(code)html+='<code>'+esc(code)+'</code>';else if(path){const src=resolvePreviewImage(path,n);html+=src?'<img data-preview-image src="'+esc(src)+'" role="button" tabindex="0" aria-label="查看完整图片：'+esc(alt||'图片')+'" alt="'+esc(alt)+'">':'<span class="image-missing" role="status">图片未找到：'+esc(alt||path)+'</span>';}else if(wiki&&((s[match.index-1]==='!')||isMarkdownEscaped(s,match.index)))html+=esc(all);else if(wiki){const [target,alias]=wiki.split('|'),resolved=resolveWikiTarget(target,n),label=alias||target.split('/').pop().replace(/\.markdown$|\.md$/,'');if(resolved.status==='resolved')html+='<button class="wiki-link" data-source="'+esc(resolved.note.id)+'" title="在另一栏查看 '+esc(target)+'">'+esc(label)+'</button>';else if(resolved.status==='missing')html+='<button class="wiki-link wiki-link-missing" data-wiki-create="'+esc(target)+'" title="创建笔记：'+esc(resolved.path)+'">'+esc(label)+'</button><small class="wiki-link-state">（未创建）</small>';else if(resolved.status==='ambiguous')html+='<button class="wiki-link" data-wiki-problem="ambiguous" title="目标不唯一，请补全路径或扩展名">'+esc(label)+'</button><small class="wiki-link-state">（目标不唯一）</small>';else{const reason=String(target).includes('#')?'标题锚点暂不支持':'路径无效';html+='<span class="wiki-link-invalid" title="'+reason+'">'+esc(label)+'（'+reason+'）</span>'; }}else if(url)html+='<a href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(label)+'</a>';else html+=bold?'<strong>'+esc(bold)+'</strong>':'<em>'+esc(italic)+'</em>';last=match.index+all.length;}return html+tagText(s.slice(last));}
+function inline(s,n=note(current)){const pattern=/`([^`]+)`|!\[([^\]]*)\]\(([^)]+)\)|\[\[([^\]]+)\]\]|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|~~([^~]+)~~/g;let html='',last=0;for(const match of s.matchAll(pattern)){html+=tagText(s.slice(last,match.index));const [all,code,alt,path,wiki,label,url,bold,italic,strike]=match;if(code)html+='<code>'+esc(code)+'</code>';else if(path){const src=resolvePreviewImage(path,n);html+=src?'<img data-preview-image src="'+esc(src)+'" role="button" tabindex="0" aria-label="查看完整图片：'+esc(alt||'图片')+'" alt="'+esc(alt)+'">':'<span class="image-missing" role="status">图片未找到：'+esc(alt||path)+'</span>';}else if(wiki&&((s[match.index-1]==='!')||isMarkdownEscaped(s,match.index)))html+=esc(all);else if(wiki){const [target,alias]=wiki.split('|'),resolved=resolveWikiTarget(target,n),label=alias||target.split('/').pop().replace(/\.markdown$|\.md$/,'');if(resolved.status==='resolved')html+='<button class="wiki-link" data-source="'+esc(resolved.note.id)+'" title="在另一栏查看 '+esc(target)+'">'+esc(label)+'</button>';else if(resolved.status==='missing')html+='<button class="wiki-link wiki-link-missing" data-wiki-create="'+esc(target)+'" title="创建笔记：'+esc(resolved.path)+'">'+esc(label)+'</button><small class="wiki-link-state">（未创建）</small>';else if(resolved.status==='ambiguous')html+='<button class="wiki-link" data-wiki-problem="ambiguous" title="目标不唯一，请补全路径或扩展名">'+esc(label)+'</button><small class="wiki-link-state">（目标不唯一）</small>';else{const reason=String(target).includes('#')?'标题锚点暂不支持':'路径无效';html+='<span class="wiki-link-invalid" title="'+reason+'">'+esc(label)+'（'+reason+'）</span>'; }}else if(url)html+='<a href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(label)+'</a>';else html+=bold?'<strong>'+esc(bold)+'</strong>':italic?'<em>'+esc(italic)+'</em>':'<del>'+esc(strike)+'</del>';last=match.index+all.length;}return html+tagText(s.slice(last));}
 function rememberEditorPosition(){const editor=$('editor');if(editing&&Number.isFinite(editor.selectionEnd))editorPositions[current]={start:editor.selectionStart,end:editor.selectionEnd};}
 function restoreEditorPosition(){const editor=$('editor'),position=editorPositions[current];if(position&&editor.setSelectionRange)editor.setSelectionRange(Math.min(position.start,editor.value.length),Math.min(position.end,editor.value.length));}
 for(const event of ['select','keyup','pointerup','blur'])$('editor').addEventListener(event,rememberEditorPosition);
@@ -165,22 +177,38 @@ function renderMarkdown(text,anchors,prefix='section-',n=note(current)){
   const line=raw.replace(/(?:\r\n|\n|\r)$/,'');
   lines.push({text:line,start:offset,end:offset+line.length});offset+=raw.length;
  }
- let html=tagProperties(text),list=false,index=0,code=null,fence=null,codeStart=0;
+ let html=tagProperties(text),list=null,index=0,code=null,fence=null,codeStart=0,table=null;
  const range=(start,end)=>' data-source-start="'+start+'" data-source-end="'+end+'"';
+ const listItem=line=>line.match(/^(\s*)([-*+]|\d+[.)]) (.*)$/);
+ const tableRow=line=>/^\s*\|.*\|\s*$/.test(line);
+ const tableCells=line=>line.trim().replace(/^\||\|$/g,'').split('|').map(cell=>cell.trim());
+ const closeList=()=>{if(list){html+='</'+list+'>';list=null;}};
+ const closeTable=()=>{if(!table)return;const rows=table.rows,sep=rows.length>1&&rows[1].cells.every(cell=>/^:?-+:?$/.test(cell));
+  let out='<table class="simple-table md-table"'+range(table.start,table.end)+'>';
+  rows.forEach((row,i)=>{if(sep&&i===1)return;const tag=sep&&i===0?'th':'td';out+='<tr>'+row.cells.map(cell=>'<'+tag+'>'+inline(cell,n)+'</'+tag+'>').join('')+'</tr>';});
+  html+=out+'</table>';table=null;};
  for(const item of lines){const line=item.text;
   if(code!==null&&closesMarkdownFence(line,fence)){html+='<pre'+range(codeStart,item.end)+'><code>'+esc(code.join('\n'))+'</code></pre>';code=null;fence=null;continue;}
-  if(code===null&&markdownFence(line)){if(list){html+='</ul>';list=false;}fence=markdownFence(line);code=[];codeStart=item.start;continue;}
+  if(code===null&&markdownFence(line)){closeList();closeTable();fence=markdownFence(line);code=[];codeStart=item.start;continue;}
   if(code!==null){code.push(line);continue;}
-  if(!line.startsWith('- ')&&list){html+='</ul>';list=false;}
+  if(tableRow(line)){closeList();if(!table)table={start:item.start,end:item.end,rows:[]};table.rows.push({cells:tableCells(line)});table.end=item.end;continue;}
+  closeTable();
+  const listMatch=listItem(line);
+  if(!listMatch&&list)closeList();
   const attrs=range(item.start,item.end),heading=line.match(/^(#{1,6}) (.*)$/);
   if(heading){const level=heading[1].length;html+='<h'+level+(anchors?' id="'+prefix+index+++'"':'')+attrs+'>'+inline(heading[2],n)+'</h'+level+'>';}
   else if(line.startsWith('> '))html+='<blockquote'+attrs+'>'+inline(line.slice(2),n)+'</blockquote>';
-  else if(line.startsWith('- ')){if(!list){html+='<ul>';list=true;}const itemText=line.slice(2),task=itemText.match(/^\[([ xX])\] (.*)$/);html+='<li'+attrs+'>'+(task?'<input type="checkbox" disabled aria-label="任务状态"'+(task[1]!==' '?' checked':'')+'> '+inline(task[2],n):inline(itemText,n))+'</li>';}
+  else if(listMatch){const depth=Math.min(3,Math.floor(listMatch[1].replace(/\t/g,'  ').length/2)),ordered=/\d/.test(listMatch[2]),kind=ordered?'ol':'ul';
+   if(!list||(depth===0&&list!==kind)){closeList();const startNo=ordered?parseInt(listMatch[2],10):1;html+='<'+kind+(ordered&&startNo!==1?' start="'+startNo+'"':'')+'>';list=kind;}
+   const itemText=listMatch[3],task=itemText.match(/^\[([ xX])\] (.*)$/),depthAttr=depth?' data-depth="'+depth+'"':'',ownKind=depth&&kind!==list?' data-kind="'+kind+'"':'';
+   html+='<li'+depthAttr+ownKind+attrs+'>'+(task?'<input type="checkbox" disabled aria-label="任务状态"'+(task[1]!==' '?' checked':'')+'> '+inline(task[2],n):inline(itemText,n))+'</li>';}
   else if(line.trim()==='---')html+='<hr'+attrs+'>';
   else if(line.trim())html+='<p'+attrs+'>'+inline(line,n)+'</p>';
  }
+ closeTable();
  if(code!==null){const end=lines.length?lines[lines.length-1].end:codeStart;html+='<pre'+range(codeStart,end)+'><code>'+esc(code.join('\n'))+'</code></pre>';}
- return html+(list?'</ul>':'');
+ closeList();
+ return html;
 }
 function markdownFence(line){const match=line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);return match&&!(match[1][0]==='`'&&match[2].includes('`'))?match:null;}
 function closesMarkdownFence(line,opening){const match=markdownFence(line);return match&&match[1][0]===opening[1][0]&&match[1].length>=opening[1].length&&!match[2].trim();}
@@ -369,7 +397,7 @@ function syncExperience(){
  if(!simple){for(const root of [$('article'),$('reference')]){for(const el of root.querySelectorAll('[contenteditable]')){el.removeAttribute('contenteditable');el.removeAttribute('role');el.removeAttribute('aria-label');el.removeAttribute('aria-multiline');}for(const el of root.querySelectorAll('.simple-protected'))el.classList.remove('simple-protected');}return;}
  $('article').classList.remove('hidden');prepareSimpleBlocks('left');prepareSimpleBlocks('right');
 }
-function simplePrefix(raw){return (raw.match(/^(?:#{1,6} |-(?: \[[ xX]\])? |> )/)||[''])[0];}
+function simplePrefix(raw){return (raw.match(/^(?:#{1,6} |\s*(?:[-*+]|\d+[.)])(?: \[[ xX]\])? |> )/)||[''])[0];}
 function simpleBlockAllowed(raw){raw=raw.slice(simplePrefix(raw).length);return !!raw.trim()&&!/[\`|\[\]<>$~=_!]/.test(raw)&&!/^\s*(?:\d+[.)] |---|\+ |\* )/.test(raw)&&!raw.includes('** *');}
 function simpleRoot(pane){return $(pane==='right'?'reference':'article');}
 function simpleNoteId(pane){return pane==='right'?reference:current;}
@@ -398,6 +426,7 @@ function simpleMarkdown(node){
  if(node.tagName==='BR')return '\n';
  if(node.tagName==='B'||node.tagName==='STRONG')return '**'+value+'**';
  if(node.tagName==='I'||node.tagName==='EM')return '*'+value+'*';
+ if(node.tagName==='DEL'||node.tagName==='S')return '~~'+value+'~~';
  return /^(DIV|P)$/.test(node.tagName)?(node.previousSibling?'\n':'')+value:value;
 }
 function simpleContent(block){return Array.from(block.childNodes).map(simpleMarkdown).join('').replace(/\n$/,'');}
@@ -691,4 +720,13 @@ for(const root of [$('article'),$('reference')]){
  root.addEventListener('keydown',event=>{if(experience!=='simple')return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();simpleTravel(event.shiftKey);}});
 }
 syncExperience();
+</script><script>
+/* 2026-11-02 review fixes */
+(()=>{
+ for(const [scrollId,zoomId] of [['writingScroll','leftZoomControls'],['rightScroll','rightZoomControls']]){
+  const scroller=document.getElementById(scrollId),zoom=document.getElementById(zoomId);if(!scroller||!zoom)continue;let timer=0;
+  zoom.addEventListener('focusin',()=>{clearTimeout(timer);zoom.classList.remove('is-scrolling');});
+  scroller.addEventListener('scroll',()=>{if(zoom.contains(document.activeElement))return;zoom.classList.add('is-scrolling');clearTimeout(timer);timer=setTimeout(()=>zoom.classList.remove('is-scrolling'),900);},{passive:true});
+ }
+})();
 </script></body></html>

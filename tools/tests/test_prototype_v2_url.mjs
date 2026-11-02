@@ -560,3 +560,16 @@ test('switching to simple mode preserves the open split layout',()=>{
  f.run("changeExperience('professional')");
  assert.equal(f.run('experience'),'professional');assert.equal(f.run('referenceShown()'),true);
 });
+
+test('prototype renders common Markdown and preserves simple list prefixes',()=>{
+ const f=fixture();
+ const rendered=f.run('renderMarkdown("~~old~~\\n\\n3. first\\n  - child\\n\\n| a | b |\\n| --- | --- |\\n| c | d |",false)');
+ assert.match(rendered,/<del>old<\/del>/);
+ assert.match(rendered,/<ol start="3">/);
+ assert.match(rendered,/<li data-depth="1"/);
+ assert.match(rendered,/<table class="simple-table md-table" data-source-start="\d+" data-source-end="\d+"/);
+ assert.match(rendered,/<th>a<\/th><th>b<\/th>/);
+ assert.equal(f.run('simplePrefix("  - child")'),'  - ');
+ assert.equal(f.run('simplePrefix("3. first")'),'3. ');
+ assert.equal(f.run('simpleBlockAllowed("~~old~~")'),false);
+});
