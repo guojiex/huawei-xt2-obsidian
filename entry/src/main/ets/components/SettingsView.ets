@@ -22,7 +22,6 @@ import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
-import { ResetDataDialog } from './ResetDataDialog';
 import { AppDataResetService } from '../model/AppDataResetService';
 import { RECENT_CHANGELOG } from '../model/ChangelogData';
 import { ChangelogList } from './ChangelogList';
@@ -67,6 +66,7 @@ export struct SettingsView {
   @State versionCode: number = 0;
   @State resetting: boolean = false;
   @State resetError: string = '';
+  @State resetConfirmOpen: boolean = false;
   @State selectedTab: string = 'general';
   @State systemPromptDraft: string = '';
   @State skillPrompts: string[] = [];
@@ -82,7 +82,6 @@ export struct SettingsView {
   @State feedbackExpected: string = '';
   @State feedbackPreview: string = '';
   @State diagnosticsExpanded: boolean = false;
-  private resetDialog: CustomDialogController | null = null;
   private deleteSessionDialog: CustomDialogController | null = null;
 
   private normalizedCategory(category: string): string {
@@ -255,14 +254,12 @@ export struct SettingsView {
     this.onSelectCategory(category);
   }
 
-  private confirmReset(): void {
+  /** 危险行展开组内确认；防误触靠「点行 → 点确认」两步，与弹窗一致。 */
+  private openResetConfirm(): void {
     if (this.resetting) {
       return;
     }
-    this.resetDialog = new CustomDialogController({
-      builder: ResetDataDialog({ onConfirm: (): void => { void this.resetData(); } })
-    });
-    this.resetDialog.open();
+    this.resetConfirmOpen = true;
   }
 
   private async resetData(): Promise<void> {
@@ -486,6 +483,20 @@ export struct SettingsView {
     }
   }
 
+  /**
+   * 分组标题（v1.13，照 v2 .hs-group-title）：12 号、muted、500，位于分组卡片之外。
+   * 原型 `margin: --s5 --s4 --s2`，这里左右对齐交给外层容器，不重复加内缩。
+   */
+  @Builder
+  GroupTitle(text: string) {
+    Text(text)
+      .fontSize(FontSize.caption)
+      .fontWeight(FontWeight.Medium)
+      .fontColor($r('app.color.text_tertiary'))
+      .width('100%')
+      .margin({ top: Space.s5, bottom: Space.s2 })
+  }
+
   /** 一行「标签 + 值」（v2 settings-facts / setting-row：14 号、值右对齐、可选行分隔线） */
   @Builder
   InfoRow(label: string, value: string, showDivider: boolean) {
@@ -561,14 +572,27 @@ export struct SettingsView {
     .backgroundColor($r('app.color.bg_page'))
   }
 
+  /**
+   * 单屏「只显示分类列表」态：右侧没有并列详情，行本身表示「进入」，
+   * 此时既不该有选中高亮（v1.13 的单屏错误选中态），箭头也属多余。
+   */
+  private isCategoryListOnly(): boolean {
+    return this.singleScreenLayout && this.showCategoryList;
+  }
+
+  private isCategoryHighlighted(category: string): boolean {
+    return this.selectedTab === category && !this.isCategoryListOnly();
+  }
+
   @Builder
   CategoryRow(category: string, label: string, showArrow: boolean) {
     Row() {
       Text(label)
         .fontSize(FontSize.body2)
-        .fontColor(this.selectedTab === category ? $r('app.color.brand') : $r('app.color.text_primary'))
+        .fontColor(this.isCategoryHighlighted(category)
+          ? $r('app.color.brand') : $r('app.color.text_primary'))
         .layoutWeight(1)
-      if (showArrow) {
+      if (showArrow && !this.isCategoryListOnly()) {
         Icon('chevronRight', 16, $r('app.color.text_tertiary'))
       }
     }
@@ -576,7 +600,7 @@ export struct SettingsView {
     .height(Size.touch)
     .padding({ left: Space.s3, right: Space.s3 })
     .borderRadius(Radius.control)
-    .backgroundColor(this.selectedTab === category
+    .backgroundColor(this.isCategoryHighlighted(category)
       ? $r('app.color.brand_bg') : Color.Transparent)
     .focusable(true)
     .id('settings-category-' + category)
@@ -638,13 +662,8 @@ export struct SettingsView {
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
         .margin({ bottom: Space.s4 })
+      this.GroupTitle('外观')
       Column() {
-        Text('外观')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
         this.InfoRow('显示主题', this.appTheme === 'dark' ? '深色（跟随系统）' : '浅色（跟随系统）', false)
       }
       .width('100%')
@@ -653,18 +672,24 @@ export struct SettingsView {
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
+      // 编辑模式标题保留键盘焦点进入（v0.7 7.x 的焦点恢复），样式与其余分组标题一致
+      Text('编辑模式')
+        .fontSize(FontSize.caption)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .margin({ top: Space.s5, bottom: Space.s2 })
+        .focusable(true)
+        .tabStop(true)
+        .onKeyEvent((event: KeyEvent): boolean => { return this.onExperienceModeHeadingKey(event); })
       Column() {
-        Text('编辑模式')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .margin({ bottom: Space.s2 })
-          .focusable(true)
-          .tabStop(true)
-          .onKeyEvent((event: KeyEvent): boolean => { return this.onExperienceModeHeadingKey(event); })
         this.ExperienceModeRow('simple', '简单模式', '在排版正文中直接输入和设置基础格式。', 'simpleMode')
         this.ExperienceModeRow('professional', '专业模式', '使用 Markdown 源码、预览和双栏布局。', 'professionalMode')
+        Text('切换时保留当前笔记的修改，也可以从右上角「…」菜单切换。')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .margin({ top: Space.s3 })
       }
       .width('100%')
       .padding(Space.s5)
@@ -672,13 +697,8 @@ export struct SettingsView {
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
+      this.GroupTitle('编辑器')
       Column() {
-        Text('编辑器')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
         Row() {
           Column({ space: Space.s1 }) {
             Text('显示行号')
@@ -703,13 +723,8 @@ export struct SettingsView {
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
+      this.GroupTitle('阅读与编辑布局')
       Column() {
-        Text('阅读与编辑布局')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
         this.InfoRow('当前栏宽', this.paneWidthSummary, false)
         Text('拖动导航和正文分隔条调整栏宽；编辑与预览比例会自动保存。')
           .fontSize(FontSize.body2)
@@ -729,13 +744,20 @@ export struct SettingsView {
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
+      this.GroupTitle('高级')
       Column() {
         Row() {
-          Text('诊断信息')
-            .fontSize(FontSize.body2)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
+          Column({ space: Space.s1 }) {
+            Text('诊断信息')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+            Text('用于设备验收')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
           Text(this.diagnosticsExpanded ? '⌃' : '⌄')
             .fontSize(FontSize.body2)
             .fontColor($r('app.color.text_tertiary'))
@@ -1037,32 +1059,66 @@ export struct SettingsView {
         .focusable(true)
         .id('settings-heading-data')
         .onAppear((): void => { this.focusCategoryHeading('data'); })
+      this.GroupTitle('本地数据')
       Column() {
-        Text('数据管理')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
+        // 危险行（v2 .hs-row.hs-danger：透明底、标题用 danger 色），确认在组内展开
+        Row() {
+          Text(this.resetting ? '正在重置…' : '重置所有数据…')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.danger'))
+            .layoutWeight(1)
+            .textAlign(TextAlign.Start)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .focusable(true)
+        .enabled(!this.resetting)
+        .opacity(this.resetting ? 0.4 : 1)
+        .onClick((): void => { this.openResetConfirm(); })
+        if (this.resetConfirmOpen) {
+          Column() {
+            Text('确定重置所有数据？')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+            Text('本页编辑、插入图片、文件操作和回收站将恢复为初始样例，栏宽偏好也会清除，无法撤销。')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+              .margin({ top: Space.s2 })
+            Row({ space: Space.s2 }) {
+              Text('取消')
+                .fontSize(FontSize.body3)
+                .fontColor($r('app.color.text_primary'))
+                .height(Size.buttonH)
+                .padding({ left: Space.s4, right: Space.s4 })
+                .textAlign(TextAlign.Center)
+                .borderRadius(Radius.full)
+                .backgroundColor($r('app.color.bg_secondary'))
+                .onClick((): void => { this.resetConfirmOpen = false; })
+              Text('重置并恢复样例')
+                .fontSize(FontSize.body3)
+                .fontColor(Color.White)
+                .height(Size.buttonH)
+                .padding({ left: Space.s4, right: Space.s4 })
+                .textAlign(TextAlign.Center)
+                .borderRadius(Radius.full)
+                .backgroundColor($r('app.color.danger'))
+                .enabled(!this.resetting)
+                .opacity(this.resetting ? 0.4 : 1)
+                .onClick((): void => { void this.resetData(); })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.End)
+            .margin({ top: Space.s3 })
+          }
           .width('100%')
-          .margin({ bottom: Space.s3 })
-        Text('清除本地数据后，重新打开应用会恢复首次安装的样例笔记库。此操作无法撤销。')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
-        Text('远端 Git 仓库不会被修改；重置前请先确认已保存需要保留的本地内容。')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
-        Button(this.resetting ? '正在重置…' : '重置所有数据…')
-          .width('100%')
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.danger'))
+          .alignItems(HorizontalAlign.Start)
+          .padding(Space.s4)
+          .borderRadius(Radius.control)
           .backgroundColor($r('app.color.danger_bg'))
-          .borderRadius(Radius.button)
-          .enabled(!this.resetting)
-          .onClick(() => { this.confirmReset(); })
+        }
         if (this.resetError.length > 0) {
           Text(this.resetError)
             .fontSize(FontSize.body2)
@@ -1077,6 +1133,14 @@ export struct SettingsView {
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
+      Column() {
+        Text('会清除本地笔记库、草稿、回收站、最近打开、同步配置和访问令牌，重新打开后恢复初始样例库，无法撤销。远端仓库不受影响。')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+      }
+      .width('100%')
+      .padding({ left: Space.s4, right: Space.s4 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -1099,34 +1163,31 @@ export struct SettingsView {
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ bottom: Space.s4 })
+      // hero（v2 .hs-hero：图标 / 名称 / 版本 / 标语居中，不再与分组卡片同列左对齐）
       Column() {
-        Row() {
-          Image($r('app.media.app_icon_1024'))
-            .width(Space.s16)
-            .height(Space.s16)
-            .objectFit(ImageFit.Contain)
-            .borderRadius(Radius.menu)
-          Column() {
-            Text('曜石笔记')
-              .fontSize(FontSize.s3)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-            Text(this.versionText())
-              .fontSize(FontSize.body2)
-              .fontColor($r('app.color.text_tertiary'))
-              .margin({ top: Space.s1 })
-          }
-          .alignItems(HorizontalAlign.Start)
-          .margin({ left: Space.s4 })
-        }
-        .alignItems(VerticalAlign.Center)
-        .width('100%')
-        .margin({ bottom: Space.s3 })
-        Text('为 XT2 三折叠做的本地 Markdown 笔记。')
+        Image($r('app.media.app_icon_1024'))
+          .width(Space.s16)
+          .height(Space.s16)
+          .objectFit(ImageFit.Contain)
+          .borderRadius(Radius.menu)
+        Text('曜石笔记')
+          .fontSize(FontSize.s3)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .margin({ top: Space.s3 })
+        Text(this.versionText())
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
+          .margin({ top: Space.s1 })
+        Text('为 XT2 三折叠做的本地 Markdown 笔记')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .margin({ top: Space.s2 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .padding({ top: Space.s4, bottom: Space.s6 })
+      Column() {
         Text() {
           Span('反馈邮箱 ')
           Span(FEEDBACK_EMAIL)
@@ -1167,13 +1228,8 @@ export struct SettingsView {
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
 
+      this.GroupTitle('更新日志')
       Column() {
-        Text('更新日志')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
         ChangelogList({ entries: RECENT_CHANGELOG })
         Text('查看完整版本记录 ›')
           .fontSize(FontSize.body2)
@@ -1210,13 +1266,8 @@ export struct SettingsView {
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
         .margin({ bottom: Space.s4 })
+      // v1.13：卡片内不再重复「问题与建议」标题，页标题 + 说明已表达同一层含义
       Column() {
-        Text('问题与建议')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .width('100%')
-          .margin({ bottom: Space.s3 })
         Text('请描述操作步骤、实际结果和期望结果，帮助我们了解问题。')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_secondary'))
