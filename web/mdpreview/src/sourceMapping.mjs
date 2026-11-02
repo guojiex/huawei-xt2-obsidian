@@ -9,6 +9,33 @@ function trimTrailingLineBreaks(text) {
   return text.replace(/(?:\r?\n)+$/, '')
 }
 
+function crlfOffsets(markdown) {
+  const offsets = []
+  let originalOffset = 0
+  let normalizedOffset = 0
+  while (originalOffset < markdown.length) {
+    if (markdown[originalOffset] === '\r' && markdown[originalOffset + 1] === '\n') {
+      offsets.push(normalizedOffset)
+      originalOffset += 2
+    } else {
+      originalOffset++
+    }
+    normalizedOffset++
+  }
+  return offsets
+}
+
+function originalOffsetForNormalizedPosition(position, offsets) {
+  let low = 0
+  let high = offsets.length
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2)
+    if (offsets[middle] < position) low = middle + 1
+    else high = middle
+  }
+  return position + low
+}
+
 /** Render each visible top-level Markdown token in a layout-transparent source wrapper. */
 function sourcePositionForDisplayOffset(displayOffset, edits, isEnd) {
   let delta = 0
@@ -24,6 +51,7 @@ function sourcePositionForDisplayOffset(displayOffset, edits, isEnd) {
 export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceOffset = 0,
   sourceEdits = [], displayOffset = 0) {
   const tokens = marked.lexer(markdown)
+  const normalizedLineEndings = crlfOffsets(markdown)
   const htmlParts = []
   const blocks = []
   let line = Math.max(0, Math.floor(lineOffset)) + 1
@@ -42,12 +70,16 @@ export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceO
       tokenList.links = tokens.links
       const html = marked.parser(tokenList)
       if (html.trim().length > 0) {
-        const displayStart = displayOffset + sourceOffsetInBody
-        const displayEnd = displayStart + raw.length
+        const displayStart = displayOffset +
+          originalOffsetForNormalizedPosition(sourceOffsetInBody, normalizedLineEndings)
+        const displayEnd = displayOffset +
+          originalOffsetForNormalizedPosition(sourceOffsetInBody + raw.length, normalizedLineEndings)
         const sourceStart = sourceEdits.length > 0
-          ? sourcePositionForDisplayOffset(displayStart, sourceEdits, false) : sourceOffset + sourceOffsetInBody
+          ? sourcePositionForDisplayOffset(displayStart, sourceEdits, false)
+          : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody, normalizedLineEndings)
         const sourceEnd = sourceEdits.length > 0
-          ? sourcePositionForDisplayOffset(displayEnd, sourceEdits, true) : sourceStart + raw.length
+          ? sourcePositionForDisplayOffset(displayEnd, sourceEdits, true)
+          : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + raw.length, normalizedLineEndings)
         htmlParts.push(`<div class="preview-source-block" data-source-start-line="${startLine}" data-source-end-line="${endLine}">${html}</div>`)
         blocks.push({ tokenIndex: index, startLine, endLine, sourceStart, sourceEnd, type: token.type })
       }
