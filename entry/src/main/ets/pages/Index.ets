@@ -1931,6 +1931,7 @@ struct Index {
 
   private toggleReference(): void {
     if (this.experienceMode === 'simple') {
+      void this.openProfessionalReferencePane();
       return;
     }
     const show: boolean = this.focused || !this.isReferenceShown();
@@ -1947,6 +1948,19 @@ struct Index {
     } else if (!show && this.activePane === 'right') {
       this.setActivePane('left');
     }
+  }
+
+  private async openProfessionalReferencePane(): Promise<void> {
+    await this.selectEditorExperience('professional');
+    if (this.experienceMode !== 'professional') {
+      return;
+    }
+    this.focused = false;
+    this.referenceVisible = true;
+    if (this.breakpoint === Breakpoint.MD) {
+      this.setSidebarCollapsed(true);
+    }
+    this.scheduleWorkspaceSessionSave();
   }
 
   private isReferenceShown(): boolean {
@@ -4435,8 +4449,10 @@ struct Index {
     .justifyContent(FlexAlign.Center)
     .borderRadius(Radius.icon)
     .backgroundColor(this.isReferenceShown() ? $r('app.color.brand_bg') : Color.Transparent)
-    .accessibilityText(this.focused ? '退出专注并打开双栏' : this.isReferenceShown() ? '关闭双栏' : '打开双栏')
-    .accessibilityTextHint(this.focused ? '退出专注模式并显示右侧参考栏' : '显示或收起右侧参考栏')
+    .accessibilityText(this.focused ? '退出专注并打开双栏' : this.experienceMode === 'simple'
+      ? '切换到专业双栏模式' : this.isReferenceShown() ? '关闭双栏' : '打开双栏')
+    .accessibilityTextHint(this.focused ? '退出专注模式并显示右侧参考栏' : this.experienceMode === 'simple'
+      ? '切换到专业模式并显示右侧参考栏' : '显示或收起右侧参考栏')
     .onClick((): void => {
       this.toggleReference();
     })
@@ -5029,9 +5045,7 @@ struct Index {
           if (this.currentVaultIsGit()) {
             this.GitSyncButton()
           }
-          if (this.experienceMode === 'professional') {
-            this.ReferencePaneButton()
-          }
+          this.ReferencePaneButton()
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
           })
