@@ -1985,9 +1985,7 @@ struct Index {
     if (this.isSingleScreenLayout() || !activeNoteOpen) {
       return false;
     }
-    const navigationVisible: boolean = !this.sidebarCollapsed;
-    const referenceVisible: boolean = this.experienceMode === 'professional' && this.isReferenceShown();
-    return navigationVisible || referenceVisible;
+    return !this.sidebarCollapsed;
   }
 
   private toggleFocus(): void {
