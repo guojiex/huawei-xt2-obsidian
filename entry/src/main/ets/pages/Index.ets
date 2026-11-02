@@ -1980,14 +1980,11 @@ struct Index {
     if (this.focused) {
       return true;
     }
-    const activeNoteOpen: boolean = this.activePane === 'right'
-      ? this.rightFilePath.length > 0 : this.currentFilePath.length > 0;
-    if (this.isSingleScreenLayout() || !activeNoteOpen) {
+    const bothPanesOpen: boolean = this.currentFilePath.length > 0 && this.rightFilePath.length > 0;
+    if (this.isSingleScreenLayout() || this.experienceMode !== 'professional' || !bothPanesOpen) {
       return false;
     }
-    const navigationVisible: boolean = !this.sidebarCollapsed;
-    const referenceVisible: boolean = this.experienceMode === 'professional' && this.isReferenceShown();
-    return navigationVisible || referenceVisible;
+    return this.isReferenceShown();
   }
 
   private toggleFocus(): void {
@@ -4459,6 +4456,15 @@ struct Index {
   }
 
   @Builder
+  WorkspaceLayoutButton() {
+    if (this.canToggleFocus()) {
+      this.FocusModeButton()
+    } else if (!this.isSingleScreenLayout()) {
+      this.ReferencePaneButton()
+    }
+  }
+
+  @Builder
   GitAheadBadge() {
     if (this.gitAheadCommitCount > 0) {
       Text(this.gitAheadBadgeLabel())
@@ -5045,14 +5051,11 @@ struct Index {
           if (this.currentVaultIsGit()) {
             this.GitSyncButton()
           }
-          this.ReferencePaneButton()
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
             this.openShareNoteDialog();
           })
         }
-        if (this.canToggleFocus()) {
-          this.FocusModeButton()
-        }
+        this.WorkspaceLayoutButton()
         this.MoreMenuButton()
       } else if (this.topView === 'agent') {
         this.IconButton('settings', $r('app.color.text_secondary'), (): void => {
