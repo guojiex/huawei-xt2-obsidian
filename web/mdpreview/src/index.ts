@@ -121,7 +121,7 @@ function localizeImages(root: HTMLElement): void {
         }
       }
     } catch (error) {
-      console.log('[mdpreview] readAsset threw: ' + String(error))
+      console.warn('[mdpreview] readAsset failed')
     }
   }
 }
@@ -776,7 +776,7 @@ const api: MdPreviewApi = {
     mermaidRender = renderMermaidBlocks(el, generation)
     localizeImages(el)
     updateImageBounds()
-    console.log('[mdpreview] setContent len=' + text.length)
+    console.log('[mdpreview] setContent: rendered')
   },
 
   setNoteDir(b64: string): void {

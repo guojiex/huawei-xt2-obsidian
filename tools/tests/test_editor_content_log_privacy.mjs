@@ -4,6 +4,8 @@ import { test } from 'node:test'
 
 const read = (path) => fs.readFileSync(new URL(path, import.meta.url), 'utf8')
 const editor = read('../../web/mdeditor/src/index.ts')
+const preview = read('../../web/mdpreview/src/index.ts')
+const previewRawfile = read('../../entry/src/main/resources/rawfile/mdpreview/index.html')
 const editorBridge = read('../../entry/src/main/ets/components/EditorWebView.ets')
 const previewBridge = read('../../entry/src/main/ets/components/PreviewWebView.ets')
 const noteService = read('../../entry/src/main/ets/model/NoteService.ets')
@@ -16,6 +18,15 @@ test('editor diagnostics never report note content length or a content-bearing b
   assert.doesNotMatch(editorBridge, /hilog\.(?:info|warn|error)\([^\n]*(?:json|content|text|path)/i)
   assert.doesNotMatch(editorBridge, /onConsole\([^)]*\)[\s\S]{0,180}getMessage\(/)
   assert.doesNotMatch(previewBridge, /onConsole\([^)]*\)[\s\S]{0,180}getMessage\(/)
+})
+
+test('preview diagnostics omit note length and raw resource errors in source and rawfile', () => {
+  for (const [name, source] of [['preview source', preview], ['preview rawfile', previewRawfile]]) {
+    assert.doesNotMatch(source, /setContent len=/, `${name} must not log note length`)
+    assert.doesNotMatch(source, /readAsset threw:/, `${name} must not log raw read errors`)
+  }
+  assert.match(preview, /console\.warn\('\[mdpreview\] readAsset failed'\)/)
+  assert.match(previewRawfile, /readAsset failed/)
 })
 
 test('note, file-tree and trash diagnostics omit note names and paths', () => {
