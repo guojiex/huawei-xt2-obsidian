@@ -252,6 +252,12 @@ export class PreviewBridge {
     }
   }
 
+  unbind(impl: PreviewImpl): void {
+    if (this.impl === impl) {
+      this.impl = undefined;
+    }
+  }
+
   get ready(): boolean {
     return this.impl?.ready ?? false;
   }
@@ -505,10 +511,13 @@ export struct PreviewWebView {
   private controller: webview.WebviewController = new webview.WebviewController();
   private proxy: PreviewNativeProxy = new PreviewNativeProxy();
   private base64: util.Base64Helper = new util.Base64Helper();
+  private boundImpl: PreviewImpl | undefined = undefined;
+  private componentActive: boolean = false;
   /** 代理是否已注册（onControllerAttached 里注册，onPageEnd 兜底） */
   private proxyRegistered: boolean = false;
 
   aboutToAppear(): void {
+    this.componentActive = true;
     this.proxy.imageViewerChangeHandler = (state: string): void => {
       this.bridge.setImageViewerOpen(state === 'open');
     };
@@ -591,6 +600,11 @@ export struct PreviewWebView {
 
   aboutToDisappear(): void {
     this.bridge.setImageViewerOpen(false);
+    this.componentActive = false;
+    if (this.boundImpl !== undefined) {
+      this.bridge.unbind(this.boundImpl);
+      this.boundImpl = undefined;
+    }
   }
 
   /**
@@ -620,6 +634,9 @@ export struct PreviewWebView {
           this.registerProxy();
         })
         .onPageEnd(() => {
+          if (!this.componentActive) {
+            return;
+          }
           // 兜底：onControllerAttached 没跑成时补注册 + refresh（与 EditorWebView 同款）
           if (!this.proxyRegistered) {
             this.registerProxy();
@@ -631,6 +648,7 @@ export struct PreviewWebView {
           // 就绪：绑定 bridge、冲队列、下发主题。onPageEnd 时内联脚本已执行，
           // window.__mdpreview 必然存在（构建产物单文件内联，无外链资源）。
           const impl = new PreviewImpl(this.controller);
+          this.boundImpl = impl;
           this.bridge.bind(impl);
           void this.finishPageInitialization(impl);
         })
