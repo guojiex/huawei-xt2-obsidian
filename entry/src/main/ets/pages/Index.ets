@@ -162,9 +162,6 @@ struct Index {
   @State settingsCategory: string = 'general';
   @State settingsDetail: boolean = false;
   @State settingsPrivacyPolicyOpen: boolean = false;
-  @State importDirectoryName: string = '';
-  @State importHasDirectorySelection: boolean = false;
-  @State importVaultBusy: boolean = false;
   @State agentTitle: string = '新对话';
   @State agentHamburgerSeq: number = 0;
   @State agentRenameSeq: number = 0;
@@ -1632,25 +1629,17 @@ struct Index {
       return;
     }
     this.pendingExternalDirectory = null;
-    this.importDirectoryName = '';
-    this.importHasDirectorySelection = false;
-    this.importVaultBusy = false;
     this.importVaultCtl = new CustomDialogController({
       builder: ImportVaultDialog({
-        directoryName: this.importDirectoryName,
-        hasDirectorySelection: this.importHasDirectorySelection,
-        busy: this.importVaultBusy,
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
-        onChooseDirectory: (): void => { void this.chooseExternalDirectory(); },
-        onAssociateDirectory: (): void => { void this.associateExternalDirectory(); },
+        onChooseDirectory: (): Promise<string | null> => this.chooseExternalDirectory(),
+        onAssociateDirectory: (): Promise<boolean> => this.associateExternalDirectory(),
         onContinueGit: (draft: GitImportDraft): void => {
           void this.openGitSyncPage(draft);
         },
         onCancel: (): void => {
           this.pendingExternalDirectory = null;
-          this.importDirectoryName = '';
-          this.importHasDirectorySelection = false;
         }
       }),
       autoCancel: true,
@@ -1659,35 +1648,31 @@ struct Index {
     this.importVaultCtl.open();
   }
 
-  private async chooseExternalDirectory(): Promise<void> {
-    if (this.importVaultBusy) {
-      return;
-    }
-    this.importVaultBusy = true;
+  /** 返回选中目录的展示名交给弹窗自己显示；取消返回 null，失败提示后返回 null。 */
+  private async chooseExternalDirectory(): Promise<string | null> {
+    const authorization: ExternalVaultAuthorizationService =
+      createExternalVaultAuthorization(VaultRegistry.get().abilityContext());
+    let selection: ExternalDirectorySelection | null = null;
     try {
-      const authorization: ExternalVaultAuthorizationService =
-        createExternalVaultAuthorization(VaultRegistry.get().abilityContext());
-      const selection: ExternalDirectorySelection | null = await authorization.pickDirectory();
-      if (selection === null) {
-        return;
-      }
-      this.pendingExternalDirectory = selection;
-      this.importDirectoryName = selection.displayName.length > 0 ? selection.displayName : '已选择目录';
-      this.importHasDirectorySelection = true;
+      selection = await authorization.pickDirectory();
     } catch (error) {
       const err = error as Error;
       promptAction.showToast({ message: err.message.length > 0 ? err.message : '选择目录失败，请重试' });
-    } finally {
-      this.importVaultBusy = false;
+      return null;
     }
+    if (selection === null) {
+      return null;
+    }
+    this.pendingExternalDirectory = selection;
+    return selection.displayName.length > 0 ? selection.displayName : '已选择目录';
   }
 
-  private async associateExternalDirectory(): Promise<void> {
+  /** 返回是否关联成功；失败时弹窗保持打开，可换目录重试。 */
+  private async associateExternalDirectory(): Promise<boolean> {
     const selection: ExternalDirectorySelection | null = this.pendingExternalDirectory;
-    if (selection === null || this.importVaultBusy) {
-      return;
+    if (selection === null) {
+      return false;
     }
-    this.importVaultBusy = true;
     const authorization: ExternalVaultAuthorizationService =
       createExternalVaultAuthorization(VaultRegistry.get().abilityContext());
     let grant: ExternalDirectoryGrant | null = null;
@@ -1705,20 +1690,17 @@ struct Index {
       }
       const err = error as Error;
       promptAction.showToast({ message: err.message.length > 0 ? err.message : '关联目录失败，请重试' });
-      this.importVaultBusy = false;
-      return;
+      return false;
     }
 
     this.pendingExternalDirectory = null;
-    this.importDirectoryName = '';
-    this.importHasDirectorySelection = false;
     this.importVaultCtl?.close();
     this.refreshFromRegistry();
     promptAction.showToast({ message: '目录已关联为知识库' });
     if (registered !== null) {
       void this.switchVault(registered.id);
     }
-    this.importVaultBusy = false;
+    return true;
   }
 
   private async openAgent(): Promise<void> {

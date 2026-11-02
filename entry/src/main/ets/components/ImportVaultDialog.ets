@@ -3,19 +3,25 @@ import { GitImportDraft } from '../model/GitImportDraftStore';
 import { Icon } from '../common/Icons';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 
+/**
+ * 目录选择结果由弹窗自己持有：CustomDialog 的 @Prop 不会随父组件状态刷新
+ * （父在弹窗打开后置位的值传不进来，按钮会一直灰），因此父侧只通过回调返回
+ * 结果，界面状态落在下面的 @State 上。参见 v1.5 需求文档 §6.1。
+ */
 @CustomDialog
 export struct ImportVaultDialog {
   controller?: CustomDialogController;
-  @Prop directoryName: string = '';
-  @Prop hasDirectorySelection: boolean = false;
-  @Prop busy: boolean = false;
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
+  @State pickedName: string = '';
+  @State working: boolean = false;
   @State source: string = 'local';
   @State gitRemote: string = '';
   @State gitBranch: string = 'main';
-  onChooseDirectory: () => void = () => {};
-  onAssociateDirectory: () => void = () => {};
+  /** 返回选中目录的展示名；取消或失败返回 null（失败原因由父侧提示）。 */
+  onChooseDirectory: () => Promise<string | null> = async (): Promise<string | null> => null;
+  /** 返回是否关联成功；失败时父侧提示，弹窗保持打开供重试。 */
+  onAssociateDirectory: () => Promise<boolean> = async (): Promise<boolean> => false;
   onContinueGit: (draft: GitImportDraft) => void = (_draft: GitImportDraft) => {};
   onCancel: () => void = () => {};
 
@@ -25,13 +31,45 @@ export struct ImportVaultDialog {
   }
 
   private chooseSource(source: string): void {
-    if (!this.busy) {
+    if (!this.working) {
       this.source = source;
     }
   }
 
+  /** 是否已选好目录：只认弹窗自己的状态，不看父组件回传。 */
+  private hasPicked(): boolean {
+    return this.pickedName.length > 0;
+  }
+
+  private async pickDirectory(): Promise<void> {
+    if (this.working) {
+      return;
+    }
+    this.working = true;
+    try {
+      const name: string | null = await this.onChooseDirectory();
+      if (name !== null && name.length > 0) {
+        this.pickedName = name;
+      }
+    } finally {
+      this.working = false;
+    }
+  }
+
+  private async associateDirectory(): Promise<void> {
+    if (!this.hasPicked() || this.working) {
+      return;
+    }
+    this.working = true;
+    try {
+      await this.onAssociateDirectory();
+    } finally {
+      this.working = false;
+    }
+  }
+
   private continueGit(): void {
-    if (this.gitRemote.trim().length === 0 || this.busy) {
+    if (this.gitRemote.trim().length === 0 || this.working) {
       return;
     }
     const draft: GitImportDraft = {
@@ -109,13 +147,13 @@ export struct ImportVaultDialog {
             Row({ space: Space.s3 }) {
               Icon('folder', Space.s6, $r('app.color.brand'))
               Column({ space: Space.s1 }) {
-                Text(this.hasDirectorySelection ? this.directoryName : '选择本地目录')
+                Text(this.hasPicked() ? this.pickedName : '选择本地目录')
                   .fontSize(FontSize.body2)
                   .fontWeight(FontWeight.Medium)
                   .fontColor($r('app.color.text_primary'))
                   .maxLines(2)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text(this.hasDirectorySelection ? '已选择文件夹，关联后直接读写' : '从系统目录选择器中选择文件夹')
+                Text(this.hasPicked() ? '已选择文件夹，关联后直接读写' : '从系统目录选择器中选择文件夹')
                   .fontSize(FontSize.caption)
                   .fontColor($r('app.color.text_tertiary'))
               }
@@ -128,12 +166,12 @@ export struct ImportVaultDialog {
             .alignItems(VerticalAlign.Center)
             .padding(Space.s4)
             .borderRadius(Radius.card)
-            .border({ width: 1, color: this.hasDirectorySelection
+            .border({ width: 1, color: this.hasPicked()
               ? $r('app.color.brand') : $r('app.color.line_strong'),
-              style: this.hasDirectorySelection ? BorderStyle.Solid : BorderStyle.Dashed })
-            .backgroundColor(this.hasDirectorySelection
+              style: this.hasPicked() ? BorderStyle.Solid : BorderStyle.Dashed })
+            .backgroundColor(this.hasPicked()
               ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
-            .onClick(() => { this.onChooseDirectory(); })
+            .onClick(() => { void this.pickDirectory(); })
             Text('直接读写原目录，不复制文件。移除库只解除关联，原目录和文件保留。')
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_secondary'))
@@ -214,7 +252,7 @@ export struct ImportVaultDialog {
           .backgroundColor($r('app.color.bg_secondary'))
           .onClick(() => { this.close(); })
         if (this.source === 'local') {
-          Text(this.busy ? '处理中…' : '关联此目录')
+          Text(this.working ? '处理中…' : '关联此目录')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.on_brand'))
             .height(Size.buttonH)
@@ -222,11 +260,11 @@ export struct ImportVaultDialog {
             .textAlign(TextAlign.Center)
             .borderRadius(Radius.control)
             .backgroundColor($r('app.color.brand'))
-            .enabled(this.hasDirectorySelection && !this.busy)
-            .opacity(this.hasDirectorySelection && !this.busy ? 1 : 0.4)
-            .onClick(() => { this.onAssociateDirectory(); })
+            .enabled(this.hasPicked() && !this.working)
+            .opacity(this.hasPicked() && !this.working ? 1 : 0.4)
+            .onClick(() => { void this.associateDirectory(); })
         } else {
-          Text(this.busy ? '处理中…' : '导入 Git 仓库')
+          Text(this.working ? '处理中…' : '导入 Git 仓库')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.on_brand'))
             .height(Size.buttonH)
@@ -234,8 +272,8 @@ export struct ImportVaultDialog {
             .textAlign(TextAlign.Center)
             .borderRadius(Radius.control)
             .backgroundColor($r('app.color.brand'))
-            .enabled(this.gitRemote.trim().length > 0 && !this.busy)
-            .opacity(this.gitRemote.trim().length > 0 && !this.busy ? 1 : 0.4)
+            .enabled(this.gitRemote.trim().length > 0 && !this.working)
+            .opacity(this.gitRemote.trim().length > 0 && !this.working ? 1 : 0.4)
             .onClick(() => { this.continueGit(); })
         }
       }

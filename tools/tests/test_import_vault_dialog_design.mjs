@@ -19,17 +19,22 @@ function extract(startMarker, endMarker) {
 
 const harnessCode = transformSync(`
 class ImportVaultDialogHarness {
-  ${extract('  private chooseSource(', '\n  private continueGit')}
-  ${extract('  private continueGit(): void {', '\n  @Builder')}
+  ${extract('  private chooseSource(', '\n  @Builder')}
   constructor() {
     this.source = 'local';
-    this.busy = false;
+    this.working = false;
+    this.pickedName = '';
     this.gitRemote = '';
     this.gitBranch = 'main';
     this.closed = 0;
     this.drafts = [];
+    this.calls = [];
+    this.pickResult = null;
+    this.associateResult = false;
     this.controller = { close: () => { this.closed++; } };
     this.onContinueGit = draft => this.drafts.push(draft);
+    this.onChooseDirectory = async () => { this.calls.push('choose'); return this.pickResult; };
+    this.onAssociateDirectory = async () => { this.calls.push('associate'); return this.associateResult; };
   }
 }
 module.exports = ImportVaultDialogHarness;
@@ -39,6 +44,11 @@ function createHarness() {
   const module = { exports: {} };
   vm.runInContext(harnessCode, vm.createContext({ module, exports: module.exports }));
   return new module.exports();
+}
+
+/** harness 跑在 vm realm 里，数组跨 realm 直接 deepEqual 会失败，先做一次 JSON 往返。 */
+function plain(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 test('import dialog matches the v2 title, close action and shared segmented source control', () => {
@@ -53,10 +63,10 @@ test('import dialog matches the v2 title, close action and shared segmented sour
 test('local directory card shows selection affordance and the non-copy/remove boundary', () => {
   assert.match(dialogSource, /Text\('使用手机里的笔记目录'\)/);
   assert.match(dialogSource, /Icon\('folder', Space\.s6, \$r\('app\.color\.brand'\)\)/);
-  assert.match(dialogSource, /this\.hasDirectorySelection \? this\.directoryName : '选择本地目录'/);
+  assert.match(dialogSource, /this\.hasPicked\(\) \? this\.pickedName : '选择本地目录'/);
   assert.match(dialogSource, /从系统目录选择器中选择文件夹/);
   assert.match(dialogSource, /直接读写原目录，不复制文件。移除库只解除关联，原目录和文件保留。/);
-  assert.match(dialogSource, /this\.onChooseDirectory\(\)/);
+  assert.match(dialogSource, /void this\.pickDirectory\(\)/);
 });
 
 test('Git source follows the prototype form and leaves credentials to the existing secure SyncPage', () => {
@@ -66,7 +76,7 @@ test('Git source follows the prototype form and leaves credentials to the existi
   assert.match(dialogSource, /Text\('分支'\)/);
   const gitForm = dialogSource.slice(dialogSource.indexOf("Text('仓库地址')"), dialogSource.indexOf("Text('GitHub / Gitee"));
   assert.equal((gitForm.match(/\.alignItems\(HorizontalAlign\.Start\)/g) || []).length, 2);
-  assert.match(dialogSource, /Text\(this\.busy \? '处理中…' : '导入 Git 仓库'\)/);
+  assert.match(dialogSource, /Text\(this\.working \? '处理中…' : '导入 Git 仓库'\)/);
   assert.doesNotMatch(dialogSource, /Access Token|用户名（Gitee|gitToken|gitUsername/);
   assert.match(dialogSource, /username: '',\s*token: ''/);
   assert.match(syncSource, /TextInput\(\{ placeholder: '私有库填 Access Token/);
@@ -91,10 +101,52 @@ test('Git handoff keeps remote and branch while guarding blank input and busy st
     token: ''
   });
 
-  dialog.busy = true;
+  dialog.working = true;
   dialog.continueGit();
   assert.equal(dialog.closed, 1);
   assert.equal(dialog.drafts.length, 1);
+});
+
+test('picked directory lives in dialog @State, not in a @Prop the parent cannot refresh', () => {
+  // CustomDialog 的 @Prop 不随父组件状态刷新：父在弹窗打开后置位的值传不进来，
+  // 「关联此目录」会一直是灰的。弹窗必须自己持有选中状态。
+  assert.doesNotMatch(dialogSource, /@Prop hasDirectorySelection|@Prop directoryName|@Prop busy/);
+  assert.match(dialogSource, /@State pickedName: string = ''/);
+  assert.match(dialogSource, /@State working: boolean = false/);
+  assert.match(dialogSource, /\.enabled\(this\.hasPicked\(\) && !this\.working\)/);
+  assert.match(indexSource, /onChooseDirectory: \(\): Promise<string \| null> => this\.chooseExternalDirectory\(\)/);
+  assert.match(indexSource, /onAssociateDirectory: \(\): Promise<boolean> => this\.associateExternalDirectory\(\)/);
+  assert.doesNotMatch(indexSource, /importHasDirectorySelection|importDirectoryName|importVaultBusy/);
+});
+
+test('directory pick updates the dialog state and releases the busy guard', async () => {
+  const dialog = createHarness();
+  dialog.pickResult = null;
+  await dialog.pickDirectory();
+  assert.equal(dialog.pickedName, '', 'cancelled pick must not enable the associate button');
+  assert.equal(dialog.hasPicked(), false);
+  assert.equal(dialog.working, false);
+  assert.deepEqual(plain(dialog.calls), ['choose']);
+
+  dialog.pickResult = '笔记';
+  await dialog.pickDirectory();
+  assert.equal(dialog.pickedName, '笔记');
+  assert.equal(dialog.hasPicked(), true);
+  assert.equal(dialog.working, false);
+});
+
+test('associate runs only after a pick and stays open when the parent reports failure', async () => {
+  const dialog = createHarness();
+  await dialog.associateDirectory();
+  assert.deepEqual(plain(dialog.calls), [], 'associate must not run without a picked directory');
+  assert.equal(dialog.working, false);
+
+  dialog.pickedName = '笔记';
+  dialog.associateResult = false;
+  await dialog.associateDirectory();
+  assert.deepEqual(plain(dialog.calls), ['associate']);
+  assert.equal(dialog.working, false, 'a failed associate must release the busy guard so it can be retried');
+  assert.equal(dialog.closed, 0, 'the dialog stays open; the parent owns closing on success');
 });
 
 test('narrow and short windows keep the dialog within bounds and scroll the content area', () => {
