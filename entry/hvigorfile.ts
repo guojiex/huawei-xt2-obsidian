@@ -1,6 +1,7 @@
 import { hapTasks } from '@ohos/hvigor-ohos-plugin';
 import * as fs from 'fs';
 import * as path from 'path';
+import { spawnSync } from 'child_process';
 
 /**
  * 模块级 ABI 本机覆盖：从 .local/local-abi.json 注入 abiFilters。
@@ -63,18 +64,75 @@ if (localAbiFilters.length > 0) {
   console.log('[abi] 未设置本机 ABI 覆盖 —— 按 build-profile.json5 的 arm64-v8a 构建');
 }
 
+/**
+ * 构建提交号注入（v1.15）：把「构建时源码快照的 commit 短 ID + 是否 dirty」写进
+ * BuildProfile，供「设置与关于 → 通用 → 诊断信息」显示与复制。
+ *
+ * 为什么用 buildProfileFields 而不是生成 .ets 源文件：
+ *   BuildProfile 由 hvigor 在构建时生成、落在产物里，**不改工作区**（需求 §3：不为生成
+ *   标识而更改用户工作区）；而生成 .ets 会把值写回源码树，下一次 dirty 判定又会把它自己
+ *   算成未提交更改。声明见 hvigor-ohos-plugin 的类型定义（非凭记忆）：
+ *     src/options/build/hap-ohos-config.d.ts → ArkOptionsOpt.buildProfileFields?: object
+ *     src/options/build/build-opt.d.ts       → ArkOptions.buildProfileFields?: object
+ *   与上面 ABI 注入同走 overrides.buildOption，因此 IDE 点「运行」与命令行行为一致。
+ *
+ * 取值由 tools/generators/build_commit_info.mjs 负责（dirty 判定范围在该文件集中维护）；
+ * 任何一步失败都退化为「未知」，绝不沿用上一次构建的值，也不阻塞构建。
+ */
+const BUILD_COMMIT_GENERATOR: string = path.resolve(__dirname, '../tools/generators/build_commit_info.mjs');
+
+function loadBuildCommit(): { commitId: string; state: string; label: string } {
+  const fallback = { commitId: '', state: 'unknown', label: '未知' };
+  if (!fs.existsSync(BUILD_COMMIT_GENERATOR)) {
+    return fallback;
+  }
+  const result = spawnSync(process.execPath, [BUILD_COMMIT_GENERATOR], {
+    cwd: path.resolve(__dirname, '..'),
+    encoding: 'utf8',
+    windowsHide: true
+  });
+  if (result.error !== undefined || result.status !== 0) {
+    console.log(`[build-commit] 取构建提交失败 —— 本次显示未知：${String(result.error ?? result.stderr)}`);
+    return fallback;
+  }
+  try {
+    const parsed = JSON.parse(String(result.stdout ?? '')) as
+      { commitId?: unknown; state?: unknown; label?: unknown };
+    if (typeof parsed.commitId === 'string' && typeof parsed.state === 'string' &&
+        typeof parsed.label === 'string' && parsed.label.length > 0) {
+      return { commitId: parsed.commitId, state: parsed.state, label: parsed.label };
+    }
+  } catch (error) {
+    console.log(`[build-commit] 解析构建提交失败 —— 本次显示未知：${String(error)}`);
+  }
+  return fallback;
+}
+
+const buildCommit = loadBuildCommit();
+console.log(`[build-commit] 构建提交 ${buildCommit.label}（${buildCommit.state}）`);
+
+/**
+ * ABI 与构建提交都挂在 overrides.buildOption 上，按是否有内容合并：
+ * 两个字段并存时都要写进同一个 buildOption 对象，后写会覆盖先写的 buildOption。
+ */
+const buildOption: Record<string, object> = {};
+if (localAbiFilters.length > 0) {
+  buildOption['externalNativeOptions'] = { abiFilters: localAbiFilters };
+}
+buildOption['arkOptions'] = {
+  buildProfileFields: {
+    buildCommitId: buildCommit.commitId,
+    buildCommitState: buildCommit.state,
+    buildCommitLabel: buildCommit.label
+  }
+};
+
 export default {
   system: hapTasks, /* Built-in plugin of Hvigor. It cannot be modified. */
   plugins: [],      /* Custom plugin to extend the functionality of Hvigor. */
   config: {
     ohos: {
-      overrides: localAbiFilters.length > 0 ? {
-        buildOption: {
-          externalNativeOptions: {
-            abiFilters: localAbiFilters
-          }
-        }
-      } : {}
+      overrides: { buildOption: buildOption }
     }
   }
 }

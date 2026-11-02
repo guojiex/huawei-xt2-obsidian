@@ -15,6 +15,10 @@
  * 视觉：token 化 + 内容页限宽 760vp 居中（需求 4.9）。
  */
 import { bundleManager, common, Want } from '@kit.AbilityKit';
+import { pasteboard } from '@kit.BasicServicesKit';
+import { promptAction } from '@kit.ArkUI';
+import { buildCommitCopyPayload, buildCommitLabel, isBuildCommitKnown } from '../common/BuildCommitInfo';
+import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
@@ -743,6 +747,7 @@ export struct SettingsView {
         if (this.diagnosticsExpanded) {
           this.InfoRow('当前形态', this.formLabel(), true)
           this.InfoRow('断点', this.breakpoint, true)
+          this.BuildCommitRow()
           this.InfoRow('库目录', this.vaultDir(), true)
         }
       }
@@ -755,6 +760,64 @@ export struct SettingsView {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  /**
+   * 「构建提交」一行（v1.15）：显示构建期注入的标识，并提供复制。
+   * 复制内容只有标识本身；未知状态不伪造标识也不复制。
+   */
+  @Builder
+  BuildCommitRow() {
+    Row() {
+      Text('构建提交')
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_tertiary'))
+      Text(buildCommitLabel(this.buildCommitState(), this.buildCommitLabelText()))
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textAlign(TextAlign.End)
+      Text('复制')
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.brand'))
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s2 })
+        .focusable(true)
+        .accessibilityText('复制构建提交号')
+        .enabled(isBuildCommitKnown(this.buildCommitState()))
+        .opacity(isBuildCommitKnown(this.buildCommitState()) ? 1 : 0.4)
+        .onClick((): void => { void this.copyBuildCommit(); })
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({ top: Space.s3, bottom: Space.s3 })
+    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+  }
+
+  /** BuildProfile 由 hvigor 在构建时生成；字段缺失一律按未知处理，不沿用旧值。 */
+  private buildCommitState(): string {
+    return typeof BuildProfile.buildCommitState === 'string' ? BuildProfile.buildCommitState : 'unknown';
+  }
+
+  private buildCommitLabelText(): string {
+    return typeof BuildProfile.buildCommitLabel === 'string' ? BuildProfile.buildCommitLabel : '';
+  }
+
+  private async copyBuildCommit(): Promise<void> {
+    const payload: string = buildCommitCopyPayload(this.buildCommitState(), this.buildCommitLabelText());
+    if (payload.length === 0) {
+      promptAction.showToast({ message: '构建提交未知，不复制' });
+      return;
+    }
+    try {
+      const board: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
+      await board.setData(pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, payload));
+      promptAction.showToast({ message: '已复制构建提交号' });
+    } catch (error) {
+      promptAction.showToast({ message: '复制失败，请手动记录' });
+    }
   }
 
   @Builder
