@@ -1711,3 +1711,77 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 ### U1 ❓ `ANIMATOR_DURATION_SCALE` 不能作为系统减动效偏好的已证实接口（2026-11-01）
 
 本机 SDK `@ohos.settings.d.ts` 声明 `settings.display.ANIMATOR_DURATION_SCALE` 自 API 7 起，且标记 deprecated since 21；Stage `settings.getValue(context, name)` 自 API 10 起。声明只描述动画时长缩放因子，没有证明其代表无障碍“减少动态效果”偏好，也没有证明系统缩放会联动 ArkUI 属性动画。官方公开资料核对范围、结论与限制见[本机 SDK 与官方文档核对记录](qa/2026-11-01_v0.10减动效SDK与官方文档核对_API24.md)。**不在 v0.10 关键路径调用该候选项；API 24 / XT2 运行行为仍未验证。**
+
+## V 组：应用内检测更新（AppGallery Kit `updateManager`，2026-11-02）
+
+> 证据构成：鸿蒙官方 Agent 答复 + **本机 HMS SDK 声明逐条核对**（`sdk/default/hms/ets/api/@hms.core.appgalleryservice.updateManager.d.ts`、`kits/@kit.AppGalleryKit.d.ts`）。
+> **没有任何 API 24 / XT2 运行时证据**；声明只证明接口存在、签名与起始版本。逐条来源与分歧见 [答复归档](qa/2026-11-02_应用内检测更新能力答复_API24.md)。服务 [v1.17](../releases/v1.17/需求文档.md)。
+
+### V1 ✅ 端侧检查更新接口存在，API 12 起，无需权限
+
+`import { updateManager } from '@kit.AppGalleryKit'`；`updateManager.checkAppUpdate(context: common.UIAbilityContext): Promise<CheckUpdateResult>`，`@since 5.0.0(12)`、`@stagemodelonly`、`SystemCapability.AppGalleryService.Distribution.Update`。声明块内**无 `@permission`** → 现有 `INTERNET` 权限集不变（硬约束 13 不被触发）。形参只有 context，**应用侧无法注入任何请求内容**，笔记数据不可能进入该链路（硬约束 16 在架构上满足）。
+
+### V2 ✅ 结果只有「有 / 无新版本」一个可用字段
+
+`CheckUpdateResult.updateAvailable: UpdateAvailableCode`，枚举 `LATER_VERSION_NOT_EXIST = 0` / `LATER_VERSION_EXIST = 1`（均 `@since 5.0.0(12)`）。
+
+### V3 ⚠️ 拿不到市场侧版本号，也不要做客户端比较
+
+`CheckUpdateResult.versionName?` 与 `versionCode?` 是 **`@since 6.0.0(20)`** 加入的字段，SDK 注释「available only for atomic services」。官方答复称应用场景返回 `undefined` —— 方向一致但**属运行时推断，未实测**。→ **本项目不读这两个字段**：不显示目标版本号、不比较版本字符串，结论只来自 `updateAvailable`。
+
+### V4 ✅ 更新引导用系统弹框，不自己拼市场跳转
+
+`updateManager.showUpdateDialog(context): Promise<ShowUpdateResultCode>`，`@since 5.0.0(12)`；`ShowUpdateResultCode { SHOW_DIALOG_SUCCESS = 0, SHOW_DIALOG_FAILURE = 1 }`。弹框由系统提供、UI 不可自定义，用户确认后进入市场更新流程；未装市场时由系统侧先提示安装（答复，⚠️ 未实测）。**官方无公开市场 DeepLink scheme，禁止自拼 URL**（答复）。方向 B 备选 `productViewManager.loadProduct(context, want, callback)`（`@since 4.1.0(11)`）存在，`Want` 用法 ❓ 未核实，本版不需要。
+
+### V5 ❓ `checkAppUpdate` 的限流阈值未记载 —— 「30 分钟」别挂错接口
+
+`checkAppUpdate` 声明抛 `1009400006 - Time limited`，但**没有给出阈值数字**。官方答复转述的「至少 30 分钟间隔 / 每天六次」在 SDK 里挂在 **`on('updateChange')`（元服务更新监听，`@since 6.0.0(20)`）** 的 NOTE 上，不是 `checkAppUpdate` 的承诺。→ 工程做法：仅用户主动点击触发 + 应用内自建冷却，**冷却值是工程选择，不是官方保证**。
+
+### V6 ✅ 错误码全集（`checkAppUpdate` 声明逐条命中）
+
+`401` 参数错误、`1009400001` SA 连接、`1009400002` 请求服务、`1009400003` 网络、`1009400004` **不在前台**、`1009400005` **未同意应用市场隐私协议**、`1009400006` 限流、`1009400007` 其他。
+`showUpdateDialog` 的抛错列表**不含 `1009400003`**（弹框不联网查询），两者分支要分开写。无「应用未上架」专用码 —— 未上架时按答复通常表现为「查不到更新」，⚠️ 未实测，UI 不得把它当成「已是最新版本」的确证。
+
+### V7 ✅ 平台不提供强更通道
+
+`CheckUpdateResult` 仅三个字段，**无强更标记**；答复引 FAQ「暂不提供」，系统弹框允许用户稍后处理。→ 「不更新不让用」只能自研阻断，本版禁止（见 v1.17 §5）。
+
+### V8 ⚠️ 应用不得自行下载安装更新包
+
+答复称 HarmonyOS 未向三方开放「下载更新包并触发安装」的公开 API，更新链路统一收敛到应用市场。**「SDK 中不存在」这一全称判断本轮未逐一枚举验证**，按平台惯例采纳；对本工程的实际约束只是「本版不做，且只走 V1/V4 两个接口」。
+
+### V9 ⚠️ 新版本判定口径 = `versionCode`
+
+答复依据是 AGC 提审提示「`versionCode` 与在架版本相同时，已安装同版本号用户无法升级到该版本」；`versionName` 仅展示。控制台侧原文本轮未核对。→ 与仓库既有发布纪律一致，作为**上架待办**记入 [上架准备清单](../releases/上架准备清单.md)：每次发版必须抬 `versionCode`，抬 `versionName` 不抬 `versionCode` 会让更新检测静默失效。
+
+### V10 ⚠️ 首发后可用调测证书联调整条链路
+
+答复引官方 FAQ：先正式上架一个不含该功能的版本（`versionCode` > 1000000），之后可用调测证书在本地开发环境直接调试「检查更新 + 跳转市场更新」全链路。→ 意味着 v1.17 不必等市场上出现更高版本才拿到端到端证据。**AGC / FAQ 原文未核对，发布前复核。**
+
+### V11 合规边界（⚠️ 条款原文未逐字核对）
+
+- 审核禁止引导到第三方渠道下载（答复引审核指南）；我们只有市场一个渠道，天然合规。
+- 新增联网检查入口建议在隐私政策补一句说明（答复标注为**推断**，非单一条款强制）；请求由系统服务发起、不携带笔记数据，风险低。核对挂在 [v1.11](../releases/v1.11/需求文档.md) 与 [上架准备清单](../releases/上架准备清单.md)的政策一致性项。
+- 应用市场自身的更新提醒默认生效，无需开发者额外配置（答复，未在本机 AGC 核实）。
+
+### V12 ✅ HMS Kit 在本工程可用的旁证
+
+项目已在使用 `@kit.AgentFrameworkKit`，而该 Kit 只存在于 `sdk/default/hms/ets/kits/`（OpenHarmony SDK 的 `kits/` 无此项）。→ 引入 `@kit.AppGalleryKit` 属同类 HMS Kit，预期无需新增依赖配置；仍以实际构建通过为准。
+
+### 仍未解决
+
+- `checkAppUpdate` 实际限流阈值（❓ 官方未记载）。
+- 检查请求逐项携带的应用 / 设备信息清单（❓ 未记载；隐私政策措辞按「会通过华为应用市场服务查询版本更新信息」处理）。
+- 应用场景下 `versionName` / `versionCode` 的真实返回值（⚠️ 不采用，无需再问）。
+- 未上架 / 无更新时的可辨识状态（⚠️ 需真机与发布环境实测）。
+
+
+## W 组：预览缩放与 PinchGesture（2026-11-02 补录，本机 OpenHarmony SDK 声明核对）
+
+### W1 ⚠️ 双指缩放手势接口层级满足 API 24，但 ArkWeb 内的手势竞争无结论（补录 2026-11-02）
+
+本组是 [v1.12 需求文档](../releases/v1.12/需求文档.md) 那轮 SDK 核对的**补录**：当时结论只写进了版本档案，`api_notes.md` 里从未落条目，而 v1.12 已按 R5 规则把链接指到这里 —— 链接因此是坏的。本轮按声明文件重新核对并补齐。
+
+- **本机 SDK 声明**（`sdk/default/openharmony/ets/component/gesture.d.ts`，2026-11-02 重新读取）：`interface PinchGestureInterface extends GestureInterface<PinchGestureInterface>` 标注 `@since 7`、`@syscap SystemCapability.ArkUI.ArkUI.Full`；其 `onActionUpdate(event: (event: GestureEvent) => void): PinchGestureInterface` 同样 `@since 7`。声明注释给出参数语义：`fingers` 最小触发指数为 2–5（默认 2，越界回落到默认值），`distance` 为最小识别距离、单位 vp、默认 5。→ **起始版本远低于 API 24 兼容下限，声明层面无障碍。**
+- **声明不能证明的事**（这条才是 v1.12 的实际卡点）：ArkWeb 组件内部的滚动、DOM 层触摸事件与 ArkUI 手势识别之间的**竞争/优先级关系**没有任何记载；`pinch` 构造器本身不在本文件的核对范围内（未单独取到 `@since`，不在此断言）。
+- **状态**：⚠️ 未进入关键路径。v1.12 当前**不接入双指或 Ctrl+滚轮**，等正常交互验证与需求评估；本轮同样**没有 API 24 / XT2 运行时证据**。

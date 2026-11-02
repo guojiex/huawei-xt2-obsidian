@@ -103,6 +103,8 @@ docs/harmonyos/
 
 | 日期 | 主题 | 问题数 | 存档 | 关键产出 |
 | --- | --- | --- | --- | --- |
+| 2026-11-02 | **应用内检测更新能力**（官方答复 + 本机 HMS SDK 声明核对） | 7 组 | [答复与核对归档](qa/2026-11-02_应用内检测更新能力答复_API24.md) | 见 [api_notes V1–V12](api_notes.md#v-组应用内检测更新appgallery-kit-updatemanager2026-11-02)：`@kit.AppGalleryKit` 的 `updateManager.checkAppUpdate` / `showUpdateDialog` **`@since 5.0.0(12)`、无需权限、Stage only** → **方向 A 成立**；应用侧**只有 `updateAvailable` 可用**，市场版本号字段是 `@since 6.0.0(20)` 的元服务专用，**不读、不比较**。⚠️ 答复两处挂错：「30 分钟 / 每天六次」是 `on('updateChange')` 元服务监听的约束，`checkAppUpdate` 阈值 ❓ 未记载；`showUpdateDialog` 抛错列表**无** 1009400003。平台无强更通道，自行下载安装未开放 |
+| 2026-11-02 | v1.12 预览缩放与 PinchGesture（**补录**，本机 SDK 声明核对，非新问答） | 1 组 | — | 见 [api_notes W1](api_notes.md)：`PinchGestureInterface` 与 `onActionUpdate` 经重新读取声明确认为 `@since 7`（起始版本满足 API 24）；ArkWeb 内滚动 / DOM 触摸与 ArkUI 手势的竞争关系**无任何记载**，v1.12 仍不接入双指与 Ctrl+滚轮。⚠️ 该轮结论此前只在 v1.12 版本档案里，`api_notes` 从未落条目，导致版本档案的链接指向不存在的小节 —— 本次补齐并修链 |
 | 2026-11-02 | v1.11 在线隐私政策查看（本机 API26 SDK 声明核对，非新问答） | 6 组接口 | [核对归档](qa/2026-11-02_ArkWeb隐私政策查看SDK核对_API24.md) | 见 [api_notes B9](api_notes.md#b9-关于页在线隐私政策查看2026-11-02)：页面加载、网络 / HTTP / SSL 错误回调和重试所需接口注解均不高于 API 24；API26 TripleFold 模拟器已检查单 / 双 / 三屏入口及单 / 三屏在线加载和返回，API24 / XT2 仍待用户手动验收 |
 | 2026-11-01 | v1.8 专注模式入口无障碍名称与提示（本机 API26 SDK 声明核对，非新问答） | 1 组 | — | 见 [api_notes L-15](api_notes.md#l-15-v18-专注模式入口无障碍名称与提示本机-sdk-声明)：accessibilityText 自 API 11、accessibilityTextHint 自 API 12；屏幕阅读器与 API24 / XT2 表现待验 |
 | 2026-11-01 | v0.10 减动效（本机 API26 SDK + 官方公开资料核对，非新问答） | 1 组 | [核对归档](qa/2026-11-01_v0.10减动效SDK与官方文档核对_API24.md) | 见 [api_notes U1](api_notes.md#u-组减少动态效果偏好与arkui-动画)：`getValue` 声明 since 10；缩放项 deprecated since 21；其系统偏好含义与 ArkUI 动画联动仍 ❓，不进入关键路径 |
@@ -110,7 +112,7 @@ docs/harmonyos/
 | 2026-10-31 | 模拟器 AgentKit 动态加载与设备识别答复核对（用户提供的 AI 答复，非官方答复） | 方案与代码片段核对 | [答复核对归档](qa/2026-10-31_模拟器AgentKit动态加载与设备识别答复核对_API24.md) | 见 [api_notes F1](api_notes.md)：`productModel` 门禁与按需动态加载是隔离方向；具体动态组件挂载、缺 HSP 触发行为和 XT2 仍待验证；当前 main 静态导入仍会阻断模拟器启动 |
 | 2026-10-27 | 客服智能体 / Skill 接入建议与官方文档核对 | 2 条路线 | [核对归档](qa/2026-10-27_客服智能体与Skill接入建议_API24.md) | 见 [api_notes F16](api_notes.md)：推荐沿用托管 Agent + 端插件；Skill 亦可接端插件，但不自动解决入口、端执行器与设备条件；不恢复排期 |
 | 2026-10-27 | WriteStream 二进制写入规格与需求反馈 | 领域专家回复 | [答复原文与需求草稿](qa/2026-10-27_WriteStream_二进制写入规格答复.md)；结论见 [api_notes.md C1](api_notes.md#c1-原子写--用官方-atomicfile-替换自研-tmprename) | 用户带回答复；适用版本范围未提供，需求草稿未提交 |
-| 2026-10-27 | API 24 新建图片附件的写入方案与 AtomicFile 是否强制 | 4 项核实 | [提问原文](prompts/2026-10-27_API24_应用附件写入方案与AtomicFile要求.md) | 待用户向鸿蒙官方 Agent 提问；区分平台要求、推荐方案和应用自身的工程约束 |
+| 2026-10-27 | API 24 新建图片附件的写入方案与 AtomicFile 是否强制 | 4 项核实 | **提问原文未入库** —— `prompts/` 下没有 `2026-10-27_API24_应用附件写入方案与AtomicFile要求.md`（2026-11-02 链接核查时发现，Git 历史亦从未提交该文件） | 官方提问仍未发（区分平台要求、推荐方案和应用自身的工程约束）。**工程侧结论已定**：`AtomicFile` 是本项目的完整性策略而非平台强制 API，新建唯一附件按 [api_notes C1](api_notes.md#c1-原子写--用官方-atomicfile-替换自研-tmprename) 与 [Q1](api_notes.md#q1-picker-uri-的授权范围与-sdk-声明存在不同表述) 处理，见 `AGENTS.md` 硬约束 10 |
 | 2026-10-26 | Share Kit / 本地 ZIP 官方文档与 SDK 声明核对（非新问答） | 3 组 API 边界 | [核对归档](qa/2026-10-26_ShareKit与本地打包_API24.md) | 结论见 [api_notes O1–O3](api_notes.md)：API 起始版本满足 API 24；接收授权生命周期及 Markdown 长图输出仍待验证 |
 | 2026-10-26 | 小艺开放平台官方文档对照（非新问答） | 两份待问清单对照 | [核对归档](qa/2026-10-26_小艺开放平台文档对照_API24.md) | 结论见 [api_notes F1 / F9–F11](api_notes.md)：入口、通信方向、配置前置和版本边界；保留未解问题，不恢复实施排期 |
 | 2026-10-26 | 小艺自绘按钮拉起答复与官方 API 对照（社区答复） | 3 项入口问题 | [核对归档](qa/2026-10-26_小艺自绘按钮拉起答复_API24.md) | 结论见 [api_notes F1](api_notes.md)：两条答复对“无自绘按钮启动 API”结论一致；Stack 叠放是未验证建议，原按钮接线仍无公开依据 |
@@ -147,6 +149,7 @@ docs/harmonyos/
 | G-C | `customProperty()` 的值有无类型 / 长度限制？ | 组件标识怎么编码 | ❓ 待问 |
 | **H-1** | **API 24 下运行时读取自身 `versionName` 的确切接口与所需 flag**？读自身包信息要不要权限？ | 「关于」页显示版本号 | ❓ 待问（**别凭记忆写接口**） |
 | H-2 | `bundleManager` 的同步版本（如 `getBundleInfoForSelfSync`）在 API 24 是否可用？ | 同上，实现选型 | ❓ 待问 |
+| **V-1** | **API ≤ 24 有无官方的「应用内检测更新」能力** | **v1.17 的方向 A / B / C 与能否落码**（[需求](../releases/v1.17/需求文档.md)） | ✅ **已答**（2026-11-02）：方向 **A 成立**，见 [api_notes V1–V12](api_notes.md#v-组应用内检测更新appgallery-kit-updatemanager2026-11-02)。剩余项转入 V 组「仍未解决」：`checkAppUpdate` 限流阈值 ❓、请求携带信息清单 ❓、真机与市场侧行为 ⚠️；答复的两处口径错位已按本机 SDK 声明修正，**别照转贴的答复原文落码** |
 
 **真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 
