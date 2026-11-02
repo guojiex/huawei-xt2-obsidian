@@ -309,6 +309,9 @@ export struct VaultSidebar {
               this.menuOpen = false;
               this.onSwitchVault(v.id);
             })
+            // v1.10 读屏：菜单项自带文字，补「当前 / 切换」状态，否则读屏只念库名
+            .accessibilityText(v.id === this.currentVaultId
+              ? v.id + '，当前知识库' : v.id + '，切换到此知识库')
           }, (v: VaultEntry) => v.id)
 
           // 原型 .vault-menu-actions：通栏分隔线（原型 border-top 不带左右内缩）
@@ -481,6 +484,10 @@ export struct VaultSidebar {
         .onClick(() => {
           this.menuOpen = !this.menuOpen;
         })
+        // v1.10 读屏：卡片是纯图标 + 文本的切换入口，补名称与展开状态
+        .accessibilityText('切换知识库，当前 ' +
+          (this.currentVaultId.length > 0 ? this.currentVaultId : '无'))
+        .accessibilityTextHint(this.menuOpen ? '收起知识库列表' : '展开知识库列表')
         // 实测卡片宽回填弹层宽（原型 vault-menu 与卡片同宽，见 menuW 注释）
         .onAreaChange((oldArea: Area, newArea: Area) => {
           if (typeof newArea.width === 'number') {
@@ -527,6 +534,7 @@ export struct VaultSidebar {
           .alignItems(VerticalAlign.Center)
           .borderRadius(Radius.icon)
           .onClick((): void => { this.onOpenSearch(); })
+          .accessibilityText('搜索笔记')
           Row() {
             Icon('plus', 16, $r('app.color.text_tertiary'))
           }
@@ -538,6 +546,7 @@ export struct VaultSidebar {
           .onClick(() => {
             this.onCreateNote();
           })
+          .accessibilityText('新建笔记')
         }
         .width('100%')
         .padding({ left: Space.s4, right: Space.s2 })
@@ -653,6 +662,8 @@ export struct VaultSidebar {
                       .alignItems(VerticalAlign.Center)
                       .focusable(true)
                       .onClick((): void => { this.toggleChapter(chapter); })
+                      .accessibilityText((this.isChapterCollapsed(chapter) ? '展开' : '折叠') +
+                        '章节：' + chapter.title)
                     } else {
                       Column()
                         .width(Space.s8)

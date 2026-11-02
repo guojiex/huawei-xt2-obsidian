@@ -141,6 +141,8 @@ export struct CreateNoteDialog {
       this.selectedDir = rel;
       this.pickerOpen = false;
     })
+    // v1.10 读屏：选中态靠底色表达，读屏读不出来，补进名称
+    .accessibilityText(label + (this.selectedDir === rel ? '，已选中' : ''))
   }
 
   build() {
@@ -178,6 +180,7 @@ export struct CreateNoteDialog {
         .onClick(() => {
           this.createType = 'note';
         })
+        .accessibilityText('创建笔记' + (this.createType === 'note' ? '，已选中' : ''))
 
         Row({ space: Space.s1 }) {
           Icon('folder', 14, this.createType === 'folder'
@@ -197,6 +200,7 @@ export struct CreateNoteDialog {
         .onClick(() => {
           this.createType = 'folder';
         })
+        .accessibilityText('创建文件夹' + (this.createType === 'folder' ? '，已选中' : ''))
       }
       .width('100%')
       .padding(2)
@@ -224,6 +228,9 @@ export struct CreateNoteDialog {
       .onClick(() => {
         this.pickerOpen = !this.pickerOpen;
       })
+      // v1.10 读屏：补位置与展开状态
+      .accessibilityText('保存位置：' + (this.selectedDir.length > 0 ? this.selectedDir : '根目录') +
+        (this.pickerOpen ? '，已展开' : '，已收起'))
 
       // 内联目录列表：根目录恒为第一项，其余按扫描顺序；固定高度内部滚
       if (this.pickerOpen) {
@@ -534,6 +541,8 @@ export struct MovePathDialog {
       this.selectedDir = rel;
       this.pickerOpen = false;
     })
+    // v1.10 读屏：选中态靠底色表达，读屏读不出来，补进名称
+    .accessibilityText(label + (this.selectedDir === rel ? '，已选中' : ''))
   }
 
   build() {
@@ -572,6 +581,9 @@ export struct MovePathDialog {
       .onClick(() => {
         this.pickerOpen = !this.pickerOpen;
       })
+      // v1.10 读屏：补位置与展开状态
+      .accessibilityText('移动目标：' + (this.selectedDir.length > 0 ? this.selectedDir : '根目录') +
+        (this.pickerOpen ? '，已展开' : '，已收起'))
 
       if (this.pickerOpen) {
         Scroll() {

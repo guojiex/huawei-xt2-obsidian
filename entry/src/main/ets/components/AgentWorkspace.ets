@@ -647,6 +647,8 @@ export struct AgentWorkspace {
               .justifyContent(FlexAlign.Center)
               .borderRadius(Radius.icon)
               .onClick(() => { void this.archiveSession(session.id); })
+              // v1.10 读屏：纯图标按钮，名称带上作用对象
+              .accessibilityText('归档对话「' + session.title + '」')
             }
             .width('100%')
             .height(Size.touch)

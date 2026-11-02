@@ -25,7 +25,7 @@
     { "name": "float_shadow", "value": "#14233652" },
 
     { "name": "line", "value": "#E7E9ED" },
-    { "name": "line_strong", "value": "#D8DDE5" },
+    { "name": "line_strong", "value": "#8A909C" },
 
     { "name": "text_primary", "value": "#202530" },
     { "name": "text_secondary", "value": "#7C8390" },

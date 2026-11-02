@@ -11,8 +11,8 @@
     { "name": "success", "value": "#75C7A0" },
     { "name": "success_bg", "value": "#292BC48A" },
     { "name": "warning", "value": "#FFA433" },
-    { "name": "danger", "value": "#CF4048" },
-    { "name": "danger_press", "value": "#E84C4C" },
+    { "name": "danger", "value": "#FF6B6B" },
+    { "name": "danger_press", "value": "#FF8A8A" },
     { "name": "danger_bg", "value": "#24FF6B6B" },
     { "name": "hl_code", "value": "#4EC5A5" },
 
@@ -25,7 +25,7 @@
     { "name": "float_shadow", "value": "#33000000" },
 
     { "name": "line", "value": "#303741" },
-    { "name": "line_strong", "value": "#2EFFFFFF" },
+    { "name": "line_strong", "value": "#66FFFFFF" },
 
     { "name": "text_primary", "value": "#E4E8EF" },
     { "name": "text_secondary", "value": "#9BA5B3" },

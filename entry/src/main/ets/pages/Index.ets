@@ -4573,6 +4573,10 @@ struct Index {
     .onClick((): void => {
       void this.openGitSyncPage();
     })
+    // v1.10 读屏：纯图标按钮补名称与待推送状态
+    .accessibilityText('Git 同步')
+    .accessibilityTextHint(this.gitAheadCommitCount > 0
+      ? '有 ' + this.gitAheadCommitCount.toString() + ' 个提交待推送' : '打开同步页')
   }
 
   private isPaneModeSelected(pane: string, label: string): boolean {
@@ -4713,6 +4717,9 @@ struct Index {
       this.paneMorePane = pane;
       this.paneMoreOpen = !this.paneMoreOpen;
     })
+    .accessibilityText('更多操作')
+    .accessibilityTextHint(this.paneMoreOpen && this.paneMorePane === pane
+      ? '收起操作菜单' : '展开操作菜单')
     .bindPopup(this.paneMoreOpen && this.paneMorePane === pane, {
       builder: this.PaneMoreMenu(pane),
       placement: Placement.BottomRight,
@@ -5172,6 +5179,8 @@ struct Index {
     .focusable(true)
     .id('workspace-more-button')
     .onClick(() => { this.moreMenuOpen = !this.moreMenuOpen; })
+    .accessibilityText('更多菜单')
+    .accessibilityTextHint(this.moreMenuOpen ? '收起菜单' : '展开菜单')
     .onAppear((): void => {
       if (this.focusMoreMenuOnAppear) {
         this.getUIContext().getFocusController().requestFocus('workspace-more-button');
@@ -5611,6 +5620,8 @@ struct Index {
     .borderRadius(Radius.icon)
     .enabled(this.isPaneEditable(pane))
     .onClick((): void => { this.applyEditorFormat(kind, pane); })
+    // v1.10 读屏：kind === 'task' 只画图标，没有可见文字，统一用 label 当名称
+    .accessibilityText(label)
   }
 
   @Builder
@@ -5626,6 +5637,7 @@ struct Index {
     .borderRadius(Radius.icon)
     .enabled(this.isPaneEditable(pane) && !this.isImagePickerBusy(pane))
     .onClick((): void => { void this.pickImageForCurrentNote(pane); })
+    .accessibilityText(this.isImagePickerBusy(pane) ? '正在选择图片' : '插入图片')
   }
 
   @Builder
@@ -5903,7 +5915,8 @@ struct Index {
               this.onRightCompositionChange(composing);
             },
             onLockedContentTap: (): void => {
-              promptAction.showToast({ message: '此内容请在专业模式编辑' });
+              // v1.7 17.4 文案：说清是简单模式不支持并可切专业模式；表格的后续版本承诺在块内标注
+              promptAction.showToast({ message: '此内容不支持在简单模式编辑，请切换到专业模式修改' });
             },
             onError: (msg: string): void => {
               hilog.error(DOMAIN, TAG, '右栏预览 Web 加载失败');
@@ -6087,7 +6100,8 @@ struct Index {
             this.onLeftCompositionChange(composing);
           },
           onLockedContentTap: (): void => {
-            promptAction.showToast({ message: '此内容请在专业模式编辑' });
+            // v1.7 17.4 文案：说清是简单模式不支持并可切专业模式；表格的后续版本承诺在块内标注
+            promptAction.showToast({ message: '此内容不支持在简单模式编辑，请切换到专业模式修改' });
           },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '预览 Web 加载失败');

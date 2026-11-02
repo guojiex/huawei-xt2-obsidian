@@ -574,6 +574,8 @@ export struct FileTreeView {
               hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：新建子目录');
               this.onCreateInDir(n.relPath);
               })
+              // v1.10 读屏：纯图标按钮没有可见文字，必须自带名称
+              .accessibilityText('在「' + n.name + '」下新建')
             } else if (!n.isDir && !this.referenceOnly && !this.hideOtherPane) {
               Row() {
                 Icon('fileReference', Space.s5, $r('app.color.text_secondary'), 1.7)
@@ -586,6 +588,7 @@ export struct FileTreeView {
               .onClick((): void => {
                 this.onOpenOtherPane(n.relPath);
               })
+              .accessibilityText('在参考栏打开「' + n.name + '」')
             }
           }
           .width('100%')
