@@ -99,6 +99,27 @@
 .md-table th{padding:var(--s2);border:var(--stroke) solid var(--line);background:var(--nav);font-weight:600;text-align:left}
 .md-table td,.md-table th{overflow-wrap:anywhere;vertical-align:top}
 .simple-protected:has(+ .simple-protected)::after{display:none}
+.simple-protected[data-block-type=table]::after{content:'表格编辑将在后续版本开放'}
+
+/* 2026-11-02 complex block entry: contextual bar (C) + block sheet (D). Design sketch only. */
+.simple-block-active{box-shadow:0 0 0 var(--stroke) var(--blue);border-radius:var(--small-r)}
+.simple-block-active::after{content:none}
+.simple-table td.cell-active,.simple-table th.cell-active{background:var(--blue-soft)}
+.block-bar{position:fixed;z-index:6;display:flex;align-items:center;gap:var(--s1);padding:var(--s1);border:var(--stroke) solid var(--line);border-radius:var(--pill);background:var(--float);box-shadow:var(--float-shadow)}
+.block-bar button{min-width:var(--touch);min-height:var(--touch);padding:0 var(--s2);border:0;border-radius:var(--pill);background:transparent;color:var(--ink);font:inherit;font-size:var(--caption);cursor:pointer}
+.block-bar button:hover{background:var(--nav)}
+.block-bar button.more{color:var(--blue)}
+.block-scrim{position:fixed;z-index:6;background:var(--scrim)}
+.block-sheet{position:fixed;z-index:7;max-height:56%;overflow:auto;padding:0 0 var(--s6);border-radius:calc(var(--r) * 2) calc(var(--r) * 2) 0 0;background:var(--paper);box-shadow:var(--shadow)}
+.block-sheet-drag{width:var(--s10);height:var(--s1);margin:var(--s3) auto var(--s2);border-radius:var(--pill);background:var(--line)}
+.block-sheet-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);padding:0 var(--s3) var(--s3) var(--s5)}
+.block-sheet-head strong{font-size:var(--large);font-weight:500}
+.block-sheet-head .icon{width:var(--s10);height:var(--s10);padding:0;border-radius:var(--pill);background:var(--nav);color:var(--muted)}
+.block-sheet .hs-group{margin:0 var(--s4)}
+.block-sheet .hs-group+.hs-group{margin-top:var(--s4)}
+.block-sheet .settings-toggle-row{padding:var(--s2) var(--s4)}
+.block-sheet .hs-row .seg{flex:none;margin:0}
+.block-sheet-note{margin:var(--s4) var(--s4) 0;color:var(--muted);font-size:var(--caption);line-height:var(--leading);text-align:center}
 .preview-zoom{transition:opacity var(--ease, .2s)}
 .preview-zoom.is-scrolling{opacity:0;pointer-events:none}
 
@@ -188,6 +209,9 @@ a.hs-value{color:var(--blue)}
 <dialog id="formatDialog" class="utility-dialog format-panel" aria-labelledby="formatTitle"><header class="utility-head"><h2 id="formatTitle">文字与段落</h2><button id="closeFormat">完成</button></header><section class="format-group"><h3>段落</h3><div class="format-grid"><button data-format-choice="paragraph"><span>Aa</span><small>正文</small></button><button data-format-choice="h1"><span>H1</span><small>1 级标题</small></button><button data-format-choice="h2"><span>H2</span><small>2 级标题</small></button><button data-format-choice="h3"><span>H3</span><small>3 级标题</small></button><button data-format-choice="h4"><span>H4</span><small>4 级标题</small></button><button data-format-choice="h5"><span>H5</span><small>5 级标题</small></button><button data-format-choice="h6"><span>H6</span><small>6 级标题</small></button></div></section><section class="format-group"><h3>文字</h3><div class="format-grid"><button data-format-choice="bold"><span>B</span><small>加粗</small></button><button data-format-choice="italic"><span>I</span><small>斜体</small></button><button id="formatCodeChoice" data-format-choice="code" aria-pressed="false"><span>&lt;/&gt;</span><small>代码块</small></button><button data-format-choice="link"><span>↗</span><small>链接</small></button></div></section><section class="format-group"><h3>列表与引用</h3><div class="format-grid"><button data-format-choice="list"><span>≡</span><small>列表</small></button><button data-format-choice="task"><span>☑</span><small>待办</small></button><button data-format-choice="quote"><span>❞</span><small>引用</small></button></div></section></dialog><dialog id="quickSearchDialog" class="utility-dialog quick-search-dialog" aria-labelledby="quickSearchTitle"><header class="utility-head"><h2 id="quickSearchTitle">快切与搜索</h2><button id="closeQuickSearch" class="icon" aria-label="关闭搜索">×</button></header><label class="search-field"><span class="hidden">搜索当前知识库</span><input id="quickSearchInput" type="search" placeholder="搜索文件名、路径或正文" autocomplete="off"></label><div class="search-results-head"><span id="quickSearchLabel">最近打开</span><span id="quickSearchCount">0</span></div><div id="quickSearchResults" class="search-results" role="list"></div><p id="quickSearchEmpty" class="search-empty hidden" role="status"></p><p class="search-note">只搜索当前知识库。此页仅演示界面，不写入设备。</p></dialog></main>
 <footer class="caption"><span>V2 / 清爽原生 × 安静阅读 · 可体验独立参考面板、专注、源码编辑、章节跳转与摘录撤销</span><span><a href="./设计说明.md">设计说明</a> · <a href="https://developer.huawei.com/consumer/cn/design/concept/" target="_blank" rel="noopener">HarmonyOS 设计参考</a></span></footer></div>
 <div class="toast hidden" id="toast" role="status"><span id="toastText"></span><button id="undo" class="hidden">撤销摘录</button></div>
+<div class="block-bar hidden" id="blockBar" role="group" aria-label="当前块操作"><button type="button" data-block-op="insert-row" aria-label="在当前行下方插入一行">下加行</button><button type="button" data-block-op="insert-col" aria-label="在当前列右侧插入一列">右加列</button><button type="button" data-block-op="del-row" aria-label="删除当前行">删除</button><button type="button" class="more" data-block-op="more" aria-label="打开当前块设置">更多</button></div>
+<div class="block-scrim hidden" id="blockScrim"></div>
+<div class="block-sheet hidden" id="blockSheet" role="dialog" aria-modal="true" aria-label="块设置：表格"><div class="block-sheet-drag" aria-hidden="true"></div><div class="block-sheet-head"><strong id="blockSheetTitle">表格</strong><button type="button" class="icon" id="blockSheetClose" aria-label="关闭块设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div class="hs-group"><label class="settings-toggle-row"><span class="settings-toggle-copy"><strong>首行为表头</strong><small>第一行按表头样式显示</small></span><span class="settings-switch"><input type="checkbox" id="blockHeaderRow" checked><span class="settings-switch-track"></span></span></label></div><div class="hs-group"><div class="hs-row"><span class="hs-main"><strong>插入列</strong></span><span class="seg edit-switch" role="group" aria-label="插入列的方向"><button type="button" data-block-side="left" aria-pressed="false">左</button><button type="button" data-block-side="right" aria-pressed="true">右</button></span></div><button class="hs-row" type="button" data-block-op="insert-col"><span class="hs-main"><strong id="blockInsertColLabel" style="color:var(--blue)">在右侧插入列</strong></span></button><div class="hs-row"><span class="hs-main"><strong>插入行</strong></span><span class="seg edit-switch" role="group" aria-label="插入行的方向"><button type="button" data-block-side="up" aria-pressed="false">上</button><button type="button" data-block-side="down" aria-pressed="true">下</button></span></div><button class="hs-row" type="button" data-block-op="insert-row"><span class="hs-main"><strong id="blockInsertRowLabel" style="color:var(--blue)">在下方插入行</strong></span></button></div><div class="hs-group"><button class="hs-row" type="button" data-block-op="del-col"><span class="hs-main"><strong style="color:var(--danger)">删除当前列</strong></span></button><button class="hs-row" type="button" data-block-op="del-row"><span class="hs-main"><strong style="color:var(--danger)">删除当前行</strong></span></button></div><div class="hs-group"><button class="hs-row" type="button" id="blockSourceEdit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg><span class="hs-main"><strong style="color:var(--blue)">以源码编辑此块</strong></span></button></div><p class="block-sheet-note">原型示意：只演示交互，不写入笔记内容。切换方向会同步到浮条按钮。</p></div>
 <script>
 'use strict';
 const icons={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',focus:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',exitFocus:'<path d="M3 8h5V3m13 5h-5V3M3 16h5v5m13-5h-5v5"/>',columns:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M11 4v16"/>',note:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5"/>',moon:'<path d="M20 14a8 8 0 0 1-10-10A8 8 0 1 0 20 14Z"/>'};
@@ -463,6 +487,7 @@ function openImageViewer(image){if(!image||!image.src)return;imageReturnFocus=im
 function finishImageViewer(){const target=imageReturnFocus;imageReturnFocus=null;$('imageViewerImage').removeAttribute('src');$('imageViewerImage').alt='';$('imageViewerTitle').textContent='完整图片';if(target)target.focus();}
 function closeImageViewer(){if($('imageViewerDialog').open)$('imageViewerDialog').close();finishImageViewer();}
 
+let blockTarget=null,blockFrame=null,blockSides={col:'right',row:'down'};
 function syncExperienceChoices(){
  $('experienceSimple').checked=experience==='simple';$('experienceProfessional').checked=experience==='professional';$('quickSimple').setAttribute('aria-pressed',String(experience==='simple'));$('quickProfessional').setAttribute('aria-pressed',String(experience==='professional'));
 }
@@ -470,8 +495,8 @@ function syncExperience(){
  const simple=experience==='simple';$('window').classList.toggle('simple-mode',simple);syncExperienceChoices();
  $('simpleTools').classList.toggle('hidden',!simple||activePane!=='left'||!current);
  $('simpleToolsRight').classList.toggle('hidden',!simple||activePane!=='right'||!reference);
- if(!simple){for(const root of [$('article'),$('reference')]){for(const el of root.querySelectorAll('[contenteditable]')){el.removeAttribute('contenteditable');el.removeAttribute('role');el.removeAttribute('aria-label');el.removeAttribute('aria-multiline');}for(const el of root.querySelectorAll('.simple-protected'))el.classList.remove('simple-protected');}return;}
- $('article').classList.remove('hidden');prepareSimpleBlocks('left');prepareSimpleBlocks('right');
+ if(!simple){closeBlockUi();for(const root of [$('article'),$('reference')]){for(const el of root.querySelectorAll('[contenteditable]')){el.removeAttribute('contenteditable');el.removeAttribute('role');el.removeAttribute('aria-label');el.removeAttribute('aria-multiline');}for(const el of root.querySelectorAll('.simple-protected'))el.classList.remove('simple-protected');}return;}
+ $('article').classList.remove('hidden');prepareSimpleBlocks('left');prepareSimpleBlocks('right');bindBlockEntrances();closeBlockUi();
 }
 function simplePrefix(raw){return (raw.match(/^(?:#{1,6} |\s*(?:[-*+]|\d+[.)])(?: \[[ xX]\])? |> )/)||[''])[0];}
 function simpleBlockAllowed(raw){raw=raw.slice(simplePrefix(raw).length);return !!raw.trim()&&!/[\`|\[\]<>$~=_!]/.test(raw)&&!/^\s*(?:\d+[.)] |---|\+ |\* )/.test(raw)&&!raw.includes('** *');}
@@ -494,6 +519,112 @@ function prepareSimpleBlocks(pane='left'){
   if(allowed){block.contentEditable='true';block.setAttribute('role','textbox');block.setAttribute('aria-label','编辑正文：'+(block.textContent.trim().slice(0,20)||'空白段落'));block.setAttribute('aria-multiline','true');}else block.removeAttribute('contenteditable');
  }
 }
+function closeBlockUi(){
+ blockTarget=null;
+ if(blockFrame!==null&&window.cancelAnimationFrame)window.cancelAnimationFrame(blockFrame);blockFrame=null;
+ for(const el of document.querySelectorAll('.simple-block-active'))el.classList.remove('simple-block-active');
+ for(const el of document.querySelectorAll('.cell-active'))el.classList.remove('cell-active');
+ $('blockBar').classList.add('hidden');$('blockSheet').classList.add('hidden');$('blockScrim').classList.add('hidden');
+}
+function positionBlockSheet(){
+ const sheet=$('blockSheet');if(sheet.classList.contains('hidden'))return;
+ const win=$('window').getBoundingClientRect(),scrim=$('blockScrim');
+ const left=Math.max(0,win.left),width=Math.min(win.width,window.innerWidth-left),top=Math.max(0,win.top);
+ scrim.style.left=left+'px';scrim.style.top=top+'px';scrim.style.width=width+'px';
+ scrim.style.height=Math.min(win.height,window.innerHeight-top)+'px';
+ sheet.style.left=left+'px';sheet.style.width=width+'px';sheet.style.bottom=Math.max(0,window.innerHeight-win.bottom)+'px';
+}
+function positionBlockBar(){
+ const bar=$('blockBar');if(bar.classList.contains('hidden')||!blockTarget)return;
+ const block=blockTarget.block;if(!block.isConnected){closeBlockUi();return;}
+ const rect=block.getBoundingClientRect(),win=$('window').getBoundingClientRect(),sheet=$('blockSheet');
+ const limit=sheet.classList.contains('hidden')?Math.min(window.innerHeight,win.bottom):sheet.getBoundingClientRect().top;
+ const gap=4,height=bar.offsetHeight,width=bar.offsetWidth;
+ if(!height||rect.bottom<win.top+gap||rect.top>limit){bar.classList.add('hidden');return;}
+ let top=rect.bottom+gap;
+ if(top+height>limit)top=rect.top-height-gap;
+ bar.style.left=Math.max(win.left+gap,Math.min(rect.left,win.right-width-gap))+'px';
+ bar.style.top=Math.max(win.top+gap,top)+'px';
+}
+function followBlockBar(){positionBlockBar();if(!$('blockBar').classList.contains('hidden')&&window.requestAnimationFrame)blockFrame=window.requestAnimationFrame(followBlockBar);}
+function syncBlockBarLabels(){
+ const left=blockSides.col==='left',up=blockSides.row==='up';
+ const col=document.querySelector('#blockBar [data-block-op="insert-col"]'),row=document.querySelector('#blockBar [data-block-op="insert-row"]');
+ if(col){col.textContent=(left?'左':'右')+'加列';col.setAttribute('aria-label','在当前列'+(left?'左':'右')+'侧插入一列');}
+ if(row){row.textContent=(up?'上':'下')+'加行';row.setAttribute('aria-label','在当前行'+(up?'上':'下')+'方插入一行');}
+}
+function syncBlockSheetLabels(){
+ const left=blockSides.col==='left',up=blockSides.row==='up';
+ $('blockInsertColLabel').textContent='在'+(left?'左':'右')+'侧插入列';
+ $('blockInsertRowLabel').textContent='在'+(up?'上':'下')+'方插入行';
+}
+function openBlockUi(block,cell){
+ if(experience!=='simple')return;
+ closeBlockUi();
+ blockTarget={block,cell:cell||null};
+ block.classList.add('simple-block-active');
+ if(cell)cell.classList.add('cell-active');
+ $('blockSheetTitle').textContent=block.dataset.blockType==='table'?'表格':'当前块';
+ syncBlockBarLabels();
+ $('blockBar').classList.remove('hidden');
+ positionBlockBar();followBlockBar();
+}
+function bindBlockEntrances(){
+ for(const root of [$('article'),$('reference')])for(const table of root.querySelectorAll('table.simple-table')){
+  table.dataset.blockType='table';
+  if(table.dataset.blockBound==='1')continue;table.dataset.blockBound='1';
+  table.setAttribute('tabindex','0');
+  table.setAttribute('aria-label','表格块，简单模式下可打开块操作');
+  table.addEventListener('click',event=>{const cell=event.target.closest?event.target.closest('td,th'):null;openBlockUi(table,cell);});
+  table.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openBlockUi(table,table.querySelector('td'));}});
+ }
+}
+function blockPosition(){
+ if(!blockTarget)return null;
+ const table=blockTarget.block,cell=blockTarget.cell&&blockTarget.cell.isConnected?blockTarget.cell:table.querySelector('td');
+ if(!cell||!cell.parentElement||!table.rows.length)return null;
+ return {table,rowIndex:cell.parentElement.rowIndex,colIndex:cell.cellIndex,cols:cell.parentElement.cells.length};
+}
+function insertTableColumn(side){
+ const pos=blockPosition();if(!pos)return;
+ const index=side==='left'?pos.colIndex:pos.colIndex+1;
+ for(const row of pos.table.rows)row.insertCell(Math.min(index,row.cells.length)).textContent='';
+ toast('原型示意：在'+(side==='left'?'左':'右')+'侧插入一列，未写入笔记');
+}
+function insertTableRow(side){
+ const pos=blockPosition();if(!pos)return;
+ const index=side==='up'?pos.rowIndex:pos.rowIndex+1;
+ const row=pos.table.insertRow(Math.max(0,Math.min(index,pos.table.rows.length)));
+ for(let i=0;i<pos.cols;i++)row.insertCell().textContent='';
+ toast('原型示意：在'+(side==='up'?'上':'下')+'方插入一行，未写入笔记');
+}
+function deleteTableColumn(){
+ const pos=blockPosition();if(!pos||pos.cols<=1){toast('至少保留一列',false);return;}
+ for(const row of pos.table.rows)if(row.cells[pos.colIndex])row.deleteCell(pos.colIndex);
+ closeBlockUi();toast('原型示意：删除当前列，未写入笔记');
+}
+function deleteTableRow(){
+ const pos=blockPosition();if(!pos||pos.table.rows.length<=1){toast('至少保留一行',false);return;}
+ pos.table.deleteRow(pos.rowIndex);closeBlockUi();toast('原型示意：删除当前行，未写入笔记');
+}
+function applyBlockOp(op){
+ if(!blockTarget)return;
+ if(op==='more'){syncBlockSheetLabels();$('blockScrim').classList.remove('hidden');$('blockSheet').classList.remove('hidden');positionBlockSheet();positionBlockBar();$('blockSheetClose').focus();return;}
+ if(op==='insert-col')insertTableColumn(blockSides.col);
+ else if(op==='insert-row')insertTableRow(blockSides.row);
+ else if(op==='del-col')deleteTableColumn();
+ else if(op==='del-row')deleteTableRow();
+}
+function setBlockSide(group,value){for(const button of document.querySelectorAll('#blockSheet [data-block-side]')){const side=button.dataset.blockSide,inGroup=group==='col'?(side==='left'||side==='right'):(side==='up'||side==='down');if(inGroup)button.setAttribute('aria-pressed',String(side===value));}syncBlockBarLabels();syncBlockSheetLabels();}
+document.addEventListener('click',event=>{if(!event.target||!event.target.closest)return;if(event.target===$('blockScrim')){closeBlockUi();return;}if($('blockBar').contains(event.target)||$('blockSheet').contains(event.target))return;if(event.target.closest('table.simple-table'))return;closeBlockUi();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&blockTarget){event.preventDefault();closeBlockUi();}});
+for(const selector of ['#blockBar [data-block-op]','#blockSheet [data-block-op]'])document.querySelectorAll(selector).forEach(b=>b.onclick=()=>applyBlockOp(b.dataset.blockOp));
+for(const button of document.querySelectorAll('#blockSheet [data-block-side]'))button.onclick=()=>{const side=button.dataset.blockSide;if(side==='left'||side==='right'){blockSides.col=side;setBlockSide('col',side);}else{blockSides.row=side;setBlockSide('row',side);}positionBlockBar();};
+$('blockSheetClose').onclick=()=>closeBlockUi();
+$('blockSourceEdit').onclick=()=>{closeBlockUi();toast('原型示意：以源码编辑此块尚未实现');};
+for(const id of ['simpleAa','simpleAaRight'])$(id).addEventListener('toggle',()=>{if($(id).open)closeBlockUi();});
+window.addEventListener('resize',()=>{positionBlockBar();positionBlockSheet();});
+window.addEventListener('scroll',()=>positionBlockBar(),true);
 function simpleMarkdown(node){
  if(node.nodeType===Node.TEXT_NODE)return node.textContent.replace(/([\\`*_[\]<>])/g,'\\$1');
  if(node.nodeType!==Node.ELEMENT_NODE)return '';
