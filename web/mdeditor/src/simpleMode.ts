@@ -14,6 +14,16 @@ export interface SimpleModeRanges {
   decorations: SimpleRange[]
 }
 
+/**
+ * 受保护块的提示文案（v1.7 17.4：限制须在相关内容附近清楚说明）。
+ * 只写「后续版本」不写版本号，避免版本重排后文案过期。
+ * - 表格：v1.14「简单模式表格编辑」已立项，可以承诺后续开放。
+ * - 其余：需求池没有排期，属简单模式的长期边界，只说清「不支持」，
+ *   不承诺会支持，也不让用户干等。
+ */
+export const PROTECTED_HINT_TABLE: string = '表格编辑将在后续版本开放，当前请在专业模式修改'
+export const PROTECTED_HINT_DEFAULT: string = '此内容不支持在简单模式编辑，请在专业模式修改'
+
 function mergeProtected(ranges: SimpleRange[]): SimpleRange[] {
   const sorted = ranges.filter((range) => range.to > range.from)
     .sort((left, right) => left.from - right.from || left.to - right.to)
@@ -24,6 +34,25 @@ function mergeProtected(ranges: SimpleRange[]): SimpleRange[] {
       last.to = Math.max(last.to, range.to)
     } else {
       merged.push({ from: range.from, to: range.to, kind: 'protected' })
+    }
+  }
+  return merged
+}
+
+/** 与 mergeProtected 同逻辑，但保留提示文案：合并到一起的不同类型块退回默认文案。 */
+function mergeHints(ranges: SimpleRange[]): SimpleRange[] {
+  const sorted = ranges.filter((range) => range.to > range.from)
+    .sort((left, right) => left.from - right.from || left.to - right.to)
+  const merged: SimpleRange[] = []
+  for (const range of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && range.from <= last.to) {
+      last.to = Math.max(last.to, range.to)
+      if (last.value !== range.value) {
+        last.value = undefined
+      }
+    } else {
+      merged.push({ from: range.from, to: range.to, kind: 'protected-hint', value: range.value })
     }
   }
   return merged
@@ -121,7 +150,7 @@ function customProtectedRanges(source: string): SimpleRange[] {
       if (line.includes('|')) {
         tableEnd = offset + line.length
       } else if (line.trim().length > 0) {
-        ranges.push({ from: tableStart, to: tableEnd, kind: 'protected' })
+        ranges.push({ from: tableStart, to: tableEnd, kind: 'protected', value: PROTECTED_HINT_TABLE })
         tableStart = -1
         tableEnd = -1
       }
@@ -145,7 +174,7 @@ function customProtectedRanges(source: string): SimpleRange[] {
     ranges.push({ from: quoteStart, to: quoteEnd, kind: 'protected' })
   }
   if (tableStart >= 0) {
-    ranges.push({ from: tableStart, to: tableEnd, kind: 'protected' })
+    ranges.push({ from: tableStart, to: tableEnd, kind: 'protected', value: PROTECTED_HINT_TABLE })
   }
   if (formulaStart >= 0) {
     ranges.push({ from: formulaStart, to: source.length, kind: 'protected' })
@@ -294,6 +323,8 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
           } else {
             hintRanges.push(range)
           }
+        } else if (node.name === 'Table') {
+          hintRanges.push({ from: range.from, to: range.to, kind: range.kind, value: PROTECTED_HINT_TABLE })
         } else {
           hintRanges.push(range)
         }
@@ -350,8 +381,9 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
     }
   }
   decorations.push(...imageRanges)
-  for (const range of mergeProtected(hintRanges)) {
-    decorations.push({ from: range.from, to: range.from, kind: 'protected-hint', value: '此内容请在专业模式编辑' })
+  for (const range of mergeHints(hintRanges)) {
+    decorations.push({ from: range.from, to: range.from, kind: 'protected-hint',
+      value: range.value ?? PROTECTED_HINT_DEFAULT })
   }
   return { protected: mergedProtected, decorations }
 }

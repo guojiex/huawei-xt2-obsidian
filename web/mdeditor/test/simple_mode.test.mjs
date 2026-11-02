@@ -10,7 +10,9 @@ const result = await build({
     contents: `
       import { EditorState } from '@codemirror/state'
       import { markdown } from '@codemirror/lang-markdown'
-      import { collectSimpleModeRanges, allowsSimpleModeTransaction, resolveSimpleModeImagePath } from '../src/simpleMode.ts'
+      import { collectSimpleModeRanges, allowsSimpleModeTransaction, resolveSimpleModeImagePath,
+        PROTECTED_HINT_TABLE, PROTECTED_HINT_DEFAULT } from '../src/simpleMode.ts'
+      export const hints = { table: PROTECTED_HINT_TABLE, fallback: PROTECTED_HINT_DEFAULT }
       export function inspect(source) {
         const state = EditorState.create({ doc: source, extensions: [markdown()] })
         return collectSimpleModeRanges(state)
@@ -72,6 +74,22 @@ test('frontmatter, code, links, tables, callouts and math are read-only with inl
   assert(protectedText.some((text) => text.includes('[!note]')))
   assert(protectedText.some((text) => text.includes('$$')))
   assert.equal(result.decorations.filter((range) => range.kind === 'protected-hint').length, result.protected.length)
+})
+
+test('protected hints promise the planned release only for tables', () => {
+  const source = '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n```js\nconst x = 1\n```\n'
+  const result = simpleMode.inspect(source)
+  const hints = result.decorations.filter((range) => range.kind === 'protected-hint')
+  const tableFrom = source.indexOf('| a | b |')
+  const table = hints.find((range) => range.from === tableFrom)
+  assert.ok(table, '表格块应带提示')
+  assert.equal(table.value, simpleMode.hints.table)
+  assert.match(table.value, /后续版本/, '已排期的表格须说明后续会开放')
+  const code = hints.find((range) => range.from === source.indexOf('```js'))
+  assert.ok(code, '代码块应带提示')
+  assert.equal(code.value, simpleMode.hints.fallback)
+  assert.doesNotMatch(code.value, /后续版本/, '没有排期的块不得承诺后续支持')
+  assert.match(code.value, /专业模式/)
 })
 
 test('simple mode blocks edits into protected source and permits neighboring paragraphs', () => {
