@@ -39,7 +39,7 @@
 | F4 | 保存与恢复 | 自动保存与草稿恢复；异常恢复逻辑用单测验证 |
 | F5 | 三形态适配 | 单屏态 / 双屏态 / 三屏展开态各自布局正确，切换时当前笔记不丢 |
 | F6（后置） | 导入 Git 仓库 | 填仓库地址与令牌，把远端库拉成 `vaults/<仓库名>`，与本地库并存 |
-| F7 | 库管理 | 多库切换、新建本地库、改名（显示名与目录名同步）、本地库删除、Git 库移除本地副本；每个库独立同步 |
+| F7 | 库管理 | 多库切换、新建本地库、改名（沙箱库同步目录名，外部库只改应用内名称）、本地库删除、Git 库移除本地副本；每个库独立同步 |
 | F8 | 小艺本地笔记操作 | 用户确认已完成；不再作为后续待办，历史证据见 [v0.6 验收记录](releases/v0.6/验收记录.md) |
 
 **库是第一等公民**：一个库 = `vaults/` 下的一个目录。本地笔记是其中一个库，导入的每个 Git 仓库各自也是一个库。这样设计的原因是——如果强制先配 GitHub 才能用，装完应用是个空壳；而如果只做一个混合目录，本地笔记和被跟踪的仓库会互相污染。
@@ -174,7 +174,9 @@ XT2 有两条铰链，把屏幕分成三块。**规则是：一栏占且只占�
 | 大文档性能 | 依赖 WebView，需实测 | 可控 | 最好 |
 | 结论 | **MVP 推荐** | 降级预案 | 后置到优化阶段 |
 
-### 3.3 方案 A 落地要点（已选定）
+### 3.3 方案 A 早期设计
+
+> 以下是早期方案，不代表 M0.5 已完成或最终选型已通过。当前 spike 证据与待验项见 [v0.2 需求文档](releases/v0.2/需求文档.md)；预览安全现状见 [安全边界](engineering/库身份与安全边界.md#2-web-预览威胁模型与待验收项)。
 
 **决策**：采用方案 A（Web 组件 + CodeMirror 6），并在 M1 之前完成 WebView 编辑可行性验证（spike）。spike 不通过则编辑端退回 `TextArea`（方案 B），预览端维持 Web 渲染不变。
 
@@ -183,7 +185,7 @@ XT2 有两条铰链，把屏幕分成三块。**规则是：一栏占且只占�
 ```
 entry/src/main/resources/rawfile/editor/
   index.html
-  editor.js      # CodeMirror 6 + Markdown 语言包 + marked/DOMPurify，vite 打包为 IIFE
+  editor.js      # CodeMirror 6 + Markdown 语言包 + marked 等，vite 打包为 IIFE；消毒状态见安全边界
   editor.css
 ```
 
@@ -197,11 +199,11 @@ entry/src/main/resources/rawfile/editor/
 
 ## 4. 存储设计
 
-> **2026-10-26 修订**：以下早期目录示意不作为当前物理布局。已确认存储方向与删库联动见 [决策总表](open_questions.md) 和 [存储规划](engineering/应用内部存储架构_审查稿.md)；不强制新增 app.json，不迁移已有 Preferences。旧示意的 app.db / app_prefs.xml 不代表已有实现；“目录名即身份”由稳定 vaultKey 与可读目录映射方案修订，尚未落码。
+> 当前身份及状态键以 [库身份与安全边界](engineering/库身份与安全边界.md) 为准；下方目录图为历史示意，不代表当前物理布局。存储决策见 [决策总表](open_questions.md)。
 
 ### 4.1 目录
 
-笔记库存放在应用沙箱（EL2 用户级加密区），通过 `UIAbilityContext.filesDir` 访问，无需任何权限申请。
+以下为沙箱库的历史示意；v1.5 还支持关联已授权外部目录，详见 [v1.5 需求文档](releases/v1.5/需求文档.md)。沙箱路径通过 `UIAbilityContext.filesDir` 获取。
 
 ```
 filesDir/
@@ -228,7 +230,7 @@ preferencesDir/
 - **开箱即用**：不配 GitHub 也能记，装上就能写。强制先同步等于把应用变成空壳。
 - **互不污染**：本地随手记和被 git 跟踪的笔记分开，不会出现 `git status` 里混进一堆不想推的草稿。
 - **各库独立**：remote、branch、token、同步频率都是库级别的；一个库同步失败不影响其他库。
-- **目录名即身份**：库 id = 目录名，不做额外映射表，导出/备份时结构自解释。
+- **身份与名称分开**：`vaultKey` 为稳定内部身份；现有 `vaultId` 可随名称改变。各状态当前使用的键和迁移缺口见 [状态对照](engineering/库身份与安全边界.md#1-库身份与状态键)。
 
 ### 4.2 写入策略（要点）
 
@@ -247,83 +249,11 @@ preferencesDir/
 
 工程已生成 `EntryBackupAbility`（backup extension）与 `backup_config.json`，MVP 阶段即可配置备份 `vault/` 目录，走系统备份恢复通道。
 
-### 4.4 同步：GitHub 双向
+### 4.4 Git 同步
 
-> **2026-10-30 路线更新**：优先验证并采用 Native libgit2；设备验证或数据保护证明不可行时再评估 isomorphic-git 等备选。下方 Web 架构是现有实现与历史证据，不再是当前首选；[v0.3 需求](releases/v0.3/需求文档.md)为当前执行范围。
+当前路线为 Native libgit2，范围、实现与证据见 [v0.3 需求及验收记录](releases/v0.3/需求文档.md)：已有状态、暂存、提交、fetch、push 接入；已有库的 pull / checkout 尚未实现安全恢复边界。远端非快进时拒绝推送，不承诺自动合并、重置工作区或推送 `xt2` 分支。真实服务、UI 和目标设备证据仍按该版记录核对。
 
-**历史方案**：在 Web 组件内运行 isomorphic-git（纯 JS 实现），支持 clone / pull / commit / push。手机端必须能回写，所以单向导入方案作废。库规模在数百篇量级，性能顾虑不成立。
-
-不采用更轻的 Git Data API 的原因：既然要回写，完整 git 语义（本地历史、diff、分支）带来的收益超过那点额外成本，且冲突可以用"推分支"优雅解决。
-
-#### 架构要点
-
-1. **运行位置**：Web 组件加载 `resources/rawfile/gitbridge/index.html`（单文件内联，含打包好的 isomorphic-git + 桥接层，268 KB）。isomorphic-git 只做计算、不依赖 DOM，因此即使 M0.5 的编辑器 spike 失败、编辑端降级到 `TextArea`，这条链路依然可用。
-2. **文件系统桥接**（核心工作量）：isomorphic-git 接受自定义 `fs` 对象，实现 `readFile / writeFile / readdir / mkdir / rmdir / stat / lstat / unlink / rename`，内部转发到 ArkTS，由 `@ohos.file.fs` 操作沙箱 `vault/`。**单一数据源必须留在沙箱**，不要在 Web 侧另存 IndexedDB 副本。
-3. **网络（结论已修正）**：~~isomorphic-git 用 fetch 直连 GitHub~~ —— 早期假设 GitHub 支持 CORS，实测不成立：`github.com` 的 git 服务端点（`info/refs`、`git-upload-pack`）**不返回 CORS 头**，WebView 内 fetch 会被同源策略拦掉。因此改为注入**自定义 http client**，把请求转发给 ArkTS 的 `@ohos.net.http`，天然不受 CORS 限制。`module.json5` 已补 `ohos.permission.INTERNET`。
-4. **认证**：PAT（fine-grained，Contents 读写）。**当前暂存在 preferences（不安全）**，必须迁移到 **Asset Store Kit**：`@kit.AssetStoreKit` 的 `asset.addSync/querySync`，**无需申请任何权限**；敏感值只能放 `asset.Tag.SECRET`（加密位），`ALIAS` 不加密、只作检索键。多库场景下 **alias 用 `vault:<库id>:token`**，每个库单独存一份。（读取时未找到会抛 `24000002`，需捕获。）
-5. **性能**：跨语言 fs 调用是主要开销。JS 侧做写缓冲，达到阈值（128 个文件 / 4 MB）才批量提交，避免逐文件跨桥；首次 clone 给进度条。
-
-**通道分工（核实后新增）**：`runJavaScript` 的脚本长度上限官方未记载，且返回值是 string，100KB 级文本往返有明显序列化开销，**不适合做数据通道**。因此：
-
-- 控制指令（init / clone / 状态查询）→ 继续走 `runJavaScript` + `javaScriptProxy`
-- **大文本与 git packfile → 必须改走 `WebMessagePort`**（`createWebMessagePort()`，支持 ArrayBuffer）
-
-**桥接不放在 Worker 里（原计划已修正）**：核实后确认 `javaScriptProxy` 是"注入到 window 对象"，而 **Worker 是独立全局作用域、没有 window，访问不到注入对象**。要 Worker 化就得在 Worker 与主线程之间再架一层 `postMessage` 中转，复杂度不划算。**MVP 先放主线程**（数百篇量级可接受），实测不够再优化。
-
-**git 计算容器的承载方式**：不要用 1×1 像素的隐藏 Web 组件。官方为"页面保活"提供的是 **`NodeController` + `NodeContainer` 动态挂载/卸载 Web 节点**（离线 Web 组件），用它承载 git 容器。
-
-#### 桥接协议
-
-- 通道：JS→ArkTS 用 `javaScriptProxy` 注入的 `window.__arkts.postMessage(json)`；ArkTS→JS 用 `runJavaScript` 调 `window.__gitBridge.onResult(id, ok, payloadB64)`。
-- 所有路径与二进制内容一律 base64，规避中文路径、二进制报文在 JSON / 脚本传参时被破坏。
-- payload 统一是「JSON 文本再做一次 base64」，从而不含引号与换行，避免脚本注入与转义问题。
-- fs 操作路径一律是 vault 内相对路径，ArkTS 侧校验并拒绝 `..` 与绝对路径。
-- 工作区 md 文件走 `tmp + rename` 原子写；`.git` 内部文件不做原子写（git 自身有完整性保障，且对象文件极多，原子写开销大）。
-- `unlink` 做成幂等：isomorphic-git 结束时会删未必存在的 `.git/shallow`。
-
-#### 已验证 / 待验证
-
-#### 多托管平台
-
-桥接层走的是标准 git smart HTTP，与平台无关，换 URL 即可。已实测：
-
-| 平台 | 公开库 | 认证方式 | 备注 |
-| --- | --- | --- | --- |
-| GitHub | 支持 | `Bearer <PAT>` | 用户名留空 |
-| Gitee | 支持 | `Basic(用户名:私人令牌)` | **不支持 Bearer**；私有库必须填用户名 |
-| 自建 GitLab | 理论支持 | `Basic(用户名:令牌)` | 未实测 |
-
-> Gitee 的坑：对"仓库不存在"和"私有库未认证"**都返回 401**（不是 404），排查时容易误判。
-> SyncPage 已对 401/404/网络错误做了人话翻译。
-
-**已验证**（`web/gitbridge/test/node_smoke.mjs`：用 node 伪造 ArkTS 后端，把打包产物真跑一遍）。
-GitHub 与 Gitee 均已成功 clone 并 checkout 出文件。过程中修掉三个真坑：
-
-1. `channel` 与调用方**重复解了一次 base64**，导致 `atob(undefined)`。
-2. http 响应体**必须包成异步块迭代器**——直接给裸 `Uint8Array` 会被 `getIterator` 当成逐字节迭代（`Uint8Array` 自带 `Symbol.iterator`），表现为 `EmptyServerResponseError`。
-3. isomorphic-git 的 `StreamReader` **强依赖 `Buffer`**（源码注释 #1855），WebView 里没有这个全局，已注入 `buffer` polyfill。
-
-**待真机验证**：`WebMessagePort` 在 `resource://rawfile/` 页面上是否可用；`NodeContainer` 承载的离线 Web 组件内 JS 是否正常执行。
-
-**关于"拦截方案"（暂缓，仅记录）**：官方更推荐的做法是 `onInterceptRequest` 拦截请求、原生层代发、`WebResourceHandler.didReceiveResponseBody(ArrayBuffer)` 流式回填——这样 isomorphic-git 继续用原生 fetch，**JS 侧代码零改动**，且支持流式、不占内存峰值。听起来比我们现在的手动转发更优雅，**但 MVP 暂不迁移**，原因是它有一个未验证的致命前提：push 走的 `git-receive-pack` 是 **POST + 大二进制 body**，而 `onInterceptRequest` 回调能否完整拿到 POST 请求体，官方答复未覆盖。我们现有的转发方案 POST body 由 JS 侧自己构造、不受此限制，且已在 node 冒烟测试中真实 clone 成功。**决策：保留现有方案，先验证 POST body 可行性再评估迁移。**
-
-#### 同步流程：读 main，写 main，冲突推分支
-
-1. pull（fetch + 判断本地与远端是否分叉）
-2. 无分叉 → 手机改动 commit 后直接 push 到 `main`
-3. 分叉但可自动合并（不同文件，或同文件不同区域）→ 自动 merge → push `main`
-4. **分叉且真冲突** → 把手机改动 commit 并 push 到 `xt2` 分支，本地 main 重置到远端最新；同时把手机版本另存到 `drafts/conflicts/`，UI 标注"这篇有未合并改动，已推送到 xt2 分支"
-5. PC 端 `git merge xt2` 解冲突并推回 main；手机下次 pull 拿到合并结果，清除冲突标记
-
-这样手机上**不需要任何合并 UI**，冲突永远不丢数据，解冲突交给 PC 端熟悉的 git 工具。
-
-> 注意：git 无法把"未解决的冲突状态"直接 push（冲突是本地索引状态，不是可推送对象）。推到独立分支是达成同一目的的标准做法，而且比带 conflict marker 的文件更干净——PC 端看到的是两次正常提交。
-
-#### 为什么不采用"生成冲突副本"
-
-生成冲突副本 = 远端版本另存为 `xxx (远端版本).md`，本地保留手机版本，两边都在本地，回 PC 再挑。问题在于：① 库里多出待清理文件；② 它只是"留在本地不推"，解决不了"把改动推上去"。既然要双向，推分支更彻底。
-
-`drafts/conflicts/` 保留手机版本仅用于"手机上还能看到自己写的内容"，不是冲突解决方案本身。
+令牌放 Asset Store 的 SECRET，当前 alias 按 `vaultId`；旧明文清理和改名迁移的限制见 [状态与安全边界](engineering/库身份与安全边界.md)。Web isomorphic-git 仅为备选，历史设计见 Git 历史；重新启用须遵循 [AGENTS.md](../AGENTS.md) 的桥接约束并重新验证。
 
 ### 4.5 多库管理
 
@@ -331,8 +261,8 @@ GitHub 与 Gitee 均已成功 clone 并 checkout 出文件。过程中修掉三�
 
 ```ts
 interface Vault {
-  id: string          // = 目录名，local 或 <仓库名>
-  name: string        // 显示名
+  id: string          // 当前显示名 / 调用标识；沙箱库也用作目录名
+  vaultKey: string    // 注册表中的稳定内部身份
   type: 'local' | 'git'
   dir: string         // filesDir/vaults/<id>
   remote?: string     // git 库才有
@@ -350,14 +280,14 @@ interface Vault {
 | 首次启动 | 全新安装创建空白「我的笔记」个人库与预置共享样例的「曜石笔记教程」，首次设教程库为当前库并打开《快速上手》；后续恢复上次工作区。既有注册表 / 库目录不自动迁移或覆盖 |
 | **新建本地库** | 用户输入名称 → 建 `vaults/<名称>`，默认为空库，创建后自动切为当前库；本地库可以建任意个 |
 | 导入仓库 | 新建 `vaults/<仓库名>` → clone → 完成后自动切为当前库 |
-| **改名** | 显示名与目录名同步修改（见下方「名称规则」）；Git 库的 remote / branch 不变，同步不受影响 |
+| **改名** | 沙箱库同步修改显示名与目录名；外部库只改应用内名称；Git 的 remote / branch 不变，令牌迁移失败需重新填写 |
 | 切换库 | 只换当前目录；各库最近打开的文件分别记住 |
 | 删除本地库 | 二次确认 → 整个目录连内容删除，不可恢复（UI 提示先导出） |
 | 移除 Git 库 | 二次确认 → 只删本地目录（含 `.git`），**远端仓库不受影响**，可重新导入 |
 
 ### 4.5.1 名称规则与改名
 
-**显示名 = 目录名，不做分离映射。** 理由：导出到 PC 时目录结构自解释，不需要额外查映射表。代价是改名要动文件系统，所以必须把实施顺序定死。
+沙箱库的 `vaultId` 与目录名相同；外部库改名只改变应用内标识，不修改用户目录。两者的稳定身份均为注册表中的 `vaultKey`。
 
 **字符消毒**（新建与改名同一套规则）：
 
@@ -367,19 +297,9 @@ interface Vault {
 4. 消毒后为空 → 拒绝，UI 实时提示（不要等点了保存才报错）
 5. 重名 → 自动加 `-2` / `-3` 后缀；新建本地库时名称预填「本地笔记 N」
 
-**改名的实施顺序**（顺序错了会丢状态）：
+**改名与失败边界**：沙箱库先改目录，再更新内存注册表并持久化；外部库不改用户目录。令牌按旧 / 新 `vaultId` 迁移，失败时提示重新填写。各项状态并未全部完成迁移；这些步骤不是单一事务，进程中断或持久化失败时不承诺整体回滚。具体状态与待验项见 [状态对照](engineering/库身份与安全边界.md#1-库身份与状态键)。
 
-```
-1. 禁止本库的同步与编辑（置锁）
-2. fs.rename 改目录
-3. 注册表更新 id / name / dir
-4. 迁移所有按 id 索引的状态：文件树缓存、最近打开、草稿、冲突副本
-5. 刷新 UI
-```
-
-任一步失败则整体回滚（目录改回去、注册表不动），不允许出现"目录改名了但注册表还是旧 id"的半状态。
-
-**Git 库改名**：`remote` 与 `branch` 是库级字段，不随目录名变化，改名后 pull/push 照常。但 UI **必须明说"只改手机上的文件夹，远端仓库名不变"**——否则用户会以为动了远端而不敢改。
+**Git 库改名**：`remote` 与 `branch` 是库级字段，不随目录名变化，改名后仍使用原 remote / branch；同步与令牌迁移须分别验收。但 UI **必须明说"只改手机上的文件夹，远端仓库名不变"**——否则用户会以为动了远端而不敢改。
 
 **删除的两种语义必须分开讲清楚**，这是最容易出数据事故的地方：删本地库 = 内容真没了；移除 Git 库 = 手机上没了，远端还在，重新导入即可。确认弹窗的文案、按钮颜色、是否默认提示"先导出"，三者都要区分。
 
@@ -395,7 +315,7 @@ interface Vault {
 - `GitBridgeController.init(gitDir, token)` 需要加 `username`，且每次操作前按当前库初始化；clone 时目标目录即新库目录
 - 新增 `VaultRegistry`：库列表 CRUD + 当前库 id 持久化 + 首次启动建本地库
 - `SyncPage` 语义从"同步本库"改为"导入新库"；库级别的 pull/push 入口放在库管理卡片上
-- token 按库存（不同库可能是不同平台），仍待迁关键资产存储服务
+- token 按库存入 Asset Store；改名和旧明文清理的边界见 [状态对照](engineering/库身份与安全边界.md#1-库身份与状态键)
 
 ## 5. 架构与模块划分
 
@@ -481,8 +401,8 @@ M0.5 的结论决定 M2 走方案 A 还是 B，属于前置关卡，不能跳过
 - 草稿恢复单测：构造正式保存前已持久化的草稿状态，重新创建服务实例后能正确恢复，不串库、不覆盖更新内容
 - 写入失败处理单测：注入写入/完成失败，验证失败清理与原内容保护；继续使用 AtomicFile，不安排模拟器写入中断实验
 - 全新安装后不配任何远端，能直接新建并编辑笔记（本地库可用）
-- 新建本地库后是空库且能立即新建笔记；改名后目录名与显示名一致，库内笔记不受影响
-- Git 库改名后 pull/push 照常，远端仓库名不变
+- 新建本地库后是空库且能立即新建笔记；沙箱库改名后目录名与显示名一致；外部库只改应用内名称；库内笔记不受影响
+- Git 库改名后仍使用原 remote / branch；同步与令牌迁移须分别验收，远端仓库名不变
 - 中文名的库能正常创建、改名、删除，导出到 PC 后目录名不乱码
 - 从私有 GitHub 仓库导入成功后，库列表多出一个目录，本地库内容不受影响
 - 导入中途断网重试不产生半初始化的 `.git`；失败则新目录整体回滚，不留垃圾
@@ -512,6 +432,6 @@ M0.5 的结论决定 M2 走方案 A 还是 B，属于前置关卡，不能跳过
 | 备份覆盖不全 | **新风险** | **PC/2in1 不支持备份恢复，Tablet 开自由多窗也不生效**。我们的 deviceTypes 含 2in1 → 备份不能作为唯一保命通道，**zip 导出仍要做** |
 | 多库状态隔离 | 中风险 | 当前库、最近打开、草稿、后续索引都必须按库隔离，最容易漏的是"切库后仍写到上一个库的草稿目录" |
 | 导入失败残留 | 中风险 | clone 中断会在 `vaults/` 留下半初始化目录，必须先 clone 到临时目录再整体改名，失败即删临时目录 |
-| 改名与同步并发 | 中风险 | 改名期间必须禁掉本库的同步与编辑，否则会写到已改名的旧路径；目录 rename 失败要整体回滚，禁止半状态 |
+| 改名与同步并发 | 中风险 | 改名期间必须禁掉本库的同步与编辑，否则会写到已改名的旧路径；多步骤失败和进程中断的恢复尚无整体事务保证，须按状态对照逐项验证 |
 | 中文目录名 | 低风险 | 允许中文目录名；桥接层路径已统一 base64 处理，但 PC 端跨平台拷U盘/压缩包时仍要留意编码，验收标准里加一条中文名库的导入导出 |
 | 冲突后本地视图 | 中风险 | 冲突推分支后 main 被重置，手机上看不到刚写的内容，需靠 `drafts/conflicts/` 与 UI 标注兜住体验 |
