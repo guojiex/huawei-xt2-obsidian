@@ -231,213 +231,27 @@ Q2 的早期后置决定保留在下文；内容导出已分配 [v0.8](releases/
 
 ## 第 2 组：需要追问鸿蒙 Agent 的技术问题
 
-### 用法
+### 状态（2026-11-02 收口）
 
-复制下面「提示词」整段粘给鸿蒙官方 Agent。**建议一次只问一组**，答得笼统就拆开再问。
+提问规则照旧：**一次一段、自包含、正文带上本机 API / SDK 版本与设备事实、末尾带防编造约束**。
+本组原有的 5 段提示词正文已删除 —— 提问原文存档这一类别已于 2026-11-02 取消（见 `harmonyos/README.md` 铁律与 `releases/README.md` R10 废止说明）。**「当时到底问没问过某一点」的唯一依据是 `harmonyos/qa/` 各归档的「问了什么」栏。**
 
-当前优先核实 A 组（三折叠）、C 组（文件/安全）、D 组（ohpm）中影响本地功能的问题。F-A 已由客服答复与官方文档给出受支持路线：直接使用 FunctionComponent；普通自绘按钮仍无公开启动 API，不重复提问。F-B/F-E 中与所选端插件路径直接相关的 API 24 声明、权限和调试细节按需核实；F-C 的 ArkWeb/git 问题只影响自动 commit，首期不依赖它。结论与范围见 [api_notes F1 / F15 / F16](harmonyos/api_notes.md)。
-（B 组已于 2026-10-17 问完，别再问。）
+| 组 | 状态 | 结论位置 |
+| --- | --- | --- |
+| A 组（三屏态 FoldStatus / 折痕 Rect / 多列布局 / 断点分档） | ✅ 关闭：A-1、A-2、A-4 由 XT2 真机实测与 SDK 核对定论；A-3 由决策否决（三栏自绘，禁 `FoldSplitContainer`） | `api_notes` A1 / A2 / A3 / A6、决策总表 |
+| B 组（Web 组件与桥接） | ✅ 2026-10-17 问完，别再问 | [`qa/2026-10-17_B组追问_Web组件.md`](harmonyos/qa/2026-10-17_B组追问_Web组件.md) |
+| C-1 原子写 / C-2 访问令牌 | ✅ 问完（C-1 前后共 5 轮） | `api_notes` C1 / C3 |
+| C-3 子线程文件 IO / C-4 备份体积与判定依据 | ✅ 2026-11-02 问完 | `api_notes` C4 / C5 / C6，[归档](harmonyos/qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md) §一 §二 |
+| F 组（意图声明、权限、后台态、智能体资格） | ✅ 2026-11-02 问完。⚠️ F-C 的「git 跑在 ArkWeb 里」前提已随 Native libgit2 过时，别照旧文重发 | `api_notes` F2 / F11 / F17 / F18 / N1–N3，归档 §三–§六 |
+| N 组（Agent 后台与通知原 7 项） | ✅ 2026-11-02 问完；核心语义官方一律答「未记载」 | `api_notes` N 组抬头与 N1–N3 |
 
----
+### 还没问、且确实没到时机
 
-### 提示词 · F 组 —— ❓ **部分待问**（AI 功能的前置问题）
-
-> 2026-10-27：下方内容是历史提问原文，不要整段重发。客服回复与官方文档已给出单 Agent + FunctionComponent + 端插件路线；F-A 的可用入口不再待决。Skill 可使用端插件，但从 App 拉起 Skill 的完整接口链路未确认，因此本版不切换路线。F-B/F-E 的 API 24 细节、AGC/Agent/插件绑定及真机调试仍待核实；F-C 不再阻塞首期文件操作，只与 Git 自动 commit 有关。
-
-> 背景：用户希望「在 App 内接入小艺，用自然语言对笔记做细粒度编辑」。
-> 官方已给出方案骨架（自建智能体 + `@InsightIntentEntry` 端侧执行 + git 版本底座），
-> 但**未附文档链接**，且方案假设存在原生 git —— 与我们「git 跑在 Web 组件里」的现状冲突。
-> **最该先问的是 F-C**，它直接决定 Q5（git 出路）选哪条。
-
-```
-我在用 HarmonyOS 原生（ArkTS）开发一个本地 Markdown 笔记应用，工程 API 版本：
-compatibleSdkVersion 6.1.1(24)，即 API 24；targetSdkVersion 26.0.0。设备是华为 XT2 三折叠。
-
-我的架构有两个关键事实，请先记住：
-1) 笔记存在应用沙箱 filesDir/vaults/<库id>/ 下，是多库 + 多级目录结构。
-2) 版本管理用的是 isomorphic-git（纯 JS），它打包进一个离线 HTML，跑在 ArkWeb 的
-   Web 组件里（resource://rawfile/）。原生侧只有 fs 桥接和 http 桥接，真正的 git
-   计算在 JS 侧，不在 ArkTS 侧。
-
-我打算用「小艺开放平台自建智能体 + 端侧意图执行（Insight Intent）」让用户用小艺
-改笔记，官方给的方案假定我在意图执行器里能直接调用原生 git 做 commit。但我没有
-原生 git。所以请逐条核实（每条标注【文档明确记载】/【推断】/【不确定】，
-不确定的直接说不确定，并给出文档出处）：
-
-F-C（最关键）端侧意图以 UI_ABILITY_BACKGROUND 模式执行时，若应用是冷启动，
-     生命周期是 onCreate → onExecute，不经过 onWindowStageCreate。
-     请问：这种情况下，同一个 UIAbility 里已挂载的 ArkWeb（Web 组件）是否已存在？
-     如果我在 onCreate 里创建、或者页面尚未建立，能否在 onExecute 期间
-     跨 Web 边界调用页面内的 JS（比如 runJavaScript / WebMessagePort）？
-     换句话说：后台意图执行期间，我能不能用跑在 Web 组件里的 git 做一次 commit？
-     如果不能，官方推荐的做法是什么（例如把任务入队、等 UI 就绪后执行）？
-
-F-A  @kit.AgentFrameworkKit 里的 FunctionComponent / FunctionController，
-     在我的 API 24 上是否存在？最低支持的 API 版本是多少？
-     如果 API 24 不支持，应用内拉起自建智能体对话还有别的官方方式吗？
-
-F-B  @InsightIntentEntry 装饰器在 API 24 是否可用？
-     insight_intent.json 的 insightIntentsSrcEntry 字段到底支不支持数组？
-     该文件应该放在哪个目录下（entry/src/main/resources/base/profile/ 吗）？
-
-F-D  在小艺开放平台创建自建智能体后，把技能以 MCP 或插件形式发布到"我自己的智能体"，
-     具体流程是什么？是否真的不需要人工审核？
-     什么条件下才需要走人工审核（上小艺主对话入口）？
-
-F-E  声明端侧意图是否需要额外的权限声明或 module.json5 配置项？
-     真机调试意图调用的标准方法是什么（怎么触发、看什么日志）？
-
-另外顺带确认：意图参数用 JSON Schema 声明时，字段的 description 是否确实会被
-系统大模型用来理解如何填参？如果是，有没有书写建议或长度限制？
-
-如果你对上面任何接口名不确定，请直接说"不确定，请以 DevEco 代码补全为准"，
-不要猜测接口名或签名——我之前因为照着编造的接口名写过代码，浪费了很多时间。
-```
-
----
-
-### 提示词 · B 组 —— ✅ **已问过**（2026-10-17）
-
-> 答案已回来并归档：[`harmonyos/qa/2026-10-17_B组追问_Web组件.md`](harmonyos/qa/2026-10-17_B组追问_Web组件.md)
-> 关键结果：**B-1 拦截方案否决**（`getRequestBody()` 返回 string，push 二进制有风险）；**B-4 推翻** NodeContainer（卸载即重载 → 改 `visibility(Hidden)` 常驻）；B-2/B-6 确认 MessagePort 可用且可 transfer 进 Worker。
-> **别再问这组**，除非要追问细节。
-
-<details><summary>当时的提问原文（留档）</summary>
-
-```
-我在用 HarmonyOS 原生（ArkTS）开发一个笔记应用，工程 API 版本：
-compatibleSdkVersion 6.1.1(24)，即 API 24；targetSdkVersion 26.0.0。
-
-架构：在 Web 组件里用 $rawfile 加载一个离线页面，页面内运行 isomorphic-git
-（纯 JS 的 git 实现），通过与原生层通信来操作沙箱内的笔记目录、并发网络请求。
-
-上一轮我已确认：ArkWeb 内核禁止 resource:// 协议的跨域访问，所以页面内 fetch
-直连 github.com 会被拦。我现在用的是「JS 侧自定义 http client，把请求转发到原生
-@ohos.net.http」的方案（已在 node 环境伪真机测试成功 clone 真实仓库）。
-官方建议的替代方案是 onInterceptRequest 拦截 + didReceiveResponseBody 流式回填，
-那样 JS 侧能继续用原生 fetch、零改动。
-
-请核实以下问题，每条请标注【文档明确记载】还是【推断】，不确定的直接说不确定：
-
-B-1（最关键）onInterceptRequest 的回调参数 WebResourceRequest，能否完整拿到
-     POST 请求的 body？具体是哪些字段/接口？是否支持二进制 body？
-     背景：git push 走 git-receive-pack，是 POST + 大二进制 body（可能是 zlib 压缩的
-     packfile）。如果拿不到 POST body，拦截方案在 push 场景就不成立。
-     若确实拿不到，请说明官方文档记载的限制，或给出在拦截模式下处理 POST 的官方做法。
-
-B-2 WebMessagePort（controller.createWebMessagePort）在 resource://rawfile/ 加载的
-     页面上能否正常建立？postMessage 传 ArrayBuffer 有没有大小上限？
-     背景：runJavaScript 的返回值是 string，我需要一个传 packfile 二进制的通道。
-
-B-3 runJavaScript 传参/返回值的长度上限，官方文档到底有没有记载？
-     若有请给出数值和出处；若没有请直说。
-
-B-4 离线 Web 组件（NodeController + NodeContainer 动态挂载/卸载 Web 节点）：
-     节点被卸载（NodeContainer 移除）后，页面内的 JS 运行环境与 JS 变量状态是否保留？
-     重新挂载时会不会重新加载页面？我想用它承载一个常驻的 git 计算容器。
-
-B-5 中文输入法在 Web 组件的 contenteditable / textarea 上：
-     官方是否记载已知的兼容性问题？有没有面向输入法的推荐配置组合
-     （keyboardAvoidMode / blurOnKeyboardHideMode / onInterceptKeyboardAttach）？
-     我打算用它做 Markdown 编辑器，中文输入法体验是关键。
-
-B-6 Web 页面内的标准 Web Worker，在 ArkWeb（Chromium M114）里是否可用？
-     Worker 内能否使用 WebMessagePort？
-     背景：我已知道 javaScriptProxy 注入的对象在 Worker 里访问不到（无 window），
-     想确认 Worker 是否至少能用 MessagePort 与原生通信。
-```
-
-</details>
-
----
-
-### 提示词 · A 组（决定 M0 三栏怎么实现）
-
-```
-我在为华为 XT2（Mate XT 系列，三折叠、双折轴）开发应用，工程 API 版本：
-compatibleSdkVersion 6.1.1(24)，即 API 24。
-
-上一轮我确认了：display.getFoldStatus() 的 FoldStatus 枚举只有
-UNKNOWN/EXPANDED/FOLDED/HALF_FOLDED 四个值，且对三折叠而言
-EXPANDED = 双屏态、FOLDED = 单屏态。但三屏全展开（G 态）对应哪个值官方未记载。
-另外 display.getCurrentFoldCreaseRegion() 的签名只返回单个 Rect，
-而三折叠有两条铰链。
-
-请核实以下问题，每条请标注【文档明确记载】还是【推断】，不确定的直接说不确定：
-
-A-1 三折叠设备（Mate XT / XTs / XT2）三屏全展开态（G 态）时，
-     display.getFoldStatus() 返回什么值？官方文档或三折叠开发实践里有没有明确映射表？
-     如果没有，官方推荐用什么方式区分三折叠的 F/M/G 三态？
-     （例如是否应改用 foldAngleChange 的双角度值判断？判据阈值是多少？）
-
-A-2 display.getCurrentFoldCreaseRegion() 在三折叠设备上返回什么？
-     是返回其中一条折痕、还是合并后的区域、还是其他？官方有没有记载？
-     如果它不可靠，官方推荐的获取三折叠两条铰链位置的方式是什么？
-
-A-3 我已确认 FoldSplitContainer 不适用于我的场景（它的"三分栏"是 extra 侧列贯穿 +
-     primary/secondary 上下堆叠，不是三列横排；且 PresetSplitRatio 只有 1:1 / 3:2 / 2:3
-     三个预设，没有 1:1:1）。
-     请回答：面向**三折叠设备的三屏展开态**，官方有没有**多列横排**的布局组件或推荐方案？
-     比如 Navigation 的 Split 模式、SideBarContainer、GridRow/GridCol、或其他"一多"布局能力？
-     我想要的是：三块物理屏横向排列时，三列各占约 1/3，且列边界落在两条铰链上。
-     如果有，请给出组件名、import 路径与是否支持自定义列宽比例。
-
-A-4 三折叠设备展开成三屏态时，窗口宽度（px）的典型值或官方推荐断点分档是多少？
-     我想校准我的断点阈值（当前定的是 sm<600vp / md 600-840vp / lg>=840vp）。
-```
-
----
-
-### 提示词 · C 组（文件与安全，可直接落码前确认）
-
-```
-工程 API 版本：compatibleSdkVersion 6.1.1(24)，即 API 24。
-
-C-1 fileIo.AtomicFile（API 15+）：
-     (1) finishWrite() 在目标文件已存在时的行为是什么？覆盖还是报错？
-     (2) openWrite() 打开后，原文件在 finishWrite 之前是否保持可读且内容不变？
-     (3) 能否在 TaskPool 子线程中调用？
-     (4) 临时文件默认写在哪里？能否指定？
-     (5) 写入大文件（比如 5MB 的 Markdown）有没有已知限制？
-     背景：我要用它保证笔记写入的原子性——写一半崩溃不能损坏原笔记。
-
-C-2 @kit.AssetStoreKit（asset.addSync / querySync）：
-     (1) addSync 在 ALIAS 已存在时的行为？是覆盖还是报错？报错码是多少？
-     (2) 单个 SECRET 的长度上限？
-     (3) 能否枚举/删除指定 ALIAS 前缀的所有资产？接口名是什么？
-     (4) 应用卸载后资产是否保留？（决定我是否需要在重装机时引导用户重填令牌）
-     背景：我要按笔记库分别存 GitHub/Gitee 访问令牌，alias 形如 vault:<库id>:token。
-
-C-3 @ohos.file.fs 在 TaskPool 中调用时，有没有需要注意的限制？
-     比如 AtomicFile、listFileSync、renameSync 是否都可在子线程调用？
-
-C-4 应用数据备份恢复：官方说 PC/2in1 不支持、Tablet 开自由多窗后不生效。
-     请确认这个限制，并说明：如果我的 deviceTypes 同时声明了 phone/tablet/2in1，
-     备份能力在 phone 上是否照常生效？是否会因为声明了 2in1 而整体失效？
-```
-
----
-
-### 提示词 · D 组（ohpm 发布，抽库时才需要）
-
-```
-我准备把一个 HarmonyOS 三方库发布到 ohpm 中心仓（ohpm.openharmony.cn）。
-
-D-1 ohpm publish 时，是否必须使用 release 构建产出的 .har？
-     debug 构建产出的 .har 能否发布？官方有没有强制要求？
-
-D-2 中心仓的审核周期通常是多久？是否有加急通道？
-     （如果官方未记载请直说。）
-
-D-3 库名被占用后，除了换名还有别的办法吗？如果我先发布一个 0.0.1 占位版本，
-     后续能否继续发布 0.0.2 / 1.0.0？版本号升级有没有限制？
-
-D-4 我的库依赖了 rawfile 资源（一个打包好的 HTML + JS 单文件，约 300KB），
-     随 HAR 一起发布。除了主模块与 HAR 的 rawfile 重名冲突，还有没有其他注意点？
-
-D-5 三方库的 LICENSE 是否强制要求？如果我用 Apache-2.0，
-     需要在 oh-package.json5 里声明什么字段？
-```
+| 项 | 为什么先不问 | 什么时候问 |
+| --- | --- | --- |
+| ohpm 中心仓：是否必须 release 构建的 .har、审核周期与有无加急通道 | 抽库发布整体挂在下方 Q3 的 TODO，未排期 | 真要发 HAR 时（D-3/D-4/D-5 的既有结论见 `api_notes` D1 / D2） |
+| 端侧意图的真机触发与断点调试：不经小艺如何用 hdc 触发一次执行、回调跑在哪个进程/线程、该看哪些日志 tag | **本轮提问清单的漏项**，官方也就没答 | XT2 上跑平台真实调用之前补问，或直接实测（见 `api_notes` F17） |
+| 各 ⚠️/❓ 的设备侧证据：跨线程并发写语义、XT2 三形态 × 自由多窗的备份可用性、后台意图期能力边界、Agent 调用语义（去重 / `instanceId` 稳定性 / 轮数与超时）、自建智能体免审边界与三者绑定流程 | 官方答「未记载」，再问也不会出现明文 | 只能 API 24 / XT2 真机实测 → 见第 3 组 |
 
 ---
 
