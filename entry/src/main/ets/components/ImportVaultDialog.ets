@@ -122,8 +122,6 @@ export struct ImportVaultDialog {
         .fontColor($r('app.color.text_secondary'))
         .margin({ top: Space.s2 })
 
-      // v1.23：首发仅开放本地目录，保留 Git 表单供后续恢复。
-
       Scroll() {
         Column({ space: Space.s3 }) {
           if (this.source === 'local') {
@@ -231,6 +229,7 @@ export struct ImportVaultDialog {
       .width('100%')
       .constraintSize({ maxHeight: Math.max(0, this.windowHeightVp - Space.s8 * 6) })
       .scrollBar(BarState.Off)
+      .margin({ top: Space.s4 })
 
       Row({ space: Space.s2 }) {
         Text('取消')

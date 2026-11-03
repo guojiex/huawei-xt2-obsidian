@@ -9,6 +9,7 @@ const { transformSync } = require('esbuild');
 const dialogSource = readSourceFile(new URL('../../entry/src/main/ets/components/ImportVaultDialog.ets', import.meta.url));
 const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const syncSource = readSourceFile(new URL('../../entry/src/main/ets/pages/SyncPage.ets', import.meta.url));
+const vaultManagerSource = readSourceFile(new URL('../../entry/src/main/ets/components/VaultManagerView.ets', import.meta.url));
 
 function extract(startMarker, endMarker) {
   const start = dialogSource.indexOf(startMarker);
@@ -57,6 +58,7 @@ test('import dialog keeps the local entry visible while Git source is hidden for
   assert.match(dialogSource, /Text\('把已有的笔记，带进你的工作台。'\)/);
   assert.doesNotMatch(dialogSource.slice(dialogSource.indexOf('  build() {')), /this\.SourceTab\('Git 仓库', 'git'\)/);
   assert.match(dialogSource, /@State source: string = 'local'/);
+  assert.match(dialogSource, /\.scrollBar\(BarState\.Off\)\s*\.margin\(\{ top: Space\.s4 \}\)/);
 });
 
 test('local directory card shows selection affordance and the non-copy/remove boundary', () => {
@@ -66,6 +68,14 @@ test('local directory card shows selection affordance and the non-copy/remove bo
   assert.match(dialogSource, /从系统目录选择器中选择文件夹/);
   assert.match(dialogSource, /直接读写原目录，不复制文件。移除库只解除关联，原目录和文件保留。/);
   assert.match(dialogSource, /void this\.pickDirectory\(\)/);
+});
+
+test('existing Git libraries stay listed and can still be selected locally', () => {
+  assert.match(vaultManagerSource, /ForEach\(this\.vaults, \(v: VaultEntry\)/);
+  assert.match(vaultManagerSource, /this\.Tag\(v\.rootKind === 'external' \? '本地目录' : \(v\.type === 'git' \? 'Git' : '本地'\)/);
+  assert.match(vaultManagerSource, /this\.onSetCurrent\(v\.id\)/);
+  assert.match(vaultManagerSource, /每个库在应用中独立管理/);
+  assert.doesNotMatch(vaultManagerSource, /各自独立同步/);
 });
 
 test('Git source follows the prototype form and leaves credentials to the existing secure SyncPage', () => {
