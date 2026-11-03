@@ -205,6 +205,9 @@ const html = `<!doctype html>
   #content .empty { color: var(--muted); font-size: var(--small); text-align: center; margin-top: var(--s10); }
   #content .empty[contenteditable="true"] { min-height: var(--body); }
   #content .empty:empty::before { content: attr(data-placeholder); }
+  #content .preview-source-block.simple-block-active > * {
+    outline: var(--stroke) solid var(--blue); outline-offset: var(--stroke);
+  }
 </style>
 <style>
 ${katexCss}

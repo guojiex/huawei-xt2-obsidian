@@ -18,6 +18,7 @@ import { marked } from 'marked'
 import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
+import { selectedLockedBlocks } from './blockSelection.mjs'
 
 declare global {
   interface Window {
@@ -637,7 +638,19 @@ function sourceBlockForNode(node: Node | null): HTMLElement | null {
   return element?.closest('.preview-source-block, .empty[data-source-from]') as HTMLElement | null;
 }
 
+function setActiveLockedBlocks(root: HTMLElement, selected: HTMLElement[]): void {
+  const activeBlocks = root.querySelectorAll('.preview-source-block.simple-block-active')
+  for (let index = 0; index < activeBlocks.length; index++) {
+    const block = activeBlocks[index] as HTMLElement
+    if (!selected.includes(block)) block.classList.remove('simple-block-active')
+  }
+  for (const block of selected) {
+    block.classList.add('simple-block-active')
+  }
+}
+
 function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
+  setActiveLockedBlocks(root, [])
   const previousEditables = root.querySelectorAll('[data-simple-editable="true"]')
   for (let index = 0; index < previousEditables.length; index++) {
     const element = previousEditables[index] as HTMLElement
@@ -747,19 +760,33 @@ contentElement.addEventListener('input', (event: Event): void => {
   if (target) replaceSourceBlock(target)
 })
 document.addEventListener('selectionchange', (): void => {
-  if (!editable) return
+  if (!editable) {
+    setActiveLockedBlocks(contentElement, [])
+    return
+  }
   const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return
+  if (!selection || selection.rangeCount === 0) {
+    setActiveLockedBlocks(contentElement, [])
+    return
+  }
   const range = selection.getRangeAt(0)
   if (sourceBlockForNode(range.startContainer)) {
     savedEditableSelection = range.cloneRange()
   }
+  const lockedBlocks = contentElement.querySelectorAll('.preview-source-block[data-edit-locked="true"]')
+  setActiveLockedBlocks(
+    contentElement,
+    selectedLockedBlocks(lockedBlocks, selection, sourceBlockForNode)
+  )
 })
 
 contentElement.addEventListener('click', (event: MouseEvent): void => {
   if (!editable || !(event.target instanceof HTMLElement)) return
+  const lockedBlock = event.target.closest(
+    '.preview-source-block[data-edit-locked="true"]'
+  ) as HTMLElement | null
+  setActiveLockedBlocks(contentElement, lockedBlock ? [lockedBlock] : [])
   if (event.target.closest('a, input, img, button')) return
-  const lockedBlock = event.target.closest('.preview-source-block[data-edit-locked="true"]')
   const arkts = window.__arkts
   if (lockedBlock && arkts && typeof arkts.onLockedContentTap === 'function') {
     arkts.onLockedContentTap()
