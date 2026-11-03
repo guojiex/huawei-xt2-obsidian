@@ -20,7 +20,6 @@ export struct ShareTextPreviewDialog {
   }
 
   private confirm(): void {
-    this.controller?.close();
     this.onConfirm(this.contentDraft);
   }
 

@@ -20,7 +20,6 @@ export struct ShareImagePreviewDialog {
   }
 
   private confirm(): void {
-    this.controller?.close();
     this.onConfirm();
   }
 

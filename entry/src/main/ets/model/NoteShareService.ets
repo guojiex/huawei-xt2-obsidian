@@ -14,6 +14,7 @@ export interface PreparedNoteShare {
   fileName: string;
   format: string;
   imageCount: number;
+  entries: string[];
 }
 
 interface ResolvedImage {
@@ -326,7 +327,7 @@ export class NoteShareService {
       try {
         const outputPath: string = registry.sharePath(shareId + '/' + noteName);
         await NoteShareService.writeAtomic(outputPath, markdownSnapshot);
-        return { filePath: outputPath, fileName: noteName, format: 'Markdown', imageCount: 0 };
+        return { filePath: outputPath, fileName: noteName, format: 'Markdown', imageCount: 0, entries: [noteName] };
       } catch (error) {
         NoteShareService.removeTree(registry, shareId);
         const err = error as Error;
@@ -362,7 +363,11 @@ export class NoteShareService {
       const zipPath: string = registry.sharePath(shareId + '/' + zipName);
       await zlib.compressFile(payloadDir, zipPath, {});
       NoteShareService.removeTree(registry, shareId + '/payload');
-      return { filePath: zipPath, fileName: zipName, format: 'ZIP', imageCount: resolved.length };
+      const entries: string[] = [notePath];
+      for (let i = 0; i < resolved.length; i++) {
+        entries.push(resolved[i].sharePath);
+      }
+      return { filePath: zipPath, fileName: zipName, format: 'ZIP', imageCount: resolved.length, entries: entries };
     } catch (error) {
       try {
         NoteShareService.removeTree(registry, shareId);

@@ -63,14 +63,15 @@ import {
 import { SplitHandle } from '../components/SplitHandle';
 import { ShareNoteDialog, ShareFormatOption, ShareScopeOption } from '../components/ShareNoteDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
+import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
-import { NoteShareService } from '../model/NoteShareService';
+import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteImageService } from '../model/NoteImageService';
 import { NoteDraftService, NoteDraftRecovery } from '../model/NoteDraftService';
 import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
-import { ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
+import { PreparedArchiveShare, ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
 import { ShareLinkService, ShareLinkScope } from '../model/ShareLinkService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { FullTextSearchResult } from '../model/SearchIndex';
@@ -414,6 +415,7 @@ struct Index {
   private movePathCtl: CustomDialogController | null = null;
   private shareNoteCtl: CustomDialogController | null = null;
   private shareImagePreviewCtl: CustomDialogController | null = null;
+  private shareFilePreviewCtl: CustomDialogController | null = null;
   private shareTextPreviewCtl: CustomDialogController | null = null;
   private shareCaptureBridge: PreviewBridge = new PreviewBridge();
   private readonly shareCaptureComponentId: string = 'note-image-share-capture';
@@ -4844,9 +4846,12 @@ struct Index {
       }
       if (scope === 'note') {
         const markdown: string = await this.editorBridgeForPath(path).getContent();
-        const prepared = await NoteShareService.prepareNote(registry, this.currentVaultId, path, markdown);
-        await this.shareFile(prepared.filePath, prepared.fileName, uniformTypeDescriptor.UniformDataType.FILE,
-          registry);
+        const prepared: PreparedNoteShare = await NoteShareService.prepareNote(registry, this.currentVaultId,
+          path, markdown);
+        const summary: string = prepared.imageCount > 0
+          ? '1 篇笔记 · ' + prepared.imageCount.toString() + ' 张图片' : '1 篇笔记';
+        this.openShareFilePreview(prepared.filePath, prepared.fileName, prepared.format, prepared.entries, summary,
+          scope, path, registry);
         return;
       }
       let snapshot: ShareSnapshot | null = null;
@@ -4856,9 +4861,15 @@ struct Index {
         (scope === 'vault' || activePath.startsWith(path + '/') || activePath === path)) {
         snapshot = { path: activePath, markdown: await activeBridge.getContent() };
       }
-      const prepared = await ShareArchiveService.prepareZip(registry, this.currentVaultId, path, snapshot);
-      await this.shareFile(prepared.filePath, prepared.fileName, uniformTypeDescriptor.UniformDataType.FILE,
-        registry);
+      const prepared: PreparedArchiveShare = await ShareArchiveService.prepareZip(registry, this.currentVaultId,
+        path, snapshot);
+      let summary: string = prepared.noteCount.toString() + ' 篇笔记 · ' +
+        prepared.fileCount.toString() + ' 个文件';
+      if (prepared.imageCount > 0) {
+        summary += ' · ' + prepared.imageCount.toString() + ' 张图片';
+      }
+      this.openShareFilePreview(prepared.filePath, prepared.fileName, 'ZIP', prepared.entries, summary,
+        scope, path, registry);
     } catch (error) {
       if (this.shareCaptureCancelled) {
         return;
@@ -4880,6 +4891,31 @@ struct Index {
       title: title
     });
     await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+  }
+
+  private openShareFilePreview(filePath: string, fileName: string, format: string, entries: string[],
+    summary: string, scope: ShareLinkScope, path: string, registry: VaultRegistry): void {
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    this.shareFilePreviewCtl = new CustomDialogController({
+      builder: ShareFilePreviewDialog({
+        fileName: fileName,
+        format: format,
+        summary: summary,
+        entries: entries,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        onBack: (): void => { this.openShareDialog(scope, path); },
+        onConfirm: (): Promise<void> => {
+          return this.shareFile(filePath, fileName, uniformTypeDescriptor.UniformDataType.FILE, registry);
+        }
+      }),
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: false,
+      customStyle: true
+    });
+    this.shareFilePreviewCtl.open();
   }
 
   private async shareLink(url: string, title: string, registry: VaultRegistry): Promise<void> {
@@ -5103,8 +5139,6 @@ struct Index {
         onConfirm: (): void => {
           const image: ShareImagePreviewImage = this.shareImagePreviewImage;
           const title: string = this.shareImagePreviewTitle;
-          this.shareImagePreviewSessionId = '';
-          this.shareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
           void this.shareImage(image, title, VaultRegistry.get());
         },
         onCancel: (): void => {

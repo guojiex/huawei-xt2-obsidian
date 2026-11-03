@@ -15,6 +15,7 @@ export interface PreparedArchiveShare {
   fileCount: number;
   noteCount: number;
   imageCount: number;
+  entries: string[];
 }
 
 export interface ShareScopeCount {
@@ -130,13 +131,21 @@ export class ShareArchiveService {
       const zipName: string = name + '.zip';
       const zipPath: string = registry.sharePath(shareId + '/' + zipName);
       await zlib.compressFile(payloadAbs, zipPath, {});
+      const entries: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        entries.push(files[i].path);
+      }
+      for (let i = 0; i < externalImages.length; i++) {
+        entries.push(archiveImages.get(externalImages[i]) ?? '');
+      }
       NoteShareService.removeTree(registry, payloadRel);
       return {
         filePath: zipPath,
         fileName: zipName,
         fileCount: files.length + externalImages.length,
         noteCount: noteCount,
-        imageCount: archiveImages.size
+        imageCount: archiveImages.size,
+        entries: entries
       };
     } catch (error) {
       try {
