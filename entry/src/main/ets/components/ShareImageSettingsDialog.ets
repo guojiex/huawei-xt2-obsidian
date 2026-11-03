@@ -60,6 +60,24 @@ export struct ShareImageSettingsDialog {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
+      Column({ space: Space.s1 }) {
+        Row() {
+          Text('图片宽度')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+          Blank()
+          Text('跟随当前栏')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('100%')
+        Text('排版宽度沿用当前笔记栏，随窗口形态和分栏宽度变化。')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      }
+      .width('100%')
+
       Row({ space: Space.s1 }) {
         this.ThemeOption('light', '浅色')
         this.ThemeOption('dark', '深色')

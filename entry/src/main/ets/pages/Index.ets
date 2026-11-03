@@ -434,6 +434,7 @@ struct Index {
   @State shareCaptureActive: boolean = false;
   @State shareCaptureStatus: string = '正在准备分享图片…';
   @State shareCaptureTheme: string = 'light';
+  @State shareCaptureWidthVp: number = 0;
   @State shareImagePreviewImage: ShareImagePreviewImage = {
     uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false
   };
@@ -1248,6 +1249,16 @@ struct Index {
   private mdPaneWidth(): MdPaneWidths {
     return mdPaneWidths(this.windowWidthVp, this.noteNavigationWidth(),
       this.sidebarProgress, this.contentRatio);
+  }
+
+  private activeSharePaneWidthVp(): number {
+    const pane: string = this.experienceMode === 'simple' ? this.simpleWorkspacePane() : this.activePane;
+    const measuredWidth: number = pane === 'right' ? this.rightPaneWidthVp : this.leftPaneWidthVp;
+    if (measuredWidth > 0) {
+      return measuredWidth;
+    }
+    const layoutWidth: Length = this.notePaneWidth(pane);
+    return typeof layoutWidth === 'number' && layoutWidth > 0 ? layoutWidth : this.noteContentWidth();
   }
 
   /**
@@ -4856,6 +4867,7 @@ struct Index {
   }
 
   private openShareImageSettings(vaultId: string, notePath: string, itemName: string): void {
+    this.shareCaptureWidthVp = this.activeSharePaneWidthVp();
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
     this.shareImageSettingsCtl = new CustomDialogController({
@@ -5992,7 +6004,7 @@ struct Index {
           this.rejectShareCaptureReady(new Error('分享预览加载失败，请重试'));
         }
       })
-        .width('100%')
+        .width(this.shareCaptureWidthVp > 0 ? this.shareCaptureWidthVp : '100%')
         .height('100%')
       Row({ space: Space.s3 }) {
         Text(this.shareCaptureStatus)
