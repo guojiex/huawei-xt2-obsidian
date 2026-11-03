@@ -30,6 +30,16 @@ function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience
  let location=new URL(href),index=0;const history=[location.href];
  const win={innerWidth:1320,innerHeight:1000,get location(){return location},history:{pushState(_,__,href){location=new URL(href);history.splice(++index);history.push(location.href)},replaceState(_,__,href){location=new URL(href);history[index]=location.href}},addEventListener(k,fn){listen('window',k,fn)}};
  const context=vm.createContext({URL,URLSearchParams,window:win,document:{getElementById:get,querySelector:selector=>selector==='#sharePreview .share-paper'?sharePaper:null,querySelectorAll(){return[]},styleSheets:[{cssRules:[{selectorText:':root',style:rootStyle}]}],body:{dataset:{}},addEventListener(k,fn){listen('document',k,fn)}},queueMicrotask:fn=>pending.push(fn),setTimeout:fn=>{pending.push(fn);return 1},clearTimeout(){},ResizeObserver:class{observe(){}},getComputedStyle:element=>({paddingLeft:element===shareStage?'16px':'0px',getPropertyValue:k=>k==='--pane-min'?'240px':k==='--format-width'?'360px':k==='--s2'?'8px':'16px'}),localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}});
+ for(const id of ['updateCheckTemplate','updateCheckDemoTemplate']){
+  const template=html.match(new RegExp(`<template id="${id}">([\\s\\S]*?)</template>`));
+  get(id).innerHTML=template?.[1]||'';
+ }
+ get('aboutOverview').firstElementChild=get('aboutHero');
+ get('updateCheckDemo').value='idle';
+ for(const id of ['aboutHero','designControls']){
+  const node=get(id);
+  node.insertAdjacentHTML=(position,markup)=>{node.insertions??=[];node.insertions.push({position,markup});};
+ }
  const run=s=>vm.runInContext(s,context);run(code);
  return {get,run,href:()=>location.href,flush(){while(pending.length)pending.shift()()},event(area,type,event={}){for(const fn of events[area][type]||[])fn(event)},back(){assert(index>0);location=new URL(history[--index]);for(const fn of events.window.popstate||[])fn({})},forward(){assert(index<history.length-1);location=new URL(history[++index]);for(const fn of events.window.popstate||[])fn({})},history};
 }
@@ -618,4 +628,48 @@ test('prototype renders common Markdown and preserves simple list prefixes',()=>
  assert.equal(f.run('simplePrefix("  - child")'),'  - ');
  assert.equal(f.run('simplePrefix("3. first")'),'3. ');
  assert.equal(f.run('simpleBlockAllowed("~~old~~")'),false);
+});
+
+test('update-check prototype covers outcomes, disables repeat checks, and leaves the system dialog external',()=>{
+ const f=fixture();
+ const aboutInsert=f.get('aboutHero').insertions[0];
+ const demoInsert=f.get('designControls').insertions[0];
+ assert.equal(aboutInsert.position,'afterend');
+ assert.match(aboutInsert.markup,/id="updateCheckButton"/);
+ assert.match(demoInsert.markup,/只切换界面演示状态，不发起联网请求/);
+ const demo=f.get('updateCheckDemo'),button=f.get('updateCheckButton');
+ demo.value='latest';button.onclick();
+ assert.equal(f.get('updateCheckGroup').dataset.state,'checking');
+ assert.equal(button.disabled,true);
+ f.flush();
+ assert.equal(f.get('updateCheckGroup').dataset.state,'latest');
+ assert.equal(button.disabled,false);
+ assert.match(f.get('updateCheckStatus').textContent,/当前没有可用更新/);
+ demo.value='available';demo.onchange();
+ assert.equal(f.get('updateCheckGroup').dataset.state,'available');
+ assert.equal(f.get('updateCheckHandoff').classList.contains('hidden'),false);
+ assert.match(aboutInsert.markup,/系统升级弹框接管；弹框由系统显示/);
+ assert.doesNotMatch(f.get('updateCheckStatus').textContent,/\b\d+\.\d+\.\d+\b/);
+ for(const [state,message] of [
+  ['network','网络不可用'],
+  ['background','不在前台'],
+  ['privacy','隐私协议'],
+  ['limited','稍后重试']
+ ]){
+  demo.value=state;demo.onchange();
+  assert.equal(f.get('updateCheckGroup').dataset.state,state);
+  assert.match(f.get('updateCheckStatus').textContent,new RegExp(message));
+  assert.equal(button.disabled,false);
+ }
+ demo.value='checking';demo.onchange();
+ assert.equal(button.disabled,true);
+ assert.match(f.get('updateCheckStatus').textContent,/正在检查/);
+ for(const preset of ['phone','double','wide']){
+  const layout=fixture();
+  layout.run(`setViewport('${preset}');openSettings();chooseSettings('about',false)`);
+  layout.get('updateCheckDemo').value='available';
+  layout.get('updateCheckDemo').onchange();
+  assert.equal(layout.run('viewportPreset'),preset);
+  assert.equal(layout.get('updateCheckGroup').dataset.state,'available');
+ }
 });
