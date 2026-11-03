@@ -444,6 +444,11 @@ struct Index {
       promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
       return;
     }
+    const targetVaultId: string = this.currentVaultId;
+    const targetLeftPath: string = this.currentFilePath;
+    const targetRightPath: string = this.rightFilePath;
+    const targetLeftRequestId: number = this.leftOpenRequestId;
+    const targetRightRequestId: number = this.rightOpenRequestId;
     if (this.experienceMode === 'simple') {
       const syncFailure: string = await this.flushSimplePreviewChanges();
       if (syncFailure.length > 0) {
@@ -451,11 +456,12 @@ struct Index {
         return;
       }
     }
-    const targetVaultId: string = this.currentVaultId;
-    const targetLeftPath: string = this.currentFilePath;
-    const targetRightPath: string = this.rightFilePath;
-    const targetLeftRequestId: number = this.leftOpenRequestId;
-    const targetRightRequestId: number = this.rightOpenRequestId;
+    if (this.workspaceOpenRequests > 0 || targetVaultId !== this.currentVaultId ||
+      targetLeftPath !== this.currentFilePath || targetRightPath !== this.rightFilePath ||
+      targetLeftRequestId !== this.leftOpenRequestId || targetRightRequestId !== this.rightOpenRequestId) {
+      promptAction.showToast({ message: '笔记正在切换，请稍后再切换编辑模式' });
+      return;
+    }
     if (!await this.flushWorkspaceSaves()) {
       if (this.leftComposing || this.rightComposing) {
         promptAction.showToast({ message: '请先完成当前输入，再切换编辑模式' });
@@ -488,12 +494,19 @@ struct Index {
     }
   }
 
-  private async commitSimplePreviewContent(pane: string, content: string): Promise<boolean> {
-    if (this.experienceMode !== 'simple') return false;
-    const vaultId = this.currentVaultId;
-    const notePath = pane === 'right' ? this.rightFilePath : this.currentFilePath;
-    const requestId = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    if (vaultId.length === 0 || notePath.length === 0) return false;
+  private isCurrentSimplePreviewTarget(pane: string, notePath: string, vaultId: string,
+    requestId: number): boolean {
+    return pane === 'right'
+      ? this.isCurrentRightOpenTarget(notePath, vaultId, requestId)
+      : this.isCurrentLeftOpenTarget(notePath, vaultId, requestId);
+  }
+
+  private async commitSimplePreviewContent(pane: string, content: string, vaultId: string,
+    notePath: string, requestId: number): Promise<boolean> {
+    if (this.experienceMode !== 'simple' || vaultId.length === 0 || notePath.length === 0 ||
+      !this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+      return false;
+    }
     const editor = this.editorBridgeForPane(pane);
     // 编辑器当前内容只用于「内容没变就跳过回写」这一个优化：
     // 拿不到（页面不可见时 ArkWeb 可能不回内容）不该判成同步失败，直接按有差异走回写。
@@ -505,9 +518,8 @@ struct Index {
     } catch {
       hilog.warn(DOMAIN, TAG, '读取编辑器内容失败，按有差异处理预览回写');
     }
-    if (vaultId !== this.currentVaultId || notePath !== (pane === 'right' ? this.rightFilePath : this.currentFilePath) ||
-      requestId !== (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) ||
-      this.experienceMode !== 'simple') {
+    if (this.experienceMode !== 'simple' ||
+      !this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
       return false;
     }
     if (hasCurrent && current === content) {
@@ -515,9 +527,8 @@ struct Index {
       return true;
     }
     await editor.replaceContentFromPreview(content);
-    if (vaultId !== this.currentVaultId || notePath !== (pane === 'right' ? this.rightFilePath : this.currentFilePath) ||
-      requestId !== (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) ||
-      this.experienceMode !== 'simple') {
+    if (this.experienceMode !== 'simple' ||
+      !this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
       return false;
     }
     this.setSimplePreviewDirty(pane, false);
@@ -579,6 +590,11 @@ struct Index {
       if (notePath.length === 0) {
         continue;
       }
+      const vaultId: string = this.currentVaultId;
+      const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+      if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+        return label + '笔记目标已变化';
+      }
       // 预览不可编辑（同篇双开时的非活动栏等）时内容不可能被改动，没有可同步的东西。
       if (!this.simplePreviewEditable(pane)) {
         continue;
@@ -587,6 +603,9 @@ struct Index {
       if (!preview.ready) {
         // 页面还没就绪就去等它就绪，而不是直接判失败把用户挡在模式切换外面。
         await this.waitForPreviewReady(preview);
+        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+          return label + '笔记目标已变化';
+        }
       }
       // 等完仍未就绪＝这一栏的预览根本没挂载，内存里不存在可编辑内容，无需同步。
       if (!preview.ready) {
@@ -595,10 +614,16 @@ struct Index {
       const dirty: boolean = this.simplePreviewDirty(pane);
       try {
         await (pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit);
+        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+          return label + '笔记目标已变化';
+        }
         let content: string = '';
         try {
           content = await preview.requestEditableContent();
         } catch {
+          if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+            return label + '笔记目标已变化';
+          }
           // 页面不可见时预览可能不回内容：没改动就放弃这次收尾同步，有改动才拦住切换。
           hilog.warn(DOMAIN, TAG, '%{public}s预览未回传正文', label);
           if (dirty) {
@@ -606,10 +631,19 @@ struct Index {
           }
           continue;
         }
-        if (!await this.commitSimplePreviewContent(pane, content)) {
+        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+          return label + '笔记目标已变化';
+        }
+        if (!await this.commitSimplePreviewContent(pane, content, vaultId, notePath, requestId)) {
           return label + '正文回写编辑器失败';
         }
+        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+          return label + '笔记目标已变化';
+        }
       } catch (error) {
+        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+          return label + '笔记目标已变化';
+        }
         const err = error as BusinessError;
         hilog.error(DOMAIN, TAG, '%{public}s预览同步异常，错误码 %{public}d', label, err?.code ?? -1);
         return label + '预览同步异常（code=' + (err?.code ?? -1).toString() + '）';
@@ -619,10 +653,17 @@ struct Index {
   }
 
   private handleSimplePreviewEdit(pane: string, content: string): void {
+    const vaultId: string = this.currentVaultId;
+    const notePath: string = pane === 'right' ? this.rightFilePath : this.currentFilePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    if (this.experienceMode !== 'simple' || this.workspaceOpenRequests > 0 || notePath.length === 0 ||
+      !this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+      return;
+    }
     this.setSimplePreviewDirty(pane, true);
     const previous = pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit;
     const next = previous.then(async (): Promise<void> => {
-      await this.commitSimplePreviewContent(pane, content);
+      await this.commitSimplePreviewContent(pane, content, vaultId, notePath, requestId);
     }).catch((): void => {
       hilog.warn(DOMAIN, TAG, '简单模式正文同步失败');
     });
@@ -634,16 +675,27 @@ struct Index {
   }
 
   private async refreshPreviewsForExperienceMode(): Promise<void> {
-    if (this.currentFilePath.length > 0 && this.editorBridge.ready) {
+    const vaultId: string = this.currentVaultId;
+    const leftPath: string = this.currentFilePath;
+    const rightPath: string = this.rightFilePath;
+    const leftRequestId: number = this.leftOpenRequestId;
+    const rightRequestId: number = this.rightOpenRequestId;
+    if (leftPath.length > 0 && this.editorBridge.ready) {
       try {
-        this.pushPreview(await this.editorBridge.getContent(), true);
+        const content: string = await this.editorBridge.getContent();
+        if (this.isCurrentLeftOpenTarget(leftPath, vaultId, leftRequestId)) {
+          this.pushPreview(content, true);
+        }
       } catch {
         hilog.warn(DOMAIN, TAG, '切换编辑模式后刷新左侧预览失败');
       }
     }
-    if (this.rightFilePath.length > 0 && this.rightEditorBridge.ready) {
+    if (rightPath.length > 0 && this.rightEditorBridge.ready) {
       try {
-        this.pushRightPreview(await this.rightEditorBridge.getContent(), true);
+        const content: string = await this.rightEditorBridge.getContent();
+        if (this.isCurrentRightOpenTarget(rightPath, vaultId, rightRequestId)) {
+          this.pushRightPreview(content, true);
+        }
       } catch {
         hilog.warn(DOMAIN, TAG, '切换编辑模式后刷新右侧预览失败');
       }

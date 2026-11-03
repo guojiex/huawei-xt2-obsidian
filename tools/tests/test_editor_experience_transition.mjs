@@ -16,9 +16,20 @@ function extract(startMarker, endMarker) {
 }
 
 const methods = [
-  extract('  private async selectEditorExperience(', '\n  private setShowLineNumbers('),
+  extract('  private async selectEditorExperience(', '\n  private isCurrentSimplePreviewTarget('),
+  extract('  private isCurrentSimplePreviewTarget(', '\n  private async commitSimplePreviewContent('),
+  extract('  private async commitSimplePreviewContent(', '\n  private setSimplePreviewDirty('),
+  extract('  private setSimplePreviewDirty(', '\n  /** 等预览页就绪'),
+  extract('  private waitForPreviewReady(', '\n  private simplePreviewDirty('),
+  extract('  private simplePreviewDirty(', '\n  /**\n   * 把预览里最后一次'),
+  extract('  private async flushSimplePreviewChanges(', '\n  private handleSimplePreviewEdit('),
+  extract('  private handleSimplePreviewEdit(', '\n  private async refreshPreviewsForExperienceMode('),
+  extract('  private async refreshPreviewsForExperienceMode(', '\n  private setShowLineNumbers('),
   extract('  private async refreshSharedEditability(): Promise<void> {', '\n  private toggleActivePane()'),
   extract('  private previewBridgeForPane(pane: string): PreviewBridge {', '\n  private synchronizePreviewFollowContext('),
+  extract('  private isCurrentLeftOpenTarget(', '\n  private isCurrentRightOpenTarget('),
+  extract('  private isCurrentRightOpenTarget(', '\n  /**\n   * 读取笔记全文'),
+  extract('  private simplePreviewEditable(', '\n  @Builder\n  PaneModeButton('),
   extract('  private simpleWorkspacePane(): string {', '\n  @Builder\n  PaneModeButton('),
   extract('  private activeFilePath(): string {', '\n  private activeEditorBridge(): EditorBridge {')
 ];
@@ -47,6 +58,8 @@ function createHarness() {
     leftComposing: false,
     rightComposing: false,
     workspaceOpenRequests: 0,
+    leftSimplePreviewDirty: false,
+    rightSimplePreviewDirty: false,
     leftOpenRequestId: 0,
     rightOpenRequestId: 0,
     sharedEditabilityGeneration: 0,
@@ -58,7 +71,6 @@ function createHarness() {
     rightEditing: false,
     editorExperienceStore: { save: (mode) => { calls.push('save:' + mode); return true; } },
     flushWorkspaceSaves: async () => { calls.push('flush'); return true; },
-    refreshPreviewsForExperienceMode: async () => {},
     refreshSharedEditability: async () => { calls.push('refresh'); },
     resetSaveFeedback: () => {},
     scheduleSave: () => {},
@@ -82,6 +94,8 @@ function createHarness() {
     },
     previewBridge: { ready: true, requestEditableContent: async () => 'left source' },
     rightPreviewBridge: { ready: true, requestEditableContent: async () => 'right source' },
+    pushPreview() {},
+    pushRightPreview() {},
     leftSimplePreviewCommit: Promise.resolve(),
     rightSimplePreviewCommit: Promise.resolve()
   });
@@ -106,6 +120,65 @@ test('a pending note open prevents a mode switch from flushing an uncommitted ta
 
   assert.equal(app.experienceMode, 'simple');
   assert.deepEqual(app.calls, ['toast:笔记正在切换，请稍后再切换编辑模式']);
+});
+
+test('a delayed preview response cannot be written to a newly opened note during mode switch', async () => {
+  const app = createHarness();
+  app.rightFilePath = '';
+  const written = [];
+  let resolvePreviewContent;
+  app.previewBridge = {
+    ready: true,
+    requestEditableContent: () => new Promise((resolve) => { resolvePreviewContent = resolve; })
+  };
+  app.editorBridge.getContent = async () => 'new note source';
+  app.editorBridge.replaceContentFromPreview = async (content) => { written.push(content); };
+
+  const switching = app.selectEditorExperience('professional');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(typeof resolvePreviewContent, 'function');
+
+  app.currentFilePath = 'new-note.md';
+  app.leftOpenRequestId++;
+  app.workspaceOpenRequests = 1;
+  resolvePreviewContent('stale preview content');
+  await switching;
+
+  assert.deepEqual(written, []);
+  assert.equal(app.experienceMode, 'simple');
+});
+
+test('a delayed preview mode refresh cannot publish old text after a new note opens', async () => {
+  const app = createHarness();
+  app.rightFilePath = '';
+  const previews = [];
+  let resolveEditorContent;
+  app.editorBridge.getContent = () => new Promise((resolve) => { resolveEditorContent = resolve; });
+  app.pushPreview = (content) => { previews.push(content); };
+
+  const refreshing = app.refreshPreviewsForExperienceMode();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(typeof resolveEditorContent, 'function');
+
+  app.currentFilePath = 'new-note.md';
+  app.leftOpenRequestId++;
+  resolveEditorContent('stale editor content');
+  await refreshing;
+
+  assert.deepEqual(previews, []);
+});
+
+test('a delayed preview edit is ignored while a new note is loading', async () => {
+  const app = createHarness();
+  app.workspaceOpenRequests = 1;
+  const written = [];
+  app.editorBridge.replaceContentFromPreview = async (content) => { written.push(content); };
+
+  app.handleSimplePreviewEdit('left', 'stale preview content');
+  await app.leftSimplePreviewCommit;
+
+  assert.deepEqual(written, []);
+  assert.equal(app.leftSimplePreviewDirty, false);
 });
 
 test('composition that starts while flushing keeps the current mode and reports the block', async () => {
