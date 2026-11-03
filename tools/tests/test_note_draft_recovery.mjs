@@ -8,9 +8,7 @@ const require = createRequire(new URL('../../web/mdpreview/package.json', import
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../../entry/src/main/ets/model/NoteDraftService.ets', import.meta.url), 'utf8');
 
-function loadDraftService() {
-  const files = new Map();
-  const directories = new Set();
+function loadDraftService(files = new Map(), directories = new Set()) {
   const context = vm.createContext({
     module: { exports: {} },
     setTimeout,
@@ -125,4 +123,18 @@ test('draft persistence uses its app-private vault-key path and matching drafts 
 
   await NoteDraftService.clearIfMatches(registry, 'vault-key', 'notes/a.md', 'pending');
   assert.equal(files.has(path), false);
+});
+
+test('a persisted draft recovers after recreating the service context', async () => {
+  const first = loadDraftService();
+  assert.equal(await first.NoteDraftService.persist(
+    first.registry, 'vault-key', 'notes/a.md', 'formal', 'pending edit'), true);
+
+  const restarted = loadDraftService(first.files, first.directories);
+  const result = await restarted.NoteDraftService.recover(
+    restarted.registry, 'vault-key', 'notes/a.md', 'formal');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    recovered: true, conflict: false, content: 'pending edit'
+  });
 });
