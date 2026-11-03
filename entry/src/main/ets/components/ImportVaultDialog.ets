@@ -122,6 +122,16 @@ export struct ImportVaultDialog {
         .fontColor($r('app.color.text_secondary'))
         .margin({ top: Space.s2 })
 
+      Row({ space: Space.s1 }) {
+        this.SourceTab('本地目录', 'local')
+        this.SourceTab('Git 仓库', 'git')
+      }
+      .width('100%')
+      .padding(Space.s1)
+      .borderRadius(Radius.full)
+      .backgroundColor($r('app.color.bg_secondary'))
+      .margin({ top: Space.s3 })
+
       Scroll() {
         Column({ space: Space.s3 }) {
           if (this.source === 'local') {

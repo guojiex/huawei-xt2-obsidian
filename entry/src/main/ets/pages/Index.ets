@@ -88,8 +88,8 @@ import { KeyCode } from '@ohos.multimodalInput.keyCode';
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
-/** v1.23 首发暂隐 Git 专属 UI，恢复入口时统一修改。 */
-const GIT_UI_ENABLED: boolean = false;
+/** v1.26 恢复 Git 专属 UI；底层能力范围仍沿用 v0.3。 */
+const GIT_UI_ENABLED: boolean = true;
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {

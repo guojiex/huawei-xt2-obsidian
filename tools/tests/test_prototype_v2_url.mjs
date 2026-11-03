@@ -53,12 +53,31 @@ test('share format and page, format panel, and non-destructive file action can b
  const h=fixture();h.run("setEditing(true,false);openFormat('left');syncUrl()");assert(fixture(h.href()).get('formatDialog').open);
  const i=fixture();i.run("openFileAction('rename','reading_stream');syncUrl()");const j=fixture(i.href());assert(j.get('fileActionDialog').open);assert.equal(j.run("note('reading_stream').title"),'基础排版');
 });
-test('Git share demo and import source stay hidden in the first-release design',()=>{
- assert.match(html,/<label class="demo-toggle hidden" title="仅展示 Git 库的分享格式/);
- assert.match(html,/<div class="seg import-tabs hidden" aria-label="导入来源">/);
- assert.match(code,/shareFolderPath='',gitShareDemo=false;/);
- assert.match(code,/gitShareDemo=false;\$\('gitShareDemo'\)\.checked=false;/);
+test('Git demo restores import, sync entry and remote share previews without network access',()=>{
+ assert.match(html,/<label class="demo-toggle" title="仅展示 Git 库的同步入口、待推送角标和分享格式/);
+ assert.match(html,/<div class="seg import-tabs" aria-label="导入来源">/);
+ assert.doesNotMatch(html,/<div class="seg import-tabs hidden" aria-label="导入来源">/);
+ assert.match(html,/<button class="icon git-sync-entry hidden" id="gitSyncBtn"/);
+ assert.match(html,/id="mobileGitSync" class="hidden git-sync-menu"/);
+ assert.match(code,/gitShareDemo=new URLSearchParams\(window.location.search\)\.get\('gitShareDemo'\)==='1'/);
  assert.match(code,/if\(stage==='link'&&gitShareDemo\)previewShare\('link'\)/);
+ assert.match(code,/不执行 Git 操作或访问远端/);
+ const local=fixture();
+ assert(local.get('gitSyncBtn').classList.contains('hidden'));
+ assert(local.get('mobileGitSync').classList.contains('hidden'));
+ local.get('gitShareDemo').checked=true;local.get('gitShareDemo').onchange();
+ assert(!local.get('gitSyncBtn').classList.contains('hidden'));
+ assert(!local.get('mobileGitSync').classList.contains('hidden'));
+ assert.equal(new URL(local.href()).searchParams.get('gitShareDemo'),'1');
+ local.get('shareBtn').onclick();
+ assert(!local.get('shareRemoteLink').classList.contains('hidden'));
+ local.get('shareRemoteLink').onclick();
+ assert(local.get('shareNotice').textContent.includes('未访问远端'));
+ assert(!local.get('sharePreview').innerHTML.includes('https://'));
+ const restored=fixture(local.href());
+ assert.equal(restored.get('gitShareDemo').checked,true);
+ assert(!restored.get('gitSyncBtn').classList.contains('hidden'));
+ assert(!restored.get('mobileGitSync').classList.contains('hidden'));
 });
 test('no-note demo toggle grays out note-scoped controls and restores the selection',()=>{
  const f=fixture();const before=f.run('current');assert.equal(f.get('editTab').disabled,false);assert.equal(f.get('previewTab').disabled,false);assert.equal(f.get('shareBtn').disabled,false);

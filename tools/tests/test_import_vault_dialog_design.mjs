@@ -52,13 +52,25 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test('import dialog keeps the local entry visible while Git source is hidden for v1.23', () => {
+test('import dialog exposes local and Git sources and defaults to local', () => {
   assert.match(dialogSource, /Text\('导入库'\)/);
   assert.match(dialogSource, /accessibilityText\('关闭导入库'\)/);
   assert.match(dialogSource, /Text\('把已有的笔记，带进你的工作台。'\)/);
-  assert.doesNotMatch(dialogSource.slice(dialogSource.indexOf('  build() {')), /this\.SourceTab\('Git 仓库', 'git'\)/);
   assert.match(dialogSource, /@State source: string = 'local'/);
+  const build = dialogSource.slice(dialogSource.indexOf('  build() {'));
+  assert.match(build, /this\.SourceTab\('本地目录', 'local'\)/);
+  assert.match(build, /this\.SourceTab\('Git 仓库', 'git'\)/);
+  assert.match(dialogSource, /\.onClick\(\(\) => \{ this\.chooseSource\(value\); \}\)/);
   assert.match(dialogSource, /\.scrollBar\(BarState\.Off\)\s*\.margin\(\{ top: Space\.s4 \}\)/);
+});
+
+test('source tabs ignore changes while the import dialog is busy', () => {
+  const dialog = createHarness();
+  dialog.chooseSource('git');
+  assert.equal(dialog.source, 'git');
+  dialog.working = true;
+  dialog.chooseSource('local');
+  assert.equal(dialog.source, 'git');
 });
 
 test('local directory card shows selection affordance and the non-copy/remove boundary', () => {
