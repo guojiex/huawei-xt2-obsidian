@@ -3,6 +3,9 @@ import { FontSize, Radius, Size, Space } from '../common/Tokens';
 export interface ShareImagePreviewImage {
   uri: string;
   aspectRatio: number;
+  width: number;
+  height: number;
+  theme: string;
   scaled: boolean;
 }
 
@@ -10,7 +13,7 @@ export interface ShareImagePreviewImage {
 export struct ShareImagePreviewDialog {
   controller?: CustomDialogController;
   itemName: string = '';
-  image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
+  image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false };
   onConfirm: () => void = () => {};
   onCancel: () => void = () => {};
 
@@ -30,14 +33,21 @@ export struct ShareImagePreviewDialog {
         .fontWeight(FontWeight.Bold)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      Text(this.itemName + ' · 1 张长图')
+      Text(this.itemName)
         .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text('1 张长图 · ' + this.image.width.toString() + ' × ' + this.image.height.toString() + ' px · ' +
+        (this.image.theme === 'dark' ? '深色' : '浅色'))
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
       if (this.image.scaled) {
-        Text('为保留全文，长图已整体按比例缩小')
+        Text('为满足图片预算，长图已整体缩小至 ' + this.image.width.toString() + ' px 宽')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')

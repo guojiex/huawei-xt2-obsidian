@@ -432,7 +432,9 @@ struct Index {
   @State shareCaptureActive: boolean = false;
   @State shareCaptureStatus: string = '正在准备分享图片…';
   @State shareCaptureTheme: string = 'light';
-  @State shareImagePreviewImage: ShareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
+  @State shareImagePreviewImage: ShareImagePreviewImage = {
+    uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false
+  };
 
   aboutToAppear(): void {
     this.previewBridge.onBlockAnchorChange = (anchor: PreviewBlockAnchor | null): void => {
@@ -5147,6 +5149,9 @@ struct Index {
       this.shareImagePreviewImage = {
         uri: fileUri.getUriFromPath(filePath),
         aspectRatio: geometry.width / geometry.height,
+        width: geometry.width,
+        height: geometry.height,
+        theme: this.shareCaptureTheme,
         scaled: geometry.scale < 1
       };
       this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath);
@@ -5201,7 +5206,9 @@ struct Index {
   private cleanupShareImagePreview(): void {
     const sessionId: string = this.shareImagePreviewSessionId;
     this.shareImagePreviewSessionId = '';
-    this.shareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
+    this.shareImagePreviewImage = {
+      uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false
+    };
     if (sessionId.length === 0) {
       return;
     }
