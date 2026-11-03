@@ -50,7 +50,7 @@ export struct VaultManagerView {
       Column() {
         // 返回入口已删（2.7c）；标题「笔记库」只保留在顶栏（2.7b）。
         Column() {
-          Text('每个库是 vaults/ 下的一个独立目录，各自独立同步')
+          Text('每个库在应用中独立管理')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.text_tertiary'))
             .width('100%')
