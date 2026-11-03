@@ -83,6 +83,10 @@ function overlapsProtected(from: number, to: number, ranges: SimpleRange[]): boo
   return ranges.some((range) => from < range.to && to > range.from)
 }
 
+function containsProtectedPosition(position: number, ranges: SimpleRange[]): boolean {
+  return ranges.some((range) => position >= range.from && position < range.to)
+}
+
 function isTaskCheckboxReference(state: EditorState, from: number, to: number): boolean {
   const line = state.doc.lineAt(from)
   const list = /^(\s*)([-+*]|\d+\.)[ \t]+(\[[ xX]\][ \t]+)?/.exec(line.text)
@@ -246,6 +250,11 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
     }
   })
 
+  let lastContentLine = state.doc.lines
+  while (lastContentLine > 0 && state.doc.line(lastContentLine).text.trim().length === 0) {
+    lastContentLine--
+  }
+
   for (let number = 1; number <= state.doc.lines; number++) {
     const line = state.doc.line(number)
     const list = /^(\s*)([-+*]|\d+\.)[ \t]+(\[[ xX]\][ \t]+)?/.exec(line.text)
@@ -258,8 +267,8 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
           value: checkbox ? (checkbox.includes('x') || checkbox.includes('X') ? '☑' : '☐') :
             (/^\d/.test(list[2]) ? list[2] : '•') })
       }
-    } else if (line.text.trim().length === 0 &&
-      !overlapsProtected(line.from, line.to, mergedProtected)) {
+    } else if (line.text.trim().length === 0 && number < lastContentLine &&
+      !containsProtectedPosition(line.from, mergedProtected)) {
       // 段距：编辑器没有段落元素，间隔落在源码空行上（样式见 build.mjs 的 .cm-simple-blank）。
       // 受保护块（表格 / 代码块 / 公式…）内的空行不动，避免影响块内对齐与行号。
       decorations.push({ from: line.from, to: line.from, kind: 'blank' })

@@ -258,11 +258,14 @@ test('18.3 CRLF 与 BOM 下区间与回写仍逐字对齐', () => {
 })
 
 test('段距：普通段落之间的空行给到 blank 装饰，受保护块内的空行不动', () => {
-  // 源码末尾若还有换行，最后那个空行也会拿到 blank —— 用不结尾换行的源码只测段落间那一处
+  // 文件末尾没有后续段落，不应把尾随空行当作段距。
   const source = '第一段\n\n第二段'
   const blanks = base.decorationKinds(source).filter((item) => item.kind === 'blank')
   assert.equal(blanks.length, 1)
   assert.equal(blanks[0].from, '第一段\n'.length)
+
+  const trailingBlanks = base.decorationKinds('第一段\n\n').filter((item) => item.kind === 'blank')
+  assert.equal(trailingBlanks.length, 0)
 
   const code = '```\n\n```\n'
   assert.equal(base.decorationKinds(code).filter((item) => item.kind === 'blank').length, 0)
@@ -270,7 +273,7 @@ test('段距：普通段落之间的空行给到 blank 装饰，受保护块内�
   const table = '| a |\n| --- |\n| 1 |\n\n正文'
   const tableBlanks = base.decorationKinds(table).filter((item) => item.kind === 'blank')
   assert.equal(tableBlanks.length, 1)
-  assert.equal(tableBlanks[0].from, table.length - '正文'.length)
+  assert.equal(tableBlanks[0].from, table.indexOf('\n\n') + 1)
 })
 
 test('块类型名有中文标签，面板与源码抽屉标题不用硬编码', () => {
