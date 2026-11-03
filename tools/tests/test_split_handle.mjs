@@ -28,3 +28,23 @@ test('expanded touch and mouse regions do not change note or Agent layout widths
   assert.equal(agentCalls.length, 2);
   for (const call of agentCalls) assert.doesNotMatch(call, /enhanced:\s*true/);
 });
+
+test('split feedback is shown during drag and retained briefly afterward', () => {
+  assert.match(splitHandle, /this\.dragging \|\| this\.feedbackVisible/);
+  assert.match(splitHandle, /this\.showFeedback\('/);
+  assert.match(splitHandle, /setTimeout\([\s\S]*?1100/);
+  assert.match(splitHandle, /readoutPrimary/);
+  assert.match(splitHandle, /readoutWidths/);
+  assert.match(splitHandle, /readoutStatus/);
+});
+
+test('split readout reports ratios, pane widths, and boundary causes', () => {
+  assert.match(index, /private splitHandlePrimary\(kind: string\)/);
+  assert.match(index, /private splitHandleWidths\(kind: string\)/);
+  assert.match(index, /private splitHandleStatus\(kind: string\)/);
+  assert.match(index, /默认比例/);
+  assert.match(index, /每个内容栏至少/);
+  assert.match(index, /每栏至少/);
+  assert.match(index, /MIN_NAV_RATIO/);
+  assert.match(index, /MAX_NAV_RATIO/);
+});

@@ -58,7 +58,8 @@ import { ShareImagePreferenceStore } from '../model/ShareImagePreferenceStore';
 import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from '../model/PreviewFollowPolicy';
 import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
-  DEFAULT_CONTENT_RATIO, MdPaneWidths, clampContentRatio, clampNavigationWidth, mdPaneWidths,
+  DEFAULT_CONTENT_RATIO, DEFAULT_NAV_RATIO, MAX_NAV_RATIO, MIN_NAV_RATIO, MdPaneWidths,
+  clampContentRatio, clampNavigationWidth, mdPaneWidths,
   isSingleLandscapeWindow, navigationWidth
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
@@ -1269,6 +1270,74 @@ struct Index {
   private contentHandleVisible(): boolean {
     return (this.breakpoint === Breakpoint.LG || this.breakpoint === Breakpoint.MD) &&
       !this.focused && this.referenceVisible;
+  }
+
+  private splitHandlePrimary(kind: string): string {
+    if (kind === 'nav') {
+      const total: number = this.windowWidthVp;
+      const navigation: number = this.noteNavigationWidth();
+      const navigationPercent: number = total > 0 ? Math.round(navigation / total * 100) : 0;
+      return '目录 ' + navigationPercent + '% · 内容 ' + (100 - navigationPercent) + '%';
+    }
+    const total: number = this.noteContentWidth();
+    const left: number = total * this.noteContentRatio();
+    const leftPercent: number = total > 0 ? Math.round(left / total * 100) : 0;
+    return '左栏 ' + leftPercent + '% · 右栏 ' + (100 - leftPercent) + '%';
+  }
+
+  private splitHandleWidths(kind: string): string {
+    if (kind === 'nav') {
+      const navigation: number = this.noteNavigationWidth();
+      return '目录 ' + Math.round(navigation) + 'vp · 内容 ' +
+        Math.round(Math.max(0, this.windowWidthVp - navigation)) + 'vp';
+    }
+    const total: number = this.noteContentWidth();
+    const left: number = total * this.noteContentRatio();
+    return '左栏 ' + Math.round(left) + 'vp · 右栏 ' + Math.round(Math.max(0, total - left)) + 'vp';
+  }
+
+  private splitHandleStatus(kind: string): string {
+    if (kind === 'nav') {
+      const total: number = this.windowWidthVp;
+      const multiPane: boolean = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape();
+      const panes: number = multiPane ? 2 : 1;
+      const splitters: number = multiPane ? 2 : 1;
+      const navigation: number = this.noteNavigationWidth();
+      const defaultRatio: number = this.breakpoint === Breakpoint.MD ? 0.38 : DEFAULT_NAV_RATIO;
+      const defaultWidth: number = navigationWidth(total, defaultRatio, panes, 0);
+      if (Math.abs(navigation - defaultWidth) <= 1) {
+        return '默认比例';
+      }
+      const minimum: number = clampNavigationWidth(0, total, panes, splitters);
+      const maximum: number = clampNavigationWidth(total, total, panes, splitters);
+      if (navigation <= minimum + 1) {
+        return total * MIN_NAV_RATIO < Size.paneMinW
+          ? '最小宽度 · 目录至少 ' + Size.paneMinW + 'vp'
+          : '最小比例 ' + Math.round(MIN_NAV_RATIO * 100) + '%';
+      }
+      if (navigation >= maximum - 1) {
+        const contentLimit: number = total - panes * Size.paneMinW - splitters * Space.s4;
+        return contentLimit < total * MAX_NAV_RATIO
+          ? '最大宽度 · 每个内容栏至少 ' + Size.paneMinW + 'vp'
+          : '最大比例 ' + Math.round(MAX_NAV_RATIO * 100) + '%';
+      }
+      return '';
+    }
+    const total: number = this.noteContentWidth();
+    const left: number = total * this.noteContentRatio();
+    if (total < Size.paneMinW * 2) {
+      return '窗口不足，无法两栏各 ' + Size.paneMinW + 'vp';
+    }
+    if (Math.abs(left - total * DEFAULT_CONTENT_RATIO) <= 1) {
+      return '默认比例';
+    }
+    if (left <= Size.paneMinW + 1) {
+      return '最小宽度 · 每栏至少 ' + Size.paneMinW + 'vp';
+    }
+    if (left >= total - Size.paneMinW - 1) {
+      return '最大宽度 · 每栏至少 ' + Size.paneMinW + 'vp';
+    }
+    return '';
   }
 
   private notePaneWidth(pane: string): Length {
@@ -5936,6 +6005,9 @@ struct Index {
 
           SplitHandle({
             enhanced: true,
+            readoutPrimary: this.splitHandlePrimary('nav'),
+            readoutWidths: this.splitHandleWidths('nav'),
+            readoutStatus: this.splitHandleStatus('nav'),
             dragStarted: (): void => { this.startNavigationDrag(false); },
             dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
             dragEnded: (): void => { this.endSplitDrag(); },
@@ -5981,6 +6053,9 @@ struct Index {
 
       SplitHandle({
         enhanced: true,
+        readoutPrimary: this.splitHandlePrimary('content'),
+        readoutWidths: this.splitHandleWidths('content'),
+        readoutStatus: this.splitHandleStatus('content'),
         dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
         dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
         dragEnded: (): void => { this.endSplitDrag(); },
