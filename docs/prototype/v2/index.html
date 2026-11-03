@@ -1470,4 +1470,10 @@ syncExperience();
   scroller.addEventListener('scroll',()=>{if(zoom.contains(document.activeElement))return;zoom.classList.add('is-scrolling');clearTimeout(timer);timer=setTimeout(()=>zoom.classList.remove('is-scrolling'),900);},{passive:true});
  }
 })();
+/* Keep the single-note image entry explicit about its in-image watermark. */
+(()=>{
+ const copy=document.querySelector('#shareImage .share-option-copy');
+ copy.querySelector('strong').textContent='排版图片';
+ copy.querySelector('small').textContent='整篇合成一张长图，末尾含“曜石笔记”水印；可选宽度与外观';
+})();
 </script></body></html>
