@@ -206,6 +206,20 @@ struct Index {
   private leftBlockToolbarPaneArea: number[] = [0, 0, 0, 0];
   private rightBlockToolbarPaneArea: number[] = [0, 0, 0, 0];
   private blockToolbarActions: BlockToolbarAction[] = [];
+  @State leftBlockPanelOpen: boolean = false;
+  @State rightBlockPanelOpen: boolean = false;
+  @State blockPanelPane: string = 'left';
+  @State blockPanelTitle: string = '当前块';
+  @State blockPanelAnchor: PreviewBlockAnchor | null = null;
+  @State blockPanelPlacement: Placement = Placement.Bottom;
+  @State blockPanelWidth: number = Size.blockPanelW;
+  @State blockPanelMaxHeight: number = Size.menuMaxH;
+  @State blockPanelHostX: number = 0;
+  @State blockPanelHostY: number = 0;
+  @State blockPanelSourceVaultId: string = '';
+  @State blockPanelSourcePath: string = '';
+  private blockPanelRestoreFocus: boolean = false;
+  private blockPanelPendingAction: boolean = false;
   private formatMenuSourceVaultId: string = '';
   private formatMenuSourcePath: string = '';
   @State navigationRatio: number = -1;
@@ -409,6 +423,12 @@ struct Index {
     };
     this.rightPreviewBridge.onBlockAnchorChange = (anchor: PreviewBlockAnchor | null): void => {
       this.onBlockAnchorChange('right', anchor);
+    };
+    this.previewBridge.onContentReplacing = (): void => {
+      this.onPreviewContentReplacing('left');
+    };
+    this.rightPreviewBridge.onContentReplacing = (): void => {
+      this.onPreviewContentReplacing('right');
     };
     void this.loadAgentKitSlot();
     this.refreshFromRegistry();
@@ -1662,6 +1682,8 @@ struct Index {
   private onBreakpointChanged(): void {
     this.moreMenuOpen = false;
     this.closeFormatMenu();
+    this.closeBlockPropertyPanel(false);
+    this.blockToolbarOpen = false;
     if (this.breakpoint !== Breakpoint.SM) {
       this.setDrawerOpen(false);
     }
@@ -2320,6 +2342,16 @@ struct Index {
       this.resetSaveFeedback();
     }
     this.synchronizePreviewFollowContext();
+    if (this.isBlockPropertyPanelOpen()) {
+      if (this.topView !== 'note' || this.activePane !== this.blockPanelPane ||
+        this.currentVaultId !== this.blockPanelSourceVaultId ||
+        this.paneFilePath(this.blockPanelPane) !== this.blockPanelSourcePath ||
+        !this.isPaneEditable(this.blockPanelPane)) {
+        this.closeBlockPropertyPanel(false);
+      } else {
+        this.updateBlockPropertyPanelLayout(this.blockPanelPane);
+      }
+    }
     if (this.formatMenuOpen) {
       this.updateFormatPopupLayout(this.formatMenuPane);
     }
@@ -2414,6 +2446,9 @@ struct Index {
     if (this.blockToolbarOpen) {
       this.updateBlockToolbarLayout(this.blockToolbarPane);
     }
+    if (this.isBlockPropertyPanelOpen()) {
+      this.updateBlockPropertyPanelLayout(this.blockPanelPane);
+    }
   }
 
   private keyboardInsetVp(): number {
@@ -2442,6 +2477,9 @@ struct Index {
     if (this.blockToolbarOpen) {
       this.updateBlockToolbarLayout(this.blockToolbarPane);
     }
+    if (this.isBlockPropertyPanelOpen()) {
+      this.updateBlockPropertyPanelLayout(this.blockPanelPane);
+    }
   }
 
   private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {
@@ -2450,6 +2488,32 @@ struct Index {
     } else {
       this.leftBlockAnchor = anchor;
     }
+    if (this.isBlockPropertyPanelOpen() && pane === this.blockPanelPane) {
+      if (anchor !== null) {
+        if (this.blockPanelAnchor !== null &&
+          (anchor.from !== this.blockPanelAnchor.from || anchor.to !== this.blockPanelAnchor.to)) {
+          this.closeBlockPropertyPanel(false);
+        } else {
+          const currentAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+          let panelAnchor: PreviewBlockAnchor = anchor;
+          if (currentAnchor !== null && currentAnchor.tapType.length > 0 && anchor.tapType.length === 0) {
+            panelAnchor = {
+              type: anchor.type,
+              tapType: currentAnchor.tapType,
+              from: anchor.from,
+              to: anchor.to,
+              x: anchor.x,
+              y: anchor.y,
+              width: anchor.width,
+              height: anchor.height
+            };
+          }
+          this.blockPanelAnchor = panelAnchor;
+          this.blockPanelTitle = this.blockPanelTitleFor(panelAnchor);
+          this.updateBlockPropertyPanelLayout(pane);
+        }
+      }
+    }
     if (pane !== this.activePane) {
       return;
     }
@@ -2457,10 +2521,25 @@ struct Index {
     this.updateBlockToolbarLayout(pane);
   }
 
+  private onPreviewContentReplacing(pane: string): void {
+    if (pane === this.blockPanelPane) {
+      this.blockPanelPendingAction = false;
+      if (this.isBlockPropertyPanelOpen()) {
+        this.closeBlockPropertyPanel(false);
+      } else {
+        this.blockPanelRestoreFocus = false;
+      }
+    }
+    this.onBlockAnchorChange(pane, null);
+  }
+
   private recordBlockToolbarPaneArea(pane: string, area: Area): void {
     this.recordFormatArea(pane === 'right' ? this.rightBlockToolbarPaneArea : this.leftBlockToolbarPaneArea, area);
     if (this.blockToolbarOpen && this.blockToolbarPane === pane) {
       this.updateBlockToolbarLayout(pane);
+    }
+    if (this.isBlockPropertyPanelOpen() && this.blockPanelPane === pane) {
+      this.updateBlockPropertyPanelLayout(pane);
     }
   }
 
@@ -2513,6 +2592,223 @@ struct Index {
     return this.experienceMode === 'simple' && this.topView === 'note' && this.activePane === pane &&
       !this.formatMenuOpen && this.isPaneEditable(pane) && anchor !== null && this.blockToolbarActions.length > 0 &&
       (pane !== 'right' || this.notePaneVisible(pane));
+  }
+
+  private hasBlockPropertyPanelForPane(pane: string, requestedAnchor: PreviewBlockAnchor | null = null): boolean {
+    const anchor: PreviewBlockAnchor | null = requestedAnchor !== null
+      ? requestedAnchor : pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    return this.experienceMode === 'simple' && this.topView === 'note' &&
+      this.isPaneEditable(pane) && anchor !== null && (pane !== 'right' || this.notePaneVisible(pane));
+  }
+
+  private isBlockPropertyPanelOpen(): boolean {
+    return this.leftBlockPanelOpen || this.rightBlockPanelOpen;
+  }
+
+  private blockPanelAnchorGeometry(pane: string): number[] {
+    const paneArea: number[] = pane === 'right'
+      ? this.rightBlockToolbarPaneArea : this.leftBlockToolbarPaneArea;
+    if (this.breakpoint === Breakpoint.SM) {
+      return [0, 0, Space.s1, Space.s1];
+    }
+    return [this.blockPanelHostX - paneArea[0], this.blockPanelHostY - paneArea[1], Space.s1, Space.s1];
+  }
+
+  private blockPanelTitleFor(anchor: PreviewBlockAnchor): string {
+    switch (anchor.tapType) {
+      case 'image':
+        return '图片';
+      case 'link':
+        return '链接';
+      case 'wikilink':
+        return '双链';
+    }
+    switch (anchor.type) {
+      case 'table':
+        return '表格';
+      case 'code':
+        return '代码块';
+      case 'image':
+        return '图片';
+      case 'link':
+        return '链接';
+      case 'wikilink':
+        return '双链';
+      case 'frontmatter':
+        return '属性';
+      case 'formula':
+        return '公式';
+      case 'paragraph':
+        return '这一段';
+      case 'heading':
+        return '标题';
+      case 'list':
+        return '列表';
+      case 'blockquote':
+        return '引用';
+      default:
+        return '当前块';
+    }
+  }
+
+  private updateBlockPropertyPanelLayout(pane: string): void {
+    if (!this.isBlockPropertyPanelOpen() || pane !== this.blockPanelPane ||
+      this.breakpoint === Breakpoint.SM) {
+      return;
+    }
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null) {
+      this.closeBlockPropertyPanel(false);
+      return;
+    }
+    const paneArea: number[] = pane === 'right'
+      ? this.rightBlockToolbarPaneArea : this.leftBlockToolbarPaneArea;
+    const anchorArea: number[] = [anchor.x, anchor.y, anchor.width, anchor.height];
+    const layout: AnchoredPopupLayout | null = this.calculateAnchoredPopupLayout(
+      pane, paneArea, anchorArea, Size.blockPanelW, Size.menuMaxH, anchor.x);
+    if (layout === null) {
+      this.closeBlockPropertyPanel(false);
+      return;
+    }
+    const minX: number = paneArea[0] + Space.s2;
+    const maxX: number = paneArea[0] + paneArea[2] - Space.s2 - layout.width;
+    this.blockPanelHostX = Math.max(minX, Math.min(anchor.x + layout.offsetX, maxX));
+    this.blockPanelHostY = anchor.y + layout.offsetY;
+    this.blockPanelPlacement = layout.placement;
+    this.blockPanelWidth = layout.width;
+    this.blockPanelMaxHeight = Math.min(Size.menuMaxH, layout.maxHeight);
+  }
+
+  private blockPanelSheetOptions(): SheetOptions {
+    if (this.breakpoint === Breakpoint.SM) {
+      return {
+        height: SheetSize.MEDIUM,
+        width: '100%',
+        preferType: SheetType.BOTTOM,
+        dragBar: true,
+        showClose: true,
+        title: { title: this.blockPanelTitle },
+        onDisappear: (): void => { this.onBlockPropertyPanelDisappear(); }
+      };
+    }
+    return {
+      height: SheetSize.FIT_CONTENT,
+      width: this.blockPanelWidth,
+      preferType: SheetType.POPUP,
+      dragBar: false,
+      showClose: true,
+      title: { title: this.blockPanelTitle },
+      placement: this.blockPanelPlacement,
+      maskColor: Color.Transparent,
+      onDisappear: (): void => { this.onBlockPropertyPanelDisappear(); }
+    };
+  }
+
+  private openBlockPropertyPanel(pane: string, tappedAnchor: PreviewBlockAnchor | null = null): void {
+    if (!this.hasBlockPropertyPanelForPane(pane, tappedAnchor)) {
+      return;
+    }
+    const anchor: PreviewBlockAnchor | null = tappedAnchor !== null
+      ? tappedAnchor : pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    if (anchor === null) {
+      return;
+    }
+    this.setActivePane(pane);
+    this.paneMoreOpen = false;
+    this.blockToolbarOpen = false;
+    this.formatMenuOpen = false;
+    this.blockPanelPane = pane;
+    this.blockPanelAnchor = anchor;
+    this.blockPanelTitle = this.blockPanelTitleFor(anchor);
+    this.blockPanelSourceVaultId = this.currentVaultId;
+    this.blockPanelSourcePath = this.paneFilePath(pane);
+    this.blockPanelRestoreFocus = true;
+    this.blockPanelPendingAction = false;
+    this.blockPanelWidth = Size.blockPanelW;
+    this.blockPanelMaxHeight = Size.menuMaxH;
+    this.leftBlockPanelOpen = pane === 'left';
+    this.rightBlockPanelOpen = pane === 'right';
+    this.updateBlockPropertyPanelLayout(pane);
+  }
+
+  private closeBlockPropertyPanel(restoreFocus: boolean = true): void {
+    this.blockPanelRestoreFocus = restoreFocus;
+    this.leftBlockPanelOpen = false;
+    this.rightBlockPanelOpen = false;
+  }
+
+  private blockPanelActionLabel(): string {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null) {
+      return '';
+    }
+    switch (anchor.tapType) {
+      case 'image':
+        return '查看大图';
+      case 'link':
+        return '打开链接';
+      case 'wikilink':
+        return '打开目标笔记';
+      default:
+        return '';
+    }
+  }
+
+  private closeBlockPanelForContentAction(): void {
+    this.blockPanelPendingAction = true;
+    this.closeBlockPropertyPanel(false);
+  }
+
+  private onBlockPropertyPanelDisappear(): void {
+    if (this.blockPanelPendingAction) {
+      this.blockPanelPendingAction = false;
+      const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+      const pane: string = this.blockPanelPane;
+      if (anchor !== null && this.activePane === pane && this.topView === 'note' &&
+        this.experienceMode === 'simple' && this.currentVaultId === this.blockPanelSourceVaultId &&
+        this.paneFilePath(pane) === this.blockPanelSourcePath && this.isPaneEditable(pane)) {
+        this.previewBridgeForPane(pane).activateLockedContent(anchor.from, anchor.to);
+      }
+      this.blockPanelRestoreFocus = false;
+      return;
+    }
+    const restoreFocus: boolean = this.blockPanelRestoreFocus;
+    this.blockPanelRestoreFocus = false;
+    if (restoreFocus) {
+      this.restoreBlockPanelFocus();
+    }
+  }
+
+  private restoreBlockPanelFocus(): void {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    if (anchor === null || this.activePane !== pane || this.topView !== 'note' ||
+      this.experienceMode !== 'simple' || !this.isPaneEditable(pane) ||
+      this.currentVaultId !== this.blockPanelSourceVaultId || this.paneFilePath(pane) !== this.blockPanelSourcePath) {
+      return;
+    }
+    this.previewBridgeForPane(pane).focusBlock(anchor.from, anchor.to);
+  }
+
+  private restoreBlockFocus(pane: string, anchor: PreviewBlockAnchor | null): void {
+    if (anchor !== null) {
+      this.previewBridgeForPane(pane).focusBlock(anchor.from, anchor.to);
+    }
+  }
+
+  private closeBlockToolbar(restoreFocus: boolean): void {
+    const pane: string = this.blockToolbarPane;
+    const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    this.blockToolbarOpen = false;
+    if (restoreFocus) {
+      this.restoreBlockFocus(pane, anchor);
+    }
+  }
+
+  private onBlockPropertyPanelKey(event: KeyEvent): void {
+    if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      this.closeBlockPropertyPanel();
+    }
   }
 
   private calculateAnchoredPopupLayout(
@@ -2636,7 +2932,7 @@ struct Index {
       return;
     }
     const anchorArea: number[] = [anchor.x, anchor.y, anchor.width, anchor.height];
-    const actionCount: number = Math.min(4, this.blockToolbarActions.length);
+    const actionCount: number = Math.min(4, this.blockToolbarActions.length) + 1;
     const naturalWidth: number = actionCount * Size.touch + Space.s2 * Math.max(0, actionCount - 1) +
       Space.s4 * 2;
     const naturalHeight: number = Size.touch + Space.s4 * 2;
@@ -4985,6 +5281,23 @@ struct Index {
           this.previewActiveNoteInOtherPane(pane);
         })
       }
+      if (this.hasBlockPropertyPanelForPane(pane)) {
+        Row() {
+          Text('块操作')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .focusable(true)
+        .accessibilityText('块操作')
+        .onClick((): void => {
+          this.paneMoreOpen = false;
+          this.openBlockPropertyPanel(pane);
+        })
+      }
       Row() {
         Text(this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
           .fontSize(FontSize.body2)
@@ -5926,6 +6239,20 @@ struct Index {
         })
         .accessibilityText(action.accessibilityText)
       }, (action: BlockToolbarAction) => action.id)
+      if (this.blockToolbarActions.length > 0) {
+        Row() {
+          Icon('more', Space.s5, $r('app.color.text_primary'))
+        }
+        .width(Size.touch)
+        .height(Size.touch)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .borderRadius(Radius.icon)
+        .onClick((): void => {
+          this.openBlockPropertyPanel(this.blockToolbarPane);
+        })
+        .accessibilityText('更多')
+      }
     }
     .width(this.blockToolbarWidth)
     .constraintSize({ maxHeight: this.blockToolbarMaxHeight })
@@ -5936,9 +6263,90 @@ struct Index {
     .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
     .onKeyEvent((event: KeyEvent): void => {
       if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
-        this.blockToolbarOpen = false;
+        this.closeBlockToolbar(true);
       }
     })
+  }
+
+  @Builder
+  BlockPropertyPanel() {
+    Column() {
+      Scroll() {
+        Column() {
+          if (this.blockPanelActionLabel().length > 0) {
+            Row() {
+              Text(this.blockPanelActionLabel())
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_primary'))
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .height(Size.touch)
+            .padding({ left: Space.s3, right: Space.s3 })
+            .focusable(true)
+            .accessibilityText(this.blockPanelActionLabel())
+            .onClick((): void => { this.closeBlockPanelForContentAction(); })
+          } else {
+            Row() {
+              Text('暂无可用属性')
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_tertiary'))
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .height(Size.touch)
+            .padding({ left: Space.s3, right: Space.s3 })
+          }
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .constraintSize({
+        maxHeight: Math.max(Space.s1, this.blockPanelMaxHeight - Size.touch - Space.s4)
+      })
+
+      Row() {
+        Text('以源码编辑此块')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s3, right: Space.s3 })
+      .enabled(false)
+      .accessibilityText('以源码编辑此块')
+    }
+    .width('100%')
+    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+    .constraintSize({ maxHeight: this.blockPanelMaxHeight })
+    .focusable(true)
+    .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
+  }
+
+  @Builder
+  PreviewBlockPanel(pane: string) {
+    if (pane === 'right') {
+      Blank()
+        .width(Math.max(Space.s1, this.blockPanelAnchorGeometry(pane)[2]))
+        .height(Math.max(Space.s1, this.blockPanelAnchorGeometry(pane)[3]))
+        .position({
+          x: this.blockPanelAnchorGeometry(pane)[0],
+          y: this.blockPanelAnchorGeometry(pane)[1]
+        })
+        .hitTestBehavior(HitTestMode.None)
+        .bindSheet($$this.rightBlockPanelOpen, this.BlockPropertyPanel(), this.blockPanelSheetOptions())
+    } else {
+      Blank()
+        .width(Math.max(Space.s1, this.blockPanelAnchorGeometry(pane)[2]))
+        .height(Math.max(Space.s1, this.blockPanelAnchorGeometry(pane)[3]))
+        .position({
+          x: this.blockPanelAnchorGeometry(pane)[0],
+          y: this.blockPanelAnchorGeometry(pane)[1]
+        })
+        .hitTestBehavior(HitTestMode.None)
+        .bindSheet($$this.leftBlockPanelOpen, this.BlockPropertyPanel(), this.blockPanelSheetOptions())
+    }
   }
 
   @Builder
@@ -6114,9 +6522,8 @@ struct Index {
             onCompositionChange: (composing: boolean): void => {
               this.onRightCompositionChange(composing);
             },
-            onLockedContentTap: (): void => {
-              // v1.7 17.4 文案：说清是简单模式不支持并可切专业模式；表格的后续版本承诺在块内标注
-              promptAction.showToast({ message: '此内容不支持在简单模式编辑，请切换到专业模式修改' });
+            onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
+              this.openBlockPropertyPanel('right', anchor);
             },
             onError: (msg: string): void => {
               hilog.error(DOMAIN, TAG, '右栏预览 Web 加载失败');
@@ -6127,6 +6534,7 @@ struct Index {
             .height('100%')
             .visibility(this.experienceMode === 'simple' || !this.rightEditing
               ? Visibility.Visible : Visibility.Hidden)
+        this.PreviewBlockPanel('right')
         this.PreviewBlockToolbar('right')
           if (this.rightFilePath.length === 0) {
             this.EmptyPane()
@@ -6304,9 +6712,8 @@ struct Index {
           onCompositionChange: (composing: boolean): void => {
             this.onLeftCompositionChange(composing);
           },
-          onLockedContentTap: (): void => {
-            // v1.7 17.4 文案：说清是简单模式不支持并可切专业模式；表格的后续版本承诺在块内标注
-            promptAction.showToast({ message: '此内容不支持在简单模式编辑，请切换到专业模式修改' });
+          onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
+            this.openBlockPropertyPanel('left', anchor);
           },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '预览 Web 加载失败');
@@ -6315,6 +6722,7 @@ struct Index {
         })
           .width('100%')
           .height('100%')
+        this.PreviewBlockPanel('left')
         this.PreviewBlockToolbar('left')
         if (this.currentFilePath.length === 0) {
           this.EmptyPane()

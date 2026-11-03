@@ -1879,4 +1879,4 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - **关闭方式**（官方 Modal Page Overview 对 semi-modal 的描述）：侧滑、点遮罩、点关闭按钮、下拉四种；生命周期 `onWillAppear → onAppear → onWillDisappear → onDisappear`；面板内滚动默认嵌套策略 `{Forward: PARENT_FIRST, Backward: SELF_FIRST}`。
 - **两个坑**：① 未用 `$$` 双向绑定时，**拖拽关闭不会改变 `isShow` 的值**（必须 `$$`）；② 宿主节点未挂载时设 `isShow=true` **不会显示**，建议在 `onAppear` 之后再弹。
 - **本项目判断**：块属性面板用 `bindSheet` 单档 `SheetSize.MEDIUM`（约半屏）+ `dragBar: true` + `showClose: true` + `title: { title: <块类型名> }`；**不用多档 `detents`** —— 它是设置面板，不需要在半屏 / 全屏之间拖拽切换，多档反而会让内容高度不确定。
-- **状态**：⚠️ `preferType` 的 API 24 声明范围已由本机 API 26 SDK 版本注解核实，官方 FAQ 仅作类型用法旁证；**没有 API 24 / XT2 运行时证据**。v1.18 的 18.5 锚点数据通路已落码并接入左右工作区状态；18.6 `bindSheet` 属性面板尚未实现。原型 `docs/prototype/v2/index.html` 已按该形态给出 HTML 示意（顶部拖拽条、右上关闭图标、遮罩、分组列表行），**原型不能代替原生外观与设备验收**。
+- **状态**：⚠️ `preferType` 的 API 24 声明范围已由本机 API 26 SDK 版本注解核实，官方 FAQ 仅作类型用法旁证；**没有 API 24 / XT2 运行时证据**。v1.18 的 18.5 锚点 / 浮条框架与 18.6 `bindSheet` 面板入口已有源码和自动测试；DevEco ArkTS 编译通过，HAP 打包仍受本机 Java 架构问题阻塞。原型 `docs/prototype/v2/index.html` 已按该形态给出 HTML 示意（顶部拖拽条、右上关闭图标、遮罩、分组列表行），**原型不能代替原生外观与设备验收**。

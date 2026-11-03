@@ -23,16 +23,21 @@ test('selection feedback outlines locked rendered children using v2 tokens', () 
   ))
 })
 
-test('locked block clicks keep existing link, image, and checkbox behavior', () => {
+test('locked block taps route links and images to the panel while controls keep their behavior', () => {
   const clickStart = previewSource.indexOf("contentElement.addEventListener('click', (event: MouseEvent): void => {")
   const clickEnd = previewSource.indexOf('\n\nasync function renderMermaidBlocks', clickStart)
   assert.ok(clickStart >= 0 && clickEnd > clickStart)
   const handler = previewSource.slice(clickStart, clickEnd)
 
   assert.match(handler, /setActiveLockedBlocks\(contentElement, lockedBlock \? \[lockedBlock\] : \[\]\)/)
-  assert.match(handler, /event\.target\.closest\('a, input, img, button'\)\) return/)
-  assert.match(handler, /onLockedContentTap\(\)/)
-  assert.doesNotMatch(handler, /preventDefault\(\)/)
+  assert.match(handler, /event\.target\.closest\('input, button'\)\) return/)
+  assert.match(handler, /anchor\.tapType = 'image'/)
+  assert.match(handler, /anchor\.tapType = href\.indexOf\('#wikilink:'\) === 0 \? 'wikilink' : 'link'/)
+  assert.match(handler, /event\.preventDefault\(\)/)
+  assert.match(handler, /onLockedContentTap\(tapPayload\)/)
+  assert.match(previewSource, /function activateLockedContent\(from: number, to: number\): void/)
+  assert.match(previewSource, /replayingLockedTap = true/)
+  assert.match(previewSource, /if \(!editable\) openImage\(img\)/)
 })
 
 test('changing preview content or leaving simple mode clears stale block outlines', () => {
@@ -56,6 +61,11 @@ test('block anchor geometry is published through the parent preview bridge', () 
   assert.match(previewComponentSource, /onBlockAnchorChange: \(anchor: PreviewBlockAnchor \| null\)/)
   assert.match(previewComponentSource, /this\.bridge\.onBlockAnchorChange\(mapPreviewBlockAnchor\(/)
   assert.doesNotMatch(previewComponentSource, /this\.onBlockAnchorChange\(/)
+})
+
+test('generated preview rawfile contains the tap action API', () => {
+  assert.match(generatedPreview, /isLockedTapActivation/)
+  assert.match(generatedPreview, /activateLockedContent/)
 })
 
 test('workspace keeps left and right preview block anchors independent', () => {

@@ -31,7 +31,7 @@ declare global {
       onEditableContentChange?: (contentB64: string) => void
       onEditableContent?: (id: number, contentB64: string) => void
       onCompositionChange?: (state: string) => void
-      onLockedContentTap?: () => void
+      onLockedContentTap?: (payload: string) => void
       onLockedBlockSelection?: (payload: string) => void
       onPreviewZoomChange?: (percent: number) => void
     }
@@ -41,6 +41,8 @@ declare global {
 /** 给 ArkTS 侧看的 API 面（setContent/setNoteDir 走 base64，避免引号/换行转义地狱） */
 interface MdPreviewApi {
   setContent(b64: string, sourceB64?: string, sourceMapB64?: string): void
+  isEditable(): boolean
+  isLockedTapActivation(): boolean
   setEditable(editable: boolean): void
   applyFormat(kind: string): void
   insertText(b64: string): void
@@ -51,6 +53,8 @@ interface MdPreviewApi {
   setPreviewZoomControlsVisible(visible: boolean): void
   resetDocument(): void
   closeImageViewer(): void
+  focusLockedBlock(from: number, to: number): void
+  activateLockedContent(from: number, to: number): void
   scrollToHeading(index: number): void
   scrollToSourceLine(line: number, lineProgress: number, viewportRatio: number, atStart: boolean, atEnd: boolean): void
   cancelSourceFollow(): void
@@ -88,6 +92,8 @@ let editableChangeTimer: number | undefined
 let editableComposing = false
 let savedEditableSelection: Range | null = null
 let activeToolbarBlock: HTMLElement | null = null
+let lastLockedTapTarget: HTMLElement | null = null
+let replayingLockedTap = false
 let mermaidRender: Promise<void> = Promise.resolve()
 let mermaidRenderGeneration = 0
 
@@ -116,11 +122,14 @@ function localizeImages(root: HTMLElement): void {
           img.tabIndex = 0
           img.setAttribute('role', 'button')
           img.setAttribute('title', '点击查看完整图片')
-          img.addEventListener('click', () => openImage(img))
+          img.addEventListener('click', () => {
+            if (!editable) openImage(img)
+          })
           img.addEventListener('keydown', (event: KeyboardEvent) => {
             if (event.key === 'Enter' || event.key === ' ') {
               event.preventDefault()
-              openImage(img)
+              if (editable) img.click()
+              else openImage(img)
             }
           })
         } else {
@@ -178,6 +187,7 @@ function closeImageViewer(): void {
 function resetPreviewDocument(): void {
   cancelSourceFollow()
   closeImageViewer()
+  lastLockedTapTarget = null
   const content = document.getElementById('content') as HTMLElement
   workspaceScrollRestoreGeneration++
   workspaceScrollRestorePending = false
@@ -652,13 +662,58 @@ function setActiveLockedBlocks(root: HTMLElement, selected: HTMLElement[]): void
   }
 }
 
-function publishLockedBlockAnchor(block: HTMLElement | null): void {
+function publishLockedBlockAnchor(block: HTMLElement | null): string {
   activeToolbarBlock = block
   const rect = block?.getBoundingClientRect()
   const anchor = rect ? lockedBlockAnchor(block, rect, window.innerWidth, window.innerHeight) : null
+  const payload = anchor ? JSON.stringify(anchor) : ''
   const arkts = window.__arkts
   if (arkts && typeof arkts.onLockedBlockSelection === 'function') {
-    arkts.onLockedBlockSelection(anchor ? JSON.stringify(anchor) : '')
+    arkts.onLockedBlockSelection(payload)
+  }
+  return payload
+}
+
+function focusLockedBlock(from: number, to: number): void {
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) return
+  const blocks = contentElement.querySelectorAll('.preview-source-block, .empty[data-source-from]')
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index] as HTMLElement
+    if (Number(block.dataset.sourceFrom) !== from || Number(block.dataset.sourceTo) !== to) continue
+    block.setAttribute('tabindex', '-1')
+    block.focus({ preventScroll: true })
+    if (savedEditableSelection && block.contains(savedEditableSelection.commonAncestorContainer)) {
+      const selection = window.getSelection()
+      if (selection) {
+        selection.removeAllRanges()
+        selection.addRange(savedEditableSelection)
+      }
+    }
+    return
+  }
+}
+
+function activateLockedContent(from: number, to: number): void {
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) return
+  const blocks = contentElement.querySelectorAll('.preview-source-block, .empty[data-source-from]')
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index] as HTMLElement
+    if (Number(block.dataset.sourceFrom) !== from || Number(block.dataset.sourceTo) !== to) continue
+    const target = lastLockedTapTarget && block.contains(lastLockedTapTarget)
+      ? lastLockedTapTarget
+      : block.querySelector('a, img') as HTMLElement | null
+    if (!target) return
+    if (target.tagName === 'IMG') {
+      openImage(target as HTMLImageElement)
+      return
+    }
+    replayingLockedTap = true
+    try {
+      target.click()
+    } finally {
+      replayingLockedTap = false
+    }
+    return
   }
 }
 
@@ -799,15 +854,36 @@ document.addEventListener('selectionchange', (): void => {
 
 contentElement.addEventListener('click', (event: MouseEvent): void => {
   if (!editable || !(event.target instanceof HTMLElement)) return
+  if (replayingLockedTap) return
   const lockedBlock = event.target.closest(
     '.preview-source-block[data-edit-locked="true"]'
   ) as HTMLElement | null
   setActiveLockedBlocks(contentElement, lockedBlock ? [lockedBlock] : [])
-  publishLockedBlockAnchor(lockedBlock)
-  if (event.target.closest('a, input, img, button')) return
+  const payload = publishLockedBlockAnchor(lockedBlock)
+  lastLockedTapTarget = null
+  if (event.target.closest('input, button')) return
+  const tapTarget = event.target.closest('a, img') as HTMLElement | null
+  let tapPayload = payload
+  if (tapTarget && lockedBlock) {
+    lastLockedTapTarget = tapTarget
+    if (payload.length > 0) {
+      const anchor = JSON.parse(payload) as Record<string, string | number>
+      if (tapTarget.tagName === 'IMG') {
+        anchor.tapType = 'image'
+      } else {
+        const href = (tapTarget as HTMLAnchorElement).getAttribute('href') ?? ''
+        anchor.tapType = href.indexOf('#wikilink:') === 0 ? 'wikilink' : 'link'
+      }
+      tapPayload = JSON.stringify(anchor)
+    }
+  }
+  if (tapTarget) {
+    event.preventDefault()
+    event.stopPropagation()
+  }
   const arkts = window.__arkts
   if (lockedBlock && arkts && typeof arkts.onLockedContentTap === 'function') {
-    arkts.onLockedContentTap()
+    arkts.onLockedContentTap(tapPayload)
   }
 })
 contentElement.addEventListener('scroll', (): void => {
@@ -846,8 +922,17 @@ async function renderMermaidBlocks(root: HTMLElement, generation: number): Promi
 marked.setOptions({ gfm: true, breaks: false })
 
 const api: MdPreviewApi = {
+  isEditable(): boolean {
+    return editable
+  },
+
+  isLockedTapActivation(): boolean {
+    return replayingLockedTap
+  },
+
   setContent(b64: string, sourceB64?: string, sourceMapB64?: string): void {
     const text = b64decode(b64)
+    lastLockedTapTarget = null
     sourceText = sourceB64 === undefined ? text : b64decode(sourceB64)
     try {
       sourceEdits = sourceMapB64 === undefined ? [] : JSON.parse(b64decode(sourceMapB64))
@@ -910,6 +995,7 @@ const api: MdPreviewApi = {
 
   setEditable(value: boolean): void {
     editable = value
+    if (!editable) lastLockedTapTarget = null
     const split = splitFrontmatter(sourceText)
     const bodyOffset = sourceText.length - split.body.length
     configureEditableBlocks(contentElement, bodyOffset)
@@ -1034,6 +1120,14 @@ const api: MdPreviewApi = {
 
   closeImageViewer(): void {
     closeImageViewer()
+  },
+
+  focusLockedBlock(from: number, to: number): void {
+    focusLockedBlock(from, to)
+  },
+
+  activateLockedContent(from: number, to: number): void {
+    activateLockedContent(from, to)
   },
 
   scrollToHeading(index: number): void {

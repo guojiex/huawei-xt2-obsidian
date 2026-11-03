@@ -28,6 +28,7 @@ export interface PreviewCaptureResult {
 
 export interface PreviewBlockAnchor {
   type: string;
+  tapType: string;
   from: number;
   to: number;
   x: number;
@@ -47,6 +48,9 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
     return null;
   }
   const type: string = source['type'] as string;
+  const rawTapType: string = typeof source['tapType'] === 'string' ? source['tapType'] as string : '';
+  const tapType: string = rawTapType === 'image' || rawTapType === 'link' || rawTapType === 'wikilink'
+    ? rawTapType : '';
   const from: number = source['from'] as number;
   const to: number = source['to'] as number;
   const left: number = source['left'] as number;
@@ -65,6 +69,7 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
   const scaleY: number = area[3] / viewportHeight;
   return {
     type: type,
+    tapType: tapType,
     from: from,
     to: to,
     x: area[0] + left * scaleX,
@@ -108,7 +113,7 @@ class PreviewNativeProxy {
   editableContentHandler: (contentB64: string) => void = (_contentB64: string) => {};
   editableContentRequestHandler: (id: number, contentB64: string) => void = (_id: number, _contentB64: string) => {};
   compositionHandler: (state: string) => void = (_state: string) => {};
-  lockedContentTapHandler: () => void = () => {};
+  lockedContentTapHandler: (payload: string) => void = (_payload: string) => {};
   lockedBlockSelectionHandler: (payload: string) => void = (_payload: string) => {};
   previewZoomChangeHandler: (percent: number) => void = (_percent: number) => {};
 
@@ -144,8 +149,8 @@ class PreviewNativeProxy {
     this.compositionHandler(state);
   }
 
-  onLockedContentTap(): void {
-    this.lockedContentTapHandler();
+  onLockedContentTap(payload: string): void {
+    this.lockedContentTapHandler(payload);
   }
 
   onLockedBlockSelection(payload: string): void {
@@ -237,6 +242,20 @@ class PreviewImpl {
     this.enqueue('window.__mdpreview.closeImageViewer()');
   }
 
+  focusBlock(from: number, to: number): void {
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) {
+      return;
+    }
+    this.enqueue(`window.__mdpreview.focusLockedBlock(${from},${to})`);
+  }
+
+  activateLockedContent(from: number, to: number): void {
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) {
+      return;
+    }
+    this.enqueue(`window.__mdpreview.activateLockedContent(${from},${to})`);
+  }
+
   scrollToHeading(index: number): void {
     this.enqueue(`window.__mdpreview.scrollToHeading(${Math.max(0, Math.floor(index))})`);
   }
@@ -272,7 +291,10 @@ class PreviewImpl {
   watchWikiLinks(): void {
     this.enqueue(`document.addEventListener('click',function(event){var node=event.target;
       while(node&&node!==document){if(node.nodeType===1&&node.classList&&node.classList.contains('wiki-link')){
-      var href=node.getAttribute('href')||'';if(href.indexOf('#wikilink:')===0){event.preventDefault();
+      var href=node.getAttribute('href')||'';if(href.indexOf('#wikilink:')===0){
+      if(window.__mdpreview&&window.__mdpreview.isEditable()&&
+      !(typeof window.__mdpreview.isLockedTapActivation==='function'&&
+      window.__mdpreview.isLockedTapActivation()))return;event.preventDefault();
       var api=window.__arkts;if(api&&typeof api.onWikiLinkClick==='function'){
       api.onWikiLinkClick(href.substring(10));}}return;}node=node.parentElement;}} ,true)`);
   }
@@ -314,6 +336,7 @@ export class PreviewBridge {
   onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
   onLockedContentTap: () => void = () => {};
   onBlockAnchorChange: (anchor: PreviewBlockAnchor | null) => void = (_anchor: PreviewBlockAnchor | null) => {};
+  onContentReplacing: () => void = () => {};
 
   bind(impl: PreviewImpl): void {
     this.impl = impl;
@@ -369,6 +392,9 @@ export class PreviewBridge {
   }
 
   setContent(text: string, sourceText: string = text, sourceEdits: WikiLinkPreviewEdit[] = []): void {
+    if (this.hasContent && (this.content !== text || this.sourceContent !== sourceText)) {
+      this.onContentReplacing();
+    }
     this.content = text;
     this.sourceContent = sourceText;
     this.sourceEdits = sourceEdits;
@@ -465,6 +491,14 @@ export class PreviewBridge {
     }
     this.impl?.closeImageViewer();
     return true;
+  }
+
+  focusBlock(from: number, to: number): void {
+    this.impl?.focusBlock(from, to);
+  }
+
+  activateLockedContent(from: number, to: number): void {
+    this.impl?.activateLockedContent(from, to);
   }
 
   scrollToHeading(index: number): void {
@@ -596,7 +630,8 @@ export struct PreviewWebView {
   onReady: () => void = () => {};
   onEditableContentChange: (content: string) => void = (_content: string) => {};
   onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
-  onLockedContentTap: () => void = () => {};
+  onLockedContentTap: (anchor: PreviewBlockAnchor | null) => void =
+    (_anchor: PreviewBlockAnchor | null) => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
   componentId: string = 'note-preview-web';
   /** 父级通过这个句柄下发渲染内容 / 笔记目录 / 主题 */
@@ -638,8 +673,8 @@ export struct PreviewWebView {
     this.proxy.previewZoomChangeHandler = (percent: number): void => {
       this.bridge.rememberPreviewZoomPercent(percent);
     };
-    this.proxy.lockedContentTapHandler = (): void => {
-      this.onLockedContentTap();
+    this.proxy.lockedContentTapHandler = (payload: string): void => {
+      this.onLockedContentTap(mapPreviewBlockAnchor(payload, this.webAreaVp));
     };
     this.proxy.lockedBlockSelectionHandler = (payload: string): void => {
       this.latestBlockAnchorPayload = payload;

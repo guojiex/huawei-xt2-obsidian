@@ -89,5 +89,8 @@ test('the rendered toolbar is bounded to four registered actions and remains sep
   const toggle = source.slice(toggleStart, toggleEnd)
   assert.match(builder, /ForEach\(this\.blockToolbarActions\.slice\(0,\s*4\)/)
   assert.match(eligibility, /this\.blockToolbarActions\.length > 0/)
+  assert.match(builder, /if \(this\.blockToolbarActions\.length > 0\)/)
+  assert.match(builder, /this\.openBlockPropertyPanel\(this\.blockToolbarPane\)/)
+  assert.match(builder, /this\.closeBlockToolbar\(true\)/)
   assert.match(toggle, /this\.blockToolbarOpen = false;/)
 })
