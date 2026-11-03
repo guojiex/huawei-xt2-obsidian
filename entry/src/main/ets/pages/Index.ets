@@ -279,6 +279,8 @@ struct Index {
   private rightPreviewScrollTop: number = 0;
   private navigationDragStart: number = 0;
   private contentDragStart: number = 0;
+  private navigationRatioAtDragStart: number = -1;
+  private contentRatioAtDragStart: number = DEFAULT_CONTENT_RATIO;
   /**
    * 当前打开文件的**库内相对路径**（如 `docs/架构.md`）。
    *
@@ -1371,27 +1373,63 @@ struct Index {
   private startNavigationDrag(agent: boolean): void {
     this.splitDragging = true;
     this.navigationDragStart = agent ? this.agentNavigationWidth() : this.noteNavigationWidth();
+    if (!agent) {
+      this.navigationRatioAtDragStart = this.navigationRatio;
+    }
   }
 
-  private updateNavigationDrag(offsetX: number, agent: boolean): void {
+  private updateNavigationDrag(offsetX: number, agent: boolean, altPressed: boolean = false): void {
     if (this.windowWidthVp <= 0 || (!agent && this.sidebarCollapsed)) {
       return;
     }
     const panes: number = !agent && this.breakpoint === Breakpoint.LG ? 2 : 1;
     const splitters: number = !agent && this.breakpoint === Breakpoint.LG ? 2 : 1;
-    const width: number = clampNavigationWidth(
-      this.navigationDragStart + offsetX, this.windowWidthVp, panes, splitters);
+    let candidate: number = this.navigationDragStart + offsetX;
+    if (!agent && !altPressed) {
+      const defaultRatio: number = this.breakpoint === Breakpoint.MD ? 0.38 : DEFAULT_NAV_RATIO;
+      const defaultWidth: number = navigationWidth(this.windowWidthVp, defaultRatio, panes, 0);
+      const minimum: number = clampNavigationWidth(0, this.windowWidthVp, panes, splitters);
+      const maximum: number = clampNavigationWidth(
+        this.windowWidthVp, this.windowWidthVp, panes, splitters);
+      if (defaultWidth >= minimum && defaultWidth <= maximum &&
+        Math.abs(candidate - defaultWidth) <= 10) {
+        candidate = defaultWidth;
+      }
+    }
+    const width: number = clampNavigationWidth(candidate, this.windowWidthVp, panes, splitters);
     this.navigationRatio = width / this.windowWidthVp;
   }
 
   private startContentDrag(): void {
     const width: number = this.noteContentWidth();
+    this.splitDragging = true;
+    this.contentRatioAtDragStart = this.contentRatio;
     this.contentDragStart = Math.max(0, width) * this.noteContentRatio();
   }
 
-  private updateContentDrag(offsetX: number): void {
+  private updateContentDrag(offsetX: number, altPressed: boolean = false): void {
     const width: number = this.noteContentWidth();
-    this.contentRatio = clampContentRatio((this.contentDragStart + offsetX) / Math.max(1, width), width);
+    if (width <= 0) {
+      return;
+    }
+    let candidate: number = clampContentRatio((this.contentDragStart + offsetX) / width, width);
+    const defaultWidth: number = width * DEFAULT_CONTENT_RATIO;
+    const candidateWidth: number = width * candidate;
+    if (!altPressed && width >= Size.paneMinW * 2 &&
+      Math.abs(candidateWidth - defaultWidth) <= 10) {
+      candidate = DEFAULT_CONTENT_RATIO;
+    }
+    this.contentRatio = candidate;
+  }
+
+  private cancelNavigationDrag(): void {
+    this.navigationRatio = this.navigationRatioAtDragStart;
+    this.splitDragging = false;
+  }
+
+  private cancelContentDrag(): void {
+    this.contentRatio = this.contentRatioAtDragStart;
+    this.splitDragging = false;
   }
 
   private endSplitDrag(): void {
@@ -6009,8 +6047,11 @@ struct Index {
             readoutWidths: this.splitHandleWidths('nav'),
             readoutStatus: this.splitHandleStatus('nav'),
             dragStarted: (): void => { this.startNavigationDrag(false); },
-            dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
+            dragUpdated: (offsetX: number, altPressed: boolean): void => {
+              this.updateNavigationDrag(offsetX, false, altPressed);
+            },
             dragEnded: (): void => { this.endSplitDrag(); },
+            dragCancelled: (): void => { this.cancelNavigationDrag(); },
             resetRequested: (): void => { this.resetSplitLayout(); }
           })
             .width(Space.s4 * this.noteNavigationProgress())
@@ -6056,9 +6097,12 @@ struct Index {
         readoutPrimary: this.splitHandlePrimary('content'),
         readoutWidths: this.splitHandleWidths('content'),
         readoutStatus: this.splitHandleStatus('content'),
-        dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
-        dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
+        dragStarted: (): void => { this.startContentDrag(); },
+        dragUpdated: (offsetX: number, altPressed: boolean): void => {
+          this.updateContentDrag(offsetX, altPressed);
+        },
         dragEnded: (): void => { this.endSplitDrag(); },
+        dragCancelled: (): void => { this.cancelContentDrag(); },
         resetRequested: (): void => { this.resetSplitLayout(); }
       })
         .width(this.contentHandleVisible() ? Space.s4 : 0)

@@ -1374,6 +1374,8 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 本机 API 24 SDK 的 `ets/component/gesture.d.ts` 声明 `PanGesture`、`onActionStart` / `onActionUpdate` / `onActionEnd` 与 `GestureEvent.offsetX` 均 since 7；`offsetX` 单位为 vp，且相对手指按下位置，可用于分隔条拖动。
 - v1.22 补充核对：`ets/component/common.d.ts` 的 `responseRegion(Rectangle)` since 8、`mouseResponseRegion(Rectangle)` since 10，可扩展触摸 / 鼠标命中区域而不改变组件布局尺寸；`onHover`、`focusable`、`onFocus` / `onBlur` 均 since 8，`tabStop` since 14。上述声明均不高于工程 API 24 上限；不证明目标设备实际命中或焦点表现。
 - v1.22 提示浮层补充：`common.d.ts` 的 `offset(Position)`、`zIndex(number)` 均 since 7；`hitTestBehavior(HitTestMode)` 及 `HitTestMode.None` 均 since 9。用于把纯反馈浮层放在分隔条上方且不截获底层交互，声明版本均不高于 API 24。
+- v1.22 拖动补充：`GestureEvent` 继承 `BaseEvent`，`getModifierKeyState(['Alt'])` 在 `common.d.ts` since 12，声明支持 Alt；可让鼠标拖动暂时停用默认比例吸附。该方法不支持触控笔输入，实际设备修饰键路由仍待验。
+- v1.22 键盘补充：`common.d.ts` 的 `onKeyEvent(KeyEvent => boolean)` since 15；`keyCode.d.ts` 的 `KEYCODE_ESCAPE`、DPAD 左 / 右、`KEYCODE_MOVE_HOME` / `KEYCODE_MOVE_END` 与 `KEYCODE_ENTER` 均 since 9；`KeyEvent.getModifierKeyState(['Shift'])` since 12。均不高于 API 24；焦点与按键路由仍待设备验收。
 - 原生通过现有 `windowSizeChange` 的宽高 vp 判断紧凑横向窗口：宽度落入 md 范围、窗口高度低于 md 下限且宽大于高。此判断只使用窗口几何，不读 `foldStatus`，也不复用原型预设值；它是项目布局规则，不是系统提供的物理屏幕类型。
 - 该几何规则及手势仅经 API 24 声明和本机构建核实；真实 XT2 的横向窗口读数、触控手感与旋转继承仍待设备验证。宽度小于所有栏最小值总和时无法同时满足 240vp，此时仅作窄窗口退让，设备目标尺寸不应进入该分支。
 

@@ -48,3 +48,20 @@ test('split readout reports ratios, pane widths, and boundary causes', () => {
   assert.match(index, /MIN_NAV_RATIO/);
   assert.match(index, /MAX_NAV_RATIO/);
 });
+
+test('note split dragging snaps near defaults, honors Alt, and restores cancelled widths', () => {
+  assert.match(splitHandle, /getModifierKeyState\(\['Alt'\]\)/);
+  assert.match(index, /Math\.abs\(candidate - defaultWidth\) <= 10/);
+  assert.match(index, /Math\.abs\(candidateWidth - defaultWidth\) <= 10/);
+  assert.match(index, /navigationRatioAtDragStart/);
+  assert.match(index, /contentRatioAtDragStart/);
+  assert.match(index, /dragCancelled: \(\): void => \{ this\.cancelNavigationDrag\(\); \}/);
+  assert.match(index, /dragCancelled: \(\): void => \{ this\.cancelContentDrag\(\); \}/);
+});
+
+test('Escape cancels a live drag and touch reset uses two short clicks', () => {
+  assert.match(splitHandle, /event\.keyCode !== KeyCode\.KEYCODE_ESCAPE/);
+  assert.match(splitHandle, /this\.dragCancelled\(\)/);
+  assert.match(splitHandle, /now - this\.lastTapAt <= 320/);
+  assert.doesNotMatch(splitHandle, /onDoubleClick/);
+});

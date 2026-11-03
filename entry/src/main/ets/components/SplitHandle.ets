@@ -1,11 +1,14 @@
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 @Component
 export struct SplitHandle {
   @Prop enhanced: boolean = false;
   dragStarted: () => void = () => {};
-  dragUpdated: (offsetX: number) => void = (offsetX: number) => {};
+  dragUpdated: (offsetX: number, altPressed: boolean) => void =
+    (offsetX: number, altPressed: boolean) => {};
   dragEnded: () => void = () => {};
+  dragCancelled: () => void = () => {};
   resetRequested: () => void = () => {};
   @Prop readoutPrimary: string = '';
   @Prop readoutWidths: string = '';
@@ -124,6 +127,7 @@ export struct SplitHandle {
       PanGesture({ fingers: 1, direction: PanDirection.Horizontal })
         .onActionStart((): void => {
           this.dragging = true;
+          this.lastTapAt = -1;
           this.feedbackMessage = '';
           if (this.feedbackTimer >= 0) {
             clearTimeout(this.feedbackTimer);
@@ -131,21 +135,47 @@ export struct SplitHandle {
           }
           this.dragStarted();
         })
-        .onActionUpdate((event: GestureEvent): void => { this.dragUpdated(event.offsetX); })
+        .onActionUpdate((event: GestureEvent): void => {
+          let altPressed: boolean = false;
+          if (event.getModifierKeyState !== undefined) {
+            altPressed = event.getModifierKeyState(['Alt']);
+          }
+          this.dragUpdated(event.offsetX, altPressed);
+        })
         .onActionEnd((): void => {
+          if (!this.dragging) {
+            return;
+          }
           this.dragging = false;
           this.dragEnded();
           this.showFeedback('栏宽已保存');
         })
         .onActionCancel((): void => {
+          if (!this.dragging) {
+            return;
+          }
           this.dragging = false;
-          this.dragEnded();
-          this.showFeedback('栏宽已保存');
+          if (this.enhanced) {
+            this.dragCancelled();
+            this.showFeedback('已取消调整');
+          } else {
+            this.dragEnded();
+          }
         })
     )
+    .onKeyEvent((event: KeyEvent): boolean => {
+      if (!this.enhanced || !this.dragging || event.type !== KeyType.Down ||
+        event.keyCode !== KeyCode.KEYCODE_ESCAPE) {
+        return false;
+      }
+      this.dragging = false;
+      this.dragCancelled();
+      this.showFeedback('已取消调整');
+      return true;
+    })
     .onClick(() => {
       const now: number = Date.now();
-      if (this.lastTapAt >= 0 && now - this.lastTapAt <= 350) {
+      if (this.lastTapAt >= 0 && now - this.lastTapAt <= 320) {
         this.lastTapAt = -1;
         this.resetRequested();
         this.showFeedback('已恢复默认比例');
