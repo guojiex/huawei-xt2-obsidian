@@ -78,6 +78,12 @@ export class Size {
   static readonly contentMaxW: number = 760;
   /** 分栏把手胶囊高度：映射 v2 `--split-height`（宽度用 `Space.s1`，命中区用 `Space.s4` = `--split-hit`） */
   static readonly splitHandleH: number = 40;
+  static readonly splitGripW: number = 12;
+  static readonly splitGripH: number = 56;
+  static readonly splitGripDot: number = 3;
+  static readonly splitTouchHitW: number = 36;
+  static readonly splitMouseHitW: number = 24;
+  static readonly splitRailW: number = 2;
   /**
    * 左滑三档（1.6）：操作条完全滑出后**再滑这么多**进入删除区（原型 DEL_EXTRA = 36）。
    * 配合 ListItem.swipeAction 的 actionAreaDistance；越过即触发 onAction（文件 → 移入回收站）。

@@ -5935,6 +5935,7 @@ struct Index {
           .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           SplitHandle({
+            enhanced: true,
             dragStarted: (): void => { this.startNavigationDrag(false); },
             dragUpdated: (offsetX: number): void => { this.updateNavigationDrag(offsetX, false); },
             dragEnded: (): void => { this.endSplitDrag(); },
@@ -5979,6 +5980,7 @@ struct Index {
       .visibility(this.notePaneVisible('left') ? Visibility.Visible : Visibility.Hidden)
 
       SplitHandle({
+        enhanced: true,
         dragStarted: (): void => { this.startContentDrag(); this.splitDragging = true; },
         dragUpdated: (offsetX: number): void => { this.updateContentDrag(offsetX); },
         dragEnded: (): void => { this.endSplitDrag(); },
