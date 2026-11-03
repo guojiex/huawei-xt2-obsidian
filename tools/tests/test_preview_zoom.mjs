@@ -14,6 +14,7 @@ const previewBridgeSource = fs.readFileSync(new URL('entry/src/main/ets/componen
 const indexSource = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', repoRoot), 'utf8')
 const buildSource = fs.readFileSync(new URL('web/mdpreview/build.mjs', repoRoot), 'utf8')
 const generatedPreview = fs.readFileSync(new URL('entry/src/main/resources/rawfile/mdpreview/index.html', repoRoot), 'utf8')
+const prototypeSource = fs.readFileSync(new URL('docs/prototype/v2/index.html', repoRoot), 'utf8')
 
 const require = createRequire(new URL('web/mdpreview/package.json', repoRoot))
 const { transformSync } = require('esbuild')
@@ -37,6 +38,22 @@ test('preview zoom scales only the rendered body and keeps reset hidden at 100%'
   }
   assert.match(previewSource, /previewZoomReset\.hidden = percent === 100/)
   assert.match(previewSource, /invalidateSourceGeometry\(\)/)
+})
+
+test('zoom controls occupy a separate row outside the scrollable note body', () => {
+  assert.match(buildSource, /body\s*\{\s*display: flex; flex-direction: column; overflow: hidden;\s*\}/)
+  assert.match(buildSource, /#content\s*\{\s*flex: 1 1 auto; min-height: 0; overflow-y: auto;/)
+  assert.match(buildSource, /\.preview-zoom\s*\{\s*position: static; align-self: flex-end; flex: none;/)
+  assert.match(generatedPreview, /\.preview-zoom\s*\{\s*position: static; align-self: flex-end; flex: none;/)
+})
+
+test('v2 design keeps zoom controls outside the body scrollers and visible in simple mode', () => {
+  assert.match(prototypeSource, /\.writing\{flex:1;min-width:0;display:flex;flex-direction:column;position:relative\}/)
+  assert.match(prototypeSource, /\.scroll\{overflow:auto;flex:1;min-height:0;/)
+  assert.match(prototypeSource, /\.preview-zoom\{position:static;align-self:flex-end;flex:none;/)
+  assert.match(prototypeSource, /id="writingScroll">[\s\S]*?<\/div><div class="preview-zoom" id="leftZoomControls"/)
+  assert.match(prototypeSource, /id="rightScroll">[\s\S]*?<\/div><div class="preview-zoom" id="rightZoomControls"/)
+  assert.doesNotMatch(prototypeSource, /\.window\.simple-mode #leftZoomControls/)
 })
 
 test('zoom controls fade during scrolling, remain visible while focused, and can be hidden in edit mode', () => {

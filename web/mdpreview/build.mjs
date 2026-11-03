@@ -76,8 +76,9 @@ const html = `<!doctype html>
     --callout-red-bg: rgba(207, 64, 72, .18);
   }
   html, body { margin: 0; padding: 0; height: 100%; background: var(--paper); }
+  body { display: flex; flex-direction: column; overflow: hidden; }
   #content {
-    height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
     box-sizing: border-box; padding: var(--s6) var(--s10) var(--s16);
     font-size: var(--body); line-height: var(--leading); color: var(--ink);
     font-family: var(--font);
@@ -90,7 +91,7 @@ const html = `<!doctype html>
   }
   .preview-source-block { display: contents; }
   .preview-zoom {
-    position: fixed; right: var(--s4); bottom: var(--s4); z-index: 5;
+    position: static; align-self: flex-end; flex: none; margin: 0 var(--s4) var(--s2);
     display: flex; align-items: center; gap: var(--s1); padding: var(--s1);
     background: var(--float); border: var(--stroke) solid var(--line);
     border-radius: var(--pill); box-shadow: var(--float-shadow);
