@@ -167,7 +167,7 @@ test('no-note empty state offers create and search actions',()=>{
  assert(f.get('count').textContent.includes('字 · 本地样例'));
 });
 test('closing one pane preserves the other and empty pane survives a URL round trip',()=>{
- const f=fixture();const left=f.run('current');f.run("closePaneNote('right')");assert.equal(f.run('current'),left);assert.equal(f.run('reference'),'');assert(!f.get('rightEmpty').classList.contains('hidden'));f.run('syncUrl()');const g=fixture(f.href());assert.equal(g.run('reference'),'');assert.equal(g.run('current'),left);
+ const f=fixture();const left=f.run('current');f.run("closePaneNote('right')");assert.equal(f.run('current'),left);assert.equal(f.run('reference'),'');assert.equal(f.run('referenceEnabled'),true);assert(!f.get('rightEmpty').classList.contains('hidden'));assert(f.get('rightEmpty').innerHTML.includes('重新打开'));assert(f.get('rightEmptyNewNote').focused);f.run('syncUrl()');const g=fixture(f.href());assert.equal(g.run('reference'),'');assert.equal(g.run('current'),left);g.run("closePaneNote('left')");assert.equal(g.run('current'),'');assert.equal(g.run('reference'),'');assert.equal(g.run('referenceEnabled'),true);assert(!g.get('leftEmpty').classList.contains('hidden'));assert(g.get('emptyNewNote').focused);
 });
 test('quick search aggregates filename and content matches without mode tabs',()=>{
  assert(!html.includes('quickNameMode')&&!html.includes('quickContentMode')&&!html.includes('search-mode'));
