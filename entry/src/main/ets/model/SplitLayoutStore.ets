@@ -18,7 +18,7 @@ export class SplitLayoutStore {
       this.store = preferences.getPreferencesSync(context, { name: SplitLayoutStore.PREF_NAME });
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('初始化分栏设置失败: ' + JSON.stringify(err));
+      console.warn('初始化分栏设置失败 code=' + err.code);
     }
   }
 
@@ -53,7 +53,7 @@ export class SplitLayoutStore {
       this.store.flushSync();
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('保存分栏设置失败: ' + JSON.stringify(err));
+      console.warn('保存分栏设置失败 code=' + err.code);
     }
   }
 
@@ -66,7 +66,7 @@ export class SplitLayoutStore {
       this.store.flushSync();
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('重置分栏设置失败: ' + JSON.stringify(err));
+      console.warn('重置分栏设置失败 code=' + err.code);
     }
   }
 }

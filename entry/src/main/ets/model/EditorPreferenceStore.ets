@@ -14,7 +14,7 @@ export class EditorPreferenceStore {
       this.store = preferences.getPreferencesSync(context, { name: EditorPreferenceStore.PREF_NAME });
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('初始化编辑器设置失败: ' + JSON.stringify(err));
+      console.warn('初始化编辑器设置失败 code=' + err.code);
     }
   }
 
@@ -26,7 +26,7 @@ export class EditorPreferenceStore {
       return (this.store.getSync(EditorPreferenceStore.SHOW_LINE_NUMBERS_KEY, 'false') as string) === 'true';
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('读取编辑器设置失败: ' + JSON.stringify(err));
+      console.warn('读取编辑器设置失败 code=' + err.code);
       return false;
     }
   }
@@ -40,7 +40,7 @@ export class EditorPreferenceStore {
       this.store.flushSync();
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('保存编辑器设置失败: ' + JSON.stringify(err));
+      console.warn('保存编辑器设置失败 code=' + err.code);
     }
   }
 
@@ -52,7 +52,7 @@ export class EditorPreferenceStore {
       return (this.store.getSync(EditorPreferenceStore.FOLLOW_PREVIEW_KEY, 'true') as string) === 'true';
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('读取编辑与预览跟随设置失败: ' + JSON.stringify(err));
+      console.warn('读取编辑与预览跟随设置失败 code=' + err.code);
       return true;
     }
   }
@@ -66,7 +66,7 @@ export class EditorPreferenceStore {
       this.store.flushSync();
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('保存编辑与预览跟随设置失败: ' + JSON.stringify(err));
+      console.warn('保存编辑与预览跟随设置失败 code=' + err.code);
     }
   }
 }

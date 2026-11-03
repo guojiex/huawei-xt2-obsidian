@@ -162,7 +162,7 @@ export class ExpandStore {
       this.store = preferences.getPreferencesSync(context, { name: ExpandStore.PREF_NAME });
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, 'expand 状态库打开失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, 'expand 状态库打开失败 code=%{public}d', err.code);
       this.store = null;
     }
   }
@@ -189,7 +189,7 @@ export class ExpandStore {
       this.store.flush();
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, 'expand 状态写入失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, 'expand 状态写入失败 code=%{public}d', err.code);
     }
   }
 }

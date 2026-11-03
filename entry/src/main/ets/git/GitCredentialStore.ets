@@ -70,7 +70,7 @@ export class GitCredentialStore {
       if (err.code === 24000002) {
         return;
       }
-      hilog.warn(CRED_DOMAIN, CRED_TAG, '删除令牌失败 vault=%{public}s code=%{public}d', vaultId, err.code);
+      hilog.warn(CRED_DOMAIN, CRED_TAG, '删除令牌失败 code=%{public}d', err.code);
     }
   }
 

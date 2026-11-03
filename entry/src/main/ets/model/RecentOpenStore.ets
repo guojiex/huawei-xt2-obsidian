@@ -20,7 +20,7 @@ export class RecentOpenStore {
       this.store = preferences.getPreferencesSync(context, { name: RecentOpenStore.PREF_NAME });
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(RECENT_DOMAIN, RECENT_TAG, '最近打开存储初始化失败: %{public}s', JSON.stringify(err));
+      hilog.error(RECENT_DOMAIN, RECENT_TAG, '最近打开存储初始化失败 code=%{public}d', err.code);
     }
   }
 
@@ -106,7 +106,7 @@ export class RecentOpenStore {
       this.store.flush();
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(RECENT_DOMAIN, RECENT_TAG, '最近打开写入失败: %{public}s', JSON.stringify(err));
+      hilog.error(RECENT_DOMAIN, RECENT_TAG, '最近打开写入失败 code=%{public}d', err.code);
     }
   }
 

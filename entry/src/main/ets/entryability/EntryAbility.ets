@@ -100,14 +100,14 @@ export default class EntryAbility extends UIAbility {
       appContext.setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, '设置跟随系统主题失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, '设置跟随系统主题失败 code=%{public}d', err.code);
     }
     try {
       appContext.onSystemConfigurationUpdated(this.colorModeObserver);
       this.colorModeObserverRegistered = true;
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, '系统主题监听注册失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, '系统主题监听注册失败 code=%{public}d', err.code);
     }
     this.publishAppTheme(this.context.config?.colorMode);
 
@@ -124,19 +124,19 @@ export default class EntryAbility extends UIAbility {
       this.publishKeyboardInset(this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_KEYBOARD));
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, '断点监听注册失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, '断点监听注册失败 code=%{public}d', err.code);
     }
 
     // ===== 折痕 / FoldStatus 数据采集日志点（T014，TODO(真机校准)）=====
     this.registerFoldCalibrationLogging();
 
-    void SampleVaultInstaller.install(registry).catch((error: Error): void => {
-      hilog.error(DOMAIN, TAG, '样例库预置失败，保留已写入内容，不自动重试: %{public}s', error.message);
+    void SampleVaultInstaller.install(registry).catch((_error: Error): void => {
+      hilog.error(DOMAIN, TAG, '样例库预置失败，保留已写入内容，不自动重试');
     }).then(async (): Promise<void> => {
       await this.restoreExternalVaultPermissions();
       windowStage.loadContent(this.resolveInitialPage(), (err) => {
         if (err.code) {
-          hilog.error(DOMAIN, TAG, 'Failed to load the content. Cause: %{public}s', JSON.stringify(err));
+          hilog.error(DOMAIN, TAG, 'Failed to load the content. code=%{public}d', err.code);
           return;
         }
         hilog.info(DOMAIN, TAG, 'Succeeded in loading the content.');
@@ -156,14 +156,14 @@ export default class EntryAbility extends UIAbility {
       }
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, 'windowSizeChange 注销失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, 'windowSizeChange 注销失败 code=%{public}d', err.code);
     }
     try {
       // off 不传 callback = 注销本事件全部订阅（本类只订阅一处，安全）
       display.off('foldStatusChange');
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, 'foldStatusChange 注销失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, TAG, 'foldStatusChange 注销失败 code=%{public}d', err.code);
     }
     if (this.colorModeObserverRegistered) {
       try {
@@ -171,7 +171,7 @@ export default class EntryAbility extends UIAbility {
         this.colorModeObserverRegistered = false;
       } catch (error) {
         const err = error as BusinessError;
-        hilog.error(DOMAIN, TAG, '系统主题监听注销失败: %{public}s', JSON.stringify(err));
+        hilog.error(DOMAIN, TAG, '系统主题监听注销失败 code=%{public}d', err.code);
       }
     }
   }
@@ -282,8 +282,8 @@ export default class EntryAbility extends UIAbility {
       return out;
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, FOLD_TAG, '折痕采集失败 %{public}s: %{public}s',
-        useLive ? 'LIVE' : 'CURRENT', JSON.stringify(err));
+      hilog.error(DOMAIN, FOLD_TAG, '折痕采集失败 %{public}s code=%{public}d',
+        useLive ? 'LIVE' : 'CURRENT', err.code);
       return '-';
     }
   }
@@ -299,7 +299,7 @@ export default class EntryAbility extends UIAbility {
       return status as number;
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, FOLD_TAG, 'foldStatus 采集失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, FOLD_TAG, 'foldStatus 采集失败 code=%{public}d', err.code);
       return -1;
     }
   }
@@ -321,7 +321,7 @@ export default class EntryAbility extends UIAbility {
         JSON.stringify(status), JSON.stringify(crease));
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, FOLD_TAG, '折痕/FoldStatus 采集失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, FOLD_TAG, '折痕/FoldStatus 采集失败 code=%{public}d', err.code);
     }
   }
 
@@ -344,7 +344,7 @@ export default class EntryAbility extends UIAbility {
       });
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(DOMAIN, FOLD_TAG, 'foldStatusChange 订阅失败: %{public}s', JSON.stringify(err));
+      hilog.error(DOMAIN, FOLD_TAG, 'foldStatusChange 订阅失败 code=%{public}d', err.code);
     }
   }
 }

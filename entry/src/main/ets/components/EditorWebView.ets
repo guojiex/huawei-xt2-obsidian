@@ -464,9 +464,8 @@ export struct EditorWebView {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts', ['postMessage', 'readAsset']);
       this.proxyRegistered = true;
       hilog.info(EDITOR_DOMAIN, EDITOR_TAG, '__arkts 代理已注册（页面加载前注入，无需 refresh）');
-    } catch (error) {
-      const err = error as Error;
-      hilog.error(EDITOR_DOMAIN, EDITOR_TAG, '注册代理失败: %{public}s', err.message);
+    } catch (_error) {
+      hilog.error(EDITOR_DOMAIN, EDITOR_TAG, '注册代理失败');
     }
   }
 

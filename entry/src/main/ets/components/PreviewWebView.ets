@@ -599,9 +599,8 @@ export struct PreviewWebView {
         const bytes = this.base64.decodeSync(relB64);
         const relPath = new util.TextDecoder().decodeToString(bytes);
         return this.onReadAsset(relPath);
-      } catch (error) {
-        const err = error as Error;
-        hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, 'readAsset 参数解码失败: %{public}s', err.message);
+      } catch (_error) {
+        hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, 'readAsset 参数解码失败');
         return '';
       }
     };
@@ -623,9 +622,8 @@ export struct PreviewWebView {
   private handleWikiLinkClick(targetB64: string): void {
     try {
       this.onWikiLinkClick(BridgeCodec.decode(targetB64));
-    } catch (error) {
-      const err = error as Error;
-      hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '双链目标解码失败: %{public}s', err.message);
+    } catch (_error) {
+      hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '双链目标解码失败');
     }
   }
 
@@ -670,9 +668,8 @@ export struct PreviewWebView {
           'onPreviewZoomChange']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
-    } catch (error) {
-      const err = error as Error;
-      hilog.error(PREVIEW_DOMAIN, PREVIEW_TAG, '注册代理失败: %{public}s', err.message);
+    } catch (_error) {
+      hilog.error(PREVIEW_DOMAIN, PREVIEW_TAG, '注册代理失败');
     }
   }
 

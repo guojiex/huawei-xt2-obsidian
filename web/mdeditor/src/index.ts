@@ -173,8 +173,8 @@ function postToArkts(msg: object): boolean {
       return true
     }
     console.log('[mdeditor] postToArkts: no fn, typeof=' + typeof window.__arkts)
-  } catch (error) {
-    console.log('[mdeditor] postToArkts threw: ' + String(error))
+  } catch {
+    console.log('[mdeditor] postToArkts threw')
   }
   return false
 }

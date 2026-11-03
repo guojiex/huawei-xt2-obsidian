@@ -123,7 +123,7 @@ export class WorkspaceSessionStore {
       this.store = preferences.getPreferencesSync(context, { name: WorkspaceSessionStore.PREF_NAME });
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('初始化工作区会话失败: ' + JSON.stringify(err));
+      console.warn('初始化工作区会话失败 code=' + err.code);
     }
   }
 
@@ -148,7 +148,7 @@ export class WorkspaceSessionStore {
       return true;
     } catch (error) {
       const err = error as BusinessError;
-      console.warn('保存工作区会话失败: ' + JSON.stringify(err));
+      console.warn('保存工作区会话失败 code=' + err.code);
       return false;
     }
   }

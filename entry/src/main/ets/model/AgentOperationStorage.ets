@@ -92,9 +92,7 @@ export class AgentOperationStorage {
     const serialized: string = JSON.stringify(state);
     await this.writeJson(statePath, serialized);
     const persisted: string = this.readText(statePath);
-    hilog.info(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
-      '运行状态读回校验 serializedChars=%{public}d persistedChars=%{public}d',
-      serialized.length, persisted.length);
+    hilog.info(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG, '运行状态读回校验完成');
     if (persisted !== serialized) {
       throw new Error('Agent 运行记录保存校验失败，未执行工具。');
     }
@@ -123,25 +121,15 @@ export class AgentOperationStorage {
       this.registry.vaultKeyOf(vaultId), operation.conversationId, operation.runId);
     if (state === null) {
       try {
-        const rawState: AgentRunState = JSON.parse(raw) as AgentRunState;
-        const vaultMatches: string = rawState.vaultKey === this.registry.vaultKeyOf(vaultId) ? 'true' : 'false';
-        const conversationMatches: string = rawState.conversationId === operation.conversationId ? 'true' : 'false';
-        const runMatches: string = rawState.runId === operation.runId ? 'true' : 'false';
-        hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
-          '运行状态校验失败 schema=%{public}d vault=%{public}s conversation=%{public}s run=%{public}s status=%{public}s',
-          rawState.schemaVersion, vaultMatches, conversationMatches, runMatches, rawState.status);
-      } catch (error) {
-        const rawLength: number = raw.length;
-        const firstCode: number = rawLength > 0 ? raw.charCodeAt(0) : -1;
-        const lastCode: number = rawLength > 0 ? raw.charCodeAt(rawLength - 1) : -1;
-        hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
-          '运行状态 JSON 无法解析 chars=%{public}d first=%{public}d last=%{public}d',
-          rawLength, firstCode, lastCode);
+        JSON.parse(raw);
+        hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG, '运行状态校验失败');
+      } catch (_error) {
+        hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG, '运行状态 JSON 无法解析');
       }
       throw new Error('Agent 运行记录格式异常，未执行笔记写入。');
     }
     if (state.status !== 'running') {
-      hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG, '运行状态不是 running: %{public}s', state.status);
+      hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG, '运行状态不是 running');
       throw new Error('Agent 运行记录不可用，未执行笔记写入。');
     }
     if (state.operationIds.indexOf(operation.operationId) < 0) {

@@ -10,8 +10,8 @@
  * **不涉及任何产品语义**：不写 VaultRegistry、不改库类型、不碰现有编辑器。
  * v1.5 正式实现（15.1–15.6）落地后本页连同 model 一起删除。
  *
- * 隐私：界面只显示目录名与**文件数量**，不显示笔记正文；打 hilog 的也只有
- * 步骤结论与错误码 —— 硬约束 16 禁止笔记内容上报/记录。
+ * 隐私：页面步骤详情可能显示授权 URI 或文件名；hilog 只记录固定步骤 ID 与成败，
+ * 不记录目录、文件名或笔记正文。
  */
 import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -56,8 +56,7 @@ struct ExternalDirProbePage {
   private firstMarkdown: string = '';
 
   private logStep(step: ProbeStep): void {
-    hilog.info(DOMAIN, TAG, 'step %{public}s ok=%{public}s detail=%{public}s',
-      step.id, String(step.ok), step.detail);
+    hilog.info(DOMAIN, TAG, 'step %{public}s ok=%{public}s', step.id, String(step.ok));
   }
 
   private push(step: ProbeStep): void {

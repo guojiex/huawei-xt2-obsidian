@@ -18,8 +18,8 @@ export class EditorExperienceStore {
       this.store = preferences.getPreferencesSync(context, { name: EditorExperienceStore.PREF_NAME });
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(EXPERIENCE_DOMAIN, EXPERIENCE_TAG, '编辑模式偏好初始化失败，使用简单模式：%{public}s',
-        JSON.stringify(err));
+      hilog.error(EXPERIENCE_DOMAIN, EXPERIENCE_TAG,
+        '编辑模式偏好初始化失败，使用简单模式 code=%{public}d', err.code);
     }
   }
 
