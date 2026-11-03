@@ -12,10 +12,18 @@ export struct ShareFilePreviewDialog {
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
   @Prop singleScreen: boolean = false;
+  @Prop initialError: string = '';
+  @Prop canShare: boolean = true;
   onBack: () => void = () => {};
   onConfirm: () => Promise<void> = async (): Promise<void> => {};
+  onRetryPreparation: () => Promise<void> = async (): Promise<void> => {};
   @State sharing: boolean = false;
+  @State preparing: boolean = false;
   @State errorMessage: string = '';
+
+  aboutToAppear(): void {
+    this.errorMessage = this.initialError;
+  }
 
   private entryIcon(path: string): string {
     const lower: string = path.toLowerCase();
@@ -56,6 +64,22 @@ export struct ShareFilePreviewDialog {
     }
   }
 
+  private async retryPreparation(): Promise<void> {
+    if (this.preparing) {
+      return;
+    }
+    this.preparing = true;
+    this.errorMessage = '';
+    try {
+      await this.onRetryPreparation();
+    } catch (error) {
+      const err = error as Error;
+      this.errorMessage = err.message.length > 0 ? err.message : '文件生成失败，请检查本地空间后重试';
+    } finally {
+      this.preparing = false;
+    }
+  }
+
   @Builder
   FileRow(path: string) {
     Row({ space: Space.s3 }) {
@@ -76,7 +100,14 @@ export struct ShareFilePreviewDialog {
   build() {
     Column({ space: Space.s3 }) {
       Row({ space: Space.s3 }) {
-        Icon('doc', Space.s5, $r('app.color.brand'))
+        Row() {
+          Icon('doc', Space.s5, $r('app.color.brand'))
+        }
+        .width(Space.s10)
+        .height(Space.s10)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(Radius.control)
+        .backgroundColor($r('app.color.brand_bg'))
         Column({ space: Space.s1 }) {
           Text('文件分享')
             .fontSize(FontSize.s3)
@@ -99,7 +130,7 @@ export struct ShareFilePreviewDialog {
           .accessibilityText('关闭文件预览')
           .focusable(true)
           .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
-          .onClick(() => { this.controller?.close(); })
+          .onClick(() => { this.back(); })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -153,7 +184,9 @@ export struct ShareFilePreviewDialog {
           .focusable(true)
           .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
           .onClick(() => { this.back(); })
-        Text(this.sharing ? '正在打开…' : '分享文件')
+        Text(this.canShare
+          ? (this.sharing ? '正在打开…' : '分享文件')
+          : (this.preparing ? '正在重试…' : '重试生成'))
           .fontSize(FontSize.body2)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.on_brand'))
@@ -163,9 +196,15 @@ export struct ShareFilePreviewDialog {
           .borderRadius(Radius.control)
           .backgroundColor($r('app.color.brand'))
           .focusable(true)
-          .enabled(!this.sharing)
+          .enabled(!this.sharing && !this.preparing)
           .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
-          .onClick(() => { void this.share(); })
+          .onClick(() => {
+            if (this.canShare) {
+              void this.share();
+            } else {
+              void this.retryPreparation();
+            }
+          })
       }
       .width('100%')
     }

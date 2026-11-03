@@ -85,25 +85,21 @@ test('native handoff sends an editable text record with Share Kit TEXT type and 
   ]);
 });
 
-test('Share Kit rejection is surfaced to the user without changing the source note', async () => {
+test('Share Kit rejection propagates to the text detail without changing the source note', async () => {
   const { app, calls } = createHarness(true);
 
-  await app.shareTextContent('Note title', 'Note title\n\nEdited body');
+  await assert.rejects(app.shareTextContent('Note title', 'Note title\n\nEdited body'),
+    /target rejected the text/);
 
-  assert.equal(calls[2][0], 'error');
-  assert.equal(calls[2][1].title, '分享失败');
-  assert.match(calls[2][1].message, /target rejected the text/);
-  assert.equal(calls[2][1].buttons[0].text, '知道了');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1][0], 'show');
 });
 
-test('oversize edited text is rejected before Share Kit handoff with a clear size reason', async () => {
+test('oversize edited text propagates a clear size reason before Share Kit handoff', async () => {
   const { app, calls } = createHarness();
 
-  await app.shareTextContent('Note title', 'x'.repeat(200 * 1024));
+  await assert.rejects(app.shareTextContent('Note title', 'x'.repeat(200 * 1024)),
+    /200 KB.*Markdown \/ ZIP/);
 
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], 'error');
-  assert.equal(calls[0][1].title, '分享失败');
-  assert.match(calls[0][1].message, /200 KB/);
-  assert.match(calls[0][1].message, /Markdown \/ ZIP/);
+  assert.equal(calls.length, 0);
 });

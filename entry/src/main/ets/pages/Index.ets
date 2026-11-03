@@ -4882,7 +4882,17 @@ struct Index {
           if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
             promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
           }
-          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
+          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath))
+            .catch((error: Error): void => {
+              this.openShareImagePreview(itemName, {
+                uri: '',
+                aspectRatio: 1,
+                width: 0,
+                height: 0,
+                theme: this.shareCaptureTheme,
+                scaled: false
+              }, notePath, vaultId, error.message);
+            });
         },
         onCancel: (): void => {
           this.openShareDialog('note', notePath);
@@ -4951,6 +4961,17 @@ struct Index {
       }
       const err = error as Error;
       const message: string = err.message.length > 0 ? err.message : '系统分享面板无法打开，请重试';
+      if (scope === 'note' && format === 'text') {
+        this.openShareTextPreview(NoteTextShareService.createPreview(path, ''), path, message,
+          (): Promise<void> => { return this.prepareShare(scope, path, format, itemName, vault); });
+        return;
+      }
+      if (format !== 'link') {
+        const detailFormat: string = format === 'file' ? 'Markdown / ZIP' : 'ZIP';
+        this.openShareFilePreview('', itemName, detailFormat, [], '文件准备失败', scope, path, registry, message,
+          (): Promise<void> => { return this.prepareShare(scope, path, format, itemName, vault); });
+        return;
+      }
       void this.getUIContext().getPromptAction().showDialog({
         title: '分享失败',
         message: message,
@@ -4969,9 +4990,11 @@ struct Index {
   }
 
   private openShareFilePreview(filePath: string, fileName: string, format: string, entries: string[],
-    summary: string, scope: ShareLinkScope, path: string, registry: VaultRegistry): void {
+    summary: string, scope: ShareLinkScope, path: string, registry: VaultRegistry, initialError: string = '',
+    onRetryPreparation: () => Promise<void> = async (): Promise<void> => {}): void {
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    this.shareFilePreviewCtl?.close();
     this.shareFilePreviewCtl = new CustomDialogController({
       builder: ShareFilePreviewDialog({
         fileName: fileName,
@@ -4981,7 +5004,10 @@ struct Index {
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
         singleScreen: shareSheet,
+        initialError: initialError,
+        canShare: filePath.length > 0,
         onBack: (): void => { this.openShareDialog(scope, path); },
+        onRetryPreparation: onRetryPreparation,
         onConfirm: (): Promise<void> => {
           return this.shareFile(filePath, fileName, uniformTypeDescriptor.UniformDataType.FILE, registry);
         }
@@ -5003,15 +5029,25 @@ struct Index {
     await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
   }
 
-  private openShareTextPreview(preview: NoteTextSharePreview, notePath: string): void {
+  private openShareTextPreview(preview: NoteTextSharePreview, notePath: string, initialError: string = '',
+    onRetryPreparation: () => Promise<void> = async (): Promise<void> => {}): void {
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    this.shareTextPreviewCtl?.close();
     this.shareTextPreviewCtl = new CustomDialogController({
       builder: ShareTextPreviewDialog({
         itemName: preview.title,
         initialContent: preview.content,
         limitations: preview.limitations,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        initialError: initialError,
+        onRetryPreparation: onRetryPreparation,
         onBack: (): void => { this.openShareDialog('note', notePath); },
-        onConfirm: (content: string): void => { void this.shareTextContent(preview.title, content); }
+        onConfirm: (content: string): Promise<void> => { return this.shareTextContent(preview.title, content); }
       }),
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: false,
       customStyle: true
     });
@@ -5020,25 +5056,16 @@ struct Index {
 
   private async shareTextContent(title: string, content: string): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
-    try {
-      if (!NoteTextShareService.isWithinShareLimit(title, content)) {
-        throw new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。');
-      }
-      const shared = new systemShare.SharedData({
-        utd: uniformTypeDescriptor.UniformDataType.TEXT,
-        content: content,
-        title: title,
-        label: 'TEXT'
-      });
-      await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
-    } catch (error) {
-      const err = error as Error;
-      void this.getUIContext().getPromptAction().showDialog({
-        title: '分享失败',
-        message: err.message.length > 0 ? err.message : '系统分享面板无法接收此文本，请改用 Markdown / ZIP。',
-        buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
-      });
+    if (!NoteTextShareService.isWithinShareLimit(title, content)) {
+      throw new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。');
     }
+    const shared = new systemShare.SharedData({
+      utd: uniformTypeDescriptor.UniformDataType.TEXT,
+      content: content,
+      title: title,
+      label: 'TEXT'
+    });
+    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
   }
 
   private waitForShareCaptureReady(): Promise<void> {
@@ -5181,7 +5208,7 @@ struct Index {
         theme: this.shareCaptureTheme,
         scaled: geometry.scale < 1
       };
-      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath);
+      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath, vaultId);
     } catch (error) {
       this.shareCaptureActive = false;
       bridge.cancelShareCaptureRequests('分享图片生成已结束');
@@ -5209,21 +5236,38 @@ struct Index {
     }
   }
 
-  private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string): void {
+  private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,
+    vaultId: string, initialError: string = ''): void {
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    this.shareImagePreviewCtl?.close();
     this.shareImagePreviewCtl = new CustomDialogController({
       builder: ShareImagePreviewDialog({
         itemName: itemName,
         image: previewImage,
-        onConfirm: (): void => {
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        widthVp: this.shareCaptureWidthVp,
+        initialError: initialError,
+        onConfirm: (): Promise<void> => {
           const image: ShareImagePreviewImage = this.shareImagePreviewImage;
           const title: string = this.shareImagePreviewTitle;
-          void this.shareImage(image, title, VaultRegistry.get());
+          return this.shareImage(image, title, VaultRegistry.get());
+        },
+        onRetry: (): Promise<void> => {
+          return this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
         },
         onCancel: (): void => {
           this.cleanupShareImagePreview();
           this.openShareDialog('note', notePath);
+        },
+        onChangeSettings: (): void => {
+          this.cleanupShareImagePreview();
+          this.openShareImageSettings(vaultId, notePath, itemName);
         }
       }),
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: false,
       customStyle: true
     });
@@ -5248,8 +5292,7 @@ struct Index {
 
   private async shareImage(previewImage: ShareImagePreviewImage, title: string, registry: VaultRegistry): Promise<void> {
     if (previewImage.uri.length === 0) {
-      promptAction.showToast({ message: '长图文件无效，请重新生成' });
-      return;
+      throw new Error('长图文件无效，请重新生成');
     }
     const shared = new systemShare.SharedData({
       utd: uniformTypeDescriptor.UniformDataType.JPEG,
@@ -5257,16 +5300,7 @@ struct Index {
       title: title,
       label: 'IMAGE'
     });
-    try {
-      await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
-    } catch (error) {
-      const err = error as Error;
-      void this.getUIContext().getPromptAction().showDialog({
-        title: '分享失败',
-        message: err.message.length > 0 ? err.message : '系统分享面板无法打开，请重试',
-        buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
-      });
-    }
+    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
   }
 
   /**
