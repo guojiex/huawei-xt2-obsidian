@@ -21,6 +21,12 @@ function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience
  const sharePaper=get('sharePaper'),shareStage=get('shareStage');shareStage.clientWidth=520;sharePaper.parentElement=shareStage;sharePaper.scrollHeight=800;sharePaper.style[Symbol.iterator]=function*(){};
  const rootStyle=new Set(['--ink','--paper','--line','--muted','--nav','--blue']);rootStyle.getPropertyValue=name=>name==='--ink'?'#202530':'';
  for(const id of ['navSplitter','contentSplitter'])get(id).querySelector=selector=>selector==='.split-tip'?get(id+'Tip'):null;
+ for(const id of ['leftPane','referencePane'])get(id).querySelector=selector=>selector==='.pane-label'?get(id+'Label'):null;
+ for(const id of ['leftEmpty','rightEmpty']){
+  const box=get(id),prefix=id==='rightEmpty'?'rightEmpty':'empty';
+  box.querySelector=selector=>selector==='.pane-empty-reopen'?null:selector==='.primary'?get(prefix+'NewNote'):null;
+  box.querySelectorAll=selector=>selector==='[data-empty-act]'?['new','search'].map((act)=>{const n=get(prefix+(act==='new'?'NewNote':'Search'));n.dataset.emptyAct=act;return n;}):[];
+ }
  let location=new URL(href),index=0;const history=[location.href];
  const win={innerWidth:1320,innerHeight:1000,get location(){return location},history:{pushState(_,__,href){location=new URL(href);history.splice(++index);history.push(location.href)},replaceState(_,__,href){location=new URL(href);history[index]=location.href}},addEventListener(k,fn){listen('window',k,fn)}};
  const context=vm.createContext({URL,URLSearchParams,window:win,document:{getElementById:get,querySelector:selector=>selector==='#sharePreview .share-paper'?sharePaper:null,querySelectorAll(){return[]},styleSheets:[{cssRules:[{selectorText:':root',style:rootStyle}]}],body:{dataset:{}},addEventListener(k,fn){listen('document',k,fn)}},queueMicrotask:fn=>pending.push(fn),setTimeout:fn=>{pending.push(fn);return 1},clearTimeout(){},ResizeObserver:class{observe(){}},getComputedStyle:element=>({paddingLeft:element===shareStage?'16px':'0px',getPropertyValue:k=>k==='--pane-min'?'240px':k==='--format-width'?'360px':k==='--s2'?'8px':'16px'}),localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}});
@@ -95,15 +101,14 @@ test('no-note demo toggle grays out note-scoped controls and restores the select
  f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();f.get('noNoteDemo').checked=false;f.get('noNoteDemo').onchange();
  assert.equal(f.run('current'),'reading_stream');
 });
-test('no-note empty state centers the brand line with create and search actions',()=>{
- assert.match(html,/id="leftEmpty"[^>]*>[\s\S]*?把空间，留给思考。[\s\S]*?从笔记列表选择一篇，或直接新建。[\s\S]*?id="emptyNewNote"[^>]*>新建笔记[\s\S]*?id="emptySearch"[^>]*>搜索笔记/);
- assert.match(html,/\.pane-empty\{display:flex;flex-direction:column;align-items:center;justify-content:center/);
- assert.match(html,/\.pane-empty-icon\{width:var\(--s16\);height:var\(--s16\);stroke-width:1\.2;color:var\(--line\)\}/);
- assert.match(html,/\.pane-empty-actions \.primary\{width:auto;padding:0 var\(--s6\)\}/);
+test('no-note empty state offers create and search actions',()=>{
  const f=fixture();
  f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();
  const empty=f.get('leftEmpty');
  assert(!empty.classList.contains('hidden'));
+ assert(empty.innerHTML.includes('未打开笔记'));
+ assert(empty.innerHTML.includes('新建笔记'));
+ assert(empty.innerHTML.includes('搜索笔记'));
  assert(f.get('article').classList.contains('hidden'));
  assert(f.get('editor').classList.contains('hidden'));
  assert.equal(f.get('count').textContent,'');
@@ -119,6 +124,9 @@ test('no-note empty state centers the brand line with create and search actions'
  assert(empty.classList.contains('hidden'));
  assert(!f.get('article').classList.contains('hidden'));
  assert(f.get('count').textContent.includes('字 · 本地样例'));
+});
+test('closing one pane preserves the other and empty pane survives a URL round trip',()=>{
+ const f=fixture();const left=f.run('current');f.run("closePaneNote('right')");assert.equal(f.run('current'),left);assert.equal(f.run('reference'),'');assert(!f.get('rightEmpty').classList.contains('hidden'));f.run('syncUrl()');const g=fixture(f.href());assert.equal(g.run('reference'),'');assert.equal(g.run('current'),left);
 });
 test('quick search aggregates filename and content matches without mode tabs',()=>{
  assert(!html.includes('quickNameMode')&&!html.includes('quickContentMode')&&!html.includes('search-mode'));
