@@ -34,6 +34,45 @@ function createHarness() {
   return new module.exports();
 }
 
+function extractDialogMethod(startMarker, endMarker) {
+  const start = dialogSource.indexOf(startMarker);
+  const end = dialogSource.indexOf(endMarker, start);
+  assert.ok(start >= 0 && end > start, `could not find ${startMarker}`);
+  return dialogSource.slice(start, end);
+}
+
+const dialogMethods = transformSync(`
+class ShareScopeDialogHarness {
+  ${extractDialogMethod('  private selectScope(', '\n  private scopeFormatAreaHeight()')}
+  ${extractDialogMethod('  private scopeFormatAreaHeight()', '\n  private onDialogKey(')}
+}
+module.exports = ShareScopeDialogHarness;
+`, { loader: 'ts', format: 'cjs' }).code;
+
+function createDialogHarness() {
+  const module = { exports: {} };
+  vm.runInContext(dialogMethods, vm.createContext({
+    module,
+    exports: module.exports,
+    Motion: { navCurve: 'nav-curve' },
+    Space: { s16: 64, s2: 8, s3: 12 }
+  }));
+  const dialog = new module.exports();
+  dialog.scopeOptions = [
+    { scope: 'note', available: true, options: [{}, {}, {}, {}] },
+    { scope: 'folder', available: true, options: [{}] },
+    { scope: 'vault', available: true, options: [{}, {}] }
+  ];
+  dialog.selectedScope = 'note';
+  dialog.getUIContext = () => ({
+    animateTo(options, callback) {
+      dialog.animation = options;
+      callback();
+    }
+  });
+  return dialog;
+}
+
 test('share range resolves the active note, source folder, and current vault independently', () => {
   const app = createHarness();
   assert.equal(app.sharePathForScope('note', 'folder', '10_写作', '10_写作/草稿.md'),
@@ -44,6 +83,20 @@ test('share range resolves the active note, source folder, and current vault ind
     '10_写作');
   assert.equal(app.sharePathForScope('folder', 'vault', '', '草稿.md'), '');
   assert.equal(app.sharePathForScope('vault', 'folder', '10_写作', '草稿.md'), '');
+});
+
+test('range changes animate for 200ms and reserve the largest format area', () => {
+  const dialog = createDialogHarness();
+
+  dialog.selectScope('folder');
+
+  assert.equal(dialog.selectedScope, 'folder');
+  assert.equal(dialog.animation.duration, 200);
+  assert.equal(dialog.animation.curve, 'nav-curve');
+  assert.equal(dialog.scopeFormatAreaHeight(), 4 * (64 + 8 + 12) + 3 * 8);
+  assert.match(dialogSource, /\.height\(this\.scopeFormatAreaHeight\(\)\)/);
+  assert.match(dialogSource, /TransitionEffect\.opacity\(0\)\.combine\(TransitionEffect\.translate\(\{ y: Space\.s2 \}\)\)/);
+  assert.match(dialogSource, /this\.selectScope\(this\.scopeOptions\[index\]\.scope\)/);
 });
 
 test('native share selector exposes three ranges, keyboard switching, and actionable format rows', () => {
@@ -58,4 +111,6 @@ test('native share selector exposes three ranges, keyboard switching, and action
   assert.match(dialogSource, /this\.chooseFormat\(scope, option\)/);
   assert.match(dialogSource, /option\.icon/);
   assert.match(dialogSource, /minHeight: Space\.s16 \+ Space\.s2/);
+  assert.match(dialogSource, /Icon\('share'/);
+  assert.match(dialogSource, /accessibilityText\('关闭分享'\)/);
 });

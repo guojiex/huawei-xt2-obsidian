@@ -1,6 +1,6 @@
 import { ShareLinkScope } from '../model/ShareLinkService';
 import { Icon } from '../common/Icons';
-import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { FontSize, Motion, Radius, Size, Space } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 export interface ShareFormatOption {
@@ -56,10 +56,32 @@ export struct ShareNoteDialog {
   private selectScope(scope: ShareLinkScope): void {
     for (let i: number = 0; i < this.scopeOptions.length; i++) {
       if (this.scopeOptions[i].scope === scope && this.scopeOptions[i].available) {
-        this.selectedScope = scope;
+        if (this.selectedScope !== scope) {
+          this.getUIContext().animateTo({ duration: 200, curve: Motion.navCurve }, (): void => {
+            this.selectedScope = scope;
+          });
+        }
         return;
       }
     }
+  }
+
+  private scopeFormatAreaHeight(): number {
+    let maxRows: number = 0;
+    for (let i: number = 0; i < this.scopeOptions.length; i++) {
+      if (this.scopeOptions[i].options.length > maxRows) {
+        maxRows = this.scopeOptions[i].options.length;
+      }
+    }
+    if (maxRows === 0) {
+      return 0;
+    }
+    const rowHeight: number = this.scopeFormatRowHeight();
+    return maxRows * rowHeight + (maxRows - 1) * Space.s2;
+  }
+
+  private scopeFormatRowHeight(): number {
+    return Space.s16 + Space.s2 + Space.s3;
   }
 
   private onDialogKey(event: KeyEvent): boolean {
@@ -96,7 +118,7 @@ export struct ShareNoteDialog {
     for (let i: number = 0; i < this.scopeOptions.length; i++) {
       index = (index + direction + this.scopeOptions.length) % this.scopeOptions.length;
       if (this.scopeOptions[index].available) {
-        this.selectedScope = this.scopeOptions[index].scope;
+        this.selectScope(this.scopeOptions[index].scope);
         return true;
       }
     }
@@ -164,9 +186,13 @@ export struct ShareNoteDialog {
     .width('100%')
     .constraintSize({ minHeight: Space.s16 + Space.s2 })
     .padding({ left: Space.s4, right: Space.s3, top: Space.s3, bottom: Space.s3 })
+    .height(this.scopeFormatRowHeight())
     .borderRadius(Radius.menu)
     .border({ width: 1, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
+    .transition(TransitionEffect.asymmetric(
+      TransitionEffect.opacity(0).combine(TransitionEffect.translate({ y: Space.s2 })),
+      TransitionEffect.IDENTITY))
     .accessibilityText(option.label + '，' + option.detail)
     .focusable(true)
     .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
@@ -194,6 +220,7 @@ export struct ShareNoteDialog {
           Text(this.currentOption().itemName + ' · ' + this.currentOption().summary)
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))
+            .height(FontSize.caption * 3)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
@@ -229,6 +256,9 @@ export struct ShareNoteDialog {
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))
             .width('100%')
+            .height(FontSize.caption * 3)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
 
           Column({ space: Space.s2 }) {
             ForEach(this.currentOption().options, (option: ShareFormatOption) => {
@@ -236,13 +266,17 @@ export struct ShareNoteDialog {
             }, (option: ShareFormatOption) => option.value)
           }
           .width('100%')
+          .height(this.scopeFormatAreaHeight())
+          .alignItems(HorizontalAlign.Start)
 
-          if (this.currentOption().notice.length > 0) {
-            Text(this.currentOption().notice)
-              .fontSize(FontSize.caption)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-          }
+          Text(this.currentOption().notice)
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .height(FontSize.caption * 3)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .visibility(this.currentOption().notice.length > 0 ? Visibility.Visible : Visibility.Hidden)
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
