@@ -20,13 +20,16 @@ test('18.7 从块属性面板打开仅含目标源码的编辑器，并提供取
   assert.doesNotMatch(panel, /getContent\(/)
 })
 
-test('18.7 打开前同步预览，并绑定库、笔记、请求代次、区间和文档修订号', () => {
+test('18.7 打开前同步预览，并绑定库、笔记、请求代次、目标区间和文档修订号', () => {
   const start = indexSource.indexOf('  private async openBlockSourceDrawer(): Promise<void> {')
   const end = indexSource.indexOf('\n  private cancelBlockSourceDrawer()', start)
   const open = indexSource.slice(start, end)
   assert.match(open, /flushSimplePreviewChanges\(\)/)
   assert.match(open, /bridge\.getContent\(\)/)
-  assert.match(open, /source\.slice\(anchor\.from, anchor\.to\)/)
+  assert.match(open, /anchor\.inlineIndex >= 0 \? anchor\.itemFrom : anchor\.from/)
+  assert.match(open, /anchor\.inlineIndex >= 0 \? anchor\.itemTo : anchor\.to/)
+  assert.match(open, /source\.slice\(sourceFrom, sourceTo\)/)
+  assert.match(open, /sourceFrom < anchor\.from \|\| sourceTo > anchor\.to/)
   assert.match(open, /blockSourceDocumentRevision = documentRevision/)
   assert.match(indexSource, /currentVaultId === vaultId/)
   assert.match(indexSource, /currentDocumentRevision === documentRevision/)

@@ -18,7 +18,7 @@ import { marked } from 'marked'
 import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
-import { lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection } from './blockSelection.mjs'
+import { inlineItemsForBlock, lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection } from './blockSelection.mjs'
 import { appendShareWatermark } from './shareWatermark.mjs'
 
 declare global {
@@ -55,7 +55,7 @@ interface MdPreviewApi {
   resetDocument(): void
   closeImageViewer(): void
   focusLockedBlock(from: number, to: number): void
-  activateLockedContent(from: number, to: number): void
+  activateLockedContent(from: number, to: number, inlineIndex?: number): void
   scrollToHeading(index: number): void
   scrollToSourceLine(line: number, lineProgress: number, viewportRatio: number, atStart: boolean, atEnd: boolean): void
   cancelSourceFollow(): void
@@ -665,6 +665,45 @@ function sourceBlockForNode(node: Node | null): HTMLElement | null {
   return element?.closest('.preview-source-block, .empty[data-source-from]') as HTMLElement | null;
 }
 
+function annotateInlineItems(block: HTMLElement, source: {
+  inlineItems?: Array<{ index: number; type: string; from: number; to: number }>;
+  inlineSafe?: boolean;
+}): void {
+  const items = source.inlineItems ?? []
+  block.dataset.inlineItemsReady = 'false'
+  if (source.inlineSafe !== true || items.length === 0) return
+  const candidates: Record<string, HTMLElement[]> = {
+    link: Array.from(block.querySelectorAll('a')),
+    image: Array.from(block.querySelectorAll('img')),
+    inlinecode: Array.from(block.querySelectorAll('code')).filter((node) => node.closest('pre') === null),
+    mathInline: Array.from(block.querySelectorAll('.katex'))
+      .filter((node) => node.closest('.katex-display') === null)
+  }
+  const cursors: Record<string, number> = { link: 0, image: 0, inlinecode: 0, mathInline: 0 }
+  const targets: Array<{ node: HTMLElement; item: { index: number; type: string; from: number; to: number } }> = []
+  for (const item of items) {
+    const nodes = candidates[item.type]
+    const target = nodes?.[cursors[item.type]]
+    if (!target || !Number.isInteger(item.from) || !Number.isInteger(item.to) || item.to <= item.from) return
+    cursors[item.type]++
+    targets.push({ node: target, item })
+  }
+  for (const [type, nodes] of Object.entries(candidates)) {
+    if (cursors[type] !== nodes.length) return
+  }
+  for (const entry of targets) {
+    const { node, item } = entry
+    const type = item.type === 'link' &&
+      (node as HTMLAnchorElement).getAttribute('href')?.indexOf('#wikilink:') === 0
+      ? 'wikilink' : item.type
+    node.dataset.previewInlineIndex = String(item.index)
+    node.dataset.previewInlineType = type
+    node.dataset.previewInlineFrom = String(item.from)
+    node.dataset.previewInlineTo = String(item.to)
+  }
+  block.dataset.inlineItemsReady = 'true'
+}
+
 function setActiveLockedBlocks(root: HTMLElement, selected: HTMLElement[]): void {
   const activeBlocks = root.querySelectorAll('.preview-source-block.simple-block-active')
   for (let index = 0; index < activeBlocks.length; index++) {
@@ -707,15 +746,28 @@ function focusLockedBlock(from: number, to: number): void {
   }
 }
 
-function activateLockedContent(from: number, to: number): void {
+function activateLockedContent(from: number, to: number, inlineIndex: number = -1): void {
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) return
   const blocks = contentElement.querySelectorAll('.preview-source-block, .empty[data-source-from]')
   for (let index = 0; index < blocks.length; index++) {
     const block = blocks[index] as HTMLElement
     if (Number(block.dataset.sourceFrom) !== from || Number(block.dataset.sourceTo) !== to) continue
-    const target = lastLockedTapTarget && block.contains(lastLockedTapTarget)
-      ? lastLockedTapTarget
-      : block.querySelector('a, img') as HTMLElement | null
+    let target: HTMLElement | null = null
+    if (Number.isInteger(inlineIndex) && inlineIndex >= 0) {
+      const items = block.querySelectorAll('[data-preview-inline-index]')
+      for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        const item = items[itemIndex] as HTMLElement
+        if (Number(item.dataset.previewInlineIndex) === inlineIndex) {
+          target = item
+          break
+        }
+      }
+      if (!target) return
+    } else {
+      target = lastLockedTapTarget && block.contains(lastLockedTapTarget)
+        ? lastLockedTapTarget
+        : block.querySelector('a, img') as HTMLElement | null
+    }
     if (!target) return
     if (target.tagName === 'IMG') {
       openImage(target as HTMLImageElement)
@@ -876,14 +928,20 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
   lastLockedTapTarget = null
   if (event.target.closest('input, button')) return
   const tapTarget = event.target.closest('a, img') as HTMLElement | null
+  const inlineTarget = event.target.closest('[data-preview-inline-index]') as HTMLElement | null
   let tapPayload = payload
-  if (tapTarget && lockedBlock) {
-    lastLockedTapTarget = tapTarget
+  if (lockedBlock && payload.length > 0 && (tapTarget || inlineTarget)) {
+    if (tapTarget) lastLockedTapTarget = tapTarget
     if (payload.length > 0) {
-      const anchor = JSON.parse(payload) as Record<string, string | number>
-      if (tapTarget.tagName === 'IMG') {
+      const anchor = JSON.parse(payload) as Record<string, string | number | Array<Object>>
+      if (inlineTarget) {
+        anchor.tapType = inlineTarget.dataset.previewInlineType ?? ''
+        anchor.inlineIndex = Number(inlineTarget.dataset.previewInlineIndex)
+        anchor.itemFrom = Number(inlineTarget.dataset.previewInlineFrom)
+        anchor.itemTo = Number(inlineTarget.dataset.previewInlineTo)
+      } else if (tapTarget?.tagName === 'IMG') {
         anchor.tapType = 'image'
-      } else {
+      } else if (tapTarget) {
         const href = (tapTarget as HTMLAnchorElement).getAttribute('href') ?? ''
         anchor.tapType = href.indexOf('#wikilink:') === 0 ? 'wikilink' : 'link'
       }
@@ -988,6 +1046,7 @@ const api: MdPreviewApi = {
       block.dataset.sourceFrom = String(source.sourceStart)
       block.dataset.sourceTo = String(source.sourceEnd)
       block.dataset.sourceType = source.type
+      annotateInlineItems(block, source)
     }
     observeSourceBlocks()
     configureEditableBlocks(el, bodyOffset)
@@ -1139,8 +1198,8 @@ const api: MdPreviewApi = {
     focusLockedBlock(from, to)
   },
 
-  activateLockedContent(from: number, to: number): void {
-    activateLockedContent(from, to)
+  activateLockedContent(from: number, to: number, inlineIndex: number = -1): void {
+    activateLockedContent(from, to, inlineIndex)
   },
 
   scrollToHeading(index: number): void {

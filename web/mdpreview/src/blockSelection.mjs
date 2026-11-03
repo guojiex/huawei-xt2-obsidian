@@ -21,6 +21,31 @@ export function toolbarBlockForSelection(blocks, selection, sourceBlockForNode) 
   return block?.dataset.editLocked === 'true' && candidates.includes(block) ? block : null
 }
 
+export function inlineItemsForBlock(block) {
+  if (block?.dataset.inlineItemsReady !== 'true' || typeof block.querySelectorAll !== 'function') return []
+  const from = Number(block.dataset.sourceFrom)
+  const to = Number(block.dataset.sourceTo)
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from) return []
+  const nodes = block.querySelectorAll('[data-preview-inline-index]')
+  const items = []
+  let previousIndex = -1
+  for (let position = 0; position < nodes.length; position++) {
+    const node = nodes[position]
+    const index = Number(node.dataset.previewInlineIndex)
+    const itemFrom = Number(node.dataset.previewInlineFrom)
+    const itemTo = Number(node.dataset.previewInlineTo)
+    const type = node.dataset.previewInlineType
+    if (!Number.isInteger(index) || index <= previousIndex || !Number.isInteger(itemFrom) ||
+      !Number.isInteger(itemTo) || itemFrom < from || itemTo > to || itemTo <= itemFrom ||
+      !['link', 'wikilink', 'image', 'inlinecode', 'mathInline'].includes(type)) {
+      return []
+    }
+    items.push({ index, type, from: itemFrom, to: itemTo })
+    previousIndex = index
+  }
+  return items
+}
+
 export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
   if (!block || block.dataset.editLocked !== 'true') return null
   const from = Number(block.dataset.sourceFrom)
@@ -45,6 +70,7 @@ export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
     type,
     from,
     to,
+    inlineItems: inlineItemsForBlock(block),
     left,
     top,
     width,

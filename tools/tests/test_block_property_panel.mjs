@@ -48,17 +48,29 @@ function makeApp() {
     breakpoint: 'MD',
     activePane: 'left',
     currentVaultId: 'vault-a',
+    leftOpenRequestId: 7,
     leftBlockPanelOpen: false,
     rightBlockPanelOpen: false,
     blockPanelPlacement: 'bottom-left',
     leftBlockAnchor: null,
     rightBlockAnchor: null,
+    blockPanelSourceVaultId: '',
+    blockPanelSourcePath: '',
+    blockSourceEditing: false,
+    blockSourceDraft: '',
+    blockSourceBlockType: '',
+    blockSourceFrom: 0,
+    blockSourceTo: 0,
+    blockSourceDocumentRevision: 0,
+    blockSourceOpenRequestId: 0,
     leftBlockToolbarPaneArea: [0, 0, 400, 600],
     rightBlockToolbarPaneArea: [400, 0, 400, 600],
     setActivePane(pane) { this.activePane = pane },
     isPaneEditable() { return true },
     notePaneVisible() { return true },
     paneFilePath() { return 'note.md' },
+    editorBridgeForPane() { return this.editorBridge },
+    flushSimplePreviewChanges: async () => '',
     updateBlockToolbarLayout() {},
     calculateAnchoredPopupLayout(_pane, _paneArea, _anchorArea, width) {
       return { placement: 'top-left', offsetX: -120, offsetY: -8, width, maxHeight: 240 }
@@ -67,14 +79,19 @@ function makeApp() {
   })
   app.previewBridge = { focused: [], activated: [], focusBlock(from, to) {
     this.focused.push([from, to])
-  }, activateLockedContent(from, to) {
-    this.activated.push([from, to])
+  }, activateLockedContent(from, to, inlineIndex) {
+    this.activated.push([from, to, inlineIndex])
   } }
+  app.editorBridge = {
+    currentDocumentRevision: 11,
+    getContent: async () => ''
+  }
   return app
 }
 
 const linkAnchor = {
   type: 'paragraph', tapType: 'link', from: 12, to: 32,
+  inlineItems: [], inlineIndex: -1, itemFrom: -1, itemTo: -1,
   x: 160, y: 200, width: 40, height: 20
 }
 
@@ -109,6 +126,7 @@ test('selection refresh preserves the tap action and a cleared selection does no
 
   app.onBlockAnchorChange('left', {
     type: 'paragraph', tapType: '', from: 12, to: 32,
+    inlineItems: [], inlineIndex: -1, itemFrom: -1, itemTo: -1,
     x: 170, y: 220, width: 40, height: 20
   })
   assert.equal(app.blockPanelAnchor.tapType, 'link')
@@ -127,7 +145,7 @@ test('content actions run after dismissal; normal close restores focus only to t
   app.blockPanelSourcePath = 'note.md'
   app.blockPanelPendingAction = true
   app.onBlockPropertyPanelDisappear()
-  assert.deepEqual(app.previewBridge.activated, [[12, 32]])
+  assert.deepEqual(app.previewBridge.activated, [[12, 32, -1]])
   assert.deepEqual(app.previewBridge.focused, [])
 
   const closeApp = makeApp()
@@ -141,6 +159,115 @@ test('content actions run after dismissal; normal close restores focus only to t
   closeApp.activePane = 'right'
   closeApp.onBlockPropertyPanelDisappear()
   assert.deepEqual(closeApp.previewBridge.focused, [[12, 32]])
+})
+
+test('paragraph item rows open a precise item panel without losing the parent source range', () => {
+  const item = { index: 1, type: 'link', from: 24, to: 42 }
+  const paragraphAnchor = {
+    type: 'paragraph', tapType: '', from: 10, to: 60, inlineItems: [item],
+    inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  const app = makeApp()
+  app.openBlockPropertyPanel('left', paragraphAnchor)
+
+  assert.equal(app.blockPanelTitle, '这一段')
+  assert.equal(app.blockPanelInlineItemLabel(item), '链接 1')
+  assert.equal(app.blockSourceActionLabel(), '以源码编辑这一段')
+  assert.equal(app.blockSourceDescription(), '只显示这一段的 Markdown，保存后只替换这一段')
+
+  app.openBlockInlineItem(item)
+  assert.equal(app.blockPanelTitle, '链接')
+  assert.equal(app.blockPanelAnchor.inlineIndex, 1)
+  assert.deepEqual(app.blockPanelAnchor.inlineItems, [item])
+  assert.equal(app.blockSourceActionLabel(), '以源码编辑这一项')
+  assert.equal(app.blockSourceDescription(), '只显示这一项的 Markdown，保存后只替换这一项')
+})
+
+test('selection refresh preserves the chosen repeated inline target through action replay', () => {
+  const items = [
+    { index: 0, type: 'link', from: 16, to: 32 },
+    { index: 1, type: 'link', from: 36, to: 54 }
+  ]
+  const paragraphAnchor = {
+    type: 'paragraph', tapType: '', from: 10, to: 60, inlineItems: items,
+    inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  const app = makeApp()
+  app.openBlockPropertyPanel('left', paragraphAnchor)
+  app.openBlockInlineItem(items[1])
+  app.onBlockAnchorChange('left', {
+    ...paragraphAnchor,
+    x: 170,
+    y: 220
+  })
+
+  assert.equal(app.blockPanelAnchor.inlineIndex, 1)
+  assert.equal(app.blockPanelAnchor.itemFrom, 36)
+  assert.equal(app.blockPanelAnchor.itemTo, 54)
+  app.blockPanelSourceVaultId = 'vault-a'
+  app.blockPanelSourcePath = 'note.md'
+  app.blockPanelPendingAction = true
+  app.onBlockPropertyPanelDisappear()
+  assert.deepEqual(app.previewBridge.activated, [[10, 60, 1]])
+})
+
+test('inline item source drawer reads only the selected exact source range', async () => {
+  const source = '前文 [重复](https://first.test) 与 [重复](https://second.test) 后文'
+  const firstFrom = source.indexOf('[重复]')
+  const firstTo = source.indexOf(')', firstFrom) + 1
+  const secondFrom = source.indexOf('[重复]', firstFrom + 1)
+  const secondTo = source.indexOf(')', secondFrom) + 1
+  const items = [
+    { index: 0, type: 'link', from: firstFrom, to: firstTo },
+    { index: 1, type: 'link', from: secondFrom, to: secondTo }
+  ]
+  const paragraphAnchor = {
+    type: 'paragraph', tapType: '', from: 0, to: source.length, inlineItems: items,
+    inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  const app = makeApp()
+  app.editorBridge.getContent = async () => source
+  app.openBlockPropertyPanel('left', paragraphAnchor)
+  app.openBlockInlineItem(items[1])
+  await app.openBlockSourceDrawer()
+
+  assert.equal(app.blockSourceFrom, secondFrom)
+  assert.equal(app.blockSourceTo, secondTo)
+  assert.equal(app.blockSourceDraft, '[重复](https://second.test)')
+  assert.equal(app.blockSourceEditing, true)
+})
+
+test('async source opening is canceled if the selected inline item changes', async () => {
+  const source = '前文 [一](https://a.test) 与 [二](https://b.test) 后文'
+  const items = [
+    { index: 0, type: 'link', from: source.indexOf('[一]'), to: source.indexOf(')', source.indexOf('[一]')) + 1 },
+    { index: 1, type: 'link', from: source.indexOf('[二]'), to: source.indexOf(')', source.indexOf('[二]')) + 1 }
+  ]
+  const paragraphAnchor = {
+    type: 'paragraph', tapType: '', from: 0, to: source.length, inlineItems: items,
+    inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  const app = makeApp()
+  app.editorBridge.getContent = async () => source
+  app.openBlockPropertyPanel('left', paragraphAnchor)
+  app.openBlockInlineItem(items[0])
+  app.flushSimplePreviewChanges = async () => {
+    app.blockPanelAnchor = {
+      ...app.blockPanelAnchor,
+      inlineIndex: items[1].index,
+      itemFrom: items[1].from,
+      itemTo: items[1].to
+    }
+    return ''
+  }
+  await app.openBlockSourceDrawer()
+
+  assert.equal(app.blockSourceEditing, false)
+  assert.equal(app.blockSourceDraft, '')
 })
 
 test('changing the anchor closes the panel without restoring focus to the old block', () => {

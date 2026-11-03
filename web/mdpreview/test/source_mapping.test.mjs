@@ -43,6 +43,62 @@ test('source block rendering keeps reference links and image blocks intact', () 
   assert.equal(result.blocks.length, 2)
 })
 
+test('paragraph inline items keep distinct source ranges across CRLF and nested formatting', () => {
+  const source = '\uFEFF---\r\ntitle: 保持\r\n---\r\n\r\n首行 **[同名](https://a.test)** 与 ' +
+    '[同名](https://b.test) `code` $x$ ![图](images/a.png)\r\n'
+  const body = source.slice(source.indexOf('首行'))
+  const rendered = renderMarkdownWithSourceBlocks(body, 3, source.length - body.length)
+  const paragraph = rendered.blocks[0]
+
+  assert.equal(paragraph.inlineSafe, true)
+  assert.deepEqual(paragraph.inlineItems.map((item) => item.type),
+    ['link', 'link', 'inlinecode', 'mathInline', 'image'])
+  assert.deepEqual(paragraph.inlineItems.map((item) => source.slice(item.from, item.to)), [
+    '[同名](https://a.test)',
+    '[同名](https://b.test)',
+    '`code`',
+    '$x$',
+    '![图](images/a.png)'
+  ])
+})
+
+test('escaped Markdown syntax stays plain text while nested repeated links map exactly', () => {
+  const source = '转义的 \\[方括号\\] 与 \\[[不是双链\\]\\]，**[重复](https://first.test)** 和 ' +
+    '[重复](https://second.test)，\\`不是代码\\`，还有 `code`'
+  const paragraph = renderMarkdownWithSourceBlocks(source).blocks[0]
+
+  assert.equal(paragraph.inlineSafe, true)
+  assert.deepEqual(paragraph.inlineItems.map((item) => source.slice(item.from, item.to)), [
+    '[重复](https://first.test)',
+    '[重复](https://second.test)',
+    '`code`'
+  ])
+})
+
+test('wiki-link display edits map an inline item back to the exact source range', () => {
+  const source = '前文 [[Target|显示名]] 后文'
+  const original = '[[Target|显示名]]'
+  const sourceStart = source.indexOf(original)
+  const displayLink = '[显示名](#wikilink:opaque)'
+  const display = source.slice(0, sourceStart) + displayLink + source.slice(sourceStart + original.length)
+  const result = renderMarkdownWithSourceBlocks(display, 0, 0, [{
+    displayStart: sourceStart,
+    displayEnd: sourceStart + displayLink.length,
+    sourceStart,
+    sourceEnd: sourceStart + original.length
+  }])
+  const item = result.blocks[0].inlineItems[0]
+
+  assert.equal(item.type, 'link')
+  assert.equal(source.slice(item.from, item.to), original)
+})
+
+test('paragraphs containing unsupported inline syntax do not expose a partial item list', () => {
+  const result = renderMarkdownWithSourceBlocks('已支持 [链接](https://example.com) 和 ==高亮==')
+  assert.equal(result.blocks[0].inlineSafe, false)
+  assert.deepEqual(result.blocks[0].inlineItems, [])
+})
+
 test('source line lookup disambiguates repeated headings and chooses the nearest block for blank lines', () => {
   const blocks = [
     { startLine: 2, endLine: 2 },

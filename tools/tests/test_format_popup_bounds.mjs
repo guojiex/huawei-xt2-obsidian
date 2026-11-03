@@ -52,6 +52,7 @@ function layout(options) {
     formatMenuMaxHeight: 500,
     paneFilePath: () => 'note.md',
     isPaneEditable: () => true,
+    isBlockPropertyPanelOpen: () => false,
     isSingleScreenLayout: () => options.breakpoint === 'sm',
     isReferenceShown: () => true,
     notePaneVisible: () => options.rightVisible ?? true,

@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
+import { createRequire } from 'node:module'
 
 const root = new URL('../../', import.meta.url)
+const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url))
+const { transformSync } = require('esbuild')
+const vm = require('node:vm')
 const previewSource = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root), 'utf8')
 const previewComponentSource = fs.readFileSync(
   new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8'
@@ -12,6 +16,20 @@ const buildSource = fs.readFileSync(new URL('web/mdpreview/build.mjs', root), 'u
 const generatedPreview = fs.readFileSync(
   new URL('entry/src/main/resources/rawfile/mdpreview/index.html', root), 'utf8'
 )
+
+function loadFunction(source, startMarker, endMarker, name, isExported = false) {
+  const start = source.indexOf(startMarker)
+  const end = source.indexOf(endMarker, start)
+  assert.ok(start >= 0 && end > start)
+  const body = source.slice(start, end).replace(isExported ? 'export function' : 'function', 'function')
+  const context = vm.createContext({ module: { exports: {} } })
+  const code = transformSync(`${body}\nmodule.exports = ${name};`, {
+    loader: 'ts',
+    format: 'cjs'
+  }).code
+  vm.runInContext(code, context)
+  return { fn: context.module.exports, context }
+}
 
 test('selection feedback outlines locked rendered children using v2 tokens', () => {
   assert.match(previewSource, /selectedLockedBlocks\(lockedBlocks, selection, sourceBlockForNode\)/)
@@ -41,11 +59,133 @@ test('locked block taps route links and images without synthesizing a block sele
   assert.match(handler, /event\.target\.closest\('input, button'\)\) return/)
   assert.match(handler, /anchor\.tapType = 'image'/)
   assert.match(handler, /anchor\.tapType = href\.indexOf\('#wikilink:'\) === 0 \? 'wikilink' : 'link'/)
+  assert.match(handler, /anchor\.inlineIndex = Number\(inlineTarget\.dataset\.previewInlineIndex\)/)
   assert.match(handler, /event\.preventDefault\(\)/)
   assert.match(handler, /onLockedContentTap\(tapPayload\)/)
-  assert.match(previewSource, /function activateLockedContent\(from: number, to: number\): void/)
+  assert.match(previewSource, /function activateLockedContent\(from: number, to: number, inlineIndex: number = -1\): void/)
+  assert.match(previewSource, /if \(Number\(item\.dataset\.previewInlineIndex\) === inlineIndex\)/)
   assert.match(previewSource, /replayingLockedTap = true/)
   assert.match(previewSource, /if \(!editable\) openImage\(img\)/)
+})
+
+test('preview anchor bridge accepts exact inline identities and rejects invalid ranges', () => {
+  const { fn: mapAnchor } = loadFunction(
+    previewComponentSource,
+    'export function mapPreviewBlockAnchor',
+    '\ninterface CaptureWaiter',
+    'mapPreviewBlockAnchor',
+    true
+  )
+  const payload = {
+    type: 'paragraph',
+    from: 10,
+    to: 80,
+    inlineItems: [{ index: 0, type: 'link', from: 18, to: 35 }],
+    inlineIndex: 0,
+    tapType: 'link',
+    itemFrom: 18,
+    itemTo: 35,
+    left: 20,
+    top: 30,
+    width: 100,
+    height: 40,
+    viewportWidth: 400,
+    viewportHeight: 600
+  }
+  const anchor = mapAnchor(JSON.stringify(payload), [5, 7, 800, 1200])
+
+  assert.deepEqual(JSON.parse(JSON.stringify(anchor.inlineItems)), [
+    { index: 0, type: 'link', from: 18, to: 35 }
+  ])
+  assert.equal(anchor.inlineIndex, 0)
+  assert.equal(anchor.itemFrom, 18)
+  assert.equal(anchor.itemTo, 35)
+  assert.equal(anchor.x, 45)
+
+  const invalid = mapAnchor(JSON.stringify({
+    ...payload,
+    inlineItems: [{ index: 0, type: 'link', from: 9, to: 35 }]
+  }), [5, 7, 800, 1200])
+  assert.deepEqual(JSON.parse(JSON.stringify(invalid.inlineItems)), [])
+  assert.equal(invalid.inlineIndex, -1)
+  assert.equal(invalid.tapType, '')
+})
+
+test('rendered inline nodes receive metadata only after every item maps', () => {
+  const { fn: annotate } = loadFunction(
+    previewSource,
+    'function annotateInlineItems',
+    '\nfunction setActiveLockedBlocks',
+    'annotateInlineItems'
+  )
+  const makeNode = (href = '') => ({
+    dataset: {},
+    closest: () => null,
+    getAttribute: (name) => name === 'href' ? href : null
+  })
+  const link = makeNode('https://example.test')
+  const wikiLink = makeNode('#wikilink:opaque')
+  const code = makeNode()
+  const math = makeNode()
+  const block = {
+    dataset: {},
+    querySelectorAll(selector) {
+      if (selector === 'a') return [link, wikiLink]
+      if (selector === 'img') return []
+      if (selector === 'code') return [code]
+      if (selector === '.katex') return [math]
+      return []
+    }
+  }
+  const items = [
+    { index: 0, type: 'link', from: 2, to: 12 },
+    { index: 1, type: 'link', from: 20, to: 35 },
+    { index: 2, type: 'inlinecode', from: 40, to: 47 },
+    { index: 3, type: 'mathInline', from: 50, to: 53 }
+  ]
+
+  annotate(block, { inlineSafe: true, inlineItems: items })
+  assert.equal(block.dataset.inlineItemsReady, 'true')
+  assert.equal(link.dataset.previewInlineIndex, '0')
+  assert.equal(wikiLink.dataset.previewInlineType, 'wikilink')
+  assert.equal(code.dataset.previewInlineFrom, '40')
+  assert.equal(math.dataset.previewInlineTo, '53')
+
+  const mismatchedBlock = {
+    dataset: {},
+    querySelectorAll(selector) {
+      if (selector === 'a') return [makeNode()]
+      return []
+    }
+  }
+  annotate(mismatchedBlock, { inlineSafe: true, inlineItems: items.slice(0, 2) })
+  assert.equal(mismatchedBlock.dataset.inlineItemsReady, 'false')
+  assert.equal(mismatchedBlock.querySelectorAll('a')[0].dataset.previewInlineIndex, undefined)
+})
+
+test('replaying a paragraph action activates only the selected repeated inline item', () => {
+  const first = { dataset: { previewInlineIndex: '0' }, tagName: 'A', clicks: 0, click() { this.clicks++ } }
+  const second = { dataset: { previewInlineIndex: '1' }, tagName: 'A', clicks: 0, click() { this.clicks++ } }
+  const block = {
+    dataset: { sourceFrom: '10', sourceTo: '80' },
+    querySelectorAll: () => [first, second]
+  }
+  const contentElement = { querySelectorAll: () => [block] }
+  const { fn: activate, context } = loadFunction(
+    previewSource,
+    'function activateLockedContent',
+    '\nfunction configureEditableBlocks',
+    'activateLockedContent'
+  )
+  context.contentElement = contentElement
+  context.lastLockedTapTarget = null
+  context.replayingLockedTap = false
+  context.openImage = () => {}
+
+  activate(10, 80, 1)
+  assert.equal(first.clicks, 0)
+  assert.equal(second.clicks, 1)
+  assert.equal(context.replayingLockedTap, false)
 })
 
 test('changing preview content or leaving simple mode clears stale block outlines', () => {

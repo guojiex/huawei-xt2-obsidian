@@ -48,6 +48,62 @@ function sourcePositionForDisplayOffset(displayOffset, edits, isEnd) {
   return displayOffset - delta
 }
 
+const INLINE_ITEM_TYPES = {
+  link: 'link',
+  image: 'image',
+  codespan: 'inlinecode',
+  mathInline: 'mathInline'
+}
+
+const SAFE_INLINE_TOKEN_TYPES = new Set([
+  'text', 'escape', 'br', 'strong', 'em', 'del',
+  ...Object.keys(INLINE_ITEM_TYPES)
+])
+
+const UNSUPPORTED_INLINE_PATTERN = /!?\[\[[^\]]*\]\]|%%|\[\^[^\]]+\]|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m
+
+function collectInlineTokenRanges(tokens, parentRaw) {
+  const items = []
+  let safe = true
+
+  const visit = (token, tokenOffset) => {
+    if (!SAFE_INLINE_TOKEN_TYPES.has(token.type)) {
+      safe = false
+      return
+    }
+    const itemType = INLINE_ITEM_TYPES[token.type]
+    if (itemType) {
+      items.push({ type: itemType, displayStart: tokenOffset, displayEnd: tokenOffset + token.raw.length })
+      return
+    }
+    if (token.type === 'text' && UNSUPPORTED_INLINE_PATTERN.test(token.raw)) {
+      safe = false
+      return
+    }
+    if (Array.isArray(token.tokens) && token.tokens.length > 0) {
+      collect(token.tokens, token.raw, tokenOffset)
+    }
+  }
+
+  const collect = (children, raw, offset) => {
+    let cursor = 0
+    for (const child of children) {
+      const childRaw = child.raw || ''
+      const relativeStart = raw.indexOf(childRaw, cursor)
+      if (relativeStart < 0) {
+        safe = false
+        return
+      }
+      visit(child, offset + relativeStart)
+      cursor = relativeStart + childRaw.length
+    }
+  }
+
+  collect(tokens, parentRaw, 0)
+  if (!safe) return { items: [], safe: false }
+  return { items, safe: true }
+}
+
 export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceOffset = 0,
   sourceEdits = [], displayOffset = 0) {
   const tokens = marked.lexer(markdown)
@@ -80,8 +136,30 @@ export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceO
         const sourceEnd = sourceEdits.length > 0
           ? sourcePositionForDisplayOffset(displayEnd, sourceEdits, true)
           : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + raw.length, normalizedLineEndings)
+        const inline = token.type === 'paragraph'
+          ? collectInlineTokenRanges(token.tokens || [], raw)
+          : { items: [], safe: false }
+        const inlineItems = inline.safe ? inline.items.map((item, itemIndex) => {
+          const itemDisplayStart = displayOffset +
+            originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayStart, normalizedLineEndings)
+          const itemDisplayEnd = displayOffset +
+            originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayEnd, normalizedLineEndings)
+          return {
+            index: itemIndex,
+            type: item.type,
+            from: sourceEdits.length > 0
+              ? sourcePositionForDisplayOffset(itemDisplayStart, sourceEdits, false)
+              : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayStart, normalizedLineEndings),
+            to: sourceEdits.length > 0
+              ? sourcePositionForDisplayOffset(itemDisplayEnd, sourceEdits, true)
+              : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayEnd, normalizedLineEndings)
+          }
+        }) : []
         htmlParts.push(`<div class="preview-source-block" data-source-start-line="${startLine}" data-source-end-line="${endLine}">${html}</div>`)
-        blocks.push({ tokenIndex: index, startLine, endLine, sourceStart, sourceEnd, type: token.type })
+        blocks.push({
+          tokenIndex: index, startLine, endLine, sourceStart, sourceEnd, type: token.type,
+          inlineItems, inlineSafe: inline.safe
+        })
       }
     }
 

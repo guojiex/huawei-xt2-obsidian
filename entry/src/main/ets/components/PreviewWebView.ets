@@ -27,11 +27,22 @@ export interface PreviewCaptureResult {
   scrollTop: number;
 }
 
+export interface PreviewBlockInlineItem {
+  index: number;
+  type: string;
+  from: number;
+  to: number;
+}
+
 export interface PreviewBlockAnchor {
   type: string;
   tapType: string;
   from: number;
   to: number;
+  inlineItems: PreviewBlockInlineItem[];
+  inlineIndex: number;
+  itemFrom: number;
+  itemTo: number;
   x: number;
   y: number;
   width: number;
@@ -42,18 +53,49 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
   if (payload.length === 0 || area.length < 4) {
     return null;
   }
-  let source: Record<string, string | number>;
+  let source: Record<string, string | number | PreviewBlockInlineItem[]>;
   try {
-    source = JSON.parse(payload) as Record<string, string | number>;
+    source = JSON.parse(payload) as Record<string, string | number | PreviewBlockInlineItem[]>;
   } catch {
     return null;
   }
   const type: string = source['type'] as string;
   const rawTapType: string = typeof source['tapType'] === 'string' ? source['tapType'] as string : '';
-  const tapType: string = rawTapType === 'image' || rawTapType === 'link' || rawTapType === 'wikilink'
+  let tapType: string = ['image', 'link', 'wikilink', 'inlinecode', 'mathInline'].includes(rawTapType)
     ? rawTapType : '';
   const from: number = source['from'] as number;
   const to: number = source['to'] as number;
+  const inlineItems: PreviewBlockInlineItem[] = [];
+  const rawInlineItems: PreviewBlockInlineItem[] = source['inlineItems'] as PreviewBlockInlineItem[];
+  if (Array.isArray(rawInlineItems)) {
+    for (let index = 0; index < rawInlineItems.length; index++) {
+      const item: PreviewBlockInlineItem = rawInlineItems[index];
+      if (item.index !== index || !['image', 'link', 'wikilink', 'inlinecode', 'mathInline'].includes(item.type) ||
+        !Number.isInteger(item.from) || !Number.isInteger(item.to) || item.from < from || item.to > to ||
+        item.to <= item.from) {
+        inlineItems.length = 0;
+        break;
+      }
+      inlineItems.push({ index: item.index, type: item.type, from: item.from, to: item.to });
+    }
+  }
+  let inlineIndex: number = -1;
+  let itemFrom: number = -1;
+  let itemTo: number = -1;
+  const rawInlineIndex: number = source['inlineIndex'] as number;
+  if (Number.isInteger(rawInlineIndex) && rawInlineIndex >= 0) {
+    for (let index = 0; index < inlineItems.length; index++) {
+      const item: PreviewBlockInlineItem = inlineItems[index];
+      if (item.index === rawInlineIndex && item.type === tapType &&
+        item.from === source['itemFrom'] && item.to === source['itemTo']) {
+        inlineIndex = item.index;
+        itemFrom = item.from;
+        itemTo = item.to;
+        break;
+      }
+    }
+    if (inlineIndex < 0) tapType = '';
+  }
   const left: number = source['left'] as number;
   const top: number = source['top'] as number;
   const width: number = source['width'] as number;
@@ -73,6 +115,10 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
     tapType: tapType,
     from: from,
     to: to,
+    inlineItems: inlineItems,
+    inlineIndex: inlineIndex,
+    itemFrom: itemFrom,
+    itemTo: itemTo,
     x: area[0] + left * scaleX,
     y: area[1] + top * scaleY,
     width: width * scaleX,
@@ -250,11 +296,11 @@ class PreviewImpl {
     this.enqueue(`window.__mdpreview.focusLockedBlock(${from},${to})`);
   }
 
-  activateLockedContent(from: number, to: number): void {
+  activateLockedContent(from: number, to: number, inlineIndex: number = -1): void {
     if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) {
       return;
     }
-    this.enqueue(`window.__mdpreview.activateLockedContent(${from},${to})`);
+    this.enqueue(`window.__mdpreview.activateLockedContent(${from},${to},${inlineIndex})`);
   }
 
   scrollToHeading(index: number): void {
@@ -502,8 +548,8 @@ export class PreviewBridge {
     this.impl?.focusBlock(from, to);
   }
 
-  activateLockedContent(from: number, to: number): void {
-    this.impl?.activateLockedContent(from, to);
+  activateLockedContent(from: number, to: number, inlineIndex: number = -1): void {
+    this.impl?.activateLockedContent(from, to, inlineIndex);
   }
 
   scrollToHeading(index: number): void {

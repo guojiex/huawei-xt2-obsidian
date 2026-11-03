@@ -45,7 +45,7 @@ import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import {
-  PreviewWebView, PreviewBridge, PreviewBlockAnchor, PreviewCaptureResult
+  PreviewWebView, PreviewBridge, PreviewBlockAnchor, PreviewBlockInlineItem, PreviewCaptureResult
 } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
@@ -216,6 +216,7 @@ struct Index {
   @State blockPanelPane: string = 'left';
   @State blockPanelTitle: string = '当前块';
   @State blockPanelAnchor: PreviewBlockAnchor | null = null;
+  @State blockPanelInlineItems: PreviewBlockInlineItem[] = [];
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
   @State blockPanelMaxHeight: number = Size.menuMaxH;
@@ -2559,6 +2560,10 @@ struct Index {
               tapType: currentAnchor.tapType,
               from: anchor.from,
               to: anchor.to,
+              inlineItems: anchor.inlineItems.length > 0 ? anchor.inlineItems : currentAnchor.inlineItems,
+              inlineIndex: currentAnchor.inlineIndex,
+              itemFrom: currentAnchor.itemFrom,
+              itemTo: currentAnchor.itemTo,
               x: anchor.x,
               y: anchor.y,
               width: anchor.width,
@@ -2566,6 +2571,7 @@ struct Index {
             };
           }
           this.blockPanelAnchor = panelAnchor;
+          this.blockPanelInlineItems = panelAnchor.inlineItems;
           this.blockPanelTitle = this.blockSourceEditing ? '以源码编辑' : this.blockPanelTitleFor(panelAnchor);
           this.updateBlockPropertyPanelLayout(pane);
         }
@@ -2679,6 +2685,10 @@ struct Index {
         return '链接';
       case 'wikilink':
         return '双链';
+      case 'inlinecode':
+        return '行内代码';
+      case 'mathInline':
+        return '行内公式';
     }
     switch (anchor.type) {
       case 'table':
@@ -2777,6 +2787,7 @@ struct Index {
     this.formatMenuOpen = false;
     this.blockPanelPane = pane;
     this.blockPanelAnchor = anchor;
+    this.blockPanelInlineItems = anchor.inlineItems;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
     this.blockPanelSourcePath = this.paneFilePath(pane);
@@ -2790,6 +2801,73 @@ struct Index {
     this.leftBlockPanelOpen = pane === 'left';
     this.rightBlockPanelOpen = pane === 'right';
     this.updateBlockPropertyPanelLayout(pane);
+  }
+
+  private openBlockInlineItem(item: PreviewBlockInlineItem): void {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null || !this.blockPanelInlineItems.some((candidate: PreviewBlockInlineItem): boolean =>
+      candidate.index === item.index && candidate.from === item.from && candidate.to === item.to &&
+      candidate.type === item.type)) {
+      return;
+    }
+    const itemAnchor: PreviewBlockAnchor = {
+      type: anchor.type,
+      tapType: item.type,
+      from: anchor.from,
+      to: anchor.to,
+      inlineItems: this.blockPanelInlineItems,
+      inlineIndex: item.index,
+      itemFrom: item.from,
+      itemTo: item.to,
+      x: anchor.x,
+      y: anchor.y,
+      width: anchor.width,
+      height: anchor.height
+    };
+    this.blockPanelAnchor = itemAnchor;
+    this.blockPanelTitle = this.blockPanelTitleFor(itemAnchor);
+    this.updateBlockPropertyPanelLayout(this.blockPanelPane);
+  }
+
+  private blockPanelInlineItemLabel(item: PreviewBlockInlineItem): string {
+    let ordinal: number = 0;
+    for (const candidate of this.blockPanelInlineItems) {
+      if (candidate.type === item.type) {
+        ordinal++;
+      }
+      if (candidate.index === item.index) {
+        break;
+      }
+    }
+    let label: string = '链接';
+    if (item.type === 'image') {
+      label = '图片';
+    } else if (item.type === 'inlinecode') {
+      label = '行内代码';
+    } else if (item.type === 'mathInline') {
+      label = '行内公式';
+    } else if (item.type === 'wikilink') {
+      label = '双链';
+    }
+    return `${label} ${ordinal}`;
+  }
+
+  private blockSourceActionLabel(): string {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor !== null && anchor.type === 'paragraph') {
+      return anchor.inlineIndex < 0 ? '以源码编辑这一段' : '以源码编辑这一项';
+    }
+    return '以源码编辑此块';
+  }
+
+  private blockSourceDescription(): string {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor !== null && anchor.type === 'paragraph') {
+      return anchor.inlineIndex < 0
+        ? '只显示这一段的 Markdown，保存后只替换这一段'
+        : '只显示这一项的 Markdown，保存后只替换这一项';
+    }
+    return '只显示这一块的 Markdown，保存后只替换这一块';
   }
 
   private closeBlockPropertyPanel(restoreFocus: boolean = true): void {
@@ -2819,6 +2897,12 @@ struct Index {
       this.editorBridgeForPane(pane).currentDocumentRevision === documentRevision;
   }
 
+  private isSameBlockPanelTarget(current: PreviewBlockAnchor | null, expected: PreviewBlockAnchor): boolean {
+    return current !== null && current.from === expected.from && current.to === expected.to &&
+      current.tapType === expected.tapType && current.inlineIndex === expected.inlineIndex &&
+      current.itemFrom === expected.itemFrom && current.itemTo === expected.itemTo;
+  }
+
   private async openBlockSourceDrawer(): Promise<void> {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     const pane: string = this.blockPanelPane;
@@ -2829,6 +2913,8 @@ struct Index {
       this.editorBridgeForPane(pane).currentDocumentRevision)) {
       return;
     }
+    const sourceFrom: number = anchor.inlineIndex >= 0 ? anchor.itemFrom : anchor.from;
+    const sourceTo: number = anchor.inlineIndex >= 0 ? anchor.itemTo : anchor.to;
     const flushError: string = await this.flushSimplePreviewChanges();
     if (flushError.length > 0) {
       promptAction.showToast({ message: '无法同步当前笔记，未打开块源码' });
@@ -2838,7 +2924,7 @@ struct Index {
     const documentRevision: number = bridge.currentDocumentRevision;
     const currentAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
-      currentAnchor === null || currentAnchor.from !== anchor.from || currentAnchor.to !== anchor.to) {
+      !this.isSameBlockPanelTarget(currentAnchor, anchor)) {
       return;
     }
     let source: string = '';
@@ -2850,18 +2936,20 @@ struct Index {
     }
     const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
-      latestAnchor === null || latestAnchor.from !== anchor.from || latestAnchor.to !== anchor.to ||
-      anchor.from < 0 || anchor.to <= anchor.from || anchor.to > source.length) {
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) ||
+      !Number.isInteger(sourceFrom) || !Number.isInteger(sourceTo) ||
+      sourceFrom < anchor.from || sourceTo > anchor.to || sourceTo <= sourceFrom ||
+      sourceTo > source.length) {
       promptAction.showToast({ message: '块内容已变化，请重新打开面板' });
       return;
     }
-    const snapshot: string = source.slice(anchor.from, anchor.to);
+    const snapshot: string = source.slice(sourceFrom, sourceTo);
     if (snapshot.length === 0) {
       promptAction.showToast({ message: '未能读取块源码，请重新打开面板' });
       return;
     }
-    this.blockSourceFrom = anchor.from;
-    this.blockSourceTo = anchor.to;
+    this.blockSourceFrom = sourceFrom;
+    this.blockSourceTo = sourceTo;
     this.blockSourceSnapshot = snapshot;
     this.blockSourceDraft = snapshot;
     this.blockSourceBlockType = this.blockPanelTitleFor(anchor);
@@ -2996,7 +3084,7 @@ struct Index {
       if (anchor !== null && this.activePane === pane && this.topView === 'note' &&
         this.experienceMode === 'simple' && this.currentVaultId === this.blockPanelSourceVaultId &&
         this.paneFilePath(pane) === this.blockPanelSourcePath && this.isPaneEditable(pane)) {
-        this.previewBridgeForPane(pane).activateLockedContent(anchor.from, anchor.to);
+        this.previewBridgeForPane(pane).activateLockedContent(anchor.from, anchor.to, anchor.inlineIndex);
       }
       this.blockPanelRestoreFocus = false;
       return;
@@ -6653,7 +6741,7 @@ struct Index {
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
-        Text('只显示这一块的 Markdown，保存后只替换这一块')
+        Text(this.blockSourceDescription())
           .fontSize(FontSize.body3)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
@@ -6685,7 +6773,24 @@ struct Index {
       Column() {
         Scroll() {
           Column() {
-            if (this.blockPanelActionLabel().length > 0) {
+            if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'paragraph' &&
+              this.blockPanelAnchor.inlineIndex < 0 && this.blockPanelInlineItems.length > 0) {
+              ForEach(this.blockPanelInlineItems, (item: PreviewBlockInlineItem): void => {
+                Row({ space: Space.s2 }) {
+                  Text(this.blockPanelInlineItemLabel(item))
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                  Icon('chevronRight', Space.s4, $r('app.color.text_tertiary'))
+                }
+                .width('100%')
+                .height(Size.touch)
+                .padding({ left: Space.s3, right: Space.s3 })
+                .focusable(true)
+                .accessibilityText(this.blockPanelInlineItemLabel(item))
+                .onClick((): void => { this.openBlockInlineItem(item); })
+              }, (item: PreviewBlockInlineItem): string => String(item.index))
+            } else if (this.blockPanelActionLabel().length > 0) {
               Row() {
                 Text(this.blockPanelActionLabel())
                   .fontSize(FontSize.body2)
@@ -6718,7 +6823,7 @@ struct Index {
         })
 
         Row() {
-          Text('以源码编辑此块')
+          Text(this.blockSourceActionLabel())
             .fontSize(FontSize.body2)
             .fontColor($r('app.color.text_primary'))
             .layoutWeight(1)
@@ -6726,7 +6831,7 @@ struct Index {
         .width('100%')
         .height(Size.touch)
         .padding({ left: Space.s3, right: Space.s3 })
-        .accessibilityText('以源码编辑此块')
+        .accessibilityText(this.blockSourceActionLabel())
         .onClick((): void => { void this.openBlockSourceDrawer(); })
       }
       .width('100%')
