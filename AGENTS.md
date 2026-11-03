@@ -8,6 +8,12 @@
 >
 > ⚠️ 鸿蒙很多行为文档没写，凭通用移动端经验猜会直接写错 —— 先读 `docs/harmonyos/`。
 
+## 持续开发执行入口
+
+持续领取版本需求、修复或验收前，读取仓库 Skill：
+[`xt2-release-delivery`](.agents/skills/xt2-release-delivery/SKILL.md)。
+不支持自动发现 Skill 的模型也按该文件执行。它约束任务收敛、验证和提交节奏，不替代下方硬约束或版本需求文档。
+
 ## 开工前读什么
 
 | 顺序 | 文件 | 看什么 |
