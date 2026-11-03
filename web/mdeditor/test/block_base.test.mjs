@@ -28,6 +28,16 @@ const result = await build({
       export function ready(source) {
         return isBlockRegistryReady(state(source))
       }
+      export function unready(source) {
+        const editor = EditorState.create({ doc: source })
+        const simple = collectSimpleModeRanges(editor)
+        return {
+          ready: isBlockRegistryReady(editor),
+          blocks: collectBlockRanges(editor),
+          protected: simple.protected.map((range) => [range.from, range.to]),
+          hints: simple.decorations.filter((range) => range.kind === 'protected-hint').map((range) => range.value)
+        }
+      }
       export function labels() {
         return BLOCK_TYPE_LABELS
       }
@@ -189,10 +199,13 @@ test('18.1 光标与选区能命中块，落在块外返回 null', () => {
   assert.equal(base.findSelection(table.from + 1, table.to - 1, source).id, table.id)
 })
 
-test('18.1 语法树未就绪时不给结构操作（返回空），simpleMode 的整篇只读逻辑不受影响', () => {
+test('18.1 语法树未就绪时注册表不给块，simpleMode 整篇只读并提示', () => {
   const source = '| a | b |\n| --- | --- |\n| 1 | 2 |\n'
-  assert.equal(base.ready(source), true)
-  assert.ok(base.blocks(source).length > 0)
+  const result = base.unready(source)
+  assert.equal(result.ready, false)
+  assert.deepEqual(result.blocks, [])
+  assert.deepEqual(result.protected, [[0, source.length]])
+  assert.deepEqual(result.hints, ['正在安全解析，请稍后继续编辑'])
 })
 
 test('18.2 没有注册的块 parse 返回 null（降级只读，不静默转换）', () => {

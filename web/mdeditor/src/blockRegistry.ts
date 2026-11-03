@@ -352,6 +352,9 @@ export function isBlockRegistryReady(state: EditorState): boolean {
 
 /** 全篇块区间：语法树块 + 行模式块（起点落在语法树块内的行模式块被丢弃，与 v1.7 一致）。 */
 export function collectBlockRanges(state: EditorState): BlockRange[] {
+  if (!isBlockRegistryReady(state)) {
+    return []
+  }
   const source = state.doc.toString()
   const ranges: BlockRange[] = []
   const frontmatter = frontmatterBlock(source)
