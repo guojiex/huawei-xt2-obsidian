@@ -13,9 +13,12 @@ assert.ok(keyboardHandlerStart >= 0 && keyboardHandlerEnd > keyboardHandlerStart
   'could not find Index.onFormatKeyboardInsetChanged');
 const start = source.indexOf('  private updateFormatPopupLayout(pane: string): void {');
 const end = source.indexOf('\n  private applyEditorFormat(', start);
+const layoutStart = source.indexOf('  private calculateAnchoredPopupLayout(', keyboardHandlerStart);
+const layoutEnd = source.indexOf('\n  private updateFormatPopupLayout(', layoutStart);
 assert.ok(start >= 0 && end > start, 'could not find Index.updateFormatPopupLayout');
+assert.ok(layoutStart >= 0 && layoutEnd > layoutStart, 'could not find Index.calculateAnchoredPopupLayout');
 
-const code = transformSync(`class FormatPopupHarness { ${source.slice(keyboardHandlerStart, keyboardHandlerEnd).trim()} ${source.slice(start, end).trim()} }; module.exports = FormatPopupHarness;`, {
+const code = transformSync(`class FormatPopupHarness { ${source.slice(keyboardHandlerStart, keyboardHandlerEnd).trim()} ${source.slice(layoutStart, layoutEnd).trim()} ${source.slice(start, end).trim()} }; module.exports = FormatPopupHarness;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;

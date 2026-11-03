@@ -59,11 +59,16 @@ test('block anchor geometry is published through the parent preview bridge', () 
 })
 
 test('workspace keeps left and right preview block anchors independent', () => {
+  const handlerStart = indexSource.indexOf('  private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {')
+  const handlerEnd = indexSource.indexOf('\n  private recordBlockToolbarPaneArea(', handlerStart)
+  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart)
   assert.match(indexSource, /@State leftBlockAnchor: PreviewBlockAnchor \| null = null/)
   assert.match(indexSource, /@State rightBlockAnchor: PreviewBlockAnchor \| null = null/)
   assert.match(indexSource,
-    /this\.previewBridge\.onBlockAnchorChange = \(anchor: PreviewBlockAnchor \| null\): void => \{\s*this\.leftBlockAnchor = anchor;/)
+    /this\.previewBridge\.onBlockAnchorChange = \(anchor: PreviewBlockAnchor \| null\): void => \{\s*this\.onBlockAnchorChange\('left', anchor\);/)
   assert.match(indexSource,
-    /this\.rightPreviewBridge\.onBlockAnchorChange = \(anchor: PreviewBlockAnchor \| null\): void => \{\s*this\.rightBlockAnchor = anchor;/)
+    /this\.rightPreviewBridge\.onBlockAnchorChange = \(anchor: PreviewBlockAnchor \| null\): void => \{\s*this\.onBlockAnchorChange\('right', anchor\);/)
+  assert.match(indexSource.slice(handlerStart, handlerEnd),
+    /private onBlockAnchorChange\(pane: string, anchor: PreviewBlockAnchor \| null\): void \{[\s\S]*?if \(pane === 'right'\) \{\s*this\.rightBlockAnchor = anchor;\s*\} else \{\s*this\.leftBlockAnchor = anchor;/)
   assert.doesNotMatch(indexSource, /shareCaptureBridge\.onBlockAnchorChange/)
 })

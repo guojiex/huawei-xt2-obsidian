@@ -94,6 +94,21 @@ interface PaneHeadParam {
   pane: string;
 }
 
+interface AnchoredPopupLayout {
+  placement: Placement;
+  offsetX: number;
+  offsetY: number;
+  width: number;
+  maxHeight: number;
+}
+
+interface BlockToolbarAction {
+  id: string;
+  icon: string;
+  accessibilityText: string;
+  onActivate: () => void;
+}
+
 /** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
 function formLabelOf(bp: string, widthVp: number, heightVp: number): string {
   if (isSingleLandscapeWindow(widthVp, heightVp)) {
@@ -181,6 +196,16 @@ struct Index {
   private leftFormatAnchorArea: number[] = [0, 0, 0, 0];
   private rightFormatAnchorArea: number[] = [0, 0, 0, 0];
   private formatWindowArea: number[] = [0, 0, 0, 0];
+  @State blockToolbarOpen: boolean = false;
+  @State blockToolbarPane: string = 'left';
+  @State blockToolbarPlacement: Placement = Placement.BottomLeft;
+  @State blockToolbarOffsetX: number = 0;
+  @State blockToolbarOffsetY: number = Space.s2;
+  @State blockToolbarWidth: number = 0;
+  @State blockToolbarMaxHeight: number = 0;
+  private leftBlockToolbarPaneArea: number[] = [0, 0, 0, 0];
+  private rightBlockToolbarPaneArea: number[] = [0, 0, 0, 0];
+  private blockToolbarActions: BlockToolbarAction[] = [];
   private formatMenuSourceVaultId: string = '';
   private formatMenuSourcePath: string = '';
   @State navigationRatio: number = -1;
@@ -380,10 +405,10 @@ struct Index {
 
   aboutToAppear(): void {
     this.previewBridge.onBlockAnchorChange = (anchor: PreviewBlockAnchor | null): void => {
-      this.leftBlockAnchor = anchor;
+      this.onBlockAnchorChange('left', anchor);
     };
     this.rightPreviewBridge.onBlockAnchorChange = (anchor: PreviewBlockAnchor | null): void => {
-      this.rightBlockAnchor = anchor;
+      this.onBlockAnchorChange('right', anchor);
     };
     void this.loadAgentKitSlot();
     this.refreshFromRegistry();
@@ -2298,6 +2323,7 @@ struct Index {
     if (this.formatMenuOpen) {
       this.updateFormatPopupLayout(this.formatMenuPane);
     }
+    this.updateBlockToolbarLayout(this.activePane);
   }
 
   private async refreshWorkspaceAfterXiaoyi(): Promise<void> {
@@ -2385,6 +2411,9 @@ struct Index {
     if (this.formatMenuOpen) {
       this.updateFormatPopupLayout(this.formatMenuPane);
     }
+    if (this.blockToolbarOpen) {
+      this.updateBlockToolbarLayout(this.blockToolbarPane);
+    }
   }
 
   private keyboardInsetVp(): number {
@@ -2410,6 +2439,39 @@ struct Index {
     if (this.formatMenuOpen) {
       this.updateFormatPopupLayout(this.formatMenuPane);
     }
+    if (this.blockToolbarOpen) {
+      this.updateBlockToolbarLayout(this.blockToolbarPane);
+    }
+  }
+
+  private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {
+    if (pane === 'right') {
+      this.rightBlockAnchor = anchor;
+    } else {
+      this.leftBlockAnchor = anchor;
+    }
+    if (pane !== this.activePane) {
+      return;
+    }
+    this.blockToolbarPane = pane;
+    this.updateBlockToolbarLayout(pane);
+  }
+
+  private recordBlockToolbarPaneArea(pane: string, area: Area): void {
+    this.recordFormatArea(pane === 'right' ? this.rightBlockToolbarPaneArea : this.leftBlockToolbarPaneArea, area);
+    if (this.blockToolbarOpen && this.blockToolbarPane === pane) {
+      this.updateBlockToolbarLayout(pane);
+    }
+  }
+
+  private blockToolbarAnchorGeometry(pane: string): number[] {
+    const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    const paneArea: number[] = pane === 'right'
+      ? this.rightBlockToolbarPaneArea : this.leftBlockToolbarPaneArea;
+    if (anchor === null) {
+      return [0, 0, 0, 0];
+    }
+    return [anchor.x - paneArea[0], anchor.y - paneArea[1], anchor.width, anchor.height];
   }
 
   private closeFormatMenu(restoreEditor: boolean = false): void {
@@ -2430,6 +2492,7 @@ struct Index {
       return;
     }
     this.setActivePane(pane);
+    this.blockToolbarOpen = false;
     this.formatMenuPane = pane;
     this.formatMenuSourceVaultId = this.currentVaultId;
     this.formatMenuSourcePath = this.paneFilePath(pane);
@@ -2443,6 +2506,76 @@ struct Index {
     if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
       this.closeFormatMenu(true);
     }
+  }
+
+  private hasBlockToolbarForPane(pane: string): boolean {
+    const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    return this.experienceMode === 'simple' && this.topView === 'note' && this.activePane === pane &&
+      !this.formatMenuOpen && this.isPaneEditable(pane) && anchor !== null && this.blockToolbarActions.length > 0 &&
+      (pane !== 'right' || this.notePaneVisible(pane));
+  }
+
+  private calculateAnchoredPopupLayout(
+    pane: string,
+    paneArea: number[],
+    anchorArea: number[],
+    maxWidth: number,
+    naturalHeight: number,
+    defaultPopupLeft: number
+  ): AnchoredPopupLayout | null {
+    const paneX: number = paneArea[0];
+    const paneY: number = paneArea[1];
+    const paneWidth: number = paneArea[2];
+    const paneHeight: number = paneArea[3];
+    const anchorX: number = anchorArea[0];
+    const anchorY: number = anchorArea[1];
+    const anchorWidth: number = anchorArea[2];
+    const anchorHeight: number = anchorArea[3];
+    if (paneWidth <= 0 || paneHeight <= 0 || anchorWidth <= 0 || anchorHeight <= 0) {
+      return null;
+    }
+
+    const windowWidth: number = this.formatWindowArea[2];
+    const windowHeight: number = this.formatWindowArea[3];
+    const visibleLeft: number = Math.max(paneX, windowWidth > 0 ? this.formatWindowArea[0] : paneX);
+    const visibleTop: number = Math.max(paneY, windowHeight > 0 ? this.formatWindowArea[1] : paneY);
+    const visibleRight: number = Math.min(paneX + paneWidth,
+      windowWidth > 0 ? this.formatWindowArea[0] + windowWidth : paneX + paneWidth);
+    const visibleBottom: number = Math.min(paneY + paneHeight,
+      windowHeight > 0 ? this.formatWindowArea[1] + windowHeight : paneY + paneHeight);
+    const keyboardSafeBottom: number = Math.max(visibleTop, visibleBottom - this.keyboardInsetVp());
+    const gap: number = Space.s2;
+    const safeAnchorTop: number = Math.max(visibleTop, Math.min(anchorY, keyboardSafeBottom));
+    const safeAnchorBottom: number = Math.max(visibleTop,
+      Math.min(anchorY + anchorHeight, keyboardSafeBottom));
+    const width: number = Math.min(maxWidth, visibleRight - visibleLeft - gap * 2);
+    const above: number = Math.max(0, safeAnchorTop - visibleTop - gap * 2);
+    const below: number = Math.max(0, keyboardSafeBottom - safeAnchorBottom - gap * 2);
+    const showAbove: boolean = above >= naturalHeight || above >= below;
+    const availableHeight: number = showAbove ? above : below;
+    if (width <= 0 || availableHeight <= 0) {
+      return null;
+    }
+
+    const minLeft: number = visibleLeft + gap;
+    const maxLeft: number = visibleRight - gap - width;
+    const minCenterX: number = minLeft + width / 2;
+    const maxCenterX: number = maxLeft + width / 2;
+    const centerX: number = Math.max(minCenterX, Math.min(anchorX + anchorWidth / 2, maxCenterX));
+    const left: number = centerX - width / 2;
+    const windowLeft: number = windowWidth > 0 ? this.formatWindowArea[0] : paneX;
+    const windowRight: number = windowWidth > 0 ? windowLeft + windowWidth : paneX + paneWidth;
+    const defaultPopupLeftInWindow: number = Math.max(windowLeft + gap,
+      Math.min(defaultPopupLeft, windowRight - gap - width));
+    return {
+      placement: showAbove ? Placement.TopLeft : Placement.BottomLeft,
+      offsetX: left - defaultPopupLeftInWindow,
+      offsetY: showAbove
+        ? safeAnchorTop - anchorY - gap
+        : safeAnchorBottom - anchorY - anchorHeight + gap,
+      width: width,
+      maxHeight: availableHeight
+    };
   }
 
   private updateFormatPopupLayout(pane: string): void {
@@ -2459,65 +2592,67 @@ struct Index {
 
     const paneArea: number[] = pane === 'right' ? this.rightFormatPaneArea : this.leftFormatPaneArea;
     const anchorArea: number[] = pane === 'right' ? this.rightFormatAnchorArea : this.leftFormatAnchorArea;
-    const paneX: number = paneArea[0];
-    const paneY: number = paneArea[1];
     const paneWidth: number = paneArea[2];
     const paneHeight: number = paneArea[3];
     const anchorX: number = anchorArea[0];
-    const anchorY: number = anchorArea[1];
     const anchorWidth: number = anchorArea[2];
     const anchorHeight: number = anchorArea[3];
     if (paneWidth <= 0 || paneHeight <= 0 || anchorWidth <= 0 || anchorHeight <= 0) {
       return;
     }
 
-    const windowWidth: number = this.formatWindowArea[2];
-    const windowHeight: number = this.formatWindowArea[3];
-    const visibleLeft: number = Math.max(paneX, windowWidth > 0 ? this.formatWindowArea[0] : paneX);
-    const visibleTop: number = Math.max(paneY, windowHeight > 0 ? this.formatWindowArea[1] : paneY);
-    const visibleRight: number = Math.min(paneX + paneWidth,
-      windowWidth > 0 ? this.formatWindowArea[0] + windowWidth : paneX + paneWidth);
-    const visibleBottom: number = Math.min(paneY + paneHeight,
-      windowHeight > 0 ? this.formatWindowArea[1] + windowHeight : paneY + paneHeight);
-    const keyboardInset: number = this.keyboardInsetVp();
-    const keyboardSafeBottom: number = Math.max(visibleTop, visibleBottom - keyboardInset);
-    const gap: number = Space.s2;
-    const safeAnchorTop: number = Math.max(visibleTop, Math.min(anchorY, keyboardSafeBottom));
-    const safeAnchorBottom: number = Math.max(visibleTop,
-      Math.min(anchorY + anchorHeight, keyboardSafeBottom));
-    const width: number = Math.min(Size.formatMenuW, visibleRight - visibleLeft - gap * 2);
-    const above: number = Math.max(0, safeAnchorTop - visibleTop - gap * 2);
-    const below: number = Math.max(0, keyboardSafeBottom - safeAnchorBottom - gap * 2);
     const naturalHeight: number = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
-    const showAbove: boolean = above >= naturalHeight || above >= below;
-    const availableHeight: number = showAbove ? above : below;
-    if (width <= 0 || availableHeight <= 0) {
+    const gap: number = Space.s2;
+    const defaultPopupLeft: number = pane === 'right' ? anchorX - anchorWidth + gap : anchorX;
+    const layout: AnchoredPopupLayout | null = this.calculateAnchoredPopupLayout(
+      pane, paneArea, anchorArea, Size.formatMenuW, naturalHeight, defaultPopupLeft);
+    if (layout === null) {
       this.closeFormatMenu();
       return;
     }
 
-    const minLeft: number = visibleLeft + gap;
-    const maxLeft: number = visibleRight - gap - width;
-    const minCenterX: number = minLeft + width / 2;
-    const maxCenterX: number = maxLeft + width / 2;
-    const centerX: number = Math.max(minCenterX, Math.min(anchorX + anchorWidth / 2, maxCenterX));
-    const left: number = centerX - width / 2;
-    const defaultPopupLeft: number = pane === 'right' ? anchorX - anchorWidth + gap : anchorX;
-    const windowLeft: number = windowWidth > 0 ? this.formatWindowArea[0] : paneX;
-    const windowRight: number = windowWidth > 0 ? windowLeft + windowWidth : paneX + paneWidth;
-    const defaultPopupLeftInWindow: number = Math.max(windowLeft + gap,
-      Math.min(defaultPopupLeft, windowRight - gap - width));
-    this.formatPopupPlacement = showAbove ? Placement.TopLeft : Placement.BottomLeft;
-    this.formatPopupOffsetX = left - defaultPopupLeftInWindow;
-    this.formatPopupOffsetY = showAbove
-      ? safeAnchorTop - anchorY - gap
-      : safeAnchorBottom - anchorY - anchorHeight + gap;
-    if (Math.abs(this.formatMenuWidth - width) >= 0.5) {
-      this.formatMenuWidth = width;
+    this.formatPopupPlacement = layout.placement;
+    this.formatPopupOffsetX = layout.offsetX;
+    this.formatPopupOffsetY = layout.offsetY;
+    if (Math.abs(this.formatMenuWidth - layout.width) >= 0.5) {
+      this.formatMenuWidth = layout.width;
     }
-    if (Math.abs(this.formatMenuMaxHeight - availableHeight) >= 0.5) {
-      this.formatMenuMaxHeight = availableHeight;
+    if (Math.abs(this.formatMenuMaxHeight - layout.maxHeight) >= 0.5) {
+      this.formatMenuMaxHeight = layout.maxHeight;
     }
+  }
+
+  private updateBlockToolbarLayout(pane: string): void {
+    if (!this.hasBlockToolbarForPane(pane)) {
+      this.blockToolbarOpen = false;
+      return;
+    }
+    const anchor: PreviewBlockAnchor = pane === 'right'
+      ? this.rightBlockAnchor as PreviewBlockAnchor
+      : this.leftBlockAnchor as PreviewBlockAnchor;
+    const paneArea: number[] = pane === 'right'
+      ? this.rightBlockToolbarPaneArea : this.leftBlockToolbarPaneArea;
+    if (paneArea[2] <= 0 || paneArea[3] <= 0) {
+      return;
+    }
+    const anchorArea: number[] = [anchor.x, anchor.y, anchor.width, anchor.height];
+    const actionCount: number = Math.min(4, this.blockToolbarActions.length);
+    const naturalWidth: number = actionCount * Size.touch + Space.s2 * Math.max(0, actionCount - 1) +
+      Space.s4 * 2;
+    const naturalHeight: number = Size.touch + Space.s4 * 2;
+    const layout: AnchoredPopupLayout | null = this.calculateAnchoredPopupLayout(
+      pane, paneArea, anchorArea, naturalWidth, naturalHeight, anchor.x);
+    if (layout === null) {
+      this.blockToolbarOpen = false;
+      return;
+    }
+    this.blockToolbarPane = pane;
+    this.blockToolbarPlacement = layout.placement;
+    this.blockToolbarOffsetX = layout.offsetX;
+    this.blockToolbarOffsetY = layout.offsetY;
+    this.blockToolbarWidth = layout.width;
+    this.blockToolbarMaxHeight = layout.maxHeight;
+    this.blockToolbarOpen = true;
   }
 
   private applyEditorFormat(kind: string, pane: string): void {
@@ -5774,6 +5909,66 @@ struct Index {
   }
 
   @Builder
+  BlockToolbarContent() {
+    Row({ space: Space.s1 }) {
+      ForEach(this.blockToolbarActions.slice(0, 4), (action: BlockToolbarAction) => {
+        Row() {
+          Icon(action.icon, Space.s5, $r('app.color.text_primary'))
+        }
+        .width(Size.touch)
+        .height(Size.touch)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .borderRadius(Radius.icon)
+        .onClick((): void => {
+          this.blockToolbarOpen = false;
+          action.onActivate();
+        })
+        .accessibilityText(action.accessibilityText)
+      }, (action: BlockToolbarAction) => action.id)
+    }
+    .width(this.blockToolbarWidth)
+    .constraintSize({ maxHeight: this.blockToolbarMaxHeight })
+    .padding({ left: Space.s2, right: Space.s2, top: Space.s2, bottom: Space.s2 })
+    .borderRadius(Radius.card)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
+    .onKeyEvent((event: KeyEvent): void => {
+      if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+        this.blockToolbarOpen = false;
+      }
+    })
+  }
+
+  @Builder
+  PreviewBlockToolbar(pane: string) {
+    if (this.hasBlockToolbarForPane(pane)) {
+      Blank()
+        .width(this.blockToolbarAnchorGeometry(pane)[2])
+        .height(this.blockToolbarAnchorGeometry(pane)[3])
+        .position({
+          x: this.blockToolbarAnchorGeometry(pane)[0],
+          y: this.blockToolbarAnchorGeometry(pane)[1]
+        })
+        .hitTestBehavior(HitTestMode.None)
+        .bindPopup(this.blockToolbarOpen && this.blockToolbarPane === pane, {
+          builder: this.BlockToolbarContent(),
+          placement: this.blockToolbarPlacement,
+          enableArrow: false,
+          offset: { x: this.blockToolbarOffsetX, y: this.blockToolbarOffsetY },
+          mask: false,
+          autoCancel: true,
+          popupColor: Color.Transparent,
+          onWillDismiss: (action: DismissPopupAction): void => {
+            action.dismiss();
+            this.blockToolbarOpen = false;
+          }
+        })
+    }
+  }
+
+  @Builder
   FormatToolbar(pane: string) {
     Row() {
       Blank()
@@ -5932,6 +6127,7 @@ struct Index {
             .height('100%')
             .visibility(this.experienceMode === 'simple' || !this.rightEditing
               ? Visibility.Visible : Visibility.Hidden)
+        this.PreviewBlockToolbar('right')
           if (this.rightFilePath.length === 0) {
             this.EmptyPane()
           }
@@ -5939,6 +6135,9 @@ struct Index {
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          this.recordBlockToolbarPaneArea('right', newArea);
+        })
         if ((this.experienceMode === 'simple' || this.rightEditing) && this.rightFilePath.length > 0) {
           this.FormatToolbar('right')
         }
@@ -6116,12 +6315,16 @@ struct Index {
         })
           .width('100%')
           .height('100%')
+        this.PreviewBlockToolbar('left')
         if (this.currentFilePath.length === 0) {
           this.EmptyPane()
         }
       }
       .layoutWeight(1)
       .width('100%')
+      .onAreaChange((oldArea: Area, newArea: Area) => {
+        this.recordBlockToolbarPaneArea('left', newArea);
+      })
       if (this.experienceMode === 'simple' && this.currentFilePath.length > 0) {
         this.FormatToolbar('left')
       }
