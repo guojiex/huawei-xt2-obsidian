@@ -1,7 +1,7 @@
 /**
  * NoteDraftService.ets —— 自动保存完成前的崩溃恢复草稿（v0.2 §3.3-2.5）。
  *
- * 草稿位于 filesDir/drafts/<vaultId>/<note-relative-path>.draft，和正式 vault 隔离。
+ * 草稿位于 filesDir/drafts/<vaultKey>/<note-relative-path>.draft，和正式 vault 隔离。
  * 每条草稿保留正式内容基线；只有正式文件仍与该基线逐字相同才允许恢复，
  * 避免较旧草稿覆盖已经更新的正式笔记。
  */
