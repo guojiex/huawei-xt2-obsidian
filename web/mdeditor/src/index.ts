@@ -23,19 +23,19 @@ import { basicSetup } from 'codemirror'
 import { autocompletion } from '@codemirror/autocomplete'
 import { Compartment, EditorState, Range, StateField } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
-import { syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
+import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Decoration, DecorationSet, EditorView, Extension, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { preservedScrollTop } from './scrollAnchor'
 import { clampWorkspaceScrollTop, editorWorkspaceScrollContainer } from './workspaceScroll'
-import { allowsSimpleModeTransaction, collectSimpleModeRanges, resolveSimpleModeImagePath,
-  SimpleModeRanges, SimpleRange } from './simpleMode'
 import {
-  hasCodeBlockSelection,
-  normalizeEditorText,
-  serializeEditorText,
-  toggleCodeBlock
-} from './codeBlockFormat'
+  allowsSimpleModeTransaction,
+  collectSimpleModeRanges,
+  resolveSimpleModeImagePath,
+  SimpleModeRanges,
+  SimpleRange
+} from './simpleMode'
+import { hasCodeBlockSelection, normalizeEditorText, serializeEditorText, toggleCodeBlock } from './codeBlockFormat'
 import { toggleMarkdownFormat, toggleTaskStatus } from './markdownFormat'
 import { createChangeNotificationTimer } from './changeNotification'
 
@@ -360,7 +360,7 @@ function simpleModeDecorations(view: EditorView): DecorationSet {
   const model: SimpleModeRanges = view.state.field(simpleModeRangesField)
   const decorations: Range<Decoration>[] = []
   for (const range of model.decorations) {
-    if (range.kind.startsWith('heading-') || range.kind === 'quote') {
+    if (range.kind.startsWith('heading-') || range.kind === 'quote' || range.kind === 'blank') {
       decorations.push(Decoration.line({ attributes: { class: 'cm-simple-' + range.kind } }).range(range.from))
     } else if (range.kind === 'strong' || range.kind === 'emphasis') {
       decorations.push(Decoration.mark({ class: 'cm-simple-' + range.kind }).range(range.from, range.to))

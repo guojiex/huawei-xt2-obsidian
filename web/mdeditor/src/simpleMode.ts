@@ -1,5 +1,8 @@
 import { EditorState, Transaction } from '@codemirror/state'
 import { ensureSyntaxTree } from '@codemirror/language'
+// ⚠️ 必须带 `.ts` 后缀：`web/mdeditor/test/*.test.mjs` 有一部分直接用 Node 的类型剥离
+// 导入本文件，Node 的 ESM 解析不允许省略扩展名（ERR_MODULE_NOT_FOUND）。
+import { customBlockRanges } from './blockRegistry.ts'
 
 export interface SimpleRange {
   from: number
@@ -63,140 +66,17 @@ function frontmatterRange(source: string): SimpleRange | null {
   return match ? { from: 0, to: match[0].length, kind: 'protected' } : null
 }
 
-function appendPatternRanges(source: string, ranges: SimpleRange[], pattern: RegExp): void {
-  const expression = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g')
-  let match: RegExpExecArray | null = expression.exec(source)
-  while (match) {
-    ranges.push({ from: match.index, to: match.index + match[0].length, kind: 'protected' })
-    match = expression.exec(source)
-  }
-}
-
-function directiveBlockRanges(source: string): SimpleRange[] {
-  const ranges: SimpleRange[] = []
-  const lines = source.split(/\r?\n/)
-  let offset = 0
-  let blockStart = -1
-  let depth = 0
-  let blockEnd = -1
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]
-    const closing = /^ {0,3}:{3,}[ \t]*$/.test(line)
-    const opening = /^ {0,3}:{3,}[ \t]*[A-Za-z][A-Za-z0-9_-]*(?:\b[^\n]*)?$/.test(line)
-    if (opening) {
-      if (depth === 0) {
-        blockStart = offset
-      }
-      depth++
-      blockEnd = offset + line.length
-    } else if (closing && depth > 0) {
-      depth--
-      blockEnd = offset + line.length
-      if (depth === 0) {
-        ranges.push({ from: blockStart, to: blockEnd, kind: 'protected' })
-        blockStart = -1
-      }
-    } else if (depth > 0) {
-      blockEnd = offset + line.length
-    }
-
-    const separatorLength = offset + line.length >= source.length ? 0 :
-      (source.startsWith('\r\n', offset + line.length) ? 2 : 1)
-    offset += line.length + separatorLength
-  }
-  if (depth > 0 && blockStart >= 0) {
-    ranges.push({ from: blockStart, to: Math.max(blockEnd, source.length), kind: 'protected' })
-  }
-  return ranges
-}
-
+/**
+ * 行模式受保护块：识别逻辑已迁到 `blockRegistry.ts`（v1.18 18.1），这里只把它投影成
+ * simpleMode 的区间 —— 两处共用同一份识别，避免块身份与保护范围各自漂移。
+ */
 function customProtectedRanges(source: string): SimpleRange[] {
-  const ranges: SimpleRange[] = []
-  const lines = source.split(/\r?\n/)
-  let offset = 0
-  let quoteStart = -1
-  let quoteEnd = -1
-  let callout = false
-  let tableStart = -1
-  let tableEnd = -1
-  let formulaStart = -1
-  let formulaEnd = -1
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]
-    const quoteLine = /^ {0,3}>/.test(line)
-    if (quoteLine) {
-      if (quoteStart < 0) {
-        quoteStart = offset
-        callout = /^ {0,3}>[ \t]*\[![A-Za-z]/.test(line)
-      }
-      quoteEnd = offset + line.length
-    } else if (line.trim().length > 0 && quoteStart >= 0) {
-      if (callout) {
-        ranges.push({ from: quoteStart, to: quoteEnd, kind: 'protected' })
-      }
-      quoteStart = -1
-      quoteEnd = -1
-      callout = false
-    }
-
-    const nextLine = index + 1 < lines.length ? lines[index + 1] : ''
-    const tableHeader = line.includes('|') && /^\s*\|?\s*:?-{3,}[^\n]*\|/.test(nextLine)
-    if (tableHeader && tableStart < 0) {
-      tableStart = offset
-    }
-    if (tableStart >= 0) {
-      if (line.includes('|')) {
-        tableEnd = offset + line.length
-      } else if (line.trim().length > 0) {
-        ranges.push({ from: tableStart, to: tableEnd, kind: 'protected', value: PROTECTED_HINT_TABLE })
-        tableStart = -1
-        tableEnd = -1
-      }
-    }
-
-    if (/^ {0,3}\\?\$\$[ \t]*$/.test(line)) {
-      if (formulaStart < 0) {
-        formulaStart = offset
-      } else {
-        formulaEnd = offset + line.length
-        ranges.push({ from: formulaStart, to: formulaEnd, kind: 'protected' })
-        formulaStart = -1
-        formulaEnd = -1
-      }
-    }
-    const separatorLength = offset + line.length >= source.length ? 0 :
-      (source.startsWith('\r\n', offset + line.length) ? 2 : 1)
-    offset += line.length + separatorLength
-  }
-  if (quoteStart >= 0 && callout) {
-    ranges.push({ from: quoteStart, to: quoteEnd, kind: 'protected' })
-  }
-  if (tableStart >= 0) {
-    ranges.push({ from: tableStart, to: tableEnd, kind: 'protected', value: PROTECTED_HINT_TABLE })
-  }
-  if (formulaStart >= 0) {
-    ranges.push({ from: formulaStart, to: source.length, kind: 'protected' })
-  }
-  ranges.push(...directiveBlockRanges(source))
-  appendPatternRanges(source, ranges, /!?\[\[(?:\\.|[^\]\r\n])+?\]\]/g)
-  appendPatternRanges(source, ranges, /\$\$(?!\$)(?:\\.|[^\\$\r\n])+?\$\$/g)
-  appendPatternRanges(source, ranges, /%%[\s\S]*?(?:%%|$)/g)
-  appendPatternRanges(source, ranges, /==[^=\r\n]+==/g)
-  appendPatternRanges(source, ranges, /~~[^~\r\n]+~~/g)
-  appendPatternRanges(source, ranges, /(?<!~)~[^~\r\n]+~(?!~)/g)
-  appendPatternRanges(source, ranges, /\^[A-Za-z0-9][A-Za-z0-9_-]*\^/g)
-  appendPatternRanges(source, ranges, /\[\^[^\]\r\n]+\]/g)
-  appendPatternRanges(source, ranges, /^\[\^[^\]\r\n]+\]:[^\r\n]*$/gm)
-  appendPatternRanges(source, ranges, /\^[A-Za-z0-9][A-Za-z0-9_-]*[ \t]*$/gm)
-  const inlineMath = /\$(?!\$)(?:\\.|[^\\$\n])+?\$/g
-  let match: RegExpExecArray | null = inlineMath.exec(source)
-  while (match) {
-    ranges.push({ from: match.index, to: match.index + match[0].length, kind: 'protected' })
-    match = inlineMath.exec(source)
-  }
-  return ranges
+  return customBlockRanges(source).map((block) => ({
+    from: block.from,
+    to: block.to,
+    kind: 'protected',
+    value: block.type === 'table' ? PROTECTED_HINT_TABLE : undefined
+  }))
 }
 
 function overlapsProtected(from: number, to: number, ranges: SimpleRange[]): boolean {
@@ -378,6 +258,11 @@ export function collectSimpleModeRanges(state: EditorState): SimpleModeRanges {
           value: checkbox ? (checkbox.includes('x') || checkbox.includes('X') ? '☑' : '☐') :
             (/^\d/.test(list[2]) ? list[2] : '•') })
       }
+    } else if (line.text.trim().length === 0 &&
+      !overlapsProtected(line.from, line.to, mergedProtected)) {
+      // 段距：编辑器没有段落元素，间隔落在源码空行上（样式见 build.mjs 的 .cm-simple-blank）。
+      // 受保护块（表格 / 代码块 / 公式…）内的空行不动，避免影响块内对齐与行号。
+      decorations.push({ from: line.from, to: line.from, kind: 'blank' })
     }
   }
   decorations.push(...imageRanges)

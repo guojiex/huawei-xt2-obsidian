@@ -55,15 +55,19 @@ const html = `<!doctype html>
   #editor .cm-gutter.cm-lineNumbers { display: none !important; }
   #editor.cm-show-line-numbers .cm-gutter.cm-lineNumbers { display: flex !important; }
   #editor.cm-experience-simple .cm-content { font-family: var(--font); line-height: var(--leading); padding: var(--s4) var(--s4) calc(var(--touch) + var(--s8) + var(--s5)); }
-  #editor.cm-experience-simple .cm-simple-heading-1 { font-size: var(--heading); font-weight: 700; }
-  #editor.cm-experience-simple .cm-simple-heading-2,
+  /* 排版基准在预览侧（web/mdpreview/build.mjs 的 #content h1 / h2 / p / blockquote）：
+     双栏并排看同一篇笔记时两边节奏必须一致，改一边就要同步另一边。 */
+  #editor.cm-experience-simple .cm-simple-heading-1 { font-size: var(--heading); font-weight: 650; letter-spacing: -.035em; line-height: 1.35; }
+  #editor.cm-experience-simple .cm-simple-heading-2 { font-size: var(--large); font-weight: 600; line-height: 1.35; }
   #editor.cm-experience-simple .cm-simple-heading-3,
   #editor.cm-experience-simple .cm-simple-heading-4,
   #editor.cm-experience-simple .cm-simple-heading-5,
-  #editor.cm-experience-simple .cm-simple-heading-6 { font-size: var(--large); font-weight: 600; }
+  #editor.cm-experience-simple .cm-simple-heading-6 { font-size: var(--body); font-weight: 600; line-height: 1.35; }
   #editor.cm-experience-simple .cm-simple-strong { font-weight: 700; }
   #editor.cm-experience-simple .cm-simple-emphasis { font-style: italic; }
-  #editor.cm-experience-simple .cm-line.cm-simple-quote { border-left: var(--stroke) solid var(--blue); padding-left: var(--s3); color: var(--muted); }
+  #editor.cm-experience-simple .cm-line.cm-simple-quote { border-left: var(--focus) solid var(--blue); padding-left: var(--s3); }
+  /* 段距：预览用段落的 margin-bottom，编辑器没有段落元素，间隔落在源码空行上 —— 取同一个 token。 */
+  #editor.cm-experience-simple .cm-line.cm-simple-blank { height: var(--s5); }
   #editor.cm-experience-simple .cm-simple-list-marker { display: inline-block; min-width: var(--s6); color: var(--blue); user-select: none; }
   #editor.cm-experience-simple .cm-simple-task { display: inline-block; min-width: var(--s6); color: var(--blue); cursor: pointer; user-select: none; }
   #editor.cm-experience-simple .cm-simple-protected-hint { color: var(--muted); font-family: var(--font); font-size: var(--caption); padding: 0 var(--s1); border-radius: var(--small-r); background: var(--blue-soft); }
