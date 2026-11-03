@@ -93,7 +93,9 @@ test('explicit share theme overrides system theme while ordinary previews still 
 
 test('image settings feed the selected theme into the hidden capture preview', () => {
   assert.match(indexSource, /if \(format === 'image' && scope === 'note'\) \{\s*this\.openShareImageSettings\(vault\.id, path, itemName\);/);
-  assert.match(indexSource, /onConfirm: \(theme: string\): void => \{\s*this\.shareCaptureTheme = theme;\s*void this\.prepareNoteImageShare/);
+  assert.match(indexSource,
+    /onConfirm: \(theme: string\): void => \{\s*this\.shareCaptureTheme = theme;\s*this\.ensureShareImagePreferenceStore\(\);\s*if \(!\(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.saveTheme\(theme\)\) \{\s*promptAction\.showToast/);
+  assert.match(indexSource, /void this\.prepareNoteImageShare\(vaultId, notePath, itemName/);
   assert.match(indexSource, /cancel: \(\): void => \{\s*this\.openShareDialog\('note', notePath\);/);
   assert.match(indexSource, /themeOverride: this\.shareCaptureTheme/);
   assert.match(settingsSource, /Text\('图片外观'\)/);

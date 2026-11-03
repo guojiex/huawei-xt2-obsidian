@@ -6,9 +6,14 @@ export struct ShareImageSettingsDialog {
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
   @Prop singleScreen: boolean = false;
+  @Prop initialTheme: string = 'light';
   onConfirm: (theme: string) => void = (_theme: string) => {};
   onCancel: () => void = () => {};
   @State theme: string = 'light';
+
+  aboutToAppear(): void {
+    this.theme = this.initialTheme === 'dark' ? 'dark' : 'light';
+  }
 
   private selectTheme(theme: string): void {
     if (theme === 'light' || theme === 'dark') {

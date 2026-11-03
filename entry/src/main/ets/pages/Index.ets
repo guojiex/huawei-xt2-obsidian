@@ -54,6 +54,7 @@ import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
 import { EditorExperienceMode, DEFAULT_EDITOR_EXPERIENCE } from '../model/EditorExperiencePolicy';
 import { EditorExperienceStore } from '../model/EditorExperienceStore';
+import { ShareImagePreferenceStore } from '../model/ShareImagePreferenceStore';
 import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from '../model/PreviewFollowPolicy';
 import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
@@ -247,6 +248,7 @@ struct Index {
   private splitLayoutStore: SplitLayoutStore | null = null;
   private editorPreferenceStore: EditorPreferenceStore | null = null;
   private editorExperienceStore: EditorExperienceStore | null = null;
+  private shareImagePreferenceStore: ShareImagePreferenceStore | null = null;
   private agentKitLoadStarted: boolean = false;
   private readonly agentKitUnavailableInSimulator: boolean =
     deviceInfo.productModel.toLowerCase().indexOf('emulator') >= 0;
@@ -454,6 +456,8 @@ struct Index {
     this.ensureEditorPreferenceStore();
     this.showLineNumbers = (this.editorPreferenceStore as EditorPreferenceStore).showLineNumbers();
     this.followPreviewEnabled = (this.editorPreferenceStore as EditorPreferenceStore).followPreview();
+    this.ensureShareImagePreferenceStore();
+    this.shareCaptureTheme = (this.shareImagePreferenceStore as ShareImagePreferenceStore).loadTheme();
     this.ensureEditorExperienceStore();
     this.experienceMode = (this.editorExperienceStore as EditorExperienceStore).load();
     this.synchronizePreviewFollowContext();
@@ -503,6 +507,12 @@ struct Index {
   private ensureEditorExperienceStore(): void {
     if (this.editorExperienceStore === null) {
       this.editorExperienceStore = new EditorExperienceStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private ensureShareImagePreferenceStore(): void {
+    if (this.shareImagePreferenceStore === null) {
+      this.shareImagePreferenceStore = new ShareImagePreferenceStore(VaultRegistry.get().abilityContext());
     }
   }
 
@@ -4853,8 +4863,13 @@ struct Index {
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
         singleScreen: shareSheet,
+        initialTheme: this.shareCaptureTheme,
         onConfirm: (theme: string): void => {
           this.shareCaptureTheme = theme;
+          this.ensureShareImagePreferenceStore();
+          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
+            promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
+          }
           void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
         },
         onCancel: (): void => {
