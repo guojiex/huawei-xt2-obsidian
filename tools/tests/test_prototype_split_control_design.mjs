@@ -4,12 +4,24 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const html = fs.readFileSync(new URL('../../docs/prototype/v2/index.html', import.meta.url), 'utf8');
-const code = html.match(/<script id="splitControlEnhancement">([\s\S]*?)<\/script>/)?.[1];
-assert.ok(code, 'prototype must include the split-control enhancement script');
+const design = fs.readFileSync(new URL('../../docs/prototype/v2/设计说明.md', import.meta.url), 'utf8');
+const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g)]
+  .map((match) => match[1])
+  .find((source) => source.includes('/* split-control: snap, limit state, live readout */'));
+assert.ok(script, 'prototype must include split-control behavior in an inline script');
+const logicStart = script.indexOf('/* split-control: snap, limit state, live readout */');
+const logicEnd = script.indexOf('const note=id=>', logicStart);
+const handlersStart = script.indexOf(
+  "for(const [kind,id]of [['nav','navSplitter'],['content','contentSplitter']]){",
+  logicEnd
+);
+const handlersEnd = script.indexOf('\nlet settingsOpen=', handlersStart);
+assert.ok(logicEnd > logicStart && handlersStart > logicEnd && handlersEnd > handlersStart,
+  'prototype must retain the split-control logic and its event handlers');
+const code = script.slice(logicStart, logicEnd) + script.slice(handlersStart, handlersEnd);
 
 function fixture() {
   const listeners = {};
-  const windowListeners = {};
   const nodes = new Map();
   let now = 0;
   let saved = 0;
@@ -27,17 +39,18 @@ function fixture() {
     };
   };
   for (const id of ['navSplitter', 'contentSplitter', 'window']) {
+    const markup = id === 'window' ? '' :
+      html.match(new RegExp(`<div id="${id}"[^>]*>([\\s\\S]*?)</div>`))?.[1] ?? '';
     nodes.set(id, {
       id,
       attrs: {},
       classList: makeClassList(),
-      innerHTML: '',
-      tipParts: {
-        '.split-tip-main': { textContent: '' },
-        '.split-tip-detail': { textContent: '' }
-      },
+      innerHTML: markup,
+      tipParts: { '.split-tip': { innerHTML: '' } },
+      listeners: {},
       contains(target) { return target === this; },
       querySelector(selector) { return this.tipParts[selector]; },
+      addEventListener(type, listener) { (this.listeners[type] ??= []).push(listener); },
       setAttribute(key, value) { this.attrs[key] = value; },
       removeAttribute(key) { delete this.attrs[key]; },
       setPointerCapture(id) { this.captured = id; },
@@ -55,11 +68,13 @@ function fixture() {
   let splitDrag = null;
   const context = vm.createContext({
     document,
-    window: { addEventListener(type, listener) { windowListeners[type] = listener; } },
+    window: { addEventListener() {} },
+    navigator: {},
     ResizeObserver: class { observe() {} },
     performance: { now: () => now },
     setTimeout: () => 1,
     clearTimeout() {},
+    localStorage: { removeItem() {} },
     getComputedStyle: () => ({ getPropertyValue: (key) => key === '--s4' ? '16px' : '240px' }),
     $: (id) => nodes.get(id),
     widths,
@@ -93,7 +108,7 @@ function fixture() {
     },
     saveWidths() { saved++; }
   });
-  vm.runInContext(code, context);
+  vm.runInContext(`${code}\npaintSplit('nav');`, context);
   function fire(type, properties = {}) {
     const event = {
       target: properties.target || nodes.get('navSplitter'),
@@ -103,33 +118,40 @@ function fixture() {
       clientX: 100,
       clientY: 100,
       preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() { this.propagationStopped = true; },
       stopImmediatePropagation() { this.stopped = true; },
       ...properties
     };
+    for (const listener of event.target?.listeners?.[type] || []) listener(event);
     for (const listener of listeners[type] || []) listener(event);
     return event;
   }
   return {
     nodes,
-    widths,
+    get widths() { return context.widths; },
     fire,
+    paint(kind) { vm.runInContext(`paintSplit('${kind}');`, context); },
     setSideVisible(value) { sideVisible = value; },
-    resize() { windowListeners.resize(); },
     setNow(value) { now = value; },
     saved: () => saved
   };
 }
 
-test('split handles expose a visible grip, token-based hit area and assistive value', () => {
-  assert.match(code, /--split-hit:var\(--s6\)/);
-  assert.match(code, /@media\(pointer:coarse\)/);
-  assert.match(code, /@media\(prefers-reduced-motion:reduce\)/);
-  assert.match(code, /@media\(forced-colors:active\)/);
+test('split handles expose a visible grip, pointer hit areas and assistive value', () => {
+  assert.match(html, /--split-hit:24px/);
+  assert.match(html, /--split-hit:36px/);
+  assert.match(html, /@media \(pointer:coarse\)/);
+  assert.match(html, /@media \(prefers-reduced-motion:reduce\)/);
+  assert.match(html, /@media \(forced-colors:active\)/);
+  assert.match(html, /\.window\.phone \.split-control,\.window\.focus \.split-control\{display:none\}/);
+  assert.match(script, /const splitKey='xt2-prototype-v2-widths'/);
+  assert.match(design, /分栏调节条设计\.md/);
   assert.match(html, /role="separator" aria-orientation="vertical" aria-label="调整目录栏宽度"/);
   assert.match(html, /role="separator" aria-orientation="vertical" aria-label="调整正文与参考栏比例"/);
   const f = fixture();
   assert.match(f.nodes.get('navSplitter').innerHTML, /split-grip/);
-  assert.equal(f.nodes.get('navSplitter').attrs['aria-valuetext'], '目录 33% · 正文 67%，400 px，默认比例');
+  assert.equal(f.nodes.get('navSplitter').attrs['aria-valuetext'], '目录 33% · 正文 67%，默认比例');
+  assert.match(f.nodes.get('navSplitter').tipParts['.split-tip'].innerHTML, /400 px/);
 });
 
 test('drag snaps to default, Alt bypasses snap, and Escape restores the drag start', () => {
@@ -177,9 +199,10 @@ test('two short touch taps restore the default ratio without dblclick', () => {
 test('the content separator reports and adjusts its own two-pane ratio', () => {
   const f = fixture();
   f.setSideVisible(false);
-  f.resize();
+  f.paint('content');
   const handle = f.nodes.get('contentSplitter');
-  assert.equal(handle.attrs['aria-valuetext'], '左栏 50% · 右栏 50%，600 / 600 px，默认比例');
+  assert.equal(handle.attrs['aria-valuetext'], '左栏 50% · 右栏 50%，默认比例');
+  assert.match(handle.tipParts['.split-tip'].innerHTML, /600 \/ 600 px/);
   f.fire('keydown', { target: handle, key: 'ArrowRight' });
   assert.equal(f.widths.content, 616 / 1200);
   assert.match(handle.attrs['aria-valuetext'], /左栏 51% · 右栏 49%/);
