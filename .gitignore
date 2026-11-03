@@ -38,6 +38,8 @@ Thumbs.db
 
 # ===== 本地工具残留（不入库） =====
 /.workbuddy/
+# Playwright / 浏览器原型截图等本地验证产物（历史截图已从库中移除，查 Git 历史）
+/output/
 # DevEco Code 会话工作目录（临时截图 / 日志 / 崩溃现场等排查产物）
 /.deveco/
 # ArkTS 静态检查工具（deveco arkts_check）的本地缓存
