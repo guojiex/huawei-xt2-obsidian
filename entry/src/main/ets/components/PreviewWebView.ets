@@ -624,6 +624,7 @@ export class PreviewBridge {
 export struct PreviewWebView {
   /** 由 EntryAbility 跟随系统颜色模式写入。 */
   @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
+  @Prop @Watch('onThemeOverrideChanged') themeOverride: string = '';
   @Prop @Watch('onEditableChanged') editable: boolean = false;
   @Prop @Watch('onZoomControlsVisibleChanged') zoomControlsVisible: boolean = false;
   @State private pageReady: boolean = false;
@@ -656,6 +657,13 @@ export struct PreviewWebView {
   private proxyRegistered: boolean = false;
   private webAreaVp: number[] = [0, 0, 0, 0];
   private latestBlockAnchorPayload: string = '';
+
+  private effectiveTheme(): string {
+    if (this.themeOverride === 'dark' || this.themeOverride === 'light') {
+      return this.themeOverride;
+    }
+    return this.theme;
+  }
 
   aboutToAppear(): void {
     this.componentActive = true;
@@ -709,11 +717,15 @@ export struct PreviewWebView {
         return '';
       }
     };
-    this.bridge.setTheme(this.theme);
+    this.bridge.setTheme(this.effectiveTheme());
   }
 
   onThemeChanged(): void {
-    this.bridge.setTheme(this.theme);
+    this.bridge.setTheme(this.effectiveTheme());
+  }
+
+  onThemeOverrideChanged(): void {
+    this.bridge.setTheme(this.effectiveTheme());
   }
 
   onEditableChanged(): void {

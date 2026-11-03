@@ -62,6 +62,7 @@ import {
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
 import { ShareNoteDialog, ShareFormatOption, ShareScopeOption } from '../components/ShareNoteDialog';
+import { ShareImageSettingsDialog } from '../components/ShareImageSettingsDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
@@ -416,6 +417,7 @@ struct Index {
   private renamePathCtl: CustomDialogController | null = null;
   private movePathCtl: CustomDialogController | null = null;
   private shareNoteCtl: CustomDialogController | null = null;
+  private shareImageSettingsCtl: CustomDialogController | null = null;
   private shareImagePreviewCtl: CustomDialogController | null = null;
   private shareFilePreviewCtl: CustomDialogController | null = null;
   private shareTextPreviewCtl: CustomDialogController | null = null;
@@ -429,6 +431,7 @@ struct Index {
   private shareImagePreviewTitle: string = '';
   @State shareCaptureActive: boolean = false;
   @State shareCaptureStatus: string = '正在准备分享图片…';
+  @State shareCaptureTheme: string = 'light';
   @State shareImagePreviewImage: ShareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
 
   aboutToAppear(): void {
@@ -4840,6 +4843,32 @@ struct Index {
     this.shareNoteCtl.open();
   }
 
+  private openShareImageSettings(vaultId: string, notePath: string, itemName: string): void {
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    this.shareImageSettingsCtl = new CustomDialogController({
+      builder: ShareImageSettingsDialog({
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        onConfirm: (theme: string): void => {
+          this.shareCaptureTheme = theme;
+          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
+        },
+        onCancel: (): void => {
+          this.openShareDialog('note', notePath);
+        }
+      }),
+      autoCancel: true,
+      cancel: (): void => {
+        this.openShareDialog('note', notePath);
+      },
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      customStyle: true
+    });
+    this.shareImageSettingsCtl.open();
+  }
+
   private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
     vault: VaultEntry): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
@@ -4852,7 +4881,7 @@ struct Index {
         return;
       }
       if (format === 'image' && scope === 'note') {
-        await this.prepareNoteImageShare(this.currentVaultId, path, itemName, this.editorBridgeForPath(path));
+        this.openShareImageSettings(vault.id, path, itemName);
         return;
       }
       if (format === 'text' && scope === 'note') {
@@ -5929,6 +5958,7 @@ struct Index {
       PreviewWebView({
         bridge: this.shareCaptureBridge,
         componentId: this.shareCaptureComponentId,
+        themeOverride: this.shareCaptureTheme,
         onReadAsset: (relPath: string): string => {
           return this.readVaultAsset(relPath);
         },
