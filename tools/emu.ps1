@@ -16,6 +16,7 @@
       .\tools\emu.ps1 -Scenario -FoldList 'folded,expanded'
       .\tools\emu.ps1 -ProbeFold           # 只探测 -foldedState 的合法取值
       .\tools\emu.ps1 -Shot -Tag after     # 已开机时只截一张当前态
+      .\tools\emu.ps1 -Image               # 单屏专业模式「插入图片 → 切预览」验收（见 -Image 段说明）
 
     产物：.local/shots/<Tag>_<state>_<HHmmss>.png（.local 已 gitignore）
 
@@ -31,6 +32,7 @@ param(
     [switch]$Ui,
     [switch]$Tree,
     [switch]$Sel,
+    [switch]$Image,
     [string]$Note = '',
     [string]$Tap = '',
     [switch]$Uitest,
@@ -484,6 +486,162 @@ if ($ProbeFold) {
 if ($Shot) {
     if (-not (Start-Emu)) { exit 1 }
     Take-Shot $Tag | Out-Null
+    exit 0
+}
+
+# ---- 专业模式「插入图片 → 切预览」验收（用户 2026-11-02 报告过预览不显示图片）----
+# 为什么能脚本化：结论虽然是视觉的，但 mdpreview 渲染成功后会给本地化图片打
+# `title="点击查看完整图片"`，失败则把 alt 写成「…（图片不存在）」；两者都进无障碍控件树，
+# 于是「预览到底收到新文本没有 / 图片到底本地化没有」可以用**文本证据**判：
+#   · 命中「点击查看完整图片」        → 通过
+#   · 命中「（图片不存在）」          → 预览已渲染，但 readAsset 拿不到文件
+#   · 两个都没有，却命中「![图片](」  → Markdown 被当纯文本渲染，引用没被解析
+#   · 四个标记全无                    → 预览根本没收到插入后的文本（去重 / 推送漏了）
+# ⚠️ 两条实测前的未知项，第一次跑必须看 dump 校准，脚本不会瞎猜坐标：
+#   1) 图库 Picker 里缩略图的控件形态（下面 Find-Thumb 只按「够大的 Image 节点」猜）；
+#   2) Picker 确认按钮的文字（依次试 确定 / 导入 / 选择 / 完成）。
+# 找不到就停下来打印 dump 路径，绝不盲点。
+# ⚠️ 只在模拟器跑：这条流程会往笔记里真插一张图，不要对真机用。
+if ($Image) {
+    if (-not (Start-Emu)) { exit 1 }
+    if (-not (Install-Launch)) { exit 1 }
+    $script:UseUitest = $true
+
+    # 用户报告的场景 = 单屏 + 专业模式 + 单栏编辑
+    Write-Line "`n=== 折叠态 → single ===" 'Cyan'
+    $r = Invoke-Fold 'single'
+    if ($r -match 'not started|not exist|Failed|failed') { Write-Line "   切换失败：$r" 'Yellow' }
+    Start-Sleep -Seconds 6
+
+    function Dump-Ui([string]$step) {
+        $safe = ($step -replace '[^A-Za-z0-9_]', '_')
+        $lay = Get-UiLayout -All
+        $p = Join-Path $shotDir ("ui_img_{0}_{1}.md" -f $safe, (Get-Date -Format 'HHmmss'))
+        $lay | Out-File -FilePath $p -Encoding utf8
+        Write-Line ("  控件树 → {0}" -f $p) 'Gray'
+        return $lay
+    }
+
+    function Find-Center([object[]]$lay, [string]$pattern) {
+        $hit = $null
+        foreach ($ln in $lay) { if ($ln -match $pattern) { $hit = $ln } }
+        if (-not $hit) { return $null }
+        if ($hit -match 'top:\s*(\d+),\s*left:\s*(\d+),\s*width:\s*(\d+),\s*height:\s*(\d+)') {
+            return ,@([int]$Matches[2] + [int]($Matches[3] / 2), [int]$Matches[1] + [int]($Matches[4] / 2))
+        }
+        return $null
+    }
+
+    function Tap-Where([object[]]$lay, [string]$pattern, [string]$label) {
+        $c = Find-Center $lay $pattern
+        if (-not $c) { Write-Line "   未找到：$label" 'Yellow'; return $false }
+        Write-Line ("   点 {0} @ {1},{2}" -f $label, $c[0], $c[1]) 'Gray'
+        Invoke-TapXY $c[0] $c[1] | Out-Null
+        return $true
+    }
+
+    # 缩略图猜法：Picker 里「够大」的 Image 节点，取**第一个**（列表顺序即图库顺序）
+    function Find-Thumb([object[]]$lay) {
+        foreach ($ln in $lay) {
+            if ($ln -match 'Image' -and $ln -match 'top:\s*(\d+),\s*left:\s*(\d+),\s*width:\s*(\d+),\s*height:\s*(\d+)') {
+                if ([int]$Matches[3] -ge 100 -and [int]$Matches[4] -ge 100 -and [int]$Matches[1] -ge 120) {
+                    return ,@([int]$Matches[2] + [int]($Matches[3] / 2), [int]$Matches[1] + [int]($Matches[4] / 2))
+                }
+            }
+        }
+        return $null
+    }
+
+    # 1) 灌一篇一次性测试笔记：插入会真的改内容，绝不拿教程样例当靶子
+    $note = 'img-probe.md'
+    $base = "/data/app/el2/100/base/$Bundle/files/vaults/local"
+    $tmp = Join-Path $repoRoot '.local\seed_img'
+    if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+    New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+    $src = Join-Path $tmp $note
+    Set-Content -LiteralPath $src -Value "img probe`n`nbody line" -Encoding UTF8
+    Write-Line "`n=== 灌测试笔记 $note ===" 'Cyan'
+    $null = (& $Hdc -t $Target shell "mkdir -p $base" 2>&1)
+    $send = ((& $Hdc -t $Target file send $src "$base/$note" 2>&1) -join ' ')
+    if ($send -match 'Fail|fail|Error|error') { Write-Line "   灌入失败：$send" 'Red'; exit 1 }
+    # hdc 写进去是 root 属主，应用进程可能读不到 → 放权（仅模拟器用途）
+    $null = (& $Hdc -t $Target shell "chmod -R 777 /data/app/el2/100/base/$Bundle/files/vaults" 2>&1)
+    # 文件树只在建组件 / 切库时扫描，必须重启 Ability 才看得见新文件
+    $null = (& $Hdc -t $Target shell "aa force-stop $Bundle" 2>&1)
+    Start-Sleep -Seconds 3
+    $null = (& $Hdc -t $Target shell "aa start -a $Ability -b $Bundle" 2>&1)
+    Start-Sleep -Seconds 8
+
+    # 2) 打开这篇笔记（树里第一行同名 Text）
+    Write-Line "`n=== 打开 $note ===" 'Cyan'
+    $lay = Dump-Ui 'open'
+    if (-not (Tap-Where $lay ("Text .*\b" + [regex]::Escape($note)) $note)) {
+        Write-Line '   文件树里没有这篇笔记（侧栏可能被收起）；请看上面的 dump 判断，脚本不盲点' 'Red'
+        exit 2
+    }
+    Start-Sleep -Seconds 3
+
+    # 3) 专业模式：栏头有「编辑 / 预览」两个 tab 就说明已是专业模式，否则走更多菜单
+    Write-Line "`n=== 确保专业模式 ===" 'Cyan'
+    $lay = Dump-Ui 'mode'
+    if (-not (Find-Center $lay 'Text 编辑\b')) {
+        if (-not (Tap-Where $lay '更多操作' '更多操作')) { exit 2 }
+        Start-Sleep -Seconds 2
+        $lay = Dump-Ui 'menu'
+        if (-not (Tap-Where $lay 'Text 专业模式' '专业模式')) { exit 2 }
+        Start-Sleep -Seconds 3
+        $lay = Dump-Ui 'mode2'
+    }
+
+    # 4) 切到编辑，插图片
+    Write-Line "`n=== 编辑 → 插入图片 ===" 'Cyan'
+    if (-not (Tap-Where $lay 'Text 编辑\b' '编辑 tab')) { exit 2 }
+    Start-Sleep -Seconds 2
+    $lay = Dump-Ui 'edit'
+    if (-not (Tap-Where $lay '插入图片' '插入图片')) { exit 2 }
+    Start-Sleep -Seconds 4
+    $null = Take-Shot 'img_picker'
+    $lay = Dump-Ui 'picker'
+
+    # 5) Picker：选第一张缩略图 → 确认。图库为空 / 形态不认识就停下报清楚
+    $thumb = Find-Thumb $lay
+    if (-not $thumb) {
+        Write-Line '   Picker 里没认出缩略图：模拟器图库很可能是空的（先用模拟器相机拍一张，或人工放一张进图库）；' 'Red'
+        Write-Line '   若图库已有图，请按 picker dump 的 Image 节点行手工给坐标：.\tools\emu.ps1 -Tap "x y;x y"' 'Yellow'
+        exit 2
+    }
+    Write-Line ("   点缩略图 @ {0},{1}" -f $thumb[0], $thumb[1]) 'Gray'
+    Invoke-TapXY $thumb[0] $thumb[1] | Out-Null
+    Start-Sleep -Seconds 2
+    $lay = Dump-Ui 'picked'
+    $done = $false
+    foreach ($word in @('确定', '导入', '选择', '完成')) {
+        if (Tap-Where $lay ("Text " + $word) "Picker 确认（$word）") { $done = $true; break }
+    }
+    if (-not $done) { Write-Line '   没找到 Picker 的确认按钮，停在 dump 前' 'Red'; exit 2 }
+    # 300ms change 上报 + 500ms 预览联动 + 800ms 自动保存
+    Start-Sleep -Seconds 4
+
+    # 6) 附件真的复制进库了吗（文本证据，不靠截图）
+    Write-Line "`n=== 库内附件 ===" 'Cyan'
+    $found = ((& $Hdc -t $Target shell "find $base -type f" 2>&1) -join "`n")
+    ($found -split "`n") | Where-Object { $_ -match '\.(png|jpe?g|webp|gif)$' } |
+        ForEach-Object { Write-Line "   $_" 'Gray' }
+
+    # 7) 切预览并判定
+    Write-Line "`n=== 切到预览并判定 ===" 'Cyan'
+    $lay = Dump-Ui 'before-preview'
+    if (-not (Tap-Where $lay 'Text 预览\b' '预览 tab')) { exit 2 }
+    Start-Sleep -Seconds 3
+    $null = Take-Shot 'img_preview'
+    $lay = Dump-Ui 'preview'
+    $text = ($lay -join "`n")
+    $verdict = '预览没收到插入后的文本（推送漏了 / 被去重吞掉）'
+    if ($text -match '点击查看完整图片') { $verdict = '通过：图片已渲染并本地化' }
+    elseif ($text -match '图片不存在') { $verdict = '失败：预览已渲染但 readAsset 取不到文件' }
+    elseif ($text -match '!\[图片\]\(') { $verdict = '失败：图片引用被当纯文本渲染，没解析成 img' }
+    Write-Line ("  结论：" + $verdict) $(if ($verdict -like '通过*') { 'Green' } else { 'Red' })
+    Write-Line '  产物在 .local\shots（截图 + 每步控件树 dump）' 'Gray'
     exit 0
 }
 
