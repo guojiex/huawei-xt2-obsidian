@@ -135,10 +135,14 @@ function localizeImages(root: HTMLElement): void {
             }
           })
         } else {
+          img.dataset.shareMissing = 'true'
           img.alt = src + '（图片不存在）'
         }
+      } else {
+        img.dataset.shareMissing = 'true'
       }
     } catch (error) {
+      img.dataset.shareMissing = 'true'
       console.warn('[mdpreview] readAsset failed')
     }
   }
@@ -541,12 +545,20 @@ function sendShareCaptureResult(id: number, errorText: string = ''): void {
 }
 
 async function waitForLocalImages(root: HTMLElement): Promise<void> {
+  const missingImages = root.querySelectorAll<HTMLImageElement>('img[data-share-missing="true"]')
+  if (missingImages.length > 0) {
+    throw new Error('笔记中的本地图片缺失或无法读取，请补齐附件后重试')
+  }
   const images = root.querySelectorAll<HTMLImageElement>('img[data-share-local="true"]')
   for (let i = 0; i < images.length; i++) {
     const image = images[i]
-    await image.decode()
+    try {
+      await image.decode()
+    } catch (error) {
+      throw new Error('笔记中的本地图片无法解码，请检查附件后重试')
+    }
     if (image.naturalWidth <= 0 || image.naturalHeight <= 0) {
-      throw new Error('本地图片解码失败，无法生成完整分享图片')
+      throw new Error('笔记中的本地图片无法解码，请检查附件后重试')
     }
   }
 }
