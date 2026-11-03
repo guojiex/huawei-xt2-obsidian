@@ -50,17 +50,12 @@ test('share format and page, format panel, and non-destructive file action can b
  const h=fixture();h.run("setEditing(true,false);openFormat('left');syncUrl()");assert(fixture(h.href()).get('formatDialog').open);
  const i=fixture();i.run("openFileAction('rename','reading_stream');syncUrl()");const j=fixture(i.href());assert(j.get('fileActionDialog').open);assert.equal(j.run("note('reading_stream').title"),'基础排版');
 });
-test('Git share design state exposes scope-specific remote link previews without a fake URL',()=>{
- const f=fixture();f.get('gitShareDemo').checked=true;f.get('gitShareDemo').onchange();f.get('shareBtn').onclick();
- for(const [scope,label]of [['note','远端笔记网页链接'],['folder','远端文件夹网页链接'],['vault','仓库首页链接']]){
-  f.get('shareScope').value=scope;f.get('shareScope').onchange();assert(!f.get('shareRemoteLink').classList.contains('hidden'));assert.equal(f.get('shareRemoteLinkLabel').textContent,label);
-  if(scope==='note')assert(!f.get('shareImage').classList.contains('hidden'));else assert(f.get('shareImage').classList.contains('hidden'));
-  f.get('shareRemoteLink').onclick();assert.equal(f.run('shareStage'),'link');assert.match(f.get('sharePreview').innerHTML,/私有仓库.*访问权限/);assert.match(f.get('sharePreview').innerHTML,/未推送的本地修改不会出现在链接中/);assert(!f.get('sharePreview').innerHTML.includes('https://'));
-  f.get('shareBack').onclick();
- }
- f.run('syncUrl()');const g=fixture(f.href());assert(g.get('shareDialog').open);assert.equal(g.run('gitShareDemo'),true);assert.equal(g.run('shareStage'),'formats');assert(!g.get('shareRemoteLink').classList.contains('hidden'));
- const h=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&gitShareDemo=1&panel=share&scope=vault&stage=link');assert.equal(h.run('shareStage'),'link');assert(h.get('sharePreview').innerHTML.includes('仓库首页链接'));assert.equal(new URL(h.href()).searchParams.get('gitShareDemo'),'1');
- g.get('gitShareDemo').checked=false;g.get('gitShareDemo').onchange();assert(g.get('shareRemoteLink').classList.contains('hidden'));assert.equal(g.run('shareStage'),'formats');
+test('Git share demo and import source stay hidden in the first-release design',()=>{
+ assert.match(html,/<label class="demo-toggle hidden" title="仅展示 Git 库的分享格式/);
+ assert.match(html,/<div class="seg import-tabs hidden" aria-label="导入来源">/);
+ assert.match(code,/shareFolderPath='',gitShareDemo=false;/);
+ assert.match(code,/gitShareDemo=false;\$\('gitShareDemo'\)\.checked=false;/);
+ assert.match(code,/if\(stage==='link'&&gitShareDemo\)previewShare\('link'\)/);
 });
 test('no-note demo toggle grays out note-scoped controls and restores the selection',()=>{
  const f=fixture();const before=f.run('current');assert.equal(f.get('editTab').disabled,false);assert.equal(f.get('previewTab').disabled,false);assert.equal(f.get('shareBtn').disabled,false);
