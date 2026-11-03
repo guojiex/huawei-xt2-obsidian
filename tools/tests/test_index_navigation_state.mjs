@@ -77,6 +77,7 @@ function createHarness(overrides = {}) {
     drawerOpen: false,
     drawerProgress: 0,
     focused: false,
+    focusNavigationOpen: false,
     activePane: 'left',
     referenceVisible: true,
     moreMenuOpen: true,
@@ -137,7 +138,7 @@ test('back closes expanded wide-screen navigation before leaving the workspace',
   assert.equal(app.sidebarProgress, 0);
 });
 
-test('hamburger exits focused md mode, restores navigation, and returns to the left pane', () => {
+test('focused hamburger only toggles the in-focus file navigation without exiting focus (md)', () => {
   const app = createHarness({
     breakpoint: Breakpoint.MD,
     layoutBreakpoint: Breakpoint.MD,
@@ -148,15 +149,19 @@ test('hamburger exits focused md mode, restores navigation, and returns to the l
   });
 
   app.onHamburger();
-  assert.equal(app.focused, false);
-  assert.equal(app.activePane, 'left');
-  assert.equal(app.sidebarCollapsed, false);
-  assert.equal(app.sidebarProgress, 1);
-  assert.equal(app.moreMenuOpen, false);
-  assert.equal(app.paneMoreOpen, false);
+  assert.equal(app.focused, true);
+  assert.equal(app.focusNavigationOpen, true);
+  assert.equal(app.activePane, 'right');
+  assert.equal(app.sidebarCollapsed, true);
+  assert.equal(app.sidebarProgress, 0);
+  assert.deepEqual(app.activePaneChanges, []);
+
+  app.onHamburger();
+  assert.equal(app.focused, true);
+  assert.equal(app.focusNavigationOpen, false);
 });
 
-test('hamburger exits focused lg mode while preserving the active content pane', () => {
+test('focused hamburger only toggles the in-focus file navigation without exiting focus (lg)', () => {
   const app = createHarness({
     breakpoint: Breakpoint.LG,
     layoutBreakpoint: Breakpoint.LG,
@@ -167,11 +172,52 @@ test('hamburger exits focused lg mode while preserving the active content pane',
   });
 
   app.onHamburger();
+  assert.equal(app.focused, true);
+  assert.equal(app.focusNavigationOpen, true);
+  assert.equal(app.sidebarCollapsed, true);
+  assert.equal(app.sidebarProgress, 0);
+
+  app.onHamburger();
+  assert.equal(app.focused, true);
+  assert.equal(app.focusNavigationOpen, false);
+});
+
+test('leaving focus resets the in-focus navigation and restores the pre-focus layout', () => {
+  const app = createHarness({
+    breakpoint: Breakpoint.LG,
+    layoutBreakpoint: Breakpoint.LG,
+    sidebarCollapsed: false,
+    sidebarProgress: 1,
+    focused: true,
+    focusNavigationOpen: true,
+    activePane: 'right'
+  });
+
+  app.toggleFocus();
   assert.equal(app.focused, false);
-  assert.equal(app.activePane, 'right');
+  assert.equal(app.focusNavigationOpen, false);
   assert.equal(app.sidebarCollapsed, false);
   assert.equal(app.sidebarProgress, 1);
-  assert.deepEqual(app.activePaneChanges, []);
+  assert.equal(app.activePane, 'right');
+  assert.equal(app.moreMenuOpen, false);
+  assert.equal(app.paneMoreOpen, false);
+});
+
+test('back closes the in-focus navigation before leaving focus mode', () => {
+  const app = createHarness({
+    breakpoint: Breakpoint.LG,
+    layoutBreakpoint: Breakpoint.LG,
+    sidebarCollapsed: true,
+    sidebarProgress: 0,
+    focused: true,
+    focusNavigationOpen: true,
+    moreMenuOpen: false,
+    quickSwitchOpen: false
+  });
+
+  assert.equal(app.onBackPress(), true);
+  assert.equal(app.focusNavigationOpen, false);
+  assert.equal(app.focused, true);
 });
 
 test('entering md collapses navigation only when a reference pane can be shown', () => {
@@ -237,6 +283,7 @@ test('navigation widths interpolate with sidebar progress and focused mode resto
     contentRatio: 0.5,
     sidebarProgress: 0.5,
     focused: false,
+    focusNavigationOpen: false,
     referenceVisible: true,
     activePane: 'left',
     experienceMode: 'simple'
@@ -254,6 +301,11 @@ test('navigation widths interpolate with sidebar progress and focused mode resto
   app.focused = true;
   assert.equal(app.noteNavigationProgress(), 0);
   assert.equal(app.noteContentWidth(), 1200);
+  app.focusNavigationOpen = true;
+  assert.equal(app.noteNavigationProgress(), 1);
+  assert.equal(app.noteContentWidth(), 840);
+  app.focusNavigationOpen = false;
+  assert.equal(app.noteNavigationProgress(), 0);
   app.windowWidthVp = 250;
   assert.equal(app.drawerNavigationWidth(), 250);
 

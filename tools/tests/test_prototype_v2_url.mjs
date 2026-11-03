@@ -227,11 +227,15 @@ test('phone hamburger stays interactive while the pushed note body is inert and 
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&nav=0');f.get('menu').onclick();assert(f.get('window').classList.contains('nav-open'));assert.equal(f.get('noteWorkspace').inert,false);assert.equal(f.get('notePanes').inert,true);assert.equal(f.get('noteFooter').inert,true);assert.equal(f.get('mobileMore').inert,true);assert.notEqual(f.get('menu').inert,true);f.get('menu').onclick();assert(!f.get('window').classList.contains('nav-open'));assert.equal(f.get('notePanes').inert,false);assert.equal(f.get('noteFooter').inert,false);assert.equal(f.get('mobileMore').inert,false);assert.equal(f.get('navSidebar').inert,true);
 });
 
-test('hamburger exits focus and reveals navigation',()=>{
+test('hamburger toggles the in-focus navigation without exiting focus',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=wide&focus=1&nav=0');
  assert(f.run('focused'));assert(f.get('window').classList.contains('focus'));
  f.get('menu').onclick();
- assert(!f.run('focused'));assert(!f.get('window').classList.contains('focus'));assert(!f.get('window').classList.contains('nav-hidden'));
+ assert(f.run('focused'));assert(f.get('window').classList.contains('focus'));
+ assert(f.run('focusNavigationOpen'));assert(f.get('window').classList.contains('focus-nav'));
+ f.get('menu').onclick();
+ assert(f.run('focused'));assert(!f.get('window').classList.contains('focus-nav'));
+ assert.equal(f.run('focusNavigationOpen'),false);
 });
 
 test('focus button icon and accessible label follow mode changes and Escape',()=>{
@@ -264,12 +268,14 @@ test('restored focus state is announced and compact layout reset updates the but
  assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
 });
 
-test('double-screen focus hamburger aligns navigation with the visible left pane',()=>{
+test('double-screen focus hamburger keeps the active pane while toggling navigation',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=double&vault=reading&focus=1&nav=0&side=chapters&active=right&left=reading_stream&right=reading_reading_journal');
  assert(f.run('focused'));assert.equal(f.run('activePane'),'right');
  f.get('menu').onclick();
- assert(!f.run('focused'));assert(!f.get('window').classList.contains('nav-hidden'));
- assert.equal(f.run('activePane'),'left');assert.equal(f.run('activeNoteId()'),'reading_stream');
+ assert(f.run('focused'));assert(f.get('window').classList.contains('focus-nav'));
+ assert.equal(f.run('activePane'),'right');assert.equal(f.run('activeNoteId()'),'reading_reading_journal');
+ f.run('setFocused(false)');
+ assert.equal(f.run('focusNavigationOpen'),false);assert(!f.get('window').classList.contains('focus-nav'));
 });
 
 test('trash is a collapsed bottom folder; delete updates entries without auto-expanding and restore works',()=>{
