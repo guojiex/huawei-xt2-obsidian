@@ -1529,6 +1529,16 @@ F4 仍为未充分核实的平台生命周期记录；不能据此声称支持�
 - 已落地 v1.9 的视口级捕获与 BGRA_8888 合成流程，最后只保存一个 JPEG 并交给单条 Share Kit JPEG record；当前 API 声明与源码状态不构成编译、运行或接收验收。
 - 官方声明未给出本工程 API 24 / XT2 的实际 PixelMap 分配余量、长图 JPEG 接收大小、系统分享接收应用的最大尺寸或内容展示能力。需分别记录目标设备生成、保存和接收端可读取 / 显示结果；Share Kit 面板可达仍不能证明接收成功。
 
+### O4 ⚠️ 固定宽度 ArkWeb 长图离屏截图能力未证实（2026-11-03 SDK 核对）
+
+来源：本机 DevEco Studio 26.0.0.851 SDK 声明及 [HarmonyOS 使用组件截图指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/arkts-uicontext-component-snapshot)；核对范围与逐条证据见 [SDK 核对归档](qa/2026-11-03_ArkWeb长图截图宽度_API24_SDK核对.md)。本机 SDK 为 API 26，工程 `compatibleSdkVersion` 为 API 24。
+
+- `ComponentSnapshot` 的 API 起始版本满足 API 24，但快照受目标组件布局边界限制；长内容按滚动位置捕获是既有视口分段模型，不会自动扩展到超出组件边界的 DOM 内容。
+- `WebviewController.getSurfaceId()` 起始 API 12，仅在 `RenderMode.ASYNC_RENDER` 且 Web 初始化后有效；`image.createPixelMapFromSurface(surfaceId, region)` 起始 API 11。现有分享 `Web` 使用 `SYNC_RENDER`，不能直接套用 `getSurfaceId()`。
+- `RenderMode.SYNC_RENDER` 的 SDK 宽度上限为 500,000 px；这只说明 Web 组件 API 的声明范围，不证明其能突破 ArkUI 父容器宽度或被完整截取。异步模式 7,680 px 限制亦不证明宽页面布局行为。
+- API 12 起的 `ComponentSnapshot.createFromBuilder()` 声明可离屏构建含 Web 的自定义组件，但 SDK 同时提示 Web 加载任务可能尚未完成即产生快照。尚无本工程固定宽度、加载就绪和截图内容一致性的运行证据。
+- **结论：**手机 / 宽版固定宽度是否可在窗口以外完整排版并可靠捕获仍为 ⚠️ 未验证，不能据此进入关键路径。当前 API 26 模拟器未在线；按隔离合成 Markdown 探针恢复验证。此限制不阻塞不依赖固定宽度的分享面板布局工作；API24 / XT2 仍由用户手动验收。
+
 
 ## P 组：系统主题变更通知（2026-10-27 本机 SDK 声明核对）
 
