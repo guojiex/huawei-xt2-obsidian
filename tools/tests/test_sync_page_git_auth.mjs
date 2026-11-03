@@ -19,7 +19,7 @@ const classCode = transformSync(`
 const IMPORTING_SUFFIX = '__importing';
 class SyncPageGitAuthHarness {
   ${method('  private async doClone(): Promise<void> {', '\n  private isGitHubRemote(')}
-  ${method('  private isGitHubRemote(', '\n  private urlHasInlineCredentials(')}
+  ${method('  private remoteHost(', '\n  private urlHasInlineCredentials(')}
   ${method('  private urlHasInlineCredentials(', '\n  private refreshSyncStatus(')}
   ${method('  private explainError(', '\n  /** 将导入到的库 id')}
   previewVaultId() { return 'isolated-repo'; }
@@ -30,7 +30,11 @@ class SyncPageGitAuthHarness {
 module.exports = SyncPageGitAuthHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
 
-function harness({ clonePathMismatch = false, state = { clean: true, branch: 'main' } } = {}) {
+function harness({
+  clonePathMismatch = false,
+  cloneError = null,
+  state = { clean: true, branch: 'main' }
+} = {}) {
   const cloneCalls = [];
   const registryCalls = [];
   const toasts = [];
@@ -47,6 +51,7 @@ function harness({ clonePathMismatch = false, state = { clean: true, branch: 'ma
     GitNativeService: {
       async clone(options) {
         cloneCalls.push(options);
+        if (cloneError !== null) throw cloneError;
         return clonePathMismatch ? '/unexpected/path' : options.targetPath;
       },
       repositoryState() { return state; },
@@ -62,8 +67,14 @@ function harness({ clonePathMismatch = false, state = { clean: true, branch: 'ma
     username: '',
     busy: false,
     progressText: '',
+    logs: [],
     pendingFinalId: '',
-    pendingTempId: ''
+    pendingTempId: '',
+    appendLog(line) { this.logs.push(line); },
+    onCloneDone(ok, message) {
+      this.cloneResult = { ok, message };
+      if (!ok) this.appendLog('导入失败：' + this.explainError(message));
+    }
   });
   return { page, cloneCalls, registryCalls, toasts };
 }
@@ -117,6 +128,22 @@ test('credential-bearing URL components are rejected before Native clone', async
   }
 });
 
+test('authentication failures stay actionable, redact the token, and do not register a library', async () => {
+  const token = 'synthetic-secret-token';
+  const f = harness({ cloneError: new Error('HTTP 401 token=' + token) });
+  f.page.repoUrl = 'https://github.com/team/repo.git';
+  f.page.token = token;
+
+  await f.page.doClone();
+
+  assert.equal(f.page.cloneResult.ok, false);
+  assert.ok(!f.page.cloneResult.message.includes(token));
+  assert.match(f.page.logs.join('\n'), /认证失败/);
+  assert.ok(!f.page.logs.join('\n').includes(token));
+  assert.equal(f.registryCalls.some((call) => call.startsWith('register:')), false);
+  assert.equal(f.registryCalls.some((call) => call.startsWith('finish:')), false);
+});
+
 test('GitHub detection matches the host rather than an arbitrary containing domain', () => {
   const f = harness();
   assert.equal(f.page.isGitHubRemote('https://github.com/team/repo.git'), true);
@@ -128,6 +155,11 @@ test('GitHub detection matches the host rather than an arbitrary containing doma
 test('common authentication, missing repository and network errors receive actionable messages', () => {
   const f = harness();
   assert.match(f.page.explainError('HTTP 401'), /认证失败/);
+  f.page.repoUrl = 'https://github.com/team/repo.git';
+  assert.match(f.page.explainError('HTTP 401'), /GitHub 认证失败/);
+  assert.doesNotMatch(f.page.explainError('HTTP 401'), /Gitee 用户名/);
+  f.page.repoUrl = 'https://gitee.com/team/repo.git';
+  assert.match(f.page.explainError('HTTP 401'), /Gitee 认证失败/);
   assert.match(f.page.explainError('NotFound 404'), /仓库或分支不存在/);
   assert.match(f.page.explainError('ECONNREFUSED'), /网络不可达/);
   assert.equal(f.page.explainError('unclassified failure'), 'unclassified failure');

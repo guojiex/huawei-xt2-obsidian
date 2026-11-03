@@ -126,8 +126,15 @@ struct SyncPage {
   private explainError(message: string): string {
     if (message.includes('401') || message.includes('Unauthorized') ||
       message.toLowerCase().includes('authentication')) {
-      // Gitee 对「仓库不存在」和「私有库未认证」都回 401，最容易误判
-      return '认证失败。Gitee 对"仓库不存在 / 私有库未授权"都返回 401，请确认地址、用户名与令牌';
+      const remote: string = this.syncMode ? this.syncRemote : this.repoUrl;
+      if (this.isGitHubRemote(remote)) {
+        return 'GitHub 认证失败，请检查仓库地址和访问令牌权限；私有仓库需要有效令牌';
+      }
+      if (this.isGiteeRemote(remote)) {
+        // Gitee 对「仓库不存在」和「私有库未认证」都可能回 401。
+        return 'Gitee 认证失败。仓库不存在或私有库未授权都可能返回 401，请检查地址、用户名和私人令牌';
+      }
+      return '认证失败，请检查仓库地址、用户名和访问令牌后重试';
     }
     if (message.includes('404') || message.includes('NotFound')) {
       return '仓库或分支不存在，请检查地址与分支名';
@@ -202,17 +209,30 @@ struct SyncPage {
       this.onCloneDone(true, 'Native clone 与磁盘状态校验完成');
     } catch (error) {
       const err = error as BusinessError;
-      this.onCloneDone(false, err.message ?? String(error));
+      let message: string = err.message ?? String(error);
+      if (token.length > 0) {
+        message = message.split(token).join('[令牌已隐藏]');
+      }
+      this.onCloneDone(false, message);
     }
   }
 
-  private isGitHubRemote(url: string): boolean {
+  private remoteHost(url: string): string {
     const scheme: number = url.indexOf('://');
     const authorityStart: number = scheme >= 0 ? scheme + 3 : 0;
     const slash: number = url.indexOf('/', authorityStart);
     const authority: string = url.substring(authorityStart, slash >= 0 ? slash : url.length);
-    const host: string = authority.split(':')[0].toLowerCase();
+    return authority.substring(authority.lastIndexOf('@') + 1).split(':')[0].toLowerCase();
+  }
+
+  private isGitHubRemote(url: string): boolean {
+    const host: string = this.remoteHost(url);
     return host === 'github.com' || host === 'www.github.com';
+  }
+
+  private isGiteeRemote(url: string): boolean {
+    const host: string = this.remoteHost(url);
+    return host === 'gitee.com' || host.endsWith('.gitee.com');
   }
 
   private urlHasInlineCredentials(url: string): boolean {

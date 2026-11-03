@@ -18,6 +18,10 @@ export struct ImportVaultDialog {
   @State source: string = 'local';
   @State gitRemote: string = '';
   @State gitBranch: string = 'main';
+  @State gitUsername: string = '';
+  @State gitToken: string = '';
+  @State showGitToken: boolean = false;
+  @State gitAuthHint: string = '';
   /** 返回选中目录的展示名；取消或失败返回 null（失败原因由父侧提示）。 */
   onChooseDirectory: () => Promise<string | null> = async (): Promise<string | null> => null;
   /** 返回是否关联成功；失败时父侧提示，弹窗保持打开供重试。 */
@@ -25,9 +29,45 @@ export struct ImportVaultDialog {
   onContinueGit: (draft: GitImportDraft) => void = (_draft: GitImportDraft) => {};
   onCancel: () => void = () => {};
 
+  private isGiteeRemote(): boolean {
+    const scheme: number = this.gitRemote.indexOf('://');
+    const authorityStart: number = scheme >= 0 ? scheme + 3 : 0;
+    const slash: number = this.gitRemote.indexOf('/', authorityStart);
+    const authority: string =
+      this.gitRemote.substring(authorityStart, slash >= 0 ? slash : this.gitRemote.length);
+    const host: string = authority.substring(authority.lastIndexOf('@') + 1).split(':')[0].toLowerCase();
+    return host === 'gitee.com' || host.endsWith('.gitee.com');
+  }
+
+  private isGitHubRemote(): boolean {
+    const scheme: number = this.gitRemote.indexOf('://');
+    const authorityStart: number = scheme >= 0 ? scheme + 3 : 0;
+    const slash: number = this.gitRemote.indexOf('/', authorityStart);
+    const authority: string =
+      this.gitRemote.substring(authorityStart, slash >= 0 ? slash : this.gitRemote.length);
+    const host: string = authority.substring(authority.lastIndexOf('@') + 1).split(':')[0].toLowerCase();
+    return host === 'github.com' || host === 'www.github.com';
+  }
+
+  private clearGitCredentials(): void {
+    this.gitUsername = '';
+    this.gitToken = '';
+    this.showGitToken = false;
+    this.gitAuthHint = '';
+  }
+
+  private toggleGitTokenVisibility(): void {
+    this.showGitToken = !this.showGitToken;
+  }
+
   private close(): void {
+    this.clearGitCredentials();
     this.controller?.close();
     this.onCancel();
+  }
+
+  aboutToDisappear(): void {
+    this.clearGitCredentials();
   }
 
   private chooseSource(source: string): void {
@@ -72,12 +112,18 @@ export struct ImportVaultDialog {
     if (this.gitRemote.trim().length === 0 || this.working) {
       return;
     }
+    const username: string = this.gitUsername.trim();
+    if (this.isGiteeRemote() && this.gitToken.length > 0 && username.length === 0) {
+      this.gitAuthHint = '使用 Gitee 私人令牌时，请填写对应用户名。';
+      return;
+    }
     const draft: GitImportDraft = {
       remote: this.gitRemote.trim(),
       branch: this.gitBranch.trim(),
-      username: '',
-      token: ''
+      username: username,
+      token: this.gitToken
     };
+    this.clearGitCredentials();
     this.controller?.close();
     this.onContinueGit(draft);
   }
@@ -224,7 +270,78 @@ export struct ImportVaultDialog {
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
-            Text('GitHub / Gitee 等 HTTPS 仓库。私有仓库在应用内安全验证；移除库只删除手机副本，远端仓库保留。')
+            if (this.isGiteeRemote()) {
+              Column({ space: Space.s1 }) {
+                Text('用户名')
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                TextInput({ placeholder: 'Gitee 用户名', text: this.gitUsername })
+                  .height(Size.buttonH)
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                  .placeholderColor($r('app.color.text_tertiary'))
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .backgroundColor($r('app.color.bg_secondary'))
+                  .borderRadius(Radius.control)
+                  .onChange((value: string) => {
+                    this.gitUsername = value;
+                    this.gitAuthHint = '';
+                  })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
+            Column({ space: Space.s1 }) {
+              Text('访问令牌')
+                .fontSize(FontSize.body3)
+                .fontColor($r('app.color.text_primary'))
+              Row() {
+                TextInput({ placeholder: '私有仓库访问令牌', text: this.gitToken })
+                  .type(this.showGitToken ? InputType.Normal : InputType.Password)
+                  .layoutWeight(1)
+                  .height(Size.buttonH)
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                  .placeholderColor($r('app.color.text_tertiary'))
+                  .padding({ left: Space.s3, right: Space.s2 })
+                  .backgroundColor(Color.Transparent)
+                  .onChange((value: string) => {
+                    this.gitToken = value;
+                    this.gitAuthHint = '';
+                  })
+                Text(this.showGitToken ? '隐藏' : '显示')
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.brand'))
+                  .height(Size.touch)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .textAlign(TextAlign.Center)
+                  .accessibilityText(this.showGitToken ? '隐藏访问令牌' : '显示访问令牌')
+                  .onClick(() => { this.toggleGitTokenVisibility(); })
+              }
+              .width('100%')
+              .borderRadius(Radius.control)
+              .backgroundColor($r('app.color.bg_secondary'))
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+            Text(this.gitAuthHint.length > 0
+              ? this.gitAuthHint
+              : (this.isGitHubRemote()
+                ? 'GitHub 使用 Bearer 认证；私有仓库需要令牌，公开仓库可留空。'
+                : '私有仓库需要令牌，公开仓库可留空。'))
+              .fontSize(FontSize.caption)
+              .fontColor(this.gitAuthHint.length > 0
+                ? $r('app.color.brand')
+                : $r('app.color.text_secondary'))
+              .width('100%')
+            Text('令牌用于本次克隆；成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换。')
+              .fontSize(FontSize.body3)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+              .padding(Space.s3)
+              .borderRadius(Radius.control)
+              .backgroundColor($r('app.color.bg_secondary'))
+            Text('GitHub 使用 Bearer；Gitee 使用用户名和令牌。移除库只删除手机副本，远端仓库保留。')
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')

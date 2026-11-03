@@ -20,6 +20,11 @@ function extract(startMarker, endMarker) {
 
 const harnessCode = transformSync(`
 class ImportVaultDialogHarness {
+  ${extract('  private isGiteeRemote(', '\n  private clearGitCredentials(')}
+  ${extract('  private clearGitCredentials(', '\n  private toggleGitTokenVisibility(')}
+  ${extract('  private toggleGitTokenVisibility(', '\n  private close(')}
+  ${extract('  private close(', '\n  aboutToDisappear(')}
+  ${extract('  aboutToDisappear(): void {', '\n  private chooseSource(')}
   ${extract('  private chooseSource(', '\n  @Builder')}
   constructor() {
     this.source = 'local';
@@ -27,6 +32,10 @@ class ImportVaultDialogHarness {
     this.pickedName = '';
     this.gitRemote = '';
     this.gitBranch = 'main';
+    this.gitUsername = '';
+    this.gitToken = '';
+    this.showGitToken = false;
+    this.gitAuthHint = '';
     this.closed = 0;
     this.drafts = [];
     this.calls = [];
@@ -34,6 +43,7 @@ class ImportVaultDialogHarness {
     this.associateResult = false;
     this.controller = { close: () => { this.closed++; } };
     this.onContinueGit = draft => this.drafts.push(draft);
+    this.onCancel = () => { this.cancelled = true; };
     this.onChooseDirectory = async () => { this.calls.push('choose'); return this.pickResult; };
     this.onAssociateDirectory = async () => { this.calls.push('associate'); return this.associateResult; };
   }
@@ -90,42 +100,76 @@ test('existing Git libraries stay listed and can still be selected locally', () 
   assert.doesNotMatch(vaultManagerSource, /各自独立同步/);
 });
 
-test('Git source follows the prototype form and leaves credentials to the existing secure SyncPage', () => {
+test('Git source collects provider credentials in the dialog and documents safe storage', () => {
   assert.match(dialogSource, /Text\('连接远端 Git 仓库'\)/);
   assert.match(dialogSource, /Text\('仓库地址'\)/);
   assert.match(dialogSource, /placeholder: 'https:\/\/github\.com\/用户名\/仓库\.git'/);
   assert.match(dialogSource, /Text\('分支'\)/);
-  const gitForm = dialogSource.slice(dialogSource.indexOf("Text('仓库地址')"), dialogSource.indexOf("Text('GitHub / Gitee"));
-  assert.equal((gitForm.match(/\.alignItems\(HorizontalAlign\.Start\)/g) || []).length, 2);
+  assert.match(dialogSource, /if \(this\.isGiteeRemote\(\)\) \{[\s\S]*?Text\('用户名'\)/);
+  assert.match(dialogSource, /TextInput\(\{ placeholder: 'Gitee 用户名', text: this\.gitUsername \}\)/);
+  assert.match(dialogSource, /TextInput\(\{ placeholder: '私有仓库访问令牌', text: this\.gitToken \}\)/);
+  assert.match(dialogSource, /\.type\(this\.showGitToken \? InputType\.Normal : InputType\.Password\)/);
+  assert.match(dialogSource, /accessibilityText\(this\.showGitToken \? '隐藏访问令牌' : '显示访问令牌'\)/);
+  assert.match(dialogSource, /GitHub 使用 Bearer；Gitee 使用用户名和令牌/);
+  assert.match(dialogSource, /成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换/);
   assert.match(dialogSource, /Text\(this\.working \? '处理中…' : '导入 Git 仓库'\)/);
-  assert.doesNotMatch(dialogSource, /Access Token|用户名（Gitee|gitToken|gitUsername/);
-  assert.match(dialogSource, /username: '',\s*token: ''/);
+  assert.match(dialogSource, /username: username,\s*token: this\.gitToken/);
   assert.match(syncSource, /TextInput\(\{ placeholder: '私有库填 Access Token/);
-  assert.match(syncSource, /TextInput\(\{ placeholder: '用户名（仅 Gitee/);
   assert.match(indexSource, /onContinueGit: \(draft: GitImportDraft\): void => \{\s*void this\.openGitSyncPage\(draft\);/);
+  assert.match(indexSource, /GitImportDraftStore\.set\(draft\);[\s\S]*?router\.pushUrl\(\{ url: 'pages\/SyncPage' \}\)/);
+  assert.match(indexSource, /cancel: \(\): void => \{\s*GitImportDraftStore\.clear\(\);/);
 });
 
-test('Git handoff keeps remote and branch while guarding blank input and busy state', () => {
+test('Git handoff keeps credentials in memory and clears dialog state before navigation', () => {
   const dialog = createHarness();
   dialog.continueGit();
   assert.equal(dialog.closed, 0);
   assert.equal(dialog.drafts.length, 0);
 
-  dialog.gitRemote = '  https://github.com/team/notes.git  ';
+  dialog.gitRemote = '  https://gitee.com/team/notes.git  ';
   dialog.gitBranch = '  release  ';
+  dialog.gitToken = 'synthetic-token';
+  dialog.continueGit();
+  assert.equal(dialog.closed, 0, 'Gitee token requires its username');
+  assert.equal(dialog.drafts.length, 0);
+  assert.match(dialog.gitAuthHint, /填写对应用户名/);
+
+  dialog.gitUsername = ' synthetic-user ';
   dialog.continueGit();
   assert.equal(dialog.closed, 1);
   assert.deepEqual(JSON.parse(JSON.stringify(dialog.drafts[0])), {
-    remote: 'https://github.com/team/notes.git',
+    remote: 'https://gitee.com/team/notes.git',
     branch: 'release',
-    username: '',
-    token: ''
+    username: 'synthetic-user',
+    token: 'synthetic-token'
   });
+  assert.equal(dialog.gitUsername, '');
+  assert.equal(dialog.gitToken, '');
+  assert.equal(dialog.showGitToken, false);
 
   dialog.working = true;
   dialog.continueGit();
   assert.equal(dialog.closed, 1);
   assert.equal(dialog.drafts.length, 1);
+});
+
+test('closing or dismissing the import dialog clears credentials and visibility state', () => {
+  const dialog = createHarness();
+  dialog.gitUsername = 'synthetic-user';
+  dialog.gitToken = 'synthetic-token';
+  dialog.showGitToken = true;
+  dialog.close();
+  assert.equal(dialog.gitUsername, '');
+  assert.equal(dialog.gitToken, '');
+  assert.equal(dialog.showGitToken, false);
+  assert.equal(dialog.closed, 1);
+  assert.equal(dialog.cancelled, true);
+
+  dialog.gitToken = 'another-synthetic-token';
+  dialog.showGitToken = true;
+  dialog.aboutToDisappear();
+  assert.equal(dialog.gitToken, '');
+  assert.equal(dialog.showGitToken, false);
 });
 
 test('picked directory lives in dialog @State, not in a @Prop the parent cannot refresh', () => {

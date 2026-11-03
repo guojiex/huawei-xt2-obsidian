@@ -1876,9 +1876,14 @@ struct Index {
           void this.openGitSyncPage(draft);
         },
         onCancel: (): void => {
+          GitImportDraftStore.clear();
           this.pendingExternalDirectory = null;
         }
       }),
+      cancel: (): void => {
+        GitImportDraftStore.clear();
+        this.pendingExternalDirectory = null;
+      },
       autoCancel: true,
       customStyle: true
     });
