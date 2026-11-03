@@ -588,6 +588,22 @@ test('Git import validates HTTPS URL and adds only demo metadata without storing
 test('Git import credential demo switches provider hints and clears secrets on close',()=>{
  const f=fixture();f.run('openImportVault()');f.get('importGitTab').onclick();f.get('importGitUrl').value='https://github.com/user/repo';f.get('importGitUrl').oninput();assert(f.get('importGitUserRow').classList.contains('hidden'));f.get('importGitUrl').value='https://gitee.com/user/repo';f.get('importGitUrl').oninput();assert(!f.get('importGitUserRow').classList.contains('hidden'));f.get('importGitToken').type='password';f.get('importGitToken').value='synthetic-secret';f.get('importGitUser').value='synthetic-user';f.get('importGitTokenToggle').onclick();assert.equal(f.get('importGitToken').type,'text');assert(!f.href().includes('synthetic-secret'));f.get('importVaultDialog').dispatch('close',{});assert.equal(f.get('importGitToken').value,'');assert.equal(f.get('importGitUser').value,'');assert.equal(f.get('importGitToken').type,'password');
 });
+test('v1.24 import prototype retains directory IDs and covers card states with a discoverable retry',()=>{
+ for(const id of ['importVaultDialog','importVaultTitle','importVaultLead','importLocalTab','importGitTab','importLocalPanel','importGitPanel','chooseImportDirectory','importDirectoryName','importDirectoryHint','importDirectoryAction','importDirectoryIcon','importVaultStatus','importFailDemo','cancelImportVault','confirmImportVault'])assert(markupIds.has(id),id);
+ assert.match(html,/<dialog id="importVaultDialog"[^>]+aria-labelledby="importVaultTitle" aria-describedby="importVaultLead"/);
+ assert.match(html,/<button id="chooseImportDirectory"[^>]+aria-describedby="importDirectoryHint"/);
+ assert.match(html,/<span id="importDirectoryAction" class="directory-action" aria-hidden="true">/);
+ assert.match(html,/<span id="importVaultStatus" role="status">/);
+ const f=fixture();f.get('importVaultMenu').onclick();
+ const card=f.get('chooseImportDirectory');
+ assert(f.get('importVaultDialog').open);assert.equal(card.focused,true);assert.equal(card.dataset.state,'empty');assert.equal(card.dataset.selected,'false');
+ assert.equal(f.get('importDirectoryName').textContent,'选择笔记目录');assert.equal(f.get('importDirectoryAction').textContent,'选择');assert(f.get('confirmImportVault').disabled);
+ f.get('importFailDemo').onclick();
+ assert.equal(card.dataset.state,'error');assert.equal(f.get('importDirectoryName').textContent,'未获得目录授权');assert.equal(f.get('importDirectoryAction').textContent,'重试');
+ assert.match(f.get('importVaultStatus').textContent,/未登记知识库/);assert(f.get('confirmImportVault').disabled);assert.equal(card.focused,true);
+ card.onclick();
+ assert.equal(card.dataset.state,'selected');assert.equal(card.dataset.selected,'true');assert.equal(f.get('importDirectoryAction').textContent,'更换');assert.equal(f.get('confirmImportVault').disabled,false);
+});
 
 test('first launch and missing or invalid mode choose simple; explicit professional remains available',()=>{
  for(const href of ['file:///repo/docs/prototype/v2/index.html','file:///repo/docs/prototype/v2/index.html?ui=2','file:///repo/docs/prototype/v2/index.html?ui=2&experience=invalid']){
