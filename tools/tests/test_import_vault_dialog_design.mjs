@@ -51,12 +51,11 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test('import dialog matches the v2 title, close action and shared segmented source control', () => {
+test('import dialog keeps the local entry visible while Git source is hidden for v1.23', () => {
   assert.match(dialogSource, /Text\('导入库'\)/);
   assert.match(dialogSource, /accessibilityText\('关闭导入库'\)/);
   assert.match(dialogSource, /Text\('把已有的笔记，带进你的工作台。'\)/);
-  assert.match(dialogSource, /Row\(\{ space: Space\.s1 \}\) \{\s*this\.SourceTab\('本地目录', 'local'\)\s*this\.SourceTab\('Git 仓库', 'git'\)\s*\}/);
-  assert.match(dialogSource, /\.padding\(Space\.s1\)\s*\.borderRadius\(Radius\.full\)\s*\.backgroundColor\(\$r\('app\.color\.bg_secondary'\)\)/);
+  assert.doesNotMatch(dialogSource.slice(dialogSource.indexOf('  build() {')), /this\.SourceTab\('Git 仓库', 'git'\)/);
   assert.match(dialogSource, /@State source: string = 'local'/);
 });
 

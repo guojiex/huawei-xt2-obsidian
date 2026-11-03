@@ -70,13 +70,15 @@ test('repository errors clear stale badge state instead of showing a false count
   assert.equal(app.gitAheadCommitCount, 0);
 });
 
-test('badge text caps only the compact top-bar count and keeps exact count in the single-screen menu', () => {
+test('badge data remains available but its top-bar and menu UI are hidden for v1.23', () => {
   const { app } = createHarness({ aheadCount: 123 });
   app.gitAheadCommitCount = 123;
   assert.equal(app.gitAheadBadgeLabel(), '99+');
   assert.match(source, /Text\(this\.gitAheadCommitCount\.toString\(\) \+ ' 个待推送'\)/);
   assert.match(source, /this\.GitSyncButton\(\)/);
-  assert.match(source, /if \(this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);
+  assert.match(source, /const GIT_UI_ENABLED: boolean = false/);
+  assert.match(source, /if \(GIT_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);
+  assert.match(source, /if \(GIT_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitSyncButton\(\)/);
 });
 
 test('badge refresh runs when Index appears and when its registry snapshot changes', () => {
