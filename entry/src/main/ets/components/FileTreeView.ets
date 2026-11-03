@@ -204,7 +204,7 @@ export struct FileTreeView {
     // VaultAccess 负责遍历（沙箱 fileIo / 外部 Native POSIX），这里只做剪枝与排版。
     const access: VaultAccess = VaultRegistry.get().accessFor(this.vaultId);
     this.applyNodes(FileTree.scan(access, this.expanded));
-    hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成，可见项=%{public}d', this.nodes.length);
+    hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成');
   }
 
   private isExpanded(relPath: string): boolean {
