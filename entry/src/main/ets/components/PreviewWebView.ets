@@ -26,6 +26,54 @@ export interface PreviewCaptureResult {
   scrollTop: number;
 }
 
+export interface PreviewBlockAnchor {
+  type: string;
+  from: number;
+  to: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewBlockAnchor | null {
+  if (payload.length === 0 || area.length < 4) {
+    return null;
+  }
+  let source: Record<string, string | number>;
+  try {
+    source = JSON.parse(payload) as Record<string, string | number>;
+  } catch {
+    return null;
+  }
+  const type: string = source['type'] as string;
+  const from: number = source['from'] as number;
+  const to: number = source['to'] as number;
+  const left: number = source['left'] as number;
+  const top: number = source['top'] as number;
+  const width: number = source['width'] as number;
+  const height: number = source['height'] as number;
+  const viewportWidth: number = source['viewportWidth'] as number;
+  const viewportHeight: number = source['viewportHeight'] as number;
+  if (type.length === 0 || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from ||
+    !Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height) ||
+    width <= 0 || height <= 0 || !Number.isFinite(viewportWidth) || !Number.isFinite(viewportHeight) ||
+    viewportWidth <= 0 || viewportHeight <= 0 || area[2] <= 0 || area[3] <= 0) {
+    return null;
+  }
+  const scaleX: number = area[2] / viewportWidth;
+  const scaleY: number = area[3] / viewportHeight;
+  return {
+    type: type,
+    from: from,
+    to: to,
+    x: area[0] + left * scaleX,
+    y: area[1] + top * scaleY,
+    width: width * scaleX,
+    height: height * scaleY
+  };
+}
+
 interface CaptureWaiter {
   resolve: (result: PreviewCaptureResult) => void;
   reject: (error: Error) => void;
@@ -61,6 +109,7 @@ class PreviewNativeProxy {
   editableContentRequestHandler: (id: number, contentB64: string) => void = (_id: number, _contentB64: string) => {};
   compositionHandler: (state: string) => void = (_state: string) => {};
   lockedContentTapHandler: () => void = () => {};
+  lockedBlockSelectionHandler: (payload: string) => void = (_payload: string) => {};
   previewZoomChangeHandler: (percent: number) => void = (_percent: number) => {};
 
   readAsset(relB64: string): string {
@@ -97,6 +146,10 @@ class PreviewNativeProxy {
 
   onLockedContentTap(): void {
     this.lockedContentTapHandler();
+  }
+
+  onLockedBlockSelection(payload: string): void {
+    this.lockedBlockSelectionHandler(payload);
   }
 
   onPreviewZoomChange(percent: number): void {
@@ -260,6 +313,7 @@ export class PreviewBridge {
   onEditableContentChange: (content: string) => void = (_content: string) => {};
   onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
   onLockedContentTap: () => void = () => {};
+  onBlockAnchorChange: (anchor: PreviewBlockAnchor | null) => void = (_anchor: PreviewBlockAnchor | null) => {};
 
   bind(impl: PreviewImpl): void {
     this.impl = impl;
@@ -555,6 +609,8 @@ export struct PreviewWebView {
   private componentActive: boolean = false;
   /** 代理是否已注册（onControllerAttached 里注册，onPageEnd 兜底） */
   private proxyRegistered: boolean = false;
+  private webAreaVp: number[] = [0, 0, 0, 0];
+  private latestBlockAnchorPayload: string = '';
 
   aboutToAppear(): void {
     this.componentActive = true;
@@ -584,6 +640,10 @@ export struct PreviewWebView {
     };
     this.proxy.lockedContentTapHandler = (): void => {
       this.onLockedContentTap();
+    };
+    this.proxy.lockedBlockSelectionHandler = (payload: string): void => {
+      this.latestBlockAnchorPayload = payload;
+      this.publishBlockAnchor();
     };
     this.bridge.onEditableContentChange = (content: string): void => {
       this.onEditableContentChange(content);
@@ -627,6 +687,18 @@ export struct PreviewWebView {
     }
   }
 
+  private publishBlockAnchor(): void {
+    this.bridge.onBlockAnchorChange(mapPreviewBlockAnchor(this.latestBlockAnchorPayload, this.webAreaVp));
+  }
+
+  private recordWebArea(area: Area): void {
+    this.webAreaVp[0] = typeof area.globalPosition.x === 'number' ? area.globalPosition.x : 0;
+    this.webAreaVp[1] = typeof area.globalPosition.y === 'number' ? area.globalPosition.y : 0;
+    this.webAreaVp[2] = typeof area.width === 'number' ? area.width : 0;
+    this.webAreaVp[3] = typeof area.height === 'number' ? area.height : 0;
+    this.publishBlockAnchor();
+  }
+
   private async finishPageInitialization(impl: PreviewImpl): Promise<void> {
     try {
       await impl.markReady();
@@ -645,6 +717,8 @@ export struct PreviewWebView {
   }
 
   aboutToDisappear(): void {
+    this.latestBlockAnchorPayload = '';
+    this.publishBlockAnchor();
     this.bridge.setImageViewerOpen(false);
     this.componentActive = false;
     if (this.boundImpl !== undefined) {
@@ -665,7 +739,7 @@ export struct PreviewWebView {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
         ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
-          'onPreviewZoomChange']);
+          'onLockedBlockSelection', 'onPreviewZoomChange']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (_error) {
@@ -676,6 +750,9 @@ export struct PreviewWebView {
   build() {
     Column() {
       Web({ src: $rawfile('mdpreview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+        .onAreaChange((_oldArea: Area, newArea: Area) => {
+          this.recordWebArea(newArea);
+        })
         .onControllerAttached(() => {
           this.registerProxy();
         })

@@ -18,7 +18,7 @@ import { marked } from 'marked'
 import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
-import { selectedLockedBlocks } from './blockSelection.mjs'
+import { lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection } from './blockSelection.mjs'
 
 declare global {
   interface Window {
@@ -32,6 +32,7 @@ declare global {
       onEditableContent?: (id: number, contentB64: string) => void
       onCompositionChange?: (state: string) => void
       onLockedContentTap?: () => void
+      onLockedBlockSelection?: (payload: string) => void
       onPreviewZoomChange?: (percent: number) => void
     }
   }
@@ -86,6 +87,7 @@ let editable = false
 let editableChangeTimer: number | undefined
 let editableComposing = false
 let savedEditableSelection: Range | null = null
+let activeToolbarBlock: HTMLElement | null = null
 let mermaidRender: Promise<void> = Promise.resolve()
 let mermaidRenderGeneration = 0
 
@@ -269,6 +271,7 @@ function setPreviewZoomPercent(value: number, notifyNative: boolean = false): vo
   previewZoomSelect.value = String(percent)
   previewZoomReset.hidden = percent === 100
   invalidateSourceGeometry()
+  publishLockedBlockAnchor(activeToolbarBlock)
   if (notifyNative) {
     const arkts = window.__arkts
     if (arkts && typeof arkts.onPreviewZoomChange === 'function') {
@@ -649,8 +652,19 @@ function setActiveLockedBlocks(root: HTMLElement, selected: HTMLElement[]): void
   }
 }
 
+function publishLockedBlockAnchor(block: HTMLElement | null): void {
+  activeToolbarBlock = block
+  const rect = block?.getBoundingClientRect()
+  const anchor = rect ? lockedBlockAnchor(block, rect, window.innerWidth, window.innerHeight) : null
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onLockedBlockSelection === 'function') {
+    arkts.onLockedBlockSelection(anchor ? JSON.stringify(anchor) : '')
+  }
+}
+
 function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
   setActiveLockedBlocks(root, [])
+  publishLockedBlockAnchor(null)
   const previousEditables = root.querySelectorAll('[data-simple-editable="true"]')
   for (let index = 0; index < previousEditables.length; index++) {
     const element = previousEditables[index] as HTMLElement
@@ -762,11 +776,13 @@ contentElement.addEventListener('input', (event: Event): void => {
 document.addEventListener('selectionchange', (): void => {
   if (!editable) {
     setActiveLockedBlocks(contentElement, [])
+    publishLockedBlockAnchor(null)
     return
   }
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0) {
     setActiveLockedBlocks(contentElement, [])
+    publishLockedBlockAnchor(null)
     return
   }
   const range = selection.getRangeAt(0)
@@ -778,6 +794,7 @@ document.addEventListener('selectionchange', (): void => {
     contentElement,
     selectedLockedBlocks(lockedBlocks, selection, sourceBlockForNode)
   )
+  publishLockedBlockAnchor(toolbarBlockForSelection(lockedBlocks, selection, sourceBlockForNode))
 })
 
 contentElement.addEventListener('click', (event: MouseEvent): void => {
@@ -786,11 +803,18 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
     '.preview-source-block[data-edit-locked="true"]'
   ) as HTMLElement | null
   setActiveLockedBlocks(contentElement, lockedBlock ? [lockedBlock] : [])
+  publishLockedBlockAnchor(lockedBlock)
   if (event.target.closest('a, input, img, button')) return
   const arkts = window.__arkts
   if (lockedBlock && arkts && typeof arkts.onLockedContentTap === 'function') {
     arkts.onLockedContentTap()
   }
+})
+contentElement.addEventListener('scroll', (): void => {
+  if (activeToolbarBlock) publishLockedBlockAnchor(activeToolbarBlock)
+}, { passive: true })
+window.addEventListener('resize', (): void => {
+  if (activeToolbarBlock) publishLockedBlockAnchor(activeToolbarBlock)
 })
 
 async function renderMermaidBlocks(root: HTMLElement, generation: number): Promise<void> {
