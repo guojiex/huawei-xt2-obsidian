@@ -53,8 +53,7 @@ export struct TrashView {
     try {
       await TrashService.migrateLegacyTrash(registry, requestedVaultId);
     } catch (error) {
-      const err = error as Error;
-      hilog.warn(TRASH_VIEW_DOMAIN, TRASH_VIEW_TAG, '旧回收站复制未完成，原目录保留: %{public}s', err.message);
+      hilog.warn(TRASH_VIEW_DOMAIN, TRASH_VIEW_TAG, '旧回收站复制未完成，原目录保留');
       migrationFailed = true;
     }
     if (generation !== this.reloadGeneration || requestedVaultId !== this.vaultId) {
@@ -67,8 +66,7 @@ export struct TrashView {
         this.expandedVaultIds = this.expandedVaultIds.filter((id: string) => id !== requestedVaultId);
       }
     } catch (error) {
-      const err = error as Error;
-      hilog.warn(TRASH_VIEW_DOMAIN, TRASH_VIEW_TAG, '列回收站失败: %{public}s', err.message);
+      hilog.warn(TRASH_VIEW_DOMAIN, TRASH_VIEW_TAG, '列回收站失败');
       this.items = [];
       this.loadFailed = true;
     }

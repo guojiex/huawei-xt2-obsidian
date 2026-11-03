@@ -8,7 +8,10 @@ const preview = read('../../web/mdpreview/src/index.ts')
 const previewRawfile = read('../../entry/src/main/resources/rawfile/mdpreview/index.html')
 const editorBridge = read('../../entry/src/main/ets/components/EditorWebView.ets')
 const previewBridge = read('../../entry/src/main/ets/components/PreviewWebView.ets')
+const trashView = read('../../entry/src/main/ets/components/TrashView.ets')
 const noteService = read('../../entry/src/main/ets/model/NoteService.ets')
+const noteDraftService = read('../../entry/src/main/ets/model/NoteDraftService.ets')
+const vaultRegistry = read('../../entry/src/main/ets/model/VaultRegistry.ets')
 const fileTree = read('../../entry/src/main/ets/components/FileTreeView.ets')
 const trashService = read('../../entry/src/main/ets/model/TrashService.ets')
 const workspace = read('../../entry/src/main/ets/pages/Index.ets')
@@ -29,10 +32,15 @@ test('preview diagnostics omit note length and raw resource errors in source and
   assert.match(previewRawfile, /readAsset failed/)
 })
 
-test('note, file-tree and trash diagnostics omit note names and paths', () => {
+test('note, file-tree, trash, draft and vault diagnostics omit note names and paths', () => {
   const sensitiveArgument = /hilog\.(?:info|warn|error)\([^\n]*(?:relPath|trashRel|n\.relPath|FileTree\.describe)/
-  for (const source of [noteService, fileTree, trashService, workspace]) {
+  for (const source of [noteService, fileTree, trashService, workspace, trashView, noteDraftService, vaultRegistry]) {
     assert.doesNotMatch(source, sensitiveArgument)
   }
   assert.doesNotMatch(noteService, /hilog\.(?:info|warn|error)\([^\n]*text\.length/)
+  const loggedCalls = [trashView, noteDraftService, vaultRegistry]
+    .flatMap((source) => [...source.matchAll(/hilog\.(?:info|warn|error)\([\s\S]*?;/g)].map(([call]) => call))
+  for (const call of loggedCalls) {
+    assert.doesNotMatch(call, /err\.message|JSON\.stringify\(err\)|dirs\[i\]/)
+  }
 })

@@ -103,8 +103,7 @@ export class VaultRegistry {
     try {
       this.store = preferences.getPreferencesSync(this.context, { name: this.PREF_NAME });
     } catch (error) {
-      const err = error as BusinessError;
-      hilog.error(REG_DOMAIN, REG_TAG, 'getPreferencesSync 失败: %{public}s', JSON.stringify(err));
+      hilog.error(REG_DOMAIN, REG_TAG, 'getPreferencesSync 失败');
       this.store = null;
     }
     const rawJson: string = this.store !== null ? (this.store.getSync(this.PREF_KEY, '') as string) : '';
@@ -493,8 +492,7 @@ export class VaultRegistry {
     try {
       this.removeImportMarker(finalId, importingId);
     } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(REG_DOMAIN, REG_TAG, 'Git 导入标记清理失败，将在下次启动重试: %{public}s', err.message);
+      hilog.warn(REG_DOMAIN, REG_TAG, 'Git 导入标记清理失败，将在下次启动重试');
     }
   }
 
@@ -611,9 +609,7 @@ export class VaultRegistry {
       try {
         this.removePathTreeIfExists(dirs[i]);
       } catch (error) {
-        const err = error as BusinessError;
-        hilog.warn(0x0000, 'VaultRegistry', '私有数据清理失败 %{public}s: %{public}s',
-          dirs[i], err.message);
+        hilog.warn(0x0000, 'VaultRegistry', '私有数据清理失败');
       }
     }
   }
@@ -854,8 +850,7 @@ export class VaultRegistry {
       }
       return state;
     } catch (error) {
-      const err = error as BusinessError;
-      hilog.warn(REG_DOMAIN, REG_TAG, '注册表 JSON 解析失败，按首启处理: %{public}s', JSON.stringify(err));
+      hilog.warn(REG_DOMAIN, REG_TAG, '注册表 JSON 解析失败，按首启处理');
       return null;
     }
   }
@@ -886,8 +881,7 @@ export class VaultRegistry {
         }
       }
     } catch (error) {
-      const err = error as BusinessError;
-      hilog.error(REG_DOMAIN, REG_TAG, '补建库目录失败: %{public}s', JSON.stringify(err));
+      hilog.error(REG_DOMAIN, REG_TAG, '补建库目录失败');
     }
   }
 
@@ -914,18 +908,16 @@ export class VaultRegistry {
           this.state.currentVaultId = SAMPLE_VAULT_ID;
           this.state.initialNotePath = '00_开始/快速上手.md';
         } catch (error) {
-          const err = error as BusinessError;
           this.sampleInstallPending = false;
           this.state.currentVaultId = DEFAULT_VAULT_ID;
-          hilog.error(REG_DOMAIN, REG_TAG, '创建教程库失败，回退到个人库: %{public}s', JSON.stringify(err));
+          hilog.error(REG_DOMAIN, REG_TAG, '创建教程库失败，回退到个人库');
         }
       } else {
         this.state.currentVaultId = DEFAULT_VAULT_ID;
       }
       this.persist();
     } catch (error) {
-      const err = error as BusinessError;
-      hilog.error(REG_DOMAIN, REG_TAG, '创建默认库失败: %{public}s', JSON.stringify(err));
+      hilog.error(REG_DOMAIN, REG_TAG, '创建默认库失败');
     }
   }
 
@@ -944,7 +936,7 @@ export class VaultRegistry {
       return true;
     } catch (error) {
       const err = error as BusinessError;
-      hilog.error(REG_DOMAIN, REG_TAG, '注册表持久化失败: %{public}s', JSON.stringify(err));
+      hilog.error(REG_DOMAIN, REG_TAG, '注册表持久化失败');
       if (mustSucceed) {
         throw new Error(err.message);
       }
@@ -983,8 +975,7 @@ export class VaultRegistry {
         }
         fileIo.rmdirSync(markerDir);
       } catch (error) {
-        const err = error as BusinessError;
-        hilog.warn(REG_DOMAIN, REG_TAG, 'Git 导入残留恢复失败，将保留标记供重试: %{public}s', err.message);
+        hilog.warn(REG_DOMAIN, REG_TAG, 'Git 导入残留恢复失败，将保留标记供重试');
       }
     }
   }

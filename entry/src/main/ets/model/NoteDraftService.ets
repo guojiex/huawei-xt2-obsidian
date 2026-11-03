@@ -185,8 +185,7 @@ export class NoteDraftService {
       }
       draftKeys = fileIo.listFileSync(root);
     } catch (error) {
-      const err = error as BusinessError;
-      hilog.error(0x0000, 'NoteDraftService', '扫描草稿目录失败: %{public}s', err.message);
+      hilog.error(0x0000, 'NoteDraftService', '扫描草稿目录失败');
       return;
     }
     // v1.5 15.6：草稿目录按 **vaultKey** 分（不是 vaultId），与回收站口径一致。
