@@ -44,7 +44,9 @@ import { RecentOpenStore } from '../model/RecentOpenStore';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
-import { PreviewWebView, PreviewBridge, PreviewCaptureResult } from '../components/PreviewWebView';
+import {
+  PreviewWebView, PreviewBridge, PreviewBlockAnchor, PreviewCaptureResult
+} from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
 import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
@@ -261,6 +263,8 @@ struct Index {
   @State rightEditorLen: number = 0;
   @State leftCodeBlockActive: boolean = false;
   @State rightCodeBlockActive: boolean = false;
+  @State leftBlockAnchor: PreviewBlockAnchor | null = null;
+  @State rightBlockAnchor: PreviewBlockAnchor | null = null;
   @State rightImagePickerBusy: boolean = false;
   @State chapterEntries: ChapterEntry[] = [];
   @State selectedChapterIndex: number = -1;
@@ -375,6 +379,12 @@ struct Index {
   @State shareImagePreviewImage: ShareImagePreviewImage = { uri: '', aspectRatio: 1, scaled: false };
 
   aboutToAppear(): void {
+    this.previewBridge.onBlockAnchorChange = (anchor: PreviewBlockAnchor | null): void => {
+      this.leftBlockAnchor = anchor;
+    };
+    this.rightPreviewBridge.onBlockAnchorChange = (anchor: PreviewBlockAnchor | null): void => {
+      this.rightBlockAnchor = anchor;
+    };
     void this.loadAgentKitSlot();
     this.refreshFromRegistry();
     this.ensureEditorPreferenceStore();

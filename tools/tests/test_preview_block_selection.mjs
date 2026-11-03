@@ -7,6 +7,7 @@ const previewSource = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root
 const previewComponentSource = fs.readFileSync(
   new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8'
 )
+const indexSource = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
 const buildSource = fs.readFileSync(new URL('web/mdpreview/build.mjs', root), 'utf8')
 const generatedPreview = fs.readFileSync(
   new URL('entry/src/main/resources/rawfile/mdpreview/index.html', root), 'utf8'
@@ -55,4 +56,14 @@ test('block anchor geometry is published through the parent preview bridge', () 
   assert.match(previewComponentSource, /onBlockAnchorChange: \(anchor: PreviewBlockAnchor \| null\)/)
   assert.match(previewComponentSource, /this\.bridge\.onBlockAnchorChange\(mapPreviewBlockAnchor\(/)
   assert.doesNotMatch(previewComponentSource, /this\.onBlockAnchorChange\(/)
+})
+
+test('workspace keeps left and right preview block anchors independent', () => {
+  assert.match(indexSource, /@State leftBlockAnchor: PreviewBlockAnchor \| null = null/)
+  assert.match(indexSource, /@State rightBlockAnchor: PreviewBlockAnchor \| null = null/)
+  assert.match(indexSource,
+    /this\.previewBridge\.onBlockAnchorChange = \(anchor: PreviewBlockAnchor \| null\): void => \{\s*this\.leftBlockAnchor = anchor;/)
+  assert.match(indexSource,
+    /this\.rightPreviewBridge\.onBlockAnchorChange = \(anchor: PreviewBlockAnchor \| null\): void => \{\s*this\.rightBlockAnchor = anchor;/)
+  assert.doesNotMatch(indexSource, /shareCaptureBridge\.onBlockAnchorChange/)
 })
