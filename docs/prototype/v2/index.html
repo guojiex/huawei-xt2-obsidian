@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>曜石笔记 · 设计探索 v2</title>
 <style>
-:root{--format-width:360px;--panel-width:560px;--panel-height:80vh;--scrim:#17263866;--danger:#cf4048;--swipe-width:144px;--swipe-extra:36px;--nav-duration:240ms;--nav-curve:cubic-bezier(.20,0,0,1);--mobile-nav-width:300px;--gesture-slop:8px;--switch-thumb:#fff;--blue:#007dff;--blue-soft:#eaf3ff;--ink:#202530;--muted:#7c8390;--line:#e7e9ed;--paper:#fff;--nav:#f5f6f8;--outer:#e9edf2;--float:#ffffffed;--green:#35916d;--shadow:0 24px 80px #263f5814;--float-shadow:0 8px 28px #23365214;--r:16px;--small-r:10px;--pill:999px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:20px;--s6:24px;--s8:32px;--s10:40px;--s12:48px;--s16:64px;--touch:48px;--caption:12px;--small:14px;--body:16px;--large:20px;--heading:32px;--font:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;--nav-width:240px;--pane-min:240px;--split-hit:16px;--split-height:40px;--tree-indent:24px;--tree-icon:18px;--tree-caret:16px;--tree-text-min:160px;--reading-width:660px;--window-width:1320px;--phone-width:390px;--double-width:820px;--window-height:820px;--window-min:620px;--stroke:1px;--focus:2px;--leading:1.85;--ease:180ms ease}
+:root{--format-width:360px;--panel-width:560px;--panel-height:80vh;--scrim:#17263866;--danger:#cf4048;--swipe-width:144px;--swipe-extra:36px;--nav-duration:240ms;--nav-curve:cubic-bezier(.20,0,0,1);--mobile-nav-width:300px;--gesture-slop:8px;--switch-thumb:#fff;--blue:#007dff;--blue-soft:#eaf3ff;--ink:#202530;--muted:#7c8390;--line:#e7e9ed;--paper:#fff;--nav:#f5f6f8;--outer:#e9edf2;--float:#ffffffed;--green:#35916d;--shadow:0 24px 80px #263f5814;--float-shadow:0 8px 28px #23365214;--r:16px;--small-r:10px;--pill:999px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:20px;--s6:24px;--s8:32px;--s10:40px;--s12:48px;--s16:64px;--touch:48px;--caption:12px;--small:14px;--body:16px;--large:20px;--heading:32px;--font:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;--nav-width:240px;--pane-min:240px;--split-hit:24px;--split-height:40px;--tree-indent:24px;--tree-icon:18px;--tree-caret:16px;--tree-text-min:160px;--reading-width:660px;--window-width:1320px;--phone-width:390px;--double-width:820px;--window-height:820px;--window-min:620px;--stroke:1px;--focus:2px;--leading:1.85;--ease:180ms ease}
 [data-theme=dark]{--ink:#e4e8ef;--muted:#9ba5b3;--line:#303741;--paper:#1d232b;--nav:#171d25;--outer:#10151d;--float:#27303af5;--blue:#71b3ff;--blue-soft:#263951;--green:#75c7a0;--danger:#ff6b6b;--shadow:0 24px 80px #0003;--float-shadow:0 8px 28px #0003}
 *{box-sizing:border-box}body{margin:0;padding:var(--s8);background:var(--outer);color:var(--ink);font:var(--small)/1.6 var(--font)}button,select,input{font:inherit;color:inherit}button{border:0;background:none;cursor:pointer;min-height:var(--touch);padding:var(--s2) var(--s4);border-radius:var(--small-r);transition:background var(--ease)}button:hover{background:var(--blue-soft)}button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:var(--focus) solid var(--blue);outline-offset:var(--s1)}button:disabled{opacity:.45;cursor:default}.icon{width:var(--touch);padding:var(--s3);display:inline-grid;place-items:center}svg{width:var(--s5);height:var(--s5);fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.hidden{display:none!important}.muted{color:var(--muted)}.blue{color:var(--blue)}
 .showcase{max-width:var(--window-width);margin:auto}.intro{display:flex;align-items:center;justify-content:space-between;gap:var(--s6);margin-bottom:var(--s6)}.eyebrow{font-size:var(--caption);letter-spacing:.12em;color:var(--muted)}.intro h1{font-size:var(--large);font-weight:600;margin:var(--s1) 0}.intro p{margin:0;color:var(--muted);font-size:var(--caption)}.controls{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap}.seg{display:flex;gap:var(--s1);background:var(--nav);padding:var(--s1);border-radius:var(--pill)}.seg button{border-radius:var(--pill);font-size:var(--small)}.seg button[aria-pressed=true]{background:var(--paper);box-shadow:var(--float-shadow);color:var(--blue)}
@@ -13,7 +13,32 @@
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 .sidebar .note-list{flex:1;min-height:0;overflow:auto}.sidebar-bottom{margin-top:var(--s3)}.tree-group{list-style:none;margin:0;padding:0}.tree-row{display:flex;align-items:center;gap:var(--s2);width:100%;min-width:calc(var(--tree-text-min) + var(--depth) * var(--tree-indent));min-height:var(--touch);padding:var(--s2) var(--s2) var(--s2) calc(var(--s2) + var(--depth) * var(--tree-indent));text-align:left;border-radius:var(--small-r);color:var(--muted);font-size:var(--small)}.tree-row:hover{background:var(--paper)}.tree-row[aria-current=true]{background:var(--blue-soft);color:var(--blue);font-weight:500}.tree-row.folder-row{color:var(--ink);font-weight:500}.tree-row>.tree-caret{width:var(--tree-caret);height:var(--tree-caret);flex:none;display:grid;place-items:center;color:var(--muted)}.tree-caret svg{width:var(--tree-caret);height:var(--tree-caret);transition:transform var(--ease)}.tree-row[aria-expanded=true] .tree-caret svg{transform:rotate(90deg)}.tree-row>svg{width:var(--tree-icon);height:var(--tree-icon);flex:none}.folder-row>svg{color:var(--blue)}.tree-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tree-children{position:relative}.tree-children::before{content:'';position:absolute;top:0;bottom:0;left:calc(var(--s2) + var(--parent-depth) * var(--tree-indent) + var(--tree-caret) / 2);border-left:var(--stroke) solid var(--line);pointer-events:none}.sidebar .note-list{display:block;padding-right:var(--s1)}.edit-switch button{min-height:var(--s8);padding:var(--s1) var(--s3)}
 .window.double{width:var(--double-width)}.window.double .sidebar{width:38%}.window.double:not(.nav-hidden) .reference{display:none}.window.double.nav-hidden:not(.focus) .reference{display:flex;width:var(--reference-size,50%)}.window.double .topbar{flex-wrap:wrap;padding:var(--s2) var(--s3)}.window.double .topbar>.seg{order:5;width:100%;justify-content:center}.window.double .article,.window.double .source-editor{padding:var(--s5) var(--s6) var(--s16)}.window.double .pane-label{padding:var(--s2) var(--s3)}.window.double:not(.nav-hidden):not(.focus) .mobile-switch{display:flex}.window.double .reference .mobile-switch{display:none}.window.double .article h1{font-size:var(--heading)}
-.split-control{position:relative;flex:0 0 0;width:0;z-index:4;align-self:stretch;cursor:col-resize;touch-action:none;outline:none}.split-control::before{content:'';position:absolute;top:0;bottom:0;left:calc(var(--split-hit) / -2);width:var(--split-hit)}.split-control>span{position:absolute;top:50%;left:calc(var(--s1) / -2);width:var(--s1);height:var(--split-height);transform:translateY(-50%);border-radius:var(--pill);background:var(--line)}.split-control:hover>span,.split-control:focus-visible>span,.split-control.dragging>span{background:var(--blue)}.window.splitting{user-select:none;cursor:col-resize}.window.splitting *{cursor:col-resize!important}.window:not(.phone)>.sidebar{width:var(--side-size,var(--nav-width))}.window:not(.phone) .reference{width:var(--reference-size,50%);flex:none}.window.phone .split-control,.window.focus .split-control{display:none}
+.split-control{position:relative;flex:0 0 0;width:0;z-index:4;align-self:stretch;cursor:col-resize;touch-action:none;outline:none}.split-control::before{content:'';position:absolute;top:0;bottom:0;left:calc(var(--split-hit) / -2);width:var(--split-hit)}/* split-control: full-height rail + grip capsule + live readout (design: 分栏调节条设计.md) */
+.split-control{--split-grip-w:12px;--split-grip-h:56px}
+.split-rail{position:absolute;top:0;bottom:0;left:-1px;width:2px;background:var(--blue);opacity:0;transition:opacity var(--ease),background var(--ease);pointer-events:none}
+.split-grip{position:absolute;top:50%;left:0;z-index:1;transform:translate(-50%,-50%);width:var(--split-grip-w);height:var(--split-grip-h);box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:var(--stroke) solid var(--line);border-radius:var(--pill);background:var(--paper);box-shadow:var(--float-shadow);transition:width var(--ease),height var(--ease),background var(--ease),border-color var(--ease);pointer-events:none}
+.split-grip em{display:block;width:3px;height:3px;border-radius:50%;background:var(--muted);transition:background var(--ease)}
+[data-theme=dark] .split-grip{background:var(--nav);border-color:color-mix(in srgb,var(--muted) 55%,transparent)}
+[data-theme=dark] .split-grip em{background:var(--ink);opacity:.7}
+.split-control:hover .split-rail{opacity:.35}
+.split-control:hover .split-grip{width:calc(var(--split-grip-w) + 2px);border-color:var(--blue)}
+.split-control:focus-visible .split-rail,.split-control.dragging .split-rail{opacity:1}
+.split-control:focus-visible .split-grip{border-color:var(--blue);box-shadow:0 0 0 var(--focus) var(--blue),var(--float-shadow)}
+.split-control.dragging .split-grip{width:calc(var(--split-grip-w) + 4px);height:calc(var(--split-grip-h) + 8px);background:var(--blue);border-color:var(--blue)}
+.split-control.dragging .split-grip em,[data-theme=dark] .split-control.dragging .split-grip em{background:#fff;opacity:1}
+.split-control.at-default.dragging .split-rail,.split-control.at-default.tip-on .split-rail{background:var(--green)}
+.split-control.at-default.dragging .split-grip{background:var(--green);border-color:var(--green)}
+.split-control.at-limit.dragging .split-rail,.split-control.at-limit.tip-on .split-rail{background:var(--danger);opacity:.7}
+.split-control.at-limit.dragging .split-grip{background:var(--danger);border-color:var(--danger)}
+.split-tip{position:absolute;left:0;top:calc(50% - var(--split-grip-h) / 2 - var(--s3));z-index:5;transform:translate(-50%,-100%) translateY(4px);display:flex;flex-direction:column;align-items:center;gap:2px;padding:var(--s2) var(--s3);border-radius:var(--small-r);background:var(--ink);color:var(--paper);font-size:var(--caption);line-height:1.4;white-space:nowrap;box-shadow:var(--float-shadow);opacity:0;pointer-events:none;transition:opacity var(--ease),transform var(--ease)}
+.split-tip small{font-size:11px;opacity:.8}
+.split-control.tip-on .split-tip,.split-control.dragging .split-tip{opacity:1;transform:translate(-50%,-100%)}
+.split-control.snapped .split-grip{animation:split-snap 160ms ease-out}
+@keyframes split-snap{50%{transform:translate(-50%,-50%) scale(1.12)}}
+.window.splitting .split-control:not(.dragging) .split-rail{opacity:.15}
+@media (pointer:coarse){.split-control{--split-hit:36px;--split-grip-w:14px;--split-grip-h:64px}}
+@media (prefers-reduced-motion:reduce){.split-rail,.split-grip,.split-grip em,.split-tip{transition:none}.split-control.snapped .split-grip{animation:none}}
+@media (forced-colors:active){.split-grip{border-color:CanvasText;background:Canvas}.split-grip em{background:CanvasText}.split-control:focus-visible .split-grip,.split-control.dragging .split-grip{border-color:Highlight;background:Highlight}.split-rail{background:Highlight}}.window.splitting{user-select:none;cursor:col-resize}.window.splitting *{cursor:col-resize!important}.window:not(.phone)>.sidebar{width:var(--side-size,var(--nav-width))}.window:not(.phone) .reference{width:var(--reference-size,50%);flex:none}.window.phone .split-control,.window.focus .split-control{display:none}
 .window.ref-disabled .reference,.window.focus .reference{display:none!important}.window.phone.focus .writing{display:flex}.topbar #showRef[aria-pressed=true]{background:var(--blue-soft);color:var(--blue)}
  .reference{position:relative}.edit-tools{position:absolute;z-index:3;bottom:var(--s5);left:50%;transform:translateX(-50%);display:grid;grid-template-columns:repeat(5,minmax(0,1fr));width:calc(var(--touch) * 5 + var(--s4));max-width:calc(100% - var(--s4));padding:var(--s1) var(--s2);border:var(--stroke) solid var(--line);border-radius:var(--pill);background:var(--float);box-shadow:var(--float-shadow);backdrop-filter:blur(var(--s4))}.edit-tools button{display:grid;place-items:center;min-width:0;min-height:var(--touch);padding:0;border-radius:var(--pill);font-size:var(--large);color:var(--ink)}.edit-tools button:hover{color:var(--blue);background:var(--blue-soft)}.format-trigger{font-weight:600}.source-editor{padding-bottom:calc(var(--touch) + var(--s8) + var(--s5))}.format-panel{width:min(var(--format-width),calc(100% - var(--s6)))}.format-group+.format-group{margin-top:var(--s4);padding-top:var(--s4);border-top:var(--stroke) solid var(--line)}.format-group h3{font-size:var(--small);font-weight:500;color:var(--muted)}.format-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s2)}.format-grid button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s1);min-width:0;padding:var(--s2) var(--s1);background:var(--nav);font-size:var(--large)}.format-grid small{font-size:var(--caption)}.window.phone .format-panel{margin:auto auto 0;width:min(var(--phone-width),100%);border-bottom-left-radius:0;border-bottom-right-radius:0}
 .article img{display:block;max-width:100%;max-height:var(--window-min);object-fit:contain;border-radius:var(--small-r);margin:var(--s3) 0}.article img[data-preview-image]{cursor:zoom-in}.article img[data-preview-image]:focus-visible{outline:var(--focus) solid var(--blue);outline-offset:var(--s1)}.wiki-link-state{display:inline;color:var(--muted);font-size:var(--caption)}.wiki-link-invalid{color:var(--muted);text-decoration:underline;text-decoration-style:dotted}.backlinks-panel{flex:none;padding:var(--s2) var(--s4);border-bottom:var(--stroke) solid var(--line);background:var(--paper);font-size:var(--caption)}.backlinks-head{display:flex;align-items:center;gap:var(--s2);min-height:var(--touch)}.backlinks-head small{color:var(--muted);font-weight:400}.backlinks-head button{margin-left:auto;color:var(--blue)}.backlinks-items{max-height:calc(var(--touch) * 3);overflow:auto}.backlinks-items button{display:block;width:100%;min-height:var(--touch);padding:var(--s2);text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.backlinks-empty{margin:0;padding:var(--s2);color:var(--muted)}.image-viewer-dialog{height:min(var(--window-height),var(--panel-height));max-height:calc(100% - var(--s8));overflow:hidden}.image-viewer-dialog[open]{display:flex;flex-direction:column}.image-viewer-scroll{flex:1;min-height:0;overflow:auto;padding-top:var(--s3);text-align:center}.image-viewer-scroll img{display:inline-block;max-width:100%;height:auto;max-height:none;border-radius:var(--small-r)}.article pre{overflow:auto;background:var(--nav);padding:var(--s4);border-radius:var(--small-r)}.article pre code{padding:0}.article h3,.article h4,.article h5,.article h6{font-size:var(--body);margin:var(--s5) 0 var(--s2)}
@@ -198,12 +223,121 @@ a.hs-value{color:var(--blue)}
 .window.phone .settings-navigation button:last-child,.window.compact-height .settings-navigation button:last-child{border-radius:0 0 var(--r) var(--r)}
 .window.phone .settings-detail{padding:var(--s4) var(--s3) var(--s8)}
 .window.phone .hs-value{max-width:50%}
+
+/* ======================================================================
+   2026-11-03 简单模式复杂块（设计稿：简单模式复杂块设计稿.md）
+   颜色只用既有 token；提示块类型色为本地变量，需与原生 mdpreview 的 callout 配色对照
+   ====================================================================== */
+:root{--cb-note:#007dff;--cb-tip:#35916d;--cb-warn:#c77a12;--cb-danger:#cf4048;--cb-purple:#7a5cd6;--cb-gray:#7c8390}
+[data-theme=dark]{--cb-note:#5aa4ff;--cb-tip:#75c7a0;--cb-warn:#e2a54c;--cb-danger:#ef7a80;--cb-purple:#a991f0;--cb-gray:#9aa1ad}
+
+/* 代码块：右上角语言标签 + 复制（Notion / Bear / Typora 同类做法），点代码直接改内容 */
+.md-code{position:relative;margin:var(--s4) 0}
+.md-code>pre{margin:0;padding-top:calc(var(--s4) + var(--s6))}
+.md-code-bar{position:absolute;top:var(--s2);right:var(--s2);left:var(--s3);display:flex;align-items:center;justify-content:flex-end;gap:var(--s1);pointer-events:none}
+.md-code-bar button{pointer-events:auto;display:inline-flex;align-items:center;gap:2px;min-height:28px;padding:0 var(--s2);border:0;border-radius:var(--pill);background:transparent;color:var(--muted);font:inherit;font-size:var(--caption);cursor:pointer}
+.md-code-bar button svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.md-code-bar button:hover,.md-code-bar button:focus-visible{background:var(--paper);color:var(--ink)}
+.md-code-bar .block-chip{margin-right:auto;padding-left:var(--s1);font-family:var(--mono)}
+.window:not(.simple-mode) .md-code-bar{display:none}
+.window:not(.simple-mode) .md-code>pre{padding-top:var(--s4)}
+.md-code>pre[contenteditable]{outline:none;cursor:text;white-space:pre-wrap;caret-color:var(--blue)}
+.md-code.is-editing>pre,.md-code.cb-active>pre{box-shadow:0 0 0 var(--stroke) var(--blue)}
+
+/* 提示块 */
+.md-callout{--c:var(--cb-note);margin:var(--s5) 0;border-left:3px solid var(--c);border-radius:0 var(--small-r) var(--small-r) 0;background:color-mix(in srgb,var(--c) 8%,var(--paper));overflow:hidden}
+.md-callout[data-callout=tip],.md-callout[data-callout=success],.md-callout[data-callout=check],.md-callout[data-callout=done],.md-callout[data-callout=hint]{--c:var(--cb-tip)}
+.md-callout[data-callout=warning],.md-callout[data-callout=caution],.md-callout[data-callout=attention],.md-callout[data-callout=question],.md-callout[data-callout=help],.md-callout[data-callout=faq],.md-callout[data-callout=todo]{--c:var(--cb-warn)}
+.md-callout[data-callout=danger],.md-callout[data-callout=error],.md-callout[data-callout=failure],.md-callout[data-callout=fail],.md-callout[data-callout=missing],.md-callout[data-callout=bug]{--c:var(--cb-danger)}
+.md-callout[data-callout=example],.md-callout[data-callout=important]{--c:var(--cb-purple)}
+.md-callout[data-callout=quote],.md-callout[data-callout=cite],.md-callout[data-callout=unknown]{--c:var(--cb-gray)}
+.md-callout-head{display:flex;align-items:center;gap:var(--s2);min-height:40px;padding:var(--s2) var(--s4);color:var(--c);font-weight:600;font-size:var(--small)}
+.md-callout-icon{width:16px;height:16px;flex:none;border-radius:50%;background:var(--c);-webkit-mask:radial-gradient(circle at 50% 50%,transparent 3px,#000 3.5px);mask:radial-gradient(circle at 50% 50%,transparent 3px,#000 3.5px)}
+.md-callout-title{flex:1;min-width:0}
+.md-callout-fold{flex:none;padding:2px var(--s2);border-radius:var(--pill);font-weight:400;font-size:var(--caption);color:var(--muted);cursor:pointer}
+.md-callout-body{padding:0 var(--s4) var(--s3)}
+.md-callout-body p{margin:0 0 var(--s2);font-size:var(--small)}
+.md-callout.is-folded .md-callout-body{display:none}
+.simple-mode .md-callout-head{cursor:pointer}
+.simple-mode .md-callout-head:hover{background:color-mix(in srgb,var(--c) 6%,transparent)}
+.md-callout.cb-active{box-shadow:0 0 0 var(--stroke) var(--blue)}
+
+/* 公式 */
+.md-math{position:relative;margin:var(--s4) 0;padding:var(--s5) var(--s4) var(--s4);border-radius:var(--small-r);background:var(--nav);text-align:center;font:italic 1.1em/1.6 "Times New Roman",STSong,serif;white-space:pre-wrap}
+.md-math-tag{position:absolute;top:var(--s1);left:var(--s3);font:normal var(--caption)/1.6 var(--font);color:var(--muted)}
+.md-math-inline{padding:0 3px;border-radius:4px;background:var(--nav);font:italic 1em "Times New Roman",STSong,serif}
+.simple-mode .md-math{cursor:pointer}
+.simple-mode .md-math:hover{box-shadow:0 0 0 var(--stroke) var(--line)}
+.md-math.cb-active{box-shadow:0 0 0 var(--stroke) var(--blue)}
+
+/* 属性入口（Obsidian 属性视图的简化：文首一行入口，不在正文里显示 YAML） */
+.md-props-entry{display:inline-flex;align-items:center;gap:var(--s1);min-height:28px;margin:0 var(--s1) var(--s1) 0;padding:0 var(--s3);border:var(--stroke) solid var(--line);border-radius:var(--pill);background:var(--paper);color:var(--muted);font:inherit;font-size:var(--caption);cursor:pointer}
+.md-props-entry svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.md-props-entry:hover,.md-props-entry.cb-active{border-color:var(--blue);color:var(--blue)}
+.window:not(.simple-mode) .md-props-entry{display:none}
+
+/* 行内复杂内容：简单模式下点按打开编辑面板 */
+.simple-mode .article [data-inline]{cursor:pointer;border-radius:4px}
+.simple-mode .article a[data-inline]:hover,.simple-mode .article code[data-inline]:hover,.simple-mode .article .wiki-link[data-inline]:hover{background:var(--blue-soft)}
+.article [data-inline].cb-active{background:var(--blue-soft);box-shadow:0 0 0 2px var(--blue-soft)}
+.article img[data-inline].cb-active{outline:var(--focus) solid var(--blue);outline-offset:2px}
+
+/* 含暂不支持格式的段落：整段可点，保留 v1.7 提示文案 */
+.simple-mode .article .cb-para{cursor:pointer;border-radius:var(--small-r)}
+.simple-mode .article .cb-para:hover{background:color-mix(in srgb,var(--nav) 70%,transparent)}
+.article .cb-para.cb-active{box-shadow:0 0 0 var(--stroke) var(--blue)}
+pre.simple-protected::after,table.simple-table.simple-protected::after{content:none}
+
+/* 块属性面板：单屏底部半模态；宽屏跟手弹出（bindSheet preferType 的 BOTTOM / POPUP 形态） */
+.block-sheet-titles{display:flex;flex-direction:column;min-width:0}
+.block-sheet-titles small{color:var(--muted);font-size:var(--caption);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.block-sheet-titles small:empty{display:none}
+.block-sheet.as-popup{border:var(--stroke) solid var(--line);border-radius:var(--r);padding-bottom:var(--s4);box-shadow:var(--shadow)}
+.block-sheet.as-popup .block-sheet-drag{display:none}
+.block-sheet.as-popup .block-sheet-head{padding-top:var(--s4)}
+.block-scrim.clear{background:transparent}
+#blockSheetBody .hs-group{margin:0 var(--s4)}
+#blockSheetBody .hs-group+.hs-group,#blockSheetBody .hs-group+.cb-info,#blockSheetBody .cb-info+.hs-group,#blockSheetBody .cb-actions+.hs-group,#blockSheetBody .cb-math-preview+.cb-actions{margin-top:var(--s4)}
+.block-sheet:not(.as-popup) #blockSheetBody{padding-bottom:var(--s2)}
+.cb-field{display:flex;flex-direction:column;gap:6px;padding:var(--s3) var(--s4)}
+.cb-label{display:flex;align-items:center;justify-content:space-between;gap:var(--s2);font-size:var(--small);color:var(--ink)}
+.cb-hint{font-size:var(--caption);color:var(--muted);line-height:1.5}
+.cb-input{width:100%;box-sizing:border-box;min-height:40px;padding:var(--s2) var(--s3);border:var(--stroke) solid transparent;border-radius:var(--small-r);background:var(--nav);color:var(--ink);font:inherit;font-size:var(--small)}
+.cb-input:focus{outline:none;border-color:var(--blue);background:var(--paper)}
+.cb-area{min-height:72px;resize:vertical;font-family:var(--mono);line-height:1.6}
+.cb-select{appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 16px) 52%,calc(100% - 11px) 52%;background-size:5px 5px;background-repeat:no-repeat;padding-right:32px}
+.cb-seg{flex:none;margin:0}
+.cb-info{margin:var(--s3) var(--s5) 0;color:var(--muted);font-size:var(--caption);line-height:1.6}
+.cb-info.warn{color:var(--ink);padding:var(--s2) var(--s3);margin:var(--s3) var(--s4) 0;border-radius:var(--small-r);background:color-mix(in srgb,var(--cb-warn) 12%,var(--paper))}
+.cb-act.accent .hs-title{color:var(--blue)}
+.cb-act.danger .hs-title{color:var(--danger)}
+.cb-row-icon{flex:none;width:20px;height:20px;fill:none;stroke:var(--blue);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cb-act.danger .cb-row-icon{stroke:var(--danger)}
+.cb-remove{flex:none;min-height:24px;padding:0 var(--s2);border:0;border-radius:var(--pill);background:transparent;color:var(--danger);font:inherit;font-size:var(--caption);cursor:pointer}
+.cb-keep{flex:none;color:var(--muted);font-size:var(--caption)}
+.cb-add{display:grid;grid-template-columns:1fr 1.4fr auto;gap:var(--s2)}
+.cb-actions{display:flex;justify-content:flex-end;gap:var(--s2);margin:var(--s3) var(--s4) 0}
+.cb-btn{min-height:40px;padding:0 var(--s5);border:0;border-radius:var(--pill);background:var(--nav);color:var(--ink);font:inherit;font-size:var(--small);cursor:pointer}
+.cb-btn.primary{background:var(--blue);color:#fff}
+.cb-math-preview{margin:var(--s3) var(--s4) 0;padding:var(--s3) var(--s4);border:var(--stroke) dashed var(--line);border-radius:var(--small-r)}
+.cb-math-out{margin:var(--s2) 0;text-align:center;font:italic 1.15em/1.6 "Times New Roman",STSong,serif;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink)}
+.cb-source{display:block;box-sizing:border-box;width:calc(100% - var(--s8));margin:var(--s3) var(--s4) 0;min-height:120px;padding:var(--s3);border:var(--stroke) solid var(--line);border-radius:var(--small-r);background:var(--nav);color:var(--ink);font:var(--small)/1.6 var(--mono);resize:vertical}
+.cb-source:focus{outline:none;border-color:var(--blue);background:var(--paper)}
+@media (prefers-reduced-motion:reduce){.md-callout-head,.cb-input{transition:none}}
+
+.simple-mode .article .cb-para-inline.simple-protected::after{content:'含链接、代码或公式 · 点按逐项编辑'}
+.cb-field .cb-seg{display:flex;width:100%}
+.cb-field .cb-seg button{flex:1}
+.cb-actions .cb-btn,.cb-add .cb-btn{flex:none;width:auto;min-width:88px;white-space:nowrap}
+.cb-add .cb-btn{min-width:64px;padding:0 var(--s3)}
+#blockSheetBody .cb-actions{position:sticky;bottom:calc(-1 * var(--s4));z-index:1;margin-bottom:0;padding:var(--s3) 0;background:var(--paper)}
+.block-sheet:not(.as-popup) #blockSheetBody .cb-actions{bottom:calc(-1 * var(--s6))}
 </style></head><body>
 <div class="showcase"><header class="intro"><div><div class="eyebrow">OBSIDIAN NOTES / DESIGN EXPLORATION 02</div><h1>把空间，留给思考。</h1><p>曜石笔记 · 鸿蒙风格概念稿 · 原创样例，编辑仅保留在本页</p></div><div class="controls" id="designControls"><div class="seg" aria-label="窗口预设"><button id="wide" aria-pressed="true">三屏</button><button id="double" aria-pressed="false">双屏</button><button id="phone" aria-pressed="false">单屏</button></div><button id="rotateViewport" class="icon" aria-label="旋转预览窗口90度" title="旋转 90°" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V3m0 0h5M4 3l4 4M20 16v5m0 0h-5m5 0-4-4"/><rect x="8" y="5" width="8" height="14" rx="2"/></svg></button><label class="demo-toggle" title="直接展开当前栏的 Aa 面板，拖动分隔条或旋转观察跟随"><input id="formatFollowDemo" type="checkbox" role="switch" aria-controls="formatDialog">格式面板跟手</label><label class="demo-toggle"><input id="trashDemo" type="checkbox" role="switch">回收站有内容</label><label class="demo-toggle" title="仅展示 Git 库的分享格式，不连接远端"><input id="gitShareDemo" type="checkbox" role="switch">Git 分享示意</label><label class="demo-toggle" title="预览左侧未选中任何笔记的空态：编辑/预览与分享置灰不可点"><input id="noNoteDemo" type="checkbox" role="switch">未选笔记</label><span id="viewportLabel" class="muted"></span><button id="theme" aria-label="切换深色模式" class="icon" title="切换浅色 / 深色"></button></div></header>
-<main class="window" id="window" data-mode-style="outline"><aside class="sidebar" id="navSidebar"><div class="brand"><img class="brand-mark" src="../../assets/app_icon_1024.png" width="40" height="40" alt="" aria-hidden="true">曜石笔记<button class="close-nav icon" id="closeNav" aria-label="返回笔记">×</button></div><details class="vault" id="vaultPicker"><summary id="vaultTrigger" aria-label="切换知识库"><span class="vault-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16M13 9h3M13 13h3"/></svg></span><span class="vault-copy"><strong id="vaultName"></strong><small id="vaultMeta"></small></span><svg class="vault-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div class="vault-menu" aria-label="可切换的知识库"><div class="vault-menu-label">切换知识库</div><div id="vaultOptions"></div><div class="vault-menu-actions"><button id="importVaultMenu" type="button">＋ 导入库</button><button id="manageVaults" type="button">管理库…</button></div></div></details><div class="sidebar-tabs" role="group" aria-label="侧栏内容"><button id="filesTab" aria-pressed="true" aria-controls="filesPanel">文件</button><button id="chaptersTab" aria-pressed="false" aria-controls="chaptersPanel">章节</button></div><section id="filesPanel" class="sidebar-panel"><div class="nav-head"><div class="nav-label" id="libraryCount"></div><button id="newAtRoot" class="nav-icon" aria-label="在根目录新建笔记或文件夹" title="在根目录新建"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><button id="openQuickSearch" class="nav-icon" aria-label="快切与搜索" title="搜索当前知识库"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2"/></svg></button></div><nav class="note-list" id="notes" aria-label="文件夹与笔记列表"></nav><div class="tree-help">左滑文件可操作 · 拖动行尾图标到任一栏</div><details id="trashFolder" class="trash-folder hidden"><summary id="openTrash" class="tree-row folder-row" style="--depth:0" title="展开当前知识库回收站"><span class="tree-caret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg><span class="tree-name">回收站</span><small id="trashCount"></small></summary><div id="trashList" class="trash-list" aria-label="已删除笔记"></div></details></section><section id="chaptersPanel" class="sidebar-panel hidden"><div class="nav-label chapter-title" id="chapterTitle"></div><nav id="chapters" class="chapter-list" aria-label="当前笔记章节列表"></nav></section><div class="sidebar-bottom"><span></span>本地概念演示 · 刷新恢复样例</div></aside><div id="navSplitter" class="split-control hidden" role="separator" aria-orientation="vertical" aria-label="调整目录栏宽度" aria-controls="notes" tabindex="0" title="拖动调整目录宽度；双击恢复默认；方向键微调"><span></span></div>
+<main class="window" id="window" data-mode-style="outline"><aside class="sidebar" id="navSidebar"><div class="brand"><img class="brand-mark" src="../../assets/app_icon_1024.png" width="40" height="40" alt="" aria-hidden="true">曜石笔记<button class="close-nav icon" id="closeNav" aria-label="返回笔记">×</button></div><details class="vault" id="vaultPicker"><summary id="vaultTrigger" aria-label="切换知识库"><span class="vault-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 4v16M13 9h3M13 13h3"/></svg></span><span class="vault-copy"><strong id="vaultName"></strong><small id="vaultMeta"></small></span><svg class="vault-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg></summary><div class="vault-menu" aria-label="可切换的知识库"><div class="vault-menu-label">切换知识库</div><div id="vaultOptions"></div><div class="vault-menu-actions"><button id="importVaultMenu" type="button">＋ 导入库</button><button id="manageVaults" type="button">管理库…</button></div></div></details><div class="sidebar-tabs" role="group" aria-label="侧栏内容"><button id="filesTab" aria-pressed="true" aria-controls="filesPanel">文件</button><button id="chaptersTab" aria-pressed="false" aria-controls="chaptersPanel">章节</button></div><section id="filesPanel" class="sidebar-panel"><div class="nav-head"><div class="nav-label" id="libraryCount"></div><button id="newAtRoot" class="nav-icon" aria-label="在根目录新建笔记或文件夹" title="在根目录新建"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button><button id="openQuickSearch" class="nav-icon" aria-label="快切与搜索" title="搜索当前知识库"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m15.5 15.5 4.2 4.2"/></svg></button></div><nav class="note-list" id="notes" aria-label="文件夹与笔记列表"></nav><div class="tree-help">左滑文件可操作 · 拖动行尾图标到任一栏</div><details id="trashFolder" class="trash-folder hidden"><summary id="openTrash" class="tree-row folder-row" style="--depth:0" title="展开当前知识库回收站"><span class="tree-caret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></svg><span class="tree-name">回收站</span><small id="trashCount"></small></summary><div id="trashList" class="trash-list" aria-label="已删除笔记"></div></details></section><section id="chaptersPanel" class="sidebar-panel hidden"><div class="nav-label chapter-title" id="chapterTitle"></div><nav id="chapters" class="chapter-list" aria-label="当前笔记章节列表"></nav></section><div class="sidebar-bottom"><span></span>本地概念演示 · 刷新恢复样例</div></aside><div id="navSplitter" class="split-control hidden" role="separator" aria-orientation="vertical" aria-label="调整目录栏宽度" aria-controls="notes" tabindex="0" title="拖动调整目录宽度；双击恢复默认；方向键微调（Shift 加大步长，Home / End 到最小 / 最大）"><i class="split-rail" aria-hidden="true"></i><b class="split-grip" aria-hidden="true"><em></em><em></em><em></em></b><span class="split-tip" aria-hidden="true"></span></div>
 <section class="workspace" id="noteWorkspace"><header class="topbar"><button class="icon" id="menu" aria-label="展开或收起笔记列表" title="笔记列表" data-icon="menu"></button><div class="crumb" id="crumb" aria-label="当前知识库">阅读笔记</div><span class="function-component-slot" title="系统 FunctionComponent 样式示意，图标及实际尺寸以系统为准" aria-label="小艺系统组件样式示意，不可交互"><span class="function-component-sample" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3c.8 4.5 2.5 6.2 7 7-4.5.8-6.2 2.5-7 7-.8-4.5-2.5-6.2-7-7 4.5-.8 6.2-2.5 7-7Z"/><path d="M19 16v4M17 18h4"/></svg><span>Agent 对话</span></span></span><button id="showRef" class="icon" aria-pressed="true" aria-label="开启或收起双栏" title="开启或收起双栏"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4v16"/></svg></button><button class="icon" id="shareBtn" title="分享" aria-label="分享当前笔记" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 9V4l8 8-8 8v-5C8 15 4 17 2 21c0-7 4-12 12-12Z"/></svg></button><button class="icon" id="focus" title="进入专注，Esc 退出" aria-label="进入专注模式" data-icon="focus"></button><details id="mobileMore" class="pane-more mobile-top-more"><summary id="mobileMoreTrigger" aria-label="更多操作" title="更多操作"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary><div class="pane-more-menu"><button id="mobileShare">分享笔记</button><div class="experience-quick" role="group" aria-label="快捷编辑模式"><p>编辑模式</p><button id="quickSimple" type="button" aria-pressed="true"><span>简单模式</span><span class="mode-check" aria-hidden="true">✓</span></button><button id="quickProfessional" type="button" aria-pressed="false"><span>专业模式</span><span class="mode-check" aria-hidden="true">✓</span></button></div><button id="mobileSettings" aria-controls="settingsPage">设置与关于</button><button id="mobileBacklinks">查看反链</button><button id="switchPane" class="hidden">切换笔记</button></div></details></header>
 <div class="panes" id="notePanes"><section class="writing" id="leftPane" aria-label="左栏"><div class="pane-label"><div class="seg edit-switch" aria-label="笔记编辑状态"><button id="editTab" aria-pressed="false">编辑</button><button id="previewTab" aria-pressed="true">预览</button></div><span class="hidden" id="writingLabel">当前笔记</span><input id="imageInput" class="hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp"><details class="pane-more" id="leftMore"><summary id="leftMoreTrigger" aria-label="左栏更多操作" title="更多操作"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary><div class="pane-more-menu"><button id="leftFollowToggle" class="hidden" type="button" aria-pressed="true">跟随编辑：开</button><button id="samePreview">在另一栏预览</button><button id="leftBacklinks">查看反链</button></div></details></div><div class="edit-tools hidden" id="editTools" role="group" aria-label="写作工具"><button id="formatBtn" class="format-trigger" title="标题与更多格式" aria-label="标题与更多格式" aria-haspopup="dialog">Aa</button><button data-format="bold" title="加粗" aria-label="加粗"><b>B</b></button><button data-format="italic" title="斜体" aria-label="斜体"><i>I</i></button><button data-format="task" title="待办" aria-label="待办"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="2"/><path d="m4.5 8 1.5 1.5 3-4M13 8h8M13 16h8M3 16h6"/></svg></button><button id="insertImage" title="插入本地图片" aria-label="插入图片"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 3-3 5 5"/></svg></button></div><div id="simpleTools" class="edit-tools hidden" role="group" aria-label="正文格式工具"><details id="simpleAa"><summary aria-label="文字与段落格式">Aa</summary><div class="simple-format-menu"><button data-simple-format="paragraph">正文</button><button data-simple-format="h1">大标题</button><button data-simple-format="h2">小标题</button><button data-simple-format="quote">引用</button><button id="simpleUndo">撤销</button><button id="simpleRedo">重做</button></div></details><button data-simple-format="bold" aria-label="正文加粗"><b>B</b></button><button data-simple-format="italic" aria-label="正文斜体"><i>I</i></button><button data-simple-format="list" aria-label="正文列表">≡</button><button data-simple-format="task" aria-label="正文待办">☑</button></div><div class="pane-note-title" id="leftTitle" tabindex="-1"></div><section class="backlinks-panel hidden" id="leftBacklinksPanel" aria-label="当前笔记反链"><div class="backlinks-head"><strong>反链 <small id="leftBacklinksCount">0</small></strong><button id="leftBacklinksClose" type="button">收起</button></div><div class="backlinks-items" id="leftBacklinksItems"></div></section><div class="scroll" id="writingScroll"><div class="pane-empty hidden" id="leftEmpty"><svg viewBox="0 0 24 24" aria-hidden="true" class="pane-empty-icon"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5"/></svg><h3>把空间，留给思考。</h3><p>从笔记列表选择一篇，或直接新建。</p><div class="pane-empty-actions"><button id="emptyNewNote" class="primary" type="button">新建笔记</button><button id="emptySearch" type="button">搜索笔记</button></div></div><article class="article" id="article"></article><textarea class="source-editor hidden" id="editor" aria-label="当前笔记 Markdown 源码" spellcheck="false"></textarea></div><div class="preview-zoom" id="leftZoomControls" role="group" aria-label="左栏正文缩放"><select id="leftZoom" aria-label="正文缩放比例"><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="125">125%</option><option value="150">150%</option><option value="175">175%</option><option value="200">200%</option></select><button id="leftZoomReset" class="icon hidden" title="恢复 100%" aria-label="恢复正文至 100%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button></div></section>
-<div id="contentSplitter" class="split-control hidden" role="separator" aria-orientation="vertical" aria-label="调整正文与参考栏比例" aria-controls="writingScroll reference" tabindex="0" title="拖动调整正文与参考；双击恢复默认；方向键微调"><span></span></div><aside class="reference" id="referencePane" aria-label="右栏"><div class="pane-label"><div class="seg edit-switch" aria-label="右栏编辑状态"><button id="rightEditTab" aria-pressed="false">编辑</button><button id="rightPreviewTab" aria-pressed="true">预览</button></div><details class="pane-more" id="rightMore"><summary id="rightMoreTrigger" aria-label="右栏更多操作" title="更多操作"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary><div class="pane-more-menu"><button id="rightFollowToggle" class="hidden" type="button" aria-pressed="true">跟随编辑：开</button><button id="rightSamePreview">在另一栏预览</button><button id="rightBacklinks">查看反链</button></div></details></div><div class="pane-note-title" id="referenceTitle" tabindex="-1"></div><section class="backlinks-panel hidden" id="rightBacklinksPanel" aria-label="当前笔记反链"><div class="backlinks-head"><strong>反链 <small id="rightBacklinksCount">0</small></strong><button id="rightBacklinksClose" type="button">收起</button></div><div class="backlinks-items" id="rightBacklinksItems"></div></section><div class="edit-tools hidden" id="rightTools" role="group" aria-label="写作工具"><button id="rightFormatBtn" class="format-trigger" title="标题与更多格式" aria-label="标题与更多格式" aria-haspopup="dialog">Aa</button><button data-right-format="bold" title="加粗" aria-label="加粗"><b>B</b></button><button data-right-format="italic" title="斜体" aria-label="斜体"><i>I</i></button><button data-right-format="task" title="待办" aria-label="待办"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="2"/><path d="m4.5 8 1.5 1.5 3-4M13 8h8M13 16h8M3 16h6"/></svg></button><button id="rightImage" title="插入本地图片" aria-label="插入图片"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 3-3 5 5"/></svg></button></div><div id="simpleToolsRight" class="edit-tools hidden" role="group" aria-label="正文格式工具"><details id="simpleAaRight"><summary aria-label="文字与段落格式">Aa</summary><div class="simple-format-menu"><button data-simple-format="paragraph">正文</button><button data-simple-format="h1">大标题</button><button data-simple-format="h2">小标题</button><button data-simple-format="quote">引用</button><button id="simpleUndoRight">撤销</button><button id="simpleRedoRight">重做</button></div></details><button data-simple-format="bold" aria-label="正文加粗"><b>B</b></button><button data-simple-format="italic" aria-label="正文斜体"><i>I</i></button><button data-simple-format="list" aria-label="正文列表">≡</button><button data-simple-format="task" aria-label="正文待办">☑</button></div><div class="scroll" id="rightScroll"><article class="article" id="reference"></article><textarea id="rightEditor" class="source-editor hidden" aria-label="右栏 Markdown 源码" spellcheck="false"></textarea></div><div class="preview-zoom" id="rightZoomControls" role="group" aria-label="右栏正文缩放"><select id="rightZoom" aria-label="正文缩放比例"><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="125">125%</option><option value="150">150%</option><option value="175">175%</option><option value="200">200%</option></select><button id="rightZoomReset" class="icon hidden" title="恢复 100%" aria-label="恢复正文至 100%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button></div><div class="reference-foot hidden" id="excerptFoot"><p>将右栏选中文字摘录到左栏光标位置。</p><button class="primary" id="excerpt" disabled>摘录到左栏 <span aria-hidden="true">↗</span></button></div></aside></div><footer class="footer" id="noteFooter"><span id="status">本页演示 · 未写入设备</span><span id="count"></span></footer></section><section id="settingsPage" class="settings-page hidden" aria-labelledby="settingsTitle"><header class="settings-header"><button id="closeSettings" class="icon" aria-label="返回上一层" title="返回上一层"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button><h2 id="settingsTitle">设置与关于</h2></header><div class="settings-layout"><nav class="settings-navigation" aria-label="设置分类"><button data-settings-page="general" id="settingsNav-general" aria-controls="settingsPanel-general" aria-current="true">通用<span aria-hidden="true">›</span></button><button data-settings-page="data" id="settingsNav-data" aria-controls="settingsPanel-data" aria-current="false">数据<span aria-hidden="true">›</span></button><button data-settings-page="feedback" id="settingsNav-feedback" aria-controls="settingsPanel-feedback" aria-current="false">问题与建议<span aria-hidden="true">›</span></button><button data-settings-page="about" id="settingsNav-about" aria-controls="settingsPanel-about" aria-current="false">关于与版本记录<span aria-hidden="true">›</span></button></nav><div class="settings-detail"><section id="settingsPanel-general" class="settings-content hs" aria-labelledby="settingsHeading-general"><h3 id="settingsHeading-general" tabindex="-1">通用</h3><h4 class="hs-group-title">外观</h4><div class="hs-group"><div class="hs-row"><label class="hs-main" for="appearance"><span class="hs-title">显示主题</span></label><select id="appearance" class="hs-select"><option value="light">浅色</option><option value="dark">深色</option></select></div></div><h4 class="hs-group-title">编辑模式</h4><div class="hs-group experience-card" id="experienceSettings" tabindex="-1" role="radiogroup" aria-label="编辑模式" aria-describedby="experienceHint"><label class="hs-row hs-choice"><input type="radio" id="experienceSimple" name="experienceMode" value="simple" checked><span class="hs-main"><span class="hs-title">简单模式</span><span class="hs-sub">在排版后的正文里直接书写</span></span><span class="hs-check" aria-hidden="true"></span></label><label class="hs-row hs-choice"><input type="radio" id="experienceProfessional" name="experienceMode" value="professional"><span class="hs-main"><span class="hs-title">专业模式</span><span class="hs-sub">编辑 Markdown 源码，可切换预览</span></span><span class="hs-check" aria-hidden="true"></span></label></div><p class="hs-note" id="experienceHint">应用于整个工作区，切换时保留当前笔记的修改。也可以从右上角“…”菜单切换。</p><h4 class="hs-group-title">编辑器</h4><div class="hs-group"><label class="hs-row" for="showLineNumbers"><span class="hs-main"><span class="hs-title">显示行号</span><span class="hs-sub" id="lineNumbersHint">编辑 Markdown 时显示，预览不显示</span></span><span class="settings-switch"><input type="checkbox" role="switch" id="showLineNumbers" aria-describedby="lineNumbersHint"><span class="settings-switch-track" aria-hidden="true"></span></span></label><button type="button" id="resetPaneWidths" class="hs-row hs-button"><span class="hs-main"><span class="hs-title">恢复默认栏宽</span><span class="hs-sub">栏宽可直接拖动分隔条调整，会自动记住</span></span></button></div><h4 class="hs-group-title">高级</h4><details class="hs-group hs-disclosure"><summary class="hs-row"><span class="hs-main"><span class="hs-title">诊断信息</span><span class="hs-sub">用于设备验收</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary><dl class="hs-facts"><div><dt>当前形态</dt><dd id="settingsShape"></dd></div><div><dt>断点档位</dt><dd id="settingsBreakpoint"></dd></div><div><dt>构建提交</dt><dd><span id="settingsBuildCommit">a1b2c3d4（示例）</span> <button type="button" id="copyBuildCommit" class="hs-back" aria-label="复制构建提交号示例">复制</button></dd></div><div><dt>当前栏宽</dt><dd id="settingsWidths"></dd></div><div><dt>库目录</dt><dd id="settingsVaultPath"></dd></div><div><dt>折痕校准</dt><dd>只采集，不参与布局</dd></div></dl></details></section><section id="settingsPanel-data" class="settings-content hs hidden" aria-labelledby="settingsHeading-data"><h3 id="settingsHeading-data" tabindex="-1">数据</h3><h4 class="hs-group-title">本地数据</h4><div class="hs-group"><button type="button" id="resetDemo" class="hs-row hs-button hs-danger"><span class="hs-main"><span class="hs-title">重置所有数据…</span></span></button><div id="resetConfirm" class="hs-confirm hidden"><p class="hs-confirm-title">确定重置所有数据？</p><p>本页编辑、插入图片、文件操作和回收站将恢复为初始样例，栏宽偏好也会清除。无法撤销。</p><div class="hs-confirm-actions"><button type="button" id="cancelReset" class="hs-btn">取消</button><button type="button" id="confirmReset" class="hs-btn hs-btn-danger">重置并恢复样例</button></div></div></div><p class="hs-note">会清除本地笔记库、草稿、回收站、最近打开、同步配置和访问令牌，重新打开后恢复初始样例库，无法撤销。远端仓库不受影响。</p><p class="hs-note hs-demo">设计稿仅恢复本页样例和栏宽偏好，不操作设备数据。</p></section><section id="settingsPanel-feedback" class="settings-content hs hidden" aria-labelledby="settingsHeading-feedback"><h3 id="settingsHeading-feedback" tabindex="-1">问题与建议</h3><p class="hs-lead">描述操作步骤、实际结果和期望结果，帮助我们定位问题。</p><div class="hs-group hs-form"><label for="feedbackSteps">操作步骤</label><textarea id="feedbackSteps" placeholder="例如：打开某篇笔记 → 切换到双栏"></textarea><label for="feedbackActual">实际结果</label><textarea id="feedbackActual" placeholder="发生了什么"></textarea><label for="feedbackExpected">期望结果</label><textarea id="feedbackExpected" placeholder="你希望怎样"></textarea><p id="feedbackPreview" class="hs-preview" role="status"></p></div><div class="hs-group"><button type="button" id="previewFeedback" class="hs-row hs-button"><span class="hs-main"><span class="hs-title">预览反馈内容</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><div class="hs-row"><span class="hs-main"><span class="hs-title">反馈邮箱</span></span><a id="feedbackEmailAddress" class="hs-value"></a></div></div><a id="feedbackEmailLink" class="hs-primary">发送反馈邮件</a><p class="hs-note">将在邮件应用中创建邮件，由你确认后发送；若未打开，可手动发送到上方邮箱。不会自动附带笔记、对话或日志，添加截图前请检查私人信息。</p></section><section id="settingsPanel-about" class="settings-content hs hidden" aria-labelledby="settingsHeading-about"><h3 id="settingsHeading-about" tabindex="-1">关于与版本记录</h3><div id="aboutOverview"><div class="hs-hero"><img class="about-icon" src="../../assets/app_icon_1024.png" width="64" height="64" alt="" aria-hidden="true"><p class="hs-hero-name">曜石笔记</p><p id="settingsVersion" class="hs-hero-version"></p><p class="hs-hero-tagline">为 XT2 三折叠做的本地 Markdown 笔记</p></div><div class="hs-group"><div class="hs-row"><span class="hs-main"><span class="hs-title">反馈邮箱</span></span><a id="aboutContactEmail" class="hs-value"></a></div><a class="hs-row hs-button" href="https://agreement-drcn.hispace.dbankcloud.cn/index.html?lang=zh&amp;agreementId=2064689818977197760" target="_blank" rel="noopener noreferrer"><span class="hs-main"><span class="hs-title">隐私政策</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a><div class="hs-row"><span class="hs-main"><span class="hs-title">开源许可</span><span class="hs-sub">含 isomorphic-git、CodeMirror 等 MIT 组件</span></span><span class="hs-value">MIT</span></div></div><h4 class="hs-group-title">更新日志</h4><div class="hs-group"><div id="recentChangelog" class="hs-changelog"></div><button type="button" id="openHistory" class="hs-row hs-button"><span class="hs-main"><span class="hs-title">查看完整版本记录</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div><p class="hs-note hs-demo">设计稿 v2；版本号取自项目配置，不代表已发布。</p></div><div id="historyDetail" class="hidden"><button type="button" id="closeHistory" class="hs-back">‹ 返回关于</button><div id="allChangelog" class="hs-group hs-changelog"></div></div></section></div></div></section>
+<div id="contentSplitter" class="split-control hidden" role="separator" aria-orientation="vertical" aria-label="调整正文与参考栏比例" aria-controls="writingScroll reference" tabindex="0" title="拖动调整正文与参考；双击恢复默认；方向键微调（Shift 加大步长，Home / End 到最小 / 最大）"><i class="split-rail" aria-hidden="true"></i><b class="split-grip" aria-hidden="true"><em></em><em></em><em></em></b><span class="split-tip" aria-hidden="true"></span></div><aside class="reference" id="referencePane" aria-label="右栏"><div class="pane-label"><div class="seg edit-switch" aria-label="右栏编辑状态"><button id="rightEditTab" aria-pressed="false">编辑</button><button id="rightPreviewTab" aria-pressed="true">预览</button></div><details class="pane-more" id="rightMore"><summary id="rightMoreTrigger" aria-label="右栏更多操作" title="更多操作"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></summary><div class="pane-more-menu"><button id="rightFollowToggle" class="hidden" type="button" aria-pressed="true">跟随编辑：开</button><button id="rightSamePreview">在另一栏预览</button><button id="rightBacklinks">查看反链</button></div></details></div><div class="pane-note-title" id="referenceTitle" tabindex="-1"></div><section class="backlinks-panel hidden" id="rightBacklinksPanel" aria-label="当前笔记反链"><div class="backlinks-head"><strong>反链 <small id="rightBacklinksCount">0</small></strong><button id="rightBacklinksClose" type="button">收起</button></div><div class="backlinks-items" id="rightBacklinksItems"></div></section><div class="edit-tools hidden" id="rightTools" role="group" aria-label="写作工具"><button id="rightFormatBtn" class="format-trigger" title="标题与更多格式" aria-label="标题与更多格式" aria-haspopup="dialog">Aa</button><button data-right-format="bold" title="加粗" aria-label="加粗"><b>B</b></button><button data-right-format="italic" title="斜体" aria-label="斜体"><i>I</i></button><button data-right-format="task" title="待办" aria-label="待办"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="6" height="6" rx="2"/><path d="m4.5 8 1.5 1.5 3-4M13 8h8M13 16h8M3 16h6"/></svg></button><button id="rightImage" title="插入本地图片" aria-label="插入图片"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8" cy="9" r="1.5"/><path d="m4 17 5-5 4 4 3-3 5 5"/></svg></button></div><div id="simpleToolsRight" class="edit-tools hidden" role="group" aria-label="正文格式工具"><details id="simpleAaRight"><summary aria-label="文字与段落格式">Aa</summary><div class="simple-format-menu"><button data-simple-format="paragraph">正文</button><button data-simple-format="h1">大标题</button><button data-simple-format="h2">小标题</button><button data-simple-format="quote">引用</button><button id="simpleUndoRight">撤销</button><button id="simpleRedoRight">重做</button></div></details><button data-simple-format="bold" aria-label="正文加粗"><b>B</b></button><button data-simple-format="italic" aria-label="正文斜体"><i>I</i></button><button data-simple-format="list" aria-label="正文列表">≡</button><button data-simple-format="task" aria-label="正文待办">☑</button></div><div class="scroll" id="rightScroll"><article class="article" id="reference"></article><textarea id="rightEditor" class="source-editor hidden" aria-label="右栏 Markdown 源码" spellcheck="false"></textarea></div><div class="preview-zoom" id="rightZoomControls" role="group" aria-label="右栏正文缩放"><select id="rightZoom" aria-label="正文缩放比例"><option value="50">50%</option><option value="75">75%</option><option value="100">100%</option><option value="125">125%</option><option value="150">150%</option><option value="175">175%</option><option value="200">200%</option></select><button id="rightZoomReset" class="icon hidden" title="恢复 100%" aria-label="恢复正文至 100%"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></svg></button></div><div class="reference-foot hidden" id="excerptFoot"><p>将右栏选中文字摘录到左栏光标位置。</p><button class="primary" id="excerpt" disabled>摘录到左栏 <span aria-hidden="true">↗</span></button></div></aside></div><footer class="footer" id="noteFooter"><span id="status">本页演示 · 未写入设备</span><span id="count"></span></footer></section><section id="settingsPage" class="settings-page hidden" aria-labelledby="settingsTitle"><header class="settings-header"><button id="closeSettings" class="icon" aria-label="返回上一层" title="返回上一层"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg></button><h2 id="settingsTitle">设置与关于</h2></header><div class="settings-layout"><nav class="settings-navigation" aria-label="设置分类"><button data-settings-page="general" id="settingsNav-general" aria-controls="settingsPanel-general" aria-current="true">通用<span aria-hidden="true">›</span></button><button data-settings-page="data" id="settingsNav-data" aria-controls="settingsPanel-data" aria-current="false">数据<span aria-hidden="true">›</span></button><button data-settings-page="feedback" id="settingsNav-feedback" aria-controls="settingsPanel-feedback" aria-current="false">问题与建议<span aria-hidden="true">›</span></button><button data-settings-page="about" id="settingsNav-about" aria-controls="settingsPanel-about" aria-current="false">关于与版本记录<span aria-hidden="true">›</span></button></nav><div class="settings-detail"><section id="settingsPanel-general" class="settings-content hs" aria-labelledby="settingsHeading-general"><h3 id="settingsHeading-general" tabindex="-1">通用</h3><h4 class="hs-group-title">外观</h4><div class="hs-group"><div class="hs-row"><label class="hs-main" for="appearance"><span class="hs-title">显示主题</span></label><select id="appearance" class="hs-select"><option value="light">浅色</option><option value="dark">深色</option></select></div></div><h4 class="hs-group-title">编辑模式</h4><div class="hs-group experience-card" id="experienceSettings" tabindex="-1" role="radiogroup" aria-label="编辑模式" aria-describedby="experienceHint"><label class="hs-row hs-choice"><input type="radio" id="experienceSimple" name="experienceMode" value="simple" checked><span class="hs-main"><span class="hs-title">简单模式</span><span class="hs-sub">在排版后的正文里直接书写</span></span><span class="hs-check" aria-hidden="true"></span></label><label class="hs-row hs-choice"><input type="radio" id="experienceProfessional" name="experienceMode" value="professional"><span class="hs-main"><span class="hs-title">专业模式</span><span class="hs-sub">编辑 Markdown 源码，可切换预览</span></span><span class="hs-check" aria-hidden="true"></span></label></div><p class="hs-note" id="experienceHint">应用于整个工作区，切换时保留当前笔记的修改。也可以从右上角“…”菜单切换。</p><h4 class="hs-group-title">编辑器</h4><div class="hs-group"><label class="hs-row" for="showLineNumbers"><span class="hs-main"><span class="hs-title">显示行号</span><span class="hs-sub" id="lineNumbersHint">编辑 Markdown 时显示，预览不显示</span></span><span class="settings-switch"><input type="checkbox" role="switch" id="showLineNumbers" aria-describedby="lineNumbersHint"><span class="settings-switch-track" aria-hidden="true"></span></span></label><button type="button" id="resetPaneWidths" class="hs-row hs-button"><span class="hs-main"><span class="hs-title">恢复默认栏宽</span><span class="hs-sub">栏宽可直接拖动分隔条调整，会自动记住</span></span></button></div><h4 class="hs-group-title">高级</h4><details class="hs-group hs-disclosure"><summary class="hs-row"><span class="hs-main"><span class="hs-title">诊断信息</span><span class="hs-sub">用于设备验收</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></summary><dl class="hs-facts"><div><dt>当前形态</dt><dd id="settingsShape"></dd></div><div><dt>断点档位</dt><dd id="settingsBreakpoint"></dd></div><div><dt>构建提交</dt><dd><span id="settingsBuildCommit">a1b2c3d4（示例）</span> <button type="button" id="copyBuildCommit" class="hs-back" aria-label="复制构建提交号示例">复制</button></dd></div><div><dt>当前栏宽</dt><dd id="settingsWidths"></dd></div><div><dt>库目录</dt><dd id="settingsVaultPath"></dd></div><div><dt>折痕校准</dt><dd>只采集，不参与布局</dd></div></dl></details></section><section id="settingsPanel-data" class="settings-content hs hidden" aria-labelledby="settingsHeading-data"><h3 id="settingsHeading-data" tabindex="-1">数据</h3><h4 class="hs-group-title">本地数据</h4><div class="hs-group"><button type="button" id="resetDemo" class="hs-row hs-button hs-danger"><span class="hs-main"><span class="hs-title">重置所有数据…</span></span></button><div id="resetConfirm" class="hs-confirm hidden"><p class="hs-confirm-title">确定重置所有数据？</p><p>本页编辑、插入图片、文件操作和回收站将恢复为初始样例，栏宽偏好也会清除。无法撤销。</p><div class="hs-confirm-actions"><button type="button" id="cancelReset" class="hs-btn">取消</button><button type="button" id="confirmReset" class="hs-btn hs-btn-danger">重置并恢复样例</button></div></div></div><p class="hs-note">会清除本地笔记库、草稿、回收站、最近打开、同步配置和访问令牌，重新打开后恢复初始样例库，无法撤销。远端仓库不受影响。</p><p class="hs-note hs-demo">设计稿仅恢复本页样例和栏宽偏好，不操作设备数据。</p></section><section id="settingsPanel-feedback" class="settings-content hs hidden" aria-labelledby="settingsHeading-feedback"><h3 id="settingsHeading-feedback" tabindex="-1">问题与建议</h3><p class="hs-lead">描述操作步骤、实际结果和期望结果，帮助我们定位问题。</p><div class="hs-group hs-form"><label for="feedbackSteps">操作步骤</label><textarea id="feedbackSteps" placeholder="例如：打开某篇笔记 → 切换到双栏"></textarea><label for="feedbackActual">实际结果</label><textarea id="feedbackActual" placeholder="发生了什么"></textarea><label for="feedbackExpected">期望结果</label><textarea id="feedbackExpected" placeholder="你希望怎样"></textarea><p id="feedbackPreview" class="hs-preview" role="status"></p></div><div class="hs-group"><button type="button" id="previewFeedback" class="hs-row hs-button"><span class="hs-main"><span class="hs-title">预览反馈内容</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button><div class="hs-row"><span class="hs-main"><span class="hs-title">反馈邮箱</span></span><a id="feedbackEmailAddress" class="hs-value"></a></div></div><a id="feedbackEmailLink" class="hs-primary">发送反馈邮件</a><p class="hs-note">将在邮件应用中创建邮件，由你确认后发送；若未打开，可手动发送到上方邮箱。不会自动附带笔记、对话或日志，添加截图前请检查私人信息。</p></section><section id="settingsPanel-about" class="settings-content hs hidden" aria-labelledby="settingsHeading-about"><h3 id="settingsHeading-about" tabindex="-1">关于与版本记录</h3><div id="aboutOverview"><div class="hs-hero"><img class="about-icon" src="../../assets/app_icon_1024.png" width="64" height="64" alt="" aria-hidden="true"><p class="hs-hero-name">曜石笔记</p><p id="settingsVersion" class="hs-hero-version"></p><p class="hs-hero-tagline">为 XT2 三折叠做的本地 Markdown 笔记</p></div><div class="hs-group"><div class="hs-row"><span class="hs-main"><span class="hs-title">反馈邮箱</span></span><a id="aboutContactEmail" class="hs-value"></a></div><a class="hs-row hs-button" href="https://agreement-drcn.hispace.dbankcloud.cn/index.html?lang=zh&amp;agreementId=2064689818977197760" target="_blank" rel="noopener noreferrer"><span class="hs-main"><span class="hs-title">隐私政策</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a><div class="hs-row"><span class="hs-main"><span class="hs-title">开源许可</span><span class="hs-sub">含 isomorphic-git、CodeMirror 等 MIT 组件</span></span><span class="hs-value">MIT</span></div></div><h4 class="hs-group-title">更新日志</h4><div class="hs-group"><div id="recentChangelog" class="hs-changelog"></div><button type="button" id="openHistory" class="hs-row hs-button"><span class="hs-main"><span class="hs-title">查看完整版本记录</span></span><svg class="hs-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></button></div><p class="hs-note hs-demo">设计稿 v2；版本号取自项目配置，不代表已发布。</p></div><div id="historyDetail" class="hidden"><button type="button" id="closeHistory" class="hs-back">‹ 返回关于</button><div id="allChangelog" class="hs-group hs-changelog"></div></div></section></div></div></section>
 <section id="vaultManagerPage" class="settings-page hidden" aria-labelledby="vaultManagerTitle"><header class="settings-header"><button id="closeVaultManager" aria-label="返回笔记">← 返回笔记</button><h2 id="vaultManagerTitle">笔记库</h2></header><div class="vault-manager-scroll"><div class="vault-manager-content"><p>新建空白笔记库，或导入已有目录与 Git 仓库；各库独立管理。</p><div id="vaultCards" class="vault-card-list"></div><div class="vault-manager-actions"><button id="createVaultButton" class="settings-action" type="button">＋ 新建本地笔记库</button><button id="importVaultButton" class="primary" type="button">＋ 导入库</button></div><p class="search-note">此页只演示操作；刷新恢复公开样例，不写入设备。本地目录关联见 v1.5，Git 导入见 v0.3。</p></div></div></section><dialog id="importVaultDialog" class="utility-dialog" aria-labelledby="importVaultTitle"><header class="utility-head"><h2 id="importVaultTitle">导入库</h2><button id="closeImportVault" class="icon" aria-label="关闭导入库">×</button></header><p>把已有的笔记，带进你的工作台。</p><div class="seg import-tabs" aria-label="导入来源"><button id="importLocalTab" type="button" aria-pressed="true">本地目录</button><button id="importGitTab" type="button" aria-pressed="false">Git 仓库</button></div><section id="importLocalPanel" class="import-panel" aria-labelledby="importLocalHeading"><h3 id="importLocalHeading">使用手机里的笔记目录</h3><p>选择已有 Markdown 目录，授权后直接作为笔记库使用。</p><button id="chooseImportDirectory" class="directory-choice" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3Z"/></svg><span><strong id="importDirectoryName">选择本地目录</strong><small id="importDirectoryHint">从系统目录选择器中选择文件夹</small></span><span aria-hidden="true">↗</span></button><p class="import-summary">直接读写原目录，不复制文件。移除库只解除关联，原目录和文件保留。</p></section><section id="importGitPanel" class="import-panel hidden" aria-labelledby="importGitHeading"><h3 id="importGitHeading">连接远端 Git 仓库</h3><p>克隆到应用内，作为独立笔记库使用。</p><label>仓库地址<input id="importGitUrl" type="url" autocomplete="off" placeholder="https://github.com/用户名/仓库.git"></label><label>分支<input id="importGitBranch" autocomplete="off" value="main" placeholder="main"></label><p class="import-summary">GitHub / Gitee 等 HTTPS 仓库。私有仓库在应用内安全验证；移除库只删除手机副本，远端仓库保留。</p></section><p id="importVaultStatus" class="search-note" role="status">原型演示：点击目录卡片选用示例目录，不打开系统选择器、不读取手机文件。</p><div class="utility-actions"><button id="cancelImportVault" type="button">取消</button><button id="confirmImportVault" class="primary" type="button" disabled>关联此目录</button></div></dialog><dialog id="vaultActionDialog" class="utility-dialog file-action-form" aria-labelledby="vaultActionTitle"><header class="utility-head"><h2 id="vaultActionTitle"></h2><button id="closeVaultAction" class="icon" aria-label="关闭库操作">×</button></header><p id="vaultActionDescription"></p><label id="vaultActionNameField">库名称<input id="vaultActionName" autocomplete="off" placeholder="库名称"></label><p id="vaultActionPath" role="status"></p><div class="utility-actions"><button id="cancelVaultAction" type="button">取消</button><button id="confirmVaultAction" type="button">创建</button></div><p class="search-note">本页操作仅修改内存中的公开样例；刷新后恢复，不触碰设备文件。</p></dialog><dialog id="shareDialog" class="utility-dialog" aria-labelledby="shareTitle"><header class="utility-head"><h2 id="shareTitle">分享</h2><button id="closeShare" class="icon" aria-label="关闭分享">×</button></header><div class="setting-row"><label for="shareScope">分享范围</label><select id="shareScope"><option value="note">当前笔记</option><option value="folder">当前文件夹及子目录</option><option value="vault">当前知识库</option></select></div><p id="shareSummary"></p><div id="shareOptions"><button class="option" id="shareImage"><strong>排版图片</strong><small>整篇笔记合成为一张连续长图</small></button><button class="option" id="shareFile"><strong id="shareFileLabel">Markdown 文件</strong><small id="shareFileHint"></small></button><button class="option" id="shareText"><strong>文本</strong><small>预览并编辑标题与正文；图片和复杂格式按提示降级</small></button><button class="option hidden" id="shareRemoteLink"><strong id="shareRemoteLinkLabel">远端网页链接</strong><small>指向远端已有版本；未推送的本地修改不会包含</small></button></div><div id="sharePreview" class="share-preview hidden"></div><div id="shareActions" class="utility-actions hidden"><button id="shareBack">返回格式选择</button><button id="shareContinue">查看分享去向示意</button></div><p id="shareNotice">本页演示分享流程，不生成文件、不上传或发送内容。</p></dialog>
 <dialog id="newEntryDialog" class="utility-dialog file-action-form" aria-labelledby="newEntryTitle"><header class="utility-head"><h2 id="newEntryTitle">新建笔记</h2><button id="closeNewEntry" aria-label="关闭新建">×</button></header><div class="new-entry-kind" role="group" aria-label="创建类型"><button id="newNoteKind" type="button" aria-pressed="true">笔记</button><button id="newFolderKind" type="button" aria-pressed="false">文件夹</button></div><p id="newEntryTarget"></p><label>名称<input id="newEntryName" autocomplete="off" placeholder="笔记名称，不含 .md"></label><label><span id="newEntryFolderLabel">所在文件夹</span><select id="newEntryFolder"></select></label><p id="newEntryError" role="status"></p><div class="utility-actions"><button id="cancelNewEntry" type="button">取消</button><button id="confirmNewEntry" type="button">创建</button></div><p class="search-note">本页仅演示界面；刷新恢复样例，不写入设备。</p></dialog><dialog id="fileActionDialog" class="utility-dialog file-action-form" aria-labelledby="fileActionTitle"><header class="utility-head"><h2 id="fileActionTitle"></h2><button id="closeFileAction" aria-label="关闭文件操作">×</button></header><p id="fileActionPath"></p><label id="renameField">名称<input id="renameInput" autocomplete="off"></label><label id="moveField">目标文件夹<select id="moveSelect"></select></label><p id="fileActionError" role="status"></p><div class="utility-actions"><button id="cancelFileAction">取消</button><button id="confirmFileAction">确认</button></div></dialog><dialog id="deleteFolderDialog" class="utility-dialog" aria-labelledby="deleteFolderTitle"><header class="utility-head"><h2 id="deleteFolderTitle">永久删除文件夹？</h2><button id="closeDeleteFolder" aria-label="关闭删除确认">×</button></header><p id="deleteFolderPath"></p><p id="deleteFolderSummary"></p><div class="utility-actions"><button id="cancelDeleteFolder">取消</button><button id="confirmDeleteFolder" class="danger-button">永久删除</button></div></dialog><dialog id="trashDialog" class="utility-dialog" aria-labelledby="trashTitle"><header class="utility-head"><h2 id="trashTitle">当前知识库回收站</h2><button id="closeTrash" aria-label="关闭回收站">×</button></header><div id="trashItems"></div><p>本页演示，可恢复已删除笔记；刷新恢复样例。</p></dialog><dialog id="imageViewerDialog" class="utility-dialog image-viewer-dialog" aria-labelledby="imageViewerTitle"><header class="utility-head"><h2 id="imageViewerTitle">完整图片</h2><button id="closeImageViewer" class="icon" aria-label="关闭完整图片">关闭</button></header><div class="image-viewer-scroll" id="imageViewerScroll" tabindex="0" aria-label="完整图片，可滚动"><img id="imageViewerImage" alt=""></div></dialog>
 <dialog id="formatDialog" class="utility-dialog format-panel" aria-labelledby="formatTitle"><header class="utility-head"><h2 id="formatTitle">文字与段落</h2><button id="closeFormat">完成</button></header><section class="format-group"><h3>段落</h3><div class="format-grid"><button data-format-choice="paragraph"><span>Aa</span><small>正文</small></button><button data-format-choice="h1"><span>H1</span><small>1 级标题</small></button><button data-format-choice="h2"><span>H2</span><small>2 级标题</small></button><button data-format-choice="h3"><span>H3</span><small>3 级标题</small></button><button data-format-choice="h4"><span>H4</span><small>4 级标题</small></button><button data-format-choice="h5"><span>H5</span><small>5 级标题</small></button><button data-format-choice="h6"><span>H6</span><small>6 级标题</small></button></div></section><section class="format-group"><h3>文字</h3><div class="format-grid"><button data-format-choice="bold"><span>B</span><small>加粗</small></button><button data-format-choice="italic"><span>I</span><small>斜体</small></button><button id="formatCodeChoice" data-format-choice="code" aria-pressed="false"><span>&lt;/&gt;</span><small>代码块</small></button><button data-format-choice="link"><span>↗</span><small>链接</small></button></div></section><section class="format-group"><h3>列表与引用</h3><div class="format-grid"><button data-format-choice="list"><span>≡</span><small>列表</small></button><button data-format-choice="task"><span>☑</span><small>待办</small></button><button data-format-choice="quote"><span>❞</span><small>引用</small></button></div></section></dialog><dialog id="quickSearchDialog" class="utility-dialog quick-search-dialog" aria-labelledby="quickSearchTitle"><header class="utility-head"><h2 id="quickSearchTitle">快切与搜索</h2><button id="closeQuickSearch" class="icon" aria-label="关闭搜索">×</button></header><label class="search-field"><span class="hidden">搜索当前知识库</span><input id="quickSearchInput" type="search" placeholder="搜索文件名、路径或正文" autocomplete="off"></label><div class="search-results-head"><span id="quickSearchLabel">最近打开</span><span id="quickSearchCount">0</span></div><div id="quickSearchResults" class="search-results" role="list"></div><p id="quickSearchEmpty" class="search-empty hidden" role="status"></p><p class="search-note">只搜索当前知识库。此页仅演示界面，不写入设备。</p></dialog></main>
@@ -211,7 +345,7 @@ a.hs-value{color:var(--blue)}
 <div class="toast hidden" id="toast" role="status"><span id="toastText"></span><button id="undo" class="hidden">撤销摘录</button></div>
 <div class="block-bar hidden" id="blockBar" role="group" aria-label="当前块操作"><button type="button" data-block-op="insert-row" aria-label="在当前行下方插入一行">下加行</button><button type="button" data-block-op="insert-col" aria-label="在当前列右侧插入一列">右加列</button><button type="button" data-block-op="del-row" aria-label="删除当前行">删除</button><button type="button" class="more" data-block-op="more" aria-label="打开当前块设置">更多</button></div>
 <div class="block-scrim hidden" id="blockScrim"></div>
-<div class="block-sheet hidden" id="blockSheet" role="dialog" aria-modal="true" aria-label="块设置：表格"><div class="block-sheet-drag" aria-hidden="true"></div><div class="block-sheet-head"><strong id="blockSheetTitle">表格</strong><button type="button" class="icon" id="blockSheetClose" aria-label="关闭块设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div class="hs-group"><label class="settings-toggle-row"><span class="settings-toggle-copy"><strong>首行为表头</strong><small>第一行按表头样式显示</small></span><span class="settings-switch"><input type="checkbox" id="blockHeaderRow" checked><span class="settings-switch-track"></span></span></label></div><div class="hs-group"><div class="hs-row"><span class="hs-main"><strong>插入列</strong></span><span class="seg edit-switch" role="group" aria-label="插入列的方向"><button type="button" data-block-side="left" aria-pressed="false">左</button><button type="button" data-block-side="right" aria-pressed="true">右</button></span></div><button class="hs-row" type="button" data-block-op="insert-col"><span class="hs-main"><strong id="blockInsertColLabel" style="color:var(--blue)">在右侧插入列</strong></span></button><div class="hs-row"><span class="hs-main"><strong>插入行</strong></span><span class="seg edit-switch" role="group" aria-label="插入行的方向"><button type="button" data-block-side="up" aria-pressed="false">上</button><button type="button" data-block-side="down" aria-pressed="true">下</button></span></div><button class="hs-row" type="button" data-block-op="insert-row"><span class="hs-main"><strong id="blockInsertRowLabel" style="color:var(--blue)">在下方插入行</strong></span></button></div><div class="hs-group"><button class="hs-row" type="button" data-block-op="del-col"><span class="hs-main"><strong style="color:var(--danger)">删除当前列</strong></span></button><button class="hs-row" type="button" data-block-op="del-row"><span class="hs-main"><strong style="color:var(--danger)">删除当前行</strong></span></button></div><div class="hs-group"><button class="hs-row" type="button" id="blockSourceEdit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg><span class="hs-main"><strong style="color:var(--blue)">以源码编辑此块</strong></span></button></div><p class="block-sheet-note">原型示意：只演示交互，不写入笔记内容。切换方向会同步到浮条按钮。</p></div>
+<div class="block-sheet hidden" id="blockSheet" role="dialog" aria-modal="true" aria-label="块设置：表格"><div class="block-sheet-drag" aria-hidden="true"></div><div class="block-sheet-head"><span class="block-sheet-titles"><strong id="blockSheetTitle">表格</strong><small id="blockSheetSub"></small></span><button type="button" class="icon" id="blockSheetClose" aria-label="关闭块设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div><div id="blockSheetTable"><div class="hs-group"><label class="settings-toggle-row"><span class="settings-toggle-copy"><strong>首行为表头</strong><small>第一行按表头样式显示</small></span><span class="settings-switch"><input type="checkbox" id="blockHeaderRow" checked><span class="settings-switch-track"></span></span></label></div><div class="hs-group"><div class="hs-row"><span class="hs-main"><strong>插入列</strong></span><span class="seg edit-switch" role="group" aria-label="插入列的方向"><button type="button" data-block-side="left" aria-pressed="false">左</button><button type="button" data-block-side="right" aria-pressed="true">右</button></span></div><button class="hs-row" type="button" data-block-op="insert-col"><span class="hs-main"><strong id="blockInsertColLabel" style="color:var(--blue)">在右侧插入列</strong></span></button><div class="hs-row"><span class="hs-main"><strong>插入行</strong></span><span class="seg edit-switch" role="group" aria-label="插入行的方向"><button type="button" data-block-side="up" aria-pressed="false">上</button><button type="button" data-block-side="down" aria-pressed="true">下</button></span></div><button class="hs-row" type="button" data-block-op="insert-row"><span class="hs-main"><strong id="blockInsertRowLabel" style="color:var(--blue)">在下方插入行</strong></span></button></div><div class="hs-group"><button class="hs-row" type="button" data-block-op="del-col"><span class="hs-main"><strong style="color:var(--danger)">删除当前列</strong></span></button><button class="hs-row" type="button" data-block-op="del-row"><span class="hs-main"><strong style="color:var(--danger)">删除当前行</strong></span></button></div><div class="hs-group"><button class="hs-row" type="button" id="blockSourceEdit"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg><span class="hs-main"><strong style="color:var(--blue)">以源码编辑此块</strong></span></button></div><p class="block-sheet-note">原型示意：只演示交互，不写入笔记内容。切换方向会同步到浮条按钮。</p></div><div id="blockSheetBody" class="hidden"></div></div>
 <script>
 'use strict';
 const icons={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',focus:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',exitFocus:'<path d="M3 8h5V3m13 5h-5V3M3 16h5v5m13-5h-5v5"/>',columns:'<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M11 4v16"/>',note:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5"/>',moon:'<path d="M20 14a8 8 0 0 1-10-10A8 8 0 1 0 20 14Z"/>'};
@@ -247,7 +381,43 @@ function splitActive(kind,m=splitMetrics()){return !phone&&!focused&&(kind==='na
 function clampWidth(value,range){return Math.max(range.min,Math.min(range.max,value));}
 function saveWidths(){try{localStorage.setItem(splitKey,JSON.stringify(widths));}catch(_){toast('浏览器无法记住栏宽，本次调整仍有效',false);}}
 function syncNavigation(){const visible=!settingsOpen&&!focused&&(phone?$('window').classList.contains('nav-open'):!$('window').classList.contains('nav-hidden'));const sidebar=$('navSidebar'),workspace=$('noteWorkspace'),wasHidden=sidebar.inert;sidebar.inert=!visible;workspace.inert=false;const blocked=phone&&visible;$('notePanes').inert=blocked;$('noteFooter').inert=blocked;for(const id of ['showRef','shareBtn','focus','mobileMore'])$(id).inert=blocked;$('menu').setAttribute('aria-expanded',String(visible));$('menu').setAttribute('aria-controls','navSidebar');$('menu').setAttribute('aria-label',visible?'收起文件与章节列表':'展开文件与章节列表');if(visible&&phone&&wasHidden){rememberEditorPosition();rememberRightPosition();$('closeNav').focus();}else if(!visible&&!settingsOpen&&sidebar.contains(document.activeElement))$('menu').focus();}
-function applySplits(){syncNavigation();syncReference();syncFocusButton();const m=splitMetrics();if(!m.w)return;let side=0;if(m.side){side=clampWidth(widths.nav*m.w,splitRange('nav',m));$('window').style.setProperty('--side-size',side+'px');}else if(!phone){const navGeometry={...m,referenceVisible:referenceEnabled&&!focused&&viewport!=='double'};$('window').style.setProperty('--side-size',clampWidth(widths.nav*m.w,splitRange('nav',navGeometry))+'px');}if(m.referenceVisible){const available=m.w-side;const writing=m.side?available/2:clampWidth(widths.content*available,{min:m.min,max:available-m.min});$('window').style.setProperty('--reference-size',(available-writing)+'px');}else $('window').style.removeProperty('--reference-size');for(const [kind,id]of [['nav','navSplitter'],['content','contentSplitter']]){const handle=$(id),active=splitActive(kind,m);handle.classList.toggle('hidden',!active);handle.setAttribute('tabindex',active?'0':'-1');if(active){const range=splitRange(kind,m);handle.setAttribute('aria-valuemin',Math.round(range.min));handle.setAttribute('aria-valuemax',Math.round(range.max));handle.setAttribute('aria-valuenow',Math.round(clampWidth(widths[kind]*m.w,range)));}}if(splitDrag&&!splitActive(splitDrag.kind,m))endSplit();positionFormatPanel();}
+function applySplits(){syncNavigation();syncReference();syncFocusButton();const m=splitMetrics();if(!m.w)return;let side=0;if(m.side){side=clampWidth(widths.nav*m.w,splitRange('nav',m));$('window').style.setProperty('--side-size',side+'px');}else if(!phone){const navGeometry={...m,referenceVisible:referenceEnabled&&!focused&&viewport!=='double'};$('window').style.setProperty('--side-size',clampWidth(widths.nav*m.w,splitRange('nav',navGeometry))+'px');}if(m.referenceVisible){const available=m.w-side;const writing=m.side?available/2:clampWidth(widths.content*available,{min:m.min,max:available-m.min});$('window').style.setProperty('--reference-size',(available-writing)+'px');}else $('window').style.removeProperty('--reference-size');for(const [kind,id]of [['nav','navSplitter'],['content','contentSplitter']]){const handle=$(id),active=splitActive(kind,m);handle.classList.toggle('hidden',!active);handle.setAttribute('tabindex',active?'0':'-1');if(active){const range=splitRange(kind,m);handle.setAttribute('aria-valuemin',Math.round(range.min));handle.setAttribute('aria-valuemax',Math.round(range.max));handle.setAttribute('aria-valuenow',Math.round(clampWidth(widths[kind]*m.w,range)));paintSplit(kind,m);}}if(splitDrag&&!splitActive(splitDrag.kind,m))endSplit();positionFormatPanel();}
+/* split-control: snap, limit state, live readout */
+const SPLIT_SNAP_PX=10;let splitTipTimer=0;
+function splitDefaultPixels(kind,m){return m.w*(kind==='nav'?1/3:.5);}
+function splitState(kind,m,px){const range=splitRange(kind,m);if(Math.abs(px-splitDefaultPixels(kind,m))<=1)return 'default';if(px<=range.min+1)return 'min';if(px>=range.max-1)return 'max';return '';}
+function splitReadout(kind,m,px){
+ const pct=Math.round(px/m.w*100);
+ return kind==='nav'?{main:'目录 '+pct+'% · 正文 '+(100-pct)+'%',px:Math.round(px)+' px'}:{main:'左栏 '+pct+'% · 右栏 '+(100-pct)+'%',px:Math.round(px)+' / '+Math.round(m.w-px)+' px'};
+}
+function paintSplit(kind,m=splitMetrics(),extra){
+ const handle=$(kind==='nav'?'navSplitter':'contentSplitter');if(!handle||!splitActive(kind,m))return;
+ const range=splitRange(kind,m),px=clampWidth(widths[kind]*m.w,range),state=splitState(kind,m,px),text=splitReadout(kind,m,px);
+ handle.classList.toggle('at-default',state==='default');handle.classList.toggle('at-limit',state==='min'||state==='max');
+ const note=extra||(state==='default'?'默认比例':state==='min'?'已到最小宽度（每栏至少 '+Math.round(m.min)+' px）':state==='max'?'已到最大宽度':'');
+ handle.querySelector('.split-tip').innerHTML=text.main+'<small>'+text.px+(note?' · '+note:'')+'</small>';
+ handle.setAttribute('aria-valuetext',text.main+(note?'，'+note:''));
+}
+function showSplitTip(kind,extra){
+ const handle=$(kind==='nav'?'navSplitter':'contentSplitter');if(!handle)return;
+ paintSplit(kind,splitMetrics(),extra);handle.classList.add('tip-on');clearTimeout(splitTipTimer);
+ splitTipTimer=setTimeout(()=>handle.classList.remove('tip-on'),extra?1100:900);
+}
+function dragSplit(kind,pixels,event,fromKeyboard){
+ const m=splitMetrics();if(!splitActive(kind,m))return;
+ const handle=$(kind==='nav'?'navSplitter':'contentSplitter'),range=splitRange(kind,m),before=splitState(kind,m,clampWidth(widths[kind]*m.w,range));
+ let px=clampWidth(pixels,range);
+ if(!fromKeyboard&&!(event&&event.altKey)){const d=splitDefaultPixels(kind,m);if(Math.abs(px-d)<=SPLIT_SNAP_PX&&d>=range.min&&d<=range.max)px=d;}
+ resizeSplit(kind,px);
+ const after=splitState(kind,m,clampWidth(widths[kind]*m.w,range));
+ if(after&&after!==before){handle.classList.remove('snapped');void handle.offsetWidth;handle.classList.add('snapped');if(!fromKeyboard&&navigator.vibrate)navigator.vibrate(8);}
+ paintSplit(kind,m);
+}
+document.addEventListener('keydown',e=>{
+ if(e.key!=='Escape'||!splitDrag)return;
+ e.stopPropagation();e.preventDefault();
+ const {kind,initial}=splitDrag;widths[kind]=initial;endSplit();applySplits();showSplitTip(kind,'已取消调整');
+},true);
 function resizeSplit(kind,pixels){const m=splitMetrics();if(!splitActive(kind,m))return;widths[kind]=clampWidth(pixels,splitRange(kind,m))/m.w;applySplits();}
 function endSplit(){if(!splitDrag)return;const {handle,pointer}=splitDrag;splitDrag=null;handle.classList.remove('dragging');$('window').classList.remove('splitting');if(handle.hasPointerCapture(pointer))handle.releasePointerCapture(pointer);saveWidths();}
 function resetSplits(){endSplit();widths={nav:1/3,content:.5};try{localStorage.removeItem(splitKey);}catch(_){}applySplits();}
@@ -261,9 +431,9 @@ function validTag(value){return /^[\p{L}\p{N}\p{M}\p{S}_/-]+$/u.test(value)&&/[^
 function tagChip(tag){return '<span class="note-tag">#'+esc(tag)+'</span>';}
 function tagText(text){const pattern=/(^|[\s(（])#([\p{L}\p{N}\p{M}\p{S}_/-]+)/gu;let html='',last=0;for(const match of text.matchAll(pattern)){html+=esc(text.slice(last,match.index));html+=esc(match[1])+(validTag(match[2])?tagChip(match[2]):esc('#'+match[2]));last=match.index+match[0].length;}return html+esc(text.slice(last));}
 function frontmatterTags(text){const body=markdownBody(text);if(!body.offset)return [];const lines=text.slice(0,body.offset).replace(/^\uFEFF/,'').split(/\r?\n/);let values=[],reading=false;for(const line of lines.slice(1,-1)){const key=line.match(/^tags:[ \t]*(.*)$/);if(key){reading=true;const inline=key[1].replace(/[ \t]+#.*$/,'').trim();if(inline.startsWith('[')&&inline.endsWith(']'))values.push(...(inline.slice(1,-1).match(/"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|[^,]+/g)||[]));continue;}if(reading){const item=line.match(/^[ \t]*-[ \t]+(.*)$/);if(item)values.push(item[1]);else if(/^[^ \t#]/.test(line))reading=false;}}const tags=[],seen=new Set();for(let value of values){value=value.trim();if(value.startsWith('"')&&value.endsWith('"')){try{value=JSON.parse(value);}catch(_){continue;}}else if(value.startsWith("'")&&value.endsWith("'"))value=value.slice(1,-1).replace(/''/g,"'");else value=value.replace(/[ \t]+#.*$/,'');value=value.replace(/^#/,'');if(validTag(value)&&!seen.has(value.toLowerCase())){seen.add(value.toLowerCase());tags.push(value);}}return tags;}
-function tagProperties(text){const tags=frontmatterTags(text);return tags.length?'<div class="note-tags" aria-label="笔记标签">'+tags.map(tagChip).join('')+'</div>':'';}
+function tagProperties(text){const tags=frontmatterTags(text),body=markdownBody(text);let entry='';if(body.offset){const keys=(text.slice(0,body.offset).match(/^[^\s#:-][^:\n]*:/gm)||[]).length;entry='<button type="button" class="md-props-entry" data-block-type="props" data-source-start="0" data-source-end="'+body.offset+'" aria-label="笔记属性，共 '+keys+' 项，打开编辑"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>属性 · '+keys+' 项</button>';}return (entry||tags.length)?'<div class="note-tags" aria-label="笔记属性与标签">'+entry+tags.map(tagChip).join('')+'</div>':'';}
 function isMarkdownEscaped(text,index){let count=0;for(let cursor=index-1;cursor>=0&&text[cursor]==='\\';cursor--)count++;return count%2===1;}
-function inline(s,n=note(current)){const pattern=/`([^`]+)`|!\[([^\]]*)\]\(([^)]+)\)|\[\[([^\]]+)\]\]|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|~~([^~]+)~~/g;let html='',last=0;for(const match of s.matchAll(pattern)){html+=tagText(s.slice(last,match.index));const [all,code,alt,path,wiki,label,url,bold,italic,strike]=match;if(code)html+='<code>'+esc(code)+'</code>';else if(path){const src=resolvePreviewImage(path,n);html+=src?'<img data-preview-image src="'+esc(src)+'" role="button" tabindex="0" aria-label="查看完整图片：'+esc(alt||'图片')+'" alt="'+esc(alt)+'">':'<span class="image-missing" role="status">图片未找到：'+esc(alt||path)+'</span>';}else if(wiki&&((s[match.index-1]==='!')||isMarkdownEscaped(s,match.index)))html+=esc(all);else if(wiki){const [target,alias]=wiki.split('|'),resolved=resolveWikiTarget(target,n),label=alias||target.split('/').pop().replace(/\.markdown$|\.md$/,'');if(resolved.status==='resolved')html+='<button class="wiki-link" data-source="'+esc(resolved.note.id)+'" title="在另一栏查看 '+esc(target)+'">'+esc(label)+'</button>';else if(resolved.status==='missing')html+='<button class="wiki-link wiki-link-missing" data-wiki-create="'+esc(target)+'" title="创建笔记：'+esc(resolved.path)+'">'+esc(label)+'</button><small class="wiki-link-state">（未创建）</small>';else if(resolved.status==='ambiguous')html+='<button class="wiki-link" data-wiki-problem="ambiguous" title="目标不唯一，请补全路径或扩展名">'+esc(label)+'</button><small class="wiki-link-state">（目标不唯一）</small>';else{const reason=String(target).includes('#')?'标题锚点暂不支持':'路径无效';html+='<span class="wiki-link-invalid" title="'+reason+'">'+esc(label)+'（'+reason+'）</span>'; }}else if(url)html+='<a href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(label)+'</a>';else html+=bold?'<strong>'+esc(bold)+'</strong>':italic?'<em>'+esc(italic)+'</em>':'<del>'+esc(strike)+'</del>';last=match.index+all.length;}return html+tagText(s.slice(last));}
+function inline(s,n=note(current)){const pattern=/`([^`]+)`|!\[([^\]]*)\]\(([^)]+)\)|\[\[([^\]]+)\]\]|\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|~~([^~]+)~~|\$([^$\s](?:[^$]*[^$\s])?)\$/g;let html='',last=0;for(const match of s.matchAll(pattern)){html+=tagText(s.slice(last,match.index));const [all,code,alt,path,wiki,label,url,bold,italic,strike,math]=match;const ia=kind=>' data-inline=\"'+kind+'\" data-md=\"'+esc(all)+'\" data-occ=\"'+(s.slice(0,match.index).split(all).length-1)+'\"';if(code)html+='<code'+ia('code')+'>'+esc(code)+'</code>';else if(path){const src=resolvePreviewImage(path,n),altParts=String(alt).split('|'),altText=altParts[0],imgWidth=/^\d{2,4}$/.test(altParts[1]||'')?altParts[1]:'';html+=src?'<img data-preview-image'+ia('image')+' src="'+esc(src)+'" role="button" tabindex="0" aria-label="查看完整图片：'+esc(altText||'图片')+'" alt="'+esc(altText)+'"'+(imgWidth?' style="width:'+imgWidth+'px"':'')+'>':'<span class="image-missing" role="status"'+ia('image')+' tabindex="0">图片未找到：'+esc(altText||path)+'</span>';}else if(wiki&&((s[match.index-1]==='!')||isMarkdownEscaped(s,match.index)))html+=esc(all);else if(wiki){const [target,alias]=wiki.split('|'),resolved=resolveWikiTarget(target,n),label=alias||target.split('/').pop().replace(/\.markdown$|\.md$/,'');if(resolved.status==='resolved')html+='<button class="wiki-link"'+ia('wiki')+' data-source="'+esc(resolved.note.id)+'" title="在另一栏查看 '+esc(target)+'">'+esc(label)+'</button>';else if(resolved.status==='missing')html+='<button class="wiki-link wiki-link-missing"'+ia('wiki')+' data-wiki-create="'+esc(target)+'" title="创建笔记：'+esc(resolved.path)+'">'+esc(label)+'</button><small class="wiki-link-state">（未创建）</small>';else if(resolved.status==='ambiguous')html+='<button class="wiki-link"'+ia('wiki')+' data-wiki-problem="ambiguous" title="目标不唯一，请补全路径或扩展名">'+esc(label)+'</button><small class="wiki-link-state">（目标不唯一）</small>';else{const reason=String(target).includes('#')?'标题锚点暂不支持':'路径无效';html+='<span class="wiki-link-invalid"'+ia('wiki')+' tabindex="0" title="'+reason+'">'+esc(label)+'（'+reason+'）</span>'; }}else if(url)html+='<a'+ia('link')+' href="'+esc(url)+'" target="_blank" rel="noopener">'+esc(label)+'</a>';else if(math)html+='<span class="md-math-inline"'+ia('math')+' tabindex="0" role="button" aria-label="行内公式：'+esc(math)+'">'+esc(math)+'</span>';else html+=bold?'<strong>'+esc(bold)+'</strong>':italic?'<em>'+esc(italic)+'</em>':'<del>'+esc(strike)+'</del>';last=match.index+all.length;}return html+tagText(s.slice(last));}
 function rememberEditorPosition(){const editor=$('editor');if(editing&&Number.isFinite(editor.selectionEnd))editorPositions[current]={start:editor.selectionStart,end:editor.selectionEnd};}
 function restoreEditorPosition(){const editor=$('editor'),position=editorPositions[current];if(position&&editor.setSelectionRange)editor.setSelectionRange(Math.min(position.start,editor.value.length),Math.min(position.end,editor.value.length));}
 for(const event of ['select','keyup','pointerup','blur'])$('editor').addEventListener(event,rememberEditorPosition);
@@ -277,12 +447,16 @@ function renderMarkdown(text,anchors,prefix='section-',n=note(current)){
   const line=raw.replace(/(?:\r\n|\n|\r)$/,'');
   lines.push({text:line,start:offset,end:offset+line.length});offset+=raw.length;
  }
- let html=tagProperties(text),list=null,index=0,code=null,fence=null,codeStart=0,table=null;
+ let html=tagProperties(text),list=null,index=0,code=null,fence=null,codeStart=0,table=null,callout=null,mathBlock=null;
  const range=(start,end)=>' data-source-start="'+start+'" data-source-end="'+end+'"';
  const listItem=line=>line.match(/^(\s*)([-*+]|\d+[.)]) (.*)$/);
  const tableRow=line=>/^\s*\|.*\|\s*$/.test(line);
  const tableCells=line=>line.trim().replace(/^\||\|$/g,'').split('|').map(cell=>cell.trim());
  const closeList=()=>{if(list){html+='</'+list+'>';list=null;}};
+ const calloutName={note:'笔记',abstract:'摘要',summary:'摘要',tldr:'摘要',info:'信息',todo:'待办',tip:'提示',hint:'提示',important:'重要',success:'完成',check:'完成',done:'完成',question:'问题',help:'问题',faq:'问题',warning:'注意',caution:'注意',attention:'注意',failure:'失败',fail:'失败',missing:'失败',danger:'危险',error:'危险',bug:'缺陷',example:'示例',quote:'引用',cite:'引用'};
+ const closeCallout=()=>{if(!callout)return;const c=callout,type=c.type.toLowerCase(),known=Object.prototype.hasOwnProperty.call(calloutName,type),title=c.title||(known?calloutName[type]:c.type);
+  html+='<div class="md-callout'+(c.fold==='-'?' is-folded':'')+'" data-block-type="callout" data-callout="'+esc(known?type:'unknown')+'"'+range(c.start,c.end)+'><div class="md-callout-head" tabindex="0" role="button" aria-label="提示块：'+esc(title)+'，打开设置"><span class="md-callout-icon" aria-hidden="true"></span><span class="md-callout-title">'+inline(title,n)+'</span>'+(c.fold?'<span class="md-callout-fold" aria-hidden="true">'+(c.fold==='-'?'展开':'收起')+'</span>':'')+'</div><div class="md-callout-body">'+c.body.map(b=>b.text.trim()?'<p'+range(b.start,b.end)+'>'+inline(b.text,n)+'</p>':'').join('')+'</div></div>';callout=null;};
+ const emitMath=(start,end,body)=>{html+='<div class="md-math" data-block-type="math" tabindex="0" role="button" aria-label="块级公式，打开编辑"'+range(start,end)+'><span class="md-math-tag" aria-hidden="true">公式</span><span class="md-math-body">'+esc(body)+'</span></div>';};
  const closeTable=()=>{if(!table)return;const rows=table.rows,sep=rows.length>1&&rows[1].cells.every(cell=>/^:?-+:?$/.test(cell));
   let out='<table class="simple-table md-table"'+range(table.start,table.end)+'>';
   rows.forEach((row,i)=>{if(sep&&i===1)return;const tag=sep&&i===0?'th':'td';out+='<tr>'+row.cells.map(cell=>'<'+tag+'>'+inline(cell,n)+'</'+tag+'>').join('')+'</tr>';});
@@ -291,6 +465,11 @@ function renderMarkdown(text,anchors,prefix='section-',n=note(current)){
   if(code!==null&&closesMarkdownFence(line,fence)){html+='<pre'+range(codeStart,item.end)+'><code>'+esc(code.join('\n'))+'</code></pre>';code=null;fence=null;continue;}
   if(code===null&&markdownFence(line)){closeList();closeTable();fence=markdownFence(line);code=[];codeStart=item.start;continue;}
   if(code!==null){code.push(line);continue;}
+  if(mathBlock!==null){if(line.trim()==='$$'){emitMath(mathBlock.start,item.end,mathBlock.lines.join('\n'));mathBlock=null;}else mathBlock.lines.push(line);continue;}
+  if(callout){if(/^>/.test(line)){callout.body.push({text:line.replace(/^> ?/,''),start:item.start,end:item.end});callout.end=item.end;continue;}closeCallout();}
+  if(line.trim()==='$$'){closeList();closeTable();mathBlock={start:item.start,lines:[]};continue;}
+  const oneLineMath=line.match(/^\s*\$\$(.+)\$\$\s*$/);if(oneLineMath){closeList();closeTable();emitMath(item.start,item.end,oneLineMath[1].trim());continue;}
+  const calloutHead=line.match(/^> ?\[!([A-Za-z][\w-]*)\]([+-])?[ \t]*(.*)$/);if(calloutHead){closeList();closeTable();callout={type:calloutHead[1],fold:calloutHead[2]||'',title:calloutHead[3],start:item.start,end:item.end,body:[]};continue;}
   if(tableRow(line)){closeList();if(!table)table={start:item.start,end:item.end,rows:[]};table.rows.push({cells:tableCells(line)});table.end=item.end;continue;}
   closeTable();
   const listMatch=listItem(line);
@@ -305,7 +484,8 @@ function renderMarkdown(text,anchors,prefix='section-',n=note(current)){
   else if(line.trim()==='---')html+='<hr'+attrs+'>';
   else if(line.trim())html+='<p'+attrs+'>'+inline(line,n)+'</p>';
  }
- closeTable();
+ closeTable();closeCallout();
+ if(mathBlock!==null){const end=lines.length?lines[lines.length-1].end:mathBlock.start;html+='<p'+range(mathBlock.start,end)+'>'+esc(source.text.slice(mathBlock.start-source.offset,end-source.offset))+'</p>';}
  if(code!==null){const end=lines.length?lines[lines.length-1].end:codeStart;html+='<pre'+range(codeStart,end)+'><code>'+esc(code.join('\n'))+'</code></pre>';}
  closeList();
  return html;
@@ -511,6 +691,7 @@ function prepareSimpleBlocks(pane='left'){
  }
  if(id&&!text.trim()&&!root.querySelector('[data-source-start]'))root.innerHTML='<p data-source-start="0" data-source-end="'+text.length+'"><br></p>';
  for(const block of root.querySelectorAll('[data-source-start]')){
+  if(block.dataset.blockType&&block.tagName!=='TABLE'){block.classList.remove('simple-protected');block.removeAttribute('contenteditable');continue;}
   const raw=text.slice(Number(block.dataset.sourceStart),Number(block.dataset.sourceEnd));
   const protectedBlock=block.tagName==='PRE'||block.tagName==='HR'||
    (!!text.trim()&&!simpleBlockAllowed(raw));
@@ -518,6 +699,7 @@ function prepareSimpleBlocks(pane='left'){
   block.classList.toggle('simple-protected',protectedBlock);
   if(allowed){block.contentEditable='true';block.setAttribute('role','textbox');block.setAttribute('aria-label','编辑正文：'+(block.textContent.trim().slice(0,20)||'空白段落'));block.setAttribute('aria-multiline','true');}else block.removeAttribute('contenteditable');
  }
+ if(typeof annotateComplexBlocks==='function')annotateComplexBlocks(pane);
 }
 function closeBlockUi(){
  blockTarget=null;
@@ -525,9 +707,11 @@ function closeBlockUi(){
  for(const el of document.querySelectorAll('.simple-block-active'))el.classList.remove('simple-block-active');
  for(const el of document.querySelectorAll('.cell-active'))el.classList.remove('cell-active');
  $('blockBar').classList.add('hidden');$('blockSheet').classList.add('hidden');$('blockScrim').classList.add('hidden');
+ if(typeof resetComplexSheet==='function')resetComplexSheet();
 }
 function positionBlockSheet(){
  const sheet=$('blockSheet');if(sheet.classList.contains('hidden'))return;
+ if(sheet.classList.contains('as-popup')&&typeof positionBlockPopup==='function'){positionBlockPopup();return;}
  const win=$('window').getBoundingClientRect(),scrim=$('blockScrim');
  const left=Math.max(0,win.left),width=Math.min(win.width,window.innerWidth-left),top=Math.max(0,win.top);
  scrim.style.left=left+'px';scrim.style.top=top+'px';scrim.style.width=width+'px';
@@ -609,7 +793,7 @@ function deleteTableRow(){
 }
 function applyBlockOp(op){
  if(!blockTarget)return;
- if(op==='more'){syncBlockSheetLabels();$('blockScrim').classList.remove('hidden');$('blockSheet').classList.remove('hidden');positionBlockSheet();positionBlockBar();$('blockSheetClose').focus();return;}
+ if(op==='more'){syncBlockSheetLabels();if(typeof setSheetMode==='function')setSheetMode(blockTarget.block);$('blockScrim').classList.remove('hidden');$('blockSheet').classList.remove('hidden');positionBlockSheet();positionBlockBar();$('blockSheetClose').focus();return;}
  if(op==='insert-col')insertTableColumn(blockSides.col);
  else if(op==='insert-row')insertTableRow(blockSides.row);
  else if(op==='del-col')deleteTableColumn();
@@ -621,7 +805,7 @@ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&blockTarget
 for(const selector of ['#blockBar [data-block-op]','#blockSheet [data-block-op]'])document.querySelectorAll(selector).forEach(b=>b.onclick=()=>applyBlockOp(b.dataset.blockOp));
 for(const button of document.querySelectorAll('#blockSheet [data-block-side]'))button.onclick=()=>{const side=button.dataset.blockSide;if(side==='left'||side==='right'){blockSides.col=side;setBlockSide('col',side);}else{blockSides.row=side;setBlockSide('row',side);}positionBlockBar();};
 $('blockSheetClose').onclick=()=>closeBlockUi();
-$('blockSourceEdit').onclick=()=>{closeBlockUi();toast('原型示意：以源码编辑此块尚未实现');};
+$('blockSourceEdit').onclick=()=>{const table=blockTarget&&blockTarget.block;if(table&&typeof openComplexFor==='function'){openComplexFor(table,'table-source');return;}closeBlockUi();};
 for(const id of ['simpleAa','simpleAaRight'])$(id).addEventListener('toggle',()=>{if($(id).open)closeBlockUi();});
 window.addEventListener('resize',()=>{positionBlockBar();positionBlockSheet();});
 window.addEventListener('scroll',()=>positionBlockBar(),true);
@@ -740,7 +924,19 @@ scheduleLineNumbers();
 
 function excerpt(){if(!current||!reference||current===reference)return;const quote=selection.trim();if(!quote){toast('请先选中右栏中的文字',false);return;}rememberEditorPosition();deletedUndo=null;const n=note(current),ref=note(reference),before=n.text,position=editorPositions[current];const at=position?Math.min(position.end,before.length):before.length;const source=ref.folder+'/'+ref.title;const text='\n\n'+quote.split('\n').map(line=>'> '+line).join('\n')+'\n\n来源：[['+source+'|'+ref.title+']]\n\n';n.text=before.slice(0,at)+text+before.slice(at);undoState={id:n.id,before,after:n.text,position:position?{...position}:null};editorPositions[current]={start:at+text.length,end:at+text.length};render();activatePane('left',true);if(editing){$('editor').focus();scrollEditorTo(at);}toast('已插入摘录，可点击来源回看原文',true);}
 $('reference').addEventListener('mouseup',captureSelection);$('reference').addEventListener('touchend',captureSelection);document.addEventListener('selectionchange',()=>{const s=window.getSelection();if(s&&$('reference').contains(s.anchorNode)&&$('reference').contains(s.focusNode))captureSelection();});function captureSelection(){const s=window.getSelection();selection=s&&$('reference').contains(s.anchorNode)&&$('reference').contains(s.focusNode)?s.toString():'';$('excerpt').disabled=!selection.trim();$('excerptFoot').classList.toggle('hidden',!selection.trim()||current===reference);}
-$('editTab').onclick=()=>{activatePane('left');setEditing(true);};$('previewTab').onclick=()=>{activatePane('left');setEditing(false);};$('double').onclick=()=>setViewport('double');$('editor').oninput=()=>{if(!current)return;rememberEditorPosition();note(current).text=$('editor').value;$('article').innerHTML=renderMarkdown(note(current).text,true);$('count').textContent=note(current).text.replace(/\s/g,'').length+' 字 · 本页已更新';syncOtherPane('left');renderChapters();};$('excerpt').onclick=excerpt;$('undo').onclick=()=>{if(deletedUndo){const id=deletedUndo;deletedUndo=null;restoreFile(id);return;}if(!undoState)return;const n=note(undoState.id);if(n.text!==undoState.after){toast('摘录后已有新编辑，已保留内容',false);return;}n.text=undoState.before;if(undoState.position)editorPositions[n.id]=undoState.position;else delete editorPositions[n.id];undoState=null;render();toast('已撤销摘录',false);};$('focus').onclick=toggleFocus;$('wide').onclick=()=>setPhone(false);$('phone').onclick=()=>setPhone(true);$('theme').onclick=()=>{const dark=document.body.dataset.theme!=='dark';document.body.dataset.theme=dark?'dark':'light';$('theme').setAttribute('aria-label',dark?'切换浅色模式':'切换深色模式');};$('menu').onclick=()=>{if(focused){setFocused(false);if(viewport==='double'&&activePane==='right')activatePane('left');$('window').classList.remove('nav-hidden');if(phone)$('window').classList.add('nav-open');}else $('window').classList.toggle(phone?'nav-open':'nav-hidden');applySplits();};$('closeNav').onclick=()=>{$('window').classList.remove('nav-open');applySplits();};$('showRef').onclick=toggleReference;$('switchPane').onclick=()=>{$('mobileMore').open=false;if(!phone||!current||!reference||current===reference)return;activatePane(activePane==='left'?'right':'left',true);};document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('importVaultDialog').open){e.preventDefault();closeImportVault();return;}if($('vaultActionDialog').open){e.preventDefault();closeVaultAction();return;}if(vaultManagerOpen){e.preventDefault();closeVaultManager();return;}for(const id of ['leftMore','rightMore','mobileMore'])if($(id).open){$(id).open=false;$(id==='mobileMore'?'mobileMoreTrigger':id==='leftMore'?'leftMoreTrigger':'rightMoreTrigger').focus();return;}if(settingsOpen){if(historyOpen){closeHistory();return;}if(settingsSinglePane()&&$('settingsPage').classList.contains('detail-open'))backSettings();else closeSettings();return;}if($('formatDialog').open)return;if($('shareDialog').open||$('fileActionDialog').open||$('trashDialog').open)return;closeFileSwipes(null,true);if($('vaultPicker').open){$('vaultPicker').open=false;$('vaultTrigger').focus();return;}if(focused)setFocused(false);else {$('window').classList.remove('nav-open','ref-open');applySplits();}}});document.addEventListener('click',e=>{if(!$('vaultPicker').contains(e.target))$('vaultPicker').open=false;});for(const [kind,id]of [['nav','navSplitter'],['content','contentSplitter']]){const handle=$(id);handle.addEventListener('pointerdown',e=>{if(e.button!==0||!splitActive(kind))return;e.preventDefault();const m=splitMetrics();splitDrag={kind,handle,pointer:e.pointerId,start:e.clientX,pixels:clampWidth(widths[kind]*m.w,splitRange(kind,m))};handle.setPointerCapture(e.pointerId);handle.classList.add('dragging');$('window').classList.add('splitting');});handle.addEventListener('pointermove',e=>{if(splitDrag&&splitDrag.handle===handle&&e.pointerId===splitDrag.pointer)resizeSplit(kind,splitDrag.pixels+e.clientX-splitDrag.start);});for(const type of ['pointerup','pointercancel','lostpointercapture'])handle.addEventListener(type,endSplit);handle.addEventListener('dblclick',()=>{if(splitActive(kind))resetSplits();});handle.addEventListener('keydown',e=>{if(!splitActive(kind))return;if(e.key==='Enter'){e.preventDefault();resetSplits();}else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();const m=splitMetrics(),step=parseFloat(getComputedStyle(handle).getPropertyValue('--s4'));resizeSplit(kind,clampWidth(widths[kind]*m.w,splitRange(kind,m))+(e.key==='ArrowRight'?step:-step));saveWidths();}});}
+$('editTab').onclick=()=>{activatePane('left');setEditing(true);};$('previewTab').onclick=()=>{activatePane('left');setEditing(false);};$('double').onclick=()=>setViewport('double');$('editor').oninput=()=>{if(!current)return;rememberEditorPosition();note(current).text=$('editor').value;$('article').innerHTML=renderMarkdown(note(current).text,true);$('count').textContent=note(current).text.replace(/\s/g,'').length+' 字 · 本页已更新';syncOtherPane('left');renderChapters();};$('excerpt').onclick=excerpt;$('undo').onclick=()=>{if(deletedUndo){const id=deletedUndo;deletedUndo=null;restoreFile(id);return;}if(!undoState)return;const n=note(undoState.id);if(n.text!==undoState.after){toast('摘录后已有新编辑，已保留内容',false);return;}n.text=undoState.before;if(undoState.position)editorPositions[n.id]=undoState.position;else delete editorPositions[n.id];undoState=null;render();toast('已撤销摘录',false);};$('focus').onclick=toggleFocus;$('wide').onclick=()=>setPhone(false);$('phone').onclick=()=>setPhone(true);$('theme').onclick=()=>{const dark=document.body.dataset.theme!=='dark';document.body.dataset.theme=dark?'dark':'light';$('theme').setAttribute('aria-label',dark?'切换浅色模式':'切换深色模式');};$('menu').onclick=()=>{if(focused){setFocused(false);if(viewport==='double'&&activePane==='right')activatePane('left');$('window').classList.remove('nav-hidden');if(phone)$('window').classList.add('nav-open');}else $('window').classList.toggle(phone?'nav-open':'nav-hidden');applySplits();};$('closeNav').onclick=()=>{$('window').classList.remove('nav-open');applySplits();};$('showRef').onclick=toggleReference;$('switchPane').onclick=()=>{$('mobileMore').open=false;if(!phone||!current||!reference||current===reference)return;activatePane(activePane==='left'?'right':'left',true);};document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('importVaultDialog').open){e.preventDefault();closeImportVault();return;}if($('vaultActionDialog').open){e.preventDefault();closeVaultAction();return;}if(vaultManagerOpen){e.preventDefault();closeVaultManager();return;}for(const id of ['leftMore','rightMore','mobileMore'])if($(id).open){$(id).open=false;$(id==='mobileMore'?'mobileMoreTrigger':id==='leftMore'?'leftMoreTrigger':'rightMoreTrigger').focus();return;}if(settingsOpen){if(historyOpen){closeHistory();return;}if(settingsSinglePane()&&$('settingsPage').classList.contains('detail-open'))backSettings();else closeSettings();return;}if($('formatDialog').open)return;if($('shareDialog').open||$('fileActionDialog').open||$('trashDialog').open)return;closeFileSwipes(null,true);if($('vaultPicker').open){$('vaultPicker').open=false;$('vaultTrigger').focus();return;}if(focused)setFocused(false);else {$('window').classList.remove('nav-open','ref-open');applySplits();}}});document.addEventListener('click',e=>{if(!$('vaultPicker').contains(e.target))$('vaultPicker').open=false;});for(const [kind,id]of [['nav','navSplitter'],['content','contentSplitter']]){const handle=$(id);handle.addEventListener('pointerdown',e=>{if(e.button!==0||!splitActive(kind))return;e.preventDefault();const m=splitMetrics();splitDrag={kind,handle,pointer:e.pointerId,start:e.clientX,initial:widths[kind],pixels:clampWidth(widths[kind]*m.w,splitRange(kind,m))};handle._down={x:e.clientX,t:performance.now()};handle.setPointerCapture(e.pointerId);handle.classList.add('dragging');$('window').classList.add('splitting');});handle.addEventListener('pointermove',e=>{if(splitDrag&&splitDrag.handle===handle&&e.pointerId===splitDrag.pointer)dragSplit(kind,splitDrag.pixels+e.clientX-splitDrag.start,e);});for(const type of ['pointerup','pointercancel','lostpointercapture'])handle.addEventListener(type,endSplit);handle.addEventListener('dblclick',()=>{if(splitActive(kind))resetSplits();});handle.addEventListener('keydown',e=>{if(!splitActive(kind))return;
+  if(e.key==='Enter'){e.preventDefault();resetSplits();showSplitTip(kind,'已恢复默认');return;}
+  const m=splitMetrics(),range=splitRange(kind,m),current=clampWidth(widths[kind]*m.w,range),step=parseFloat(getComputedStyle(handle).getPropertyValue('--s4'))*(e.shiftKey?4:1);
+  let target=null;
+  if(e.key==='ArrowRight')target=current+step;else if(e.key==='ArrowLeft')target=current-step;else if(e.key==='Home')target=range.min;else if(e.key==='End')target=range.max;
+  if(target===null)return;
+  e.preventDefault();dragSplit(kind,target,null,true);saveWidths();showSplitTip(kind);
+ });
+ handle.addEventListener('pointerup',e=>{
+  if(e.pointerType!=='touch'||!handle._down)return;
+  const now=performance.now(),still=Math.abs(e.clientX-handle._down.x)<4&&now-handle._down.t<300;
+  if(still){if(handle._lastTap&&now-handle._lastTap<320){handle._lastTap=0;if(splitActive(kind)){resetSplits();showSplitTip(kind,'已恢复默认');}}else handle._lastTap=now;}
+ });}
 let settingsOpen=false,settingsCategory='general';
 function settingsSinglePane(){return phone||$('window').classList.contains('compact-height');}
 function chooseSettings(category,focus=true){closeHistory();settingsCategory=category;for(const key of ['general','data','feedback','about']){$('settingsPanel-'+key).classList.toggle('hidden',key!==category);$('settingsNav-'+key).setAttribute('aria-current',String(key===category));}$('settingsPage').classList.add('detail-open');if(focus)$('settingsHeading-'+category).focus();}
@@ -927,6 +1123,328 @@ for(const root of [$('article'),$('reference')]){
  root.addEventListener('paste',event=>{if(experience!=='simple'||!event.target.closest('[contenteditable=true]'))return;event.preventDefault();const selection=window.getSelection();if(!selection.rangeCount)return;const range=selection.getRangeAt(0);range.deleteContents();const text=document.createTextNode(event.clipboardData.getData('text/plain'));range.insertNode(text);range.setStartAfter(text);range.collapse(true);selection.removeAllRanges();selection.addRange(range);commitSimpleBlock(event.target.closest('[contenteditable=true]'));});
  root.addEventListener('keydown',event=>{if(experience!=='simple')return;if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();simpleTravel(event.shiftKey);}});
 }
+/* ======================================================================
+   2026-11-03 简单模式复杂块：统一入口 + 块属性面板 + 块级源码抽屉
+   设计：docs/prototype/v2/简单模式复杂块设计稿.md（对齐 engineering/简单模式复杂块编辑设计.md 的 C + D 方向）
+   原则：所有写入只替换目标块 / 目标行内片段的源码区间；写入前校验区间内容未变；每次写入一个撤销步。
+   ====================================================================== */
+const CB_TYPE_NAME={code:'代码块',inlinecode:'行内代码',link:'链接',wiki:'双链',image:'图片',math:'公式',mathInline:'行内公式',callout:'提示块',props:'属性',para:'这一段',table:'表格'};
+const CB_LANGS=[['','纯文本'],['javascript','JavaScript'],['typescript','TypeScript'],['python','Python'],['java','Java'],['kotlin','Kotlin'],['swift','Swift'],['go','Go'],['rust','Rust'],['c','C'],['cpp','C++'],['json','JSON'],['yaml','YAML'],['bash','Shell'],['sql','SQL'],['html','HTML'],['css','CSS'],['markdown','Markdown'],['mermaid','Mermaid 图表']];
+const CB_CALLOUTS=[['note','笔记'],['abstract','摘要'],['info','信息'],['todo','待办'],['tip','提示'],['success','完成'],['question','问题'],['warning','注意'],['failure','失败'],['danger','危险'],['bug','缺陷'],['example','示例'],['quote','引用']];
+var cbTarget=null,cbReturnFocus=null;
+
+/* ---------- 源码定位 ---------- */
+function cbPaneOf(el){const root=el&&el.closest?el.closest('#article,#reference'):null;return root?(root.id==='reference'?'right':'left'):null;}
+function cbBlockRange(block){return {from:Number(block.dataset.sourceStart),to:Number(block.dataset.sourceEnd)};}
+function cbInlineRange(el){
+ const block=el.closest('[data-source-start]');if(!block)return null;
+ const pane=cbPaneOf(el),id=simpleNoteId(pane),text=note(id).text,{from,to}=cbBlockRange(block),raw=text.slice(from,to),md=el.dataset.md,occ=Number(el.dataset.occ||0);
+ let at=-1;for(let i=0;i<=occ;i++){at=raw.indexOf(md,at+1);if(at<0)return null;}
+ return {from:from+at,to:from+at+md.length,block,blockFrom:from,blockTo:to};
+}
+function cbTargetFor(el,kindHint){
+ const pane=cbPaneOf(el);if(!pane)return null;const id=simpleNoteId(pane),n=note(id);
+ let kind=kindHint,range,anchor=el;
+ if(!kind){
+  if(el.matches('pre'))kind='code';
+  else if(el.matches('.md-math'))kind='math';
+  else if(el.matches('.md-callout'))kind='callout';
+  else if(el.matches('.md-props-entry'))kind='props';
+  else if(el.matches('table'))kind='table';
+  else if(el.dataset.inline){kind={code:'inlinecode',link:'link',wiki:'wiki',image:'image',math:'mathInline'}[el.dataset.inline];}
+  else kind='para';
+ }
+ if(el.dataset.inline&&kind!=='para'){range=cbInlineRange(el);if(!range)return null;}
+ else range=cbBlockRange(el);
+ return {kind,pane,id,el,anchor,from:range.from,to:range.to,raw:n.text.slice(range.from,range.to),blockFrom:range.blockFrom,blockTo:range.blockTo};
+}
+/* 写入：校验 → 记录撤销 → 改写区间 → 局部重渲染 → 尝试原位重新打开面板 */
+function cbWrite(t,newRaw,message,reopen=true){
+ const n=note(t.id);
+ if(n.text.slice(t.from,t.to)!==t.raw){toast('这一块已经变化，请关闭后重新打开再改',false);return false;}
+ if(newRaw===t.raw)return true;
+ simpleRecord(t.id,n.text);n.text=n.text.slice(0,t.from)+newRaw+n.text.slice(t.to);simpleChanged(t.id,t.pane);
+ const scroller=simpleRoot(t.pane).closest('.scroll'),top=scroller?scroller.scrollTop:0,root=simpleRoot(t.pane);
+ root.innerHTML=renderMarkdown(n.text,true,t.pane==='right'?'right-section-':'section-',n);prepareSimpleBlocks(t.pane);bindBlockEntrances();
+ if(scroller)scroller.scrollTop=top;
+ if(message)toast(message+'（可撤销）',false);
+ if(!reopen){closeBlockUi();return true;}
+ let next=null;
+ if(t.blockFrom!==undefined&&t.kind!=='para'){const block=root.querySelector('[data-source-start="'+t.blockFrom+'"]');if(block)next=[...block.querySelectorAll('[data-inline]')].find(x=>x.dataset.md===newRaw)||null;}
+ else next=root.querySelector('[data-source-start="'+t.from+'"]');
+ if(next&&(t.kind==='code'||next.matches('pre')))next=root.querySelector('pre[data-source-start="'+t.from+'"]');
+ if(next)openComplexFor(next,t.kind,true);else closeBlockUi();
+ return true;
+}
+
+/* ---------- 面板 HTML 片段（沿用设置页分组列表样式） ---------- */
+const CBH={
+ group:inner=>'<div class="hs-group">'+inner+'</div>',
+ field:(label,control,hint)=>(control.includes('cb-seg')?'<div class="cb-field" role="group">':'<label class="cb-field">')+'<span class="cb-label">'+label+'</span>'+control+(hint?'<small class="cb-hint">'+hint+'</small>':'')+(control.includes('cb-seg')?'</div>':'</label>'),
+ input:(name,value,ph,type='text')=>'<input class="cb-input" data-cb="'+name+'" type="'+type+'" value="'+esc(String(value))+'" placeholder="'+esc(ph||'')+'" autocomplete="off">',
+ area:(name,value,rows=4)=>'<textarea class="cb-input cb-area" data-cb="'+name+'" rows="'+rows+'" spellcheck="false">'+esc(String(value))+'</textarea>',
+ select:(name,opts,value)=>'<select class="cb-input cb-select" data-cb="'+name+'">'+opts.map(([v,l])=>'<option value="'+esc(v)+'"'+(v===value?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>',
+ row:(title,control,sub)=>'<div class="hs-row"><span class="hs-main"><span class="hs-title">'+title+'</span>'+(sub?'<span class="hs-sub">'+sub+'</span>':'')+'</span>'+control+'</div>',
+ seg:(name,opts,value,label)=>'<span class="seg edit-switch cb-seg" role="group" aria-label="'+label+'">'+opts.map(([v,l])=>'<button type="button" data-cb-seg="'+name+'" data-value="'+esc(v)+'" aria-pressed="'+(v===value)+'">'+esc(l)+'</button>').join('')+'</span>',
+ toggle:(name,on,label)=>'<span class="settings-switch"><input type="checkbox" role="switch" data-cb="'+name+'" aria-label="'+label+'"'+(on?' checked':'')+'><span class="settings-switch-track" aria-hidden="true"></span></span>',
+ act:(name,label,tone,sub,icon)=>'<button type="button" class="hs-row hs-button cb-act'+(tone?' '+tone:'')+'" data-cb-act="'+name+'">'+(icon||'')+'<span class="hs-main"><span class="hs-title">'+label+'</span>'+(sub?'<span class="hs-sub">'+sub+'</span>':'')+'</span></button>',
+ info:(text,tone)=>'<p class="cb-info'+(tone?' '+tone:'')+'">'+text+'</p>',
+ source:sub=>'<div class="hs-group">'+'<button type="button" class="hs-row hs-button cb-act accent" data-cb-act="source"><svg class="cb-row-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8l-4 4 4 4M15 8l4 4-4 4"/></svg><span class="hs-main"><span class="hs-title">以源码编辑此块</span><span class="hs-sub">'+(sub||'只显示这一块的 Markdown，保存后只替换这一块')+'</span></span></button>'+'</div>'
+};
+
+/* ---------- 各类块的模型与面板 ---------- */
+function cbCodeModel(raw){
+ const lines=raw.split(/\r?\n/),eol=raw.includes('\r\n')?'\r\n':'\n',open=lines[0].match(/^( {0,3})(`{3,}|~{3,})(.*)$/);if(!open)return null;
+ const fenceCh=open[2][0],fenceLen=open[2].length,last=lines.length>1?lines[lines.length-1]:'',closed=lines.length>1&&new RegExp('^ {0,3}\\'+fenceCh+'{'+fenceLen+',}\\s*$').test(last);
+ const info=open[3].trim(),lang=info.split(/\s+/)[0]||'';
+ return {lines,eol,indent:open[1],fence:open[2],lang,info,closed,content:closed?lines.slice(1,-1).join(eol):lines.slice(1).join(eol),closing:closed?last:''};
+}
+function cbCodeRaw(m,content,lang){return m.indent+m.fence+(lang===undefined?m.info:lang)+m.eol+(content?content+m.eol:'')+(m.closing||m.fence);}
+function cbMathParts(raw,inline){
+ if(inline)return {body:raw.slice(1,-1),wrap:b=>'$'+b+'$'};
+ const one=raw.match(/^(\s*)\$\$(.+)\$\$\s*$/);if(one)return {body:one[2].trim(),wrap:b=>one[1]+'$$'+b+'$$'};
+ const eol=raw.includes('\r\n')?'\r\n':'\n',lines=raw.split(/\r?\n/);return {body:lines.slice(1,-1).join(eol),wrap:b=>'$$'+eol+b+eol+'$$'};
+}
+function cbCalloutModel(raw){const eol=raw.includes('\r\n')?'\r\n':'\n',lines=raw.split(/\r?\n/),h=lines[0].match(/^>( ?)\[!([A-Za-z][\w-]*)\]([+-])?[ \t]*(.*)$/);if(!h)return null;return {eol,lines,space:h[1],type:h[2],fold:h[3]||'',title:h[4]};}
+function cbCalloutRaw(m,patch){const v={...m,...patch};return ['>'+v.space+'[!'+v.type+']'+v.fold+(v.title?' '+v.title:'')].concat(v.lines.slice(1)).join(v.eol);}
+/* frontmatter：只改动过的键重写，未触及的键（含嵌套 / 未知类型）逐字保留 */
+function cbPropsModel(raw){
+ const eol=raw.includes('\r\n')?'\r\n':'\n',lines=raw.replace(/^﻿/,'').split(/\r?\n/);
+ const bom=raw.startsWith('﻿')?'﻿':'',closeIdx=lines.findIndex((l,i)=>i>0&&/^(---|\.\.\.)\s*$/.test(l));if(!/^---\s*$/.test(lines[0])||closeIdx<0)return null;
+ const entries=[];let cur=null;
+ for(const line of lines.slice(1,closeIdx)){
+  const key=line.match(/^([^\s#:'"-][^:]*?):(?:[ \t]+(.*)|[ \t]*)$/);
+  if(key){cur={key:key[1].trim(),value:(key[2]||'').trim(),lines:[line],touched:false};entries.push(cur);}
+  else if(cur)cur.lines.push(line);else entries.push({key:null,lines:[line]});
+ }
+ for(const e of entries){if(!e.key)continue;const rest=e.lines.slice(1).filter(l=>l.trim());
+  if(!e.value&&rest.length&&rest.every(l=>/^\s+-\s+\S/.test(l))){e.kind='list';e.items=rest.map(l=>cbYamlScalar(l.replace(/^\s+-\s+/,'')));}
+  else if(/^\[.*\]$/.test(e.value)&&!rest.length){e.kind='list';e.items=e.value.slice(1,-1).split(',').map(x=>cbYamlScalar(x.trim())).filter(Boolean);}
+  else if(!rest.length&&!/^[|>{&*!]/.test(e.value)){const v=cbYamlScalar(e.value);e.kind=/^(true|false)$/i.test(v)?'bool':/^\d{4}-\d{2}-\d{2}$/.test(v)?'date':'text';e.text=v;}
+  else e.kind='complex';}
+ return {eol,bom,lines,closeIdx,entries};
+}
+function cbYamlScalar(v){v=String(v).replace(/[ \t]+#.*$/,'').trim();if(/^".*"$/.test(v)){try{return JSON.parse(v);}catch(_){return v.slice(1,-1);}}if(/^'.*'$/.test(v))return v.slice(1,-1).replace(/''/g,"'");return v;}
+function cbYamlQuote(v){v=String(v);return (v===''||/^\s|\s$|: |\s#|^[-?:,\[\]{}#&*!|>'"%@`]/.test(v))?JSON.stringify(v):v;}
+function cbPropsRaw(m){
+ const out=[m.lines[0]];
+ for(const e of m.entries){
+  if(e.removed)continue;
+  if(!e.key||!e.touched){out.push(...e.lines);continue;}
+  if(e.kind==='list'){out.push(e.key+':');for(const it of e.items)out.push('  - '+cbYamlQuote(it));}
+  else if(e.kind==='bool')out.push(e.key+': '+(e.text==='true'?'true':'false'));
+  else out.push(e.key+': '+(e.text===''?'':cbYamlQuote(e.text)));
+ }
+ out.push(m.lines[m.closeIdx]);
+ const tail=m.lines.slice(m.closeIdx+1).join(m.eol);
+ return m.bom+out.join(m.eol)+m.eol+tail;
+}
+function cbWikiParts(md){const inner=md.slice(2,-2),bar=inner.indexOf('|');return {target:bar<0?inner:inner.slice(0,bar),alias:bar<0?'':inner.slice(bar+1)};}
+function cbLinkParts(md){const m=md.match(/^\[([^\]]*)\]\(([^)]*)\)$/);return m?{label:m[1],url:m[2]}:null;}
+function cbImageParts(md){const m=md.match(/^!\[([^\]]*)\]\(([^)]*)\)$/);if(!m)return null;const [alt,w]=m[1].split('|');return {alt:alt||'',width:/^\d{2,4}$/.test(w||'')?w:'',path:m[2]};}
+function cbNotePath(x){return (x.folder?x.folder+'/':'')+x.title;}
+
+function cbSpec(t){
+ const n=note(t.id);
+ switch(t.kind){
+ case 'code':{
+  const m=cbCodeModel(t.raw),lineCount=m?m.content.split(/\r?\n/).filter((_,i,a)=>!(i===a.length-1&&_==='')).length:0;
+  if(!m||!m.closed)return {title:'代码块',sub:'围栏未闭合',html:CBH.info('这个代码块缺少结束围栏，直接编辑可能吞掉后面的正文，所以暂时只能改源码。','warn')+CBH.source()};
+  const known=CB_LANGS.some(([v])=>v===m.lang),opts=known?CB_LANGS:[[m.lang,'保留：'+m.lang]].concat(CB_LANGS);
+  const special=m.lang==='mermaid'?CBH.info('Mermaid 图表按代码内容编辑，不校验图表语法；预览由本地图表库渲染。'):m.lang==='dataview'?CBH.info('插件查询只展示源码，本应用不执行。'):'';
+  return {title:'代码块',sub:(m.lang||'纯文本')+' · '+lineCount+' 行',
+   html:CBH.group(CBH.field('语言',CBH.select('lang',opts,m.lang),'只改围栏上的语言标记，不动代码内容'))+special+CBH.group(CBH.act('copy','复制代码','',null,'<svg class="cb-row-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8zM5 16V5h11"/></svg>'))+CBH.info('直接点代码即可修改内容；在代码里输入 * 或 # 不会变成格式。')+CBH.source(),
+   onField:(k,v)=>{if(k==='lang')cbWrite(t,cbCodeRaw(m,m.content,v),'已改为 '+(v||'纯文本'));},
+   onAct:a=>{if(a==='copy'){(navigator.clipboard?navigator.clipboard.writeText(m.content):Promise.reject()).then(()=>toast('已复制代码',false),()=>toast('原型环境无法访问剪贴板',false));}}};}
+ case 'inlinecode':{const inner=t.raw.replace(/^`+|`+$/g,'');
+  return {title:'行内代码',sub:inner.length>24?inner.slice(0,24)+'…':inner,html:CBH.group(CBH.act('plain','转为纯文本','','去掉反引号，保留文字'))+CBH.source(),onAct:a=>{if(a==='plain')cbWrite(t,inner,'已转为纯文本',false);}};}
+ case 'link':{const p=cbLinkParts(t.raw);if(!p)return {title:'链接',html:CBH.info('这个链接的写法暂不支持结构化编辑。','warn')+CBH.source()};
+  return {title:'链接',sub:p.url.replace(/^https?:\/\//,'').slice(0,40),
+   html:CBH.group(CBH.act('open','打开链接','accent',p.url,'<svg class="cb-row-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>'))+CBH.group(CBH.field('显示文字',CBH.input('label',p.label,'链接上显示的文字'))+CBH.field('地址',CBH.input('url',p.url,'https://…','url'),'不自动补全协议'))+CBH.group(CBH.act('unlink','取消链接','','去掉链接，保留显示文字'))+CBH.source(),
+   onField:(k,v)=>{v=v.trim();if(k==='url'&&!v){toast('地址不能为空',false);return;}const label=k==='label'?(v||p.url):p.label,url=k==='url'?v:p.url;cbWrite(t,'['+label+']('+url+')','已更新链接');},
+   onAct:a=>{if(a==='open')window.open(p.url,'_blank','noopener');else if(a==='unlink')cbWrite(t,p.label,'已取消链接',false);}};}
+ case 'wiki':{const w=cbWikiParts(t.raw),list=notes.filter(x=>!x.deleted&&x.vault===activeVault),paths=list.map(cbNotePath),resolved=resolveWikiTarget(w.target,n),targetOpt=paths.includes(w.target.replace(/\.md$/,''))?w.target.replace(/\.md$/,''):w.target;
+  const opts=(paths.includes(targetOpt)?[]:[[targetOpt,targetOpt+(resolved.status==='missing'?'（未创建）':'（无法解析）')]]).concat(paths.map(p=>[p,p]));
+  const state=resolved.status==='resolved'?'':resolved.status==='missing'?CBH.info('目标笔记还没有创建；仍可修改显示文字或重新选择目标。','warn'):String(w.target).includes('#')?CBH.info('标题锚点暂不支持跳转；可改显示文字或重新选择目标笔记。','warn'):CBH.info('目标不唯一或路径无效，请重新选择目标。','warn');
+  return {title:'双链',sub:w.target,
+   html:(resolved.status==='resolved'?CBH.group(CBH.act('jump','打开目标笔记','accent','在另一栏打开「'+esc(resolved.note.title)+'」','<svg class="cb-row-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg>')):'')+state+CBH.group(CBH.field('目标笔记',CBH.select('target',opts,targetOpt),'列表来自当前知识库')+CBH.field('显示文字',CBH.input('alias',w.alias,'留空则显示笔记名'),'只影响显示，不改变链接目标'))+CBH.group(CBH.act('remove','移除双链','','保留显示文字'))+CBH.source(),
+   onField:(k,v)=>{const target=k==='target'?v:w.target,alias=k==='alias'?v.trim():w.alias;cbWrite(t,'[['+target+(alias?'|'+alias:'')+']]','已更新双链');},
+   onAct:a=>{if(a==='jump'&&resolved.note){closeBlockUi();openSource(resolved.note.id);}else if(a==='remove')cbWrite(t,w.alias||w.target.split('/').pop().replace(/#.*$/,''),'已移除双链',false);}};}
+ case 'image':{const p=cbImageParts(t.raw);if(!p)return {title:'图片',html:CBH.info('这个图片的写法暂不支持结构化编辑。','warn')+CBH.source()};
+  const remote=/^https?:/i.test(p.path),widths=[['','原始'],['240','小'],['360','中'],['480','大']];
+  return {title:'图片',sub:p.path.split('/').pop(),
+   html:CBH.group(CBH.field('替代文字',CBH.input('alt',p.alt,'描述图片内容，读屏会读出'),'也会作为图片无法显示时的说明'))+CBH.group(CBH.field('显示宽度',CBH.seg('width',widths,widths.some(([v])=>v===p.width)?p.width:'','显示宽度'),p.width&&!widths.some(([v])=>v===p.width)?'当前 '+p.width+' px':'小 240 · 中 360 · 大 480 px，按 Obsidian 写法保存'))+CBH.group(CBH.act('view','查看大图')+CBH.act('replace','替换图片','',remote?'外链图片只改地址，不下载':'复用「插入图片」：选图 → 存入附件 → 改写地址')+CBH.act('delete','删除图片','danger','只删除引用，附件文件按既有规则保留'))+CBH.source(),
+   onField:(k,v)=>{if(k==='alt')cbWrite(t,'!['+v.replace(/[\]|]/g,'')+(p.width?'|'+p.width:'')+']('+p.path+')','已更新替代文字');},
+   onSeg:(k,v)=>{if(k==='width')cbWrite(t,'!['+p.alt+(v?'|'+v:'')+']('+p.path+')',v?'宽度 '+v+' px':'已恢复原始宽度');},
+   onAct:a=>{if(a==='view'){const img=t.el;closeBlockUi();if(img.matches('img'))openImageViewer(img);}else if(a==='replace')toast('原型示意：原生复用插入图片链路，原型不选择文件',false);else if(a==='delete')cbWrite(t,'','已删除图片',false);}};}
+ case 'math':case 'mathInline':{const inline=t.kind==='mathInline',parts=cbMathParts(t.raw,inline);
+  return {title:inline?'行内公式':'公式',sub:'LaTeX',
+   html:CBH.group(CBH.field('公式（LaTeX）',CBH.area('tex',parts.body,inline?2:4),'保留原有定界符 '+(inline?'$…$':'$$…$$')))+'<div class="cb-math-preview" aria-live="polite"><span class="cb-label">预览</span><div class="cb-math-out">'+esc(parts.body)+'</div><small class="cb-hint">原生由本地公式库实时排版；原型只显示文本。</small></div>'+'<div class="cb-actions"><button type="button" class="cb-btn primary" data-cb-act="apply">应用</button></div>'+CBH.source(),
+   onLive:(k,v)=>{const out=$('blockSheetBody').querySelector('.cb-math-out');if(out)out.textContent=v;},
+   onAct:a=>{if(a==='apply'){const v=$('blockSheetBody').querySelector('[data-cb="tex"]').value;if(!v.trim()){toast('公式不能为空；要删除请用源码编辑',false);return;}if(inline&&/\$/.test(v)){toast('行内公式里不能包含 $',false);return;}cbWrite(t,parts.wrap(inline?v.trim():v),'已更新公式');}}};}
+ case 'callout':{const m=cbCalloutModel(t.raw);if(!m)return {title:'提示块',html:CBH.source()};
+  const type=m.type.toLowerCase(),known=CB_CALLOUTS.some(([v])=>v===type),opts=known?CB_CALLOUTS:[[m.type,'保留：'+m.type]].concat(CB_CALLOUTS);
+  return {title:'提示块',sub:(CB_CALLOUTS.find(([v])=>v===type)||[0,m.type])[1],
+   html:CBH.group(CBH.field('类型',CBH.select('type',opts,known?type:m.type),known?'':'未知类型会原样保留')+CBH.field('标题',CBH.input('title',m.title,'留空则显示类型名'))+CBH.field('折叠',CBH.seg('fold',[['','不折叠'],['+','默认展开'],['-','默认收起']],m.fold,'折叠方式'),'阅读时是否可以收起正文'))+CBH.info('提示块的正文直接在正文里点击修改。')+CBH.source(),
+   onField:(k,v)=>{if(k==='type')cbWrite(t,cbCalloutRaw(m,{type:v}),'已改为'+((CB_CALLOUTS.find(([x])=>x===v)||[0,v])[1]));else if(k==='title')cbWrite(t,cbCalloutRaw(m,{title:v.trim()}),'已更新标题');},
+   onSeg:(k,v)=>{if(k==='fold')cbWrite(t,cbCalloutRaw(m,{fold:v}),'已更新折叠方式');}};}
+ case 'props':{const m=cbPropsModel(t.raw);if(!m)return {title:'属性',html:CBH.info('文档头不是标准 YAML，暂时只能改源码。','warn')+CBH.source()};
+  const rows=m.entries.map((e,i)=>{if(!e.key)return '';const rm='<button type="button" class="cb-remove" data-cb-act="rm:'+i+'" aria-label="移除属性 '+esc(e.key)+'">移除</button>';
+   if(e.kind==='list')return CBH.field(esc(e.key)+rm,CBH.input('v:'+i,e.items.join('、'),'用顿号或逗号分隔'),e.key==='tags'?'标签':e.key==='aliases'?'别名':'列表');
+   if(e.kind==='bool')return CBH.row(esc(e.key),CBH.toggle('v:'+i,e.text==='true',e.key)+rm);
+   if(e.kind==='date')return CBH.field(esc(e.key)+rm,CBH.input('v:'+i,e.text,'','date'),'日期');
+   if(e.kind==='text')return CBH.field(esc(e.key)+rm,CBH.input('v:'+i,e.text,''),'文本');
+   return CBH.row(esc(e.key),'<span class="cb-keep">保留原值</span>','嵌套或多行结构，请用源码编辑');}).join('');
+  return {title:'属性',sub:m.entries.filter(e=>e.key).length+' 项',
+   html:CBH.group(rows)+CBH.group(CBH.field('添加属性','<span class="cb-add">'+CBH.input('newKey','','名称')+CBH.input('newVal','','值')+'<button type="button" class="cb-btn" data-cb-act="add">添加</button></span>','值写成「a、b」会保存为列表'))+CBH.info('只重写你改动过的属性；其他行（含嵌套结构和注释）逐字保留。')+CBH.source(),
+   onField:(k,v)=>{if(!k.startsWith('v:'))return;const e=m.entries[Number(k.slice(2))];e.touched=true;if(e.kind==='list')e.items=String(v).split(/[、,，]/).map(x=>x.trim()).filter(Boolean);else if(e.kind==='bool')e.text=v?'true':'false';else e.text=String(v).trim();cbWrite(t,cbPropsRaw(m),'已更新属性「'+e.key+'」');},
+   onAct:a=>{if(a.startsWith('rm:')){const e=m.entries[Number(a.slice(3))];e.removed=true;cbWrite(t,cbPropsRaw(m),'已移除属性「'+e.key+'」');}
+    else if(a==='add'){const body=$('blockSheetBody'),key=body.querySelector('[data-cb="newKey"]').value.trim(),val=body.querySelector('[data-cb="newVal"]').value.trim();
+     if(!/^[^\s#:'"-][^:]*$/.test(key)){toast('属性名不能为空，也不能包含冒号',false);return;}if(m.entries.some(e=>e.key===key&&!e.removed)){toast('已有同名属性',false);return;}
+     const list=/[、,，]/.test(val);m.entries.push({key,touched:true,kind:list?'list':'text',items:list?val.split(/[、,，]/).map(x=>x.trim()).filter(Boolean):[],text:val,lines:[]});cbWrite(t,cbPropsRaw(m),'已添加属性「'+key+'」');}}};}
+ case 'para':{const items=[...t.el.querySelectorAll('[data-inline]')];
+  const rows=items.map((x,i)=>CBH.act('item:'+i,CB_TYPE_NAME[{code:'inlinecode',link:'link',wiki:'wiki',image:'image',math:'mathInline'}[x.dataset.inline]]+' · '+esc((x.textContent||x.getAttribute('alt')||x.dataset.md).trim().slice(0,28)),'','')).join('');
+  return {title:'这一段',sub:items.length?items.length+' 处可编辑内容':'含暂不支持的格式',
+   html:CBH.info(items.length?'这一段里有链接、代码等内容，正文暂时不能直接打字修改。点下面的项目单独编辑，或改这一段的源码。':'这一段含高亮、注释、嵌入等暂不支持的格式。可以只改这一段的源码，不会影响其他内容。')+(rows?CBH.group(rows):'')+CBH.source('只显示这一段的 Markdown'),
+   onAct:a=>{if(a.startsWith('item:')){const el=items[Number(a.slice(5))];openComplexFor(el);}}};}
+ }
+ return {title:CB_TYPE_NAME[t.kind]||'当前块',html:CBH.source()};
+}
+
+/* ---------- 面板形态：单屏底部半模态；双屏 / 三屏跟手弹出（对齐 bindSheet preferType） ---------- */
+function setSheetMode(anchor){
+ const sheet=$('blockSheet'),popup=!phone;sheet.classList.toggle('as-popup',popup);$('blockScrim').classList.toggle('clear',popup);cbTarget=cbTarget||{};cbTarget.anchorEl=anchor;
+}
+function positionBlockPopup(){
+ const sheet=$('blockSheet'),scrim=$('blockScrim'),win=$('window').getBoundingClientRect(),anchor=cbTarget&&cbTarget.anchorEl;
+ scrim.style.left=win.left+'px';scrim.style.top=win.top+'px';scrim.style.width=win.width+'px';scrim.style.height=win.height+'px';
+ const pane=anchor&&anchor.isConnected?anchor.closest('.scroll'):null,paneRect=pane?pane.getBoundingClientRect():win;
+ const width=Math.min(sheet.classList.contains('cb-wide')?480:380,paneRect.width-16,win.width-16);sheet.style.width=width+'px';sheet.style.bottom='auto';
+ const r=anchor&&anchor.isConnected?anchor.getBoundingClientRect():{left:paneRect.left+16,top:win.top+80,bottom:win.top+80,width:0};
+ const gap=8,below=win.bottom-gap-(r.bottom+gap),above=(r.top-gap)-(win.top+gap),cap=Math.min(win.height*0.72,560);
+ sheet.style.maxHeight=Math.min(cap,Math.max(below,above,200))+'px';
+ const h=sheet.offsetHeight;let top;
+ if(h<=below||below>=above)top=r.bottom+gap;else top=r.top-gap-h;
+ top=Math.max(win.top+gap,Math.min(top,win.bottom-gap-h));
+ const left=Math.max(paneRect.left+8,Math.min(r.left,paneRect.right-width-8));
+ sheet.style.left=left+'px';sheet.style.top=top+'px';
+}
+
+/* ---------- 打开 / 关闭 ---------- */
+function resetComplexSheet(){
+ const sheet=$('blockSheet');sheet.classList.remove('as-popup','cb-wide');$('blockScrim').classList.remove('clear');sheet.style.top='';sheet.style.maxHeight='';
+ $('blockSheetTable').classList.remove('hidden');$('blockSheetBody').classList.add('hidden');$('blockSheetBody').innerHTML='';$('blockSheetSub').textContent='';
+ for(const el of document.querySelectorAll('.cb-active'))el.classList.remove('cb-active');
+ const back=cbReturnFocus;cbTarget=null;cbReturnFocus=null;if(back&&back.isConnected&&document.activeElement===document.body)back.focus({preventScroll:true});
+}
+function openComplexFor(el,kindHint,keepFocus){
+ if(experience!=='simple')return;
+ const source=kindHint==='table-source';const t=cbTargetFor(el,source?'table':(kindHint&&kindHint!=='code'?kindHint:undefined));if(!t){toast('无法定位这一块的源码，请用专业模式编辑',false);return;}
+ const returnTo=keepFocus&&cbReturnFocus?cbReturnFocus:el;
+ closeBlockUi();
+ blockTarget={block:el.closest('[data-source-start]')||el,cell:null};
+ cbTarget={...t,anchorEl:el};cbReturnFocus=returnTo;
+ (el.matches('[data-inline]')?el:(el.closest('.md-code')||el)).classList.add('cb-active');
+ if(source||t.kind==='table'){cbOpenSource(t);return;}
+ const spec=cbSpec(t);cbTarget.spec=spec;
+ cbShow(spec.title,spec.sub||'',spec.html,false);cbBind(spec);
+}
+function cbShow(title,sub,html,wide){
+ $('blockSheetTitle').textContent=title;$('blockSheetSub').textContent=sub;
+ $('blockSheet').setAttribute('aria-label','块设置：'+title);
+ $('blockSheetTable').classList.add('hidden');const body=$('blockSheetBody');body.innerHTML=html;body.classList.remove('hidden');
+ setSheetMode(cbTarget.anchorEl);$('blockSheet').classList.toggle('cb-wide',!!wide);
+ $('blockScrim').classList.remove('hidden');$('blockSheet').classList.remove('hidden');positionBlockSheet();
+ const first=body.querySelector('input:not([type=checkbox]),textarea,select,button');($('blockSheet').classList.contains('as-popup')&&first?first:$('blockSheetClose')).focus({preventScroll:true});
+}
+function cbBind(spec){
+ const body=$('blockSheetBody');
+ for(const input of body.querySelectorAll('[data-cb]')){
+  const name=input.dataset.cb;if(name==='newKey'||name==='newVal')continue;
+  if(input.type==='checkbox'){input.addEventListener('change',()=>spec.onField&&spec.onField(name,input.checked));continue;}
+  if(input.tagName==='SELECT'||input.type==='date'){input.addEventListener('change',()=>spec.onField&&spec.onField(name,input.value));continue;}
+  if(input.tagName==='TEXTAREA'){input.addEventListener('input',()=>spec.onLive&&spec.onLive(name,input.value));continue;}
+  const initial=input.value;
+  const commit=()=>{if(input.value!==initial&&spec.onField)spec.onField(name,input.value);};
+  input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();commit();}});
+  input.addEventListener('change',commit);
+ }
+ for(const b of body.querySelectorAll('[data-cb-seg]'))b.addEventListener('click',e=>{e.stopPropagation();spec.onSeg&&spec.onSeg(b.dataset.cbSeg,b.dataset.value);});
+ for(const b of body.querySelectorAll('[data-cb-act]'))b.addEventListener('click',e=>{e.stopPropagation();const a=b.dataset.cbAct;if(a==='source')cbOpenSource(cbTarget);else spec.onAct&&spec.onAct(a);});
+}
+/* 块级源码抽屉：只显示目标区间；保存前校验区间未变 */
+function cbOpenSource(t){
+ const name=CB_TYPE_NAME[t.kind]||'当前块';
+ cbShow('以源码编辑',name,CBH.info('只显示这一块的 Markdown。保存后只替换这一块，其他内容不变。')+'<textarea class="cb-source" spellcheck="false" aria-label="'+name+'的源码">'+esc(t.raw)+'</textarea><div class="cb-actions"><button type="button" class="cb-btn" data-src="cancel">取消</button><button type="button" class="cb-btn primary" data-src="save">保存</button></div>',true);
+ const area=$('blockSheetBody').querySelector('.cb-source');area.style.height=Math.min(320,Math.max(120,area.scrollHeight+4))+'px';area.focus({preventScroll:true});
+ $('blockSheetBody').querySelector('[data-src="cancel"]').onclick=ev=>{ev.stopPropagation();closeBlockUi();};
+ $('blockSheetBody').querySelector('[data-src="save"]').onclick=ev=>{ev.stopPropagation();const v=area.value;if(v===t.raw){closeBlockUi();return;}cbWrite({...t,kind:'para'},v,'已保存这一块的源码',false);};
+ area.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();$('blockSheetBody').querySelector('[data-src="save"]').click();}});
+}
+
+/* ---------- 代码块就地编辑（v1.19 19.1）：只改围栏之间的内容 ---------- */
+function commitCodeBlock(pre){
+ const pane=cbPaneOf(pre),id=simpleNoteId(pane),n=note(id),{from,to}=cbBlockRange(pre),raw=n.text.slice(from,to),m=cbCodeModel(raw);if(!m||!m.closed)return;
+ let content=pre.innerText.replace(/\n$/,'');if(m.eol==='\r\n')content=content.replace(/\r?\n/g,'\r\n');
+ if(content.split(/\r?\n/).some(l=>new RegExp('^ {0,3}\\'+m.fence[0]+'{'+m.fence.length+',}\\s*$').test(l))){toast('代码里不能出现与围栏相同的整行（'+m.fence+'），已撤回这次输入',false);const root=simpleRoot(pane);root.innerHTML=renderMarkdown(n.text,true,pane==='right'?'right-section-':'section-',n);prepareSimpleBlocks(pane);bindBlockEntrances();return;}
+ const next=cbCodeRaw(m,content);if(next===raw)return;
+ simpleRecord(id,n.text);n.text=n.text.slice(0,from)+next+n.text.slice(to);const delta=next.length-raw.length;pre.dataset.sourceEnd=to+delta;
+ for(const el of simpleRoot(pane).querySelectorAll('[data-source-start]')){if(el===pre)continue;const a=Number(el.dataset.sourceStart);if(a>=to){el.dataset.sourceStart=a+delta;el.dataset.sourceEnd=Number(el.dataset.sourceEnd)+delta;}}
+ simpleChanged(id,pane);
+ const chip=pre.closest('.md-code')&&pre.closest('.md-code').querySelector('.block-chip-sub');if(chip)chip.textContent=content.split(/\r?\n/).length+' 行';
+}
+
+/* ---------- 每次重渲染后的标注 ---------- */
+function annotateComplexBlocks(pane){
+ if(experience!=='simple')return;
+ const root=simpleRoot(pane),id=simpleNoteId(pane),text=note(id).text,editable=activePane===pane&&!!id;
+ for(const pre of root.querySelectorAll('pre[data-source-start]')){
+  pre.dataset.blockType='code';pre.classList.remove('simple-protected');
+  const m=cbCodeModel(text.slice(Number(pre.dataset.sourceStart),Number(pre.dataset.sourceEnd)));
+  if(!pre.parentElement.classList.contains('md-code')){const wrap=document.createElement('div');wrap.className='md-code';pre.replaceWith(wrap);wrap.appendChild(pre);
+   const bar=document.createElement('div');bar.className='md-code-bar';
+   bar.innerHTML='<button type="button" class="block-chip" aria-label="代码块设置：语言 '+esc(m&&m.lang||'纯文本')+'"><span>'+esc(m&&m.closed?(m.lang||'纯文本'):'源码')+'</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button><button type="button" class="block-copy" aria-label="复制代码" title="复制代码"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h11v11H8zM5 16V5h11"/></svg></button>';
+   wrap.appendChild(bar);}
+  if(editable&&m&&m.closed){try{pre.contentEditable='plaintext-only';}catch(_){pre.contentEditable='true';}pre.setAttribute('role','textbox');pre.setAttribute('aria-multiline','true');pre.setAttribute('aria-label','编辑代码，语言 '+(m.lang||'纯文本'));pre.spellcheck=false;}
+  else pre.removeAttribute('contenteditable');
+ }
+ for(const el of root.querySelectorAll('.simple-protected:not([data-block-type]):not(table)'))if(!el.closest('table,.md-callout-head')){
+  el.classList.add('cb-para');el.tabIndex=0;
+  let rest=text.slice(Number(el.dataset.sourceStart),Number(el.dataset.sourceEnd));for(const x of el.querySelectorAll('[data-inline]'))rest=rest.split(x.dataset.md).join('');rest=rest.slice(simplePrefix(rest).length);
+  const onlyInline=el.querySelector('[data-inline]')&&!/[`|\[\]<>$~=_!]/.test(rest)&&!/%%/.test(rest);
+  el.classList.toggle('cb-para-inline',!!onlyInline);
+  el.setAttribute('aria-label',onlyInline?'这一段含链接、公式等内容，按回车逐项编辑':'这一段含暂不支持直接编辑的格式，按回车打开编辑选项');}
+ if(root.dataset.cbBound==='1')return;root.dataset.cbBound='1';
+ root.addEventListener('click',event=>{
+  if(experience!=='simple'||!event.target.closest)return;const tgt=event.target;
+  const hit=tgt.closest('.block-chip,.block-copy,[data-inline],.md-props-entry,.md-callout-head,.md-math,.cb-para');if(!hit||!root.contains(hit))return;
+  if(hit.matches('.block-copy')){event.preventDefault();event.stopPropagation();const pre=hit.closest('.md-code').querySelector('pre'),m=cbCodeModel(note(simpleNoteId(cbPaneOf(pre))).text.slice(Number(pre.dataset.sourceStart),Number(pre.dataset.sourceEnd)));(navigator.clipboard&&m?navigator.clipboard.writeText(m.content):Promise.reject()).then(()=>toast('已复制代码',false),()=>toast('原型环境无法访问剪贴板',false));return;}
+  if(hit.matches('.block-chip')){event.preventDefault();event.stopPropagation();openComplexFor(hit.closest('.md-code').querySelector('pre'),'code');return;}
+  if(hit.matches('.md-callout-head')&&tgt.closest('.md-callout-fold')){event.preventDefault();event.stopPropagation();hit.parentElement.classList.toggle('is-folded');return;}
+  event.preventDefault();event.stopPropagation();
+  openComplexFor(hit.matches('.md-callout-head')?hit.parentElement:hit);
+ },true);
+ root.addEventListener('keydown',event=>{
+  if(experience!=='simple')return;const tgt=event.target;
+  if(tgt.matches&&tgt.matches('pre[contenteditable]')){
+   if(event.key==='Tab'&&!event.isComposing){event.preventDefault();document.execCommand('insertText',false,'  ');return;}
+   if((event.key==='F10'&&event.shiftKey)||event.key==='ContextMenu'){event.preventDefault();openComplexFor(tgt,'code');return;}
+   if(event.key==='Escape'){tgt.blur();return;}
+   return;
+  }
+  const hit=tgt.closest&&tgt.closest('[data-inline],.md-props-entry,.md-callout-head,.md-math,.cb-para,table.simple-table');if(!hit||!root.contains(hit))return;
+  const menu=(event.key==='F10'&&event.shiftKey)||event.key==='ContextMenu',activate=(event.key==='Enter'||event.key===' ')&&!hit.matches('table');
+  if(hit.matches('table')){if(menu){event.preventDefault();event.stopPropagation();openBlockUi(hit,hit.querySelector('td'));applyBlockOp('more');}return;}
+  if(menu||activate){event.preventDefault();event.stopPropagation();openComplexFor(hit.matches('.md-callout-head')?hit.parentElement:hit);}
+ },true);
+ root.addEventListener('input',event=>{if(experience==='simple'&&!event.isComposing&&event.target.matches&&event.target.matches('pre[contenteditable]'))commitCodeBlock(event.target);});
+ root.addEventListener('compositionend',event=>{if(experience==='simple'&&event.target.matches&&event.target.matches('pre[contenteditable]'))commitCodeBlock(event.target);});
+ root.addEventListener('focusin',event=>{const pre=event.target.closest&&event.target.closest('pre[contenteditable]');if(pre)pre.closest('.md-code').classList.add('is-editing');});
+ root.addEventListener('focusout',event=>{const pre=event.target.closest&&event.target.closest('pre[contenteditable]');if(pre)pre.closest('.md-code').classList.remove('is-editing');});
+}
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&cbTarget&&!$('blockSheet').classList.contains('hidden')){event.preventDefault();closeBlockUi();}},true);
+window.addEventListener('scroll',()=>{if(cbTarget&&$('blockSheet').classList.contains('as-popup')&&!$('blockSheet').classList.contains('hidden')){const a=cbTarget.anchorEl;if(!a||!a.isConnected){closeBlockUi();return;}positionBlockPopup();}},true);
+
 syncExperience();
 </script><script>
 /* 2026-11-02 review fixes */
@@ -936,160 +1454,5 @@ syncExperience();
   zoom.addEventListener('focusin',()=>{clearTimeout(timer);zoom.classList.remove('is-scrolling');});
   scroller.addEventListener('scroll',()=>{if(zoom.contains(document.activeElement))return;zoom.classList.add('is-scrolling');clearTimeout(timer);timer=setTimeout(()=>zoom.classList.remove('is-scrolling'),900);},{passive:true});
  }
-})();
-</script><script id="splitControlEnhancement">
-(()=>{
- const style=document.createElement('style');
- style.textContent=`
-.split-control{--split-hit:var(--s6);--split-grip-w:var(--s3);--split-grip-h:calc(var(--s16) - var(--s2))}
-.split-control::before{z-index:2}
-.split-rail{position:absolute;top:0;bottom:0;left:calc(var(--stroke) * -1);width:calc(var(--stroke) * 2);background:var(--blue);opacity:0;pointer-events:none;transition:opacity var(--ease),background var(--ease)}
-.split-grip{position:absolute;top:50%;left:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s1);width:var(--split-grip-w);height:var(--split-grip-h);box-sizing:border-box;transform:translate(-50%,-50%);border:var(--stroke) solid var(--line);border-radius:var(--pill);background:var(--paper);box-shadow:var(--float-shadow);pointer-events:none;transition:width var(--ease),height var(--ease),background var(--ease),border-color var(--ease)}
-.split-grip em{display:block;width:calc(var(--stroke) * 3);height:calc(var(--stroke) * 3);border-radius:var(--pill);background:var(--muted)}
-[data-theme=dark] .split-grip{background:var(--nav);border-color:var(--muted)}
-[data-theme=dark] .split-grip em{background:var(--ink)}
-.split-control:hover .split-rail{opacity:.35}
-.split-control:hover .split-grip{width:calc(var(--split-grip-w) + var(--s1));border-color:var(--blue)}
-.split-control:focus-visible .split-rail,.split-control.dragging .split-rail{opacity:1}
-.split-control:focus-visible .split-grip{border-color:var(--blue);box-shadow:0 0 0 var(--focus) var(--blue),var(--float-shadow)}
-.split-control.dragging .split-grip{width:calc(var(--split-grip-w) + var(--s2));height:calc(var(--split-grip-h) + var(--s2));background:var(--blue);border-color:var(--blue)}
-.split-control.dragging .split-grip em{background:var(--paper)}
-.split-control.at-default.dragging .split-rail,.split-control.at-default.tip-on .split-rail{background:var(--green)}
-.split-control.at-default.dragging .split-grip{background:var(--green);border-color:var(--green)}
-.split-control.at-limit.dragging .split-rail,.split-control.at-limit.tip-on .split-rail{background:var(--danger);opacity:.7}
-.split-control.at-limit.dragging .split-grip{background:var(--danger);border-color:var(--danger)}
-.split-control>.split-tip{position:absolute;top:calc(50% - var(--split-grip-h) / 2 - var(--s3));left:0;z-index:5;display:flex;flex-direction:column;align-items:center;gap:var(--s1);width:max-content;height:auto;max-width:calc(100vw - var(--s8));padding:var(--s2) var(--s3);transform:translate(-50%,-100%) translateY(var(--s1));border:0;border-radius:var(--small-r);background:var(--ink);color:var(--paper);font-size:var(--caption);line-height:1.4;text-align:center;white-space:normal;overflow-wrap:anywhere;box-shadow:var(--float-shadow);opacity:0;pointer-events:none;transition:opacity var(--ease),transform var(--ease)}
-.split-control:hover>.split-tip,.split-control:focus-visible>.split-tip,.split-control.dragging>.split-tip{background:var(--ink);color:var(--paper)}
-.split-tip small{font-size:var(--caption);opacity:.85}
-.split-control.tip-on .split-tip,.split-control.dragging .split-tip{opacity:1;transform:translate(-50%,-100%)}
-.split-control.snapped .split-grip{animation:split-snap var(--ease)}
-@keyframes split-snap{50%{transform:translate(-50%,-50%) scale(1.12)}}
-.window.splitting .split-control:not(.dragging) .split-rail{opacity:.15}
-@media(pointer:coarse){.split-control{--split-hit:calc(var(--s8) + var(--s1));--split-grip-w:calc(var(--s3) + var(--s1));--split-grip-h:var(--s16)}}
-@media(prefers-reduced-motion:reduce){.split-rail,.split-grip,.split-tip{transition:none}.split-control.snapped .split-grip{animation:none}}
-@media(forced-colors:active){.split-grip{border-color:CanvasText;background:Canvas}.split-grip em{background:CanvasText}.split-control:focus-visible .split-grip,.split-control.dragging .split-grip{border-color:Highlight;background:Highlight}.split-rail{background:Highlight}}
-`;
- document.head.appendChild(style);
- const controls={nav:document.getElementById('navSplitter'),content:document.getElementById('contentSplitter')};
- for(const [kind,handle]of Object.entries(controls)){
-  if(!handle)continue;
-  handle.innerHTML='<i class="split-rail" aria-hidden="true"></i><b class="split-grip" aria-hidden="true"><em></em><em></em><em></em></b><span class="split-tip" aria-hidden="true"><span class="split-tip-main"></span><small class="split-tip-detail"></small></span>';
-  handle.title='拖动调整栏宽；双击或 Enter 恢复默认；方向键微调，Shift 加大步长，Home / End 到最小 / 最大';
- }
- const defaultPixels=(kind,metrics)=>metrics.w*(kind==='nav'?1/3:.5);
- const currentPixels=(kind,metrics)=>clampWidth(widths[kind]*metrics.w,splitRange(kind,metrics));
- function stateFor(kind,metrics,pixels){
-  const range=splitRange(kind,metrics);
-  if(Math.abs(pixels-defaultPixels(kind,metrics))<=1)return 'default';
-  if(pixels<=range.min+1)return 'min';
-  if(pixels>=range.max-1)return 'max';
-  return '';
- }
- function readout(kind,metrics,pixels){
-  const ratio=Math.round(pixels/metrics.w*100);
-  const other=100-ratio;
-  return kind==='nav'
-   ?{main:'目录 '+ratio+'% · 正文 '+other+'%',detail:Math.round(pixels)+' px'}
-   :{main:'左栏 '+ratio+'% · 右栏 '+other+'%',detail:Math.round(pixels)+' / '+Math.round(metrics.w-pixels)+' px'};
- }
- function paint(kind,metrics=splitMetrics(),extra=''){
-  const handle=controls[kind];
-  if(!handle)return;
-  if(!splitActive(kind,metrics)){handle.removeAttribute('aria-valuetext');handle.classList.remove('at-default','at-limit','tip-on');return;}
-  const pixels=currentPixels(kind,metrics),state=stateFor(kind,metrics,pixels),value=readout(kind,metrics,pixels);
-  const note=extra||(state==='default'?'默认比例':state==='min'?'已到最小宽度（每栏至少 '+Math.round(metrics.min)+' px）':state==='max'?'已到最大宽度':'');
-  handle.classList.toggle('at-default',state==='default');handle.classList.toggle('at-limit',state==='min'||state==='max');
-  handle.querySelector('.split-tip-main').textContent=value.main;
-  handle.querySelector('.split-tip-detail').textContent=value.detail+(note?' · '+note:'');
-  handle.setAttribute('aria-valuetext',value.main+'，'+value.detail+(note?'，'+note:''));
- }
- let tipTimer=0,lastTap=null;
- function showTip(kind,extra=''){
-  const handle=controls[kind];
-  if(!handle)return;
-  paint(kind,splitMetrics(),extra);handle.classList.add('tip-on');clearTimeout(tipTimer);
-  tipTimer=setTimeout(()=>handle.classList.remove('tip-on'),1000);
- }
- function applyDrag(kind,pixels,event=null,keyboard=false){
-  const metrics=splitMetrics(),range=splitRange(kind,metrics),handle=controls[kind];
-  if(!splitActive(kind,metrics))return;
-  const previous=stateFor(kind,metrics,currentPixels(kind,metrics)),base=defaultPixels(kind,metrics);
-  let target=clampWidth(pixels,range);
-  if(!keyboard&&!(event&&event.altKey)&&Math.abs(target-base)<=10&&base>=range.min&&base<=range.max)target=base;
-  resizeSplit(kind,target);
-  const next=stateFor(kind,metrics,currentPixels(kind,metrics));
-  if(next==='default'&&previous!=='default'){handle.classList.remove('snapped');void handle.offsetWidth;handle.classList.add('snapped');}
-  paint(kind,metrics);
- }
- function finishDrag(commit,extra=''){
-  if(!splitDrag)return;
-  const {kind,initial}=splitDrag;
-  if(!commit)widths[kind]=initial;
-  endSplit();applySplits();
-  showTip(kind,extra||(commit?'':'已取消调整'));
- }
- function handleForTarget(target){
-  return Object.entries(controls).find(([,handle])=>handle&&(target===handle||handle.contains(target)))||[];
- }
- document.addEventListener('keydown',event=>{
-  if(event.key==='Escape'&&splitDrag){event.preventDefault();event.stopImmediatePropagation();finishDrag(false);return;}
-  const [kind,handle]=handleForTarget(event.target);
-  if(!handle||!splitActive(kind))return;
-  let target=null;
-  if(event.key==='Enter'){event.preventDefault();event.stopImmediatePropagation();resetSplits();showTip(kind,'已恢复默认');lastTap=null;return;}
-  const metrics=splitMetrics(),range=splitRange(kind,metrics),current=currentPixels(kind,metrics);
-  if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
-   const step=parseFloat(getComputedStyle(handle).getPropertyValue('--s4'))*(event.shiftKey?4:1);
-   target=current+(event.key==='ArrowRight'?step:-step);
-  }else if(event.key==='Home')target=range.min;
-  else if(event.key==='End')target=range.max;
-  if(target===null)return;
-  event.preventDefault();event.stopImmediatePropagation();applyDrag(kind,target,null,true);saveWidths();showTip(kind);lastTap=null;
- },true);
- document.addEventListener('pointerdown',event=>{
-  const [kind,handle]=handleForTarget(event.target);
-  if(!handle||event.button!==0||!splitActive(kind))return;
-  event.preventDefault();event.stopImmediatePropagation();clearTimeout(tipTimer);
-  const metrics=splitMetrics(),pixels=currentPixels(kind,metrics);
-  splitDrag={kind,handle,pointer:event.pointerId,pointerType:event.pointerType,start:event.clientX,startY:event.clientY,pixels,initial:widths[kind],moved:false,started:performance.now()};
-  handle.setPointerCapture(event.pointerId);handle.classList.add('dragging');$('window').classList.add('splitting');
- },true);
- document.addEventListener('pointermove',event=>{
-  if(!splitDrag||event.pointerId!==splitDrag.pointer)return;
-  event.preventDefault();event.stopImmediatePropagation();
-  const delta=event.clientX-splitDrag.start;
-  if(splitDrag.pointerType==='touch'&&!splitDrag.moved&&Math.abs(delta)<4&&Math.abs(event.clientY-splitDrag.startY)<4)return;
-  splitDrag.moved=true;applyDrag(splitDrag.kind,splitDrag.pixels+delta,event,false);
- },true);
- document.addEventListener('pointerup',event=>{
-  if(!splitDrag||event.pointerId!==splitDrag.pointer)return;
-  event.stopImmediatePropagation();
-  const drag=splitDrag,wasTap=event.pointerType==='touch'&&!drag.moved&&performance.now()-drag.started<320;
-  finishDrag(true);
-  if(wasTap){
-   const now=performance.now(),doubleTap=lastTap&&now-lastTap.time<320&&Math.abs(event.clientX-lastTap.x)<4&&Math.abs(event.clientY-lastTap.y)<4;
-   if(doubleTap){lastTap=null;resetSplits();showTip(drag.kind,'已恢复默认');}
-   else lastTap={time:now,x:event.clientX,y:event.clientY,kind:drag.kind};
-  }else lastTap=null;
- },true);
- document.addEventListener('pointercancel',event=>{
-  if(!splitDrag||event.pointerId!==splitDrag.pointer)return;
-  event.preventDefault();event.stopImmediatePropagation();finishDrag(false);
- },true);
- document.addEventListener('lostpointercapture',event=>{
-  if(!splitDrag||event.pointerId!==splitDrag.pointer)return;
-  event.stopImmediatePropagation();finishDrag(false);
- },true);
- document.addEventListener('dblclick',event=>{
-  const [kind,handle]=handleForTarget(event.target);
-  if(!handle||!splitActive(kind))return;
-  event.preventDefault();event.stopImmediatePropagation();resetSplits();showTip(kind,'已恢复默认');lastTap=null;
- },true);
- function paintAll(){
-  for(const kind of Object.keys(controls))paint(kind);
- }
- window.addEventListener('resize',paintAll);
- new ResizeObserver(paintAll).observe($('window'));
- paintAll();
 })();
 </script></body></html>
