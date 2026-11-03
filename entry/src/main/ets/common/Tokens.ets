@@ -73,6 +73,8 @@ export class Size {
   static readonly treeIcon: number = 18;
   /** 内容页限宽（4.9）：三屏 1061vp 下不把设置项拉成一整行 */
   static readonly contentMaxW: number = 760;
+  /** 分栏把手胶囊高度：映射 v2 `--split-height`（宽度用 `Space.s1`，命中区用 `Space.s4` = `--split-hit`） */
+  static readonly splitHandleH: number = 40;
   /**
    * 左滑三档（1.6）：操作条完全滑出后**再滑这么多**进入删除区（原型 DEL_EXTRA = 36）。
    * 配合 ListItem.swipeAction 的 actionAreaDistance；越过即触发 onAction（文件 → 移入回收站）。
