@@ -102,6 +102,37 @@ test('Git demo restores import, sync entry and remote share previews without net
  assert(!restored.get('gitSyncBtn').classList.contains('hidden'));
  assert(!restored.get('mobileGitSync').classList.contains('hidden'));
 });
+test('Git sync demo validates branches and renders progress and failure results locally',()=>{
+ const f=fixture();
+ const syncCode=html.match(/\/\/ v1\.27: Git sync page design[\s\S]*?(?=<\/script>)/)[0];
+ f.run(syncCode);
+ for(const branch of ['', 'bad name', 'a..b', 'HEAD', '-draft'])assert.notEqual(f.run(`validateGitBranch(${JSON.stringify(branch)})`),'');
+ f.run("gitSyncState.editing=true;gitSyncState.draft='main';renderGitSync()");
+ assert(f.get('gitSyncBody').innerHTML.includes('这是克隆时跟踪的分支'));
+ f.run("gitSyncState.draft='bad name';renderGitSync()");
+ assert(f.get('gitSyncBody').innerHTML.includes('aria-invalid=\"true\"'));
+ assert.match(f.get('gitSyncBody').innerHTML,/id="gitSyncBranchSave"[^>]*disabled/);
+ f.run("gitSyncState.draft='phone-notes';renderGitSync()");
+ f.get('gitSyncBranchSave').onclick();
+ assert.equal(f.run('gitSyncState.branch'),'phone-notes');
+ f.run("gitSyncState.stage='running';gitSyncState.step=1;renderGitSync()");
+ assert.match(f.get('gitSyncBody').innerHTML,/<li data-state="done">暂存改动<\/li>/);
+ assert.match(f.get('gitSyncBody').innerHTML,/<li data-state="active">提交<\/li>/);
+ assert(f.get('gitSyncPush').disabled);
+ assert(f.get('gitSyncCancel').disabled);
+ f.get('gitSyncDialog').open=true;
+ f.run('closeGitSync()');
+ assert.equal(f.get('gitSyncDialog').open,true);
+ for(const [outcome,expected] of [
+  ['ok','已推送到 phone-notes'],
+  ['rejected','远端 phone-notes 已有新提交'],
+  ['auth','401 / 403'],
+  ['network','网络连接失败']
+ ]){
+  f.run(`gitSyncState.stage='done';gitSyncState.outcome=${JSON.stringify(outcome)};renderGitSync()`);
+  assert(f.get('gitSyncBody').innerHTML.includes(expected));
+ }
+});
 test('no-note demo toggle grays out note-scoped controls and restores the selection',()=>{
  const f=fixture();const before=f.run('current');assert.equal(f.get('editTab').disabled,false);assert.equal(f.get('previewTab').disabled,false);assert.equal(f.get('shareBtn').disabled,false);
  f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();
