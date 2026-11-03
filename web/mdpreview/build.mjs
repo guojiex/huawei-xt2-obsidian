@@ -10,6 +10,7 @@ import { build } from 'esbuild'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PREVIEW_ZOOM_PRESETS } from './src/previewZoom.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(here, '../..')
@@ -21,6 +22,9 @@ const sharedTokens = prototypeHtml.match(/:root\{[^\r\n]*\}\s*\[data-theme=dark\
 if (!sharedTokens) {
   throw new Error('Unable to read shared v2 tokens from docs/prototype/v2/index.html')
 }
+const previewZoomOptions = PREVIEW_ZOOM_PRESETS.map((percent) =>
+  `    <option value="${percent}"${percent === 100 ? ' selected' : ''}>${percent}%</option>`
+).join('\n')
 
 await build({
   entryPoints: [path.join(here, 'src/index.ts')],
@@ -79,7 +83,32 @@ const html = `<!doctype html>
     font-family: var(--font);
     word-break: break-word;
   }
+  #content .preview-body { zoom: var(--preview-scale, 1); }
   .preview-source-block { display: contents; }
+  .preview-zoom {
+    position: fixed; right: var(--s4); bottom: var(--s4); z-index: 5;
+    display: flex; align-items: center; gap: var(--s1); padding: var(--s1);
+    background: var(--float); border: var(--stroke) solid var(--line);
+    border-radius: var(--pill); box-shadow: var(--float-shadow);
+    transition: opacity var(--ease, 180ms ease);
+  }
+  .preview-zoom[hidden] { display: none; }
+  .preview-zoom.is-scrolling { opacity: 0; pointer-events: none; }
+  .preview-zoom select {
+    min-height: var(--s8); border: 0; border-radius: var(--pill);
+    background: transparent; padding: var(--s1) var(--s2);
+    font-size: var(--small); color: var(--ink); cursor: pointer;
+  }
+  .preview-zoom button {
+    display: grid; place-items: center; width: var(--s8); height: var(--s8);
+    min-height: var(--s8); padding: var(--s2); border: 0;
+    border-radius: var(--pill); background: transparent; color: var(--ink);
+  }
+  .preview-zoom button[hidden] { display: none; }
+  .preview-zoom button:focus-visible, .preview-zoom select:focus-visible {
+    outline: var(--focus) solid var(--blue); outline-offset: var(--s1);
+  }
+  .preview-zoom button svg { width: var(--s4); height: var(--s4); }
   #content h1 { font-size: var(--heading); margin: var(--s3) 0 var(--s4); font-weight: 650; letter-spacing: -.035em; line-height: 1.35; }
   #content .note-tags { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s4); font-size: var(--caption); }
   #content .note-tag { display: inline-block; padding: 0 var(--s2); border-radius: var(--pill); background: var(--blue-soft); color: var(--blue); font-size: var(--small); overflow-wrap: anywhere; }
@@ -183,6 +212,16 @@ ${katexCss}
 </head>
 <body>
 <div id="content"></div>
+<div id="preview-zoom-controls" class="preview-zoom" role="group" aria-label="预览正文缩放" hidden>
+  <select id="preview-zoom-select" aria-label="正文缩放比例">
+${previewZoomOptions}
+  </select>
+  <button id="preview-zoom-reset" type="button" title="恢复 100%" aria-label="恢复正文至 100%" hidden>
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/>
+    </svg>
+  </button>
+</div>
 <div id="image-viewer" class="image-viewer hidden" role="dialog" aria-modal="true" aria-label="完整图片">
   <div class="image-viewer-toolbar"><button id="image-viewer-close">关闭图片</button></div>
   <div id="image-viewer-scroll" class="image-viewer-scroll" tabindex="0" aria-label="完整图片，可滚动查看">

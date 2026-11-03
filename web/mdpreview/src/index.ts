@@ -17,6 +17,7 @@
 import { marked } from 'marked'
 import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
+import { normalizePreviewZoomPercent } from './previewZoom.mjs'
 
 declare global {
   interface Window {
@@ -26,10 +27,11 @@ declare global {
       onImageViewerChange?: (state: string) => void
       onShareCaptureResult?: (payload: string) => void
       onWorkspaceScroll?: (top: number) => void
-    onEditableContentChange?: (contentB64: string) => void
-    onEditableContent?: (id: number, contentB64: string) => void
-    onCompositionChange?: (state: string) => void
+      onEditableContentChange?: (contentB64: string) => void
+      onEditableContent?: (id: number, contentB64: string) => void
+      onCompositionChange?: (state: string) => void
       onLockedContentTap?: () => void
+      onPreviewZoomChange?: (percent: number) => void
     }
   }
 }
@@ -43,6 +45,8 @@ interface MdPreviewApi {
   flushEditableContent(id: number): void
   setNoteDir(b64: string): void
   setTheme(theme: string): void
+  setPreviewZoomPercent(percent: number): void
+  setPreviewZoomControlsVisible(visible: boolean): void
   resetDocument(): void
   closeImageViewer(): void
   scrollToHeading(index: number): void
@@ -224,8 +228,77 @@ const contentResizeObserver = new ResizeObserver((): void => {
   invalidateSourceGeometry()
 })
 const contentElement = document.getElementById('content') as HTMLElement
+const previewZoomControls = document.getElementById('preview-zoom-controls') as HTMLElement
+const previewZoomSelect = document.getElementById('preview-zoom-select') as HTMLSelectElement
+const previewZoomReset = document.getElementById('preview-zoom-reset') as HTMLButtonElement
 contentResizeObserver.observe(contentElement)
 window.addEventListener('resize', updateImageBounds)
+
+let previewZoomControlsVisible = false
+let previewZoomFadeTimer: number | undefined
+
+function previewZoomControlFocused(): boolean {
+  return previewZoomControls.contains(document.activeElement)
+}
+
+function schedulePreviewZoomFade(): void {
+  if (!previewZoomControlsVisible) {
+    return
+  }
+  if (previewZoomFadeTimer !== undefined) {
+    window.clearTimeout(previewZoomFadeTimer)
+    previewZoomFadeTimer = undefined
+  }
+  if (previewZoomControlFocused()) {
+    previewZoomControls.classList.remove('is-scrolling')
+    return
+  }
+  previewZoomControls.classList.add('is-scrolling')
+  previewZoomFadeTimer = window.setTimeout((): void => {
+    previewZoomFadeTimer = undefined
+    if (!previewZoomControlFocused()) {
+      previewZoomControls.classList.remove('is-scrolling')
+    }
+  }, 900)
+}
+
+function setPreviewZoomPercent(value: number, notifyNative: boolean = false): void {
+  const percent = normalizePreviewZoomPercent(value)
+  document.documentElement.style.setProperty('--preview-scale', String(percent / 100))
+  previewZoomSelect.value = String(percent)
+  previewZoomReset.hidden = percent === 100
+  invalidateSourceGeometry()
+  if (notifyNative) {
+    const arkts = window.__arkts
+    if (arkts && typeof arkts.onPreviewZoomChange === 'function') {
+      arkts.onPreviewZoomChange(percent)
+    }
+  }
+}
+
+function setPreviewZoomControlsVisible(visible: boolean): void {
+  previewZoomControlsVisible = visible
+  previewZoomControls.hidden = !visible
+  previewZoomControls.classList.remove('is-scrolling')
+  if (previewZoomFadeTimer !== undefined) {
+    window.clearTimeout(previewZoomFadeTimer)
+    previewZoomFadeTimer = undefined
+  }
+}
+
+previewZoomSelect.addEventListener('change', (): void => {
+  setPreviewZoomPercent(Number(previewZoomSelect.value), true)
+})
+previewZoomReset.addEventListener('click', (): void => {
+  setPreviewZoomPercent(100, true)
+})
+previewZoomControls.addEventListener('focusin', (): void => {
+  if (previewZoomFadeTimer !== undefined) {
+    window.clearTimeout(previewZoomFadeTimer)
+    previewZoomFadeTimer = undefined
+  }
+  previewZoomControls.classList.remove('is-scrolling')
+})
 
 let workspaceScrollTimer: number | undefined = undefined
 let workspaceScrollRestorePending = false
@@ -405,6 +478,7 @@ sourceMutationObserver.observe(contentElement, { childList: true, characterData:
 window.addEventListener('resize', invalidateSourceGeometry)
 
 contentElement.addEventListener('scroll', (): void => {
+  schedulePreviewZoomFade()
   if (workspaceUserScrollIntent && !workspaceUserScrollIntentReported) {
     reportWorkspaceScrollIntent()
   }
@@ -749,7 +823,7 @@ const api: MdPreviewApi = {
     if (tagsHtml.length === 0 && bodyHtml.length === 0) {
       mermaidRenderGeneration++
       mermaidRender = Promise.resolve()
-      el.innerHTML = '<div class="empty" data-placeholder="空笔记"></div>'
+      el.innerHTML = '<div class="preview-body"><div class="empty" data-placeholder="空笔记"></div></div>'
       sourceBlockGeometry = []
       observeSourceBlocks()
       configureEditableBlocks(el, bodyOffset)
@@ -757,7 +831,7 @@ const api: MdPreviewApi = {
       console.log('[mdpreview] setContent: empty')
       return
     }
-    el.innerHTML = tagsHtml + bodyHtml
+    el.innerHTML = `<div class="preview-body">${tagsHtml}${bodyHtml}</div>`
     const sourceBlocks = el.querySelectorAll('.preview-source-block')
     for (let index = 0; index < sourceBlocks.length && index < renderedBody.blocks.length; index++) {
       const block = sourceBlocks[index] as HTMLElement
@@ -893,6 +967,14 @@ const api: MdPreviewApi = {
 
   setTheme(theme: string): void {
     document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light')
+  },
+
+  setPreviewZoomPercent(percent: number): void {
+    setPreviewZoomPercent(percent)
+  },
+
+  setPreviewZoomControlsVisible(visible: boolean): void {
+    setPreviewZoomControlsVisible(visible)
   },
 
   resetDocument(): void {

@@ -1789,6 +1789,12 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 本机 SDK `@ohos.settings.d.ts` 声明 `settings.display.ANIMATOR_DURATION_SCALE` 自 API 7 起，且标记 deprecated since 21；Stage `settings.getValue(context, name)` 自 API 10 起。声明只描述动画时长缩放因子，没有证明其代表无障碍“减少动态效果”偏好，也没有证明系统缩放会联动 ArkUI 属性动画。官方公开资料核对范围、结论与限制见[本机 SDK 与官方文档核对记录](qa/2026-11-01_v0.10减动效SDK与官方文档核对_API24.md)。**不在 v0.10 关键路径调用该候选项；API 24 / XT2 运行行为仍未验证。**
 
+### V1.12 预览缩放与 `PinchGesture` SDK 声明（2026-11-02）
+
+- ✅ 本机 DevEco Studio 26.0.0.851 的 API 26 SDK `ets/component/gesture.d.ts` 声明 `PinchGestureInterface`、`onActionStart`、`onActionUpdate`、`onActionEnd` 与取消回调 `@since 7`；因此声明版本低于工程 API 24 兼容下限。源码位置与核对范围见[本机 SDK 记录](qa/2026-11-02_v1.12_预览缩放手势SDK核对_API24.md)。
+- ❓ SDK 声明未说明 ArkUI `PinchGesture` 与 ArkWeb 内部滚动、DOM 触摸 / 浏览器页面缩放之间的事件仲裁。API 26 SDK 类型存在不等于 API 24 / XT2 运行通过，也不构成此交互受支持的证据。
+- **当前实现只提供固定比例控件，不接入双指或 Ctrl+滚轮。** 需先在正常交互中确认滚动、缩放及系统默认缩放没有冲突；API24 / XT2 由用户手动验收。
+
 ## V 组：应用内检测更新（AppGallery Kit `updateManager`，2026-11-02）
 
 > 证据构成：鸿蒙官方 Agent 答复 + **本机 HMS SDK 声明逐条核对**（`sdk/default/hms/ets/api/@hms.core.appgalleryservice.updateManager.d.ts`、`kits/@kit.AppGalleryKit.d.ts`）。

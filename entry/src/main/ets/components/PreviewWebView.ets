@@ -40,6 +40,15 @@ interface ContentWaiter {
 
 const PREVIEW_DOMAIN = 0x0000;
 const PREVIEW_TAG = 'PreviewWebView';
+const PREVIEW_ZOOM_MIN: number = 50;
+const PREVIEW_ZOOM_MAX: number = 200;
+
+function normalizePreviewZoomPercent(percent: number): number {
+  if (!Number.isFinite(percent)) {
+    return 100;
+  }
+  return Math.max(PREVIEW_ZOOM_MIN, Math.min(PREVIEW_ZOOM_MAX, Math.round(percent)));
+}
 
 /** 注入到 WebView window.__arkts 的 JS → ArkTS 接口。 */
 class PreviewNativeProxy {
@@ -52,6 +61,7 @@ class PreviewNativeProxy {
   editableContentRequestHandler: (id: number, contentB64: string) => void = (_id: number, _contentB64: string) => {};
   compositionHandler: (state: string) => void = (_state: string) => {};
   lockedContentTapHandler: () => void = () => {};
+  previewZoomChangeHandler: (percent: number) => void = (_percent: number) => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -89,6 +99,9 @@ class PreviewNativeProxy {
     this.lockedContentTapHandler();
   }
 
+  onPreviewZoomChange(percent: number): void {
+    this.previewZoomChangeHandler(percent);
+  }
 }
 
 /** 桥接内部实现：页面就绪前收到的指令先进队列，onPageEnd 后按序补发 */
@@ -129,6 +142,14 @@ class PreviewImpl {
 
   setEditable(editable: boolean): void {
     this.enqueue(`window.__mdpreview.setEditable(${editable})`);
+  }
+
+  setPreviewZoomPercent(percent: number): void {
+    this.enqueue(`window.__mdpreview.setPreviewZoomPercent(${normalizePreviewZoomPercent(percent)})`);
+  }
+
+  setPreviewZoomControlsVisible(visible: boolean): void {
+    this.enqueue(`window.__mdpreview.setPreviewZoomControlsVisible(${visible})`);
   }
 
   applyFormat(kind: string): void {
@@ -230,6 +251,8 @@ export class PreviewBridge {
   private hasWorkspaceScrollTop: boolean = false;
   private noteDir: string = '';
   private theme: string = 'light';
+  private previewZoomPercent: number = 100;
+  private zoomControlsVisible: boolean = false;
   private captureWaiters: Map<number, CaptureWaiter> = new Map<number, CaptureWaiter>();
   private nextCaptureId: number = 1;
   private contentWaiters: Map<number, ContentWaiter> = new Map<number, ContentWaiter>();
@@ -244,6 +267,8 @@ export class PreviewBridge {
     impl.setNoteDir(this.noteDir);
     impl.setTheme(this.theme);
     impl.setEditable(this.editable);
+    impl.setPreviewZoomPercent(this.previewZoomPercent);
+    impl.setPreviewZoomControlsVisible(this.zoomControlsVisible);
     if (this.hasContent) {
       impl.setContent(this.content, this.sourceContent, this.sourceEdits);
     }
@@ -300,6 +325,20 @@ export class PreviewBridge {
   setEditable(editable: boolean): void {
     this.editable = editable;
     this.impl?.setEditable(editable);
+  }
+
+  setPreviewZoomPercent(percent: number): void {
+    this.previewZoomPercent = normalizePreviewZoomPercent(percent);
+    this.impl?.setPreviewZoomPercent(this.previewZoomPercent);
+  }
+
+  rememberPreviewZoomPercent(percent: number): void {
+    this.previewZoomPercent = normalizePreviewZoomPercent(percent);
+  }
+
+  setPreviewZoomControlsVisible(visible: boolean): void {
+    this.zoomControlsVisible = visible;
+    this.impl?.setPreviewZoomControlsVisible(visible);
   }
 
   applyFormat(kind: string): void {
@@ -488,6 +527,7 @@ export struct PreviewWebView {
   /** 由 EntryAbility 跟随系统颜色模式写入。 */
   @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
   @Prop @Watch('onEditableChanged') editable: boolean = false;
+  @Prop @Watch('onZoomControlsVisibleChanged') zoomControlsVisible: boolean = false;
   @State private pageReady: boolean = false;
   @State private loadFailed: boolean = false;
   /** 读库内图片 → data URI（找不到/读失败返回空串，Web 侧显示「图片不存在」） */
@@ -539,6 +579,9 @@ export struct PreviewWebView {
     this.proxy.compositionHandler = (state: string): void => {
       this.bridge.handleCompositionChange(state);
     };
+    this.proxy.previewZoomChangeHandler = (percent: number): void => {
+      this.bridge.rememberPreviewZoomPercent(percent);
+    };
     this.proxy.lockedContentTapHandler = (): void => {
       this.onLockedContentTap();
     };
@@ -549,6 +592,7 @@ export struct PreviewWebView {
       this.onCompositionChange(composing);
     };
     this.bridge.setEditable(this.editable);
+    this.bridge.setPreviewZoomControlsVisible(this.zoomControlsVisible);
     // JS 桥收的是 base64（避免引号/换行转义），这里解开再交给父级回调
     this.proxy.readAssetHandler = (relB64: string): string => {
       try {
@@ -570,6 +614,10 @@ export struct PreviewWebView {
 
   onEditableChanged(): void {
     this.bridge.setEditable(this.editable);
+  }
+
+  onZoomControlsVisibleChanged(): void {
+    this.bridge.setPreviewZoomControlsVisible(this.zoomControlsVisible);
   }
 
   private handleWikiLinkClick(targetB64: string): void {
@@ -618,7 +666,8 @@ export struct PreviewWebView {
     try {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
         ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
-          'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap']);
+          'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
+          'onPreviewZoomChange']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (error) {

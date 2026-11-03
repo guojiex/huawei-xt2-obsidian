@@ -15,6 +15,10 @@ const componentStart = source.indexOf('/**\n * 可见的预览 Web 组件', impl
 assert.ok(implStart >= 0 && componentStart > implStart, 'could not find PreviewImpl and PreviewBridge');
 
 const coreCode = transformSync(`
+function normalizePreviewZoomPercent(percent) {
+  if (!Number.isFinite(percent)) return 100;
+  return Math.max(50, Math.min(200, Math.round(percent)));
+}
 ${source.slice(implStart, componentStart).replace(/^export /gm, '')}
 module.exports = { PreviewImpl, PreviewBridge };
 `, { loader: 'ts', format: 'cjs' }).code;

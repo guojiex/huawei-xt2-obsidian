@@ -5839,6 +5839,7 @@ struct Index {
           PreviewWebView({
             bridge: this.rightPreviewBridge,
             editable: this.simplePreviewEditable('right'),
+            zoomControlsVisible: this.experienceMode === 'simple' || !this.rightEditing,
             componentId: 'note-right-preview-web',
             onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
             onScrollPositionChange: (top: number): void => {
@@ -6020,6 +6021,7 @@ struct Index {
         PreviewWebView({
           bridge: this.previewBridge,
           editable: this.simplePreviewEditable('left'),
+          zoomControlsVisible: this.experienceMode === 'simple' || this.smMode === 'preview',
           componentId: 'note-left-preview-web',
           onReadAsset: (relPath: string): string => {
             return this.readVaultAsset(relPath);
