@@ -31,13 +31,13 @@ test('preview WebView suppresses the system focus box around the whole note', ()
     /\.focusBox\(\{\s*strokeWidth: LengthMetrics\.vp\(0\)\s*\}\)/)
 })
 
-test('locked block taps route links and images to the panel while controls keep their behavior', () => {
+test('locked block taps route links and images without synthesizing a block selection', () => {
   const clickStart = previewSource.indexOf("contentElement.addEventListener('click', (event: MouseEvent): void => {")
   const clickEnd = previewSource.indexOf('\n\nasync function renderMermaidBlocks', clickStart)
   assert.ok(clickStart >= 0 && clickEnd > clickStart)
   const handler = previewSource.slice(clickStart, clickEnd)
 
-  assert.match(handler, /setActiveLockedBlocks\(contentElement, lockedBlock \? \[lockedBlock\] : \[\]\)/)
+  assert.doesNotMatch(handler, /setActiveLockedBlocks\(/)
   assert.match(handler, /event\.target\.closest\('input, button'\)\) return/)
   assert.match(handler, /anchor\.tapType = 'image'/)
   assert.match(handler, /anchor\.tapType = href\.indexOf\('#wikilink:'\) === 0 \? 'wikilink' : 'link'/)

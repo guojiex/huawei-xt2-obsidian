@@ -872,7 +872,6 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
   const lockedBlock = event.target.closest(
     '.preview-source-block[data-edit-locked="true"]'
   ) as HTMLElement | null
-  setActiveLockedBlocks(contentElement, lockedBlock ? [lockedBlock] : [])
   const payload = publishLockedBlockAnchor(lockedBlock)
   lastLockedTapTarget = null
   if (event.target.closest('input, button')) return
