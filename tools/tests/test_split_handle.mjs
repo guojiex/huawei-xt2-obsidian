@@ -60,8 +60,27 @@ test('note split dragging snaps near defaults, honors Alt, and restores cancelle
 });
 
 test('Escape cancels a live drag and touch reset uses two short clicks', () => {
-  assert.match(splitHandle, /event\.keyCode !== KeyCode\.KEYCODE_ESCAPE/);
+  assert.match(splitHandle, /event\.keyCode === KeyCode\.KEYCODE_ESCAPE && this\.dragging/);
   assert.match(splitHandle, /this\.dragCancelled\(\)/);
   assert.match(splitHandle, /now - this\.lastTapAt <= 320/);
   assert.doesNotMatch(splitHandle, /onDoubleClick/);
+});
+
+test('split handles support keyboard adjustment, limits, reset, and current accessible values', () => {
+  assert.match(splitHandle, /SPLIT_KEY_STEP: number = 16/);
+  assert.match(splitHandle, /SPLIT_KEY_SHIFT_STEP: number = 64/);
+  assert.match(splitHandle, /KEYCODE_DPAD_LEFT/);
+  assert.match(splitHandle, /KEYCODE_DPAD_RIGHT/);
+  assert.match(splitHandle, /getModifierKeyState\(\['Shift'\]\)/);
+  assert.match(splitHandle, /KEYCODE_MOVE_HOME[\s\S]*?keyboardToLimit\(false\)/);
+  assert.match(splitHandle, /KEYCODE_MOVE_END[\s\S]*?keyboardToLimit\(true\)/);
+  assert.match(splitHandle, /KEYCODE_ENTER[\s\S]*?resetRequested\(\)/);
+  assert.match(splitHandle, /'分隔条，当前比例：' \+ this\.readoutPrimary/);
+  assert.match(splitHandle, /this\.readoutWidths/);
+  assert.match(splitHandle, /this\.readoutStatus/);
+
+  assert.match(index, /adjustSplitByKeyboard\('nav', deltaVp\)/);
+  assert.match(index, /adjustSplitByKeyboard\('content', deltaVp\)/);
+  assert.match(index, /setSplitKeyboardLimit\('nav', maximum\)/);
+  assert.match(index, /setSplitKeyboardLimit\('content', maximum\)/);
 });

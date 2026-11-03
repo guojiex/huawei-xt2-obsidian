@@ -1432,6 +1432,52 @@ struct Index {
     this.splitDragging = false;
   }
 
+  private adjustSplitByKeyboard(kind: string, deltaVp: number): void {
+    if (kind === 'nav') {
+      const total: number = this.windowWidthVp;
+      if (total <= 0 || this.sidebarCollapsed) {
+        return;
+      }
+      const multiPane: boolean = this.breakpoint === Breakpoint.LG;
+      const panes: number = multiPane ? 2 : 1;
+      const splitters: number = multiPane ? 2 : 1;
+      const width: number = clampNavigationWidth(
+        this.noteNavigationWidth() + deltaVp, total, panes, splitters);
+      this.navigationRatio = width / total;
+    } else {
+      const total: number = this.noteContentWidth();
+      if (total <= 0) {
+        return;
+      }
+      const width: number = total * this.noteContentRatio();
+      this.contentRatio = clampContentRatio((width + deltaVp) / total, total);
+    }
+    this.endSplitDrag();
+  }
+
+  private setSplitKeyboardLimit(kind: string, maximum: boolean): void {
+    if (kind === 'nav') {
+      const total: number = this.windowWidthVp;
+      if (total <= 0 || this.sidebarCollapsed) {
+        return;
+      }
+      const multiPane: boolean = this.breakpoint === Breakpoint.LG;
+      const panes: number = multiPane ? 2 : 1;
+      const splitters: number = multiPane ? 2 : 1;
+      const minimum: number = clampNavigationWidth(0, total, panes, splitters);
+      const maximumWidth: number = clampNavigationWidth(total, total, panes, splitters);
+      this.navigationRatio = (maximum ? maximumWidth : minimum) / total;
+    } else {
+      const total: number = this.noteContentWidth();
+      if (total <= 0) {
+        return;
+      }
+      this.contentRatio = maximum
+        ? clampContentRatio(1, total) : clampContentRatio(0, total);
+    }
+    this.endSplitDrag();
+  }
+
   private endSplitDrag(): void {
     this.splitDragging = false;
     this.saveSplitLayout();
@@ -6046,6 +6092,12 @@ struct Index {
             readoutPrimary: this.splitHandlePrimary('nav'),
             readoutWidths: this.splitHandleWidths('nav'),
             readoutStatus: this.splitHandleStatus('nav'),
+            keyboardAdjusted: (deltaVp: number): void => {
+              this.adjustSplitByKeyboard('nav', deltaVp);
+            },
+            keyboardToLimit: (maximum: boolean): void => {
+              this.setSplitKeyboardLimit('nav', maximum);
+            },
             dragStarted: (): void => { this.startNavigationDrag(false); },
             dragUpdated: (offsetX: number, altPressed: boolean): void => {
               this.updateNavigationDrag(offsetX, false, altPressed);
@@ -6097,6 +6149,12 @@ struct Index {
         readoutPrimary: this.splitHandlePrimary('content'),
         readoutWidths: this.splitHandleWidths('content'),
         readoutStatus: this.splitHandleStatus('content'),
+        keyboardAdjusted: (deltaVp: number): void => {
+          this.adjustSplitByKeyboard('content', deltaVp);
+        },
+        keyboardToLimit: (maximum: boolean): void => {
+          this.setSplitKeyboardLimit('content', maximum);
+        },
         dragStarted: (): void => { this.startContentDrag(); },
         dragUpdated: (offsetX: number, altPressed: boolean): void => {
           this.updateContentDrag(offsetX, altPressed);
