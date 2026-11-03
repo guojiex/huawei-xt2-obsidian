@@ -61,6 +61,7 @@ export class Size {
   static readonly statusbarH: number = 28;
   static readonly sidebarW: number = 240;  // 侧栏最小宽（宽屏按等分，见 Index）
   static readonly drawerW: number = 300;
+  static readonly shareW: number = 520;
   static readonly paneMinW: number = 240;
   static readonly formatMenuW: number = 360;  // Aa 浮层宽度（v2 --format-width）
   static readonly blockPanelW: number = 380;

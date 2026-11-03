@@ -61,7 +61,7 @@ import {
   isSingleLandscapeWindow, navigationWidth
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
-import { ShareNoteDialog, ShareFormatOption } from '../components/ShareNoteDialog';
+import { ShareNoteDialog, ShareFormatOption, ShareScopeOption } from '../components/ShareNoteDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
 import { NoteShareService } from '../model/NoteShareService';
@@ -4701,6 +4701,17 @@ struct Index {
     this.openShareDialog('vault', '');
   }
 
+  private sharePathForScope(targetScope: ShareLinkScope, entryScope: ShareLinkScope, entryPath: string,
+    notePath: string): string {
+    if (targetScope === 'vault') {
+      return '';
+    }
+    if (targetScope === 'note') {
+      return notePath;
+    }
+    return entryScope === 'folder' ? entryPath : NoteShareService.parentOf(notePath);
+  }
+
   private openShareDialog(scope: ShareLinkScope, path: string): void {
     const registry: VaultRegistry = VaultRegistry.get();
     const entries: VaultEntry[] = registry.list();
@@ -4715,62 +4726,96 @@ struct Index {
       promptAction.showToast({ message: '当前知识库不存在' });
       return;
     }
-    const shareBridge: EditorBridge = this.editorBridgeForPath(path);
-    if (scope === 'note' && !shareBridge.ready) {
+    const notePath: string = this.activeFilePath();
+    const noteReady: boolean = notePath.length > 0 && this.editorBridgeForPath(notePath).ready;
+    if (scope === 'note' && !noteReady) {
       promptAction.showToast({ message: '编辑器尚未就绪，暂时无法分享' });
       return;
     }
-    let title: string = '分享笔记';
-    let itemName: string = path.substring(path.lastIndexOf('/') + 1);
-    let description: string = '范围：当前编辑中的笔记及其引用的库内图片，不包含链接到的其他笔记。';
-    let itemSummary: string = '';
-    if (scope === 'folder') {
-      title = '分享文件夹';
-      itemName = path;
-      description = '范围：递归包含此文件夹下的文件，并补齐这些笔记引用的库内图片。';
-    } else if (scope === 'vault') {
-      title = '分享知识库';
-      itemName = this.currentVaultId;
-      description = '范围：当前知识库中的文件；隐藏项、回收站、缓存、草稿、凭据及内部状态不会打包。';
-    }
-
-    const options: ShareFormatOption[] = [];
-    if (scope === 'note') {
-      options.push({ value: 'image', label: '排版图片', detail: '整篇笔记与本地图片合成一张长图；超出尺寸时整体缩小。' });
-      options.push({ value: 'file', label: 'Markdown / ZIP', detail: '无本地图片分享 Markdown；有本地图片时自动打包 ZIP。' });
-      options.push({ value: 'text', label: '文本', detail: '预览并编辑标题与正文；图片和复杂格式按提示降级。' });
-    } else {
-      const count = ShareArchiveService.countScope(registry, this.currentVaultId, path);
-      itemSummary = '范围内 ' + count.noteCount.toString() + ' 篇 Markdown、' +
-        count.fileCount.toString() + ' 个文件；打包时会补齐外部引用图片。';
-      options.push({ value: 'zip', label: 'ZIP 文件', detail: '在本地生成，保留目录结构，不上传托管服务。' });
-    }
-
-    let notice: string = '';
-    if (GIT_UI_ENABLED && vault.type === 'git') {
-      try {
-        const link: ShareLinkScope = scope;
-        const targetPath: string = path;
-        const linkResult = ShareLinkService.build(vault, link, targetPath);
-        options.push({ value: 'link', label: '远端网页链接', detail: '来自已配置的 Git 远端和跟踪分支。' });
-        notice = linkResult.accessNotice;
-      } catch (error) {
-        const err = error as Error;
-        notice = err.message + '；仍可分享本地文件。';
+    const folderPath: string = this.sharePathForScope('folder', scope, path, notePath);
+    const noteName: string = notePath.substring(notePath.lastIndexOf('/') + 1);
+    const noteOptions: ShareFormatOption[] = [
+      { value: 'image', label: '长图', detail: '整篇笔记合成一张带水印的图片。', icon: 'image' },
+      { value: 'file', label: 'Markdown / ZIP', detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc' },
+      { value: 'text', label: '文本', detail: '预览并编辑本次分享文本，不写回笔记。', icon: 'message' }
+    ];
+    const folderOptions: ShareFormatOption[] = [
+      { value: 'zip', label: 'ZIP 文件', detail: '保留目录结构，并补齐引用的本地图片。', icon: 'archive' }
+    ];
+    const vaultOptions: ShareFormatOption[] = [
+      { value: 'zip', label: 'ZIP 文件', detail: '打包当前知识库中的可分享文件。', icon: 'archive' }
+    ];
+    const scopeOptions: ShareScopeOption[] = [
+      {
+        scope: 'note',
+        path: notePath,
+        label: '笔记',
+        title: '分享笔记',
+        itemName: noteName,
+        description: '当前笔记及其引用的库内图片，不包含链接到的其他笔记。',
+        summary: '当前编辑内容',
+        notice: '',
+        available: noteReady,
+        options: noteOptions
+      },
+      {
+        scope: 'folder',
+        path: folderPath,
+        label: '文件夹',
+        title: '分享文件夹',
+        itemName: folderPath.length > 0 ? folderPath : '知识库根目录',
+        description: '递归包含所选文件夹中的文件，并补齐笔记引用的库内图片。',
+        summary: '递归文件与图片',
+        notice: '',
+        available: true,
+        options: folderOptions
+      },
+      {
+        scope: 'vault',
+        path: '',
+        label: '知识库',
+        title: '分享知识库',
+        itemName: this.currentVaultId,
+        description: '排除隐藏项、回收站、缓存、草稿、凭据及内部状态。',
+        summary: '当前库的可分享文件',
+        notice: '',
+        available: true,
+        options: vaultOptions
+      }
+    ];
+    for (let i: number = 0; i < scopeOptions.length; i++) {
+      if (GIT_UI_ENABLED && vault.type === 'git') {
+        try {
+          const linkResult = ShareLinkService.build(vault, scopeOptions[i].scope, scopeOptions[i].path);
+          scopeOptions[i].options.push({
+            value: 'link',
+            label: '远端网页链接',
+            detail: '来自已配置的 Git 远端和跟踪分支。',
+            icon: 'share'
+          });
+          scopeOptions[i].notice = linkResult.accessNotice;
+        } catch (error) {
+          const err = error as Error;
+          scopeOptions[i].notice = err.message + '；仍可分享本地文件。';
+        }
       }
     }
 
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
     this.shareNoteCtl = new CustomDialogController({
       builder: ShareNoteDialog({
-        title: title,
-        itemName: itemName,
-        scopeDescription: description,
-        itemSummary: itemSummary,
-        notice: notice,
-        options: options,
-        onConfirm: (format: string): void => { void this.prepareShare(scope, path, format, itemName, vault as VaultEntry); }
+        scopeOptions: scopeOptions,
+        initialScope: scope,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        onConfirm: (targetScope: ShareLinkScope, targetPath: string, format: string, itemName: string): void => {
+          void this.prepareShare(targetScope, targetPath, format, itemName, vault as VaultEntry);
+        }
       }),
       autoCancel: true,
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
       customStyle: true
     });
     this.shareNoteCtl.open();

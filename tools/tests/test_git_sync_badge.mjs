@@ -81,7 +81,7 @@ test('badge data remains available but its top-bar and menu UI are hidden for v1
   assert.match(source, /if \(GIT_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitSyncButton\(\)/);
   const shareDialog = source.slice(source.indexOf('  private openShareNoteDialog(): void {'),
     source.indexOf('  private async prepareShare(', source.indexOf('  private openShareNoteDialog(): void {')));
-  assert.match(shareDialog, /options\.push\(\{ value: 'file', label: 'Markdown \/ ZIP'/);
+  assert.match(shareDialog, /value: 'file', label: 'Markdown \/ ZIP'/);
   assert.match(shareDialog, /if \(GIT_UI_ENABLED && vault\.type === 'git'\) \{[\s\S]*?value: 'link'/);
 });
 

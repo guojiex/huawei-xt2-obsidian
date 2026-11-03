@@ -1,113 +1,269 @@
+import { ShareLinkScope } from '../model/ShareLinkService';
+import { Icon } from '../common/Icons';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 export interface ShareFormatOption {
   value: string;
   label: string;
   detail: string;
+  icon: string;
+}
+
+export interface ShareScopeOption {
+  scope: ShareLinkScope;
+  path: string;
+  label: string;
+  title: string;
+  itemName: string;
+  description: string;
+  summary: string;
+  notice: string;
+  available: boolean;
+  options: ShareFormatOption[];
 }
 
 @CustomDialog
 export struct ShareNoteDialog {
   controller?: CustomDialogController;
-  title: string = '分享笔记';
-  itemName: string = '';
-  scopeDescription: string = '';
-  itemSummary: string = '';
-  notice: string = '';
-  options: ShareFormatOption[] = [];
-  onConfirm: (format: string) => void = (format: string) => {};
-  @State selectedFormat: string = '';
+  @Prop scopeOptions: ShareScopeOption[] = [];
+  @Prop initialScope: ShareLinkScope = 'note';
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
+  @Prop singleScreen: boolean = false;
+  onConfirm: (scope: ShareLinkScope, path: string, format: string, itemName: string) => void =
+    (scope: ShareLinkScope, path: string, format: string, itemName: string) => {};
+  @State selectedScope: ShareLinkScope = 'note';
 
   aboutToAppear(): void {
-    if (this.options.length > 0) {
-      this.selectedFormat = this.options[0].value;
+    this.selectedScope = this.initialScope;
+  }
+
+  private currentOption(): ShareScopeOption {
+    for (let i: number = 0; i < this.scopeOptions.length; i++) {
+      if (this.scopeOptions[i].scope === this.selectedScope && this.scopeOptions[i].available) {
+        return this.scopeOptions[i];
+      }
+    }
+    for (let i: number = 0; i < this.scopeOptions.length; i++) {
+      if (this.scopeOptions[i].available) {
+        return this.scopeOptions[i];
+      }
+    }
+    return this.scopeOptions[0];
+  }
+
+  private selectScope(scope: ShareLinkScope): void {
+    for (let i: number = 0; i < this.scopeOptions.length; i++) {
+      if (this.scopeOptions[i].scope === scope && this.scopeOptions[i].available) {
+        this.selectedScope = scope;
+        return;
+      }
     }
   }
 
-  private confirm(): void {
+  private onDialogKey(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down || event.keyCode !== KeyCode.KEYCODE_ESCAPE) {
+      return false;
+    }
     this.controller?.close();
-    this.onConfirm(this.selectedFormat);
+    event.stopPropagation();
+    return true;
+  }
+
+  private onScopeKey(scope: ShareLinkScope, event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      return this.onDialogKey(event);
+    }
+    let direction: number = 0;
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_LEFT || event.keyCode === KeyCode.KEYCODE_DPAD_UP) {
+      direction = -1;
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_RIGHT || event.keyCode === KeyCode.KEYCODE_DPAD_DOWN) {
+      direction = 1;
+    } else {
+      return false;
+    }
+    let index: number = 0;
+    for (let i: number = 0; i < this.scopeOptions.length; i++) {
+      if (this.scopeOptions[i].scope === scope) {
+        index = i;
+        break;
+      }
+    }
+    for (let i: number = 0; i < this.scopeOptions.length; i++) {
+      index = (index + direction + this.scopeOptions.length) % this.scopeOptions.length;
+      if (this.scopeOptions[index].available) {
+        this.selectedScope = this.scopeOptions[index].scope;
+        return true;
+      }
+    }
+    return true;
+  }
+
+  private chooseFormat(scope: ShareScopeOption, format: ShareFormatOption): void {
+    const selectedScope: ShareLinkScope = scope.scope;
+    const selectedPath: string = scope.path;
+    const selectedName: string = scope.itemName;
+    const selectedFormat: string = format.value;
+    this.controller?.close();
+    this.onConfirm(selectedScope, selectedPath, selectedFormat, selectedName);
+  }
+
+  @Builder
+  ScopeTab(option: ShareScopeOption) {
+    Text(option.label)
+      .fontSize(FontSize.body2)
+      .fontWeight(this.selectedScope === option.scope ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.selectedScope === option.scope
+        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      .height(Size.buttonH)
+      .layoutWeight(1)
+      .textAlign(TextAlign.Center)
+      .focusable(option.available)
+      .opacity(option.available ? 1 : 0.4)
+      .accessibilityText(option.label + (this.selectedScope === option.scope ? '，已选中' : ''))
+      .onKeyEvent((event: KeyEvent): boolean => { return this.onScopeKey(option.scope, event); })
+      .onClick(() => { this.selectScope(option.scope); })
+      .borderRadius(Radius.full)
+      .backgroundColor(this.selectedScope === option.scope
+        ? $r('app.color.bg_card') : Color.Transparent)
+  }
+
+  @Builder
+  FormatRow(scope: ShareScopeOption, option: ShareFormatOption) {
+    Row({ space: Space.s3 }) {
+      Row() {
+        Icon(option.icon, Space.s5, $r('app.color.brand'))
+      }
+      .width(Space.s10)
+      .height(Space.s10)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(Radius.control)
+      .backgroundColor($r('app.color.brand_bg'))
+      Column({ space: Space.s1 }) {
+        Text(option.label)
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(option.detail)
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+      Icon('chevronRight', Space.s5, $r('app.color.text_tertiary'))
+    }
+    .width('100%')
+    .constraintSize({ minHeight: Space.s16 + Space.s2 })
+    .padding({ left: Space.s4, right: Space.s3, top: Space.s3, bottom: Space.s3 })
+    .borderRadius(Radius.menu)
+    .border({ width: 1, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
+    .accessibilityText(option.label + '，' + option.detail)
+    .focusable(true)
+    .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
+    .onClick(() => { this.chooseFormat(scope, option); })
   }
 
   build() {
-    Column({ space: Space.s3 }) {
-      Row() {
-        Text(this.title)
-          .fontSize(FontSize.s3)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
+    Column({ space: Space.s4 }) {
+      Row({ space: Space.s3 }) {
+        Row() {
+          Icon('share', Space.s5, $r('app.color.brand'))
+        }
+        .width(Space.s10)
+        .height(Space.s10)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(Radius.control)
+        .backgroundColor($r('app.color.brand_bg'))
+        Column({ space: Space.s1 }) {
+          Text(this.currentOption().title)
+            .fontSize(FontSize.s3)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.text_primary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.currentOption().itemName + ' · ' + this.currentOption().summary)
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
         Text('×')
           .fontSize(FontSize.s1)
           .fontColor($r('app.color.text_secondary'))
           .width(Size.touch)
           .height(Size.touch)
           .textAlign(TextAlign.Center)
+          .accessibilityText('关闭分享')
           .focusable(true)
+          .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
           .onClick(() => { this.controller?.close(); })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-      Text(this.itemName)
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-      Text(this.scopeDescription)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      if (this.itemSummary.length > 0) {
-        Text(this.itemSummary)
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
+
+      Scroll() {
+        Column({ space: Space.s4 }) {
+          Row({ space: Space.s1 }) {
+            ForEach(this.scopeOptions, (option: ShareScopeOption) => {
+              this.ScopeTab(option)
+            }, (option: ShareScopeOption) => option.scope)
+          }
           .width('100%')
-      }
-      ForEach(this.options, (option: ShareFormatOption) => {
-        Row({ space: Space.s2 }) {
-          Text(this.selectedFormat === option.value ? '●' : '○')
-            .fontSize(FontSize.body2)
-            .fontColor(this.selectedFormat === option.value
-              ? $r('app.color.brand') : $r('app.color.text_tertiary'))
-          Column({ space: Space.s1 }) {
-            Text(option.label)
-              .fontSize(FontSize.body2)
-              .fontColor($r('app.color.text_primary'))
-            Text(option.detail)
+          .padding(Space.s1)
+          .borderRadius(Radius.full)
+          .backgroundColor($r('app.color.bg_secondary'))
+
+          Text(this.currentOption().description)
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+
+          Column({ space: Space.s2 }) {
+            ForEach(this.currentOption().options, (option: ShareFormatOption) => {
+              this.FormatRow(this.currentOption(), option)
+            }, (option: ShareFormatOption) => option.value)
+          }
+          .width('100%')
+
+          if (this.currentOption().notice.length > 0) {
+            Text(this.currentOption().notice)
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
           }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
         }
         .width('100%')
-        .padding({ top: Space.s2, bottom: Space.s2, left: Space.s2, right: Space.s2 })
-        .borderRadius(Radius.control)
-        .backgroundColor(this.selectedFormat === option.value
-          ? $r('app.color.brand_bg') : $r('app.color.bg_card'))
-        .onClick(() => { this.selectedFormat = option.value; })
-      }, (option: ShareFormatOption) => option.value)
-      if (this.notice.length > 0) {
-        Text(this.notice)
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-      }
-      Row({ space: Space.s2 }) {
-        Button('准备分享')
-          .width('100%')
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          .enabled(this.selectedFormat.length > 0)
-          .onClick(() => { this.confirm(); })
+        .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
+      .constraintSize({ maxHeight: this.windowHeightVp > 0
+        ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 4))
+        : Size.menuMaxH })
+      .scrollBar(BarState.Off)
     }
-    .width(Size.drawerW)
+    .width(this.windowWidthVp > 0
+      ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
+      : Size.shareW)
+    .constraintSize({ maxHeight: this.windowHeightVp > 0
+      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s6))
+      : Size.menuMaxH })
     .padding(Space.s5)
-    .borderRadius(Radius.dialog)
+    .borderRadius(this.singleScreen
+      ? { topLeft: Radius.dialog, topRight: Radius.dialog, bottomLeft: 0, bottomRight: 0 }
+      : Radius.dialog)
     .backgroundColor($r('app.color.bg_card'))
+    .alignItems(HorizontalAlign.Start)
   }
 }
