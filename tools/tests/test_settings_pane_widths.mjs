@@ -30,6 +30,9 @@ const method = indexSource.slice(methodStart, methodEnd).trim();
 const code = transformSync(`class SettingsWidthHarness {
   noteNavigationWidth() { return this.navigationWidth; }
   noteContentRatio() { return this.contentRatio; }
+  noteNavigationProgress() {
+    return this.focused ? (this.focusNavigationOpen ? 1 : 0) : this.sidebarProgress;
+  }
   mdPaneWidth() {
     return mdPaneWidths(this.windowWidthVp, this.noteNavigationWidth(),
       this.sidebarProgress, this.contentRatio);
@@ -53,6 +56,7 @@ function createHarness(options = {}) {
     singleLandscape: false,
     sidebarCollapsed: false,
     focused: false,
+    focusNavigationOpen: false,
     referenceVisible: true,
     activePane: 'left',
     sidebarProgress: 1,
@@ -100,6 +104,11 @@ test('single-screen layout reports only its active pane', () => {
 test('focus layout reports the active pane at full width', () => {
   const app = createHarness({ focused: true, activePane: 'right' });
   assert.equal(app.settingsPaneWidthSummary(), '目录 0.0% · 左栏 0.0% · 右栏 100.0%');
+});
+
+test('focus layout with in-focus navigation open subtracts it from the active pane', () => {
+  const app = createHarness({ focused: true, focusNavigationOpen: true, activePane: 'right' });
+  assert.equal(app.settingsPaneWidthSummary(), '目录 33.3% · 左栏 0.0% · 右栏 66.7%');
 });
 
 test('single-landscape layout reports the active pane without counting overlay navigation', () => {

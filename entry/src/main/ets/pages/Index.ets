@@ -303,6 +303,8 @@ struct Index {
   @State @Watch('onFormatContextChanged') activePane: string = 'left';
   @State @Watch('onFormatContextChanged') referenceVisible: boolean = true;
   @State @Watch('onFormatContextChanged') focused: boolean = false;
+  /** 专注模式下临时展开的文件导航（汉堡切换）；退出专注即重置，不进会话快照 */
+  @State focusNavigationOpen: boolean = false;
   @State paneMoreOpen: boolean = false;
   @State paneMorePane: string = 'left';
   @State leftPaneWidthVp: number = 0;
@@ -1175,13 +1177,16 @@ struct Index {
   }
 
   private noteContentWidth(): number {
-    const progress: number = this.focused ? 0 : this.sidebarProgress;
+    const progress: number = this.noteNavigationProgress();
     const navWidth: number = this.noteNavigationWidth() * progress;
     return Math.max(0, this.windowWidthVp - navWidth);
   }
 
   private noteNavigationProgress(): number {
-    return this.focused ? 0 : this.sidebarProgress;
+    if (this.focused) {
+      return this.focusNavigationOpen ? 1 : 0;
+    }
+    return this.sidebarProgress;
   }
 
   private noteContentRatio(): number {
@@ -1195,16 +1200,17 @@ struct Index {
     }
     const singleScreenLayout: boolean = this.isSingleScreenLayout();
     const mdWidths: MdPaneWidths = this.mdPaneWidth();
-    const navigationVisible: boolean = !singleScreenLayout &&
-      !this.sidebarCollapsed && !this.focused;
+    const navigationVisible: boolean = this.focused
+      ? this.focusNavigationOpen
+      : !singleScreenLayout && !this.sidebarCollapsed;
     const sidebarWidth: number = navigationVisible
-      ? this.noteNavigationWidth() * this.sidebarProgress : 0;
+      ? this.noteNavigationWidth() * this.noteNavigationProgress() : 0;
     const contentWidth: number = Math.max(0, totalWidth - sidebarWidth);
     let leftWidth: number = contentWidth;
     let rightWidth: number = 0;
     if (singleScreenLayout || this.focused) {
-      leftWidth = this.activePane === 'left' ? totalWidth : 0;
-      rightWidth = this.activePane === 'right' ? totalWidth : 0;
+      leftWidth = this.activePane === 'left' ? contentWidth : 0;
+      rightWidth = this.activePane === 'right' ? contentWidth : 0;
     } else if (this.breakpoint === Breakpoint.MD) {
       leftWidth = this.referenceVisible ? mdWidths.left : contentWidth;
       rightWidth = this.referenceVisible ? mdWidths.right : 0;
@@ -1739,6 +1745,10 @@ struct Index {
       this.setDrawerOpen(false);
       return true;
     }
+    if (this.topView === 'note' && this.focused && this.focusNavigationOpen) {
+      this.focusNavigationOpen = false;
+      return true;
+    }
     if (this.topView === 'note' && !this.focused && this.breakpoint !== Breakpoint.SM &&
       !this.sidebarCollapsed) {
       this.setSidebarCollapsed(true);
@@ -2249,6 +2259,7 @@ struct Index {
     const show: boolean = this.focused || !this.isReferenceShown();
     if (this.focused) {
       this.focused = false;
+      this.focusNavigationOpen = false;
     }
     this.referenceVisible = show;
     this.scheduleWorkspaceSessionSave();
@@ -2291,6 +2302,9 @@ struct Index {
       return;
     }
     this.focused = !this.focused;
+    if (!this.focused) {
+      this.focusNavigationOpen = false;
+    }
     this.scheduleWorkspaceSessionSave();
     this.moreMenuOpen = false;
     this.paneMoreOpen = false;
@@ -4180,12 +4194,10 @@ struct Index {
       this.agentHamburgerSeq++;
       return;
     }
+    // 专注下点汉堡只推入/收回文件列表，保持专注单栏（v1.8 语义修正：
+    // 退出专注恢复进入前布局只走右上角专注入口，汉堡不再顺带退出专注）。
     if (this.focused) {
-      this.toggleFocus();
-      if (this.breakpoint === Breakpoint.MD && this.activePane === 'right') {
-        this.setActivePane('left');
-      }
-      this.setSidebarCollapsed(false);
+      this.focusNavigationOpen = !this.focusNavigationOpen;
       return;
     }
     if (this.breakpoint === Breakpoint.SM) {
@@ -5729,7 +5741,7 @@ struct Index {
           .backgroundColor($r('app.color.bg_navigation'))
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
           .margin({ left: -this.noteNavigationWidth() * (1 - this.noteNavigationProgress()) })
-          .enabled(!this.sidebarCollapsed && !this.focused)
+          .enabled(this.focused ? this.focusNavigationOpen : !this.sidebarCollapsed)
           .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           SplitHandle({
@@ -5741,7 +5753,7 @@ struct Index {
             .width(Space.s4 * this.noteNavigationProgress())
             .margin({ left: -Space.s2 * this.noteNavigationProgress(),
               right: -Space.s2 * this.noteNavigationProgress() })
-            .enabled(!this.sidebarCollapsed && !this.focused)
+            .enabled(this.focused ? this.focusNavigationOpen : !this.sidebarCollapsed)
             .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           Column() {

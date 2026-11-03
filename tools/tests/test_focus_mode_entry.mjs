@@ -46,7 +46,8 @@ test('custom icon is used and focus entry replaces split entry for an active two
 
 test('focus preference restoration, explicit toggle, and its current API floor remain wired', () => {
   assert.match(indexSource, /this\.focused = session\.focused/);
-  assert.match(indexSource, /private toggleFocus\(\): void \{\s*if \(!this\.focused && !this\.canToggleFocus\(\)\) \{\s*return;\s*\}\s*this\.focused = !this\.focused;\s*this\.scheduleWorkspaceSessionSave\(\)/);
-  assert.match(indexSource, /if \(this\.focused\) \{\s*this\.toggleFocus\(\)/);
+  assert.match(indexSource, /private toggleFocus\(\): void \{\s*if \(!this\.focused && !this\.canToggleFocus\(\)\) \{\s*return;\s*\}\s*this\.focused = !this\.focused;\s*if \(!this\.focused\) \{\s*this\.focusNavigationOpen = false;\s*\}\s*this\.scheduleWorkspaceSessionSave\(\)/);
+  assert.match(indexSource, /private onHamburger\(\): void \{[\s\S]*?if \(this\.focused\) \{\s*this\.focusNavigationOpen = !this\.focusNavigationOpen;\s*return;\s*\}/);
+  assert.doesNotMatch(indexSource, /if \(this\.focused\) \{\s*this\.toggleFocus\(\)/);
   assert.match(apiNotes, /accessibilityText\(value: string\)` 与 `accessibilityTextHint\(value: string\)` 均自 API 12 起/);
 });
