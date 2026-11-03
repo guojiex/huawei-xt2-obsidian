@@ -19,6 +19,7 @@ import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBo
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
 import { lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection } from './blockSelection.mjs'
+import { appendShareWatermark } from './shareWatermark.mjs'
 
 declare global {
   interface Window {
@@ -60,6 +61,7 @@ interface MdPreviewApi {
   cancelSourceFollow(): void
   restoreScrollTop(top: number): void
   requestShareCaptureMetrics(id: number): void
+  appendShareWatermark(id: number): void
   prepareShareCapturePages(id: number, pageCount: number): void
   setShareCaptureScrollTop(id: number, top: number): void
 }
@@ -1190,6 +1192,16 @@ const api: MdPreviewApi = {
     try {
       await mermaidRender
       await waitForLocalImages(document.getElementById('content') as HTMLElement)
+      await nextRenderedFrame()
+      sendShareCaptureResult(id)
+    } catch (error) {
+      sendShareCaptureResult(id, String(error))
+    }
+  },
+
+  async appendShareWatermark(id: number): Promise<void> {
+    try {
+      appendShareWatermark(document.getElementById('content') as HTMLElement, document)
       await nextRenderedFrame()
       sendShareCaptureResult(id)
     } catch (error) {

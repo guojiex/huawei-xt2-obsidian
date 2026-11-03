@@ -84,6 +84,10 @@ const html = `<!doctype html>
     word-break: break-word;
   }
   #content .preview-body { zoom: var(--preview-scale, 1); }
+  #content .share-watermark {
+    margin-top: var(--s8); padding-top: var(--s3); border-top: var(--stroke) solid var(--line);
+    color: var(--muted); font-size: var(--caption); line-height: var(--leading); text-align: right;
+  }
   .preview-source-block { display: contents; }
   .preview-zoom {
     position: fixed; right: var(--s4); bottom: var(--s4); z-index: 5;

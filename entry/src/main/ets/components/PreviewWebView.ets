@@ -283,6 +283,10 @@ class PreviewImpl {
     this.enqueue(`window.__mdpreview.requestShareCaptureMetrics(${id})`);
   }
 
+  appendShareWatermark(id: number): void {
+    this.enqueue(`window.__mdpreview.appendShareWatermark(${id})`);
+  }
+
   setShareCaptureScrollTop(id: number, top: number): void {
     this.enqueue(`window.__mdpreview.setShareCaptureScrollTop(${id},${top})`);
   }
@@ -531,6 +535,12 @@ export class PreviewBridge {
   requestShareCaptureMetrics(): Promise<PreviewCaptureResult> {
     return this.requestCapture((id: number): void => {
       this.impl?.requestShareCaptureMetrics(id);
+    });
+  }
+
+  appendShareWatermark(): Promise<PreviewCaptureResult> {
+    return this.requestCapture((id: number): void => {
+      this.impl?.appendShareWatermark(id);
     });
   }
 

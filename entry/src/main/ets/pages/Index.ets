@@ -4942,7 +4942,8 @@ struct Index {
     try {
       const ready: Promise<void> = this.waitForShareCaptureReady();
       await ready;
-      const initial: PreviewCaptureResult = await bridge.requestShareCaptureMetrics();
+      await bridge.requestShareCaptureMetrics();
+      const initial: PreviewCaptureResult = await bridge.appendShareWatermark();
       const captureTops: number[] = NoteImageShareService.pageTops(initial.scrollHeight, initial.viewportHeight);
       const prepared: PreviewCaptureResult = await bridge.prepareShareCapturePages(captureTops.length);
       if (prepared.viewportHeight <= 0 || prepared.viewportWidth <= 0 ||
