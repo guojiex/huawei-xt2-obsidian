@@ -38,6 +38,7 @@ import {
 import { hasCodeBlockSelection, normalizeEditorText, serializeEditorText, toggleCodeBlock } from './codeBlockFormat'
 import { toggleMarkdownFormat, toggleTaskStatus } from './markdownFormat'
 import { createChangeNotificationTimer } from './changeNotification'
+import { blockSourceEditRange, isBlockSourceEditTransaction, prepareBlockSourceEdit } from './blockModel'
 
 declare global {
   interface Window {
@@ -60,6 +61,8 @@ declare global {
 interface MdEditorApi {
   setContent(b64: string, documentRevision: number, vaultIdB64: string, noteDirB64: string): void
   replaceContentFromPreview(b64: string, expectedRevision: number): void
+  replaceBlockSource(id: number, from: number, to: number, expectedB64: string,
+    replacementB64: string, expectedRevision: number): void
   /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
   requestContent(reqId: number): void
@@ -397,6 +400,9 @@ function simpleModeExtensions(): Extension[] {
   return [
     simpleModeRangesField,
     EditorState.changeFilter.of((transaction) => {
+      if (transaction.annotation(blockSourceEditRange)) {
+        return isBlockSourceEditTransaction(transaction)
+      }
       const model = transaction.startState.field(simpleModeRangesField)
       return allowsSimpleModeTransaction(transaction.startState, transaction, model.protected)
     }),
@@ -813,6 +819,27 @@ const api: MdEditorApi = {
     } finally {
       applyingContent = false
     }
+  },
+
+  replaceBlockSource(id: number, from: number, to: number, expectedB64: string,
+    replacementB64: string, expectedRevision: number): void {
+    let applied = false
+    if (view && isEditable && simpleExperience && expectedRevision === documentRevision) {
+      const edit = prepareBlockSourceEdit(view.state, from, to, b64decode(expectedB64),
+        b64decode(replacementB64), documentLineEnding)
+      if (edit) {
+        view.dispatch({
+          changes: edit.changes,
+          selection: { anchor: edit.selection.from, head: edit.selection.to },
+          annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
+          scrollIntoView: true,
+          userEvent: 'input'
+        })
+        view.focus()
+        applied = true
+      }
+    }
+    postToArkts({ type: 'event', name: 'blockSourceEdit', id: id, applied: applied })
   },
 
   getContent(): string {

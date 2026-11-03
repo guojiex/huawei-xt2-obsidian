@@ -64,6 +64,7 @@ export class Size {
   static readonly paneMinW: number = 240;
   static readonly formatMenuW: number = 360;  // Aa 浮层宽度（v2 --format-width）
   static readonly blockPanelW: number = 380;
+  static readonly blockSourceW: number = 480;
   /** 触控热区下限：图标按钮视觉 24，热区必须 ≥48（v0.1 遗留缺陷，4.x 修正） */
   static readonly touch: number = 48;
   /** 浮层最大高度：映射 v2 `--window-min`，用于 vault-menu 这类可滚动下拉（超出即内部滚动） */

@@ -222,6 +222,14 @@ struct Index {
   @State blockPanelSourcePath: string = '';
   private blockPanelRestoreFocus: boolean = false;
   private blockPanelPendingAction: boolean = false;
+  @State blockSourceEditing: boolean = false;
+  @State blockSourceDraft: string = '';
+  @State blockSourceBlockType: string = '';
+  private blockSourceSnapshot: string = '';
+  private blockSourceFrom: number = 0;
+  private blockSourceTo: number = 0;
+  private blockSourceDocumentRevision: number = 0;
+  private blockSourceOpenRequestId: number = 0;
   private formatMenuSourceVaultId: string = '';
   private formatMenuSourcePath: string = '';
   @State navigationRatio: number = -1;
@@ -2511,7 +2519,7 @@ struct Index {
             };
           }
           this.blockPanelAnchor = panelAnchor;
-          this.blockPanelTitle = this.blockPanelTitleFor(panelAnchor);
+          this.blockPanelTitle = this.blockSourceEditing ? '以源码编辑' : this.blockPanelTitleFor(panelAnchor);
           this.updateBlockPropertyPanelLayout(pane);
         }
       }
@@ -2666,8 +2674,9 @@ struct Index {
     const paneArea: number[] = pane === 'right'
       ? this.rightBlockToolbarPaneArea : this.leftBlockToolbarPaneArea;
     const anchorArea: number[] = [anchor.x, anchor.y, anchor.width, anchor.height];
+    const panelWidth: number = this.blockSourceEditing ? Size.blockSourceW : Size.blockPanelW;
     const layout: AnchoredPopupLayout | null = this.calculateAnchoredPopupLayout(
-      pane, paneArea, anchorArea, Size.blockPanelW, Size.menuMaxH, anchor.x);
+      pane, paneArea, anchorArea, panelWidth, Size.menuMaxH, anchor.x);
     if (layout === null) {
       this.closeBlockPropertyPanel(false);
       return;
@@ -2726,6 +2735,9 @@ struct Index {
     this.blockPanelSourcePath = this.paneFilePath(pane);
     this.blockPanelRestoreFocus = true;
     this.blockPanelPendingAction = false;
+    this.blockSourceEditing = false;
+    this.blockSourceDraft = '';
+    this.blockSourceBlockType = '';
     this.blockPanelWidth = Size.blockPanelW;
     this.blockPanelMaxHeight = Size.menuMaxH;
     this.leftBlockPanelOpen = pane === 'left';
@@ -2737,6 +2749,174 @@ struct Index {
     this.blockPanelRestoreFocus = restoreFocus;
     this.leftBlockPanelOpen = false;
     this.rightBlockPanelOpen = false;
+    this.resetBlockSourceEditor();
+  }
+
+  private resetBlockSourceEditor(): void {
+    this.blockSourceEditing = false;
+    this.blockSourceDraft = '';
+    this.blockSourceBlockType = '';
+    this.blockSourceSnapshot = '';
+    this.blockSourceFrom = 0;
+    this.blockSourceTo = 0;
+    this.blockSourceDocumentRevision = 0;
+    this.blockSourceOpenRequestId = 0;
+  }
+
+  private isCurrentBlockSourceTarget(pane: string, vaultId: string, path: string, requestId: number,
+    documentRevision: number): boolean {
+    return this.isBlockPropertyPanelOpen() && this.blockPanelPane === pane && this.activePane === pane &&
+      this.topView === 'note' && this.experienceMode === 'simple' && this.currentVaultId === vaultId &&
+      this.paneFilePath(pane) === path && this.isPaneEditable(pane) &&
+      (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) === requestId &&
+      this.editorBridgeForPane(pane).currentDocumentRevision === documentRevision;
+  }
+
+  private async openBlockSourceDrawer(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    if (anchor === null || !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
+      this.editorBridgeForPane(pane).currentDocumentRevision)) {
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      promptAction.showToast({ message: '无法同步当前笔记，未打开块源码' });
+      return;
+    }
+    const bridge: EditorBridge = this.editorBridgeForPane(pane);
+    const documentRevision: number = bridge.currentDocumentRevision;
+    const currentAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
+      currentAnchor === null || currentAnchor.from !== anchor.from || currentAnchor.to !== anchor.to) {
+      return;
+    }
+    let source: string = '';
+    try {
+      source = await bridge.getContent();
+    } catch {
+      promptAction.showToast({ message: '读取块源码失败' });
+      return;
+    }
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
+      latestAnchor === null || latestAnchor.from !== anchor.from || latestAnchor.to !== anchor.to ||
+      anchor.from < 0 || anchor.to <= anchor.from || anchor.to > source.length) {
+      promptAction.showToast({ message: '块内容已变化，请重新打开面板' });
+      return;
+    }
+    const snapshot: string = source.slice(anchor.from, anchor.to);
+    if (snapshot.length === 0) {
+      promptAction.showToast({ message: '未能读取块源码，请重新打开面板' });
+      return;
+    }
+    this.blockSourceFrom = anchor.from;
+    this.blockSourceTo = anchor.to;
+    this.blockSourceSnapshot = snapshot;
+    this.blockSourceDraft = snapshot;
+    this.blockSourceBlockType = this.blockPanelTitleFor(anchor);
+    this.blockSourceDocumentRevision = documentRevision;
+    this.blockSourceOpenRequestId = requestId;
+    this.blockPanelTitle = '以源码编辑';
+    this.blockSourceEditing = true;
+    this.updateBlockPropertyPanelLayout(pane);
+  }
+
+  private cancelBlockSourceDrawer(): void {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    this.resetBlockSourceEditor();
+    if (anchor !== null) {
+      this.blockPanelTitle = this.blockPanelTitleFor(anchor);
+    }
+    this.updateBlockPropertyPanelLayout(this.blockPanelPane);
+  }
+
+  private onBlockSourceEditorKey(event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      this.cancelBlockSourceDrawer();
+      event.stopPropagation();
+      return true;
+    }
+    const ctrlPressed: boolean = event.getModifierKeyState !== undefined &&
+      event.getModifierKeyState(['Ctrl']);
+    if (event.keyCode === KeyCode.KEYCODE_ENTER && (ctrlPressed || event.metaKey === 1)) {
+      void this.saveBlockSourceDrawer();
+      event.stopPropagation();
+      return true;
+    }
+    return false;
+  }
+
+  private async saveBlockSourceDrawer(): Promise<void> {
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = this.blockSourceOpenRequestId;
+    const bridge: EditorBridge = this.editorBridgeForPane(pane);
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
+      this.blockSourceDocumentRevision)) {
+      promptAction.showToast({ message: '当前笔记已变化，请重新打开块源码' });
+      return;
+    }
+    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
+    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
+    this.resetSaveFeedback();
+    WorkspaceEditGuard.mark(pane, vaultId, path);
+    if (pane === 'right') {
+      this.rightEditorDirty = true;
+    } else {
+      this.editorDirty = true;
+    }
+    let applied: boolean = false;
+    let requestFailed: boolean = false;
+    try {
+      applied = await bridge.replaceBlockSource(this.blockSourceFrom, this.blockSourceTo,
+        this.blockSourceSnapshot, this.blockSourceDraft, this.blockSourceDocumentRevision);
+    } catch {
+      requestFailed = true;
+    }
+    if (!applied) {
+      if (requestFailed) {
+        if (this.currentVaultId === vaultId && this.paneFilePath(pane) === path &&
+          (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) === requestId) {
+          if (pane === 'right') {
+            this.scheduleRightSave();
+          } else {
+            this.scheduleSave();
+          }
+        }
+        promptAction.showToast({ message: '块源码回写失败，请重试' });
+        return;
+      }
+      if (!wasDirty && !wasUnsaved &&
+        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, this.blockSourceDocumentRevision)) {
+        WorkspaceEditGuard.clear(pane, vaultId, path);
+        if (pane === 'right') {
+          this.rightEditorDirty = false;
+        } else {
+          this.editorDirty = false;
+        }
+      }
+      promptAction.showToast({ message: requestFailed
+        ? '块源码回写失败，请重试' : '块内容已变化，请重新打开后再编辑' });
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
+      this.blockSourceDocumentRevision)) {
+      return;
+    }
+    if (pane === 'right') {
+      this.scheduleRightSave();
+    } else {
+      this.scheduleSave();
+    }
+    this.closeBlockPropertyPanel(false);
   }
 
   private blockPanelActionLabel(): string {
@@ -6272,58 +6452,94 @@ struct Index {
 
   @Builder
   BlockPropertyPanel() {
-    Column() {
-      Scroll() {
-        Column() {
-          if (this.blockPanelActionLabel().length > 0) {
-            Row() {
-              Text(this.blockPanelActionLabel())
-                .fontSize(FontSize.body2)
-                .fontColor($r('app.color.text_primary'))
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .height(Size.touch)
-            .padding({ left: Space.s3, right: Space.s3 })
-            .focusable(true)
-            .accessibilityText(this.blockPanelActionLabel())
-            .onClick((): void => { this.closeBlockPanelForContentAction(); })
-          } else {
-            Row() {
-              Text('暂无可用属性')
-                .fontSize(FontSize.body2)
-                .fontColor($r('app.color.text_tertiary'))
-                .layoutWeight(1)
-            }
-            .width('100%')
-            .height(Size.touch)
-            .padding({ left: Space.s3, right: Space.s3 })
-          }
+    if (this.blockSourceEditing) {
+      Column() {
+        Text(this.blockSourceBlockType)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+        Text('只显示这一块的 Markdown，保存后只替换这一块')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+        TextArea({ text: this.blockSourceDraft })
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .fontFamily('monospace')
+          .backgroundColor($r('app.color.bg_secondary'))
+          .width('100%')
+          .layoutWeight(1)
+          .constraintSize({ minHeight: Size.touch * 4 })
+          .onChange((value: string): void => { this.blockSourceDraft = value; })
+          .onKeyEvent((event: KeyEvent): boolean => { return this.onBlockSourceEditorKey(event); })
+          .accessibilityText('块源码')
+        Row({ space: Space.s2 }) {
+          Button('取消')
+            .onClick((): void => { this.cancelBlockSourceDrawer(); })
+          Button('保存')
+            .onClick((): void => { void this.saveBlockSourceDrawer(); })
         }
         .width('100%')
+        .justifyContent(FlexAlign.End)
       }
       .width('100%')
-      .constraintSize({
-        maxHeight: Math.max(Space.s1, this.blockPanelMaxHeight - Size.touch - Space.s4)
-      })
+      .constraintSize({ maxHeight: this.blockPanelMaxHeight })
+      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+      .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
+    } else {
+      Column() {
+        Scroll() {
+          Column() {
+            if (this.blockPanelActionLabel().length > 0) {
+              Row() {
+                Text(this.blockPanelActionLabel())
+                  .fontSize(FontSize.body2)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .height(Size.touch)
+              .padding({ left: Space.s3, right: Space.s3 })
+              .focusable(true)
+              .accessibilityText(this.blockPanelActionLabel())
+              .onClick((): void => { this.closeBlockPanelForContentAction(); })
+            } else {
+              Row() {
+                Text('暂无可用属性')
+                  .fontSize(FontSize.body2)
+                  .fontColor($r('app.color.text_tertiary'))
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .height(Size.touch)
+              .padding({ left: Space.s3, right: Space.s3 })
+            }
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .constraintSize({
+          maxHeight: Math.max(Space.s1, this.blockPanelMaxHeight - Size.touch - Space.s4)
+        })
 
-      Row() {
-        Text('以源码编辑此块')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_tertiary'))
-          .layoutWeight(1)
+        Row() {
+          Text('以源码编辑此块')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .accessibilityText('以源码编辑此块')
+        .onClick((): void => { void this.openBlockSourceDrawer(); })
       }
       .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .enabled(false)
-      .accessibilityText('以源码编辑此块')
+      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+      .constraintSize({ maxHeight: this.blockPanelMaxHeight })
+      .focusable(true)
+      .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
     }
-    .width('100%')
-    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-    .constraintSize({ maxHeight: this.blockPanelMaxHeight })
-    .focusable(true)
-    .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
   }
 
   @Builder

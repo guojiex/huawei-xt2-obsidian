@@ -1,4 +1,4 @@
-import { EditorState } from '@codemirror/state'
+import { Annotation, EditorState, Transaction } from '@codemirror/state'
 import { BlockRange, BlockType } from './blockRegistry.ts'
 
 /**
@@ -69,6 +69,48 @@ export interface BlockChange {
 export interface BlockEditResult {
   changes: BlockChange
   selection: BlockSelection
+}
+
+export const blockSourceEditRange = Annotation.define<BlockSelection>()
+
+/** Convert a preview source interval into the normalized CodeMirror document coordinates. */
+export function prepareBlockSourceEdit(state: EditorState, from: number, to: number,
+  expectedSource: string, replacement: string, lineEnding: '\n' | '\r\n'): BlockEditResult | null {
+  const source = lineEnding === '\r\n' ? state.doc.toString().replace(/\n/g, '\r\n') : state.doc.toString()
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from || to > source.length ||
+    (source[from - 1] === '\r' && source[from] === '\n') ||
+    (source[to - 1] === '\r' && source[to] === '\n') ||
+    source.slice(from, to) !== expectedSource) {
+    return null
+  }
+  const docFrom = source.slice(0, from).replace(/\r\n/g, '\n').length
+  const docTo = source.slice(0, to).replace(/\r\n/g, '\n').length
+  return applyBlockEdit(state, {
+    from: docFrom,
+    to: docTo,
+    type: 'mixed',
+    id: 'source-drawer'
+  }, {
+    type: 'replaceSource',
+    text: replacement.replace(/\r\n/g, '\n')
+  })
+}
+
+/** The exception for a source-drawer edit permits exactly one replacement of its declared interval. */
+export function isBlockSourceEditTransaction(transaction: Transaction): boolean {
+  const range = transaction.annotation(blockSourceEditRange)
+  if (!range || !transaction.docChanged) {
+    return false
+  }
+  let count = 0
+  let exactRange = true
+  transaction.changes.iterChangedRanges((from: number, to: number): void => {
+    count++
+    if (from !== range.from || to !== range.to) {
+      exactRange = false
+    }
+  })
+  return count === 1 && exactRange
 }
 
 /**

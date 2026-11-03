@@ -50,6 +50,7 @@ class EditorImpl {
   private pending: string[] = [];
   /** getContent 往返：reqId → 回调（Web 侧以 content 事件回内容，不走 runJavaScript 返回值） */
   private contentWaiters: Map<number, (b64: string) => void> = new Map();
+  private blockSourceWaiters: Map<number, (applied: boolean) => void> = new Map();
   private nextReqId: number = 1;
 
   constructor(controller: webview.WebviewController) {
@@ -140,12 +141,49 @@ class EditorImpl {
     });
   }
 
+  async replaceBlockSource(from: number, to: number, expectedSource: string, replacement: string,
+    expectedRevision: number): Promise<boolean> {
+    const reqId: number = this.nextReqId;
+    this.nextReqId += 1;
+    const expectedB64: string = BridgeCodec.encode(expectedSource);
+    const replacementB64: string = BridgeCodec.encode(replacement);
+    return new Promise<boolean>((resolve: (applied: boolean) => void, reject: (error: Error) => void) => {
+      let settled: boolean = false;
+      const timerId = setTimeout((): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.blockSourceWaiters.delete(reqId);
+        reject(new Error('块源码回写超时'));
+      }, 3000);
+      this.blockSourceWaiters.set(reqId, (applied: boolean): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timerId);
+        resolve(applied);
+      });
+      this.enqueue(`window.__mdeditor.replaceBlockSource(${reqId},${from},${to},` +
+        `'${expectedB64}','${replacementB64}',${expectedRevision})`);
+    });
+  }
+
   /** Web 侧 content 回复的落点（EditorWebView.handleMessage 按 reqId 路由过来） */
   handleContent(reqId: number, b64: string): void {
     const waiter = this.contentWaiters.get(reqId);
     if (waiter) {
       this.contentWaiters.delete(reqId);
       waiter(b64);
+    }
+  }
+
+  handleBlockSourceEditResult(reqId: number, applied: boolean): void {
+    const waiter = this.blockSourceWaiters.get(reqId);
+    if (waiter) {
+      this.blockSourceWaiters.delete(reqId);
+      waiter(applied);
     }
   }
 
@@ -335,6 +373,18 @@ export class EditorBridge {
     return await this.impl.getContent();
   }
 
+  get currentDocumentRevision(): number {
+    return this.documentRevision;
+  }
+
+  async replaceBlockSource(from: number, to: number, expectedSource: string, replacement: string,
+    expectedRevision: number): Promise<boolean> {
+    if (!this.impl) {
+      return false;
+    }
+    return await this.impl.replaceBlockSource(from, to, expectedSource, replacement, expectedRevision);
+  }
+
   insertText(text: string): void {
     this.impl?.insertText(text);
   }
@@ -512,6 +562,8 @@ export struct EditorWebView {
     } else if (name === 'content') {
       // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContent Promise
       this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
+    } else if (name === 'blockSourceEdit') {
+      this.impl?.handleBlockSourceEditResult(msg['id'] as number, msg['applied'] as boolean);
     } else if (name === 'change') {
       if (this.impl?.isCurrentDocumentRevision(msg['revision'] as number)) {
         this.onChange((msg['len'] as number) ?? 0);

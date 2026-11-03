@@ -1385,7 +1385,8 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 本机 HarmonyOS SDK 的 `ets/api/@ohos.multimodalInput.keyCode.d.ts` 声明方向键 `KEYCODE_DPAD_UP/DOWN/LEFT/RIGHT` 为 2012–2015、中心键 2016、空格 2050、Enter 2054、Home/End 2081–2082，均为 since 9。
 - `ets/component/common.d.ts` 的布尔型 `onKeyEvent` 回调为 since 15（void 型重载为 since 7），组件 `id()` 为 since 11；`ets/api/@ohos.arkui.UIContext.d.ts` 的 `UIContext.getFocusController()` / `FocusController.requestFocus()` 为 since 12。声明版本均不高于工程兼容上限 API 24。
 - 文件树操作菜单快捷键声明：`ets/api/@ohos.multimodalInput.keyCode.d.ts` 的 `KEYCODE_MENU` / `KEYCODE_F10` 均为 since 9；ArkUI `KeyEvent.getModifierKeyState(['Shift'])` 以及 `DismissPopupAction.reason` / `dismiss()` 均为 since 12，`DismissReason.PRESS_BACK` 包含 Esc 与系统 Back。均不高于 API 24；这只是本机 SDK 声明核对，不证明键盘路由、弹层焦点或设备交互。
-- 以上仅核对当前本机 SDK 的声明与可用版本；本轮 HAP 在 API 26 模拟器安装，未实际注入键盘事件，不能据此宣称 API 24 / XT2 键盘行为通过。
+- v1.18 块源码抽屉使用的 `KEYCODE_ENTER` 声明 since 9，`KeyEvent.metaKey` since 7，`getModifierKeyState(['Ctrl'])` since 12；`getModifierKeyState` 仅声明支持 Ctrl / Alt / Shift，`metaKey` 文档描述 Meta 键，不证明 Apple 键盘的 Cmd 映射。该实现的快捷键和 TextArea 焦点仍需 API26 模拟器及 API24 / XT2 验收。
+- v1.18 源码抽屉快捷键仅完成本机 SDK 声明核对；未在 API 26 模拟器实际注入键盘事件，也没有 API 24 / XT2 键盘路由证据。
 
 ### L-14 v1.7 编辑模式设置的键盘选择（SDK 声明 + API 26 模拟器）⚠️
 
@@ -1879,4 +1880,4 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - **关闭方式**（官方 Modal Page Overview 对 semi-modal 的描述）：侧滑、点遮罩、点关闭按钮、下拉四种；生命周期 `onWillAppear → onAppear → onWillDisappear → onDisappear`；面板内滚动默认嵌套策略 `{Forward: PARENT_FIRST, Backward: SELF_FIRST}`。
 - **两个坑**：① 未用 `$$` 双向绑定时，**拖拽关闭不会改变 `isShow` 的值**（必须 `$$`）；② 宿主节点未挂载时设 `isShow=true` **不会显示**，建议在 `onAppear` 之后再弹。
 - **本项目判断**：块属性面板用 `bindSheet` 单档 `SheetSize.MEDIUM`（约半屏）+ `dragBar: true` + `showClose: true` + `title: { title: <块类型名> }`；**不用多档 `detents`** —— 它是设置面板，不需要在半屏 / 全屏之间拖拽切换，多档反而会让内容高度不确定。
-- **状态**：⚠️ `preferType` 的 API 24 声明范围已由本机 API 26 SDK 版本注解核实，官方 FAQ 仅作类型用法旁证；**没有 API 24 / XT2 运行时证据**。v1.18 的 18.5 锚点 / 浮条框架与 18.6 `bindSheet` 面板入口已有源码和自动测试；DevEco ArkTS 编译通过，HAP 打包仍受本机 Java 架构问题阻塞。原型 `docs/prototype/v2/index.html` 已按该形态给出 HTML 示意（顶部拖拽条、右上关闭图标、遮罩、分组列表行），**原型不能代替原生外观与设备验收**。
+- **状态**：⚠️ `preferType` 的 API 24 声明范围已由本机 API 26 SDK 版本注解核实，官方 FAQ 仅作类型用法旁证；**没有 API 24 / XT2 运行时证据**。v1.18 的 18.5 锚点 / 浮条框架、18.6 `bindSheet` 面板入口及 18.7 块级源码抽屉已有源码和自动测试；签名调试 arm64-v8a HAP 构建通过。原型 `docs/prototype/v2/index.html` 已按该形态给出 HTML 示意（顶部拖拽条、右上关闭图标、遮罩、分组列表行），**原型不能代替原生外观与设备验收**。

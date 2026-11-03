@@ -10,14 +10,27 @@ const result = await build({
     contents: `
       import { EditorState } from '@codemirror/state'
       import { markdown } from '@codemirror/lang-markdown'
+      import { history, redo, undo } from '@codemirror/commands'
+      import { blockSourceEditRange, isBlockSourceEditTransaction, prepareBlockSourceEdit,
+        applyBlockEdit, applyBlockText, blockEditKeepsOutside, parseBlock, stringifyBlock,
+        registerBlockCodec, codecFor } from '../src/blockModel.ts'
       import { collectBlockRanges, customBlockRanges, findBlockAt, findBlockInSelection,
         isBlockRegistryReady, BLOCK_TYPE_LABELS } from '../src/blockRegistry.ts'
-      import { applyBlockEdit, applyBlockText, blockEditKeepsOutside, parseBlock, stringifyBlock,
-        registerBlockCodec, codecFor } from '../src/blockModel.ts'
       import { collectSimpleModeRanges } from '../src/simpleMode.ts'
 
       function state(source) {
         return EditorState.create({ doc: source, extensions: [markdown()] })
+      }
+      function sourceEditState(source) {
+        return EditorState.create({
+          doc: source,
+          extensions: [
+            markdown(),
+            history(),
+            EditorState.changeFilter.of((transaction) => transaction.annotation(blockSourceEditRange)
+              ? isBlockSourceEditTransaction(transaction) : true)
+          ]
+        })
       }
       export function blocks(source) {
         return collectBlockRanges(state(source))
@@ -73,6 +86,39 @@ const result = await build({
       }
       export function editRange(source, range, op) {
         return applyBlockEdit(state(source), range, op)
+      }
+      export function prepareSourceEdit(source, from, to, expected, replacement, lineEnding = '\\n') {
+        return prepareBlockSourceEdit(state(source), from, to, expected, replacement, lineEnding)
+      }
+      export function replaceSourceWithHistory(source, from, to, expected, replacement, lineEnding = '\\n') {
+        let editor = sourceEditState(source)
+        const edit = prepareBlockSourceEdit(editor, from, to, expected, replacement, lineEnding)
+        if (!edit) return null
+        editor = editor.update({
+          changes: edit.changes,
+          selection: { anchor: edit.selection.from, head: edit.selection.to },
+          annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
+          userEvent: 'input'
+        }).state
+        const serialize = (current) => lineEnding === '\\r\\n'
+          ? current.doc.toString().replace(/\\n/g, '\\r\\n') : current.doc.toString()
+        const after = serialize(editor)
+        const outsideIntact = source.slice(0, from) + replacement + source.slice(to) === after
+        const edited = after
+        const undoApplied = undo({ state: editor, dispatch: (transaction) => { editor = editor.update(transaction).state } })
+        const undone = serialize(editor)
+        const redoApplied = redo({ state: editor, dispatch: (transaction) => { editor = editor.update(transaction).state } })
+        return { after, outsideIntact, edited, undoApplied, undone, redoApplied, redone: serialize(editor) }
+      }
+      export function rejectsMismatchedSourceEdit(source, from, to, replacement, declaredRange) {
+        const editor = sourceEditState(source)
+        return editor.update({
+          changes: [
+            { from, to, insert: replacement },
+            { from: editor.doc.length, to: editor.doc.length, insert: 'outside' }
+          ],
+          annotations: [blockSourceEditRange.of(declaredRange)]
+        }).state.doc.toString() === editor.doc.toString()
       }
       export function editWithCodec(source, op) {
         registerBlockCodec({
@@ -233,6 +279,53 @@ test('18.3 整块源码替换只改目标区间，区间外逐字不变', () => 
   assert.equal(edited.outsideIntact, true)
   assert.deepEqual(edited.result.selection, { from: edited.result.changes.from + edited.result.changes.insert.length,
     to: edited.result.changes.from + edited.result.changes.insert.length })
+})
+
+test('18.7 源码抽屉只替换目标区间，撤销与重做各一步', () => {
+  const source = '前缀\n\n```ts\nconst a = 1\n```\n\n后缀'
+  const from = source.indexOf('```ts')
+  const to = source.indexOf('\n\n后缀')
+  const expected = source.slice(from, to)
+  const replacement = '```js\nlet b = 2\n```'
+  const result = base.replaceSourceWithHistory(source, from, to, expected, replacement)
+  assert.ok(result)
+  assert.equal(result.after, '前缀\n\n```js\nlet b = 2\n```\n\n后缀')
+  assert.equal(result.outsideIntact, true)
+  assert.equal(result.undoApplied, true)
+  assert.equal(result.undone, source)
+  assert.equal(result.redoApplied, true)
+  assert.equal(result.redone, result.after)
+})
+
+test('18.7 CRLF 源码区间精确映射到 CodeMirror，并保留区间外字节', () => {
+  const source = '前缀\r\n\r\n| a | b |\r\n| --- | --- |\r\n| 1 | 2 |\r\n\r\n后缀\r\n'
+  const from = source.indexOf('| a | b |')
+  const to = source.indexOf('\r\n\r\n后缀')
+  const expected = source.slice(from, to)
+  const replacement = '| a | b |\r\n| --- | --- |\r\n| 3 | 4 |'
+  const result = base.replaceSourceWithHistory(source, from, to, expected, replacement, '\r\n')
+  assert.ok(result)
+  assert.equal(result.after, '前缀\r\n\r\n| a | b |\r\n| --- | --- |\r\n| 3 | 4 |\r\n\r\n后缀\r\n')
+  assert.equal(result.outsideIntact, true)
+  assert.equal(result.undone, source)
+  assert.equal(result.redone, result.after)
+})
+
+test('18.7 打开后目标区间变化或偏移落在 CRLF 中间时拒绝回写', () => {
+  const original = '前缀\r\n```js\r\nx\r\n```\r\n后缀'
+  const from = original.indexOf('```js')
+  const to = original.indexOf('\r\n后缀')
+  const expected = original.slice(from, to)
+  const changed = original.replace('x', 'y')
+  assert.equal(base.prepareSourceEdit(changed, from, to, expected, '```js\r\nz\r\n```', '\r\n'), null)
+  const splitCRLF = original.indexOf('\r\n') + 1
+  assert.equal(base.prepareSourceEdit(original, splitCRLF, original.length,
+    original.slice(splitCRLF), 'suffix', '\r\n'), null)
+})
+
+test('18.7 注解不能授权跨越源码抽屉区间的多处改动', () => {
+  const source = '```js\nx\n```'
+  assert.equal(base.rejectsMismatchedSourceEdit(source, 0, 3, '~~~', { from: 0, to: 3 }), true)
 })
 
 test('18.3 指定选区时落在块内，越界即拒绝', () => {

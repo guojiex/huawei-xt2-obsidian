@@ -37,7 +37,7 @@ function makeApp() {
     KeyType: { Down: 'down' },
     KeyCode: { KEYCODE_ESCAPE: 27 },
     Color: { Transparent: 'transparent' },
-    Size: { blockPanelW: 380, menuMaxH: 560, touch: 48 },
+    Size: { blockPanelW: 380, blockSourceW: 480, menuMaxH: 560, touch: 48 },
     Space: { s1: 4, s2: 8 }
   })
   vm.runInContext(code, context)
@@ -60,8 +60,8 @@ function makeApp() {
     notePaneVisible() { return true },
     paneFilePath() { return 'note.md' },
     updateBlockToolbarLayout() {},
-    calculateAnchoredPopupLayout() {
-      return { placement: 'top-left', offsetX: -120, offsetY: -8, width: 380, maxHeight: 240 }
+    calculateAnchoredPopupLayout(_pane, _paneArea, _anchorArea, width) {
+      return { placement: 'top-left', offsetX: -120, offsetY: -8, width, maxHeight: 240 }
     },
     previewBridgeForPane() { return this.previewBridge }
   })
@@ -90,6 +90,15 @@ test('a tapped anchor opens its pane panel and clamps the popup host inside that
   assert.equal(app.blockPanelHostY, 192)
   assert.equal(app.blockPanelPlacement, 'top-left')
   assert.deepEqual(Array.from(app.blockPanelAnchorGeometry('left')), [12, 192, 4, 4])
+})
+
+test('source editing widens the anchored panel to the source-drawer token', () => {
+  const app = makeApp()
+  app.openBlockPropertyPanel('left', linkAnchor)
+  assert.equal(app.blockPanelWidth, 380)
+  app.blockSourceEditing = true
+  app.updateBlockPropertyPanelLayout('left')
+  assert.equal(app.blockPanelWidth, 480)
 })
 
 test('selection refresh preserves the tap action and a cleared selection does not dismiss the panel', () => {
