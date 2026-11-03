@@ -4,6 +4,7 @@ export function selectedLockedBlocks(blocks, selection, sourceBlockForNode) {
 
   if (selection.isCollapsed) {
     const block = sourceBlockForNode(selection.anchorNode)
+    if (block?.dataset.sourceType === 'paragraph') return []
     return block?.dataset.editLocked === 'true' && candidates.includes(block) ? [block] : []
   }
 

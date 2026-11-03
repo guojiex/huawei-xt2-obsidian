@@ -7,22 +7,28 @@ import {
   toolbarBlockForSelection
 } from '../src/blockSelection.mjs'
 
-function makeBlock(id, locked = true) {
-  return { id, dataset: { editLocked: String(locked) } }
+function makeBlock(id, locked = true, sourceType = 'table') {
+  return { id, dataset: { editLocked: String(locked), sourceType } }
 }
 
 const resolveBlock = (node) => node?.block ?? null
 
-test('collapsed caret highlights only its locked source block', () => {
-  const locked = makeBlock('locked')
-  const editable = makeBlock('editable', false)
-  const blocks = [locked, editable]
+test('collapsed caret ignores paragraphs but still activates independent locked blocks', () => {
+  const paragraph = makeBlock('paragraph', true, 'paragraph')
+  const table = makeBlock('table')
+  const editable = makeBlock('editable', false, 'paragraph')
+  const blocks = [paragraph, table, editable]
 
   assert.deepEqual(selectedLockedBlocks(blocks, {
     rangeCount: 1,
     isCollapsed: true,
-    anchorNode: { block: locked }
-  }, resolveBlock), [locked])
+    anchorNode: { block: paragraph }
+  }, resolveBlock), [])
+  assert.deepEqual(selectedLockedBlocks(blocks, {
+    rangeCount: 1,
+    isCollapsed: true,
+    anchorNode: { block: table }
+  }, resolveBlock), [table])
   assert.deepEqual(selectedLockedBlocks(blocks, {
     rangeCount: 1,
     isCollapsed: true,
@@ -42,6 +48,15 @@ test('non-collapsed selection highlights every locked block it intersects', () =
       intersectsNode: (block) => block !== editable
     })
   }, resolveBlock), [first, second])
+})
+
+test('non-collapsed text selection still highlights its paragraph', () => {
+  const paragraph = makeBlock('paragraph', true, 'paragraph')
+  assert.deepEqual(selectedLockedBlocks([paragraph], {
+    rangeCount: 1,
+    isCollapsed: false,
+    getRangeAt: () => ({ intersectsNode: () => true })
+  }, resolveBlock), [paragraph])
 })
 
 test('missing, empty, or out-of-root selections do not highlight blocks', () => {
