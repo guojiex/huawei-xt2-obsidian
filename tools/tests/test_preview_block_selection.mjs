@@ -23,6 +23,14 @@ test('selection feedback outlines locked rendered children using v2 tokens', () 
   ))
 })
 
+test('preview WebView suppresses the system focus box around the whole note', () => {
+  const webStart = previewComponentSource.indexOf("Web({ src: $rawfile('mdpreview/index.html'")
+  const webEnd = previewComponentSource.indexOf('\n\n      if (!this.pageReady)', webStart)
+  assert.ok(webStart >= 0 && webEnd > webStart)
+  assert.match(previewComponentSource.slice(webStart, webEnd),
+    /\.focusBox\(\{\s*strokeWidth: LengthMetrics\.vp\(0\)\s*\}\)/)
+})
+
 test('locked block taps route links and images to the panel while controls keep their behavior', () => {
   const clickStart = previewSource.indexOf("contentElement.addEventListener('click', (event: MouseEvent): void => {")
   const clickEnd = previewSource.indexOf('\n\nasync function renderMermaidBlocks', clickStart)

@@ -11,6 +11,7 @@
  * 文件 IO 不在本组件 —— readAsset 的实际读文件由父级经 `onReadAsset` 回调提供
  * （硬约束 14：路径只由解析器拼）。
  */
+import { LengthMetrics } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -843,6 +844,7 @@ export struct PreviewWebView {
         })
         .width('100%')
         .height('100%')
+        .focusBox({ strokeWidth: LengthMetrics.vp(0) })
         .backgroundColor($r('app.color.bg_card'))
         .id(this.componentId)
 
