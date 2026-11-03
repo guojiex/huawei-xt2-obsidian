@@ -92,8 +92,8 @@ import { KeyCode } from '@ohos.multimodalInput.keyCode';
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
-/** v1.26 恢复 Git 专属 UI；底层能力范围仍沿用 v0.3。 */
-const GIT_UI_ENABLED: boolean = true;
+/** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
+const GIT_ENTRY_UI_ENABLED: boolean = true;
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -5070,7 +5070,7 @@ struct Index {
       }
     ];
     for (let i: number = 0; i < scopeOptions.length; i++) {
-      if (GIT_UI_ENABLED && vault.type === 'git') {
+      if (vault.type === 'git') {
         try {
           const linkResult = ShareLinkService.build(vault, scopeOptions[i].scope, scopeOptions[i].path);
           scopeOptions[i].options.push({
@@ -6393,7 +6393,7 @@ struct Index {
           .margin({ left: Space.s1, right: Space.s1 })
         }
         if (!this.isSingleScreenLayout()) {
-          if (GIT_UI_ENABLED && this.currentVaultIsGit()) {
+          if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
             this.GitSyncButton()
           }
           this.IconButton('share', $r('app.color.text_secondary'), (): void => {
@@ -6427,7 +6427,7 @@ struct Index {
       .height(Size.touch)
       .justifyContent(FlexAlign.Center)
       .borderRadius(Radius.icon)
-      if (GIT_UI_ENABLED && this.currentVaultIsGit()) {
+      if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
         this.GitAheadBadge()
       }
     }
@@ -6470,7 +6470,7 @@ struct Index {
         .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s1 })
       this.ExperienceMenuItem('simple', '简单模式', 'simpleMode')
       this.ExperienceMenuItem('professional', '专业模式', 'professionalMode')
-      if (GIT_UI_ENABLED && this.currentVaultIsGit()) {
+      if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
         Row() {
           Text('同步到 Git')
             .fontSize(FontSize.body2)

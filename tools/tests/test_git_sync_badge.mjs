@@ -70,19 +70,20 @@ test('repository errors clear stale badge state instead of showing a false count
   assert.equal(app.gitAheadCommitCount, 0);
 });
 
-test('badge data and Git sync entries are restored for v1.26', () => {
+test('Git entry visibility does not gate remote-link sharing', () => {
   const { app } = createHarness({ aheadCount: 123 });
   app.gitAheadCommitCount = 123;
   assert.equal(app.gitAheadBadgeLabel(), '99+');
   assert.match(source, /Text\(this\.gitAheadCommitCount\.toString\(\) \+ ' 个待推送'\)/);
   assert.match(source, /this\.GitSyncButton\(\)/);
-  assert.match(source, /const GIT_UI_ENABLED: boolean = true/);
-  assert.match(source, /if \(GIT_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);
-  assert.match(source, /if \(GIT_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitSyncButton\(\)/);
+  assert.match(source, /const GIT_ENTRY_UI_ENABLED: boolean = true/);
+  assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);
+  assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitSyncButton\(\)/);
   const shareDialog = source.slice(source.indexOf('  private openShareNoteDialog(): void {'),
     source.indexOf('  private async prepareShare(', source.indexOf('  private openShareNoteDialog(): void {')));
   assert.match(shareDialog, /value: 'file', label: 'Markdown \/ ZIP'/);
-  assert.match(shareDialog, /if \(GIT_UI_ENABLED && vault\.type === 'git'\) \{[\s\S]*?value: 'link'/);
+  assert.match(shareDialog, /if \(vault\.type === 'git'\) \{[\s\S]*?value: 'link'/);
+  assert.doesNotMatch(shareDialog, /GIT_ENTRY_UI_ENABLED/);
 });
 
 test('badge refresh runs when Index appears and when its registry snapshot changes', () => {
