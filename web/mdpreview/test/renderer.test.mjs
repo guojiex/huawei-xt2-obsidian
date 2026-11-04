@@ -177,14 +177,25 @@ test('extracts tags from block lists, inline lists and quoted values with dedupe
   assert.deepEqual(frontmatterTags('# 无 frontmatter'), [])
 })
 
-test('renders note tags as escaped chips and returns empty string without tags', () => {
+test('renders the property entry with escaped frontmatter tags', () => {
   const html = renderNoteTags('---\ntags:\n  - 阅读<b>\n  - 产品\n---\n正文')
   assert.equal(
     html,
-    '<div class="note-tags" aria-label="笔记标签"><span class="note-tag">#阅读&lt;b&gt;</span><span class="note-tag">#产品</span></div>'
+    '<div class="note-tags" aria-label="笔记属性与标签"><button type="button" class="md-props-entry" ' +
+      'data-preview-frontmatter-entry aria-label="笔记属性，共 1 项，打开编辑">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>' +
+      '属性 · 1 项</button><span class="note-tag">#阅读&lt;b&gt;</span><span class="note-tag">#产品</span></div>'
   )
-  assert.equal(renderNoteTags('---\ntitle: 无标签\n---\n正文'), '')
+  assert.match(renderNoteTags('---\ntitle: 无标签\n---\n正文'), /属性 · 1 项/)
   assert.equal(renderNoteTags('# 无 frontmatter'), '')
+})
+
+test('property entry count follows source frontmatter while tags follow rendered Markdown', () => {
+  const rendered = '---\ntags:\n  - visible\n---\n正文'
+  const source = '---\ntitle: 标题\ntags:\n  - visible\naliases: [a, b]\n---\n正文'
+  const html = renderNoteTags(rendered, source)
+  assert.match(html, /aria-label="笔记属性，共 3 项，打开编辑"/)
+  assert.match(html, /#visible/)
 })
 
 test('renders Obsidian callouts with type, custom title and content', () => {

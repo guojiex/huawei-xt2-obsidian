@@ -303,14 +303,27 @@ export function frontmatterTags(markdown) {
   return tags
 }
 
-/** Render frontmatter tags as the v2 note-tags chip row; empty string when there are no valid tags. */
-export function renderNoteTags(markdown) {
+function frontmatterPropertyCount(frontmatter) {
+  const lines = frontmatter.replace(/^\uFEFF/, '').split(/\r?\n/)
+  return lines.filter((line) => /^[^\s#:-][^:\n]*:/.test(line)).length
+}
+
+/** Render the editable property entry and frontmatter tags for the v2 preview. */
+export function renderNoteTags(markdown, propertySource = markdown) {
   const tags = frontmatterTags(markdown)
-  if (tags.length === 0) {
+  const frontmatter = splitFrontmatter(propertySource).frontmatter
+  if (tags.length === 0 && frontmatter.length === 0) {
     return ''
   }
+  const propertyCount = frontmatterPropertyCount(frontmatter)
+  const entry = frontmatter.length > 0
+    ? `<button type="button" class="md-props-entry" data-preview-frontmatter-entry ` +
+      `aria-label="笔记属性，共 ${propertyCount} 项，打开编辑">` +
+      `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>` +
+      `属性 · ${propertyCount} 项</button>`
+    : ''
   const chips = tags.map((tag) => `<span class="note-tag">#${escapeHtml(tag)}</span>`).join('')
-  return `<div class="note-tags" aria-label="笔记标签">${chips}</div>`
+  return `<div class="note-tags" aria-label="笔记属性与标签">${entry}${chips}</div>`
 }
 
 /** Parse and render one Mermaid block, allowing the caller to isolate failures per block. */

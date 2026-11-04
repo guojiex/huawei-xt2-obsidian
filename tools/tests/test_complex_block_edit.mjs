@@ -111,3 +111,85 @@ test('21.2 preview edits only safe callout bodies and preserves their header', (
   assert.match(preview, /serializeCalloutBody\(previous, serializeEditedBlock\(calloutBody\)\)/)
   assert.match(preview, /event\.target\.closest\('\[data-simple-callout-editable="true"\]'\)\) return/)
 })
+
+test('21.3 frontmatter edits preserve BOM, CRLF, comments, nested values, and the body', () => {
+  const raw = '\uFEFF---\r\n' +
+    'title: Old title  # keep comment\r\n' +
+    'created: "2024-02-29"\r\n' +
+    'published: false\r\n' +
+    'tags:\r\n  - reading\r\n  - notes\r\n' +
+    'nested:\r\n  path: unchanged\r\n' +
+    '...\r\n'
+  const model = MarkdownComplexBlockEdit.parseFrontmatter(raw)
+  assert.ok(model)
+  assert.deepEqual(Array.from(model.properties, (property) => [property.key, property.kind]), [
+    ['title', 'text'],
+    ['created', 'date'],
+    ['published', 'bool'],
+    ['tags', 'list'],
+    ['nested', 'complex']
+  ])
+
+  const updatedTitle = MarkdownComplexBlockEdit.setFrontmatterProperty(raw, 'title', 'New: title')
+  assert.ok(updatedTitle)
+  assert.equal(updatedTitle, '\uFEFF---\r\n' +
+    'title: "New: title"  # keep comment\r\n' +
+    'created: "2024-02-29"\r\n' +
+    'published: false\r\n' +
+    'tags:\r\n  - reading\r\n  - notes\r\n' +
+    'nested:\r\n  path: unchanged\r\n' +
+    '...\r\n')
+
+  const updatedTags = MarkdownComplexBlockEdit.setFrontmatterProperty(raw, 'tags', 'writing, work、notes')
+  assert.ok(updatedTags)
+  assert.ok(updatedTags.includes('tags:\r\n  - writing\r\n  - work\r\n  - notes\r\n'))
+  assert.ok(updatedTags.includes('nested:\r\n  path: unchanged\r\n'))
+  assert.equal(MarkdownComplexBlockEdit.setFrontmatterProperty(raw, 'created', '2023-02-29'), null)
+})
+
+test('21.3 adds and removes values while preserving unmodified frontmatter lines', () => {
+  const raw = '---\r\n' +
+    'title: Existing # inline\r\n' +
+    '# keep this comment\r\n' +
+    '\r\n' +
+    'nested:\r\n  path: keep\r\n' +
+    '# keep after nested\r\n' +
+    '\r\n' +
+    '---\r\n'
+  const addedList = MarkdownComplexBlockEdit.addFrontmatterProperty(raw, 'aliases', 'one、two')
+  assert.equal(addedList, '---\r\ntitle: Existing # inline\r\n# keep this comment\r\n\r\n' +
+    'nested:\r\n  path: keep\r\n# keep after nested\r\n\r\n' +
+    'aliases:\r\n  - one\r\n  - two\r\n---\r\n')
+  const addedBool = MarkdownComplexBlockEdit.addFrontmatterProperty(addedList, 'published', 'true')
+  assert.ok(addedBool?.includes('published: true\r\n'))
+  assert.equal(MarkdownComplexBlockEdit.addFrontmatterProperty(addedList, 'title', 'duplicate'), null)
+
+  const removed = MarkdownComplexBlockEdit.removeFrontmatterProperty(addedBool, 'nested')
+  assert.ok(removed)
+  assert.ok(!removed.includes('nested:'))
+  assert.ok(!removed.includes('path: keep'))
+  assert.ok(removed.includes('# keep this comment\r\n'))
+  assert.ok(removed.includes('# keep after nested\r\n\r\n'))
+  assert.equal(MarkdownComplexBlockEdit.removeFrontmatterProperty(raw, 'missing'), null)
+})
+
+test('21.3 malformed frontmatter is rejected for structured edits and panel source remains available', () => {
+  assert.equal(MarkdownComplexBlockEdit.parseFrontmatter('---\ntitle: value\n'), null)
+  assert.equal(MarkdownComplexBlockEdit.parseFrontmatter('---\ntitle value\n---\n'), null)
+  assert.equal(MarkdownComplexBlockEdit.parseFrontmatter('---\ntitle: one\ntitle: two\n---\n'), null)
+  assert.equal(
+    MarkdownComplexBlockEdit.setFrontmatterProperty('---\ntitle: "unterminated\n---\n', 'title', 'safe'),
+    null
+  )
+
+  const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
+  const preview = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root), 'utf8')
+  const renderer = fs.readFileSync(new URL('web/mdpreview/src/renderer.mjs', root), 'utf8')
+  assert.match(renderer, /data-preview-frontmatter-entry/)
+  assert.match(preview, /dataset\.sourceType = 'frontmatter'/)
+  assert.match(index, /anchor\.type === 'frontmatter'[\s\S]*?loadBlockPanelFrontmatter\(\)/)
+  assert.match(index, /anchor\.type !== 'frontmatter'\) \|\|/)
+  assert.match(index, /this\.blockSourceActionLabel\(\)[\s\S]*?openBlockSourceDrawer\(\)/)
+  assert.match(index, /Checkbox\(\{ name: entry\.key \}\)/)
+  assert.match(index, /DatePicker\(\{[\s\S]*?onDateChange/)
+})

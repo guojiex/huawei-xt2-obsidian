@@ -20,6 +20,8 @@ const linkFieldBuilderStart = source.indexOf('  BlockPanelLinkField(')
 const linkFieldBuilderEnd = source.indexOf('\n  @Builder\n  PreviewBlockPanel(', linkFieldBuilderStart)
 const linkMethodsStart = source.indexOf('  private async loadBlockPanelLink()')
 const linkMethodsEnd = source.indexOf('\n  private async convertInlineCodeToPlainText()', linkMethodsStart)
+const frontmatterMethodsStart = source.indexOf('  private async loadBlockPanelFrontmatter()')
+const frontmatterMethodsEnd = source.indexOf('\n  private blockPanelCalloutTypeOptions()', frontmatterMethodsStart)
 const sourceTargetMethodsStart = source.indexOf('  private isCurrentBlockSourceTarget(')
 const sourceTargetMethodsEnd = source.indexOf('\n  private async openBlockSourceDrawer()', sourceTargetMethodsStart)
 const imagePickerStart = source.indexOf('  private async pickImageForCurrentNote(')
@@ -31,6 +33,7 @@ assert.ok(panelStart >= 0 && panelEnd > panelStart)
 assert.ok(panelBuilderStart >= 0 && panelBuilderEnd > panelBuilderStart)
 assert.ok(linkFieldBuilderStart >= 0 && linkFieldBuilderEnd > linkFieldBuilderStart)
 assert.ok(linkMethodsStart >= 0 && linkMethodsEnd > linkMethodsStart)
+assert.ok(frontmatterMethodsStart >= 0 && frontmatterMethodsEnd > frontmatterMethodsStart)
 assert.ok(sourceTargetMethodsStart >= 0 && sourceTargetMethodsEnd > sourceTargetMethodsStart)
 assert.ok(imagePickerStart >= 0 && imagePickerEnd > imagePickerStart)
 assert.ok(copyMethodsStart >= 0 && copyMethodsEnd > copyMethodsStart)
@@ -76,6 +79,7 @@ const code = transformSync(
     ${source.slice(anchorChangeStart, anchorChangeEnd).trim()}
     ${source.slice(panelStart, panelEnd).trim()}
     ${source.slice(linkMethodsStart, linkMethodsEnd).trim()}
+    ${source.slice(frontmatterMethodsStart, frontmatterMethodsEnd).trim()}
     ${source.slice(sourceTargetMethodsStart, sourceTargetMethodsEnd).trim()}
     ${source.slice(imagePickerStart, imagePickerEnd).trim()}
   }; module.exports = BlockPanelHarness;`,
@@ -220,6 +224,56 @@ function prepareCalloutPanel(source, prefix = '', suffix = '') {
   app.blockPanelSourcePath = 'note.md'
   app.blockPanelCalloutReady = false
   app.blockPanelCalloutSaveTail = Promise.resolve()
+  app.editorBridge = {
+    currentDocumentRevision: 11,
+    getContent: async () => content,
+    replaceBlockSource: async (...args) => {
+      writes.push(args)
+      if (app.editorBridge.currentDocumentRevision !== args[4] ||
+        content.slice(args[0], args[1]) !== args[2]) {
+        return false
+      }
+      history.push(content)
+      content = content.slice(0, args[0]) + args[3] + content.slice(args[1])
+      app.editorBridge.currentDocumentRevision++
+      return true
+    },
+    undo: () => {
+      if (history.length > 0) {
+        content = history.pop()
+        app.editorBridge.currentDocumentRevision++
+      }
+    },
+    content: () => content,
+    writes,
+    history
+  }
+  return { app, anchor, writes, history, content: () => content }
+}
+
+function prepareFrontmatterPanel(raw, suffix = '') {
+  const app = makeApp()
+  const anchor = {
+    type: 'frontmatter', tapType: '', from: 0, to: raw.length, inlineItems: [],
+    inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  const writes = []
+  const history = []
+  let content = raw + suffix
+  Object.assign(app, {
+    blockPanelPane: 'left',
+    blockPanelAnchor: anchor,
+    blockPanelInlineItems: [],
+    leftBlockPanelOpen: true,
+    rightBlockPanelOpen: false,
+    blockPanelSourceVaultId: 'vault-a',
+    blockPanelSourcePath: 'note.md',
+    blockPanelFrontmatterReady: false,
+    blockPanelFrontmatterSaveTail: Promise.resolve(),
+    blockPanelFrontmatterSaving: false,
+    updateBlockPropertyPanelLayout() {}
+  })
   app.editorBridge = {
     currentDocumentRevision: 11,
     getContent: async () => content,
@@ -425,6 +479,41 @@ test('21.2 unknown callout types keep their type and expose no type or fold cont
   assert.match(source.slice(panelBuilderStart, panelBuilderEnd),
     /blockPanelCalloutModel\.knownType[\s\S]*?Select\(this\.blockPanelCalloutTypeOptions\(\)\)[\s\S]*?if \(this\.blockPanelCalloutModel\.knownType\)/)
   assert.match(source.slice(panelBuilderStart, panelBuilderEnd), /类型 · 保留：\$\{this\.blockPanelCalloutModel\.type\}/)
+})
+
+test('21.3 loads and edits only frontmatter, preserving outside source and undo', async () => {
+  const raw = '---\r\ntitle: Original\r\ntags:\r\n  - old\r\nnested:\r\n  path: keep\r\n---\r\n'
+  const suffix = '\r\n# Body\r\n'
+  const { app, writes, history, content } = prepareFrontmatterPanel(raw, suffix)
+  await app.loadBlockPanelFrontmatter()
+
+  assert.equal(app.blockPanelFrontmatterModel.properties.length, 3)
+  assert.equal(app.blockPanelFrontmatterMessage, '')
+  await app.saveBlockPanelFrontmatterProperty('set', 'title', 'Updated')
+  await app.saveBlockPanelFrontmatterProperty('set', 'tags', 'new, work')
+  await app.saveBlockPanelFrontmatterProperty('add', 'published', 'true')
+  await app.saveBlockPanelFrontmatterProperty('remove', 'nested', '')
+
+  assert.equal(content(), '---\r\ntitle: Updated\r\ntags:\r\n  - new\r\n  - work\r\npublished: true\r\n---\r\n' + suffix)
+  assert.equal(writes.length, 4)
+  assert.equal(writes[0][0], 0)
+  assert.equal(writes[0][1], raw.length)
+  assert.equal(writes[0][2], raw)
+  assert.equal(history.length, 4)
+  const undoCount = history.length
+  for (let index = 0; index < undoCount; index++) app.editorBridge.undo()
+  assert.equal(content(), raw + suffix)
+})
+
+test('21.3 malformed YAML loads read-only without replacing source', async () => {
+  const raw = '---\ntitle value\n---\n'
+  const { app, writes, content } = prepareFrontmatterPanel(raw)
+  await app.loadBlockPanelFrontmatter()
+  assert.equal(app.blockPanelFrontmatterModel, null)
+  assert.match(app.blockPanelFrontmatterMessage, /只读|安全编辑/)
+  assert.equal(await app.saveBlockPanelFrontmatterProperty('set', 'title', 'unsafe'), false)
+  assert.equal(writes.length, 0)
+  assert.equal(content(), raw)
 })
 
 function prepareLinkEditor(app, content) {

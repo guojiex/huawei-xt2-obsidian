@@ -1392,6 +1392,22 @@ function activateLockedContent(from: number, to: number, inlineIndex: number = -
 function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
   setActiveLockedBlocks(root, [])
   publishLockedBlockAnchor(null)
+  const frontmatterEntry = root.querySelector('.md-props-entry') as HTMLElement | null
+  if (frontmatterEntry) {
+    const frontmatter = splitFrontmatter(sourceText).frontmatter
+    frontmatterEntry.hidden = !editable || frontmatter.length === 0
+    if (editable && frontmatter.length > 0) {
+      frontmatterEntry.dataset.sourceFrom = '0'
+      frontmatterEntry.dataset.sourceTo = String(frontmatter.length)
+      frontmatterEntry.dataset.sourceType = 'frontmatter'
+      frontmatterEntry.dataset.editLocked = 'true'
+    } else {
+      delete frontmatterEntry.dataset.sourceFrom
+      delete frontmatterEntry.dataset.sourceTo
+      delete frontmatterEntry.dataset.sourceType
+      delete frontmatterEntry.dataset.editLocked
+    }
+  }
   const previousEditables = root.querySelectorAll(
     '[data-simple-editable="true"], [data-simple-code-editable="true"], ' +
     '[data-simple-callout-editable="true"], [data-simple-table-cell]'
@@ -1721,6 +1737,19 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
   if (replayingLockedTap) return
   const tableCell = event.target.closest('[data-simple-table-cell="true"]') as HTMLElement | null
   if (tableCell) return
+  const frontmatterEntry = event.target.closest(
+    '.md-props-entry[data-edit-locked="true"]'
+  ) as HTMLElement | null
+  if (frontmatterEntry) {
+    event.preventDefault()
+    event.stopPropagation()
+    const payload = publishLockedBlockAnchor(frontmatterEntry)
+    const arkts = window.__arkts
+    if (payload.length > 0 && arkts && typeof arkts.onLockedContentTap === 'function') {
+      arkts.onLockedContentTap(payload)
+    }
+    return
+  }
   const lockedBlock = event.target.closest(
     '.preview-source-block[data-edit-locked="true"]'
   ) as HTMLElement | null
@@ -1817,7 +1846,7 @@ const api: MdPreviewApi = {
     }
     const split = splitFrontmatter(text)
     const sourceSplit = splitFrontmatter(sourceText)
-    const tagsHtml = renderNoteTags(text)
+    const tagsHtml = renderNoteTags(text, sourceText)
     const bodyOffset = text.length - split.body.length
     const bodyLineOffset = text.substring(0, bodyOffset).split('\n').length - 1
     const sourceBodyOffset = sourceText.length - sourceSplit.body.length

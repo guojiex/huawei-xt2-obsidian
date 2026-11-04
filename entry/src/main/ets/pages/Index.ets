@@ -35,7 +35,8 @@ import {
   MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts
 } from '../model/MarkdownInlineParser';
 import {
-  CalloutSourceModel, FormulaSourceModel, MarkdownComplexBlockEdit
+  CalloutSourceModel, FormulaSourceModel, FrontmatterPropertyModel, FrontmatterSourceModel,
+  MarkdownComplexBlockEdit
 } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
@@ -259,6 +260,17 @@ struct Index {
   private blockPanelCalloutRaw: string = '';
   private blockPanelCalloutModel: CalloutSourceModel | null = null;
   private blockPanelCalloutSaveTail: Promise<void> = Promise.resolve();
+  @State blockPanelFrontmatterReady: boolean = false;
+  @State blockPanelFrontmatterEntries: FrontmatterPropertyModel[] = [];
+  @State blockPanelFrontmatterMessage: string = '';
+  @State blockPanelFrontmatterNewKey: string = '';
+  @State blockPanelFrontmatterNewValue: string = '';
+  @State blockPanelFrontmatterDateKey: string = '';
+  @State blockPanelFrontmatterDateDraft: string = '';
+  @State blockPanelFrontmatterSaving: boolean = false;
+  private blockPanelFrontmatterRaw: string = '';
+  private blockPanelFrontmatterModel: FrontmatterSourceModel | null = null;
+  private blockPanelFrontmatterSaveTail: Promise<void> = Promise.resolve();
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -3080,6 +3092,17 @@ struct Index {
     this.blockPanelCalloutRaw = '';
     this.blockPanelCalloutModel = null;
     this.blockPanelCalloutSaveTail = Promise.resolve();
+    this.blockPanelFrontmatterReady = false;
+    this.blockPanelFrontmatterEntries = [];
+    this.blockPanelFrontmatterMessage = anchor.type === 'frontmatter' ? '正在读取属性…' : '';
+    this.blockPanelFrontmatterNewKey = '';
+    this.blockPanelFrontmatterNewValue = '';
+    this.blockPanelFrontmatterDateKey = '';
+    this.blockPanelFrontmatterDateDraft = '';
+    this.blockPanelFrontmatterSaving = false;
+    this.blockPanelFrontmatterRaw = '';
+    this.blockPanelFrontmatterModel = null;
+    this.blockPanelFrontmatterSaveTail = Promise.resolve();
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3104,6 +3127,8 @@ struct Index {
       void this.loadBlockPanelFormula();
     } else if (anchor.type === 'callout') {
       void this.loadBlockPanelCallout();
+    } else if (anchor.type === 'frontmatter') {
+      void this.loadBlockPanelFrontmatter();
     }
   }
 
@@ -3396,6 +3421,187 @@ struct Index {
     this.blockPanelFormulaRaw = replacement;
     this.blockPanelFormulaModel = MarkdownComplexBlockEdit.parseFormula(replacement, model.inline);
     this.blockPanelFormulaMessage = '';
+  }
+
+  private async loadBlockPanelFrontmatter(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.type !== 'frontmatter' || anchor.from !== 0 ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      this.blockPanelFrontmatterReady = true;
+      this.blockPanelFrontmatterMessage = '属性区间已变化，请重新打开面板';
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelFrontmatterReady = true;
+      this.blockPanelFrontmatterMessage = '无法同步当前笔记，请关闭面板后重试';
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelFrontmatterReady = true;
+      this.blockPanelFrontmatterMessage = '读取属性失败，请关闭面板后重试';
+      return;
+    }
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
+      latestAnchor.from !== 0 || latestAnchor.to <= 0 || latestAnchor.to > source.length) {
+      this.blockPanelFrontmatterReady = true;
+      this.blockPanelFrontmatterMessage = '属性区间已变化，请重新打开面板';
+      return;
+    }
+    const raw: string = source.slice(latestAnchor.from, latestAnchor.to);
+    const model: FrontmatterSourceModel | null = MarkdownComplexBlockEdit.parseFrontmatter(raw);
+    this.blockPanelFrontmatterRaw = raw;
+    this.blockPanelFrontmatterModel = model;
+    this.blockPanelFrontmatterReady = true;
+    this.blockPanelFrontmatterMessage = model === null
+      ? '文档头不是可安全编辑的 YAML，请以源码编辑' : '';
+    this.blockPanelFrontmatterEntries = model === null ? [] : model.properties;
+  }
+
+  private saveBlockPanelFrontmatterProperty(
+    action: string, key: string, value: string
+  ): Promise<boolean> {
+    const task: Promise<boolean> = this.blockPanelFrontmatterSaveTail.then(async (): Promise<boolean> => {
+      return await this.applyBlockPanelFrontmatterProperty(action, key, value);
+    });
+    this.blockPanelFrontmatterSaveTail = task.then((): void => {}, (): void => {});
+    return task;
+  }
+
+  private async applyBlockPanelFrontmatterProperty(
+    action: string, key: string, value: string
+  ): Promise<boolean> {
+    if (!this.blockPanelFrontmatterReady || this.blockPanelFrontmatterModel === null ||
+      this.blockPanelFrontmatterSaving) {
+      return false;
+    }
+    let replacement: string | null = null;
+    if (action === 'set') {
+      replacement = MarkdownComplexBlockEdit.setFrontmatterProperty(
+        this.blockPanelFrontmatterRaw, key, value);
+    } else if (action === 'remove') {
+      replacement = MarkdownComplexBlockEdit.removeFrontmatterProperty(
+        this.blockPanelFrontmatterRaw, key);
+    } else if (action === 'add') {
+      replacement = MarkdownComplexBlockEdit.addFrontmatterProperty(
+        this.blockPanelFrontmatterRaw, key, value);
+    }
+    if (replacement === null) {
+      this.blockPanelFrontmatterMessage = action === 'add'
+        ? '属性名无效或已存在，值无法安全写入'
+        : '属性已变化或值无效，未修改';
+      return false;
+    }
+    if (replacement === this.blockPanelFrontmatterRaw) {
+      this.blockPanelFrontmatterMessage = '';
+      return true;
+    }
+
+    this.blockPanelFrontmatterSaving = true;
+    try {
+      if (!await this.replaceBlockPanelInlineSource(
+        this.blockPanelFrontmatterRaw, replacement, '修改属性失败，请重试')) {
+        this.blockPanelFrontmatterMessage = '属性已变化或保存失败，请重新打开面板';
+        return false;
+      }
+      const model: FrontmatterSourceModel | null = MarkdownComplexBlockEdit.parseFrontmatter(replacement);
+      if (model === null) {
+        this.blockPanelFrontmatterModel = null;
+        this.blockPanelFrontmatterEntries = [];
+        this.blockPanelFrontmatterMessage = '属性写回后无法解析，请以源码编辑';
+        return false;
+      }
+      this.blockPanelFrontmatterRaw = replacement;
+      this.blockPanelFrontmatterModel = model;
+      this.blockPanelFrontmatterEntries = model.properties;
+      this.blockPanelFrontmatterMessage = '';
+      this.blockPanelFrontmatterDateKey = '';
+      if (action === 'add') {
+        this.blockPanelFrontmatterNewKey = '';
+        this.blockPanelFrontmatterNewValue = '';
+      }
+      return true;
+    } finally {
+      this.blockPanelFrontmatterSaving = false;
+    }
+  }
+
+  private updateBlockPanelFrontmatterDraft(key: string, value: string): void {
+    const entries: FrontmatterPropertyModel[] = [];
+    for (const entry of this.blockPanelFrontmatterEntries) {
+      if (entry.key === key) {
+        entry.text = value;
+      }
+      entries.push(entry);
+    }
+    this.blockPanelFrontmatterEntries = entries;
+  }
+
+  private blockPanelFrontmatterDate(): Date {
+    const parts: RegExpExecArray | null =
+      /^(\d{4})-(\d{2})-(\d{2})$/.exec(this.blockPanelFrontmatterDateDraft);
+    if (parts === null) {
+      return new Date();
+    }
+    return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
+  }
+
+  private blockPanelFrontmatterDateSelectable(value: string): boolean {
+    const parts: RegExpExecArray | null = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (parts === null) {
+      return false;
+    }
+    const date: number = Number(parts[1]) * 10000 + Number(parts[2]) * 100 + Number(parts[3]);
+    return date >= 19000131 && date <= 21001231;
+  }
+
+  private beginBlockPanelFrontmatterDate(key: string): void {
+    for (const entry of this.blockPanelFrontmatterEntries) {
+      if (entry.key !== key) {
+        continue;
+      }
+      if (!this.blockPanelFrontmatterDateSelectable(entry.text)) {
+        this.blockPanelFrontmatterMessage = '该日期超出系统选择范围，请以源码编辑';
+        return;
+      }
+      this.blockPanelFrontmatterDateKey = key;
+      this.blockPanelFrontmatterDateDraft = entry.text;
+      this.blockPanelFrontmatterMessage = '';
+      return;
+    }
+  }
+
+  private cancelBlockPanelFrontmatterDate(): void {
+    this.blockPanelFrontmatterDateKey = '';
+    this.blockPanelFrontmatterDateDraft = '';
+  }
+
+  private blockPanelFrontmatterDateValue(value: Date): string {
+    const year: string = String(value.getFullYear());
+    const month: string = String(value.getMonth() + 1).padStart(2, '0');
+    const day: string = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private async finishBlockPanelFrontmatterDate(): Promise<void> {
+    const key: string = this.blockPanelFrontmatterDateKey;
+    if (key.length === 0) {
+      return;
+    }
+    if (await this.saveBlockPanelFrontmatterProperty('set', key, this.blockPanelFrontmatterDateDraft)) {
+      this.cancelBlockPanelFrontmatterDate();
+    }
   }
 
   private blockPanelCalloutTypeOptions(): SelectOption[] {
@@ -3706,7 +3912,7 @@ struct Index {
     const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
     const editor: EditorBridge = this.editorBridgeForPane(pane);
     if (anchor === null || (anchor.inlineIndex < 0 && anchor.tapType !== 'image' &&
-      anchor.type !== 'formula' && anchor.type !== 'callout') ||
+      anchor.type !== 'formula' && anchor.type !== 'callout' && anchor.type !== 'frontmatter') ||
       !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
       return false;
     }
@@ -8400,6 +8606,191 @@ struct Index {
                   .fontColor($r('app.color.text_secondary'))
                   .width('100%')
                   .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s2 })
+              }
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'frontmatter') {
+              if (!this.blockPanelFrontmatterReady || this.blockPanelFrontmatterModel === null) {
+                Text(this.blockPanelFrontmatterMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              } else {
+                ForEach(this.blockPanelFrontmatterEntries, (entry: FrontmatterPropertyModel): void => {
+                  Column({ space: Space.s1 }) {
+                    Row({ space: Space.s1 }) {
+                      Column({ space: Space.s1 }) {
+                        Text(entry.key)
+                          .fontSize(FontSize.body2)
+                          .fontColor($r('app.color.text_primary'))
+                        Text(entry.key === 'tags' ? '标签' : entry.key === 'aliases'
+                          ? '别名' : entry.kind === 'list' ? '列表' : entry.kind === 'date'
+                          ? '日期' : entry.kind === 'bool' ? '复选框' : entry.kind === 'text'
+                          ? '文本' : '保留原值')
+                          .fontSize(FontSize.caption)
+                          .fontColor($r('app.color.text_tertiary'))
+                      }
+                      .layoutWeight(1)
+                      Button('移除')
+                        .enabled(!this.blockPanelFrontmatterSaving)
+                        .onClick((): void => {
+                          void this.saveBlockPanelFrontmatterProperty('remove', entry.key, '');
+                        })
+                    }
+                    .width('100%')
+                    if (entry.kind === 'complex') {
+                      Text('嵌套或未知结构保持原值，请以源码编辑')
+                        .fontSize(FontSize.caption)
+                        .fontColor($r('app.color.text_tertiary'))
+                        .width('100%')
+                    } else if (entry.kind === 'bool') {
+                      Row({ space: Space.s2 }) {
+                        Text(entry.text === 'true' ? '开启' : '关闭')
+                          .fontSize(FontSize.body2)
+                          .fontColor($r('app.color.text_secondary'))
+                          .layoutWeight(1)
+                        Checkbox({ name: entry.key })
+                          .select(entry.text === 'true')
+                          .onChange((checked: boolean): void => {
+                            void this.saveBlockPanelFrontmatterProperty(
+                              'set', entry.key, checked ? 'true' : 'false');
+                          })
+                          .accessibilityText(`${entry.key} ${entry.text === 'true' ? '开启' : '关闭'}`)
+                      }
+                      .width('100%')
+                      .height(Size.touch)
+                    } else if (entry.kind === 'date') {
+                      Row({ space: Space.s2 }) {
+                        Text(entry.text)
+                          .fontSize(FontSize.body2)
+                          .fontColor($r('app.color.text_primary'))
+                          .layoutWeight(1)
+                        if (this.blockPanelFrontmatterDateSelectable(entry.text)) {
+                          Button(this.blockPanelFrontmatterDateKey === entry.key ? '已选择' : '选择日期')
+                            .enabled(!this.blockPanelFrontmatterSaving)
+                            .onClick((): void => { this.beginBlockPanelFrontmatterDate(entry.key); })
+                        } else {
+                          Text('超出选择范围')
+                            .fontSize(FontSize.caption)
+                            .fontColor($r('app.color.text_tertiary'))
+                        }
+                      }
+                      .width('100%')
+                      if (this.blockPanelFrontmatterDateKey === entry.key) {
+                        DatePicker({
+                          start: new Date(1900, 0, 31),
+                          end: new Date(2100, 11, 31),
+                          selected: this.blockPanelFrontmatterDate()
+                        })
+                          .onDateChange((value: Date): void => {
+                            this.blockPanelFrontmatterDateDraft =
+                              this.blockPanelFrontmatterDateValue(value);
+                          })
+                        Row({ space: Space.s2 }) {
+                          Text(this.blockPanelFrontmatterDateDraft)
+                            .fontSize(FontSize.body2)
+                            .fontColor($r('app.color.text_secondary'))
+                            .layoutWeight(1)
+                          Button('取消')
+                            .onClick((): void => { this.cancelBlockPanelFrontmatterDate(); })
+                          Button('保存')
+                            .enabled(!this.blockPanelFrontmatterSaving)
+                            .onClick((): void => { void this.finishBlockPanelFrontmatterDate(); })
+                        }
+                        .width('100%')
+                      }
+                    } else {
+                      Row({ space: Space.s1 }) {
+                        TextInput({
+                          text: entry.text,
+                          placeholder: entry.kind === 'list' ? '用顿号或逗号分隔' : '属性值'
+                        })
+                          .height(Size.buttonH)
+                          .fontSize(FontSize.body2)
+                          .fontColor($r('app.color.text_primary'))
+                          .placeholderColor($r('app.color.text_tertiary'))
+                          .padding({ left: Space.s2, right: Space.s2 })
+                          .backgroundColor($r('app.color.bg_secondary'))
+                          .borderRadius(Radius.control)
+                          .layoutWeight(1)
+                          .onChange((value: string): void => {
+                            this.updateBlockPanelFrontmatterDraft(entry.key, value);
+                          })
+                          .onSubmit((): void => {
+                            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
+                          })
+                          .accessibilityText(`${entry.key} ${entry.kind === 'list' ? '列表' : '文本'}`)
+                        Button('保存')
+                          .enabled(!this.blockPanelFrontmatterSaving)
+                          .onClick((): void => {
+                            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
+                          })
+                      }
+                      .width('100%')
+                    }
+                  }
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                }, (entry: FrontmatterPropertyModel): string => entry.key)
+                if (this.blockPanelFrontmatterEntries.length === 0) {
+                  Text('暂无属性')
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .width('100%')
+                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                }
+                Column({ space: Space.s1 }) {
+                  Text('添加属性')
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .width('100%')
+                  TextInput({ text: this.blockPanelFrontmatterNewKey, placeholder: '名称' })
+                    .height(Size.buttonH)
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .placeholderColor($r('app.color.text_tertiary'))
+                    .padding({ left: Space.s2, right: Space.s2 })
+                    .backgroundColor($r('app.color.bg_secondary'))
+                    .borderRadius(Radius.control)
+                    .width('100%')
+                    .onChange((value: string): void => { this.blockPanelFrontmatterNewKey = value; })
+                    .accessibilityText('新属性名称')
+                  Row({ space: Space.s1 }) {
+                    TextInput({
+                      text: this.blockPanelFrontmatterNewValue,
+                      placeholder: '值；a、b 表示列表'
+                    })
+                      .height(Size.buttonH)
+                      .fontSize(FontSize.body2)
+                      .fontColor($r('app.color.text_primary'))
+                      .placeholderColor($r('app.color.text_tertiary'))
+                      .padding({ left: Space.s2, right: Space.s2 })
+                      .backgroundColor($r('app.color.bg_secondary'))
+                      .borderRadius(Radius.control)
+                      .layoutWeight(1)
+                      .onChange((value: string): void => { this.blockPanelFrontmatterNewValue = value; })
+                      .accessibilityText('新属性值')
+                    Button('添加')
+                      .enabled(!this.blockPanelFrontmatterSaving)
+                      .onClick((): void => {
+                        void this.saveBlockPanelFrontmatterProperty(
+                          'add', this.blockPanelFrontmatterNewKey, this.blockPanelFrontmatterNewValue);
+                      })
+                  }
+                  .width('100%')
+                  Text('只改动当前属性；其他行、注释与嵌套结构保持原样。')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .width('100%')
+                }
+                .width('100%')
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s3, bottom: Space.s2 })
+                if (this.blockPanelFrontmatterMessage.length > 0) {
+                  Text(this.blockPanelFrontmatterMessage)
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                    .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s2 })
+                }
               }
             } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'link') {
               Row() {

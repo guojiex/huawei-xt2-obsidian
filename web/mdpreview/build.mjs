@@ -124,6 +124,22 @@ const html = `<!doctype html>
   #content h1 { font-size: var(--heading); margin: var(--s3) 0 var(--s4); font-weight: 650; letter-spacing: -.035em; line-height: 1.35; }
   #content .note-tags { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); margin-bottom: var(--s4); font-size: var(--caption); }
   #content .note-tag { display: inline-block; padding: 0 var(--s2); border-radius: var(--pill); background: var(--blue-soft); color: var(--blue); font-size: var(--small); overflow-wrap: anywhere; }
+  #content .md-props-entry {
+    display: inline-flex; align-items: center; gap: var(--s1); min-height: 28px;
+    margin: 0 var(--s1) var(--s1) 0; padding: 0 var(--s3); border: var(--stroke) solid var(--line);
+    border-radius: var(--pill); background: var(--paper); color: var(--muted);
+    font: inherit; font-size: var(--caption); cursor: pointer;
+  }
+  #content .md-props-entry svg {
+    width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2;
+    stroke-linecap: round;
+  }
+  #content .md-props-entry:hover, #content .md-props-entry:focus-visible {
+    border-color: var(--blue); color: var(--blue);
+  }
+  #content .md-props-entry:focus-visible {
+    outline: var(--focus) solid var(--blue); outline-offset: var(--s1);
+  }
   #content h2 { font-size: var(--large); margin: var(--s8) 0 var(--s3); font-weight: 600; line-height: 1.35; }
   #content h3, #content h4, #content h5, #content h6 { font-size: var(--body); margin: var(--s5) 0 var(--s2); font-weight: 600; }
   #content p { margin: 0 0 var(--s5); }
