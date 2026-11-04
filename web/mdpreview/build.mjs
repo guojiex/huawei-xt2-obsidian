@@ -165,6 +165,24 @@ const html = `<!doctype html>
     overflow: auto; margin: 0 0 var(--s5);
   }
   #content pre code { background: none; padding: 0; }
+  #content .md-code { position: relative; margin: var(--s4) 0; }
+  #content .md-code>pre { margin: 0; padding-top: calc(var(--s4) + var(--s6)); }
+  #content .md-code-bar {
+    position: absolute; z-index: 1; top: var(--s2); right: var(--s2); left: var(--s3);
+    display: flex; align-items: center; justify-content: flex-end; gap: var(--s1);
+    pointer-events: none;
+  }
+  #content .md-code-bar button {
+    pointer-events: auto; display: inline-flex; align-items: center; min-height: 28px;
+    padding: 0 var(--s2); border: 0; border-radius: var(--pill);
+    background: transparent; color: var(--muted); font: inherit; font-size: var(--caption);
+  }
+  #content .md-code-bar button:focus-visible {
+    outline: var(--focus) solid var(--blue); outline-offset: var(--s1);
+  }
+  #content .md-code-bar .md-code-language {
+    margin-right: auto; padding-left: var(--s1); font-family: var(--mono);
+  }
   #content pre [data-simple-code-editable="true"] {
     outline: none; caret-color: var(--blue); user-select: text;
   }

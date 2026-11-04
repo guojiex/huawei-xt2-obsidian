@@ -219,6 +219,7 @@ struct Index {
   @State blockPanelTitle: string = '当前块';
   @State blockPanelAnchor: PreviewBlockAnchor | null = null;
   @State blockPanelInlineItems: PreviewBlockInlineItem[] = [];
+  @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
   @State blockPanelMaxHeight: number = Size.menuMaxH;
@@ -3002,6 +3003,7 @@ struct Index {
     this.blockPanelPane = pane;
     this.blockPanelAnchor = anchor;
     this.blockPanelInlineItems = anchor.inlineItems;
+    this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
     this.blockPanelSourcePath = this.paneFilePath(pane);
@@ -3049,6 +3051,114 @@ struct Index {
     this.updateBlockPropertyPanelLayout(this.blockPanelPane);
   }
 
+  private codeLanguageLabel(language: string): string {
+    return language.length > 0 ? language : '纯文本';
+  }
+
+  private async changeBlockCodeLanguage(language: string): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.type !== 'code' || !anchor.codeEditable || !anchor.codeLanguageSelectable ||
+      anchor.codeLanguages.indexOf(language) < 0 ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return;
+    }
+    this.blockPanelLanguagePickerOpen = false;
+    if (language === anchor.codeLanguage) {
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      promptAction.showToast({ message: '无法同步当前笔记，未修改代码语言' });
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
+      latestAnchor.type !== 'code' || !latestAnchor.codeLanguageSelectable) {
+      promptAction.showToast({ message: '代码块已变化，请重新打开面板' });
+      return;
+    }
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      promptAction.showToast({ message: '读取代码块失败，未修改语言' });
+      return;
+    }
+    const from: number = latestAnchor.codeLanguageFrom;
+    const to: number = latestAnchor.codeLanguageTo;
+    const expected: string = latestAnchor.codeLanguage;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) || from < latestAnchor.from ||
+      to < from || to > latestAnchor.to || source.slice(from, to) !== expected) {
+      promptAction.showToast({ message: '代码块已变化，请重新打开面板' });
+      return;
+    }
+
+    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
+    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
+    WorkspaceEditGuard.mark(pane, vaultId, path);
+    if (pane === 'right') {
+      this.rightEditorDirty = true;
+    } else {
+      this.editorDirty = true;
+    }
+    let applied: boolean = false;
+    try {
+      applied = await editor.replaceBlockSource(from, to, expected, language, revision);
+    } catch {
+      promptAction.showToast({ message: '修改代码语言失败，请重试' });
+    }
+    if (!applied) {
+      if (!wasDirty && !wasUnsaved &&
+        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
+        WorkspaceEditGuard.clear(pane, vaultId, path);
+        if (pane === 'right') {
+          this.rightEditorDirty = false;
+        } else {
+          this.editorDirty = false;
+        }
+      }
+      promptAction.showToast({ message: '代码块已变化，未修改语言' });
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return;
+    }
+    if (pane === 'right') {
+      this.scheduleRightSave();
+    } else {
+      this.scheduleSave();
+    }
+    this.blockPanelAnchor = {
+      type: latestAnchor.type,
+      tapType: latestAnchor.tapType,
+      from: latestAnchor.from,
+      to: latestAnchor.to + language.length - expected.length,
+      inlineItems: latestAnchor.inlineItems,
+      inlineIndex: latestAnchor.inlineIndex,
+      itemFrom: latestAnchor.itemFrom,
+      itemTo: latestAnchor.itemTo,
+      codeLanguage: language,
+      codeLanguageFrom: from,
+      codeLanguageTo: from + language.length,
+      codeLanguageSelectable: true,
+      codeLanguages: latestAnchor.codeLanguages,
+      codeEditable: latestAnchor.codeEditable,
+      x: latestAnchor.x,
+      y: latestAnchor.y,
+      width: latestAnchor.width,
+      height: latestAnchor.height
+    };
+    this.updateBlockPropertyPanelLayout(pane);
+  }
+
   private blockPanelInlineItemLabel(item: PreviewBlockInlineItem): string {
     let ordinal: number = 0;
     for (const candidate of this.blockPanelInlineItems) {
@@ -3092,6 +3202,7 @@ struct Index {
 
   private closeBlockPropertyPanel(restoreFocus: boolean = true): void {
     this.blockPanelRestoreFocus = restoreFocus;
+    this.blockPanelLanguagePickerOpen = false;
     this.leftBlockPanelOpen = false;
     this.rightBlockPanelOpen = false;
     this.resetBlockSourceEditor();
@@ -7051,6 +7162,50 @@ struct Index {
               .focusable(true)
               .accessibilityText(this.blockPanelActionLabel())
               .onClick((): void => { this.closeBlockPanelForContentAction(); })
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'code') {
+              if (this.blockPanelAnchor.codeEditable && this.blockPanelAnchor.codeLanguageSelectable) {
+                Row() {
+                  Text('语言')
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                  Text(`${this.codeLanguageLabel(this.blockPanelAnchor.codeLanguage)} ▾`)
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_secondary'))
+                }
+                .width('100%')
+                .height(Size.touch)
+                .padding({ left: Space.s3, right: Space.s3 })
+                .focusable(true)
+                .accessibilityText(`代码语言：${this.codeLanguageLabel(this.blockPanelAnchor.codeLanguage)}`)
+                .onClick((): void => {
+                  this.blockPanelLanguagePickerOpen = !this.blockPanelLanguagePickerOpen;
+                })
+                if (this.blockPanelLanguagePickerOpen) {
+                  ForEach(this.blockPanelAnchor.codeLanguages, (language: string): void => {
+                    Row() {
+                      Text(this.codeLanguageLabel(language))
+                        .fontSize(FontSize.body2)
+                        .fontColor(language === this.blockPanelAnchor?.codeLanguage
+                          ? $r('app.color.brand') : $r('app.color.text_primary'))
+                        .layoutWeight(1)
+                    }
+                    .width('100%')
+                    .height(Size.touch)
+                    .padding({ left: Space.s3, right: Space.s3 })
+                    .focusable(true)
+                    .accessibilityText(`选择代码语言：${this.codeLanguageLabel(language)}`)
+                    .onClick((): void => { void this.changeBlockCodeLanguage(language); })
+                  }, (language: string): string => language)
+                }
+              } else if (this.blockPanelAnchor.codeLanguage.length > 0) {
+                Text(`保留：${this.blockPanelAnchor.codeLanguage}`)
+                  .fontSize(FontSize.body2)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .height(Size.touch)
+                  .padding({ left: Space.s3, right: Space.s3 })
+              }
             } else {
               Row() {
                 Text('暂无可用属性')

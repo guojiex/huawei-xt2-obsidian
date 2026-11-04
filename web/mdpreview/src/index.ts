@@ -695,6 +695,55 @@ function codeElementForBlock(block: HTMLElement): HTMLElement | null {
   return pre.querySelector('code') as HTMLElement | null ?? pre
 }
 
+function clearCodeBlockToolbar(block: HTMLElement): void {
+  const pre = block.querySelector('pre') as HTMLElement | null
+  if (!pre) return
+  const container = pre.closest('.md-code') as HTMLElement | null
+  if (!container) return
+  container.querySelector('.md-code-bar')?.remove()
+  if (container.classList.contains('mermaid-block')) {
+    container.classList.remove('md-code')
+  } else if (container.dataset.simpleCodeToolbarWrapper === 'true') {
+    container.replaceWith(pre)
+  }
+}
+
+function attachCodeBlockLanguageButton(block: HTMLElement, pre: HTMLElement, language: string,
+  closed: boolean): void {
+  let container = pre.closest('.mermaid-block') as HTMLElement | null
+  if (container) {
+    container.classList.add('md-code')
+  } else if (pre.parentElement?.classList.contains('md-code')) {
+    container = pre.parentElement
+  } else {
+    container = document.createElement('div')
+    container.className = 'md-code'
+    container.dataset.simpleCodeToolbarWrapper = 'true'
+    pre.replaceWith(container)
+    container.appendChild(pre)
+  }
+
+  const bar = document.createElement('div')
+  bar.className = 'md-code-bar'
+  const languageButton = document.createElement('button')
+  languageButton.type = 'button'
+  languageButton.className = 'md-code-language'
+  languageButton.textContent = `${closed ? (language || '纯文本') : '源码'} ▾`
+  languageButton.title = '选择代码语言'
+  languageButton.setAttribute('aria-label', `代码块语言：${closed ? (language || '纯文本') : '源码'}`)
+  languageButton.addEventListener('click', (event: MouseEvent): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    const payload = publishLockedBlockAnchor(block)
+    const arkts = window.__arkts
+    if (payload.length > 0 && arkts && typeof arkts.onLockedContentTap === 'function') {
+      arkts.onLockedContentTap(payload)
+    }
+  })
+  bar.appendChild(languageButton)
+  container.insertBefore(bar, pre)
+}
+
 function notifyCodeBlockEditingChange(editing: boolean): void {
   const arkts = window.__arkts
   if (arkts && typeof arkts.onCodeBlockEditingChange === 'function') {
@@ -985,10 +1034,12 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     block.removeAttribute('data-edit-locked')
     const type = block.dataset.sourceType ?? ''
     const supported = type === 'paragraph' || type === 'heading' || type === 'list' || type === 'blockquote'
-    if (!editable) continue
     if (type === 'code') {
+      clearCodeBlockToolbar(block)
+      if (!editable) continue
       block.dataset.editLocked = 'true'
       const target = codeElementForBlock(block)
+      const pre = target?.closest('pre') as HTMLElement | null
       const from = Number(block.dataset.sourceFrom)
       const to = Number(block.dataset.sourceTo)
       const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to <= sourceText.length
@@ -1009,8 +1060,12 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
         target.setAttribute('aria-label', '编辑代码块内容')
         target.spellcheck = false
       }
+      if (pre && model) {
+        attachCodeBlockLanguageButton(block, pre, model.language, model.closed)
+      }
       continue
     }
+    if (!editable) continue
     if (!supported || containsLockedSyntax(block)) {
       block.dataset.editLocked = 'true'
       block.setAttribute('aria-label', '此内容请在专业模式编辑')

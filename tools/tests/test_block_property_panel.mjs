@@ -9,6 +9,7 @@ const { transformSync } = require('esbuild')
 const vm = require('node:vm')
 const source = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
 const previewSource = fs.readFileSync(new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8')
+const mdpreviewSource = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root), 'utf8')
 const anchorChangeStart = source.indexOf('  private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {')
 const anchorChangeEnd = source.indexOf('\n  private recordBlockToolbarPaneArea(', anchorChangeStart)
 const panelStart = source.indexOf('  private hasBlockPropertyPanelForPane(')
@@ -38,7 +39,13 @@ function makeApp() {
     KeyCode: { KEYCODE_ESCAPE: 27 },
     Color: { Transparent: 'transparent' },
     Size: { blockPanelW: 380, blockSourceW: 480, menuMaxH: 560, touch: 48 },
-    Space: { s1: 4, s2: 8 }
+    Space: { s1: 4, s2: 8 },
+    WorkspaceEditGuard: {
+      isUnsaved: () => false,
+      mark: () => {},
+      clear: () => {}
+    },
+    promptAction: { showToast: () => {} }
   })
   vm.runInContext(code, context)
   const app = new context.module.exports()
@@ -71,6 +78,10 @@ function makeApp() {
     paneFilePath() { return 'note.md' },
     editorBridgeForPane() { return this.editorBridge },
     flushSimplePreviewChanges: async () => '',
+    scheduleSave() {},
+    scheduleRightSave() {},
+    editorDirty: false,
+    rightEditorDirty: false,
     updateBlockToolbarLayout() {},
     calculateAnchoredPopupLayout(_pane, _paneArea, _anchorArea, width) {
       return { placement: 'top-left', offsetX: -120, offsetY: -8, width, maxHeight: 240 }
@@ -350,6 +361,70 @@ test('single-screen uses a bottom sheet and wide screens use an anchored popup',
   assert.equal(wideScreen.preferType, 'popup')
   assert.equal(wideScreen.placement, 'bottom-left')
   assert.equal(wideScreen.dragBar, false)
+})
+
+test('language picker changes only the language range and retains updated panel state', async () => {
+  const source = '```javascript\nconsole.log(1)\n```'
+  const calls = []
+  const app = makeApp()
+  app.editorBridge = {
+    currentDocumentRevision: 11,
+    getContent: async () => source,
+    replaceBlockSource: async (...args) => {
+      calls.push(args)
+      app.editorBridge.currentDocumentRevision++
+      return true
+    }
+  }
+  const codeAnchor = {
+    type: 'code', tapType: '', from: 0, to: source.length,
+    inlineItems: [], inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    codeLanguage: 'javascript', codeLanguageFrom: 3, codeLanguageTo: 13,
+    codeLanguageSelectable: true, codeLanguages: ['', 'javascript', 'python'], codeEditable: true,
+    x: 160, y: 200, width: 180, height: 100
+  }
+  app.openBlockPropertyPanel('left', codeAnchor)
+
+  await app.changeBlockCodeLanguage('python')
+
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0].slice(0, 4), [3, 13, 'javascript', 'python'])
+  assert.equal(app.blockPanelAnchor.codeLanguage, 'python')
+  assert.equal(app.blockPanelAnchor.codeLanguageTo, 9)
+  assert.equal(app.blockPanelAnchor.to, source.length - 'javascript'.length + 'python'.length)
+})
+
+test('unknown code languages are not exposed as language edits', async () => {
+  let reads = 0
+  const app = makeApp()
+  app.editorBridge = {
+    currentDocumentRevision: 11,
+    getContent: async () => { reads++; return '```custom\ncode\n```' },
+    replaceBlockSource: async () => { throw new Error('must not write') }
+  }
+  const codeAnchor = {
+    type: 'code', tapType: '', from: 0, to: 18,
+    inlineItems: [], inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    codeLanguage: 'custom', codeLanguageFrom: 3, codeLanguageTo: 9,
+    codeLanguageSelectable: false, codeLanguages: ['', 'python'], codeEditable: true,
+    x: 160, y: 200, width: 180, height: 100
+  }
+  app.openBlockPropertyPanel('left', codeAnchor)
+
+  await app.changeBlockCodeLanguage('python')
+
+  assert.equal(reads, 0)
+  assert.equal(app.blockPanelAnchor.codeLanguage, 'custom')
+})
+
+test('code language badge opens the existing property panel and unknown values are retained', () => {
+  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+
+  assert.match(builder, /this\.blockPanelAnchor\.codeLanguageSelectable/)
+  assert.match(builder, /ForEach\(this\.blockPanelAnchor\.codeLanguages/)
+  assert.match(builder, /保留：\$\{this\.blockPanelAnchor\.codeLanguage\}/)
+  assert.match(mdpreviewSource, /attachCodeBlockLanguageButton/)
+  assert.match(mdpreviewSource, /arkts\.onLockedContentTap\(payload\)/)
 })
 
 test('both preview panes bind the panel and block taps provide the source anchor', () => {
