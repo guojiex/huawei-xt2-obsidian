@@ -1548,7 +1548,8 @@ F4 仍为未充分核实的平台生命周期记录；不能据此声称支持�
 - `WebviewController.getSurfaceId()` 起始 API 12，仅在 `RenderMode.ASYNC_RENDER` 且 Web 初始化后有效；`image.createPixelMapFromSurface(surfaceId, region)` 起始 API 11。现有分享 `Web` 使用 `SYNC_RENDER`，不能直接套用 `getSurfaceId()`。
 - `RenderMode.SYNC_RENDER` 的 SDK 宽度上限为 500,000 px；这只说明 Web 组件 API 的声明范围，不证明其能突破 ArkUI 父容器宽度或被完整截取。异步模式 7,680 px 限制亦不证明宽页面布局行为。
 - API 12 起的 `ComponentSnapshot.createFromBuilder()` 声明可离屏构建含 Web 的自定义组件，但 SDK 同时提示 Web 加载任务可能尚未完成即产生快照。尚无本工程固定宽度、加载就绪和截图内容一致性的运行证据。
-- **结论：**手机 / 宽版固定宽度是否可在窗口以外完整排版并可靠捕获仍为 ⚠️ 未验证，不能据此进入关键路径。当前 API 26 模拟器未在线；按隔离合成 Markdown 探针恢复验证。此限制不阻塞不依赖固定宽度的分享面板布局工作；API24 / XT2 仍由用户手动验收。
+- **结论：**手机 / 宽版固定宽度是否可在窗口以外完整排版并可靠捕获仍为 ⚠️ 未验证，不能据此进入关键路径。2026-11-03 核对时 API 26 模拟器未在线，计划按隔离合成 Markdown 探针恢复验证。此限制不阻塞不依赖固定宽度的分享面板布局工作；API24 / XT2 仍由用户手动验收。
+- **2026-11-05 状态复核：**HDC `list targets` 返回 `127.0.0.1:5555`；该目标 `const.ohos.apiversion` 为 `26`、`const.product.model` 为 `emulator`。`aa dump -a` 显示 `com.jxg.huaweiobsidian` 的 `EntryAbility` 在前台，但 `window attached #0`。本次仅确认模拟器目标在线，未取得可见应用窗口，未运行离屏截图探针；固定宽度排版与完整捕获仍未证实。
 
 
 ### O5 ⚠️ 指关节双击截图（用户转贴答复、公开帮助文档与本机 SDK 核对，2026-11-05）
