@@ -26,6 +26,46 @@ export interface PreviewCaptureResult {
   scrollTop: number;
 }
 
+@Component
+export struct FormulaPreviewWeb {
+  @Prop @Watch('onFormulaChanged') expression: string = '';
+  @Prop @Watch('onFormulaChanged') displayMode: boolean = false;
+  @StorageProp('appTheme') @Watch('onFormulaChanged') appTheme: string = 'light';
+  private controller: webview.WebviewController = new webview.WebviewController();
+  private pageReady: boolean = false;
+
+  private onFormulaChanged(): void {
+    this.updateFormulaPreview();
+  }
+
+  private updateFormulaPreview(): void {
+    if (!this.pageReady) {
+      return;
+    }
+    const markdown: string = this.displayMode
+      ? `$$\n${this.expression}\n$$`
+      : `$${this.expression}$`;
+    const payload: string = BridgeCodec.encode(markdown);
+    const theme: string = this.appTheme === 'dark' ? 'dark' : 'light';
+    const script: string = `window.__mdpreview.setTheme('${theme}');` +
+      'window.__mdpreview.setPreviewZoomControlsVisible(false);' +
+      `window.__mdpreview.setContent('${payload}','${payload}','');`;
+    void this.controller.runJavaScript(script).catch((): void => {});
+  }
+
+  build() {
+    Web({ src: $rawfile('mdpreview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+      .width('100%')
+      .height('100%')
+      .onPageEnd((): void => {
+        this.pageReady = true;
+        this.updateFormulaPreview();
+      })
+      .onConsole((): boolean => true)
+      .onErrorReceive((): void => {})
+  }
+}
+
 export interface PreviewBlockInlineItem {
   index: number;
   type: string;

@@ -34,6 +34,7 @@ import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService'
 import {
   MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts
 } from '../model/MarkdownInlineParser';
+import { FormulaSourceModel, MarkdownComplexBlockEdit } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
@@ -48,7 +49,7 @@ import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import {
-  PreviewWebView, PreviewBridge, PreviewBlockAnchor, PreviewBlockInlineItem, PreviewCaptureResult,
+  PreviewWebView, FormulaPreviewWeb, PreviewBridge, PreviewBlockAnchor, PreviewBlockInlineItem, PreviewCaptureResult,
   PreviewCodeEditRequest
 } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
@@ -243,6 +244,11 @@ struct Index {
   @State blockPanelImageMessage: string = '';
   private blockPanelImageRaw: string = '';
   private blockPanelImageParts: MarkdownImageParts | null = null;
+  @State blockPanelFormulaReady: boolean = false;
+  @State blockPanelFormulaValue: string = '';
+  @State blockPanelFormulaMessage: string = '';
+  private blockPanelFormulaRaw: string = '';
+  private blockPanelFormulaModel: FormulaSourceModel | null = null;
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -3048,6 +3054,12 @@ struct Index {
     this.blockPanelImageMessage = anchor.tapType === 'image' ? '正在读取图片…' : '';
     this.blockPanelImageRaw = '';
     this.blockPanelImageParts = null;
+    this.blockPanelFormulaReady = false;
+    this.blockPanelFormulaValue = '';
+    this.blockPanelFormulaMessage = anchor.tapType === 'mathInline' || anchor.type === 'formula'
+      ? '正在读取公式…' : '';
+    this.blockPanelFormulaRaw = '';
+    this.blockPanelFormulaModel = null;
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3068,6 +3080,8 @@ struct Index {
       void this.loadBlockPanelWikiLink();
     } else if (anchor.tapType === 'image') {
       void this.loadBlockPanelImage();
+    } else if (anchor.tapType === 'mathInline' || anchor.type === 'formula') {
+      void this.loadBlockPanelFormula();
     }
   }
 
@@ -3122,12 +3136,19 @@ struct Index {
     this.blockPanelImageMessage = itemAnchor.tapType === 'image' ? '正在读取图片…' : '';
     this.blockPanelImageRaw = '';
     this.blockPanelImageParts = null;
+    this.blockPanelFormulaReady = false;
+    this.blockPanelFormulaValue = '';
+    this.blockPanelFormulaMessage = itemAnchor.tapType === 'mathInline' ? '正在读取公式…' : '';
+    this.blockPanelFormulaRaw = '';
+    this.blockPanelFormulaModel = null;
     if (itemAnchor.tapType === 'link') {
       void this.loadBlockPanelLink();
     } else if (itemAnchor.tapType === 'wikilink') {
       void this.loadBlockPanelWikiLink();
     } else if (itemAnchor.tapType === 'image') {
       void this.loadBlockPanelImage();
+    } else if (itemAnchor.tapType === 'mathInline') {
+      void this.loadBlockPanelFormula();
     }
   }
 
@@ -3280,6 +3301,81 @@ struct Index {
     return `${label} ${ordinal}`;
   }
 
+  private async loadBlockPanelFormula(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || (anchor.tapType !== 'mathInline' && anchor.type !== 'formula') ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelFormulaMessage = '无法同步当前笔记，请关闭面板后重试';
+      this.blockPanelFormulaReady = true;
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelFormulaMessage = '读取公式失败，请关闭面板后重试';
+      this.blockPanelFormulaReady = true;
+      return;
+    }
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
+      return;
+    }
+    const inline: boolean = latestAnchor.tapType === 'mathInline';
+    const from: number = inline ? latestAnchor.itemFrom : latestAnchor.from;
+    const to: number = inline ? latestAnchor.itemTo : latestAnchor.to;
+    if (from < latestAnchor.from || to > latestAnchor.to || to <= from || to > source.length) {
+      this.blockPanelFormulaMessage = '公式范围无效，请以源码编辑此项';
+      this.blockPanelFormulaReady = true;
+      return;
+    }
+    const raw: string = source.slice(from, to);
+    const model: FormulaSourceModel | null = MarkdownComplexBlockEdit.parseFormula(raw, inline);
+    if (model === null) {
+      this.blockPanelFormulaMessage = '此公式写法暂不支持结构化编辑';
+      this.blockPanelFormulaReady = true;
+      return;
+    }
+    this.blockPanelFormulaRaw = raw;
+    this.blockPanelFormulaModel = model;
+    this.blockPanelFormulaValue = model.expression;
+    this.blockPanelFormulaMessage = '';
+    this.blockPanelFormulaReady = true;
+  }
+
+  private async saveBlockPanelFormula(): Promise<void> {
+    const model: FormulaSourceModel | null = this.blockPanelFormulaModel;
+    if (!this.blockPanelFormulaReady || model === null || this.blockPanelFormulaRaw.length === 0) {
+      return;
+    }
+    const replacement: string | null = MarkdownComplexBlockEdit.serializeFormula(
+      model, this.blockPanelFormulaValue);
+    if (replacement === null) {
+      this.blockPanelFormulaMessage = model.inline && this.blockPanelFormulaValue.includes('$')
+        ? '行内公式不能包含 $' : '公式不能为空';
+      return;
+    }
+    if (!await this.replaceBlockPanelInlineSource(
+      this.blockPanelFormulaRaw, replacement, '修改公式失败，请重试')) {
+      this.blockPanelFormulaMessage = '公式已变化或保存失败，请重新打开面板';
+      return;
+    }
+    this.blockPanelFormulaRaw = replacement;
+    this.blockPanelFormulaModel = MarkdownComplexBlockEdit.parseFormula(replacement, model.inline);
+    this.blockPanelFormulaMessage = '';
+  }
+
   private async loadBlockPanelLink(): Promise<void> {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     const pane: string = this.blockPanelPane;
@@ -3415,7 +3511,8 @@ struct Index {
     const path: string = this.blockPanelSourcePath;
     const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
     const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || (anchor.inlineIndex < 0 && anchor.tapType !== 'image') ||
+    if (anchor === null || (anchor.inlineIndex < 0 && anchor.tapType !== 'image' &&
+      anchor.type !== 'formula') ||
       !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
       return false;
     }
@@ -8226,6 +8323,37 @@ struct Index {
                   .width('100%')
                   .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
               }
+            } else if (this.blockPanelAnchor !== null &&
+              (this.blockPanelAnchor.tapType === 'mathInline' || this.blockPanelAnchor.type === 'formula')) {
+              Text('LaTeX')
+                .fontSize(FontSize.caption)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s2 })
+              TextArea({ text: this.blockPanelFormulaValue })
+                .height(Size.touch * 2)
+                .fontSize(FontSize.body2)
+                .fontColor($r('app.color.text_primary'))
+                .fontFamily('monospace')
+                .backgroundColor($r('app.color.bg_secondary'))
+                .onChange((value: string): void => { this.blockPanelFormulaValue = value; })
+                .accessibilityText('LaTeX 公式')
+              FormulaPreviewWeb({
+                expression: this.blockPanelFormulaValue,
+                displayMode: !this.blockPanelFormulaModel?.inline
+              })
+                .width('100%')
+                .height(Size.touch * 3)
+                .accessibilityText('公式实时预览')
+              if (this.blockPanelFormulaMessage.length > 0) {
+                Text(this.blockPanelFormulaMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3 })
+              }
+              Button('应用')
+                .onClick((): void => { void this.saveBlockPanelFormula(); })
             } else if (this.blockPanelActionLabel().length > 0) {
               Row() {
                 Text(this.blockPanelActionLabel())

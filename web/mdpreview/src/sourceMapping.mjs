@@ -210,7 +210,8 @@ export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceO
         }) : []
         htmlParts.push(`<div class="preview-source-block" data-source-start-line="${startLine}" data-source-end-line="${endLine}">${html}</div>`)
         blocks.push({
-          tokenIndex: index, startLine, endLine, sourceStart, sourceEnd, type: token.type,
+          tokenIndex: index, startLine, endLine, sourceStart, sourceEnd,
+          type: token.type === 'mathBlock' ? 'formula' : token.type,
           inlineItems, inlineSafe: inline.safe
         })
       }

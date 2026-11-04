@@ -33,6 +33,14 @@ test('callout tokens preserve their full source line range and render through so
   assert.equal(result.blocks.length, marked.lexer(markdown).filter(({ type }) => type !== 'space').length)
 })
 
+test('block formulas carry a formula anchor and exact source range', () => {
+  const source = '$$\r\nx + y\r\n$$\r\n'
+  const result = renderMarkdownWithSourceBlocks(source)
+
+  assert.equal(result.blocks[0].type, 'formula')
+  assert.equal(source.slice(result.blocks[0].sourceStart, result.blocks[0].sourceEnd), source)
+})
+
 test('source block rendering keeps reference links and image blocks intact', () => {
   const markdown = '![图](images/sample.png)\n\n[外链][source]\n\n[source]: https://example.com'
   const result = renderMarkdownWithSourceBlocks(markdown)
