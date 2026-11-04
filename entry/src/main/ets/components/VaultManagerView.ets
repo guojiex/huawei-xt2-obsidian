@@ -11,6 +11,11 @@
 import { VaultEntry } from '../model/Vault';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 
+export interface VaultManagerShareSummary {
+  vaultId: string;
+  noteCount: number;
+}
+
 /** 小操作按钮的统一样式参数（高度 40 = 可点但有分量，圆角 control） */
 @Extend(Text)
 function actionBtn(tone: ResourceColor) {
@@ -29,11 +34,22 @@ export struct VaultManagerView {
   @Link vaults: VaultEntry[];
   /** 当前库 id（高亮用） */
   @Prop currentVaultId: string = '';
+  @Prop shareSummaries: VaultManagerShareSummary[] = [];
   onSetCurrent: (id: string) => void = (id: string) => {};
+  onShare: (id: string, focusId: string) => void = (id: string, focusId: string) => {};
   onRename: (id: string) => void = (id: string) => {};
   onDelete: (id: string) => void = (id: string) => {};
   onCreate: () => void = () => {};
   onImportVault: () => void = () => {};
+
+  private vaultHasNoNotes(vaultId: string): boolean {
+    for (let i: number = 0; i < this.shareSummaries.length; i++) {
+      if (this.shareSummaries[i].vaultId === vaultId) {
+        return this.shareSummaries[i].noteCount === 0;
+      }
+    }
+    return false;
+  }
 
   @Builder
   Tag(text: string, active: boolean) {
@@ -84,7 +100,7 @@ export struct VaultManagerView {
                   .width('100%')
                   .margin({ top: Space.s1 })
 
-                // 操作行：设为当前（非当前库才有）/ 改名 / 删除
+                // 操作行：设为当前（非当前库才有）/ 分享 / 改名 / 删除
                 Row({ space: Space.s2 }) {
                   if (v.id !== this.currentVaultId) {
                     Text('设为当前')
@@ -93,6 +109,18 @@ export struct VaultManagerView {
                         this.onSetCurrent(v.id);
                       })
                   }
+                  Text('分享')
+                    .actionBtn(this.vaultHasNoNotes(v.id)
+                      ? $r('app.color.text_tertiary') : $r('app.color.text_primary'))
+                    .padding({ left: Space.s2, right: Space.s2 })
+                    .enabled(!this.vaultHasNoNotes(v.id))
+                    .focusable(!this.vaultHasNoNotes(v.id))
+                    .id('vault-manager-share-' + v.id)
+                    .accessibilityText(this.vaultHasNoNotes(v.id)
+                      ? '分享知识库，已禁用，这个库还没有笔记' : '分享知识库')
+                    .onClick(() => {
+                      this.onShare(v.id, 'vault-manager-share-' + v.id);
+                    })
                   Text('改名')
                     .actionBtn($r('app.color.text_primary'))
                     .onClick(() => {
@@ -109,6 +137,13 @@ export struct VaultManagerView {
                 }
                 .width('100%')
                 .margin({ top: Space.s3 })
+                if (this.vaultHasNoNotes(v.id)) {
+                  Text('这个库还没有笔记')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .width('100%')
+                    .margin({ top: Space.s1 })
+                }
               }
               .width('100%')
               .alignItems(HorizontalAlign.Start)

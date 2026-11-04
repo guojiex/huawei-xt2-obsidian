@@ -33,6 +33,7 @@ export struct ShareNoteDialog {
   @Prop singleScreen: boolean = false;
   onConfirm: (scope: ShareLinkScope, path: string, format: string, itemName: string) => void =
     (scope: ShareLinkScope, path: string, format: string, itemName: string) => {};
+  onDismiss: () => void = () => {};
   @State selectedScope: ShareLinkScope = 'note';
 
   aboutToAppear(): void {
@@ -88,9 +89,14 @@ export struct ShareNoteDialog {
     if (event.type !== KeyType.Down || event.keyCode !== KeyCode.KEYCODE_ESCAPE) {
       return false;
     }
-    this.controller?.close();
+    this.dismiss();
     event.stopPropagation();
     return true;
+  }
+
+  private dismiss(): void {
+    this.controller?.close();
+    this.onDismiss();
   }
 
   private onScopeKey(scope: ShareLinkScope, event: KeyEvent): boolean {
@@ -235,22 +241,24 @@ export struct ShareNoteDialog {
           .accessibilityText('关闭分享')
           .focusable(true)
           .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
-          .onClick(() => { this.controller?.close(); })
+          .onClick(() => { this.dismiss(); })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
       Scroll() {
         Column({ space: Space.s4 }) {
-          Row({ space: Space.s1 }) {
-            ForEach(this.scopeOptions, (option: ShareScopeOption) => {
-              this.ScopeTab(option)
-            }, (option: ShareScopeOption) => option.scope)
+          if (this.scopeOptions.length > 1) {
+            Row({ space: Space.s1 }) {
+              ForEach(this.scopeOptions, (option: ShareScopeOption) => {
+                this.ScopeTab(option)
+              }, (option: ShareScopeOption) => option.scope)
+            }
+            .width('100%')
+            .padding(Space.s1)
+            .borderRadius(Radius.full)
+            .backgroundColor($r('app.color.bg_secondary'))
           }
-          .width('100%')
-          .padding(Space.s1)
-          .borderRadius(Radius.full)
-          .backgroundColor($r('app.color.bg_secondary'))
 
           Text(this.currentOption().description)
             .fontSize(FontSize.caption)

@@ -67,8 +67,6 @@ export struct VaultSidebar {
   onManageVaults: () => void = () => {};
   /** 打开当前库快切与全文搜索。 */
   onOpenSearch: () => void = () => {};
-  /** 从当前库下拉菜单分享整个知识库。 */
-  onShareVault: () => void = () => {};
   /** 统一导入库入口：本地目录或 Git 仓库。 */
   onImportVault: () => void = () => {};
   /**
@@ -349,20 +347,6 @@ export struct VaultSidebar {
             this.onImportVault();
           })
 
-          Row() {
-            Text('分享知识库…')
-              .fontSize(FontSize.body2)
-              .fontColor($r('app.color.brand'))
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .height(Size.touch)
-          .padding(Space.s2)
-          .borderRadius(Radius.control)
-          .onClick(() => {
-            this.menuOpen = false;
-            this.onShareVault();
-          })
         }
         .width('100%')
       }

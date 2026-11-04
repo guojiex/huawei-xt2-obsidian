@@ -39,7 +39,7 @@ import {
   FrontmatterPropertyModel, FrontmatterSourceModel, MarkdownComplexBlockEdit
 } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
-import { VaultManagerView } from '../components/VaultManagerView';
+import { VaultManagerShareSummary, VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
@@ -175,6 +175,7 @@ struct Index {
   @StorageProp('creasePx') creasePx: string = '-';
   /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
   @State vaults: VaultEntry[] = [];
+  @State vaultManagerShareSummaries: VaultManagerShareSummary[] = [];
   /** 当前库 id */
   @State @Watch('onFormatContextChanged') currentVaultId: string = '';
   @State private vaultSwitchInProgress: boolean = false;
@@ -1668,6 +1669,25 @@ struct Index {
     this.currentVaultId = reg.currentId();
     this.refreshCurrentVaultNoteCount();
     this.refreshGitAheadCommitCount();
+    if (this.topView === 'vaults') {
+      this.refreshVaultManagerShareSummaries();
+    }
+  }
+
+  private refreshVaultManagerShareSummaries(): void {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const entries: VaultEntry[] = registry.list();
+    const summaries: VaultManagerShareSummary[] = [];
+    for (let i: number = 0; i < entries.length; i++) {
+      let noteCount: number = -1;
+      try {
+        noteCount = ShareArchiveService.countScope(registry, entries[i].id, '').noteCount;
+      } catch (error) {
+        noteCount = -1;
+      }
+      summaries.push({ vaultId: entries[i].id, noteCount: noteCount });
+    }
+    this.vaultManagerShareSummaries = summaries;
   }
 
   private refreshCurrentVaultNoteCount(): void {
@@ -2152,6 +2172,7 @@ struct Index {
     }
     this.vaultManagerReturnView = fromView;
     this.topView = 'vaults';
+    this.refreshFromRegistry();
   }
 
   private currentVaultIsGit(): boolean {
@@ -7149,22 +7170,31 @@ struct Index {
       promptAction.showToast({ message: '请先打开一篇笔记' });
       return;
     }
-    this.openShareDialog('note', path);
+    this.openShareDialog('note', path, this.currentVaultId);
   }
 
   private openSharePath(relPath: string, isDir: boolean): void {
     if (this.topView !== 'note' || !isDir) {
       return;
     }
-    this.openShareDialog('folder', relPath);
+    this.openShareDialog('folder', relPath, this.currentVaultId);
   }
 
-  private openShareVault(): void {
-    if (this.topView !== 'note' || this.currentVaultId.length === 0) {
-      promptAction.showToast({ message: '当前没有可分享的知识库' });
+  private openShareVaultFromManager(vaultId: string, focusId: string): void {
+    const registry: VaultRegistry = VaultRegistry.get();
+    let noteCount: number = 0;
+    try {
+      noteCount = ShareArchiveService.countScope(registry, vaultId, '').noteCount;
+    } catch (error) {
+      promptAction.showToast({ message: '无法读取该知识库，暂时无法分享' });
       return;
     }
-    this.openShareDialog('vault', '');
+    if (noteCount === 0) {
+      this.refreshVaultManagerShareSummaries();
+      promptAction.showToast({ message: '这个库还没有笔记' });
+      return;
+    }
+    this.openShareDialog('vault', '', vaultId, noteCount, focusId);
   }
 
   private sharePathForScope(targetScope: ShareLinkScope, entryScope: ShareLinkScope, entryPath: string,
@@ -7178,21 +7208,22 @@ struct Index {
     return entryScope === 'folder' ? entryPath : NoteShareService.parentOf(notePath);
   }
 
-  private openShareDialog(scope: ShareLinkScope, path: string): void {
+  private openShareDialog(scope: ShareLinkScope, path: string, targetVaultId: string = this.currentVaultId,
+    vaultNoteCount: number = -1, focusReturnId: string = ''): void {
     const registry: VaultRegistry = VaultRegistry.get();
     const entries: VaultEntry[] = registry.list();
     let vault: VaultEntry | null = null;
     for (let i = 0; i < entries.length; i++) {
-      if (entries[i].id === this.currentVaultId) {
+      if (entries[i].id === targetVaultId) {
         vault = entries[i];
         break;
       }
     }
     if (vault === null) {
-      promptAction.showToast({ message: '当前知识库不存在' });
+      promptAction.showToast({ message: '这个知识库已不存在' });
       return;
     }
-    const notePath: string = this.activeFilePath();
+    const notePath: string = vault.id === this.currentVaultId ? this.activeFilePath() : '';
     const noteReady: boolean = notePath.length > 0 && this.editorBridgeForPath(notePath).ready;
     if (scope === 'note' && !noteReady) {
       promptAction.showToast({ message: '编辑器尚未就绪，暂时无法分享' });
@@ -7211,46 +7242,47 @@ struct Index {
     const vaultOptions: ShareFormatOption[] = [
       { value: 'zip', label: 'ZIP 文件', detail: '打包当前知识库中的可分享文件。', icon: 'archive' }
     ];
-    const scopeOptions: ShareScopeOption[] = [
-      {
-        scope: 'note',
-        path: notePath,
-        label: '笔记',
-        title: '分享笔记',
-        itemName: noteName,
-        description: '当前笔记及其引用的库内图片，不包含链接到的其他笔记。',
-        summary: '当前编辑内容',
-        notice: '',
-        available: noteReady,
-        options: noteOptions
-      },
-      {
-        scope: 'folder',
-        path: folderPath,
-        label: '文件夹',
-        title: '分享文件夹',
-        itemName: folderPath.length > 0 ? folderPath : '知识库根目录',
-        description: '递归包含所选文件夹中的文件，并补齐笔记引用的库内图片。',
-        summary: '递归文件与图片',
-        notice: '',
-        available: true,
-        options: folderOptions
-      },
-      {
-        scope: 'vault',
-        path: '',
-        label: '知识库',
-        title: '分享知识库',
-        itemName: this.currentVaultId,
-        description: '排除隐藏项、回收站、缓存、草稿、凭据及内部状态。',
-        summary: '当前库的可分享文件',
-        notice: '',
-        available: true,
-        options: vaultOptions
-      }
-    ];
+    const noteOption: ShareScopeOption = {
+      scope: 'note',
+      path: notePath,
+      label: '笔记',
+      title: '分享笔记',
+      itemName: noteName,
+      description: '当前笔记及其引用的库内图片，不包含链接到的其他笔记。',
+      summary: '当前编辑内容',
+      notice: '',
+      available: noteReady,
+      options: noteOptions
+    };
+    const folderOption: ShareScopeOption = {
+      scope: 'folder',
+      path: folderPath,
+      label: '文件夹',
+      title: '分享文件夹',
+      itemName: folderPath.length > 0 ? folderPath : '知识库根目录',
+      description: '递归包含所选文件夹中的文件，并补齐笔记引用的库内图片。',
+      summary: '递归文件与图片',
+      notice: '',
+      available: true,
+      options: folderOptions
+    };
+    const vaultOption: ShareScopeOption = {
+      scope: 'vault',
+      path: '',
+      label: '知识库',
+      title: '分享知识库',
+      itemName: vault.id,
+      description: '排除隐藏项、回收站、缓存、草稿、凭据及内部状态。',
+      summary: focusReturnId.length > 0 && vaultNoteCount >= 0
+        ? vaultNoteCount.toString() + ' 篇笔记' : '当前库的可分享文件',
+      notice: '',
+      available: true,
+      options: vaultOptions
+    };
+    const scopeOptions: ShareScopeOption[] = focusReturnId.length > 0
+      ? [vaultOption] : [noteOption, folderOption, vaultOption];
     for (let i: number = 0; i < scopeOptions.length; i++) {
-      if (vault.type === 'git') {
+      if (vault.type === 'git' && focusReturnId.length === 0) {
         try {
           const linkResult = ShareLinkService.build(vault, scopeOptions[i].scope, scopeOptions[i].path);
           scopeOptions[i].options.push({
@@ -7268,6 +7300,16 @@ struct Index {
 
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    let focusRestoreScheduled: boolean = false;
+    const restoreShareTriggerFocus = (): void => {
+      if (focusReturnId.length === 0 || focusRestoreScheduled) {
+        return;
+      }
+      focusRestoreScheduled = true;
+      setTimeout((): void => {
+        this.getUIContext().getFocusController().requestFocus(focusReturnId);
+      }, 0);
+    };
     this.shareNoteCtl = new CustomDialogController({
       builder: ShareNoteDialog({
         scopeOptions: scopeOptions,
@@ -7276,10 +7318,13 @@ struct Index {
         windowHeightVp: this.windowHeightVp,
         singleScreen: shareSheet,
         onConfirm: (targetScope: ShareLinkScope, targetPath: string, format: string, itemName: string): void => {
-          void this.prepareShare(targetScope, targetPath, format, itemName, vault as VaultEntry);
-        }
+          void this.prepareShare(targetScope, targetPath, format, itemName, vault as VaultEntry,
+            vaultNoteCount, focusReturnId);
+        },
+        onDismiss: restoreShareTriggerFocus
       }),
       autoCancel: true,
+      cancel: restoreShareTriggerFocus,
       alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
       customStyle: true
     });
@@ -7329,7 +7374,7 @@ struct Index {
   }
 
   private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
-    vault: VaultEntry): Promise<void> {
+    vault: VaultEntry, vaultNoteCount: number = -1, focusReturnId: string = ''): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
     try {
       if (format === 'link') {
@@ -7351,22 +7396,22 @@ struct Index {
       }
       if (scope === 'note') {
         const markdown: string = await this.editorBridgeForPath(path).getContent();
-        const prepared: PreparedNoteShare = await NoteShareService.prepareNote(registry, this.currentVaultId,
+        const prepared: PreparedNoteShare = await NoteShareService.prepareNote(registry, vault.id,
           path, markdown);
         const summary: string = prepared.imageCount > 0
           ? '1 篇笔记 · ' + prepared.imageCount.toString() + ' 张图片' : '1 篇笔记';
         this.openShareFilePreview(prepared.filePath, prepared.fileName, prepared.format, prepared.entries, summary,
-          scope, path, registry);
+          scope, path, registry, '', async (): Promise<void> => {}, vault.id, vaultNoteCount, focusReturnId);
         return;
       }
       let snapshot: ShareSnapshot | null = null;
       const activePath: string = this.activeFilePath();
       const activeBridge: EditorBridge = this.editorBridgeForPath(activePath);
-      if (activeBridge.ready && activePath.length > 0 &&
+      if (vault.id === this.currentVaultId && activeBridge.ready && activePath.length > 0 &&
         (scope === 'vault' || activePath.startsWith(path + '/') || activePath === path)) {
         snapshot = { path: activePath, markdown: await activeBridge.getContent() };
       }
-      const prepared: PreparedArchiveShare = await ShareArchiveService.prepareZip(registry, this.currentVaultId,
+      const prepared: PreparedArchiveShare = await ShareArchiveService.prepareZip(registry, vault.id,
         path, snapshot);
       let summary: string = prepared.noteCount.toString() + ' 篇笔记 · ' +
         prepared.fileCount.toString() + ' 个文件';
@@ -7374,7 +7419,7 @@ struct Index {
         summary += ' · ' + prepared.imageCount.toString() + ' 张图片';
       }
       this.openShareFilePreview(prepared.filePath, prepared.fileName, 'ZIP', prepared.entries, summary,
-        scope, path, registry);
+        scope, path, registry, '', async (): Promise<void> => {}, vault.id, vaultNoteCount, focusReturnId);
     } catch (error) {
       if (this.shareCaptureCancelled) {
         return;
@@ -7382,14 +7427,18 @@ struct Index {
       if (scope === 'note' && format === 'text') {
         this.openShareTextPreview(NoteTextShareService.createPreview(path, ''), path,
           shareFailureMessage(error, 'text_prepare'),
-          (): Promise<void> => { return this.prepareShare(scope, path, format, itemName, vault); });
+          (): Promise<void> => {
+            return this.prepareShare(scope, path, format, itemName, vault, vaultNoteCount, focusReturnId);
+          });
         return;
       }
       if (format !== 'link') {
         const detailFormat: string = format === 'file' ? 'Markdown / ZIP' : 'ZIP';
         this.openShareFilePreview('', itemName, detailFormat, [], '文件准备失败', scope, path, registry,
           shareFailureMessage(error, 'file_prepare'),
-          (): Promise<void> => { return this.prepareShare(scope, path, format, itemName, vault); });
+          (): Promise<void> => {
+            return this.prepareShare(scope, path, format, itemName, vault, vaultNoteCount, focusReturnId);
+          }, vault.id, vaultNoteCount, focusReturnId);
         return;
       }
       void this.getUIContext().getPromptAction().showDialog({
@@ -7411,7 +7460,9 @@ struct Index {
 
   private openShareFilePreview(filePath: string, fileName: string, format: string, entries: string[],
     summary: string, scope: ShareLinkScope, path: string, registry: VaultRegistry, initialError: string = '',
-    onRetryPreparation: () => Promise<void> = async (): Promise<void> => {}): void {
+    onRetryPreparation: () => Promise<void> = async (): Promise<void> => {},
+    targetVaultId: string = this.currentVaultId, vaultNoteCount: number = -1,
+    focusReturnId: string = ''): void {
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
     this.shareFilePreviewCtl?.close();
@@ -7426,7 +7477,9 @@ struct Index {
         singleScreen: shareSheet,
         initialError: initialError,
         canShare: filePath.length > 0,
-        onBack: (): void => { this.openShareDialog(scope, path); },
+        onBack: (): void => {
+          this.openShareDialog(scope, path, targetVaultId, vaultNoteCount, focusReturnId);
+        },
         onRetryPreparation: onRetryPreparation,
         onConfirm: (): Promise<void> => {
           return this.shareFile(filePath, fileName, uniformTypeDescriptor.UniformDataType.FILE, registry);
@@ -8804,10 +8857,6 @@ struct Index {
       onOpenSearch: (): void => {
         this.closeNoteNavigation();
         this.openQuickSwitcher();
-      },
-      onShareVault: (): void => {
-        this.closeNoteNavigation();
-        this.openShareVault();
       },
       onImportVault: (): void => {
         this.closeNoteNavigation();
@@ -10478,8 +10527,12 @@ struct Index {
     VaultManagerView({
       vaults: this.vaults,
       currentVaultId: this.currentVaultId,
+      shareSummaries: this.vaultManagerShareSummaries,
       onSetCurrent: (id: string): void => {
         this.doSwitchVault(id);
+      },
+      onShare: (id: string, focusId: string): void => {
+        this.openShareVaultFromManager(id, focusId);
       },
       onRename: (id: string): void => {
         this.openRenameDialog(id);

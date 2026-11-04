@@ -11,6 +11,9 @@ const end = sidebar.indexOf('\n  private vaultTypeLabel', start);
 assert.ok(start >= 0 && end > start, 'could not find VaultSidebar.VaultMenu');
 const menu = sidebar.slice(start, end);
 
+assert.ok(!menu.includes('分享知识库'), 'vault switching menu must not contain a share action');
+assert.ok(!sidebar.includes('onShareVault'), 'vault switching component must not expose the removed share callback');
+
 // 设计真源：原型 .vault-menu 的容器、标签、选项与动作区样式
 assert.match(prototype, /\.vault-menu\{[^}]*max-height:var\(--window-min\);overflow:auto/,
   'prototype .vault-menu must cap its height and scroll');
@@ -30,8 +33,8 @@ assert.match(menu, /app\.color\.brand_bg/, 'the current vault keeps the blue-sof
 assert.match(menu, /Divider\(\)[\s\S]{0,120}margin\(\{ top: Space\.s2 \}\)/,
   'the actions divider spans the full width with only an --s2 top gap');
 const blueText = (menu.match(/fontColor\(\$r\('app\.color\.brand'\)\)/g) ?? []).length;
-assert.equal(blueText, 3,
-  `the three action rows must use the blue text of .vault-menu-actions button (found ${blueText})`);
+assert.equal(blueText, 2,
+  `the two remaining action rows must use the blue text of .vault-menu-actions button (found ${blueText})`);
 assert.match(menu, /\? \$r\('app\.color\.brand'\) : \$r\('app\.color\.text_primary'\)/,
   'the selected vault row keeps the blue text of .vault-option[aria-current=true]');
 assert.match(menu, /Scroll\(\)/, 'a long vault list must scroll instead of overflowing');
