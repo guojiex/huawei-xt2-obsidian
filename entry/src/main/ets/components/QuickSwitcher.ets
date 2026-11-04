@@ -1,11 +1,15 @@
 /** v0.4 当前库文件名搜索与最近打开面板。 */
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { FullTextSearchResult } from '../model/SearchIndex';
+import { UtilityDialogShell } from './UtilityDialogShell';
 
 @Component
 export struct QuickSwitcher {
   @Prop filePaths: string[] = [];
   @Prop recentPaths: string[] = [];
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   searchContent: (query: string, onProgress: (completed: number, total: number) => void) =>
     Promise<FullTextSearchResult[]> = (query: string,
       onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> =>
@@ -18,10 +22,6 @@ export struct QuickSwitcher {
   @State fullTextSearching: boolean = false;
   @State fullTextProgress: string = '';
   @State fullTextError: string = '';
-  @State boxLeft: number = 0;
-  @State boxTop: number = 0;
-  @State boxWidth: number = 0;
-  @State boxHeight: number = 0;
   private searchTimer: number = -1;
   private searchRequestId: number = 0;
 
@@ -105,32 +105,6 @@ export struct QuickSwitcher {
     }
   }
 
-  // 外层 Row 横向铺满屏幕，左右空白的点击会落到 Row；按实测卡片区域区分内外点击。
-  private updateBoxBounds(area: Area): void {
-    const x: Length | undefined = area.globalPosition.x;
-    const y: Length | undefined = area.globalPosition.y;
-    if (typeof x === 'number' && typeof y === 'number' &&
-      typeof area.width === 'number' && typeof area.height === 'number') {
-      this.boxLeft = x;
-      this.boxTop = y;
-      this.boxWidth = area.width;
-      this.boxHeight = area.height;
-    }
-  }
-
-  private handleBoxClick(event: ClickEvent): void {
-    if (this.boxWidth <= 0 || this.boxHeight <= 0) {
-      return;
-    }
-    const insideBox: boolean = event.windowX >= this.boxLeft &&
-      event.windowX <= this.boxLeft + this.boxWidth &&
-      event.windowY >= this.boxTop &&
-      event.windowY <= this.boxTop + this.boxHeight;
-    if (!insideBox) {
-      this.onClose();
-    }
-  }
-
   private visiblePaths(): string[] {
     const normalized: string = this.query.trim().toLowerCase();
     if (normalized.length === 0) {
@@ -176,37 +150,9 @@ export struct QuickSwitcher {
     return count > 1;
   }
 
-  build() {
-    Stack({ alignContent: Alignment.Top }) {
-      Column() {
-      }
-      .width('100%')
-      .height('100%')
-      .backgroundColor($r('app.color.mask'))
-      .onClick(() => {
-        this.onClose();
-      })
-
-      Row() {
-        Column({ space: Space.s2 }) {
-          Row() {
-            Text('快切与搜索')
-              .fontSize(FontSize.s3)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .layoutWeight(1)
-            Text('×')
-              .fontSize(FontSize.s1)
-              .fontColor($r('app.color.text_secondary'))
-              .width(Size.touch)
-              .height(Size.touch)
-              .textAlign(TextAlign.Center)
-              .focusable(true)
-              .onClick(() => { this.onClose(); })
-          }
-          .width('100%')
-          .alignItems(VerticalAlign.Center)
-
+  @Builder
+  DialogContent() {
+    Column({ space: Space.s2 }) {
           TextInput({
             text: this.query,
             placeholder: '搜索文件名、路径或正文'
@@ -395,25 +341,28 @@ export struct QuickSwitcher {
             .width('100%')
           }
         }
+    .width('100%')
+    .layoutWeight(1)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  build() {
+    Stack({ alignContent: this.singleScreen ? Alignment.Bottom : Alignment.Center }) {
+      Column() {}
         .width('100%')
-        .constraintSize({ maxWidth: 560, maxHeight: '75%' })
-        .padding(Space.s4)
-        .borderRadius(Radius.dialog)
-        .backgroundColor($r('app.color.bg_card'))
-        .shadow(ShadowStyle.OUTER_DEFAULT_LG)
-        .onAreaChange((oldArea: Area, newArea: Area) => {
-          this.updateBoxBounds(newArea);
-        })
-        .onClick((event: ClickEvent) => {
-          this.handleBoxClick(event);
-        })
-      }
-      .width('100%')
-      .padding(Space.s6)
-      .justifyContent(FlexAlign.Center)
-      .alignItems(VerticalAlign.Top)
-      .onClick((event: ClickEvent) => {
-        this.handleBoxClick(event);
+        .height('100%')
+        .backgroundColor($r('app.color.mask'))
+        .onClick(() => { this.onClose(); })
+
+      UtilityDialogShell({
+        title: '快切与搜索',
+        closeLabel: '关闭快切与搜索',
+        singleScreen: this.singleScreen,
+        scrollContent: false,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onClose: this.onClose,
+        content: this.DialogContent
       })
     }
     .width('100%')

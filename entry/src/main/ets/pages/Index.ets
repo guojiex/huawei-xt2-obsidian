@@ -2221,8 +2221,10 @@ struct Index {
       return;
     }
     this.pendingExternalDirectory = null;
+    const importSheet: boolean = this.isSingleScreenLayout();
     this.importVaultCtl = new CustomDialogController({
       builder: ImportVaultDialog({
+        singleScreen: importSheet,
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
         onChooseDirectory: (): Promise<string | null> => this.chooseExternalDirectory(),
@@ -2240,6 +2242,7 @@ struct Index {
         this.pendingExternalDirectory = null;
       },
       autoCancel: true,
+      alignment: importSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
       customStyle: true
     });
     this.importVaultCtl.open();
@@ -7154,10 +7157,14 @@ struct Index {
   private openCreateDialog(): void {
     this.createDialogCtl = new CustomDialogController({
       builder: CreateVaultDialog({
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
         onConfirm: (name: string): void => {
           this.doCreateVault(name);
         }
       }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: true,
       customStyle: true
     });
@@ -7796,6 +7803,9 @@ struct Index {
         vaultId: this.currentVaultId,
         dirs: dirs,
         initialDir: initialDir,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
         onConfirm: (rawName: string, createType: string): void => {
           // 2026-10-18 方案 A：对话框内「笔记 / 文件夹」切换，落到不同的创建方法
           if (createType === 'folder') {
@@ -7805,6 +7815,7 @@ struct Index {
           }
         }
       }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: true,
       customStyle: true
     });
@@ -7820,6 +7831,9 @@ struct Index {
       builder: DeletePathDialog({
         relPath: relPath,
         isDir: isDir,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
         onConfirm: (): void => {
           if (isDir) {
             void this.doDeletePath(relPath);
@@ -7828,6 +7842,7 @@ struct Index {
           }
         }
       }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: true,
       customStyle: true
     });
@@ -7854,10 +7869,14 @@ struct Index {
         relPath: relPath,
         isDir: isDir,
         initialName: initial,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
         onConfirm: (newName: string): void => {
           this.doRenamePath(relPath, isDir, newName);
         }
       }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: true,
       customStyle: true
     });
@@ -7891,10 +7910,14 @@ struct Index {
         relPath: relPath,
         isDir: isDir,
         dirs: dirs,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
         onConfirm: (destDir: string): void => {
           this.doMovePath(relPath, isDir, destDir);
         }
       }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: true,
       customStyle: true
     });
@@ -7905,10 +7928,14 @@ struct Index {
     this.renameDialogCtl = new CustomDialogController({
       builder: RenameVaultDialog({
         initialName: id,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
         onConfirm: (name: string): void => {
           this.doRenameVault(id, name);
         }
       }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: true,
       customStyle: true
     });
@@ -7921,10 +7948,14 @@ struct Index {
         vaultId: id,
         isExternal: this.vaults.some((vault: VaultEntry): boolean =>
           vault.id === id && vault.rootKind === 'external'),
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
         onConfirm: (): void => {
           void this.doDeleteVault(id);
         }
       }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
       autoCancel: true,
       customStyle: true
     });
@@ -8450,6 +8481,9 @@ struct Index {
         QuickSwitcher({
           filePaths: this.quickSwitchFiles,
           recentPaths: this.recentOpenPaths,
+          singleScreen: this.isSingleScreenLayout(),
+          windowWidthVp: this.windowWidthVp,
+          windowHeightVp: this.windowHeightVp,
           searchContent: (query: string,
             onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> => {
             return FullTextSearchService.search(

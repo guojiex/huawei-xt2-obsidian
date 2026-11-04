@@ -2,6 +2,7 @@
 import { GitImportDraft } from '../model/GitImportDraftStore';
 import { Icon } from '../common/Icons';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 /**
  * 目录选择结果由弹窗自己持有：CustomDialog 的 @Prop 不会随父组件状态刷新
@@ -11,6 +12,7 @@ import { FontSize, Radius, Size, Space } from '../common/Tokens';
 @CustomDialog
 export struct ImportVaultDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
   @State pickedName: string = '';
@@ -143,31 +145,9 @@ export struct ImportVaultDialog {
       .onClick(() => { this.chooseSource(value); })
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Row() {
-        Text('导入库')
-          .fontSize(FontSize.s3)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-        Text('×')
-          .fontSize(FontSize.s2)
-          .fontColor($r('app.color.text_secondary'))
-          .width(Size.touch)
-          .height(Size.touch)
-          .textAlign(TextAlign.Center)
-          .accessibilityText('关闭导入库')
-          .onClick(() => { this.close(); })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      Text('把已有的笔记，带进你的工作台。')
-        .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_secondary'))
-        .margin({ top: Space.s2 })
-
       Row({ space: Space.s1 }) {
         this.SourceTab('本地目录', 'local')
         this.SourceTab('Git 仓库', 'git')
@@ -358,54 +338,47 @@ export struct ImportVaultDialog {
       .scrollBar(BarState.Off)
       .margin({ top: Space.s4 })
 
-      Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(Size.buttonH)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.control)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => { this.close(); })
-        if (this.source === 'local') {
-          Text(this.working ? '处理中…' : '关联此目录')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.on_brand'))
-            .height(Size.buttonH)
-            .padding({ left: Space.s4, right: Space.s4 })
-            .textAlign(TextAlign.Center)
-            .borderRadius(Radius.control)
-            .backgroundColor($r('app.color.brand'))
-            .enabled(this.hasPicked() && !this.working)
-            .opacity(this.hasPicked() && !this.working ? 1 : 0.4)
-            .onClick(() => { void this.associateDirectory(); })
-        } else {
-          Text(this.working ? '处理中…' : '导入 Git 仓库')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.on_brand'))
-            .height(Size.buttonH)
-            .padding({ left: Space.s4, right: Space.s4 })
-            .textAlign(TextAlign.Center)
-            .borderRadius(Radius.control)
-            .backgroundColor($r('app.color.brand'))
-            .enabled(this.gitRemote.trim().length > 0 && !this.working)
-            .opacity(this.gitRemote.trim().length > 0 && !this.working ? 1 : 0.4)
-            .onClick(() => { this.continueGit(); })
-        }
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
-      .margin({ top: Space.s3 })
     }
-    .width(this.windowWidthVp > 0
-      ? Math.max(0, Math.min(Size.drawerW, this.windowWidthVp - Space.s6))
-      : Size.drawerW)
-    .constraintSize({ maxHeight: this.windowHeightVp })
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        this.close();
+      })
+      if (this.source === 'local') {
+        UtilityDialogAction(this.working ? '处理中…' : '关联此目录', 'primary',
+          this.singleScreen, this.hasPicked() && !this.working, (): void => {
+            void this.associateDirectory();
+          })
+      } else {
+        UtilityDialogAction(this.working ? '处理中…' : '导入 Git 仓库', 'primary',
+          this.singleScreen, this.gitRemote.trim().length > 0 && !this.working, (): void => {
+            this.continueGit();
+          })
+      }
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '导入库',
+      subtitle: '把已有的笔记，带进你的工作台。',
+      headerIcon: 'folder',
+      closeLabel: '关闭导入库',
+      singleScreen: this.singleScreen,
+      preferredWidthVp: Size.importDialogW,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      scrollContent: false,
+      onClose: (): void => { this.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }

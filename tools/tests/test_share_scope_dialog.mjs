@@ -111,6 +111,6 @@ test('native share selector exposes three ranges, keyboard switching, and action
   assert.match(dialogSource, /this\.chooseFormat\(scope, option\)/);
   assert.match(dialogSource, /option\.icon/);
   assert.match(dialogSource, /minHeight: Space\.s16 \+ Space\.s2/);
-  assert.match(dialogSource, /Icon\('share'/);
-  assert.match(dialogSource, /accessibilityText\('关闭分享'\)/);
+  assert.match(dialogSource, /headerIcon: 'share'/);
+  assert.match(dialogSource, /closeLabel: '关闭分享'/);
 });

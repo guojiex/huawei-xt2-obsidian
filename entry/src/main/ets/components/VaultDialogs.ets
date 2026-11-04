@@ -13,6 +13,7 @@
 import { sanitizeVaultName } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 /** 非法字符提示（新建/改名共用，照原型 updateHint 文案） */
 const BAD_NAME_HINT: string = '名称不能为空，也不能只由 / \\ : * ? " < > | 组成';
@@ -21,6 +22,9 @@ const BAD_NAME_HINT: string = '名称不能为空，也不能只由 / \\ : * ? "
 @CustomDialog
 export struct CreateVaultDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   @State rawName: string = '';
   /** 确认回调（传原始输入；注册表侧统一消毒——单一真源） */
   onConfirm: (name: string) => void = (name: string) => {};
@@ -50,12 +54,9 @@ export struct CreateVaultDialog {
     this.onConfirm(this.rawName);
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Text('新建本地笔记库')
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
       Text('在 vaults/ 下新建一个目录，不参与同步，与现有库互不影响。')
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_secondary'))
@@ -76,42 +77,36 @@ export struct CreateVaultDialog {
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ top: Space.s2 })
-      Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => {
-            this.controller?.close();
-          })
-        Text('创建')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.on_brand'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .backgroundColor($r('app.color.brand'))
-          .enabled(this.sanitized().length > 0)
-          .opacity(this.sanitized().length > 0 ? 1 : 0.4)
-          .onClick(() => {
-            this.confirm();
-          })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
-      .margin({ top: Space.s4 })
     }
-    .width(Size.drawerW)
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        this.controller?.close();
+      })
+      UtilityDialogAction('创建', 'primary', this.singleScreen, this.sanitized().length > 0, (): void => {
+        this.confirm();
+      })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '新建本地笔记库',
+      closeLabel: '关闭新建知识库',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }
 
@@ -119,6 +114,9 @@ export struct CreateVaultDialog {
 @CustomDialog
 export struct RenameVaultDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   /** 预填现名（= 当前 id，由 Index 在拉起时传入） */
   initialName: string = '';
   @State rawName: string = '';
@@ -149,12 +147,9 @@ export struct RenameVaultDialog {
     this.onConfirm(this.rawName);
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Text('重命名「' + this.initialName + '」')
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
       Text('目录名一起改，库内的笔记不受影响。')
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_secondary'))
@@ -175,42 +170,36 @@ export struct RenameVaultDialog {
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
         .margin({ top: Space.s2 })
-      Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => {
-            this.controller?.close();
-          })
-        Text('保存')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.on_brand'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .backgroundColor($r('app.color.brand'))
-          .enabled(this.sanitized().length > 0)
-          .opacity(this.sanitized().length > 0 ? 1 : 0.4)
-          .onClick(() => {
-            this.confirm();
-          })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
-      .margin({ top: Space.s4 })
     }
-    .width(Size.drawerW)
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        this.controller?.close();
+      })
+      UtilityDialogAction('保存', 'primary', this.singleScreen, this.sanitized().length > 0, (): void => {
+        this.confirm();
+      })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '重命名「' + this.initialName + '」',
+      closeLabel: '关闭重命名知识库',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }
 
@@ -222,6 +211,9 @@ export struct RenameVaultDialog {
 @CustomDialog
 export struct DeleteVaultDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   /** 待删库 id（= 目录名 = 显示名，由 Index 在拉起时传入） */
   vaultId: string = '';
   isExternal: boolean = false;
@@ -232,12 +224,9 @@ export struct DeleteVaultDialog {
     this.onConfirm();
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Text(this.isExternal ? '解除外部目录关联？' : '删除本地笔记？')
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
       Text(this.isExternal
         ? '仅移除曜石笔记中的关联和本地私有数据；原目录与其中的文件会保留。其他应用仍可使用原目录。'
         : '将永久删除该库的全部笔记，以及该库的 Agent 对话（含归档和未发送草稿）、运行记录及撤销数据；不会删除远端 Git 仓库。此操作无法撤销。正在运行的 Agent 会阻止删除。')
@@ -252,39 +241,36 @@ export struct DeleteVaultDialog {
         .backgroundColor($r('app.color.bg_secondary'))
         .borderRadius(Radius.icon)
         .margin({ bottom: Space.s3 })
-      Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => {
-            this.controller?.close();
-          })
-        Text(this.isExternal ? '解除关联' : '确认删除')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.danger'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.danger') })
-          .backgroundColor($r('app.color.danger_bg'))
-          .onClick(() => {
-            this.confirm();
-          })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
     }
-    .width(Size.drawerW)
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        this.controller?.close();
+      })
+      UtilityDialogAction(this.isExternal ? '解除关联' : '确认删除', 'danger',
+        this.singleScreen, true, (): void => {
+          this.confirm();
+        })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: this.isExternal ? '解除外部目录关联？' : '删除本地笔记？',
+      closeLabel: this.isExternal ? '关闭解除关联确认' : '关闭删除知识库确认',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }

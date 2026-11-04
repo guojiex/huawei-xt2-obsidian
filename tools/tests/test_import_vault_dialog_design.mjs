@@ -63,13 +63,16 @@ function plain(value) {
 }
 
 test('import dialog exposes local and Git sources and defaults to local', () => {
-  assert.match(dialogSource, /Text\('导入库'\)/);
-  assert.match(dialogSource, /accessibilityText\('关闭导入库'\)/);
-  assert.match(dialogSource, /Text\('把已有的笔记，带进你的工作台。'\)/);
+  assert.match(dialogSource, /title: '导入库'/);
+  assert.match(dialogSource, /closeLabel: '关闭导入库'/);
+  assert.match(dialogSource, /subtitle: '把已有的笔记，带进你的工作台。'/);
   assert.match(dialogSource, /@State source: string = 'local'/);
-  const build = dialogSource.slice(dialogSource.indexOf('  build() {'));
-  assert.match(build, /this\.SourceTab\('本地目录', 'local'\)/);
-  assert.match(build, /this\.SourceTab\('Git 仓库', 'git'\)/);
+  const content = dialogSource.slice(
+    dialogSource.indexOf('  DialogContent() {'),
+    dialogSource.indexOf('  @Builder\n  DialogFooter()')
+  );
+  assert.match(content, /this\.SourceTab\('本地目录', 'local'\)/);
+  assert.match(content, /this\.SourceTab\('Git 仓库', 'git'\)/);
   assert.match(dialogSource, /\.onClick\(\(\) => \{ this\.chooseSource\(value\); \}\)/);
   assert.match(dialogSource, /\.scrollBar\(BarState\.Off\)\s*\.margin\(\{ top: Space\.s4 \}\)/);
 });
@@ -112,7 +115,7 @@ test('Git source collects provider credentials in the dialog and documents safe 
   assert.match(dialogSource, /accessibilityText\(this\.showGitToken \? '隐藏访问令牌' : '显示访问令牌'\)/);
   assert.match(dialogSource, /GitHub 使用 Bearer；Gitee 使用用户名和令牌/);
   assert.match(dialogSource, /成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换/);
-  assert.match(dialogSource, /Text\(this\.working \? '处理中…' : '导入 Git 仓库'\)/);
+  assert.match(dialogSource, /UtilityDialogAction\(this\.working \? '处理中…' : '导入 Git 仓库', 'primary',\s*this\.singleScreen, this\.gitRemote\.trim\(\)\.length > 0 && !this\.working/);
   assert.match(dialogSource, /username: username,\s*token: this\.gitToken/);
   assert.match(syncSource, /TextInput\(\{ placeholder: '私有库填 Access Token/);
   assert.match(indexSource, /onContinueGit: \(draft: GitImportDraft\): void => \{\s*void this\.openGitSyncPage\(draft\);/);
@@ -178,7 +181,7 @@ test('picked directory lives in dialog @State, not in a @Prop the parent cannot 
   assert.doesNotMatch(dialogSource, /@Prop hasDirectorySelection|@Prop directoryName|@Prop busy/);
   assert.match(dialogSource, /@State pickedName: string = ''/);
   assert.match(dialogSource, /@State working: boolean = false/);
-  assert.match(dialogSource, /\.enabled\(this\.hasPicked\(\) && !this\.working\)/);
+  assert.match(dialogSource, /UtilityDialogAction\(this\.working \? '处理中…' : '关联此目录', 'primary',\s*this\.singleScreen, this\.hasPicked\(\) && !this\.working/);
   assert.match(indexSource, /onChooseDirectory: \(\): Promise<string \| null> => this\.chooseExternalDirectory\(\)/);
   assert.match(indexSource, /onAssociateDirectory: \(\): Promise<boolean> => this\.associateExternalDirectory\(\)/);
   assert.doesNotMatch(indexSource, /importHasDirectorySelection|importDirectoryName|importVaultBusy/);
@@ -215,8 +218,9 @@ test('associate runs only after a pick and stays open when the parent reports fa
 });
 
 test('narrow and short windows keep the dialog within bounds and scroll the content area', () => {
-  assert.match(dialogSource, /Math\.max\(0, Math\.min\(Size\.drawerW, this\.windowWidthVp - Space\.s6\)\)/);
+  assert.match(dialogSource, /preferredWidthVp: Size\.importDialogW/);
+  assert.match(dialogSource, /singleScreen: this\.singleScreen/);
   assert.match(dialogSource, /\.constraintSize\(\{ maxHeight: Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 6\) \}\)/);
-  assert.match(dialogSource, /\.constraintSize\(\{ maxHeight: this\.windowHeightVp \}\)/);
-  assert.match(indexSource, /windowWidthVp: this\.windowWidthVp,\s*windowHeightVp: this\.windowHeightVp/);
+  assert.match(indexSource, /singleScreen: importSheet,[\s\S]*?windowWidthVp: this\.windowWidthVp,\s*windowHeightVp: this\.windowHeightVp/);
+  assert.match(indexSource, /alignment: importSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
 });

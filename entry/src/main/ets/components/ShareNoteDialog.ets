@@ -2,6 +2,7 @@ import { ShareLinkScope } from '../model/ShareLinkService';
 import { Icon } from '../common/Icons';
 import { FontSize, Motion, Radius, Size, Space } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
+import { UtilityDialogShell } from './UtilityDialogShell';
 
 export interface ShareFormatOption {
   value: string;
@@ -205,47 +206,8 @@ export struct ShareNoteDialog {
     .onClick(() => { this.chooseFormat(scope, option); })
   }
 
-  build() {
-    Column({ space: Space.s4 }) {
-      Row({ space: Space.s3 }) {
-        Row() {
-          Icon('share', Space.s5, $r('app.color.brand'))
-        }
-        .width(Space.s10)
-        .height(Space.s10)
-        .justifyContent(FlexAlign.Center)
-        .borderRadius(Radius.control)
-        .backgroundColor($r('app.color.brand_bg'))
-        Column({ space: Space.s1 }) {
-          Text(this.currentOption().title)
-            .fontSize(FontSize.s3)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.currentOption().itemName + ' · ' + this.currentOption().summary)
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
-            .height(FontSize.caption * 3)
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        Text('×')
-          .fontSize(FontSize.s1)
-          .fontColor($r('app.color.text_secondary'))
-          .width(Size.touch)
-          .height(Size.touch)
-          .textAlign(TextAlign.Center)
-          .accessibilityText('关闭分享')
-          .focusable(true)
-          .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
-          .onClick(() => { this.dismiss(); })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
+  @Builder
+  DialogContent() {
       Scroll() {
         Column({ space: Space.s4 }) {
           if (this.scopeOptions.length > 1) {
@@ -294,18 +256,21 @@ export struct ShareNoteDialog {
         ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 4))
         : Size.menuMaxH })
       .scrollBar(BarState.Off)
-    }
-    .width(this.windowWidthVp > 0
-      ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
-      : Size.shareW)
-    .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s6))
-      : Size.menuMaxH })
-    .padding(Space.s5)
-    .borderRadius(this.singleScreen
-      ? { topLeft: Radius.dialog, topRight: Radius.dialog, bottomLeft: 0, bottomRight: 0 }
-      : Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
-    .alignItems(HorizontalAlign.Start)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: this.currentOption().title,
+      subtitle: this.currentOption().itemName + ' · ' + this.currentOption().summary,
+      headerIcon: 'share',
+      closeLabel: '关闭分享',
+      singleScreen: this.singleScreen,
+      preferredWidthVp: Size.shareW,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      scrollContent: false,
+      onClose: (): void => { this.dismiss(); },
+      content: this.DialogContent
+    })
   }
 }

@@ -8,6 +8,7 @@ import { NoteService } from '../model/NoteService';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { Icon } from '../common/Icons';
+import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 /**
  * 新建笔记 / 新建文件夹（2026-10-18 方案 A 改版：目录选择器 + 名称分开 + 类型切换）。
@@ -35,6 +36,9 @@ import { Icon } from '../common/Icons';
 @CustomDialog
 export struct CreateNoteDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   /** 当前库 id（用于重名预览） */
   vaultId: string = '';
   /** 全部可选目录（库内相对路径，`FileTree.allDirs` 扫出来；不含根本身） */
@@ -145,12 +149,9 @@ export struct CreateNoteDialog {
     .accessibilityText(label + (this.selectedDir === rel ? '，已选中' : ''))
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Text(this.createType === 'folder' ? '新建文件夹' : '新建笔记')
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
       Text(this.createType === 'folder'
         ? '选一个父文件夹，再填名字。建出的文件夹是空的，之后可以在里面新建笔记。'
         : '选择目录，填写名字。名称里也可以写 / 直接建更深一层的目录。')
@@ -270,43 +271,36 @@ export struct CreateNoteDialog {
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .margin({ top: Space.s2 })
-
-      Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => {
-            this.controller?.close();
-          })
-        Text('创建')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.on_brand'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .backgroundColor($r('app.color.brand'))
-          .enabled(this.normalized().length > 0)
-          .opacity(this.normalized().length > 0 ? 1 : 0.4)
-          .onClick(() => {
-            this.confirm();
-          })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
-      .margin({ top: Space.s4 })
     }
-    .width(Size.drawerW)
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        this.controller?.close();
+      })
+      UtilityDialogAction('创建', 'primary', this.singleScreen, this.normalized().length > 0, (): void => {
+        this.confirm();
+      })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: this.createType === 'folder' ? '新建文件夹' : '新建笔记',
+      closeLabel: this.createType === 'folder' ? '关闭新建文件夹' : '关闭新建笔记',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }
 
@@ -321,6 +315,9 @@ export struct CreateNoteDialog {
 @CustomDialog
 export struct DeletePathDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   /** 待删路径（库内相对路径） */
   relPath: string = '';
   /** 是否目录（文案不同；目录 = 整棵子树） */
@@ -332,12 +329,9 @@ export struct DeletePathDialog {
     this.onConfirm();
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Text(this.isDir ? '删除文件夹？' : '删除笔记？')
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
       Text(this.isDir
         ? '文件夹会连里面的所有内容一起删除，且无法恢复。'
         : '笔记会移入当前库回收站，可恢复。')
@@ -352,40 +346,36 @@ export struct DeletePathDialog {
         .backgroundColor($r('app.color.bg_secondary'))
         .borderRadius(Radius.icon)
         .margin({ bottom: Space.s3 })
-      Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => {
-            this.controller?.close();
-          })
-        Text('确认删除')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.danger'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.danger') })
-          .backgroundColor($r('app.color.danger_bg'))
-          .onClick(() => {
-            this.confirm();
-          })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
     }
-    .width(Size.drawerW)
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        this.controller?.close();
+      })
+      UtilityDialogAction('确认删除', 'danger', this.singleScreen, true, (): void => {
+        this.confirm();
+      })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: this.isDir ? '删除文件夹？' : '删除笔记？',
+      closeLabel: this.isDir ? '关闭删除文件夹确认' : '关闭删除笔记确认',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }
 
@@ -398,6 +388,9 @@ export struct DeletePathDialog {
 @CustomDialog
 export struct RenamePathDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   /** 待改名的库内相对路径 */
   relPath: string = '';
   /** 是否目录（标题 / 文案 / 是否补 .md 不同） */
@@ -416,12 +409,9 @@ export struct RenamePathDialog {
     return this.rawName.trim().length > 0;
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Text(this.isDir ? '重命名文件夹' : '重命名笔记')
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
       Text(this.isDir
         ? '文件夹名改了，里面的笔记不受影响。'
         : '文件名改了，内容不变。')
@@ -447,46 +437,40 @@ export struct RenamePathDialog {
         .onChange((value: string) => {
           this.rawName = value;
         })
-      Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => {
-            this.controller?.close();
-          })
-        Text('保存')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.on_brand'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .backgroundColor($r('app.color.brand'))
-          .enabled(this.canConfirm())
-          .opacity(this.canConfirm() ? 1 : 0.4)
-          .onClick(() => {
-            if (!this.canConfirm()) {
-              return;
-            }
-            this.controller?.close();
-            this.onConfirm(this.rawName);
-          })
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.End)
-      .margin({ top: Space.s4 })
     }
-    .width(Size.drawerW)
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        this.controller?.close();
+      })
+      UtilityDialogAction('保存', 'primary', this.singleScreen, this.canConfirm(), (): void => {
+        if (!this.canConfirm()) {
+          return;
+        }
+        this.controller?.close();
+        this.onConfirm(this.rawName);
+      })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: this.isDir ? '重命名文件夹' : '重命名笔记',
+      closeLabel: this.isDir ? '关闭重命名文件夹' : '关闭重命名笔记',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }
 
@@ -499,6 +483,9 @@ export struct RenamePathDialog {
 @CustomDialog
 export struct MovePathDialog {
   controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   /** 待移动的库内相对路径 */
   relPath: string = '';
   /** 是否目录（文案不同） */
@@ -545,15 +532,9 @@ export struct MovePathDialog {
     .accessibilityText(label + (this.selectedDir === rel ? '，已选中' : ''))
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column() {
-      Text('移动「' + this.relPath.substring(this.relPath.lastIndexOf('/') + 1) + '」')
-        .fontSize(FontSize.s3)
-        .fontWeight(FontWeight.Bold)
-        .fontColor($r('app.color.text_primary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
       Text(this.isDir
         ? '整个文件夹连同里面的笔记一起移动。'
         : '移动到别的文件夹下（选顶层就是移到库根目录）。')
@@ -601,41 +582,36 @@ export struct MovePathDialog {
         .padding(Space.s1)
         .margin({ top: Space.s1 })
       }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
 
+  @Builder
+  DialogFooter() {
       Row({ space: Space.s2 }) {
-        Text('取消')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_primary'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .onClick(() => {
-            this.controller?.close();
-          })
-        Text('移动到这里')
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.on_brand'))
-          .height(30)
-          .padding({ left: Space.s4, right: Space.s4 })
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.icon)
-          .backgroundColor($r('app.color.brand'))
-          .onClick(() => {
-            this.controller?.close();
-            this.onConfirm(this.selectedDir);
-          })
+        UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+          this.controller?.close();
+        })
+        UtilityDialogAction('移动到这里', 'primary', this.singleScreen, true, (): void => {
+          this.controller?.close();
+          this.onConfirm(this.selectedDir);
+        })
       }
       .width('100%')
-      .justifyContent(FlexAlign.End)
-      .margin({ top: Space.s4 })
-    }
-    .width(Size.drawerW)
-    .padding(Space.s4)
-    .borderRadius(Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
-    .alignItems(HorizontalAlign.Start)
+      .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '移动「' + this.relPath.substring(this.relPath.lastIndexOf('/') + 1) + '」',
+      closeLabel: '关闭移动对话框',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: this.DialogContent,
+      footer: this.DialogFooter
+    })
   }
 }

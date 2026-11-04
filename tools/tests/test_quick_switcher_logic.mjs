@@ -18,11 +18,11 @@ function extractMethod(signature, nextMarker, modifier = 'private') {
 
 const methods = [
   extractMethod('aboutToDisappear(): void {', '\n  private setSearchMode', ''),
-  extractMethod('runFullTextSearch(query: string, requestId: number): Promise<void> {', '\n  // 外层 Row', 'private async'),
+  extractMethod('runFullTextSearch(query: string, requestId: number): Promise<void> {', '\n  private visiblePaths', 'private async'),
   extractMethod('visiblePaths(): string[] {', '\n  private fileName'),
   extractMethod('fileName(path: string): string {', '\n  /** 快切主标题'),
   extractMethod('displayName(path: string): string {', '\n  private isDuplicate'),
-  extractMethod('isDuplicate(path: string): boolean {', '\n  build()')
+  extractMethod('isDuplicate(path: string): boolean {', '\n  @Builder\n  DialogContent()')
 ];
 const code = transformSync(`class QuickSwitcherHarness {\n${methods.join('\n')}\n}; module.exports = QuickSwitcherHarness;`,
   { loader: 'ts', format: 'cjs' }).code;
