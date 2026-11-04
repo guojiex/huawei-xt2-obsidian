@@ -284,6 +284,9 @@ struct Index {
   private blockPanelFootnoteDefinitionTo: number = -1;
   private blockPanelFootnoteDefinitionRaw: string = '';
   private blockPanelFootnoteModel: FootnoteSourceModel | null = null;
+  @State blockPanelBlockIdReady: boolean = false;
+  @State blockPanelBlockId: string = '';
+  @State blockPanelBlockIdMessage: string = '';
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -3158,6 +3161,9 @@ struct Index {
     this.blockPanelFootnoteDefinitionTo = -1;
     this.blockPanelFootnoteDefinitionRaw = '';
     this.blockPanelFootnoteModel = null;
+    this.blockPanelBlockIdReady = false;
+    this.blockPanelBlockId = '';
+    this.blockPanelBlockIdMessage = '';
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3186,6 +3192,8 @@ struct Index {
       void this.loadBlockPanelFrontmatter();
     } else if (anchor.tapType === 'footnoteRef' || anchor.type === 'footnoteDefinition') {
       void this.loadBlockPanelFootnote();
+    } else if (anchor.type === 'paragraph' && anchor.tapType === '' && anchor.inlineIndex < 0) {
+      void this.loadBlockPanelBlockId();
     }
   }
 
@@ -3275,14 +3283,95 @@ struct Index {
     return language.length > 0 ? language : '纯文本';
   }
 
-  private async copyCodeTextToPasteboard(content: string): Promise<void> {
+  private async copyTextToPasteboard(content: string, label: string): Promise<void> {
     try {
       const board: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
       await board.setData(pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, content));
-      promptAction.showToast({ message: '已复制代码' });
+      promptAction.showToast({ message: `已复制${label}` });
     } catch {
-      promptAction.showToast({ message: '复制代码失败，请重试' });
+      promptAction.showToast({ message: `复制${label}失败，请重试` });
     }
+  }
+
+  private async copyCodeTextToPasteboard(content: string): Promise<void> {
+    await this.copyTextToPasteboard(content, '代码');
+  }
+
+  private async readBlockPanelParagraphSource(anchor: PreviewBlockAnchor): Promise<string | null> {
+    if (anchor.type !== 'paragraph' || anchor.tapType !== '' || anchor.inlineIndex >= 0) {
+      return null;
+    }
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    try {
+      const flushError: string = await this.flushSimplePreviewChanges();
+      if (flushError.length > 0) {
+        return null;
+      }
+      const bridge: EditorBridge = this.editorBridgeForPane(pane);
+      const documentRevision: number = bridge.currentDocumentRevision;
+      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
+        !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
+        this.blockPanelAnchor?.type !== 'paragraph') {
+        return null;
+      }
+      const source: string = await bridge.getContent();
+      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
+        !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
+        this.blockPanelAnchor?.type !== 'paragraph' ||
+        !Number.isInteger(anchor.from) || !Number.isInteger(anchor.to) ||
+        anchor.from < 0 || anchor.to <= anchor.from || anchor.to > source.length) {
+        return null;
+      }
+      return source.slice(anchor.from, anchor.to);
+    } catch {
+      return null;
+    }
+  }
+
+  private async loadBlockPanelBlockId(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null || anchor.type !== 'paragraph' || anchor.tapType !== '' || anchor.inlineIndex >= 0) {
+      return;
+    }
+    this.blockPanelBlockIdReady = false;
+    this.blockPanelBlockId = '';
+    this.blockPanelBlockIdMessage = '正在读取块 ID…';
+    const raw: string | null = await this.readBlockPanelParagraphSource(anchor);
+    if (!this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
+      this.blockPanelAnchor?.type !== 'paragraph') {
+      return;
+    }
+    if (raw === null) {
+      this.blockPanelBlockIdMessage = '无法读取本段，请重新打开面板';
+      return;
+    }
+    this.blockPanelBlockId = MarkdownComplexBlockEdit.parseBlockId(raw) ?? '';
+    this.blockPanelBlockIdReady = true;
+    this.blockPanelBlockIdMessage = '';
+  }
+
+  private async copyBlockLink(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null) {
+      return;
+    }
+    const raw: string | null = await this.readBlockPanelParagraphSource(anchor);
+    if (raw === null) {
+      promptAction.showToast({ message: '无法读取本段，请重新打开面板' });
+      return;
+    }
+    const blockId: string | null = MarkdownComplexBlockEdit.parseBlockId(raw);
+    this.blockPanelBlockId = blockId ?? '';
+    this.blockPanelBlockIdReady = true;
+    this.blockPanelBlockIdMessage = '';
+    if (blockId === null) {
+      promptAction.showToast({ message: '本段尚无块 ID，请先生成 ID' });
+      return;
+    }
+    await this.copyTextToPasteboard(`[[#^${blockId}]]`, '块链接');
   }
 
   private copyCodeBlockFromPanel(): void {
@@ -8815,6 +8904,42 @@ struct Index {
   }
 
   @Builder
+  BlockPanelBlockIdAction() {
+    if (this.blockPanelBlockIdMessage.length > 0) {
+      Text(this.blockPanelBlockIdMessage)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+    } else if (this.blockPanelBlockIdReady) {
+      Column({ space: Space.s1 }) {
+        Row() {
+          Text(this.blockPanelBlockId.length > 0 ? '复制块链接' : '复制指向本段的链接')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(Size.touch)
+        .padding({ left: Space.s3, right: Space.s3 })
+        .focusable(true)
+        .accessibilityText(this.blockPanelBlockId.length > 0
+          ? `复制块链接 [[#^${this.blockPanelBlockId}]]`
+          : '复制指向本段的链接，需要先生成 ID')
+        .onClick((): void => { void this.copyBlockLink(); })
+        if (this.blockPanelBlockId.length === 0) {
+          Text('需要先生成 ID；本操作不会自动生成。')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .padding({ left: Space.s3, right: Space.s3 })
+        }
+      }
+      .width('100%')
+    }
+  }
+
+  @Builder
   BlockPropertyPanel() {
     if (this.blockSourceEditing) {
       Column() {
@@ -8855,22 +8980,25 @@ struct Index {
         Scroll() {
           Column() {
             if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'paragraph' &&
-              this.blockPanelAnchor.inlineIndex < 0 && this.blockPanelInlineItems.length > 0) {
-              ForEach(this.blockPanelInlineItems, (item: PreviewBlockInlineItem): void => {
-                Row({ space: Space.s2 }) {
-                  Text(this.blockPanelInlineItemLabel(item))
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-                  Icon('chevronRight', Space.s4, $r('app.color.text_tertiary'))
-                }
-                .width('100%')
-                .height(Size.touch)
-                .padding({ left: Space.s3, right: Space.s3 })
-                .focusable(true)
-                .accessibilityText(this.blockPanelInlineItemLabel(item))
-                .onClick((): void => { this.openBlockInlineItem(item); })
-              }, (item: PreviewBlockInlineItem): string => String(item.index))
+              this.blockPanelAnchor.tapType === '' && this.blockPanelAnchor.inlineIndex < 0) {
+              if (this.blockPanelInlineItems.length > 0) {
+                ForEach(this.blockPanelInlineItems, (item: PreviewBlockInlineItem): void => {
+                  Row({ space: Space.s2 }) {
+                    Text(this.blockPanelInlineItemLabel(item))
+                      .fontSize(FontSize.body2)
+                      .fontColor($r('app.color.text_primary'))
+                      .layoutWeight(1)
+                    Icon('chevronRight', Space.s4, $r('app.color.text_tertiary'))
+                  }
+                  .width('100%')
+                  .height(Size.touch)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .focusable(true)
+                  .accessibilityText(this.blockPanelInlineItemLabel(item))
+                  .onClick((): void => { this.openBlockInlineItem(item); })
+                }, (item: PreviewBlockInlineItem): string => String(item.index))
+              }
+              this.BlockPanelBlockIdAction()
             } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'callout') {
               if (this.blockPanelCalloutReady && this.blockPanelCalloutModel !== null) {
                 if (this.blockPanelCalloutModel.knownType) {

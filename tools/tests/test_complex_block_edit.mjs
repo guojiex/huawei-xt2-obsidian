@@ -40,6 +40,14 @@ test('21.1 formula edits reject empty source and malformed delimiters', () => {
   assert.equal(MarkdownComplexBlockEdit.parseFormula('$$x$', false), null)
 })
 
+test('21.5 block IDs parse at the paragraph end without rewriting their source', () => {
+  assert.equal(MarkdownComplexBlockEdit.parseBlockId('Paragraph text ^note-1'), 'note-1')
+  assert.equal(MarkdownComplexBlockEdit.parseBlockId('Paragraph text ^note_1\r\n'), 'note_1')
+  assert.equal(MarkdownComplexBlockEdit.parseBlockId('Paragraph text \\^escaped'), null)
+  assert.equal(MarkdownComplexBlockEdit.parseBlockId('Paragraph text'), null)
+  assert.equal(MarkdownComplexBlockEdit.parseBlockId('Paragraph text ^bad/id'), null)
+})
+
 test('21.1 native panel uses the bundled preview and exact block replacement path', () => {
   const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
   const preview = fs.readFileSync(new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8')

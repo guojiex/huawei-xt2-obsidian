@@ -27,12 +27,19 @@ for (const marker of [
   'md-callout',
   'md-math',
   'md-props-entry',
+  'data-block-id',
+  'copy-block-link',
   'cbOpenSource',
   'cbWrite',
   'commitCodeBlock'
 ]) {
   assert.ok(prototype.includes(marker), `prototype must retain ${marker}`);
 }
+assert.match(prototype, /复制块链接/);
+assert.match(prototype, /复制指向本段的链接/);
+assert.match(prototype, /本操作不会自动生成/);
+assert.match(prototype, /navigator\.clipboard\?navigator\.clipboard\.writeText\('\[\[#\^'\+blockId\.id\+'\]\]'\)/);
+assert.match(prototype, /正文可以包含 \*\*粗体\*\*、\*斜体\*、~~删除线~~和 `行内代码`。 \^demo-paragraph/);
 
 // D-3: narrow screens use the sheet while wide screens use a bounded popup.
 assert.match(prototype, /function setSheetMode\(/);

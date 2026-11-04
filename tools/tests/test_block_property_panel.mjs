@@ -14,6 +14,8 @@ const anchorChangeStart = source.indexOf('  private onBlockAnchorChange(pane: st
 const anchorChangeEnd = source.indexOf('\n  private recordBlockToolbarPaneArea(', anchorChangeStart)
 const panelStart = source.indexOf('  private hasBlockPropertyPanelForPane(')
 const panelEnd = source.indexOf('\n  private calculateAnchoredPopupLayout(', panelStart)
+const blockIdBuilderStart = source.indexOf('  BlockPanelBlockIdAction() {')
+const blockIdBuilderEnd = source.indexOf('\n  @Builder\n  BlockPropertyPanel()', blockIdBuilderStart)
 const panelBuilderStart = source.indexOf('  BlockPropertyPanel() {')
 const panelBuilderEnd = source.indexOf('\n  @Builder\n  PreviewBlockPanel(', panelBuilderStart)
 const linkFieldBuilderStart = source.indexOf('  BlockPanelLinkField(')
@@ -26,10 +28,11 @@ const sourceTargetMethodsStart = source.indexOf('  private isCurrentBlockSourceT
 const sourceTargetMethodsEnd = source.indexOf('\n  private async openBlockSourceDrawer()', sourceTargetMethodsStart)
 const imagePickerStart = source.indexOf('  private async pickImageForCurrentNote(')
 const imagePickerEnd = source.indexOf('\n  /** 状态栏右侧读数', imagePickerStart)
-const copyMethodsStart = source.indexOf('  private async copyCodeTextToPasteboard(')
+const copyMethodsStart = source.indexOf('  private async copyTextToPasteboard(')
 const copyMethodsEnd = source.indexOf('\n  private async changeBlockCodeLanguage(', copyMethodsStart)
 assert.ok(anchorChangeStart >= 0 && anchorChangeEnd > anchorChangeStart)
 assert.ok(panelStart >= 0 && panelEnd > panelStart)
+assert.ok(blockIdBuilderStart >= 0 && blockIdBuilderEnd > blockIdBuilderStart)
 assert.ok(panelBuilderStart >= 0 && panelBuilderEnd > panelBuilderStart)
 assert.ok(linkFieldBuilderStart >= 0 && linkFieldBuilderEnd > linkFieldBuilderStart)
 assert.ok(linkMethodsStart >= 0 && linkMethodsEnd > linkMethodsStart)
@@ -1288,6 +1291,7 @@ test('code copy writes only the supplied text and the panel targets its selected
   let failWrite = false
   const context = vm.createContext({
     module: { exports: {} },
+    MarkdownComplexBlockEdit: complexEditModule.exports,
     pasteboard: {
       MIMETYPE_TEXT_PLAIN: 'text/plain',
       getSystemPasteboard: () => ({
@@ -1326,9 +1330,112 @@ test('code copy writes only the supplied text and the panel targets its selected
   assert.deepEqual(requests, [['right', 16, 48]])
 })
 
+test('21.5 paragraph block link copies the current ID and never creates a missing one', async () => {
+  const writes = []
+  const notices = []
+  let source = 'Paragraph text ^note-1'
+  const context = vm.createContext({
+    module: { exports: {} },
+    MarkdownComplexBlockEdit: complexEditModule.exports,
+    pasteboard: {
+      MIMETYPE_TEXT_PLAIN: 'text/plain',
+      getSystemPasteboard: () => ({
+        setData: async (data) => writes.push(data)
+      }),
+      createData: (mimeType, value) => ({ mimeType, value })
+    },
+    promptAction: { showToast: ({ message }) => notices.push(message) }
+  })
+  vm.runInContext(copyMethodsCode, context)
+  const app = new context.module.exports()
+  const anchor = {
+    type: 'paragraph', tapType: '', from: 0, to: source.length,
+    inlineItems: [], inlineIndex: -1, itemFrom: -1, itemTo: -1
+  }
+  Object.assign(app, {
+    blockPanelPane: 'left',
+    blockPanelAnchor: anchor,
+    blockPanelSourceVaultId: 'vault-a',
+    blockPanelSourcePath: 'note.md',
+    leftOpenRequestId: 7,
+    flushSimplePreviewChanges: async () => '',
+    editorBridgeForPane: () => ({
+      currentDocumentRevision: 11,
+      getContent: async () => source
+    }),
+    isCurrentBlockSourceTarget: () => true,
+    isSameBlockPanelTarget: (current, expected) => current === expected
+  })
+
+  await app.loadBlockPanelBlockId()
+  assert.equal(app.blockPanelBlockId, 'note-1')
+  assert.equal(app.blockPanelBlockIdReady, true)
+  await app.copyBlockLink()
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].mimeType, 'text/plain')
+  assert.equal(writes[0].value, '[[#^note-1]]')
+  assert.deepEqual(notices, ['已复制块链接'])
+
+  source = 'Paragraph without ID'
+  anchor.to = source.length
+  await app.loadBlockPanelBlockId()
+  assert.equal(app.blockPanelBlockId, '')
+  assert.equal(app.blockPanelBlockIdReady, true)
+  await app.copyBlockLink()
+  assert.equal(writes.length, 1)
+  assert.deepEqual(notices.slice(-1), ['本段尚无块 ID，请先生成 ID'])
+})
+
+test('21.5 paragraph block link refuses a stale source range', async () => {
+  const writes = []
+  const notices = []
+  const context = vm.createContext({
+    module: { exports: {} },
+    MarkdownComplexBlockEdit: complexEditModule.exports,
+    pasteboard: {
+      MIMETYPE_TEXT_PLAIN: 'text/plain',
+      getSystemPasteboard: () => ({
+        setData: async (data) => writes.push(data)
+      }),
+      createData: (mimeType, value) => ({ mimeType, value })
+    },
+    promptAction: { showToast: ({ message }) => notices.push(message) }
+  })
+  vm.runInContext(copyMethodsCode, context)
+  const app = new context.module.exports()
+  const anchor = {
+    type: 'paragraph', tapType: '', from: 0, to: 14,
+    inlineItems: [], inlineIndex: -1, itemFrom: -1, itemTo: -1
+  }
+  Object.assign(app, {
+    blockPanelPane: 'left',
+    blockPanelAnchor: anchor,
+    blockPanelSourceVaultId: 'vault-a',
+    blockPanelSourcePath: 'note.md',
+    leftOpenRequestId: 7,
+    flushSimplePreviewChanges: async () => '',
+    editorBridgeForPane: () => ({
+      currentDocumentRevision: 11,
+      getContent: async () => 'short'
+    }),
+    isCurrentBlockSourceTarget: () => true,
+    isSameBlockPanelTarget: (current, expected) => current === expected
+  })
+
+  await app.copyBlockLink()
+  assert.equal(writes.length, 0)
+  assert.deepEqual(notices, ['无法读取本段，请重新打开面板'])
+})
+
 test('code language badge opens the existing property panel and unknown values are retained', () => {
+  const blockIdBuilder = source.slice(blockIdBuilderStart, blockIdBuilderEnd)
   const builder = source.slice(panelBuilderStart, panelBuilderEnd)
 
+  assert.match(blockIdBuilder, /复制块链接/)
+  assert.match(blockIdBuilder, /复制指向本段的链接/)
+  assert.match(blockIdBuilder, /本操作不会自动生成/)
+  assert.match(source, /loadBlockPanelBlockId\(\)/)
+  assert.match(source, /MarkdownComplexBlockEdit\.parseBlockId\(raw\)/)
   assert.match(builder, /复制代码/)
   assert.match(builder, /copyCodeBlockFromPanel/)
   assert.match(builder, /this\.blockPanelAnchor\.codeLanguageSelectable/)

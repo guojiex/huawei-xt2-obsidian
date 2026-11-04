@@ -117,6 +117,26 @@ export class MarkdownComplexBlockEdit {
     return match === null ? null : match[1];
   }
 
+  static parseBlockId(source: string): string | null {
+    let end: number = source.length;
+    if (source.endsWith('\r\n')) {
+      end -= 2;
+    } else if (source.endsWith('\n')) {
+      end--;
+    }
+    const lineStart: number = source.lastIndexOf('\n', end - 1) + 1;
+    const line: string = source.substring(lineStart, end);
+    const match: RegExpExecArray | null = /\^([A-Za-z0-9][A-Za-z0-9_-]*)[ \t]*$/.exec(line);
+    if (match === null) {
+      return null;
+    }
+    let escapeCount: number = 0;
+    for (let index: number = match.index - 1; index >= 0 && line[index] === '\\'; index--) {
+      escapeCount++;
+    }
+    return escapeCount % 2 === 0 ? match[1] : null;
+  }
+
   static parseFootnoteDefinition(source: string): FootnoteSourceModel | null {
     const lines: FootnoteLineModel[] = MarkdownComplexBlockEdit.splitFootnoteLines(source);
     if (lines.length === 0) {
