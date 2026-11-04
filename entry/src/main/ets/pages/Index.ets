@@ -206,6 +206,7 @@ struct Index {
   @State agentRenameSeq: number = 0;
   @State moreMenuOpen: boolean = false;
   @State focusMoreMenuOnAppear: boolean = false;
+  @State paneMoreHoveredAction: string = '';
   @State formatMenuOpen: boolean = false;
   @State formatMenuPane: string = 'left';
   @State formatPopupPlacement: Placement = Placement.Top;
@@ -8126,74 +8127,63 @@ struct Index {
     })
   }
 
+  private activatePaneMoreAction(pane: string, action: string): void {
+    this.paneMoreOpen = false;
+    this.paneMoreHoveredAction = '';
+    if (action === 'follow') {
+      this.setPreviewFollowEnabled(!this.followPreviewEnabled);
+    } else if (action === 'preview') {
+      this.previewActiveNoteInOtherPane(pane);
+    } else if (action === 'block') {
+      this.openBlockPropertyPanel(pane);
+    } else {
+      this.toggleBacklinks(pane);
+    }
+  }
+
+  @Builder
+  PaneMoreMenuItem(pane: string, action: string, icon: string, label: string) {
+    Row({ space: Space.s3 }) {
+      Icon(icon, Space.s5, $r('app.color.text_secondary'))
+      Text(label)
+        .fontSize(FontSize.body1)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .borderRadius(Radius.control)
+    .backgroundColor(this.paneMoreHoveredAction === action
+      ? $r('app.color.bg_secondary') : Color.Transparent)
+    .focusable(true)
+    .onHover((isHover: boolean): void => {
+      this.paneMoreHoveredAction = isHover ? action : '';
+    })
+    .onClick((): void => { this.activatePaneMoreAction(pane, action); })
+    .accessibilityText(label)
+  }
+
   @Builder
   PaneMoreMenu(pane: string) {
     Column() {
       if (this.shouldShowPreviewFollowToggle(pane)) {
-        Row() {
-          Text('跟随编辑：' + (this.followPreviewEnabled ? '开' : '关'))
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .focusable(true)
-        .onClick((): void => {
-          this.paneMoreOpen = false;
-          this.setPreviewFollowEnabled(!this.followPreviewEnabled);
-        })
+        this.PaneMoreMenuItem(pane, 'follow', 'follow',
+          '跟随编辑：' + (this.followPreviewEnabled ? '开' : '关'))
       }
       if (this.paneFilePath(pane).length > 0) {
-        Row() {
-          Text('在另一栏预览')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .focusable(true)
-        .onClick((): void => {
-          this.paneMoreOpen = false;
-          this.previewActiveNoteInOtherPane(pane);
-        })
+        this.PaneMoreMenuItem(pane, 'preview', 'fileReference', '在另一栏预览')
       }
       if (this.hasBlockPropertyPanelForPane(pane)) {
-        Row() {
-          Text('块操作')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .focusable(true)
-        .accessibilityText('块操作')
-        .onClick((): void => {
-          this.paneMoreOpen = false;
-          this.openBlockPropertyPanel(pane);
-        })
+        this.PaneMoreMenuItem(pane, 'block', 'settings', '块操作')
       }
-      Row() {
-        Text(this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .onClick((): void => {
-        this.paneMoreOpen = false;
-        this.toggleBacklinks(pane);
-      })
+      this.PaneMoreMenuItem(pane, 'backlinks', 'link',
+        this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
     }
     .width(Size.sidebarW)
-    .padding(Space.s2)
+    .padding(Space.s1)
     .borderRadius(Radius.menu)
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
@@ -8227,6 +8217,7 @@ struct Index {
       onWillDismiss: (action: DismissPopupAction): void => {
         action.dismiss();
         this.paneMoreOpen = false;
+        this.paneMoreHoveredAction = '';
       }
     })
   }

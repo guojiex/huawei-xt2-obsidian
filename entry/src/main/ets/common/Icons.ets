@@ -56,6 +56,9 @@ const P_IMAGE: string = 'M3 4h18v16H3zM4 17l5-5 4 4 3-3 4 4';
 const P_TASK: string = 'M3 5h6v6H3zM4.5 8l1.5 1.5L10 5.5M13 8h8M13 16h8M3 16h6';
 const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 const P_SWAP: string = 'M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4';
+const P_LINK: string = 'M10 14C11.55 15.55 14.05 15.55 15.6 14L18.7 10.9C20.25 9.35 20.25 6.85 18.7 5.3C17.15 3.75 14.65 3.75 13.1 5.3L12.1 6.3'
+  + 'M14 10C12.45 8.45 9.95 8.45 8.4 10L5.3 13.1C3.75 14.65 3.75 17.15 5.3 18.7C6.85 20.25 9.35 20.25 10.9 18.7L11.9 17.7';
+const P_FOLLOW: string = 'M7 4v16M17 4v16M4 9l3-3 3 3M14 15l3 3 3-3';
 // 双栏（对齐 v2 showRef）：圆角外框（rx=3，四角用三次贝塞尔逼近）+ 中央分隔线，避免 A 命令 flag 被 scalePath 缩放
 const P_COLUMNS: string = 'M6 4H18C19.66 4 21 5.34 21 7V17C21 18.66 19.66 20 18 20H6C4.34 20 3 18.66 3 17V7C3 5.34 4.34 4 6 4M12 4v16';
 // 文件行尾「在另一栏打开」（v2 icons.columns）：外框相同，分隔线按原型落在 x=11
@@ -117,6 +120,10 @@ function pathOf(name: string): string {
     return P_MORE;
   } else if (name === 'swap') {
     return P_SWAP;
+  } else if (name === 'link') {
+    return P_LINK;
+  } else if (name === 'follow') {
+    return P_FOLLOW;
   } else if (name === 'columns') {
     return P_COLUMNS;
   } else if (name === 'fileReference') {
