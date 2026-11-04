@@ -6,7 +6,7 @@
  */
 import { NoteService } from '../model/NoteService';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { Space, Radius, Shadow, FontSize, Size } from '../common/Tokens';
 import { Icon } from '../common/Icons';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
@@ -95,7 +95,7 @@ export struct CreateNoteDialog {
       if (actual !== rel) {
         return '将创建文件夹：' + this.vaultId + '/' + actual + '（同名已存在，自动加后缀）';
       }
-      return '将创建文件夹：' + this.vaultId + '/' + rel;
+      return '';
     }
     let rel: string;
     try {
@@ -109,7 +109,7 @@ export struct CreateNoteDialog {
     if (actual !== rel) {
       return this.vaultId + '/' + actual + '（同名已存在，自动加后缀）';
     }
-    return this.vaultId + '/' + rel;
+    return '';
   }
 
   private confirm(): void {
@@ -159,54 +159,60 @@ export struct CreateNoteDialog {
         .fontColor($r('app.color.text_secondary'))
         .margin({ top: Space.s2, bottom: Space.s3 })
 
-      // 类型切换（2026-10-18 方案 A）：📄笔记 / 📁文件夹。
-      // 自绘两按钮分段控件（ArkUI 没有开箱分段组件），选中态用主色底 + 主色字。
-      // 切类型不清空已输名称：用户可能先打字再切类型。
-      Row({ space: 2 }) {
-        Row({ space: Space.s1 }) {
-          Icon('doc', 14, this.createType === 'note'
-            ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      // 切类型不清空已输名称，沿用 v2 胶囊分段样式。
+      Row({ space: Space.s1 }) {
+        Row() {
           Text('笔记')
-            .fontSize(FontSize.body3)
+            .fontSize(FontSize.body2)
             .fontColor(this.createType === 'note'
-              ? $r('app.color.brand') : $r('app.color.text_secondary'))
+              ? $r('app.color.brand') : $r('app.color.text_primary'))
         }
         .layoutWeight(1)
-        .height(Size.buttonH)
+        .height(Space.s10)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .borderRadius(Radius.control)
+        .borderRadius(Radius.full)
         .backgroundColor(this.createType === 'note'
-          ? $r('app.color.brand_bg_solid') : Color.Transparent)
+          ? $r('app.color.bg_card') : Color.Transparent)
+        .shadow({
+          radius: this.createType === 'note' ? Shadow.floatBlur : 0,
+          color: $r('app.color.float_shadow'),
+          offsetX: 0,
+          offsetY: this.createType === 'note' ? Space.s2 : 0
+        })
         .onClick(() => {
           this.createType = 'note';
         })
         .accessibilityText('创建笔记' + (this.createType === 'note' ? '，已选中' : ''))
 
-        Row({ space: Space.s1 }) {
-          Icon('folder', 14, this.createType === 'folder'
-            ? $r('app.color.brand') : $r('app.color.text_secondary'))
+        Row() {
           Text('文件夹')
-            .fontSize(FontSize.body3)
+            .fontSize(FontSize.body2)
             .fontColor(this.createType === 'folder'
-              ? $r('app.color.brand') : $r('app.color.text_secondary'))
+              ? $r('app.color.brand') : $r('app.color.text_primary'))
         }
         .layoutWeight(1)
-        .height(Size.buttonH)
+        .height(Space.s10)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .borderRadius(Radius.control)
+        .borderRadius(Radius.full)
         .backgroundColor(this.createType === 'folder'
-          ? $r('app.color.brand_bg_solid') : Color.Transparent)
+          ? $r('app.color.bg_card') : Color.Transparent)
+        .shadow({
+          radius: this.createType === 'folder' ? Shadow.floatBlur : 0,
+          color: $r('app.color.float_shadow'),
+          offsetX: 0,
+          offsetY: this.createType === 'folder' ? Space.s2 : 0
+        })
         .onClick(() => {
           this.createType = 'folder';
         })
         .accessibilityText('创建文件夹' + (this.createType === 'folder' ? '，已选中' : ''))
       }
       .width('100%')
-      .padding(2)
+      .padding(Space.s1)
       .backgroundColor($r('app.color.bg_secondary'))
-      .borderRadius(Radius.control)
+      .borderRadius(Radius.full)
       .margin({ bottom: Space.s3 })
 
       // 目录选择行：点开/收起内联目录列表
@@ -264,13 +270,15 @@ export struct CreateNoteDialog {
           this.rawName = value;
         })
 
-      Text(this.hintText())
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_tertiary'))
-        .width('100%')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: Space.s2 })
+      if (this.hintText().length > 0) {
+        Text(this.hintText())
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .margin({ top: Space.s2 })
+      }
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)

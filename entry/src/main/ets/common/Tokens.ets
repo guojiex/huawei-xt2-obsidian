@@ -39,6 +39,11 @@ export class Radius {
   static readonly full: number = 999;    // 全圆（头像 / 圆形按钮）
 }
 
+/** 阴影：映射 v2 `--float-shadow` 的模糊半径。 */
+export class Shadow {
+  static readonly floatBlur: number = 28;
+}
+
 /** 字号阶梯（4.5）—— 三档形态下保持一致，不随断点跳号 */
 export class FontSize {
   static readonly caption: number = 12;
