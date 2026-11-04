@@ -102,6 +102,8 @@ tools/
 
 ## 命令
 
+macOS 可从仓库根目录运行 `./hvigorw assembleHap --mode module -p product=default`；包装脚本默认使用 DevEco 自带 JBR、SDK 与 Node，可通过 `DEVECO_CONTENTS` 指定 DevEco 的 `Contents` 目录。
+
 ```powershell
 .\tools\build.ps1              # 构建 debug HAP（已设好 JAVA_HOME → DevEco jbr）
 .\tools\build.ps1 -Task clean

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEVECO_CONTENTS="${DEVECO_CONTENTS:-/Applications/DevEco-Studio.app/Contents}"
+HVIGORW="${HVIGORW:-$DEVECO_CONTENTS/tools/hvigor/bin/hvigorw}"
+NODE_HOME="${NODE_HOME:-$DEVECO_CONTENTS/tools/node}"
+JAVA_HOME="$DEVECO_CONTENTS/jbr/Contents/Home"
+
+if [[ ! -x "$HVIGORW" ]]; then
+  echo "找不到 DevEco Hvigor：$HVIGORW" >&2
+  echo "设置 DEVECO_CONTENTS 指向 DevEco-Studio.app/Contents" >&2
+  exit 1
+fi
+
+export JAVA_HOME
+export HOS_SDK_HOME="${HOS_SDK_HOME:-$DEVECO_CONTENTS/sdk}"
+export DEVECO_SDK_HOME="${DEVECO_SDK_HOME:-$DEVECO_CONTENTS/sdk}"
+export PATH="$JAVA_HOME/bin:$NODE_HOME/bin:$DEVECO_CONTENTS/tools/ohpm/bin:$DEVECO_CONTENTS/tools/hvigor/bin:$PATH"
+
+cd "$REPO_ROOT"
+
+for arg in "$@"; do
+  case "$arg" in
+    --node-home|--node-home=*) exec "$HVIGORW" "$@" ;;
+  esac
+done
+
+exec "$HVIGORW" "$@" --node-home "$NODE_HOME"
