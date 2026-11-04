@@ -29,7 +29,7 @@ import { AgentRuntime } from '../model/AgentRuntime';
 import { NotePathMutationResult, NoteService } from '../model/NoteService';
 import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 import { FileTree } from '../model/FileTree';
-import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
+import { WikiLinkCandidate, WikiLinkParser, WikiLinkReference, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
 import { MarkdownInlineParser, MarkdownLinkParts } from '../model/MarkdownInlineParser';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
@@ -226,6 +226,14 @@ struct Index {
   @State blockPanelLinkParts: MarkdownLinkParts | null = null;
   @State blockPanelLinkMessage: string = '';
   private blockPanelLinkRaw: string = '';
+  @State blockPanelWikiReady: boolean = false;
+  @State blockPanelWikiTarget: string = '';
+  @State blockPanelWikiAlias: string = '';
+  @State blockPanelWikiMessage: string = '';
+  @State blockPanelWikiFiles: string[] = [];
+  @State blockPanelWikiResolutionStatus: string = '';
+  @State blockPanelWikiResolutionPath: string = '';
+  private blockPanelWikiRaw: string = '';
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -3016,6 +3024,14 @@ struct Index {
     this.blockPanelLinkParts = null;
     this.blockPanelLinkMessage = anchor.tapType === 'link' ? '正在读取链接…' : '';
     this.blockPanelLinkRaw = '';
+    this.blockPanelWikiReady = false;
+    this.blockPanelWikiTarget = '';
+    this.blockPanelWikiAlias = '';
+    this.blockPanelWikiMessage = anchor.tapType === 'wikilink' ? '正在读取双链…' : '';
+    this.blockPanelWikiFiles = [];
+    this.blockPanelWikiResolutionStatus = '';
+    this.blockPanelWikiResolutionPath = '';
+    this.blockPanelWikiRaw = '';
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3032,6 +3048,8 @@ struct Index {
     this.updateBlockPropertyPanelLayout(pane);
     if (anchor.tapType === 'link') {
       void this.loadBlockPanelLink();
+    } else if (anchor.tapType === 'wikilink') {
+      void this.loadBlockPanelWikiLink();
     }
   }
 
@@ -3071,8 +3089,18 @@ struct Index {
     this.blockPanelLinkParts = null;
     this.blockPanelLinkMessage = itemAnchor.tapType === 'link' ? '正在读取链接…' : '';
     this.blockPanelLinkRaw = '';
+    this.blockPanelWikiReady = false;
+    this.blockPanelWikiTarget = '';
+    this.blockPanelWikiAlias = '';
+    this.blockPanelWikiMessage = itemAnchor.tapType === 'wikilink' ? '正在读取双链…' : '';
+    this.blockPanelWikiFiles = [];
+    this.blockPanelWikiResolutionStatus = '';
+    this.blockPanelWikiResolutionPath = '';
+    this.blockPanelWikiRaw = '';
     if (itemAnchor.tapType === 'link') {
       void this.loadBlockPanelLink();
+    } else if (itemAnchor.tapType === 'wikilink') {
+      void this.loadBlockPanelWikiLink();
     }
   }
 
@@ -3452,6 +3480,217 @@ struct Index {
     }
   }
 
+  private async loadBlockPanelWikiLink(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.tapType !== 'wikilink' || anchor.inlineIndex < 0 ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      this.blockPanelWikiReady = true;
+      this.blockPanelWikiMessage = '双链已变化，请重新打开面板';
+      return;
+    }
+
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelWikiReady = true;
+      this.blockPanelWikiMessage = '无法同步当前笔记，请关闭面板后重试';
+      promptAction.showToast({ message: '无法同步当前笔记，双链暂时不能编辑' });
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
+      return;
+    }
+
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelWikiReady = true;
+      this.blockPanelWikiMessage = '读取双链失败，请关闭面板后重试';
+      promptAction.showToast({ message: '读取双链失败' });
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
+      return;
+    }
+    const from: number = latestAnchor.itemFrom;
+    const to: number = latestAnchor.itemTo;
+    if (from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
+      this.blockPanelWikiReady = true;
+      this.blockPanelWikiMessage = '双链范围无效，请以源码编辑此项';
+      return;
+    }
+
+    const raw: string = source.slice(from, to);
+    const references: WikiLinkReference[] = WikiLinkParser.parse(raw);
+    if (references.length !== 1 || references[0].start !== 0 || references[0].end !== raw.length) {
+      this.blockPanelWikiReady = true;
+      this.blockPanelWikiMessage = '此双链写法暂不支持结构化编辑';
+      return;
+    }
+    let files: string[] = [];
+    try {
+      files = WikiLinkService.files(VaultRegistry.get(), vaultId);
+    } catch {
+      this.blockPanelWikiReady = true;
+      this.blockPanelWikiMessage = '读取当前库笔记列表失败，请关闭面板后重试';
+      promptAction.showToast({ message: '读取当前库笔记列表失败' });
+      return;
+    }
+
+    const reference: WikiLinkReference = references[0];
+    const resolution: WikiLinkResolution = WikiLinkService.resolve(reference.target, path, files);
+    this.blockPanelWikiRaw = raw;
+    this.blockPanelWikiTarget = reference.target;
+    this.blockPanelWikiAlias = reference.alias;
+    this.blockPanelWikiFiles = files;
+    this.blockPanelWikiResolutionStatus = resolution.status;
+    this.blockPanelWikiResolutionPath = resolution.path;
+    this.blockPanelWikiMessage = this.blockPanelWikiResolutionMessage(reference.target, resolution.status);
+    this.blockPanelWikiReady = true;
+  }
+
+  private blockPanelWikiResolutionMessage(target: string, status: string): string {
+    if (status === 'resolved') {
+      return '';
+    }
+    if (status === 'missing') {
+      return '目标笔记还没有创建；仍可修改显示文字或重新选择目标笔记。';
+    }
+    if (target.indexOf('#') >= 0) {
+      return '标题锚点暂不支持跳转；可改显示文字或重新选择目标笔记。';
+    }
+    return '目标不唯一或路径无效，请重新选择目标。';
+  }
+
+  private blockPanelWikiSelectOptions(): SelectOption[] {
+    const options: SelectOption[] = [];
+    for (const path of this.blockPanelWikiFiles) {
+      options.push({ value: WikiLinkParser.pathToTarget(path) });
+    }
+    return options;
+  }
+
+  private blockPanelWikiSelectedIndex(): number {
+    if (this.blockPanelWikiResolutionStatus !== 'resolved') {
+      return -1;
+    }
+    const target: string = WikiLinkParser.pathToTarget(this.blockPanelWikiResolutionPath);
+    const options: SelectOption[] = this.blockPanelWikiSelectOptions();
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].value === target) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private blockPanelWikiSelectValue(): string {
+    if (!this.blockPanelWikiReady) {
+      return '正在读取双链…';
+    }
+    if (this.blockPanelWikiResolutionStatus === 'resolved') {
+      return WikiLinkParser.pathToTarget(this.blockPanelWikiResolutionPath);
+    }
+    if (this.blockPanelWikiTarget.length === 0) {
+      return '重新选择目标';
+    }
+    if (this.blockPanelWikiResolutionStatus === 'missing') {
+      return `${this.blockPanelWikiTarget}（未创建）`;
+    }
+    if (this.blockPanelWikiTarget.indexOf('#') >= 0) {
+      return `${this.blockPanelWikiTarget}（暂不支持标题锚点）`;
+    }
+    return `${this.blockPanelWikiTarget}（无法解析）`;
+  }
+
+  private async saveBlockPanelWikiField(field: string, value: string): Promise<void> {
+    if (!this.blockPanelWikiReady || this.blockPanelWikiRaw.length === 0 ||
+      (field !== 'target' && field !== 'alias')) {
+      return;
+    }
+    let target: string = this.blockPanelWikiTarget;
+    let alias: string = this.blockPanelWikiAlias;
+    if (field === 'target') {
+      const options: SelectOption[] = this.blockPanelWikiSelectOptions();
+      if (!options.some((option: SelectOption): boolean => option.value === value)) {
+        return;
+      }
+      target = value;
+    } else {
+      alias = value.trim();
+      if (alias.indexOf(']]') >= 0 || alias.indexOf('\n') >= 0 || alias.indexOf('\r') >= 0) {
+        promptAction.showToast({ message: '显示文字不能包含换行或 ]]' });
+        return;
+      }
+    }
+    const replacement: string = `[[${target}${alias.length > 0 ? `|${alias}` : ''}]]`;
+    if (!await this.replaceBlockPanelInlineSource(this.blockPanelWikiRaw, replacement, '修改双链失败，请重试')) {
+      return;
+    }
+    this.blockPanelWikiRaw = replacement;
+    this.blockPanelWikiTarget = target;
+    this.blockPanelWikiAlias = alias;
+    const resolution: WikiLinkResolution = WikiLinkService.resolve(
+      target, this.blockPanelSourcePath, this.blockPanelWikiFiles);
+    this.blockPanelWikiResolutionStatus = resolution.status;
+    this.blockPanelWikiResolutionPath = resolution.path;
+    this.blockPanelWikiMessage = this.blockPanelWikiResolutionMessage(target, resolution.status);
+  }
+
+  private blockPanelWikiDisplayText(): string {
+    if (this.blockPanelWikiAlias.length > 0) {
+      return this.blockPanelWikiAlias;
+    }
+    let target: string = this.blockPanelWikiTarget;
+    if (target.endsWith('.markdown')) {
+      target = target.substring(0, target.length - '.markdown'.length);
+    } else if (target.endsWith('.md')) {
+      target = target.substring(0, target.length - 3);
+    }
+    const slash: number = target.lastIndexOf('/');
+    return slash >= 0 ? target.substring(slash + 1) : target;
+  }
+
+  private async unlinkBlockPanelWiki(): Promise<void> {
+    if (this.blockPanelWikiRaw.length === 0) {
+      return;
+    }
+    const applied: boolean = await this.replaceBlockPanelInlineSource(
+      this.blockPanelWikiRaw, this.blockPanelWikiDisplayText(), '移除双链失败，请重试');
+    if (applied) {
+      this.closeBlockPropertyPanel();
+    }
+  }
+
+  private openBlockPanelWikiTarget(): void {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    if (anchor === null || anchor.tapType !== 'wikilink' || !this.blockPanelWikiReady ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
+        this.editorBridgeForPane(pane).currentDocumentRevision)) {
+      return;
+    }
+    const resolution: WikiLinkResolution = WikiLinkService.resolve(
+      this.blockPanelWikiTarget, path, this.blockPanelWikiFiles);
+    if (resolution.status !== 'resolved') {
+      return;
+    }
+    this.closeBlockPropertyPanel(false);
+    this.openFileInOtherPane(resolution.path);
+  }
+
   private async convertInlineCodeToPlainText(): Promise<void> {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     const pane: string = this.blockPanelPane;
@@ -3759,7 +3998,8 @@ struct Index {
       case 'link':
         return '打开链接';
       case 'wikilink':
-        return '打开目标笔记';
+        return this.blockPanelWikiReady && this.blockPanelWikiResolutionStatus === 'resolved'
+          ? '打开目标笔记' : '';
       case 'inlinecode':
         return '转为纯文本';
       default:
@@ -3771,6 +4011,10 @@ struct Index {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     if (anchor !== null && anchor.tapType === 'inlinecode') {
       await this.convertInlineCodeToPlainText();
+      return;
+    }
+    if (anchor !== null && anchor.tapType === 'wikilink') {
+      this.openBlockPanelWikiTarget();
       return;
     }
     this.closeBlockPanelForContentAction();
@@ -7569,6 +7813,72 @@ struct Index {
                   .width('100%')
                   .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
               }
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'wikilink') {
+              if (this.blockPanelActionLabel().length > 0) {
+                Row() {
+                  Text(this.blockPanelActionLabel())
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .height(Size.touch)
+                .padding({ left: Space.s3, right: Space.s3 })
+                .focusable(true)
+                .accessibilityText(this.blockPanelActionLabel())
+                .onClick((): void => { void this.performBlockPanelAction(); })
+              }
+              if (this.blockPanelWikiReady) {
+                if (this.blockPanelWikiMessage.length > 0) {
+                  Text(this.blockPanelWikiMessage)
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                }
+                Column({ space: Space.s1 }) {
+                  Text('重新选择目标')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                  if (this.blockPanelWikiFiles.length > 0) {
+                    Select(this.blockPanelWikiSelectOptions())
+                      .selected(this.blockPanelWikiSelectedIndex())
+                      .value(this.blockPanelWikiSelectValue())
+                      .fontColor($r('app.color.text_primary'))
+                      .width('100%')
+                      .onSelect((index: number, value: string): void => {
+                        void this.saveBlockPanelWikiField('target', value);
+                      })
+                  } else {
+                    Text(this.blockPanelWikiSelectValue())
+                      .fontSize(FontSize.body2)
+                      .fontColor($r('app.color.text_tertiary'))
+                      .width('100%')
+                  }
+                }
+                .width('100%')
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                this.BlockPanelWikiAliasField()
+                Row() {
+                  Text('移除双链')
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .height(Size.touch)
+                .padding({ left: Space.s3, right: Space.s3 })
+                .focusable(true)
+                .accessibilityText('移除双链，保留显示文字')
+                .onClick((): void => { void this.unlinkBlockPanelWiki(); })
+              } else {
+                Text(this.blockPanelWikiMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              }
             } else if (this.blockPanelActionLabel().length > 0) {
               Row() {
                 Text(this.blockPanelActionLabel())
@@ -7711,6 +8021,33 @@ struct Index {
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
       }
+    }
+    .width('100%')
+    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+  }
+
+  @Builder
+  BlockPanelWikiAliasField() {
+    Column({ space: Space.s1 }) {
+      Text('显示文字')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      Row({ space: Space.s1 }) {
+        TextInput({ text: this.blockPanelWikiAlias, placeholder: '留空则显示笔记名' })
+          .height(Size.buttonH)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .padding({ left: Space.s2, right: Space.s2 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.control)
+          .layoutWeight(1)
+          .onChange((nextValue: string): void => { this.blockPanelWikiAlias = nextValue; })
+        Button('保存')
+          .onClick((): void => { void this.saveBlockPanelWikiField('alias', this.blockPanelWikiAlias); })
+      }
+      .width('100%')
     }
     .width('100%')
     .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })

@@ -43,6 +43,20 @@ vm.runInNewContext(
   }).code,
   { module: inlineParserModule }
 )
+const wikiParserSource = fs.readFileSync(
+  new URL('entry/src/main/ets/model/WikiLinkParser.ets', root), 'utf8'
+)
+const wikiParserModule = { exports: {} }
+vm.runInNewContext(
+  transformSync(`${wikiParserSource}\nmodule.exports = WikiLinkParser;`, {
+    loader: 'ts',
+    format: 'cjs'
+  }).code,
+  {
+    module: wikiParserModule,
+    require: () => ({ BridgeCodec: { encode: (value) => value } })
+  }
+)
 const code = transformSync(
   `class BlockPanelHarness {
     ${source.slice(anchorChangeStart, anchorChangeEnd).trim()}
@@ -61,9 +75,17 @@ const copyMethodsCode = transformSync(
 
 function makeApp() {
   const notices = []
+  let wikiFiles = ['target.md', 'folder/next.md']
   const context = vm.createContext({
     module: { exports: {} },
     MarkdownInlineParser: inlineParserModule.exports,
+    WikiLinkParser: wikiParserModule.exports,
+    WikiLinkService: {
+      files: () => wikiFiles,
+      resolve: (target, sourcePath, files) =>
+        wikiParserModule.exports.resolve(target, sourcePath, files)
+    },
+    VaultRegistry: { get: () => ({}) },
     Breakpoint: { SM: 'SM' },
     Placement: { TopLeft: 'top-left', BottomLeft: 'bottom-left' },
     SheetSize: { MEDIUM: 'medium', FIT_CONTENT: 'fit-content' },
@@ -84,6 +106,7 @@ function makeApp() {
   const app = new context.module.exports()
   Object.assign(app, {
     notices,
+    setWikiFiles(files) { wikiFiles = files },
     experienceMode: 'simple',
     topView: 'note',
     breakpoint: 'MD',
@@ -133,6 +156,56 @@ function makeApp() {
     getContent: async () => ''
   }
   return app
+}
+
+function prepareWikiPanel(source, files = ['target.md', 'folder/next.md']) {
+  const app = makeApp()
+  app.setWikiFiles(files)
+  const item = { index: 0, type: 'wikilink', from: 0, to: source.length }
+  const anchor = {
+    type: 'paragraph', tapType: 'wikilink', from: 0, to: source.length,
+    inlineItems: [item], inlineIndex: 0, itemFrom: 0, itemTo: source.length,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  let content = source
+  const history = []
+  const writes = []
+  app.blockPanelPane = 'left'
+  app.blockPanelAnchor = anchor
+  app.blockPanelInlineItems = [item]
+  app.leftBlockPanelOpen = true
+  app.rightBlockPanelOpen = false
+  app.activePane = 'left'
+  app.blockPanelSourceVaultId = 'vault-a'
+  app.blockPanelSourcePath = 'note.md'
+  app.editorBridge = {
+    currentDocumentRevision: 11,
+    getContent: async () => content,
+    replaceBlockSource: async (...args) => {
+      writes.push(args)
+      if (app.editorBridge.currentDocumentRevision !== args[4] ||
+        content.slice(args[0], args[1]) !== args[2]) {
+        return false
+      }
+      history.push(content)
+      content = content.slice(0, args[0]) + args[3] + content.slice(args[1])
+      app.editorBridge.currentDocumentRevision++
+      return true
+    },
+    undo: () => {
+      if (history.length > 0) {
+        content = history.pop()
+        app.editorBridge.currentDocumentRevision++
+      }
+    }
+  }
+  return {
+    app,
+    history,
+    writes,
+    content: () => content,
+    setContent: (nextContent) => { content = nextContent }
+  }
 }
 
 const linkAnchor = {
@@ -626,6 +699,140 @@ test('20.1 link panel shows the open action, address, editable fields and unlink
   assert.match(builder, /this\.unlinkBlockPanelLink\(\)/)
   assert.match(source.slice(linkFieldBuilderStart, linkFieldBuilderEnd),
     /BlockPanelLinkField\(label: string, field: string, value: string, placeholder: string\)[\s\S]*不自动补全协议/)
+})
+
+test('20.2 tapping a wiki link opens its panel and starts loading it', () => {
+  const app = makeApp()
+  const anchor = {
+    ...linkAnchor,
+    tapType: 'wikilink',
+    inlineIndex: 0,
+    itemFrom: 12,
+    itemTo: 32
+  }
+  let loads = 0
+  app.loadBlockPanelWikiLink = async () => { loads++ }
+
+  app.openBlockPropertyPanel('left', anchor)
+
+  assert.equal(app.blockPanelTitle, '双链')
+  assert.equal(app.blockPanelWikiReady, false)
+  assert.equal(app.blockPanelWikiMessage, '正在读取双链…')
+  assert.equal(loads, 1)
+})
+
+test('20.2 opens the wiki-link panel and loads the current-vault target and alias', async () => {
+  const { app } = prepareWikiPanel('[[target.md|Visible title]]')
+
+  await app.loadBlockPanelWikiLink()
+
+  assert.equal(app.blockPanelWikiReady, true)
+  assert.equal(app.blockPanelWikiTarget, 'target.md')
+  assert.equal(app.blockPanelWikiAlias, 'Visible title')
+  assert.equal(app.blockPanelWikiResolutionStatus, 'resolved')
+  assert.equal(app.blockPanelWikiResolutionPath, 'target.md')
+  assert.equal(app.blockPanelWikiMessage, '')
+  assert.equal(app.blockPanelActionLabel(), '打开目标笔记')
+  assert.deepEqual(
+    Array.from(app.blockPanelWikiSelectOptions(), (option) => option.value),
+    ['./target.md', 'folder/next.md']
+  )
+})
+
+test('20.2 property panel binds target selection, alias editing, and unlinking', () => {
+  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  assert.match(builder, /tapType === 'wikilink'/)
+  assert.match(builder, /Select\(this\.blockPanelWikiSelectOptions\(\)\)/)
+  assert.match(builder, /saveBlockPanelWikiField\('target', value\)/)
+  assert.match(builder, /this\.BlockPanelWikiAliasField\(\)/)
+  assert.match(builder, /this\.unlinkBlockPanelWiki\(\)/)
+  assert.match(source, /标题锚点暂不支持跳转/)
+})
+
+test('20.2 missing targets remain editable and changing the alias preserves the target', async () => {
+  const { app, content } = prepareWikiPanel('[[missing.md|Old label]]', ['target.md'])
+  await app.loadBlockPanelWikiLink()
+
+  assert.equal(app.blockPanelWikiResolutionStatus, 'missing')
+  assert.match(app.blockPanelWikiMessage, /目标笔记还没有创建/)
+  assert.equal(app.blockPanelActionLabel(), '')
+  await app.saveBlockPanelWikiField('alias', 'New label')
+
+  assert.equal(content(), '[[missing.md|New label]]')
+  assert.equal(app.blockPanelWikiTarget, 'missing.md')
+  assert.equal(app.blockPanelWikiAlias, 'New label')
+  assert.match(app.blockPanelWikiMessage, /目标笔记还没有创建/)
+  await app.saveBlockPanelWikiField('target', './target.md')
+  assert.equal(content(), '[[./target.md|New label]]')
+  assert.equal(app.blockPanelWikiResolutionStatus, 'resolved')
+})
+
+test('20.2 title anchors explain that jumping is unsupported but allow target replacement', async () => {
+  const original = '[[target.md#Intro|Jump]]'
+  const { app, content } = prepareWikiPanel(original)
+  await app.loadBlockPanelWikiLink()
+
+  assert.match(app.blockPanelWikiMessage, /标题锚点暂不支持跳转/)
+  assert.equal(app.blockPanelActionLabel(), '')
+  await app.saveBlockPanelWikiField('target', './target.md')
+
+  assert.equal(content(), '[[./target.md|Jump]]')
+  assert.equal(app.blockPanelWikiResolutionStatus, 'resolved')
+  assert.equal(app.blockPanelActionLabel(), '打开目标笔记')
+  app.editorBridge.undo()
+  assert.equal(content(), original)
+})
+
+test('20.2 clearing the alias removes its separator and unlinking retains visible text', async () => {
+  const clearAlias = prepareWikiPanel('[[folder/next.md|Visible]]')
+  await clearAlias.app.loadBlockPanelWikiLink()
+  await clearAlias.app.saveBlockPanelWikiField('alias', '')
+  assert.equal(clearAlias.content(), '[[folder/next.md]]')
+
+  const removeAlias = prepareWikiPanel('[[folder/next.md|Visible]]')
+  await removeAlias.app.loadBlockPanelWikiLink()
+  removeAlias.app.closeBlockPropertyPanel = () => {}
+  await removeAlias.app.unlinkBlockPanelWiki()
+  assert.equal(removeAlias.content(), 'Visible')
+
+  const removeDefaultLabel = prepareWikiPanel('[[folder/next.md]]')
+  await removeDefaultLabel.app.loadBlockPanelWikiLink()
+  removeDefaultLabel.app.closeBlockPropertyPanel = () => {}
+  await removeDefaultLabel.app.unlinkBlockPanelWiki()
+  assert.equal(removeDefaultLabel.content(), 'next')
+})
+
+test('20.2 opens resolved targets in the other pane without invoking missing-note creation', async () => {
+  const resolved = prepareWikiPanel('[[folder/next.md]]')
+  await resolved.app.loadBlockPanelWikiLink()
+  const opened = []
+  const closed = []
+  resolved.app.closeBlockPropertyPanel = (restoreFocus) => closed.push(restoreFocus)
+  resolved.app.openFileInOtherPane = (path) => opened.push(path)
+  resolved.app.handleWikiLinkClick = () => assert.fail('must not use the preview click path')
+
+  await resolved.app.performBlockPanelAction()
+
+  assert.deepEqual(opened, ['folder/next.md'])
+  assert.deepEqual(closed, [false])
+
+  const missing = prepareWikiPanel('[[missing.md]]')
+  await missing.app.loadBlockPanelWikiLink()
+  missing.app.closeBlockPropertyPanel = () => assert.fail('missing targets must not close and open')
+  missing.app.openFileInOtherPane = () => assert.fail('missing targets must not open')
+  await missing.app.performBlockPanelAction()
+})
+
+test('20.2 stale source ranges reject wiki-link edits without writing', async () => {
+  const { app, content, writes, setContent } = prepareWikiPanel('[[target.md|Old]]')
+  await app.loadBlockPanelWikiLink()
+  setContent('the source changed')
+  app.editorBridge.currentDocumentRevision++
+
+  await app.saveBlockPanelWikiField('alias', 'New')
+
+  assert.equal(content(), 'the source changed')
+  assert.equal(writes.length, 0)
 })
 
 test('language picker changes only the language range and retains updated panel state', async () => {
