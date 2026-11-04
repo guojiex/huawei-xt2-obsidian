@@ -27,6 +27,7 @@ function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience
  const rootStyle=new Set(['--ink','--paper','--line','--muted','--nav','--blue']);rootStyle.getPropertyValue=name=>name==='--ink'?'#202530':'';
  for(const id of ['navSplitter','contentSplitter'])get(id).querySelector=selector=>selector==='.split-tip'?get(id+'Tip'):null;
  for(const id of ['leftPane','referencePane'])get(id).querySelector=selector=>selector==='.pane-label'?get(id+'Label'):null;
+ for(const id of ['switchPane','mobileBacklinks'])get(id).querySelector=selector=>selector==='.menu-label'?get(id+'Label'):null;
  for(const id of ['leftEmpty','rightEmpty']){
   const box=get(id),prefix=id==='rightEmpty'?'rightEmpty':'empty';
   box.querySelector=selector=>selector==='.pane-empty-reopen'?null:selector==='.primary'?get(prefix+'NewNote'):null;
@@ -261,6 +262,18 @@ test('phone offers document switching only for different notes and labels the de
 
 test('single-screen overflow contains no focus or dual-layout actions, including restored legacy links',()=>{
  const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];assert(!menu.includes('mobileFocus'));assert(!menu.includes('mobileDual'));assert(menu.includes('mobileShare'));assert(menu.includes('mobileSettings'));assert(menu.includes('switchPane'));const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&focus=1');assert.equal(f.run('focused'),false);assert(!f.get('window').classList.contains('focus'));const before=f.run('referenceEnabled');f.run('toggleFocus();toggleReference();previewSameNote()');assert.equal(f.run('focused'),false);assert.equal(f.run('referenceEnabled'),before);
+});
+test('phone more menu groups actions and updates labels without replacing icons',()=>{
+ const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];
+ assert(menu.indexOf('aria-label="当前笔记"')<menu.indexOf('aria-label="快捷编辑模式"'));
+ assert(menu.indexOf('aria-label="快捷编辑模式"')<menu.indexOf('aria-label="应用"'));
+ assert.equal((menu.match(/class="menu-icon"/g)||[]).length,6);
+ assert.match(menu,/class="git-sync-count"/);
+ const f=fixture();f.run("setViewport('phone');backlinksPane=activePane;updatePaneChrome()");
+ assert.equal(f.get('mobileBacklinksLabel').textContent,'隐藏反链');
+ assert.match(f.get('switchPaneLabel').textContent,/切换到笔记/);
+ f.run("current='';reference='';updatePaneChrome()");
+ assert(f.get('mobileShare').disabled);assert(f.get('mobileBacklinks').disabled);
 });
 
 test('workspace more menu shares mode switching and settings across all breakpoints',()=>{
