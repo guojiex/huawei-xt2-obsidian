@@ -78,6 +78,16 @@ test('body edits reject any fence-like line that would make the block unsafe', (
   assert.equal(prepareCodeBodyEdit(source, 0, to, 'x\n```\ny'), null)
 })
 
+test('body edits preserve Markdown-looking symbols, tabs, blank lines, and literal CRLF text', () => {
+  const source = '```text\nold\n```\nafter'
+  const replacement = '* # heading\n\tindented\n\nlast'
+  const edit = prepareCodeBodyEdit(source, 0, source.indexOf('\nafter'), replacement)
+  const after = source.slice(0, edit.from) + edit.replacement + source.slice(edit.to)
+
+  assert.equal(after, '```text\n* # heading\n\tindented\n\nlast\n```\nafter')
+  assert.ok(edit.replacement.includes('\tindented'))
+})
+
 test('language changes touch only a known language marker, including plain-text insertion', () => {
   assert.equal(COMMON_CODE_LANGUAGES.length, 19)
   const source = '```ts extra\nx\n```'

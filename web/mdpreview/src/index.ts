@@ -1086,8 +1086,10 @@ contentElement.addEventListener('compositionend', (): void => {
   if (arkts && typeof arkts.onCompositionChange === 'function') arkts.onCompositionChange('end')
   const codeTarget = document.activeElement instanceof HTMLElement
     ? document.activeElement.closest('[data-simple-code-editable="true"]') as HTMLElement | null : null
-  if (codeTarget) {
-    updateCodeEditSessionFromDom(codeTarget)
+  const sessionTarget = codeEditSession?.target.isConnected ? codeEditSession.target : null
+  const committedCodeTarget = sessionTarget ?? codeTarget
+  if (committedCodeTarget) {
+    updateCodeEditSessionFromDom(committedCodeTarget)
     return
   }
   const target = sourceBlockForNode(window.getSelection()?.anchorNode ?? document.activeElement)
