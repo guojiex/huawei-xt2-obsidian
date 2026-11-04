@@ -1408,6 +1408,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 本机 API 26 SDK 声明 `focusBox(FocusBoxStyle)`、`FocusBoxStyle.strokeWidth`、`FocusBoxStyle.strokeColor`、`LengthMetrics.vp()` 与 `ColorMetrics.rgba()` 均为 API 12 起，低于工程 API 24 上限；`@kit.ArkUI` 导出 `LengthMetrics` 与 `ColorMetrics`。
 - 本机 SDK `ets/component/common.d.ts` 说明 `focusBox` 只影响焦点遍历时显示系统焦点框的组件；它不适用于本次触摸正文后出现的描边。此前在 `PreviewWebView` 设置零宽透明 `focusBox` 未消除该现象，现已移除。
 - 2026-11-04 API 26 `Huawei_TripleFold` 模拟器实测：冷启动首屏无框；点按正文后黑框沿滚动正文视口出现。HDC hilog 记录 `Web/secure_field RequestFocusImmediately`、ArkWeb `GestureTap` 与 `OnCursorUpdate`，但未提供 DOM 命中标签。`#content:focus:not(:focus-visible)` 未能消除黑框；改为 `#content:focus { outline: none; }` 后，同一位置点按不再出现黑框，点击及光标更新事件仍出现。仅为 API 26 模拟器证据，不外推 API 24 / XT2。
+- 2026-11-04 最终包复验：临时 DOM 诊断在普通段落点按时记录 `target=p`、`block=paragraph`、`active=body`、`outline=none`；移除诊断代码后重建并以匹配 `appSignType=none` 的 unsigned HAP 覆盖安装，重启后同类点按截图无黑框。安装失败与复验时间线见 [v1.18 §6](../releases/v1.18/需求文档.md#2026-11-04-184-最终-hap-普通段落点按复验)。仅为 API 26 模拟器结果。
 
 ---
 
