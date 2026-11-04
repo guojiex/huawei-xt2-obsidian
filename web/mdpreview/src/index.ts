@@ -29,6 +29,7 @@ import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './
 import {
   isPseudoTableSource, parseTableSource, replaceTableCellSource, serializeTableCellContent
 } from './tableCells.mjs'
+import { serializeCalloutBody } from './calloutEdit.mjs'
 
 declare global {
   interface Window {
@@ -726,6 +727,25 @@ function containsLockedSyntax(block: HTMLElement): boolean {
     /%%|\[\^[^\]]+\]|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m.test(raw)
 }
 
+function isSimpleCalloutBodyNode(node: Node): boolean {
+  if (node.nodeType === Node.TEXT_NODE) return true
+  if (!(node instanceof HTMLElement)) return true
+  const tag = node.tagName
+  const supported = tag === 'P' || tag === 'DIV' || tag === 'UL' || tag === 'OL' ||
+    tag === 'LI' || tag === 'BLOCKQUOTE' || /^H[1-6]$/.test(tag) ||
+    ['STRONG', 'B', 'EM', 'I', 'DEL', 'S', 'BR'].includes(tag)
+  if (!supported) return false
+  return Array.from(node.childNodes).every((child) => isSimpleCalloutBodyNode(child))
+}
+
+function canEditCalloutBody(block: HTMLElement, raw: string): boolean {
+  const content = block.querySelector('.callout-content')
+  const headerEnd = raw.indexOf('\n')
+  const body = headerEnd >= 0 ? raw.slice(headerEnd + 1) : ''
+  return content !== null && !/%%|\[\^[^\]]+\]|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m.test(body) &&
+    Array.from(content.childNodes).every((child) => isSimpleCalloutBodyNode(child))
+}
+
 function editableElementFor(block: HTMLElement): HTMLElement | null {
   if (block.classList.contains('empty')) return block
   const child = block.firstElementChild
@@ -1373,7 +1393,8 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
   setActiveLockedBlocks(root, [])
   publishLockedBlockAnchor(null)
   const previousEditables = root.querySelectorAll(
-    '[data-simple-editable="true"], [data-simple-code-editable="true"], [data-simple-table-cell]'
+    '[data-simple-editable="true"], [data-simple-code-editable="true"], ' +
+    '[data-simple-callout-editable="true"], [data-simple-table-cell]'
   )
   for (let index = 0; index < previousEditables.length; index++) {
     const element = previousEditables[index] as HTMLElement
@@ -1436,6 +1457,23 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
       const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from &&
         to <= sourceText.length ? sourceText.slice(from, to) : ''
       annotateTableCells(block, raw, from, true)
+      continue
+    }
+    if (type === 'callout') {
+      block.dataset.editLocked = 'true'
+      const from = Number(block.dataset.sourceFrom)
+      const to = Number(block.dataset.sourceTo)
+      const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from &&
+        to <= sourceText.length ? sourceText.slice(from, to) : ''
+      const calloutBody = block.querySelector('.callout-content') as HTMLElement | null
+      if (calloutBody && canEditCalloutBody(block, raw)) {
+        calloutBody.setAttribute('contenteditable', 'true')
+        calloutBody.setAttribute('data-simple-callout-editable', 'true')
+        calloutBody.setAttribute('aria-label', '编辑提示块正文')
+      }
+      block.setAttribute('aria-label', calloutBody?.dataset.simpleCalloutEditable === 'true'
+        ? '提示块标题可打开属性面板，正文可编辑'
+        : '提示块正文含复杂语法，请以源码编辑')
       continue
     }
     if (type === 'paragraph') {
@@ -1501,8 +1539,12 @@ function replaceSourceBlock(block: HTMLElement): void {
   const to = Number(block.dataset.sourceTo)
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from || to > sourceText.length) return
   const previous = sourceText.slice(from, to)
+  const calloutBody = block.dataset.sourceType === 'callout'
+    ? block.querySelector('[data-simple-callout-editable="true"]') as HTMLElement | null : null
   const suffix = /(?:\r?\n)*$/.exec(previous)?.[0] ?? ''
-  const replacement = serializeEditedBlock(block).replace(/(?:\r?\n)*$/, '') + suffix
+  const replacement = calloutBody
+    ? serializeCalloutBody(previous, serializeEditedBlock(calloutBody))
+    : serializeEditedBlock(block).replace(/(?:\r?\n)*$/, '') + suffix
   sourceText = sourceText.slice(0, from) + replacement + sourceText.slice(to)
   const delta = replacement.length - (to - from)
   block.dataset.sourceTo = String(from + replacement.length)
@@ -1684,6 +1726,7 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
   ) as HTMLElement | null
   const payload = publishLockedBlockAnchor(lockedBlock)
   lastLockedTapTarget = null
+  if (event.target.closest('[data-simple-callout-editable="true"]')) return
   if (event.target.closest('[data-simple-code-editable="true"]')) return
   if (event.target.closest('input, button')) return
   const tapTarget = event.target.closest('a, img') as HTMLElement | null

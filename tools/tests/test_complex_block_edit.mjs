@@ -49,3 +49,65 @@ test('21.1 native panel uses the bundled preview and exact block replacement pat
   assert.match(index, /replaceBlockPanelInlineSource\(\s*this\.blockPanelFormulaRaw, replacement/)
   assert.match(preview, /\$rawfile\('mdpreview\/index\.html'\)/)
 })
+
+test('21.2 callout edits preserve body, aliases, title spacing, and CRLF', () => {
+  const source = '> [!hint]-  Old title\r\n> body\r\n> second line\r\n'
+  const model = MarkdownComplexBlockEdit.parseCallout(source)
+  assert.ok(model)
+  assert.equal(model.knownType, true)
+  assert.equal(model.body, '> body\r\n> second line\r\n')
+  assert.equal(
+    MarkdownComplexBlockEdit.serializeCallout(model, 'title', 'New title'),
+    '> [!hint]-  New title\r\n> body\r\n> second line\r\n'
+  )
+  assert.equal(
+    MarkdownComplexBlockEdit.serializeCallout(model, 'type', 'warning'),
+    '> [!warning]-  Old title\r\n> body\r\n> second line\r\n'
+  )
+  assert.equal(
+    MarkdownComplexBlockEdit.serializeCallout(model, 'fold', '+'),
+    '> [!hint]+  Old title\r\n> body\r\n> second line\r\n'
+  )
+})
+
+test('21.2 known callout types and aliases are distinct from unknown types', () => {
+  assert.deepEqual(Array.from(MarkdownComplexBlockEdit.calloutTypes()), [
+    'note', 'abstract', 'info', 'todo', 'tip', 'success', 'question',
+    'warning', 'failure', 'danger', 'bug', 'example', 'quote'
+  ])
+  assert.equal(MarkdownComplexBlockEdit.calloutLabels().length, 13)
+  assert.equal(MarkdownComplexBlockEdit.parseCallout('> [!SUMMARY] Title')?.knownType, true)
+  assert.equal(MarkdownComplexBlockEdit.parseCallout('> [!vendor_kind] Title')?.knownType, false)
+  const unknown = MarkdownComplexBlockEdit.parseCallout('> [!vendor_kind]- Old\n> body')
+  assert.ok(unknown)
+  assert.equal(
+    MarkdownComplexBlockEdit.serializeCallout(unknown, 'title', 'New'),
+    '> [!vendor_kind]- New\n> body'
+  )
+  assert.equal(MarkdownComplexBlockEdit.serializeCallout(unknown, 'type', 'note'), null)
+  assert.equal(MarkdownComplexBlockEdit.serializeCallout(unknown, 'fold', '+'), null)
+})
+
+test('21.2 callout parser rejects non-callouts and multiline panel values', () => {
+  assert.equal(MarkdownComplexBlockEdit.parseCallout('> ordinary quote'), null)
+  const model = MarkdownComplexBlockEdit.parseCallout('\uFEFF> [!note] Title\n> body')
+  assert.ok(model)
+  assert.equal(MarkdownComplexBlockEdit.serializeCallout(model, 'title', 'bad\nheader'), null)
+  assert.equal(MarkdownComplexBlockEdit.serializeCallout(model, 'title', 'bad\rheader'), null)
+})
+
+test('21.2 native panel keeps unknown callout types and writes the exact source block', () => {
+  const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
+  assert.match(index, /anchor\.type === 'callout'[\s\S]*?loadBlockPanelCallout\(\)/)
+  assert.match(index, /MarkdownComplexBlockEdit\.parseCallout\(raw\)/)
+  assert.match(index, /this\.replaceBlockPanelInlineSource\(\s*this\.blockPanelCalloutRaw, replacement/)
+  assert.match(index, /this\.blockPanelCalloutModel\.knownType/)
+})
+
+test('21.2 preview edits only safe callout bodies and preserves their header', () => {
+  const preview = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root), 'utf8')
+  assert.match(preview, /function canEditCalloutBody\(/)
+  assert.match(preview, /calloutBody\.setAttribute\('data-simple-callout-editable', 'true'\)/)
+  assert.match(preview, /serializeCalloutBody\(previous, serializeEditedBlock\(calloutBody\)\)/)
+  assert.match(preview, /event\.target\.closest\('\[data-simple-callout-editable="true"\]'\)\) return/)
+})

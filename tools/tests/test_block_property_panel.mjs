@@ -46,6 +46,17 @@ vm.runInNewContext(
   }).code,
   { module: inlineParserModule }
 )
+const complexEditSource = fs.readFileSync(
+  new URL('entry/src/main/ets/model/MarkdownComplexBlockEdit.ets', root), 'utf8'
+)
+const complexEditModule = { exports: {} }
+vm.runInNewContext(
+  transformSync(`${complexEditSource}\nmodule.exports = MarkdownComplexBlockEdit;`, {
+    loader: 'ts',
+    format: 'cjs'
+  }).code,
+  { module: complexEditModule }
+)
 const wikiParserSource = fs.readFileSync(
   new URL('entry/src/main/ets/model/WikiLinkParser.ets', root), 'utf8'
 )
@@ -88,6 +99,7 @@ function makeApp() {
   const context = vm.createContext({
     module: { exports: {} },
     MarkdownInlineParser: inlineParserModule.exports,
+    MarkdownComplexBlockEdit: complexEditModule.exports,
     WikiLinkParser: wikiParserModule.exports,
     WikiLinkService: {
       files: () => wikiFiles,
@@ -184,6 +196,55 @@ function makeApp() {
     getContent: async () => ''
   }
   return app
+}
+
+function prepareCalloutPanel(source, prefix = '', suffix = '') {
+  const app = makeApp()
+  const fullSource = prefix + source + suffix
+  const from = prefix.length
+  const to = from + source.length
+  const anchor = {
+    type: 'callout', tapType: '', from, to, inlineItems: [],
+    inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  const writes = []
+  const history = []
+  let content = fullSource
+  app.blockPanelPane = 'left'
+  app.blockPanelAnchor = anchor
+  app.blockPanelInlineItems = []
+  app.leftBlockPanelOpen = true
+  app.rightBlockPanelOpen = false
+  app.blockPanelSourceVaultId = 'vault-a'
+  app.blockPanelSourcePath = 'note.md'
+  app.blockPanelCalloutReady = false
+  app.blockPanelCalloutSaveTail = Promise.resolve()
+  app.editorBridge = {
+    currentDocumentRevision: 11,
+    getContent: async () => content,
+    replaceBlockSource: async (...args) => {
+      writes.push(args)
+      if (app.editorBridge.currentDocumentRevision !== args[4] ||
+        content.slice(args[0], args[1]) !== args[2]) {
+        return false
+      }
+      history.push(content)
+      content = content.slice(0, args[0]) + args[3] + content.slice(args[1])
+      app.editorBridge.currentDocumentRevision++
+      return true
+    },
+    undo: () => {
+      if (history.length > 0) {
+        content = history.pop()
+        app.editorBridge.currentDocumentRevision++
+      }
+    },
+    content: () => content,
+    writes,
+    history
+  }
+  return { app, anchor, writes, history, content: () => content }
 }
 
 function prepareWikiPanel(source, files = ['target.md', 'folder/next.md']) {
@@ -319,6 +380,51 @@ test('opening a paragraph inline link starts loading the selected link', () => {
   assert.equal(loads, 1)
   assert.equal(app.blockPanelLinkReady, false)
   assert.equal(app.blockPanelLinkMessage, '正在读取链接…')
+})
+
+test('21.2 loads and edits only a callout range, preserving outside source and undo', async () => {
+  const raw = '> [!note] Old title\r\n> body\r\n'
+  const prefix = '前文\n\n'
+  const suffix = '\n\n后文'
+  const { app, writes, history, content } = prepareCalloutPanel(raw, prefix, suffix)
+  await app.loadBlockPanelCallout()
+
+  assert.equal(app.blockPanelCalloutTitle, 'Old title')
+  assert.equal(app.blockPanelCalloutFold, '')
+  await app.saveBlockPanelCalloutField('title', 'New title')
+  await app.saveBlockPanelCalloutType(7)
+  await app.saveBlockPanelCalloutFold(2)
+
+  assert.equal(content(), `${prefix}> [!warning]- New title\r\n> body\r\n${suffix}`)
+  assert.equal(writes.length, 3)
+  assert.equal(writes[0][0], prefix.length)
+  assert.equal(writes[0][2], raw)
+  assert.equal(writes[0][3], '> [!note] New title\r\n> body\r\n')
+  assert.deepEqual(Array.from(history), [
+    `${prefix}${raw}${suffix}`,
+    `${prefix}> [!note] New title\r\n> body\r\n${suffix}`,
+    `${prefix}> [!warning] New title\r\n> body\r\n${suffix}`
+  ])
+  app.editorBridge.undo()
+  app.editorBridge.undo()
+  app.editorBridge.undo()
+  assert.equal(content(), `${prefix}${raw}${suffix}`)
+})
+
+test('21.2 unknown callout types keep their type and expose no type or fold controls', async () => {
+  const raw = '> [!vendor_kind]- Old title\n> body\n'
+  const { app, writes, content } = prepareCalloutPanel(raw)
+  await app.loadBlockPanelCallout()
+
+  assert.equal(app.blockPanelCalloutModel.knownType, false)
+  assert.equal(app.blockPanelCalloutModel.type, 'vendor_kind')
+  await app.saveBlockPanelCalloutField('title', 'New title')
+
+  assert.equal(content(), '> [!vendor_kind]- New title\n> body\n')
+  assert.equal(writes.length, 1)
+  assert.match(source.slice(panelBuilderStart, panelBuilderEnd),
+    /blockPanelCalloutModel\.knownType[\s\S]*?Select\(this\.blockPanelCalloutTypeOptions\(\)\)[\s\S]*?if \(this\.blockPanelCalloutModel\.knownType\)/)
+  assert.match(source.slice(panelBuilderStart, panelBuilderEnd), /类型 · 保留：\$\{this\.blockPanelCalloutModel\.type\}/)
 })
 
 function prepareLinkEditor(app, content) {

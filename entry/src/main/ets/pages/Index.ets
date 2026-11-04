@@ -34,7 +34,9 @@ import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService'
 import {
   MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts
 } from '../model/MarkdownInlineParser';
-import { FormulaSourceModel, MarkdownComplexBlockEdit } from '../model/MarkdownComplexBlockEdit';
+import {
+  CalloutSourceModel, FormulaSourceModel, MarkdownComplexBlockEdit
+} from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
@@ -249,6 +251,14 @@ struct Index {
   @State blockPanelFormulaMessage: string = '';
   private blockPanelFormulaRaw: string = '';
   private blockPanelFormulaModel: FormulaSourceModel | null = null;
+  @State blockPanelCalloutReady: boolean = false;
+  @State blockPanelCalloutTitle: string = '';
+  @State blockPanelCalloutFold: string = '';
+  @State blockPanelCalloutMessage: string = '';
+  @State blockPanelCalloutSaving: boolean = false;
+  private blockPanelCalloutRaw: string = '';
+  private blockPanelCalloutModel: CalloutSourceModel | null = null;
+  private blockPanelCalloutSaveTail: Promise<void> = Promise.resolve();
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -2950,6 +2960,8 @@ struct Index {
         return '属性';
       case 'formula':
         return '公式';
+      case 'callout':
+        return '提示块';
       case 'paragraph':
         return '这一段';
       case 'heading':
@@ -3060,6 +3072,14 @@ struct Index {
       ? '正在读取公式…' : '';
     this.blockPanelFormulaRaw = '';
     this.blockPanelFormulaModel = null;
+    this.blockPanelCalloutReady = false;
+    this.blockPanelCalloutTitle = '';
+    this.blockPanelCalloutFold = '';
+    this.blockPanelCalloutMessage = anchor.type === 'callout' ? '正在读取提示块…' : '';
+    this.blockPanelCalloutSaving = false;
+    this.blockPanelCalloutRaw = '';
+    this.blockPanelCalloutModel = null;
+    this.blockPanelCalloutSaveTail = Promise.resolve();
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3082,6 +3102,8 @@ struct Index {
       void this.loadBlockPanelImage();
     } else if (anchor.tapType === 'mathInline' || anchor.type === 'formula') {
       void this.loadBlockPanelFormula();
+    } else if (anchor.type === 'callout') {
+      void this.loadBlockPanelCallout();
     }
   }
 
@@ -3376,6 +3398,178 @@ struct Index {
     this.blockPanelFormulaMessage = '';
   }
 
+  private blockPanelCalloutTypeOptions(): SelectOption[] {
+    const options: SelectOption[] = [];
+    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
+    const types: string[] = MarkdownComplexBlockEdit.calloutTypes();
+    const labels: string[] = MarkdownComplexBlockEdit.calloutLabels();
+    if (model !== null && !types.includes(model.type)) {
+      options.push({ value: `保留：${model.type}` });
+    }
+    for (let index = 0; index < types.length; index++) {
+      options.push({ value: labels[index] });
+    }
+    return options;
+  }
+
+  private blockPanelCalloutTypeIndex(): number {
+    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
+    if (model === null) {
+      return -1;
+    }
+    const types: string[] = MarkdownComplexBlockEdit.calloutTypes();
+    const index: number = types.indexOf(model.type);
+    return index < 0 ? 0 : index + (types.includes(model.type) ? 0 : 1);
+  }
+
+  private blockPanelCalloutTypeValue(): string {
+    const options: SelectOption[] = this.blockPanelCalloutTypeOptions();
+    const index: number = this.blockPanelCalloutTypeIndex();
+    return index >= 0 && index < options.length ? options[index].value as string : '';
+  }
+
+  private blockPanelCalloutFoldOptions(): SelectOption[] {
+    return [{ value: '不折叠' }, { value: '默认展开' }, { value: '默认收起' }];
+  }
+
+  private blockPanelCalloutFoldValue(): string {
+    const options: SelectOption[] = this.blockPanelCalloutFoldOptions();
+    return options[this.blockPanelCalloutFoldIndex()].value as string;
+  }
+
+  private blockPanelCalloutFoldIndex(): number {
+    if (this.blockPanelCalloutFold === '+') {
+      return 1;
+    }
+    return this.blockPanelCalloutFold === '-' ? 2 : 0;
+  }
+
+  private async saveBlockPanelCalloutType(index: number): Promise<void> {
+    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
+    const types: string[] = MarkdownComplexBlockEdit.calloutTypes();
+    const offset: number = model !== null && !types.includes(model.type) ? 1 : 0;
+    if (model === null || index < 0 || index >= types.length + offset) {
+      return;
+    }
+    if (this.blockPanelCalloutTitle !== model.title) {
+      if (!await this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle)) {
+        return;
+      }
+    }
+    const latest: CalloutSourceModel | null = this.blockPanelCalloutModel;
+    const type: string = offset > 0 && index === 0 ? latest?.type ?? '' : types[index - offset];
+    if (type.length > 0) {
+      await this.saveBlockPanelCalloutField('type', type);
+    }
+  }
+
+  private async saveBlockPanelCalloutFold(index: number): Promise<void> {
+    if (this.blockPanelCalloutModel === null || index < 0 || index > 2) {
+      return;
+    }
+    if (this.blockPanelCalloutTitle !== this.blockPanelCalloutModel.title) {
+      if (!await this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle)) {
+        return;
+      }
+    }
+    await this.saveBlockPanelCalloutField('fold', index === 1 ? '+' : index === 2 ? '-' : '');
+  }
+
+  private saveBlockPanelCalloutField(field: string, value: string): Promise<boolean> {
+    const task: Promise<boolean> = this.blockPanelCalloutSaveTail.then(async (): Promise<boolean> => {
+      return await this.applyBlockPanelCalloutField(field, value);
+    });
+    this.blockPanelCalloutSaveTail = task.then((): void => {}, (): void => {});
+    return task;
+  }
+
+  private async applyBlockPanelCalloutField(field: string, value: string): Promise<boolean> {
+    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
+    if (!this.blockPanelCalloutReady || model === null || this.blockPanelCalloutSaving) {
+      return false;
+    }
+    const replacement: string | null = MarkdownComplexBlockEdit.serializeCallout(model, field, value);
+    if (replacement === null) {
+      this.blockPanelCalloutMessage = '此提示块内容暂不支持该设置';
+      return false;
+    }
+    if (replacement === this.blockPanelCalloutRaw) {
+      this.blockPanelCalloutMessage = '';
+      return true;
+    }
+    this.blockPanelCalloutSaving = true;
+    try {
+      if (!await this.replaceBlockPanelInlineSource(
+        this.blockPanelCalloutRaw, replacement, '修改提示块失败，请重试')) {
+        this.blockPanelCalloutMessage = '提示块已变化或保存失败，请重新打开面板';
+        return false;
+      }
+      const updated: CalloutSourceModel | null = MarkdownComplexBlockEdit.parseCallout(replacement);
+      if (updated === null) {
+        this.blockPanelCalloutMessage = '提示块解析失败，请以源码编辑';
+        return false;
+      }
+      this.blockPanelCalloutRaw = replacement;
+      this.blockPanelCalloutModel = updated;
+      this.blockPanelCalloutTitle = updated.title;
+      this.blockPanelCalloutFold = updated.fold;
+      this.blockPanelCalloutMessage = '';
+      return true;
+    } finally {
+      this.blockPanelCalloutSaving = false;
+    }
+  }
+
+  private async loadBlockPanelCallout(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.type !== 'callout' ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      this.blockPanelCalloutReady = true;
+      this.blockPanelCalloutMessage = '提示块已变化，请重新打开面板';
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelCalloutReady = true;
+      this.blockPanelCalloutMessage = '无法同步当前笔记，请关闭面板后重试';
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelCalloutReady = true;
+      this.blockPanelCalloutMessage = '读取提示块失败，请关闭面板后重试';
+      return;
+    }
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
+      latestAnchor.from < 0 || latestAnchor.to <= latestAnchor.from || latestAnchor.to > source.length) {
+      this.blockPanelCalloutReady = true;
+      this.blockPanelCalloutMessage = '提示块已变化，请重新打开面板';
+      return;
+    }
+    const raw: string = source.slice(latestAnchor.from, latestAnchor.to);
+    const model: CalloutSourceModel | null = MarkdownComplexBlockEdit.parseCallout(raw);
+    this.blockPanelCalloutReady = true;
+    if (model === null) {
+      this.blockPanelCalloutMessage = '此提示块写法暂不支持结构化编辑';
+      return;
+    }
+    this.blockPanelCalloutRaw = raw;
+    this.blockPanelCalloutModel = model;
+    this.blockPanelCalloutTitle = model.title;
+    this.blockPanelCalloutFold = model.fold;
+    this.blockPanelCalloutMessage = '';
+  }
+
   private async loadBlockPanelLink(): Promise<void> {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     const pane: string = this.blockPanelPane;
@@ -3512,7 +3706,7 @@ struct Index {
     const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
     const editor: EditorBridge = this.editorBridgeForPane(pane);
     if (anchor === null || (anchor.inlineIndex < 0 && anchor.tapType !== 'image' &&
-      anchor.type !== 'formula') ||
+      anchor.type !== 'formula' && anchor.type !== 'callout') ||
       !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
       return false;
     }
@@ -8123,6 +8317,90 @@ struct Index {
                 .accessibilityText(this.blockPanelInlineItemLabel(item))
                 .onClick((): void => { this.openBlockInlineItem(item); })
               }, (item: PreviewBlockInlineItem): string => String(item.index))
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'callout') {
+              if (this.blockPanelCalloutReady && this.blockPanelCalloutModel !== null) {
+                if (this.blockPanelCalloutModel.knownType) {
+                  Column({ space: Space.s1 }) {
+                    Text('类型')
+                      .fontSize(FontSize.caption)
+                      .fontColor($r('app.color.text_secondary'))
+                      .width('100%')
+                    Select(this.blockPanelCalloutTypeOptions())
+                      .selected(this.blockPanelCalloutTypeIndex())
+                      .value(this.blockPanelCalloutTypeValue())
+                      .fontColor($r('app.color.text_primary'))
+                      .width('100%')
+                      .onSelect((index: number, _value: string): void => {
+                        void this.saveBlockPanelCalloutType(index);
+                      })
+                  }
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                } else {
+                  Text(`类型 · 保留：${this.blockPanelCalloutModel.type}`)
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                    .height(Size.touch)
+                    .padding({ left: Space.s3, right: Space.s3 })
+                }
+                Column({ space: Space.s1 }) {
+                  Text('标题')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                  TextInput({ text: this.blockPanelCalloutTitle, placeholder: '留空则使用默认标题' })
+                    .height(Size.buttonH)
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .placeholderColor($r('app.color.text_tertiary'))
+                    .padding({ left: Space.s2, right: Space.s2 })
+                    .backgroundColor($r('app.color.bg_secondary'))
+                    .borderRadius(Radius.control)
+                    .width('100%')
+                    .onChange((value: string): void => { this.blockPanelCalloutTitle = value; })
+                    .onSubmit((): void => {
+                      void this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle);
+                    })
+                    .onBlur((): void => {
+                      void this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle);
+                    })
+                    .accessibilityText('提示块标题')
+                }
+                .width('100%')
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                if (this.blockPanelCalloutModel.knownType) {
+                  Column({ space: Space.s1 }) {
+                    Text('折叠')
+                      .fontSize(FontSize.caption)
+                      .fontColor($r('app.color.text_secondary'))
+                      .width('100%')
+                    Select(this.blockPanelCalloutFoldOptions())
+                      .selected(this.blockPanelCalloutFoldIndex())
+                      .value(this.blockPanelCalloutFoldValue())
+                      .fontColor($r('app.color.text_primary'))
+                      .width('100%')
+                      .onSelect((index: number, _value: string): void => {
+                        void this.saveBlockPanelCalloutFold(index);
+                      })
+                  }
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                }
+              } else {
+                Text(this.blockPanelCalloutMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              }
+              if (this.blockPanelCalloutMessage.length > 0 && this.blockPanelCalloutModel !== null) {
+                Text(this.blockPanelCalloutMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s2 })
+              }
             } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'link') {
               Row() {
                 Column({ space: Space.s1 }) {
