@@ -18,7 +18,7 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
-import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo, pasteboard } from '@kit.BasicServicesKit';
 import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { SAMPLE_VAULT_ID, VaultEntry } from '../model/Vault';
@@ -3053,6 +3053,24 @@ struct Index {
 
   private codeLanguageLabel(language: string): string {
     return language.length > 0 ? language : '纯文本';
+  }
+
+  private async copyCodeTextToPasteboard(content: string): Promise<void> {
+    try {
+      const board: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
+      await board.setData(pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, content));
+      promptAction.showToast({ message: '已复制代码' });
+    } catch {
+      promptAction.showToast({ message: '复制代码失败，请重试' });
+    }
+  }
+
+  private copyCodeBlockFromPanel(): void {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null || anchor.type !== 'code') {
+      return;
+    }
+    this.previewBridgeForPane(this.blockPanelPane).copyCodeBlock(anchor.from, anchor.to);
   }
 
   private async changeBlockCodeLanguage(language: string): Promise<void> {
@@ -7163,6 +7181,18 @@ struct Index {
               .accessibilityText(this.blockPanelActionLabel())
               .onClick((): void => { this.closeBlockPanelForContentAction(); })
             } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'code') {
+              Row() {
+                Text('复制代码')
+                  .fontSize(FontSize.body2)
+                  .fontColor($r('app.color.text_primary'))
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .height(Size.touch)
+              .padding({ left: Space.s3, right: Space.s3 })
+              .focusable(true)
+              .accessibilityText('复制代码')
+              .onClick((): void => { this.copyCodeBlockFromPanel(); })
               if (this.blockPanelAnchor.codeEditable && this.blockPanelAnchor.codeLanguageSelectable) {
                 Row() {
                   Text('语言')
@@ -7449,6 +7479,12 @@ struct Index {
             onCodeBlockEditingChange: (editing: boolean): void => {
               this.onCodeBlockEditingChange('right', editing);
             },
+            onCopyCodeBlockContent: (content: string): void => {
+              void this.copyCodeTextToPasteboard(content);
+            },
+            onCodeBlockCopyFailed: (): void => {
+              promptAction.showToast({ message: '代码块已变化，未能复制' });
+            },
             onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
               this.openBlockPropertyPanel('right', anchor);
             },
@@ -7646,6 +7682,12 @@ struct Index {
           },
           onCodeBlockEditingChange: (editing: boolean): void => {
             this.onCodeBlockEditingChange('left', editing);
+          },
+          onCopyCodeBlockContent: (content: string): void => {
+            void this.copyCodeTextToPasteboard(content);
+          },
+          onCodeBlockCopyFailed: (): void => {
+            promptAction.showToast({ message: '代码块已变化，未能复制' });
           },
           onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
             this.openBlockPropertyPanel('left', anchor);

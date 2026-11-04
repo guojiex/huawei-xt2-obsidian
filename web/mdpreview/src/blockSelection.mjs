@@ -22,6 +22,17 @@ export function toolbarBlockForSelection(blocks, selection, sourceBlockForNode) 
   return block?.dataset.editLocked === 'true' && candidates.includes(block) ? block : null
 }
 
+export function codeBlockForSourceRange(blocks, from, to) {
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from) return null
+  for (const block of Array.from(blocks)) {
+    if (block.dataset?.sourceType === 'code' &&
+      Number(block.dataset.sourceFrom) === from && Number(block.dataset.sourceTo) === to) {
+      return block
+    }
+  }
+  return null
+}
+
 export function inlineItemsForBlock(block) {
   if (block?.dataset.inlineItemsReady !== 'true' || typeof block.querySelectorAll !== 'function') return []
   const from = Number(block.dataset.sourceFrom)

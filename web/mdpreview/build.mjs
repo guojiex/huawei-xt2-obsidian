@@ -183,6 +183,7 @@ const html = `<!doctype html>
   #content .md-code-bar .md-code-language {
     margin-right: auto; padding-left: var(--s1); font-family: var(--mono);
   }
+  #content .md-code-bar .md-code-copy { cursor: pointer; }
   #content pre [data-simple-code-editable="true"] {
     outline: none; caret-color: var(--blue); user-select: text;
   }
@@ -192,8 +193,11 @@ const html = `<!doctype html>
     background: var(--blue-soft); padding: var(--s2) var(--s3); border-radius: var(--small-r);
   }
   #content .mermaid-block { overflow-x: auto; margin: 0 0 var(--s5); }
-  #content .mermaid-source { display: none; }
-  #content .mermaid-block svg { max-width: 100%; height: auto; }
+  #content .mermaid-block .mermaid-source { display: none; }
+  #content .mermaid-block.md-code .mermaid-source { display: block; }
+  #content .mermaid-block.md-code .mermaid-rendered,
+  #content .mermaid-block.md-code .mermaid-error { display: none; }
+  #content .mermaid-block .mermaid-rendered svg { max-width: 100%; height: auto; }
   #content table {
     border-collapse: separate; border-spacing: 0; margin: 0 0 var(--s5);
     font-size: var(--caption); border: var(--stroke) solid var(--line);

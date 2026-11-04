@@ -16,15 +16,24 @@ const panelStart = source.indexOf('  private hasBlockPropertyPanelForPane(')
 const panelEnd = source.indexOf('\n  private calculateAnchoredPopupLayout(', panelStart)
 const panelBuilderStart = source.indexOf('  BlockPropertyPanel() {')
 const panelBuilderEnd = source.indexOf('\n  @Builder\n  PreviewBlockPanel(', panelBuilderStart)
+const copyMethodsStart = source.indexOf('  private async copyCodeTextToPasteboard(')
+const copyMethodsEnd = source.indexOf('\n  private async changeBlockCodeLanguage(', copyMethodsStart)
 assert.ok(anchorChangeStart >= 0 && anchorChangeEnd > anchorChangeStart)
 assert.ok(panelStart >= 0 && panelEnd > panelStart)
 assert.ok(panelBuilderStart >= 0 && panelBuilderEnd > panelBuilderStart)
+assert.ok(copyMethodsStart >= 0 && copyMethodsEnd > copyMethodsStart)
 
 const code = transformSync(
   `class BlockPanelHarness {
     ${source.slice(anchorChangeStart, anchorChangeEnd).trim()}
     ${source.slice(panelStart, panelEnd).trim()}
   }; module.exports = BlockPanelHarness;`,
+  { loader: 'ts', format: 'cjs' }
+).code
+const copyMethodsCode = transformSync(
+  `class CodeCopyHarness {
+    ${source.slice(copyMethodsStart, copyMethodsEnd).trim()}
+  }; module.exports = CodeCopyHarness;`,
   { loader: 'ts', format: 'cjs' }
 ).code
 
@@ -417,14 +426,64 @@ test('unknown code languages are not exposed as language edits', async () => {
   assert.equal(app.blockPanelAnchor.codeLanguage, 'custom')
 })
 
+test('code copy writes only the supplied text and the panel targets its selected pane range', async () => {
+  const writes = []
+  const notices = []
+  let failWrite = false
+  const context = vm.createContext({
+    module: { exports: {} },
+    pasteboard: {
+      MIMETYPE_TEXT_PLAIN: 'text/plain',
+      getSystemPasteboard: () => ({
+        setData: async (data) => {
+          if (failWrite) throw new Error('pasteboard unavailable')
+          writes.push(data)
+        }
+      }),
+      createData: (mimeType, value) => ({ mimeType, value })
+    },
+    promptAction: { showToast: ({ message }) => notices.push(message) }
+  })
+  vm.runInContext(copyMethodsCode, context)
+  const app = new context.module.exports()
+
+  await app.copyCodeTextToPasteboard('const answer = 42')
+  await app.copyCodeTextToPasteboard('')
+  assert.equal(writes.length, 2)
+  assert.equal(writes[0].mimeType, 'text/plain')
+  assert.equal(writes[0].value, 'const answer = 42')
+  assert.equal(writes[1].value, '')
+  assert.deepEqual(notices.slice(0, 2), ['已复制代码', '已复制代码'])
+
+  failWrite = true
+  await app.copyCodeTextToPasteboard('private body')
+  assert.equal(writes.length, 2)
+  assert.equal(notices[2], '复制代码失败，请重试')
+
+  const requests = []
+  app.blockPanelPane = 'right'
+  app.blockPanelAnchor = { type: 'code', from: 16, to: 48 }
+  app.previewBridgeForPane = (pane) => ({
+    copyCodeBlock: (from, to) => requests.push([pane, from, to])
+  })
+  app.copyCodeBlockFromPanel()
+  assert.deepEqual(requests, [['right', 16, 48]])
+})
+
 test('code language badge opens the existing property panel and unknown values are retained', () => {
   const builder = source.slice(panelBuilderStart, panelBuilderEnd)
 
+  assert.match(builder, /复制代码/)
+  assert.match(builder, /copyCodeBlockFromPanel/)
   assert.match(builder, /this\.blockPanelAnchor\.codeLanguageSelectable/)
   assert.match(builder, /ForEach\(this\.blockPanelAnchor\.codeLanguages/)
   assert.match(builder, /保留：\$\{this\.blockPanelAnchor\.codeLanguage\}/)
   assert.match(mdpreviewSource, /attachCodeBlockLanguageButton/)
+  assert.match(mdpreviewSource, /className = 'md-code-copy'/)
+  assert.match(mdpreviewSource, /notifyCodeBlockCopyContent\(target\.textContent \?\? ''\)/)
   assert.match(mdpreviewSource, /arkts\.onLockedContentTap\(payload\)/)
+  assert.match(previewSource, /copyCodeBlock\(from: number, to: number\)/)
+  assert.match(previewSource, /onCopyCodeBlockContent/)
 })
 
 test('both preview panes bind the panel and block taps provide the source anchor', () => {

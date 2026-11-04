@@ -18,7 +18,9 @@ import { marked } from 'marked'
 import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
-import { inlineItemsForBlock, lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection } from './blockSelection.mjs'
+import {
+  codeBlockForSourceRange, inlineItemsForBlock, lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection
+} from './blockSelection.mjs'
 import { appendShareWatermark } from './shareWatermark.mjs'
 import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './codeBlock.mjs'
 
@@ -39,6 +41,8 @@ declare global {
       onCodeBlockEdit?: (id: number, from: number, to: number, expectedB64: string,
         replacementB64: string, userEvent: string) => void
       onCodeBlockEditingChange?: (editing: boolean) => void
+      onCopyCodeBlockContent?: (contentB64: string) => void
+      onCodeBlockCopyFailed?: () => void
     }
   }
 }
@@ -65,6 +69,7 @@ interface MdPreviewApi {
   cancelSourceFollow(): void
   restoreScrollTop(top: number): void
   completeCodeBlockEdit(id: number, applied: boolean): void
+  copyCodeBlock(from: number, to: number): void
   requestShareCaptureMetrics(id: number): void
   appendShareWatermark(id: number): void
   prepareShareCapturePages(id: number, pageCount: number): void
@@ -741,6 +746,24 @@ function attachCodeBlockLanguageButton(block: HTMLElement, pre: HTMLElement, lan
     }
   })
   bar.appendChild(languageButton)
+
+  const copyButton = document.createElement('button')
+  copyButton.type = 'button'
+  copyButton.className = 'md-code-copy'
+  copyButton.textContent = '复制'
+  copyButton.title = '复制代码'
+  copyButton.setAttribute('aria-label', '复制代码')
+  copyButton.addEventListener('click', (event: MouseEvent): void => {
+    event.preventDefault()
+    event.stopPropagation()
+    const target = codeElementForBlock(block)
+    if (target) {
+      notifyCodeBlockCopyContent(target.textContent ?? '')
+    } else {
+      notifyCodeBlockCopyFailed()
+    }
+  })
+  bar.appendChild(copyButton)
   container.insertBefore(bar, pre)
 }
 
@@ -748,6 +771,22 @@ function notifyCodeBlockEditingChange(editing: boolean): void {
   const arkts = window.__arkts
   if (arkts && typeof arkts.onCodeBlockEditingChange === 'function') {
     arkts.onCodeBlockEditingChange(editing)
+  }
+}
+
+function notifyCodeBlockCopyContent(content: string): void {
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onCopyCodeBlockContent === 'function') {
+    arkts.onCopyCodeBlockContent(b64encode(content))
+  } else {
+    notifyCodeBlockCopyFailed()
+  }
+}
+
+function notifyCodeBlockCopyFailed(): void {
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onCodeBlockCopyFailed === 'function') {
+    arkts.onCodeBlockCopyFailed()
   }
 }
 
@@ -1286,9 +1325,12 @@ async function renderMermaidBlocks(root: HTMLElement, generation: number): Promi
       if (generation !== mermaidRenderGeneration || !block.isConnected) {
         return
       }
-      block.innerHTML = svg
-      block.setAttribute('role', 'img')
-      block.setAttribute('aria-label', 'Mermaid 图表')
+      const rendered = document.createElement('div')
+      rendered.className = 'mermaid-rendered'
+      rendered.setAttribute('role', 'img')
+      rendered.setAttribute('aria-label', 'Mermaid 图表')
+      rendered.innerHTML = svg
+      block.appendChild(rendered)
     } catch (error) {
       if (generation !== mermaidRenderGeneration || !block.isConnected) {
         return
@@ -1297,7 +1339,7 @@ async function renderMermaidBlocks(root: HTMLElement, generation: number): Promi
       fallback.className = 'mermaid-error'
       fallback.setAttribute('role', 'status')
       fallback.textContent = 'Mermaid 图语法错误，原代码保留在笔记中。'
-      block.replaceChildren(fallback)
+      block.appendChild(fallback)
     }
   }
 }
@@ -1515,6 +1557,18 @@ const api: MdPreviewApi = {
       finishCodeEditSession(session)
     }
     notifyCodeEditWaiters()
+  },
+
+  copyCodeBlock(from: number, to: number): void {
+    const root = document.getElementById('content')
+    const blocks = root?.querySelectorAll('.preview-source-block') ?? []
+    const block = codeBlockForSourceRange(blocks, from, to)
+    const target = block ? codeElementForBlock(block) : null
+    if (!target) {
+      notifyCodeBlockCopyFailed()
+      return
+    }
+    notifyCodeBlockCopyContent(target.textContent ?? '')
   },
 
   setTheme(theme: string): void {

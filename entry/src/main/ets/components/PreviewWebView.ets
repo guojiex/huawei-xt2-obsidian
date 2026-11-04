@@ -204,6 +204,8 @@ class PreviewNativeProxy {
   codeBlockEditHandler: (request: PreviewCodeEditRequest) => void =
     (_request: PreviewCodeEditRequest) => {};
   codeBlockEditingChangeHandler: (editing: boolean) => void = (_editing: boolean) => {};
+  codeBlockCopyHandler: (content: string) => void = (_content: string) => {};
+  codeBlockCopyFailedHandler: () => void = () => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -272,6 +274,18 @@ class PreviewNativeProxy {
 
   onCodeBlockEditingChange(editing: boolean): void {
     this.codeBlockEditingChangeHandler(editing);
+  }
+
+  onCopyCodeBlockContent(contentB64: string): void {
+    try {
+      this.codeBlockCopyHandler(BridgeCodec.decode(contentB64));
+    } catch {
+      this.codeBlockCopyFailedHandler();
+    }
+  }
+
+  onCodeBlockCopyFailed(): void {
+    this.codeBlockCopyFailedHandler();
   }
 }
 
@@ -372,6 +386,12 @@ class PreviewImpl {
   completeCodeBlockEdit(id: number, applied: boolean): void {
     if (Number.isInteger(id) && id > 0) {
       this.enqueue(`window.__mdpreview.completeCodeBlockEdit(${id},${applied})`);
+    }
+  }
+
+  copyCodeBlock(from: number, to: number): void {
+    if (Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to > from) {
+      this.enqueue(`window.__mdpreview.copyCodeBlock(${from},${to})`);
     }
   }
 
@@ -553,6 +573,10 @@ export class PreviewBridge {
 
   completeCodeBlockEdit(id: number, applied: boolean): void {
     this.impl?.completeCodeBlockEdit(id, applied);
+  }
+
+  copyCodeBlock(from: number, to: number): void {
+    this.impl?.copyCodeBlock(from, to);
   }
 
   insertText(text: string): void {
@@ -770,6 +794,8 @@ export struct PreviewWebView {
   onCodeBlockEdit: (request: PreviewCodeEditRequest) => void =
     (_request: PreviewCodeEditRequest) => {};
   onCodeBlockEditingChange: (editing: boolean) => void = (_editing: boolean) => {};
+  onCopyCodeBlockContent: (content: string) => void = (_content: string) => {};
+  onCodeBlockCopyFailed: () => void = () => {};
   onLockedContentTap: (anchor: PreviewBlockAnchor | null) => void =
     (_anchor: PreviewBlockAnchor | null) => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
@@ -832,6 +858,12 @@ export struct PreviewWebView {
     };
     this.proxy.codeBlockEditingChangeHandler = (editing: boolean): void => {
       this.onCodeBlockEditingChange(editing);
+    };
+    this.proxy.codeBlockCopyHandler = (content: string): void => {
+      this.onCopyCodeBlockContent(content);
+    };
+    this.proxy.codeBlockCopyFailedHandler = (): void => {
+      this.onCodeBlockCopyFailed();
     };
     this.bridge.onEditableContentChange = (content: string): void => {
       this.onEditableContentChange(content);
@@ -931,7 +963,8 @@ export struct PreviewWebView {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
         ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
-          'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onCodeBlockEditingChange']);
+          'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onCodeBlockEditingChange',
+          'onCopyCodeBlockContent', 'onCodeBlockCopyFailed']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (_error) {

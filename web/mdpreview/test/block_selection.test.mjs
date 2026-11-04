@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  codeBlockForSourceRange,
   inlineItemsForBlock,
   lockedBlockAnchor,
   selectedLockedBlocks,
@@ -86,6 +87,16 @@ test('floating-toolbar anchor follows the selection focus block', () => {
     focusNode: { block: second }
   }, resolveBlock), null)
   assert.equal(toolbarBlockForSelection([first], { rangeCount: 0 }, resolveBlock), null)
+})
+
+test('code copy resolves only the exact code block source range', () => {
+  const first = { dataset: { sourceType: 'code', sourceFrom: '10', sourceTo: '28' } }
+  const otherType = { dataset: { sourceType: 'paragraph', sourceFrom: '30', sourceTo: '48' } }
+  const second = { dataset: { sourceType: 'code', sourceFrom: '30', sourceTo: '48' } }
+
+  assert.equal(codeBlockForSourceRange([first, otherType, second], 30, 48), second)
+  assert.equal(codeBlockForSourceRange([first, second], 30, 49), null)
+  assert.equal(codeBlockForSourceRange([first], -1, 28), null)
 })
 
 test('locked block anchor contains source identity and visible geometry only', () => {
