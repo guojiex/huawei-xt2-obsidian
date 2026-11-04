@@ -177,6 +177,7 @@ struct Index {
   @State vaults: VaultEntry[] = [];
   /** 当前库 id */
   @State @Watch('onFormatContextChanged') currentVaultId: string = '';
+  @State private vaultSwitchInProgress: boolean = false;
   /** 当前库内 Markdown 笔记数量（随注册表和文件树刷新） */
   @State currentVaultNoteCount: number = 0;
   /** 当前 Git 库相对 origin/xt2 的本地超前提交数（仅前台查询，不触发网络）。 */
@@ -2553,10 +2554,10 @@ struct Index {
       ? simplePane === 'left' : this.smMode === 'edit';
     const rightRequested: boolean = this.experienceMode === 'simple'
       ? simplePane === 'right' : this.rightEditing;
-    const leftEditable: boolean = this.leftComposing || (leftRequested &&
+    const leftEditable: boolean = this.leftComposing || (!this.vaultSwitchInProgress && leftRequested &&
       (!sharedNote || (!this.rightComposing && (this.experienceMode === 'simple'
         ? simplePane === 'left' : this.activePane === 'left'))));
-    const rightEditable: boolean = this.rightComposing || (rightRequested &&
+    const rightEditable: boolean = this.rightComposing || (!this.vaultSwitchInProgress && rightRequested &&
       (!sharedNote || (!this.leftComposing && (this.experienceMode === 'simple'
         ? simplePane === 'right' : this.activePane === 'right'))));
 
@@ -2673,6 +2674,9 @@ struct Index {
   }
 
   private isPaneEditable(pane: string): boolean {
+    if (this.vaultSwitchInProgress) {
+      return false;
+    }
     if (this.experienceMode === 'simple') {
       return this.previewBridgeForPane(pane).ready && this.simplePreviewEditable(pane) &&
         this.paneFilePath(pane).length > 0;
@@ -6565,11 +6569,15 @@ struct Index {
 
   private async switchVault(id: string): Promise<void> {
     const previousVaultId: string = this.currentVaultId;
+    const previousFilePath: string = this.currentFilePath;
+    const previousRightFilePath: string = this.rightFilePath;
     const sessionSavingWasEnabled: boolean = this.workspaceSessionSavingEnabled;
+    if (this.vaultSwitchInProgress || id === previousVaultId) {
+      return;
+    }
+    this.vaultSwitchInProgress = true;
     try {
-      if (id === this.currentVaultId) {
-        return;
-      }
+      await this.refreshSharedEditability();
       const editorMounted: boolean = this.topView === 'note';
       if (editorMounted && !await this.flushWorkspaceSaves()) {
         return;
@@ -6585,18 +6593,64 @@ struct Index {
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
       this.smMode = 'edit';
-      await this.readAndPush('');
-      await this.readRightAndPush('');
+      if (!await this.readAndPush('') || !await this.readRightAndPush('')) {
+        throw new Error('工作区清理未完成');
+      }
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
     } catch (error) {
-      const registryCurrentId: string = VaultRegistry.get().currentId();
+      const registry: VaultRegistry = VaultRegistry.get();
+      let registryCurrentId: string = registry.currentId();
+      if (registryCurrentId === id && previousVaultId.length > 0) {
+        try {
+          registry.setCurrent(previousVaultId);
+          this.refreshFromRegistry();
+          if (this.currentVaultId !== previousVaultId) {
+            throw new Error('原知识库恢复失败');
+          }
+          this.currentFilePath = previousFilePath;
+          this.rightFilePath = previousRightFilePath;
+          const leftRequestId: number = ++this.leftOpenRequestId;
+          const rightRequestId: number = ++this.rightOpenRequestId;
+          const leftRestored: boolean = await this.readAndPush(previousFilePath, false,
+            leftRequestId, previousVaultId, rightRequestId);
+          const rightRestored: boolean = await this.readRightAndPush(previousRightFilePath,
+            rightRequestId, previousVaultId);
+          if (!leftRestored || !rightRestored) {
+            throw new Error('原工作区恢复失败');
+          }
+          this.workspaceSessionSavingEnabled = sessionSavingWasEnabled;
+          if (sessionSavingWasEnabled) {
+            this.scheduleWorkspaceSessionSave();
+          }
+          this.showFailureFeedback('vault', 'switch', 'unknown', 'not_completed', 'retry',
+            '切换知识库未完成；已恢复原知识库和已保存笔记。请检查目标知识库后再重试。');
+          return;
+        } catch (restoreError) {
+          this.refreshFromRegistry();
+          this.currentFilePath = '';
+          this.rightFilePath = '';
+          this.committedLeftPath = '';
+          this.committedRightPath = '';
+          this.committedLeftVaultId = '';
+          this.committedRightVaultId = '';
+          this.editorDirty = false;
+          this.rightEditorDirty = false;
+          this.workspaceSessionSavingEnabled = false;
+          this.showFailureFeedback('vault', 'switch', 'unknown', 'status_unknown', 'check_status',
+            '切换知识库未完成；已保存笔记未覆盖，但工作区恢复未完成。请检查当前知识库，并从文件树重新打开笔记。');
+          return;
+        }
+      }
       if (sessionSavingWasEnabled && registryCurrentId === previousVaultId &&
         this.currentVaultId === previousVaultId) {
         this.workspaceSessionSavingEnabled = true;
         this.scheduleWorkspaceSessionSave();
       }
       this.toastRegistryError('切换库失败', error, 'vault', 'switch');
+    } finally {
+      this.vaultSwitchInProgress = false;
+      void this.refreshSharedEditability();
     }
   }
 
@@ -7939,7 +7993,7 @@ struct Index {
   }
 
   private simplePreviewEditable(pane: string): boolean {
-    if (this.experienceMode !== 'simple') {
+    if (this.experienceMode !== 'simple' || this.vaultSwitchInProgress) {
       return false;
     }
     const sameNote: boolean = this.currentFilePath.length > 0 &&

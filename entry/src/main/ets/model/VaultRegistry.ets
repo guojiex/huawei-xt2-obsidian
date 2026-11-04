@@ -475,6 +475,9 @@ export class VaultRegistry {
     if (!importingId.startsWith(finalId + VaultRegistry.GIT_IMPORTING_SUFFIX)) {
       throw new Error('导入临时库 id 不匹配，拒绝清理: ' + importingId);
     }
+    if (!fileIo.accessSync(this.resolver.gitImportTempMarkerDir(finalId, importingId))) {
+      throw new Error('导入恢复标记不属于本次导入，拒绝清理');
+    }
     if (this.findEntry(importingId) === null) {
       this.removePathTreeIfExists(this.resolver.vaultDir(importingId));
     }

@@ -54,6 +54,9 @@ function createHarness(options = {}) {
     smMode: 'preview',
     async flushWorkspaceSaves() {
       calls.push('flush');
+      if (options.flushPending) {
+        return await options.flushPending;
+      }
       return options.flushSucceeds ?? true;
     },
     stopWorkspaceSessionSaving() {
@@ -61,14 +64,30 @@ function createHarness(options = {}) {
       this.workspaceSessionSavingEnabled = false;
     },
     scheduleWorkspaceSessionSave() { calls.push('schedule-session'); },
+    async refreshSharedEditability() {},
     refreshFromRegistry() {
       calls.push('refresh');
       this.currentVaultId = registry.currentId();
     },
-    async readAndPush(path) { calls.push(`clear-left:${path}`); },
-    async readRightAndPush(path) { calls.push(`clear-right:${path}`); },
+    async readAndPush(path) {
+      calls.push(`clear-left:${path}`);
+      if (path.length === 0 && options.clearLeftFails) {
+        throw new Error('controlled left workspace clear failure');
+      }
+      if (path === 'source.md' && options.restoreLeftFails) {
+        throw new Error('controlled left workspace restore failure');
+      }
+      return true;
+    },
+    async readRightAndPush(path) {
+      calls.push(`clear-right:${path}`);
+      return true;
+    },
     flushWorkspaceSessionSave(force) { calls.push(`save-session:${force}`); return true; },
-    toastRegistryError(prefix) { calls.push(`toast:${prefix}`); }
+    toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
+    showFailureFeedback(operation, phase, category, outcome, nextStep, detail) {
+      calls.push(`failure:${operation}:${phase}:${category}:${outcome}:${nextStep}:${detail}`);
+    }
   });
   if (options.stubSwitch) {
     app.switchVault = (id) => { calls.push(`switch:${id}`); };
@@ -150,6 +169,62 @@ test('a registry switch error keeps the old workspace and resumes session saving
   assert.equal(app.rightFilePath, 'source-right.md');
   assert.equal(app.drawerOpen, true);
   assert.equal(app.workspaceSessionSavingEnabled, true);
+});
+
+test('a workspace clear failure rolls back the library and restores both saved notes', async () => {
+  const { app, calls, state } = createHarness({
+    currentFilePath: 'source.md',
+    rightFilePath: 'source-right.md',
+    clearLeftFails: true
+  });
+
+  await app.switchVault('temporary');
+
+  assert.equal(state.currentId, 'local');
+  assert.equal(app.currentVaultId, 'local');
+  assert.equal(app.currentFilePath, 'source.md');
+  assert.equal(app.rightFilePath, 'source-right.md');
+  assert.equal(app.workspaceSessionSavingEnabled, true);
+  assert.ok(calls.includes('clear-left:source.md'));
+  assert.ok(calls.includes('clear-right:source-right.md'));
+  assert.match(calls.at(-1), /^failure:vault:switch:unknown:not_completed:retry:/);
+});
+
+test('a failed workspace rollback leaves session saving disabled and asks the user to reopen notes', async () => {
+  const { app, calls, state } = createHarness({
+    currentFilePath: 'source.md',
+    rightFilePath: 'source-right.md',
+    clearLeftFails: true,
+    restoreLeftFails: true
+  });
+
+  await app.switchVault('temporary');
+
+  assert.equal(state.currentId, 'local');
+  assert.equal(app.currentVaultId, 'local');
+  assert.equal(app.currentFilePath, '');
+  assert.equal(app.rightFilePath, '');
+  assert.equal(app.workspaceSessionSavingEnabled, false);
+  assert.match(calls.at(-1), /^failure:vault:switch:unknown:status_unknown:check_status:/);
+  assert.match(calls.at(-1), /从文件树重新打开笔记/);
+});
+
+test('a second switch request is ignored while the first is saving', async () => {
+  let releaseFlush;
+  const flushPending = new Promise(resolve => { releaseFlush = resolve; });
+  const { app, calls, state } = createHarness({ flushPending });
+
+  const firstSwitch = app.switchVault('temporary');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(app.vaultSwitchInProgress, true);
+
+  await app.switchVault('another');
+  assert.equal(calls.filter(call => call === 'flush').length, 1);
+  releaseFlush(true);
+  await firstSwitch;
+
+  assert.equal(state.currentId, 'temporary');
 });
 
 test('external vault changes clear both persistent editor buffers', async () => {
