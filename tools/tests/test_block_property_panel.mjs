@@ -16,17 +16,39 @@ const panelStart = source.indexOf('  private hasBlockPropertyPanelForPane(')
 const panelEnd = source.indexOf('\n  private calculateAnchoredPopupLayout(', panelStart)
 const panelBuilderStart = source.indexOf('  BlockPropertyPanel() {')
 const panelBuilderEnd = source.indexOf('\n  @Builder\n  PreviewBlockPanel(', panelBuilderStart)
+const linkFieldBuilderStart = source.indexOf('  BlockPanelLinkField(')
+const linkFieldBuilderEnd = source.indexOf('\n  @Builder\n  PreviewBlockPanel(', linkFieldBuilderStart)
+const linkMethodsStart = source.indexOf('  private async loadBlockPanelLink()')
+const linkMethodsEnd = source.indexOf('\n  private async convertInlineCodeToPlainText()', linkMethodsStart)
+const sourceTargetMethodsStart = source.indexOf('  private isCurrentBlockSourceTarget(')
+const sourceTargetMethodsEnd = source.indexOf('\n  private async openBlockSourceDrawer()', sourceTargetMethodsStart)
 const copyMethodsStart = source.indexOf('  private async copyCodeTextToPasteboard(')
 const copyMethodsEnd = source.indexOf('\n  private async changeBlockCodeLanguage(', copyMethodsStart)
 assert.ok(anchorChangeStart >= 0 && anchorChangeEnd > anchorChangeStart)
 assert.ok(panelStart >= 0 && panelEnd > panelStart)
 assert.ok(panelBuilderStart >= 0 && panelBuilderEnd > panelBuilderStart)
+assert.ok(linkFieldBuilderStart >= 0 && linkFieldBuilderEnd > linkFieldBuilderStart)
+assert.ok(linkMethodsStart >= 0 && linkMethodsEnd > linkMethodsStart)
+assert.ok(sourceTargetMethodsStart >= 0 && sourceTargetMethodsEnd > sourceTargetMethodsStart)
 assert.ok(copyMethodsStart >= 0 && copyMethodsEnd > copyMethodsStart)
 
+const inlineParserSource = fs.readFileSync(
+  new URL('entry/src/main/ets/model/MarkdownInlineParser.ets', root), 'utf8'
+)
+const inlineParserModule = { exports: {} }
+vm.runInNewContext(
+  transformSync(`${inlineParserSource}\nmodule.exports = MarkdownInlineParser;`, {
+    loader: 'ts',
+    format: 'cjs'
+  }).code,
+  { module: inlineParserModule }
+)
 const code = transformSync(
   `class BlockPanelHarness {
     ${source.slice(anchorChangeStart, anchorChangeEnd).trim()}
     ${source.slice(panelStart, panelEnd).trim()}
+    ${source.slice(linkMethodsStart, linkMethodsEnd).trim()}
+    ${source.slice(sourceTargetMethodsStart, sourceTargetMethodsEnd).trim()}
   }; module.exports = BlockPanelHarness;`,
   { loader: 'ts', format: 'cjs' }
 ).code
@@ -38,8 +60,10 @@ const copyMethodsCode = transformSync(
 ).code
 
 function makeApp() {
+  const notices = []
   const context = vm.createContext({
     module: { exports: {} },
+    MarkdownInlineParser: inlineParserModule.exports,
     Breakpoint: { SM: 'SM' },
     Placement: { TopLeft: 'top-left', BottomLeft: 'bottom-left' },
     SheetSize: { MEDIUM: 'medium', FIT_CONTENT: 'fit-content' },
@@ -54,11 +78,12 @@ function makeApp() {
       mark: () => {},
       clear: () => {}
     },
-    promptAction: { showToast: () => {} }
+    promptAction: { showToast: ({ message }) => notices.push(message) }
   })
   vm.runInContext(code, context)
   const app = new context.module.exports()
   Object.assign(app, {
+    notices,
     experienceMode: 'simple',
     topView: 'note',
     breakpoint: 'MD',
@@ -128,6 +153,165 @@ test('a tapped anchor opens its pane panel and clamps the popup host inside that
   assert.equal(app.blockPanelHostY, 192)
   assert.equal(app.blockPanelPlacement, 'top-left')
   assert.deepEqual(Array.from(app.blockPanelAnchorGeometry('left')), [12, 192, 4, 4])
+})
+
+test('opening a paragraph inline link starts loading the selected link', () => {
+  const item = { index: 1, type: 'link', from: 24, to: 50 }
+  const paragraphAnchor = {
+    type: 'paragraph', tapType: '', from: 10, to: 60, inlineItems: [item],
+    inlineIndex: -1, itemFrom: -1, itemTo: -1,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  const app = makeApp()
+  let loads = 0
+  app.loadBlockPanelLink = async () => { loads++ }
+  app.openBlockPropertyPanel('left', paragraphAnchor)
+  app.openBlockInlineItem(item)
+
+  assert.equal(loads, 1)
+  assert.equal(app.blockPanelLinkReady, false)
+  assert.equal(app.blockPanelLinkMessage, '正在读取链接…')
+})
+
+function prepareLinkEditor(app, content) {
+  const history = []
+  const calls = []
+  const editor = {
+    currentDocumentRevision: 11,
+    getContent: async () => content,
+    replaceBlockSource: async (...args) => {
+      calls.push(args)
+      if (editor.currentDocumentRevision !== args[4] ||
+        content.slice(args[0], args[1]) !== args[2]) {
+        return false
+      }
+      history.push(content)
+      content = content.slice(0, args[0]) + args[3] + content.slice(args[1])
+      editor.currentDocumentRevision++
+      return true
+    },
+    undo: () => {
+      if (history.length === 0) return
+      content = history.pop()
+      editor.currentDocumentRevision++
+    },
+    content: () => content,
+    history,
+    calls
+  }
+  app.editorBridge = editor
+  app.blockPanelPane = 'left'
+  app.leftBlockPanelOpen = true
+  app.rightBlockPanelOpen = false
+  app.blockPanelSourceVaultId = 'vault-a'
+  app.blockPanelSourcePath = 'note.md'
+  return editor
+}
+
+function makeSelectedLinkAnchor(content, linkFrom, linkTo, inlineIndex = 1) {
+  const item = { index: inlineIndex, type: 'link', from: linkFrom, to: linkTo }
+  return {
+    type: 'paragraph', tapType: 'link', from: 0, to: content.length,
+    inlineItems: [item], inlineIndex, itemFrom: linkFrom, itemTo: linkTo,
+    x: 160, y: 200, width: 100, height: 40
+  }
+}
+
+test('20.1 loads and edits only the selected link range, preserving other inline items', async () => {
+  const content = '前文 [一](https://first.test) 与 [二](https://second.test) 后文'
+  const linkFrom = content.indexOf('[二]')
+  const linkTo = content.indexOf(')', linkFrom) + 1
+  const app = makeApp()
+  const editor = prepareLinkEditor(app, content)
+  app.blockPanelAnchor = makeSelectedLinkAnchor(content, linkFrom, linkTo)
+
+  await app.loadBlockPanelLink()
+  assert.equal(app.blockPanelLinkLabel, '二')
+  assert.equal(app.blockPanelLinkDestination, 'https://second.test')
+
+  app.blockPanelLinkLabel = '改名'
+  await app.saveBlockPanelLinkField('label')
+  app.blockPanelLinkDestination = 'https://updated.test/path'
+  await app.saveBlockPanelLinkField('destination')
+
+  assert.equal(
+    editor.content(),
+    '前文 [一](https://first.test) 与 [改名](https://updated.test/path) 后文'
+  )
+  assert.equal(editor.calls.length, 2)
+  assert.equal(editor.calls[0][2], '[二](https://second.test)')
+  assert.equal(editor.calls[0][3], '[改名](https://second.test)')
+  assert.equal(editor.calls[1][2], '[改名](https://second.test)')
+  assert.equal(editor.calls[1][3], '[改名](https://updated.test/path)')
+  assert.equal(app.blockPanelAnchor.itemTo - app.blockPanelAnchor.itemFrom,
+    '[改名](https://updated.test/path)'.length)
+})
+
+test('20.1 rejects an empty destination without writing the note', async () => {
+  const content = '前 [链接](https://example.test) 后'
+  const linkFrom = content.indexOf('[链接]')
+  const linkTo = content.indexOf(')', linkFrom) + 1
+  const app = makeApp()
+  const editor = prepareLinkEditor(app, content)
+  app.blockPanelAnchor = makeSelectedLinkAnchor(content, linkFrom, linkTo)
+  await app.loadBlockPanelLink()
+  app.blockPanelLinkDestination = '   '
+
+  await app.saveBlockPanelLinkField('destination')
+
+  assert.equal(editor.content(), content)
+  assert.equal(editor.calls.length, 0)
+  assert.deepEqual(app.notices, ['地址不能为空或包含空格，未修改链接'])
+})
+
+test('20.1 unlink preserves the label and one undo restores exact Markdown', async () => {
+  const content = '前文 [显示 \\[文字\\]](https://example.test/a\\(b\\)) 后文'
+  const linkFrom = content.indexOf('[')
+  const linkTo = content.lastIndexOf(')') + 1
+  const app = makeApp()
+  const editor = prepareLinkEditor(app, content)
+  app.blockPanelAnchor = makeSelectedLinkAnchor(content, linkFrom, linkTo)
+  app.closeBlockPropertyPanel = () => {}
+  await app.loadBlockPanelLink()
+
+  await app.unlinkBlockPanelLink()
+
+  assert.equal(editor.content(), '前文 显示 [文字] 后文')
+  assert.equal(editor.history.length, 1)
+  editor.undo()
+  assert.equal(editor.content(), content)
+})
+
+test('20.1 unsupported link forms remain read-only and preserve a source-edit route', async () => {
+  const content = '前 [链接](https://example.test "说明") 后'
+  const linkFrom = content.indexOf('[链接]')
+  const linkTo = content.indexOf(')', linkFrom) + 1
+  const app = makeApp()
+  const editor = prepareLinkEditor(app, content)
+  app.blockPanelAnchor = makeSelectedLinkAnchor(content, linkFrom, linkTo)
+
+  await app.loadBlockPanelLink()
+
+  assert.equal(app.blockPanelLinkParts, null)
+  assert.equal(app.blockPanelLinkMessage, '此链接写法暂不支持结构化编辑')
+  assert.equal(editor.content(), content)
+})
+
+test('20.1 reports a failed write once and leaves the source unchanged', async () => {
+  const content = '前 [链接](https://example.test) 后'
+  const linkFrom = content.indexOf('[链接]')
+  const linkTo = content.indexOf(')', linkFrom) + 1
+  const app = makeApp()
+  const editor = prepareLinkEditor(app, content)
+  app.blockPanelAnchor = makeSelectedLinkAnchor(content, linkFrom, linkTo)
+  await app.loadBlockPanelLink()
+  editor.replaceBlockSource = async () => { throw new Error('write failed') }
+  app.blockPanelLinkLabel = '新标题'
+
+  await app.saveBlockPanelLinkField('label')
+
+  assert.equal(editor.content(), content)
+  assert.deepEqual(app.notices, ['修改链接失败，请重试'])
 })
 
 test('source editing widens the anchored panel to the source-drawer token', () => {
@@ -431,6 +615,17 @@ test('single-screen uses a bottom sheet and wide screens use an anchored popup',
   assert.equal(wideScreen.preferType, 'popup')
   assert.equal(wideScreen.placement, 'bottom-left')
   assert.equal(wideScreen.dragBar, false)
+})
+
+test('20.1 link panel shows the open action, address, editable fields and unlink action', () => {
+  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  assert.match(builder, /tapType === 'link'/)
+  assert.match(builder, /this\.blockPanelLinkParts\.destination/)
+  assert.match(builder, /BlockPanelLinkField\('显示文字', 'label'/)
+  assert.match(builder, /BlockPanelLinkField\('地址', 'destination'/)
+  assert.match(builder, /this\.unlinkBlockPanelLink\(\)/)
+  assert.match(source.slice(linkFieldBuilderStart, linkFieldBuilderEnd),
+    /BlockPanelLinkField\(label: string, field: string, value: string, placeholder: string\)[\s\S]*不自动补全协议/)
 })
 
 test('language picker changes only the language range and retains updated panel state', async () => {

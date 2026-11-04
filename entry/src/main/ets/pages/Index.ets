@@ -31,6 +31,7 @@ import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 import { FileTree } from '../model/FileTree';
 import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
+import { MarkdownInlineParser, MarkdownLinkParts } from '../model/MarkdownInlineParser';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
@@ -219,6 +220,12 @@ struct Index {
   @State blockPanelTitle: string = '当前块';
   @State blockPanelAnchor: PreviewBlockAnchor | null = null;
   @State blockPanelInlineItems: PreviewBlockInlineItem[] = [];
+  @State blockPanelLinkReady: boolean = false;
+  @State blockPanelLinkLabel: string = '';
+  @State blockPanelLinkDestination: string = '';
+  @State blockPanelLinkParts: MarkdownLinkParts | null = null;
+  @State blockPanelLinkMessage: string = '';
+  private blockPanelLinkRaw: string = '';
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -3003,6 +3010,12 @@ struct Index {
     this.blockPanelPane = pane;
     this.blockPanelAnchor = anchor;
     this.blockPanelInlineItems = anchor.inlineItems;
+    this.blockPanelLinkReady = anchor.tapType !== 'link';
+    this.blockPanelLinkLabel = '';
+    this.blockPanelLinkDestination = '';
+    this.blockPanelLinkParts = null;
+    this.blockPanelLinkMessage = anchor.tapType === 'link' ? '正在读取链接…' : '';
+    this.blockPanelLinkRaw = '';
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3017,6 +3030,9 @@ struct Index {
     this.leftBlockPanelOpen = pane === 'left';
     this.rightBlockPanelOpen = pane === 'right';
     this.updateBlockPropertyPanelLayout(pane);
+    if (anchor.tapType === 'link') {
+      void this.loadBlockPanelLink();
+    }
   }
 
   private openBlockInlineItem(item: PreviewBlockInlineItem): void {
@@ -3049,6 +3065,15 @@ struct Index {
     this.blockPanelAnchor = itemAnchor;
     this.blockPanelTitle = this.blockPanelTitleFor(itemAnchor);
     this.updateBlockPropertyPanelLayout(this.blockPanelPane);
+    this.blockPanelLinkReady = itemAnchor.tapType !== 'link';
+    this.blockPanelLinkLabel = '';
+    this.blockPanelLinkDestination = '';
+    this.blockPanelLinkParts = null;
+    this.blockPanelLinkMessage = itemAnchor.tapType === 'link' ? '正在读取链接…' : '';
+    this.blockPanelLinkRaw = '';
+    if (itemAnchor.tapType === 'link') {
+      void this.loadBlockPanelLink();
+    }
   }
 
   private codeLanguageLabel(language: string): string {
@@ -3198,6 +3223,233 @@ struct Index {
       label = '双链';
     }
     return `${label} ${ordinal}`;
+  }
+
+  private async loadBlockPanelLink(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.tapType !== 'link' || anchor.inlineIndex < 0 ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      this.blockPanelLinkReady = true;
+      this.blockPanelLinkMessage = '链接已变化，请重新打开面板';
+      return;
+    }
+
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelLinkReady = true;
+      this.blockPanelLinkMessage = '无法同步当前笔记，请关闭面板后重试';
+      promptAction.showToast({ message: '无法同步当前笔记，链接暂时不能编辑' });
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
+      return;
+    }
+
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelLinkReady = true;
+      this.blockPanelLinkMessage = '读取链接失败，请关闭面板后重试';
+      promptAction.showToast({ message: '读取链接失败' });
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
+      return;
+    }
+    const from: number = latestAnchor.itemFrom;
+    const to: number = latestAnchor.itemTo;
+    if (from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
+      this.blockPanelLinkReady = true;
+      this.blockPanelLinkMessage = '链接范围无效，请以源码编辑此项';
+      return;
+    }
+
+    const raw: string = source.slice(from, to);
+    const parts: MarkdownLinkParts | null = MarkdownInlineParser.parseLink(raw);
+    this.blockPanelLinkRaw = raw;
+    this.blockPanelLinkParts = parts;
+    if (parts !== null) {
+      this.blockPanelLinkLabel = parts.label;
+      this.blockPanelLinkDestination = parts.destination;
+      this.blockPanelLinkMessage = '';
+    } else {
+      this.blockPanelLinkMessage = '此链接写法暂不支持结构化编辑';
+    }
+    this.blockPanelLinkReady = true;
+  }
+
+  private async replaceBlockPanelInlineSource(expectedSource: string, replacement: string,
+    failureMessage: string): Promise<boolean> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.inlineIndex < 0 ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return false;
+    }
+    if (expectedSource === replacement) {
+      return true;
+    }
+
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      promptAction.showToast({ message: '无法同步当前笔记，未修改内容' });
+      return false;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
+      promptAction.showToast({ message: '这一项已经变化，请重新打开面板' });
+      return false;
+    }
+
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      promptAction.showToast({ message: '读取当前内容失败，未修改' });
+      return false;
+    }
+    const from: number = latestAnchor.itemFrom;
+    const to: number = latestAnchor.itemTo;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
+      from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from ||
+      source.slice(from, to) !== expectedSource) {
+      promptAction.showToast({ message: '这一项已经变化，请重新打开面板' });
+      return false;
+    }
+
+    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
+    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
+    WorkspaceEditGuard.mark(pane, vaultId, path);
+    if (pane === 'right') {
+      this.rightEditorDirty = true;
+    } else {
+      this.editorDirty = true;
+    }
+    let applied: boolean = false;
+    try {
+      applied = await editor.replaceBlockSource(from, to, expectedSource, replacement, revision, 'input', false);
+    } catch {}
+    if (!applied) {
+      if (!wasDirty && !wasUnsaved &&
+        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
+        WorkspaceEditGuard.clear(pane, vaultId, path);
+        if (pane === 'right') {
+          this.rightEditorDirty = false;
+        } else {
+          this.editorDirty = false;
+        }
+      }
+      promptAction.showToast({ message: failureMessage });
+      return false;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return true;
+    }
+    if (pane === 'right') {
+      this.scheduleRightSave();
+    } else {
+      this.scheduleSave();
+    }
+    this.updateBlockPanelInlineAnchor(latestAnchor, from, to, replacement.length);
+    return true;
+  }
+
+  private updateBlockPanelInlineAnchor(anchor: PreviewBlockAnchor, from: number, to: number,
+    replacementLength: number): void {
+    const delta: number = replacementLength - (to - from);
+    const items: PreviewBlockInlineItem[] = [];
+    for (const item of anchor.inlineItems) {
+      if (item.index === anchor.inlineIndex) {
+        items.push({ index: item.index, type: item.type, from: item.from, to: item.to + delta });
+      } else if (item.from >= to) {
+        items.push({ index: item.index, type: item.type, from: item.from + delta, to: item.to + delta });
+      } else {
+        items.push({ index: item.index, type: item.type, from: item.from, to: item.to });
+      }
+    }
+    this.blockPanelInlineItems = items;
+    this.blockPanelAnchor = {
+      type: anchor.type,
+      tapType: anchor.tapType,
+      from: anchor.from,
+      to: anchor.to + delta,
+      inlineItems: items,
+      inlineIndex: anchor.inlineIndex,
+      itemFrom: anchor.itemFrom,
+      itemTo: anchor.itemTo + delta,
+      codeLanguage: anchor.codeLanguage,
+      codeLanguageFrom: anchor.codeLanguageFrom,
+      codeLanguageTo: anchor.codeLanguageTo,
+      codeLanguageSelectable: anchor.codeLanguageSelectable,
+      codeLanguages: anchor.codeLanguages,
+      codeEditable: anchor.codeEditable,
+      x: anchor.x,
+      y: anchor.y,
+      width: anchor.width,
+      height: anchor.height
+    };
+    this.updateBlockPropertyPanelLayout(this.blockPanelPane);
+  }
+
+  private async saveBlockPanelLinkField(field: string): Promise<void> {
+    const parts: MarkdownLinkParts | null = this.blockPanelLinkParts;
+    if (parts === null || !this.blockPanelLinkReady) {
+      return;
+    }
+    let replacement: string | null = null;
+    if (field === 'label') {
+      const label: string = this.blockPanelLinkLabel.trim().length > 0
+        ? this.blockPanelLinkLabel.trim() : parts.destination;
+      replacement = MarkdownInlineParser.replaceLabel(this.blockPanelLinkRaw, parts, label);
+    } else if (field === 'destination') {
+      replacement = MarkdownInlineParser.replaceDestination(
+        this.blockPanelLinkRaw, parts, this.blockPanelLinkDestination);
+      if (replacement === null) {
+        promptAction.showToast({ message: '地址不能为空或包含空格，未修改链接' });
+        return;
+      }
+    }
+    if (replacement === null) {
+      return;
+    }
+    if (!await this.replaceBlockPanelInlineSource(this.blockPanelLinkRaw, replacement, '修改链接失败，请重试')) {
+      return;
+    }
+    this.blockPanelLinkRaw = replacement;
+    this.blockPanelLinkParts = MarkdownInlineParser.parseLink(replacement);
+    if (this.blockPanelLinkParts !== null) {
+      this.blockPanelLinkLabel = this.blockPanelLinkParts.label;
+      this.blockPanelLinkDestination = this.blockPanelLinkParts.destination;
+    }
+  }
+
+  private async unlinkBlockPanelLink(): Promise<void> {
+    const parts: MarkdownLinkParts | null = this.blockPanelLinkParts;
+    if (parts === null) {
+      return;
+    }
+    const applied: boolean = await this.replaceBlockPanelInlineSource(
+      this.blockPanelLinkRaw, parts.label, '取消链接失败，请重试');
+    if (applied) {
+      this.closeBlockPropertyPanel();
+    }
   }
 
   private async convertInlineCodeToPlainText(): Promise<void> {
@@ -7271,6 +7523,52 @@ struct Index {
                 .accessibilityText(this.blockPanelInlineItemLabel(item))
                 .onClick((): void => { this.openBlockInlineItem(item); })
               }, (item: PreviewBlockInlineItem): string => String(item.index))
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'link') {
+              Row() {
+                Column({ space: Space.s1 }) {
+                  Text(this.blockPanelActionLabel())
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .width('100%')
+                  if (this.blockPanelLinkParts !== null) {
+                    Text(this.blockPanelLinkParts.destination)
+                      .fontSize(FontSize.caption)
+                      .fontColor($r('app.color.text_secondary'))
+                      .width('100%')
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                }
+                .layoutWeight(1)
+              }
+              .width('100%')
+              .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              .constraintSize({ minHeight: Size.touch })
+              .focusable(true)
+              .accessibilityText(this.blockPanelActionLabel())
+              .onClick((): void => { void this.performBlockPanelAction(); })
+              if (this.blockPanelLinkReady && this.blockPanelLinkParts !== null) {
+                this.BlockPanelLinkField('显示文字', 'label', this.blockPanelLinkLabel, '链接上显示的文字')
+                this.BlockPanelLinkField('地址', 'destination', this.blockPanelLinkDestination, '链接地址')
+                Row() {
+                  Text('取消链接')
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .height(Size.touch)
+                .padding({ left: Space.s3, right: Space.s3 })
+                .focusable(true)
+                .accessibilityText('取消链接，保留显示文字')
+                .onClick((): void => { void this.unlinkBlockPanelLink(); })
+              } else {
+                Text(this.blockPanelLinkMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              }
             } else if (this.blockPanelActionLabel().length > 0) {
               Row() {
                 Text(this.blockPanelActionLabel())
@@ -7377,6 +7675,45 @@ struct Index {
       .focusable(true)
       .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
     }
+  }
+
+  @Builder
+  BlockPanelLinkField(label: string, field: string, value: string, placeholder: string) {
+    Column({ space: Space.s1 }) {
+      Text(label)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      Row({ space: Space.s1 }) {
+        TextInput({ text: value, placeholder: placeholder })
+          .height(Size.buttonH)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .padding({ left: Space.s2, right: Space.s2 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.control)
+          .layoutWeight(1)
+          .onChange((nextValue: string): void => {
+            if (field === 'label') {
+              this.blockPanelLinkLabel = nextValue;
+            } else {
+              this.blockPanelLinkDestination = nextValue;
+            }
+          })
+        Button('保存')
+          .onClick((): void => { void this.saveBlockPanelLinkField(field); })
+      }
+      .width('100%')
+      if (field === 'destination') {
+        Text('不自动补全协议')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+      }
+    }
+    .width('100%')
+    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
   }
 
   @Builder
