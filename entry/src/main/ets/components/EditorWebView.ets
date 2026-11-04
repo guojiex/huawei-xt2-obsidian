@@ -142,7 +142,7 @@ class EditorImpl {
   }
 
   async replaceBlockSource(from: number, to: number, expectedSource: string, replacement: string,
-    expectedRevision: number): Promise<boolean> {
+    expectedRevision: number, userEvent: string = 'input', focusAfter: boolean = true): Promise<boolean> {
     const reqId: number = this.nextReqId;
     this.nextReqId += 1;
     const expectedB64: string = BridgeCodec.encode(expectedSource);
@@ -166,7 +166,8 @@ class EditorImpl {
         resolve(applied);
       });
       this.enqueue(`window.__mdeditor.replaceBlockSource(${reqId},${from},${to},` +
-        `'${expectedB64}','${replacementB64}',${expectedRevision})`);
+        `'${expectedB64}','${replacementB64}',${expectedRevision},` +
+        `'${userEvent === 'input.type' ? 'input.type' : 'input'}',${focusAfter})`);
     });
   }
 
@@ -378,11 +379,12 @@ export class EditorBridge {
   }
 
   async replaceBlockSource(from: number, to: number, expectedSource: string, replacement: string,
-    expectedRevision: number): Promise<boolean> {
+    expectedRevision: number, userEvent: string = 'input', focusAfter: boolean = true): Promise<boolean> {
     if (!this.impl) {
       return false;
     }
-    return await this.impl.replaceBlockSource(from, to, expectedSource, replacement, expectedRevision);
+    return await this.impl.replaceBlockSource(from, to, expectedSource, replacement, expectedRevision,
+      userEvent, focusAfter);
   }
 
   insertText(text: string): void {

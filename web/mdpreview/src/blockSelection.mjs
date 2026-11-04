@@ -67,7 +67,7 @@ export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
   }
   const type = block.dataset.sourceType ?? ''
   if (type.length === 0) return null
-  return {
+  const anchor = {
     type,
     from,
     to,
@@ -79,4 +79,20 @@ export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
     viewportWidth,
     viewportHeight
   }
+  if (type === 'code') {
+    let codeLanguages = []
+    try {
+      const parsed = JSON.parse(block.dataset.codeLanguages ?? '[]')
+      if (Array.isArray(parsed)) codeLanguages = parsed.filter((language) => typeof language === 'string')
+    } catch {}
+    Object.assign(anchor, {
+      codeLanguage: block.dataset.codeLanguage ?? '',
+      codeLanguageFrom: Number(block.dataset.codeLanguageFrom ?? -1),
+      codeLanguageTo: Number(block.dataset.codeLanguageTo ?? -1),
+      codeLanguageSelectable: block.dataset.codeLanguageSelectable === 'true',
+      codeLanguages,
+      codeEditable: block.dataset.codeEditable === 'true'
+    })
+  }
+  return anchor
 }

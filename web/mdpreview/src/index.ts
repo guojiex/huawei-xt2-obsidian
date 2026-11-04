@@ -20,6 +20,7 @@ import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
 import { inlineItemsForBlock, lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection } from './blockSelection.mjs'
 import { appendShareWatermark } from './shareWatermark.mjs'
+import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './codeBlock.mjs'
 
 declare global {
   interface Window {
@@ -35,6 +36,9 @@ declare global {
       onLockedContentTap?: (payload: string) => void
       onLockedBlockSelection?: (payload: string) => void
       onPreviewZoomChange?: (percent: number) => void
+      onCodeBlockEdit?: (id: number, from: number, to: number, expectedB64: string,
+        replacementB64: string, userEvent: string) => void
+      onCodeBlockEditingChange?: (editing: boolean) => void
     }
   }
 }
@@ -60,6 +64,7 @@ interface MdPreviewApi {
   scrollToSourceLine(line: number, lineProgress: number, viewportRatio: number, atStart: boolean, atEnd: boolean): void
   cancelSourceFollow(): void
   restoreScrollTop(top: number): void
+  completeCodeBlockEdit(id: number, applied: boolean): void
   requestShareCaptureMetrics(id: number): void
   appendShareWatermark(id: number): void
   prepareShareCapturePages(id: number, pageCount: number): void
@@ -98,6 +103,30 @@ let lastLockedTapTarget: HTMLElement | null = null
 let replayingLockedTap = false
 let mermaidRender: Promise<void> = Promise.resolve()
 let mermaidRenderGeneration = 0
+interface CodeEditSession {
+  block: HTMLElement;
+  target: HTMLElement;
+  committedText: string;
+  pendingText: string;
+  inFlight: boolean;
+  exiting: boolean;
+}
+
+interface PendingCodeEdit {
+  id: number;
+  from: number;
+  to: number;
+  expected: string;
+  replacement: string;
+  bodyText: string;
+  block: HTMLElement;
+  session: CodeEditSession;
+}
+
+let codeEditSession: CodeEditSession | null = null
+let pendingCodeEdit: PendingCodeEdit | null = null
+let nextCodeEditId = 1
+const codeEditFlushWaiters: number[] = []
 
 /**
  * 渲染后处理 <img>：本地相对引用 → __arkts.readAsset 换成 data URI。
@@ -660,6 +689,158 @@ function editableElementFor(block: HTMLElement): HTMLElement | null {
   return null
 }
 
+function codeElementForBlock(block: HTMLElement): HTMLElement | null {
+  const pre = block.querySelector('pre') as HTMLElement | null
+  if (!pre) return null
+  return pre.querySelector('code') as HTMLElement | null ?? pre
+}
+
+function notifyCodeBlockEditingChange(editing: boolean): void {
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onCodeBlockEditingChange === 'function') {
+    arkts.onCodeBlockEditingChange(editing)
+  }
+}
+
+function notifyCodeEditWaiters(): void {
+  if (pendingCodeEdit !== null ||
+    (codeEditSession !== null && codeEditSession.pendingText !== codeEditSession.committedText)) {
+    return
+  }
+  const waiters = codeEditFlushWaiters.splice(0)
+  for (const id of waiters) postEditableContent(id)
+}
+
+function postEditableContent(id: number): void {
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onEditableContent === 'function') {
+    arkts.onEditableContent(id, b64encode(sourceText))
+  }
+}
+
+function finishCodeEditSession(session: CodeEditSession): void {
+  if (codeEditSession !== session || session.inFlight ||
+    session.pendingText !== session.committedText || !session.exiting) {
+    return
+  }
+  codeEditSession = null
+  notifyCodeBlockEditingChange(false)
+  notifyCodeEditWaiters()
+}
+
+function applyCodeSourcePatch(patch: PendingCodeEdit): boolean {
+  if (sourceText.slice(patch.from, patch.to) !== patch.expected) return false
+  const delta = patch.replacement.length - (patch.to - patch.from)
+  sourceText = sourceText.slice(0, patch.from) + patch.replacement + sourceText.slice(patch.to)
+  const blocks = contentElement.querySelectorAll('.preview-source-block, .empty[data-source-from]')
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index] as HTMLElement
+    const from = Number(block.dataset.sourceFrom)
+    const to = Number(block.dataset.sourceTo)
+    if (!Number.isInteger(from) || !Number.isInteger(to)) continue
+    if (block === patch.block) {
+      block.dataset.sourceTo = String(to + delta)
+    } else if (from >= patch.to) {
+      block.dataset.sourceFrom = String(from + delta)
+      block.dataset.sourceTo = String(to + delta)
+    }
+  }
+  return true
+}
+
+function submitCodeBodyEdit(session: CodeEditSession): void {
+  if (codeEditSession !== session || session.inFlight || editableComposing) return
+  if (session.pendingText === session.committedText) {
+    finishCodeEditSession(session)
+    notifyCodeEditWaiters()
+    return
+  }
+  const from = Number(session.block.dataset.sourceFrom)
+  const to = Number(session.block.dataset.sourceTo)
+  const patch = prepareCodeBodyEdit(sourceText, from, to, session.pendingText)
+  if (!patch) {
+    session.target.textContent = session.committedText
+    session.pendingText = session.committedText
+    session.exiting = true
+    finishCodeEditSession(session)
+    notifyCodeEditWaiters()
+    return
+  }
+  const id = nextCodeEditId++
+  const request: PendingCodeEdit = {
+    id,
+    from: patch.from,
+    to: patch.to,
+    expected: patch.expected,
+    replacement: patch.replacement,
+    bodyText: session.pendingText,
+    block: session.block,
+    session
+  }
+  session.inFlight = true
+  pendingCodeEdit = request
+  const arkts = window.__arkts
+  if (!arkts || typeof arkts.onCodeBlockEdit !== 'function') {
+    api.completeCodeBlockEdit(id, false)
+    return
+  }
+  try {
+    arkts.onCodeBlockEdit(id, request.from, request.to, b64encode(request.expected),
+      b64encode(request.replacement), 'input.type')
+  } catch {
+    api.completeCodeBlockEdit(id, false)
+  }
+}
+
+function startCodeEditSession(target: HTMLElement): void {
+  const block = sourceBlockForNode(target)
+  if (!block || target.dataset.simpleCodeEditable !== 'true') return
+  if (codeEditSession?.target === target) return
+  if (codeEditSession !== null) {
+    codeEditSession.exiting = true
+    submitCodeBodyEdit(codeEditSession)
+  }
+  const text = target.textContent ?? ''
+  codeEditSession = {
+    block,
+    target,
+    committedText: text,
+    pendingText: text,
+    inFlight: false,
+    exiting: false
+  }
+  notifyCodeBlockEditingChange(true)
+}
+
+function updateCodeEditSessionFromDom(target: HTMLElement): void {
+  const session = codeEditSession
+  if (!session || session.target !== target) return
+  session.pendingText = target.textContent ?? ''
+  submitCodeBodyEdit(session)
+}
+
+function insertPlainTextAtSelection(target: HTMLElement, text: string): boolean {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return false
+  const range = selection.getRangeAt(0)
+  if (!target.contains(range.startContainer) || !target.contains(range.endContainer)) return false
+  range.deleteContents()
+  const node = document.createTextNode(text)
+  range.insertNode(node)
+  range.setStartAfter(node)
+  range.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  updateCodeEditSessionFromDom(target)
+  return true
+}
+
+function resetCodeEditSession(): void {
+  const session = codeEditSession
+  codeEditSession = null
+  if (session) notifyCodeBlockEditingChange(false)
+}
+
 function sourceBlockForNode(node: Node | null): HTMLElement | null {
   const element = node instanceof HTMLElement ? node : node?.parentElement
   return element?.closest('.preview-source-block, .empty[data-source-from]') as HTMLElement | null;
@@ -786,12 +967,15 @@ function activateLockedContent(from: number, to: number, inlineIndex: number = -
 function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
   setActiveLockedBlocks(root, [])
   publishLockedBlockAnchor(null)
-  const previousEditables = root.querySelectorAll('[data-simple-editable="true"]')
+  const previousEditables = root.querySelectorAll(
+    '[data-simple-editable="true"], [data-simple-code-editable="true"]'
+  )
   for (let index = 0; index < previousEditables.length; index++) {
     const element = previousEditables[index] as HTMLElement
     element.removeAttribute('contenteditable')
     element.removeAttribute('aria-label')
     element.removeAttribute('data-simple-editable')
+    element.removeAttribute('data-simple-code-editable')
   }
   const blocks = root.querySelectorAll('.preview-source-block')
   for (let index = 0; index < blocks.length; index++) {
@@ -802,6 +986,31 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     const type = block.dataset.sourceType ?? ''
     const supported = type === 'paragraph' || type === 'heading' || type === 'list' || type === 'blockquote'
     if (!editable) continue
+    if (type === 'code') {
+      block.dataset.editLocked = 'true'
+      const target = codeElementForBlock(block)
+      const from = Number(block.dataset.sourceFrom)
+      const to = Number(block.dataset.sourceTo)
+      const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to <= sourceText.length
+        ? sourceText.slice(from, to) : ''
+      const model = target ? inspectCodeFence(raw, target.textContent ?? '') : null
+      block.dataset.codeEditable = String(model?.editable === true)
+      block.dataset.codeLanguage = model?.language ?? ''
+      block.dataset.codeLanguageFrom = model ? String(from + model.languageFrom) : '-1'
+      block.dataset.codeLanguageTo = model ? String(from + model.languageTo) : '-1'
+      block.dataset.codeLanguageSelectable = String(model?.languageSelectable === true)
+      block.dataset.codeLanguages = JSON.stringify(COMMON_CODE_LANGUAGES)
+      block.setAttribute('aria-label', model?.editable
+        ? '可编辑代码块' : '此代码块请以源码编辑')
+      if (target && model?.editable) {
+        target.textContent = model.logicalBody
+        target.setAttribute('contenteditable', 'plaintext-only')
+        target.setAttribute('data-simple-code-editable', 'true')
+        target.setAttribute('aria-label', '编辑代码块内容')
+        target.spellcheck = false
+      }
+      continue
+    }
     if (!supported || containsLockedSyntax(block)) {
       block.dataset.editLocked = 'true'
       block.setAttribute('aria-label', '此内容请在专业模式编辑')
@@ -875,12 +1084,51 @@ contentElement.addEventListener('compositionend', (): void => {
   editableComposing = false
   const arkts = window.__arkts
   if (arkts && typeof arkts.onCompositionChange === 'function') arkts.onCompositionChange('end')
+  const codeTarget = document.activeElement instanceof HTMLElement
+    ? document.activeElement.closest('[data-simple-code-editable="true"]') as HTMLElement | null : null
+  if (codeTarget) {
+    updateCodeEditSessionFromDom(codeTarget)
+    return
+  }
   const target = sourceBlockForNode(window.getSelection()?.anchorNode ?? document.activeElement)
   if (target) replaceSourceBlock(target)
   else notifyEditableContentChange()
 })
+contentElement.addEventListener('focusin', (event: FocusEvent): void => {
+  if (!editable || !(event.target instanceof HTMLElement)) return
+  const target = event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null
+  if (target) startCodeEditSession(target)
+})
+contentElement.addEventListener('focusout', (event: FocusEvent): void => {
+  const session = codeEditSession
+  if (!session || event.target !== session.target) return
+  const next = event.relatedTarget
+  if (next instanceof Node && session.block.contains(next)) return
+  session.pendingText = session.target.textContent ?? ''
+  session.exiting = true
+  submitCodeBodyEdit(session)
+})
+contentElement.addEventListener('keydown', (event: KeyboardEvent): void => {
+  if (!editable || !(event.target instanceof HTMLElement)) return
+  const target = event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null
+  if (!target) return
+  if (event.key === 'Tab') {
+    event.preventDefault()
+    insertPlainTextAtSelection(target, '  ')
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    target.blur()
+  }
+})
 contentElement.addEventListener('beforeinput', (event: InputEvent): void => {
   if (!editable) return
+  const codeTarget = event.target instanceof HTMLElement
+    ? event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null : null
+  if (codeTarget && (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak')) {
+    event.preventDefault()
+    insertPlainTextAtSelection(codeTarget, '\n')
+    return
+  }
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0) return
   const range = selection.getRangeAt(0)
@@ -890,6 +1138,12 @@ contentElement.addEventListener('beforeinput', (event: InputEvent): void => {
 })
 contentElement.addEventListener('input', (event: Event): void => {
   if (!editable || editableComposing) return
+  const codeTarget = event.target instanceof HTMLElement
+    ? event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null : null
+  if (codeTarget) {
+    updateCodeEditSessionFromDom(codeTarget)
+    return
+  }
   const target = event.target instanceof HTMLElement
     ? event.target.closest('.preview-source-block, .empty[data-source-from]') as HTMLElement | null : null
   if (target) replaceSourceBlock(target)
@@ -926,6 +1180,7 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
   ) as HTMLElement | null
   const payload = publishLockedBlockAnchor(lockedBlock)
   lastLockedTapTarget = null
+  if (event.target.closest('[data-simple-code-editable="true"]')) return
   if (event.target.closest('input, button')) return
   const tapTarget = event.target.closest('a, img') as HTMLElement | null
   const inlineTarget = event.target.closest('[data-preview-inline-index]') as HTMLElement | null
@@ -1003,6 +1258,8 @@ const api: MdPreviewApi = {
 
   setContent(b64: string, sourceB64?: string, sourceMapB64?: string): void {
     const text = b64decode(b64)
+    resetCodeEditSession()
+    pendingCodeEdit = null
     lastLockedTapTarget = null
     sourceText = sourceB64 === undefined ? text : b64decode(sourceB64)
     try {
@@ -1067,6 +1324,10 @@ const api: MdPreviewApi = {
 
   setEditable(value: boolean): void {
     editable = value
+    if (!editable && codeEditSession !== null) {
+      codeEditSession.exiting = true
+      submitCodeBodyEdit(codeEditSession)
+    }
     if (!editable) lastLockedTapTarget = null
     const split = splitFrontmatter(sourceText)
     const bodyOffset = sourceText.length - split.body.length
@@ -1168,10 +1429,35 @@ const api: MdPreviewApi = {
       window.clearTimeout(editableChangeTimer)
       editableChangeTimer = undefined
     }
-    const arkts = window.__arkts
-    if (arkts && typeof arkts.onEditableContent === 'function') {
-      arkts.onEditableContent(id, b64encode(sourceText))
+    if (pendingCodeEdit !== null ||
+      (codeEditSession !== null && codeEditSession.pendingText !== codeEditSession.committedText)) {
+      codeEditFlushWaiters.push(id)
+      return
     }
+    postEditableContent(id)
+  },
+
+  completeCodeBlockEdit(id: number, applied: boolean): void {
+    const pending = pendingCodeEdit
+    if (!pending || pending.id !== id) return
+    pendingCodeEdit = null
+    const session = pending.session
+    session.inFlight = false
+    if (!applied || !applyCodeSourcePatch(pending)) {
+      session.target.textContent = session.committedText
+      session.pendingText = session.committedText
+      session.exiting = true
+      finishCodeEditSession(session)
+      notifyCodeEditWaiters()
+      return
+    }
+    session.committedText = pending.bodyText
+    if (session.pendingText !== session.committedText) {
+      submitCodeBodyEdit(session)
+    } else {
+      finishCodeEditSession(session)
+    }
+    notifyCodeEditWaiters()
   },
 
   setTheme(theme: string): void {

@@ -62,7 +62,7 @@ interface MdEditorApi {
   setContent(b64: string, documentRevision: number, vaultIdB64: string, noteDirB64: string): void
   replaceContentFromPreview(b64: string, expectedRevision: number): void
   replaceBlockSource(id: number, from: number, to: number, expectedB64: string,
-    replacementB64: string, expectedRevision: number): void
+    replacementB64: string, expectedRevision: number, userEvent?: string, focusAfter?: boolean): void
   /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
   requestContent(reqId: number): void
@@ -822,20 +822,22 @@ const api: MdEditorApi = {
   },
 
   replaceBlockSource(id: number, from: number, to: number, expectedB64: string,
-    replacementB64: string, expectedRevision: number): void {
+    replacementB64: string, expectedRevision: number, userEvent: string = 'input',
+    focusAfter: boolean = true): void {
     let applied = false
     if (view && isEditable && simpleExperience && expectedRevision === documentRevision) {
       const edit = prepareBlockSourceEdit(view.state, from, to, b64decode(expectedB64),
         b64decode(replacementB64), documentLineEnding)
       if (edit) {
+        const transactionUserEvent = userEvent === 'input.type' ? 'input.type' : 'input'
         view.dispatch({
           changes: edit.changes,
           selection: { anchor: edit.selection.from, head: edit.selection.to },
           annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
-          scrollIntoView: true,
-          userEvent: 'input'
+          scrollIntoView: focusAfter,
+          userEvent: transactionUserEvent
         })
-        view.focus()
+        if (focusAfter) view.focus()
         applied = true
       }
     }

@@ -52,7 +52,8 @@ export function stringifyBlock(type: BlockType, model: unknown): string | null {
 }
 
 function isRangeInside(source: string, range: BlockRange): boolean {
-  return range.from >= 0 && range.to <= source.length && range.to > range.from
+  return Number.isInteger(range.from) && Number.isInteger(range.to) &&
+    range.from >= 0 && range.to <= source.length && range.to >= range.from
 }
 
 export interface BlockSelection {
@@ -77,7 +78,7 @@ export const blockSourceEditRange = Annotation.define<BlockSelection>()
 export function prepareBlockSourceEdit(state: EditorState, from: number, to: number,
   expectedSource: string, replacement: string, lineEnding: '\n' | '\r\n'): BlockEditResult | null {
   const source = lineEnding === '\r\n' ? state.doc.toString().replace(/\n/g, '\r\n') : state.doc.toString()
-  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from || to > source.length ||
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from || to > source.length ||
     (source[from - 1] === '\r' && source[from] === '\n') ||
     (source[to - 1] === '\r' && source[to] === '\n') ||
     source.slice(from, to) !== expectedSource) {

@@ -110,6 +110,27 @@ const result = await build({
         const redoApplied = redo({ state: editor, dispatch: (transaction) => { editor = editor.update(transaction).state } })
         return { after, outsideIntact, edited, undoApplied, undone, redoApplied, redone: serialize(editor) }
       }
+      export function applyInputPatchesWithHistory(source, inputs) {
+        let editor = sourceEditState(source)
+        let currentSource = source
+        for (const patch of inputs) {
+          const edit = prepareBlockSourceEdit(editor, patch.from, patch.to,
+            patch.expected, patch.replacement, '\\n')
+          if (!edit) return null
+          editor = editor.update({
+            changes: edit.changes,
+            selection: { anchor: edit.selection.from, head: edit.selection.to },
+            annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
+            userEvent: 'input.type'
+          }).state
+          currentSource = editor.doc.toString()
+        }
+        const after = currentSource
+        const undoApplied = undo({ state: editor, dispatch: (transaction) => { editor = editor.update(transaction).state } })
+        const undone = editor.doc.toString()
+        const redoApplied = redo({ state: editor, dispatch: (transaction) => { editor = editor.update(transaction).state } })
+        return { after, undoApplied, undone, redoApplied, redone: editor.doc.toString() }
+      }
       export function rejectsMismatchedSourceEdit(source, from, to, replacement, declaredRange) {
         const editor = sourceEditState(source)
         return editor.update({
@@ -309,6 +330,23 @@ test('18.7 CRLF 源码区间精确映射到 CodeMirror，并保留区间外字�
   assert.equal(result.outsideIntact, true)
   assert.equal(result.undone, source)
   assert.equal(result.redone, result.after)
+})
+
+test('19.1 空代码块首输可零长度回写，连续输入一次撤销还原原文', () => {
+  const source = '```js\n```\nafter'
+  const from = '```js\n'.length
+  const result = base.applyInputPatchesWithHistory(source, [
+    { from, to: from, expected: '', replacement: 'a\n' },
+    { from: from + 1, to: from + 1, expected: '', replacement: 'b' }
+  ])
+
+  assert.deepEqual(result, {
+    after: '```js\nab\n```\nafter',
+    undoApplied: true,
+    undone: source,
+    redoApplied: true,
+    redone: '```js\nab\n```\nafter'
+  })
 })
 
 test('18.7 打开后目标区间变化或偏移落在 CRLF 中间时拒绝回写', () => {

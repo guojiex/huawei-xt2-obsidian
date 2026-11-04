@@ -165,6 +165,9 @@ const html = `<!doctype html>
     overflow: auto; margin: 0 0 var(--s5);
   }
   #content pre code { background: none; padding: 0; }
+  #content pre [data-simple-code-editable="true"] {
+    outline: none; caret-color: var(--blue); user-select: text;
+  }
   #content .katex-display { overflow-x: auto; overflow-y: hidden; padding: var(--s1) 0; }
   #content .math-error, #content .mermaid-error {
     color: var(--muted); border-left: var(--focus) solid var(--blue);

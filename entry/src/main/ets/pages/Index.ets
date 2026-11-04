@@ -45,7 +45,8 @@ import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import {
-  PreviewWebView, PreviewBridge, PreviewBlockAnchor, PreviewBlockInlineItem, PreviewCaptureResult
+  PreviewWebView, PreviewBridge, PreviewBlockAnchor, PreviewBlockInlineItem, PreviewCaptureResult,
+  PreviewCodeEditRequest
 } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
@@ -227,6 +228,10 @@ struct Index {
   @State blockPanelSourcePath: string = '';
   private blockPanelRestoreFocus: boolean = false;
   private blockPanelPendingAction: boolean = false;
+  private leftCodePreviewEditing: boolean = false;
+  private rightCodePreviewEditing: boolean = false;
+  private leftCodeEditPending: boolean = false;
+  private rightCodeEditPending: boolean = false;
   @State blockSourceEditing: boolean = false;
   @State blockSourceDraft: string = '';
   @State blockSourceBlockType: string = '';
@@ -2717,6 +2722,12 @@ struct Index {
               inlineIndex: currentAnchor.inlineIndex,
               itemFrom: currentAnchor.itemFrom,
               itemTo: currentAnchor.itemTo,
+              codeLanguage: anchor.codeLanguage,
+              codeLanguageFrom: anchor.codeLanguageFrom,
+              codeLanguageTo: anchor.codeLanguageTo,
+              codeLanguageSelectable: anchor.codeLanguageSelectable,
+              codeLanguages: anchor.codeLanguages,
+              codeEditable: anchor.codeEditable,
               x: anchor.x,
               y: anchor.y,
               width: anchor.width,
@@ -2747,6 +2758,55 @@ struct Index {
       }
     }
     this.onBlockAnchorChange(pane, null);
+  }
+
+  private onCodeBlockEditingChange(pane: string, editing: boolean): void {
+    if (pane === 'right') {
+      this.rightCodePreviewEditing = editing;
+    } else {
+      this.leftCodePreviewEditing = editing;
+    }
+  }
+
+  private async handlePreviewCodeBlockEdit(pane: string, request: PreviewCodeEditRequest): Promise<void> {
+    const vaultId: string = this.currentVaultId;
+    const path: string = this.paneFilePath(pane);
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    const preview: PreviewBridge = this.previewBridgeForPane(pane);
+    const revision: number = editor.currentDocumentRevision;
+    if (this.experienceMode !== 'simple' || path.length === 0 ||
+      !this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId) ||
+      !Number.isInteger(request.from) || !Number.isInteger(request.to) || request.from < 0 ||
+      request.to < request.from || (request.userEvent !== 'input.type' && request.userEvent !== 'input')) {
+      preview.completeCodeBlockEdit(request.id, false);
+      return;
+    }
+    if (pane === 'right') {
+      this.rightCodeEditPending = true;
+    } else {
+      this.leftCodeEditPending = true;
+    }
+    let applied: boolean = false;
+    try {
+      applied = await editor.replaceBlockSource(request.from, request.to, request.expectedSource,
+        request.replacement, revision, request.userEvent, false);
+    } catch {
+      hilog.warn(DOMAIN, TAG, '代码块内容回写失败');
+    }
+    if (!this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId) ||
+      editor.currentDocumentRevision !== revision) {
+      applied = false;
+    }
+    preview.completeCodeBlockEdit(request.id, applied);
+    if (pane === 'right') {
+      this.rightCodeEditPending = false;
+    } else {
+      this.leftCodeEditPending = false;
+    }
+    if (!applied && this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId)) {
+      promptAction.showToast({ message: '代码块已变化，未应用输入' });
+    }
   }
 
   private recordBlockToolbarPaneArea(pane: string, area: Area): void {
@@ -2807,6 +2867,7 @@ struct Index {
     const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
     return this.experienceMode === 'simple' && this.topView === 'note' && this.activePane === pane &&
       !this.formatMenuOpen && this.isPaneEditable(pane) && anchor !== null && this.blockToolbarActions.length > 0 &&
+      anchor.type !== 'code' &&
       (pane !== 'right' || this.notePaneVisible(pane));
   }
 
@@ -2972,6 +3033,12 @@ struct Index {
       inlineIndex: item.index,
       itemFrom: item.from,
       itemTo: item.to,
+      codeLanguage: anchor.codeLanguage,
+      codeLanguageFrom: anchor.codeLanguageFrom,
+      codeLanguageTo: anchor.codeLanguageTo,
+      codeLanguageSelectable: anchor.codeLanguageSelectable,
+      codeLanguages: anchor.codeLanguages,
+      codeEditable: anchor.codeEditable,
       x: anchor.x,
       y: anchor.y,
       width: anchor.width,
@@ -3940,7 +4007,9 @@ struct Index {
         return;
       }
       this.pushPreview(text);
-      this.pushRightPreview(text);
+      if (!this.rightCodePreviewEditing && !this.rightCodeEditPending) {
+        this.pushRightPreview(text);
+      }
       if (this.editorBridge.ready && !this.leftComposing) {
         await this.editorBridge.setContent(text);
         if (!isCurrentMirrorTarget()) {
@@ -7219,6 +7288,12 @@ struct Index {
             onCompositionChange: (composing: boolean): void => {
               this.onRightCompositionChange(composing);
             },
+            onCodeBlockEdit: (request: PreviewCodeEditRequest): void => {
+              void this.handlePreviewCodeBlockEdit('right', request);
+            },
+            onCodeBlockEditingChange: (editing: boolean): void => {
+              this.onCodeBlockEditingChange('right', editing);
+            },
             onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
               this.openBlockPropertyPanel('right', anchor);
             },
@@ -7293,7 +7368,9 @@ struct Index {
               this.editorLen = len;
             }
             this.scheduleSave();
-            this.schedulePreviewUpdate();
+            if (!this.leftCodePreviewEditing && !this.leftCodeEditPending) {
+              this.schedulePreviewUpdate();
+            }
             void this.syncLeftContentToRight();
             if (this.activePane === 'left') {
               void this.refreshActiveChaptersFromBridge();
@@ -7408,6 +7485,12 @@ struct Index {
           },
           onCompositionChange: (composing: boolean): void => {
             this.onLeftCompositionChange(composing);
+          },
+          onCodeBlockEdit: (request: PreviewCodeEditRequest): void => {
+            void this.handlePreviewCodeBlockEdit('left', request);
+          },
+          onCodeBlockEditingChange: (editing: boolean): void => {
+            this.onCodeBlockEditingChange('left', editing);
           },
           onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
             this.openBlockPropertyPanel('left', anchor);

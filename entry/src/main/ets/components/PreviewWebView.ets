@@ -33,6 +33,15 @@ export interface PreviewBlockInlineItem {
   to: number;
 }
 
+export interface PreviewCodeEditRequest {
+  id: number;
+  from: number;
+  to: number;
+  expectedSource: string;
+  replacement: string;
+  userEvent: string;
+}
+
 export interface PreviewBlockAnchor {
   type: string;
   tapType: string;
@@ -42,6 +51,12 @@ export interface PreviewBlockAnchor {
   inlineIndex: number;
   itemFrom: number;
   itemTo: number;
+  codeLanguage: string;
+  codeLanguageFrom: number;
+  codeLanguageTo: number;
+  codeLanguageSelectable: boolean;
+  codeLanguages: string[];
+  codeEditable: boolean;
   x: number;
   y: number;
   width: number;
@@ -52,7 +67,7 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
   if (payload.length === 0 || area.length < 4) {
     return null;
   }
-  let source: Record<string, string | number | PreviewBlockInlineItem[]>;
+  let source: Record<string, string | number | boolean | PreviewBlockInlineItem[] | string[]>;
   try {
     source = JSON.parse(payload) as Record<string, string | number | PreviewBlockInlineItem[]>;
   } catch {
@@ -101,6 +116,23 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
   const height: number = source['height'] as number;
   const viewportWidth: number = source['viewportWidth'] as number;
   const viewportHeight: number = source['viewportHeight'] as number;
+  const codeLanguage: string = typeof source['codeLanguage'] === 'string'
+    ? source['codeLanguage'] as string : '';
+  const codeLanguageFrom: number = Number.isInteger(source['codeLanguageFrom'])
+    ? source['codeLanguageFrom'] as number : -1;
+  const codeLanguageTo: number = Number.isInteger(source['codeLanguageTo'])
+    ? source['codeLanguageTo'] as number : -1;
+  const codeLanguageSelectable: boolean = source['codeLanguageSelectable'] === true;
+  const codeEditable: boolean = source['codeEditable'] === true;
+  const codeLanguages: string[] = [];
+  const rawCodeLanguages: string[] = source['codeLanguages'] as string[];
+  if (Array.isArray(rawCodeLanguages)) {
+    for (const language of rawCodeLanguages) {
+      if (typeof language === 'string' && codeLanguages.indexOf(language) < 0) {
+        codeLanguages.push(language);
+      }
+    }
+  }
   if (type.length === 0 || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from ||
     !Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height) ||
     width <= 0 || height <= 0 || !Number.isFinite(viewportWidth) || !Number.isFinite(viewportHeight) ||
@@ -118,6 +150,13 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
     inlineIndex: inlineIndex,
     itemFrom: itemFrom,
     itemTo: itemTo,
+    codeLanguage: codeLanguage,
+    codeLanguageFrom: codeLanguageFrom,
+    codeLanguageTo: codeLanguageTo,
+    codeLanguageSelectable: codeLanguageSelectable && codeLanguageFrom >= from &&
+      codeLanguageTo >= codeLanguageFrom && codeLanguageTo <= to,
+    codeLanguages: codeLanguages,
+    codeEditable: codeEditable,
     x: area[0] + left * scaleX,
     y: area[1] + top * scaleY,
     width: width * scaleX,
@@ -162,6 +201,9 @@ class PreviewNativeProxy {
   lockedContentTapHandler: (payload: string) => void = (_payload: string) => {};
   lockedBlockSelectionHandler: (payload: string) => void = (_payload: string) => {};
   previewZoomChangeHandler: (percent: number) => void = (_percent: number) => {};
+  codeBlockEditHandler: (request: PreviewCodeEditRequest) => void =
+    (_request: PreviewCodeEditRequest) => {};
+  codeBlockEditingChangeHandler: (editing: boolean) => void = (_editing: boolean) => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -205,6 +247,31 @@ class PreviewNativeProxy {
 
   onPreviewZoomChange(percent: number): void {
     this.previewZoomChangeHandler(percent);
+  }
+
+  onCodeBlockEdit(id: number, from: number, to: number, expectedB64: string,
+    replacementB64: string, userEvent: string): void {
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(from) ||
+      !Number.isInteger(to) || from < 0 || to < from ||
+      (userEvent !== 'input.type' && userEvent !== 'input')) {
+      return;
+    }
+    try {
+      this.codeBlockEditHandler({
+        id: id,
+        from: from,
+        to: to,
+        expectedSource: BridgeCodec.decode(expectedB64),
+        replacement: BridgeCodec.decode(replacementB64),
+        userEvent: userEvent
+      });
+    } catch {
+      return;
+    }
+  }
+
+  onCodeBlockEditingChange(editing: boolean): void {
+    this.codeBlockEditingChangeHandler(editing);
   }
 }
 
@@ -302,6 +369,12 @@ class PreviewImpl {
     this.enqueue(`window.__mdpreview.activateLockedContent(${from},${to},${inlineIndex})`);
   }
 
+  completeCodeBlockEdit(id: number, applied: boolean): void {
+    if (Number.isInteger(id) && id > 0) {
+      this.enqueue(`window.__mdpreview.completeCodeBlockEdit(${id},${applied})`);
+    }
+  }
+
   scrollToHeading(index: number): void {
     this.enqueue(`window.__mdpreview.scrollToHeading(${Math.max(0, Math.floor(index))})`);
   }
@@ -384,6 +457,9 @@ export class PreviewBridge {
   private nextContentId: number = 1;
   onEditableContentChange: (content: string) => void = (_content: string) => {};
   onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
+  onCodeBlockEdit: (request: PreviewCodeEditRequest) => void =
+    (_request: PreviewCodeEditRequest) => {};
+  onCodeBlockEditingChange: (editing: boolean) => void = (_editing: boolean) => {};
   onLockedContentTap: () => void = () => {};
   onBlockAnchorChange: (anchor: PreviewBlockAnchor | null) => void = (_anchor: PreviewBlockAnchor | null) => {};
   onContentReplacing: () => void = () => {};
@@ -473,6 +549,10 @@ export class PreviewBridge {
 
   applyFormat(kind: string): void {
     this.impl?.applyFormat(kind);
+  }
+
+  completeCodeBlockEdit(id: number, applied: boolean): void {
+    this.impl?.completeCodeBlockEdit(id, applied);
   }
 
   insertText(text: string): void {
@@ -687,6 +767,9 @@ export struct PreviewWebView {
   onReady: () => void = () => {};
   onEditableContentChange: (content: string) => void = (_content: string) => {};
   onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
+  onCodeBlockEdit: (request: PreviewCodeEditRequest) => void =
+    (_request: PreviewCodeEditRequest) => {};
+  onCodeBlockEditingChange: (editing: boolean) => void = (_editing: boolean) => {};
   onLockedContentTap: (anchor: PreviewBlockAnchor | null) => void =
     (_anchor: PreviewBlockAnchor | null) => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
@@ -743,6 +826,12 @@ export struct PreviewWebView {
     this.proxy.lockedBlockSelectionHandler = (payload: string): void => {
       this.latestBlockAnchorPayload = payload;
       this.publishBlockAnchor();
+    };
+    this.proxy.codeBlockEditHandler = (request: PreviewCodeEditRequest): void => {
+      this.onCodeBlockEdit(request);
+    };
+    this.proxy.codeBlockEditingChangeHandler = (editing: boolean): void => {
+      this.onCodeBlockEditingChange(editing);
     };
     this.bridge.onEditableContentChange = (content: string): void => {
       this.onEditableContentChange(content);
@@ -842,7 +931,7 @@ export struct PreviewWebView {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
         ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
-          'onLockedBlockSelection', 'onPreviewZoomChange']);
+          'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onCodeBlockEditingChange']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (_error) {
