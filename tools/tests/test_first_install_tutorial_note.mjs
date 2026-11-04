@@ -140,6 +140,7 @@ test('switching libraries persists the new empty workspace even when the switch 
   index.topView = 'vaults';
   index.workspaceSessionSavingEnabled = false;
   index.flushWorkspaceSaves = async () => true;
+  index.refreshSharedEditability = async () => {};
   index.stopWorkspaceSessionSaving = () => { index.workspaceSessionSavingEnabled = false; };
   index.refreshFromRegistry = () => { index.currentVaultId = currentVaultId; };
   index.readAndPush = async () => true;
