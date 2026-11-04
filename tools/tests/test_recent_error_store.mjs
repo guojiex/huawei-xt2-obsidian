@@ -86,6 +86,80 @@ test('rejects unsupported snapshots and enum values', () => {
   }]), '');
 });
 
+test('keeps sensitive error details out of persisted, displayed, copied, and logged diagnostics', () => {
+  const secrets = [
+    'note-title: Private Title',
+    'file-name: secret.md',
+    'path: /private/vault/secret.md',
+    'body: confidential note text',
+    'word-count: 427',
+    'tags: personal,finance',
+    'token: ghp_private_example',
+    'credential: user:password',
+    'remote-url: https://user:token@example.com/private.git',
+    'exception: request failed with private response'
+  ];
+  const rejectedValues = new Map();
+  const injectedException = new Error(secrets.join('\n'));
+  assert.equal(makeStore(rejectedValues).recordFailure(
+    'settings', 'build_commit_copy', injectedException.message, 'not_completed', 'retry'
+  ), false);
+  assert.equal(rejectedValues.has('latest'), false);
+
+  const values = new Map();
+  const store = makeStore(values);
+  const injectedRecord = {
+    timestamp: Date.now(),
+    operation: 'settings',
+    phase: 'build_commit_copy',
+    category: 'clipboard_failure',
+    outcome: 'not_completed',
+    nextStep: 'retry',
+    noteTitle: secrets[0],
+    fileName: secrets[1],
+    path: secrets[2],
+    body: secrets[3],
+    wordCount: secrets[4],
+    tags: secrets[5],
+    token: secrets[6],
+    credential: secrets[7],
+    remoteUrl: secrets[8],
+    errorMessage: secrets[9]
+  };
+  values.set('latest', JSON.stringify({ schemaVersion: 1, records: [injectedRecord] }));
+
+  const records = store.load();
+  assert.equal(records.length, 1);
+  const pageText = formatRecentError(records[0]);
+  const clipboardText = formatRecentErrorsForCopy(records);
+  assert.equal(store.recordFailure(
+    'settings', 'recent_errors_copy', 'clipboard_failure', 'not_completed', 'retry'
+  ), true);
+  const persistedText = values.get('latest');
+
+  for (const secret of secrets) {
+    assert.ok(!pageText.includes(secret));
+    assert.ok(!clipboardText.includes(secret));
+    assert.ok(!persistedText.includes(secret));
+  }
+  assert.match(pageText, /设置/);
+  assert.match(clipboardText, /复制构建提交号/);
+  assert.equal(formatRecentError({
+    timestamp: secrets[0],
+    operation: secrets[6],
+    phase: 'build_commit_copy',
+    category: 'clipboard_failure',
+    outcome: 'not_completed',
+    nextStep: 'retry'
+  }), '诊断记录无效');
+
+  const diagnosticsStart = settingsSource.indexOf('  private async copyBuildCommit()');
+  const diagnosticsEnd = settingsSource.indexOf('  @Builder\n  AgentTab()', diagnosticsStart);
+  const diagnosticsHandlers = settingsSource.slice(diagnosticsStart, diagnosticsEnd);
+  assert.doesNotMatch(storeSource, /hilog\.|console\.(?:log|error)|error\.(?:message|stack)/);
+  assert.doesNotMatch(diagnosticsHandlers, /hilog\.|console\.(?:log|error)|error\.(?:message|stack)|String\(error\)/);
+});
+
 test('settings displays and copies the same formatted recent records', () => {
   assert.match(settingsSource, /Text\(formatRecentError\(record\)\)/);
   assert.match(settingsSource, /formatRecentErrorsForCopy\(this\.recentErrors\)/);

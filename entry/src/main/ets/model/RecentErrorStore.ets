@@ -177,10 +177,14 @@ export function serializeRecentErrorSnapshot(records: RecentErrorRecord[]): stri
 }
 
 export function formatRecentError(record: RecentErrorRecord): string {
-  const date: string = new Date(record.timestamp).toLocaleString();
-  return date + ' · 操作：' + operationLabel(record.operation) + ' / ' + phaseLabel(record.phase) +
-    ' · 分类：' + categoryLabel(record.category) + '\n结果：' + outcomeLabel(record.outcome) +
-    ' · 下一步：' + nextStepLabel(record.nextStep);
+  const safeRecord: RecentErrorRecord | null = parseRecentErrorRecord(record as Object);
+  if (safeRecord === null) {
+    return '诊断记录无效';
+  }
+  const date: string = new Date(safeRecord.timestamp).toLocaleString();
+  return date + ' · 操作：' + operationLabel(safeRecord.operation) + ' / ' + phaseLabel(safeRecord.phase) +
+    ' · 分类：' + categoryLabel(safeRecord.category) + '\n结果：' + outcomeLabel(safeRecord.outcome) +
+    ' · 下一步：' + nextStepLabel(safeRecord.nextStep);
 }
 
 export function formatRecentErrorsForCopy(records: RecentErrorRecord[]): string {
@@ -192,7 +196,7 @@ export function formatRecentErrorsForCopy(records: RecentErrorRecord[]): string 
 }
 
 function parseRecentErrorRecord(value: Object): RecentErrorRecord | null {
-  if (value === null) {
+  if (value === null || typeof value !== 'object') {
     return null;
   }
   const record: Record<string, Object> = value as Record<string, Object>;
