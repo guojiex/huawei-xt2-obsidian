@@ -92,6 +92,25 @@ test('protected hints promise the planned release only for tables', () => {
   assert.match(code.value, /专业模式/)
 })
 
+test('19.5 unsupported fenced code stays protected with the v1.7 default hint', () => {
+  const sources = [
+    ' ```js\nx\n ```',
+    '```js\nx',
+    '````js\n```\nx\n````'
+  ]
+
+  for (const source of sources) {
+    const result = simpleMode.inspect(source)
+    const hint = result.decorations.find((range) =>
+      range.kind === 'protected-hint' && range.from === source.indexOf('`'))
+    assert.ok(hint, `expected a nearby hint for ${JSON.stringify(source)}`)
+    assert.equal(hint.value, simpleMode.hints.fallback)
+    assert.ok(result.protected.some((range) => range.from <= source.indexOf('x') &&
+      range.to >= source.indexOf('x') + 1))
+    assert.equal(simpleMode.changeAllowed(source, source.indexOf('x'), source.indexOf('x'), 'changed'), false)
+  }
+})
+
 test('simple mode blocks edits into protected source and permits neighboring paragraphs', () => {
   const source = 'Safe paragraph\n\n```js\nconst x = 1\n```\n\nAnother paragraph'
   const codeOffset = source.indexOf('const x')

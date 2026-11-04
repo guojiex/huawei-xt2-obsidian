@@ -26,6 +26,24 @@ test('protects indented, unclosed, nested, and rendered-text-mismatched fences',
   assert.equal(inspectCodeFence('```js\nsource\n```', 'source\n').editable, true)
 })
 
+test('19.5 rejects writes to indented, unclosed, nested, and unmappable fences', () => {
+  const cases = [
+    { source: ' ```js\nx\n ```', rendered: 'x', reason: 'indented' },
+    { source: '```js\nx', rendered: 'x', reason: 'unclosed' },
+    { source: '````js\n```\nx\n````', rendered: '```\nx', reason: 'nested' },
+    { source: '```text\nsource\n```', rendered: 'escaped', reason: 'unmapped' }
+  ]
+
+  for (const item of cases) {
+    const model = inspectCodeFence(item.source, item.rendered)
+    assert.equal(model.editable, false)
+    assert.equal(model.reason, item.reason)
+    if (item.reason !== 'unmapped') {
+      assert.equal(prepareCodeBodyEdit(item.source, 0, item.source.length, 'replacement'), null)
+    }
+  }
+})
+
 test('body edits preserve both fences, CRLF, and all source outside the body range', () => {
   const prefix = 'before\r\n'
   const block = '~~~ts\r\nold\r\n~~~'
@@ -86,6 +104,17 @@ test('body edits preserve Markdown-looking symbols, tabs, blank lines, and liter
 
   assert.equal(after, '```text\n* # heading\n\tindented\n\nlast\n```\nafter')
   assert.ok(edit.replacement.includes('\tindented'))
+})
+
+test('19.5 Mermaid content edits do not validate diagram syntax', () => {
+  const source = '```mermaid\nnot a valid graph\n```\nafter'
+  const blockTo = source.indexOf('\nafter')
+  const edit = prepareCodeBodyEdit(source, 0, blockTo, 'still not a valid graph')
+
+  assert.ok(edit)
+  assert.equal(edit.kind, 'code-body')
+  assert.equal(source.slice(0, edit.from) + edit.replacement + source.slice(edit.to),
+    '```mermaid\nstill not a valid graph\n```\nafter')
 })
 
 test('language changes touch only a known language marker, including plain-text insertion', () => {
