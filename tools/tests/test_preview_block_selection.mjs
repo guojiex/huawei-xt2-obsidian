@@ -41,12 +41,12 @@ test('selection feedback outlines locked rendered children using v2 tokens', () 
   ))
 })
 
-test('preview WebView suppresses the system focus box around the whole note', () => {
+test('preview WebView configures a transparent system focus box', () => {
   const webStart = previewComponentSource.indexOf("Web({ src: $rawfile('mdpreview/index.html'")
   const webEnd = previewComponentSource.indexOf('\n\n      if (!this.pageReady)', webStart)
   assert.ok(webStart >= 0 && webEnd > webStart)
   assert.match(previewComponentSource.slice(webStart, webEnd),
-    /\.focusBox\(\{\s*strokeWidth: LengthMetrics\.vp\(0\)\s*\}\)/)
+    /\.focusBox\(\{\s*strokeWidth: LengthMetrics\.vp\(0\),\s*strokeColor: ColorMetrics\.rgba\(0,\s*0,\s*0,\s*0\)\s*\}\)/)
 })
 
 test('locked block taps route links and images without synthesizing a block selection', () => {

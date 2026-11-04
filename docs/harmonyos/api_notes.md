@@ -1403,6 +1403,11 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 本机 API 26 SDK 的 `ets/component/common.d.ts` 声明 `accessibilityText(value: string)` 与 `accessibilityTextHint(value: string)` 均自 API 12 起，低于工程兼容上限 API 24。专注按钮按当前状态设置“进入专注模式” / “退出专注模式”名称及对应操作提示。
 - 这里只核对 API 声明并据此接入代码；屏幕阅读器播报、键盘焦点和 API24 / XT2 表现仍待设备验收。
 
+### L-16 v1.18 预览 Web 系统焦点框样式（本机 SDK 声明）⚠️
+
+- 本机 API 26 SDK 声明 `focusBox(FocusBoxStyle)`、`FocusBoxStyle.strokeWidth`、`FocusBoxStyle.strokeColor`、`LengthMetrics.vp()` 与 `ColorMetrics.rgba()` 均为 API 12 起，低于工程 API 24 上限；`@kit.ArkUI` 导出 `LengthMetrics` 与 `ColorMetrics`。
+- `focusBox` 只配置系统焦点框样式。零宽描边的代码检查不能证明运行时黑框消失；2026-11-04 用户截图仍显示预览整栏黑框。当前显式设置透明描边，设备视觉结果待复验。
+
 ---
 
 ## 落地决策表
