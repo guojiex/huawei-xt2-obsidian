@@ -31,6 +31,7 @@ import { AgentRuntime } from '../model/AgentRuntime';
 import { BUILTIN_AGENT_PROMPT } from '../model/AgentDefaults';
 import { AgentSession, AgentSkillDefault } from '../model/AgentModels';
 import { VaultEntry } from '../model/Vault';
+import { formatRecentError, formatRecentErrorsForCopy, RecentErrorRecord, RecentErrorStore } from '../model/RecentErrorStore';
 import { Icon } from '../common/Icons';
 import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
 import { FEEDBACK_EMAIL } from '../model/AppConfig';
@@ -82,7 +83,10 @@ export struct SettingsView {
   @State feedbackExpected: string = '';
   @State feedbackPreview: string = '';
   @State diagnosticsExpanded: boolean = false;
+  @State recentErrors: RecentErrorRecord[] = [];
+  @State recentErrorsAvailable: boolean = false;
   private deleteSessionDialog: CustomDialogController | null = null;
+  private recentErrorStore: RecentErrorStore | null = null;
 
   private normalizedCategory(category: string): string {
     return category === 'data' || category === 'feedback' || category === 'about' ? category : 'general';
@@ -282,6 +286,8 @@ export struct SettingsView {
     this.selectedTab = this.normalizedCategory(this.selectedCategory);
     this.loadAgentSettings();
     this.refreshManagedSessions();
+    this.recentErrorStore = new RecentErrorStore(getContext(this) as common.UIAbilityContext);
+    this.refreshRecentErrors();
     try {
       // 读自身包信息：同步接口，flag 用 WITH_APPLICATION 即可拿到 version / name 等
       const info: bundleManager.BundleInfo =
@@ -770,6 +776,7 @@ export struct SettingsView {
           this.InfoRow('当前形态', this.formLabel(), true)
           this.InfoRow('断点', this.breakpoint, true)
           this.BuildCommitRow()
+          this.RecentErrorSection()
           this.InfoRow('库目录', this.vaultDir(), true)
         }
       }
@@ -838,7 +845,82 @@ export struct SettingsView {
       await board.setData(pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, payload));
       promptAction.showToast({ message: '已复制构建提交号' });
     } catch (error) {
+      this.recordClipboardFailure('build_commit_copy');
       promptAction.showToast({ message: '复制失败，请手动记录' });
+    }
+  }
+
+  @Builder
+  RecentErrorSection() {
+    Column({ space: Space.s2 }) {
+      Text('最近错误')
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+      if (!this.recentErrorsAvailable) {
+        Text('最近错误记录暂不可用，请重启应用后重试')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      } else if (this.recentErrors.length === 0) {
+        Text('暂无错误记录')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      } else {
+        ForEach(this.recentErrors, (record: RecentErrorRecord) => {
+          Text(formatRecentError(record))
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .padding({ top: Space.s2, bottom: Space.s2 })
+            .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+        })
+        Text('复制最近错误')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.brand'))
+          .height(Size.touch)
+          .focusable(true)
+          .accessibilityText('复制最近错误记录')
+          .onClick((): void => { void this.copyRecentErrors(); })
+      }
+    }
+    .width('100%')
+    .padding({ top: Space.s3, bottom: Space.s3 })
+    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+  }
+
+  private refreshRecentErrors(): void {
+    if (this.recentErrorStore === null) {
+      this.recentErrors = [];
+      this.recentErrorsAvailable = false;
+      return;
+    }
+    const records: RecentErrorRecord[] | null = this.recentErrorStore.load();
+    this.recentErrorsAvailable = this.recentErrorStore.isAvailable() && records !== null;
+    this.recentErrors = records ?? [];
+  }
+
+  private recordClipboardFailure(phase: 'build_commit_copy' | 'recent_errors_copy'): void {
+    if (this.recentErrorStore !== null) {
+      this.recentErrorStore.recordFailure('settings', phase, 'clipboard_failure', 'not_completed', 'retry');
+    }
+    this.refreshRecentErrors();
+  }
+
+  private async copyRecentErrors(): Promise<void> {
+    const payload: string = formatRecentErrorsForCopy(this.recentErrors);
+    if (payload.length === 0) {
+      promptAction.showToast({ message: '暂无可复制的错误记录' });
+      return;
+    }
+    try {
+      const board: pasteboard.SystemPasteboard = pasteboard.getSystemPasteboard();
+      await board.setData(pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, payload));
+      promptAction.showToast({ message: '已复制最近错误记录' });
+    } catch (error) {
+      this.recordClipboardFailure('recent_errors_copy');
+      promptAction.showToast({ message: '复制失败，请稍后重试' });
     }
   }
 
