@@ -42,6 +42,62 @@ function originalOffsetForNormalizedPosition(position, offsets) {
   return position + low
 }
 
+function unknownColonRanges(source) {
+  const ranges = []
+  const lines = []
+  let offset = 0
+  while (offset < source.length) {
+    const newline = source.indexOf('\n', offset)
+    const end = newline < 0 ? source.length : newline
+    lines.push({ text: source.slice(offset, end), start: offset, end })
+    offset = newline < 0 ? source.length : newline + 1
+  }
+
+  let blockStart = -1
+  let depth = 0
+  let fenceCharacter = ''
+  let fenceLength = 0
+  let mathBlock = false
+  for (const line of lines) {
+    const fence = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line.text)
+    if (fenceCharacter.length > 0) {
+      if (fence && fence[1][0] === fenceCharacter && fence[1].length >= fenceLength &&
+        fence[2].trim().length === 0) {
+        fenceCharacter = ''
+        fenceLength = 0
+      }
+      continue
+    }
+    if (fence && !(fence[1][0] === '`' && fence[2].includes('`'))) {
+      fenceCharacter = fence[1][0]
+      fenceLength = fence[1].length
+      continue
+    }
+    if (line.text.trim() === '$$') {
+      mathBlock = !mathBlock
+      continue
+    }
+    if (mathBlock) continue
+
+    const opening = /^ {0,3}:{3,}[ \t]*[A-Za-z][A-Za-z0-9_-]*(?:\b[^\n]*)?$/.test(line.text)
+    const closing = /^ {0,3}:{3,}[ \t]*$/.test(line.text)
+    if (opening) {
+      if (depth === 0) blockStart = line.start
+      depth++
+    } else if (closing && depth > 0) {
+      depth--
+      if (depth === 0) {
+        ranges.push({ start: blockStart, end: line.end })
+        blockStart = -1
+      }
+    }
+  }
+  if (depth > 0 && blockStart >= 0) {
+    ranges.push({ start: blockStart, end: source.length })
+  }
+  return ranges
+}
+
 /** Render each visible top-level Markdown token in a layout-transparent source wrapper. */
 function sourcePositionForDisplayOffset(displayOffset, edits, isEnd) {
   let delta = 0
@@ -166,67 +222,118 @@ function collectInlineTokenRanges(tokens, parentRaw) {
 
 export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceOffset = 0,
   sourceEdits = [], displayOffset = 0) {
+  const normalizedSource = markdown.replace(/\r\n/g, '\n')
   const tokens = marked.lexer(markdown)
   const normalizedLineEndings = crlfOffsets(markdown)
   const htmlParts = []
   const blocks = []
-  let line = Math.max(0, Math.floor(lineOffset)) + 1
-  let sourceOffsetInBody = 0
+  const ranges = unknownColonRanges(normalizedSource)
+  const segments = []
+  let segmentStart = 0
+  for (const range of ranges) {
+    if (range.start > segmentStart) segments.push({ start: segmentStart, end: range.start })
+    segments.push({ ...range, directive: true })
+    segmentStart = range.end
+  }
+  if (segmentStart < normalizedSource.length) {
+    segments.push({ start: segmentStart, end: normalizedSource.length })
+  }
+  if (segments.length === 0 && normalizedSource.length > 0) {
+    segments.push({ start: 0, end: normalizedSource.length })
+  }
 
-  for (let index = 0; index < tokens.length; index++) {
-    const token = tokens[index]
-    const raw = token.raw || ''
-    const mappedRawLength = sourceRangeLength(token, raw)
-    const visibleStart = raw.search(/\S/)
-    const content = trimTrailingLineBreaks(raw)
-
-    if (token.type !== 'space' && token.type !== 'def' && visibleStart >= 0 && content.trim().length > 0) {
-      const startLine = line + lineBreaks(raw.slice(0, visibleStart))
-      const endLine = line + lineBreaks(content)
-      const tokenList = [token]
-      tokenList.links = tokens.links
-      const html = marked.parser(tokenList)
+  let tokenIndex = 0
+  for (const segment of segments) {
+    const segmentSource = normalizedSource.slice(segment.start, segment.end)
+    const segmentTokens = segment.directive ? marked.lexer(segmentSource)
+      : ranges.length === 0 ? tokens : marked.lexer(segmentSource)
+    segmentTokens.links = tokens.links
+    const segmentLine = Math.max(0, Math.floor(lineOffset)) + 1 +
+      lineBreaks(normalizedSource.slice(0, segment.start))
+    if (segment.directive) {
+      const visibleStart = segmentSource.search(/\S/)
+      const content = trimTrailingLineBreaks(segmentSource)
+      const startLine = segmentLine + lineBreaks(segmentSource.slice(0, visibleStart))
+      const endLine = segmentLine + lineBreaks(content)
+      const html = marked.parser(segmentTokens)
       if (html.trim().length > 0) {
         const displayStart = displayOffset +
-          originalOffsetForNormalizedPosition(sourceOffsetInBody, normalizedLineEndings)
+          originalOffsetForNormalizedPosition(segment.start, normalizedLineEndings)
         const displayEnd = displayOffset +
-          originalOffsetForNormalizedPosition(sourceOffsetInBody + mappedRawLength, normalizedLineEndings)
+          originalOffsetForNormalizedPosition(segment.end, normalizedLineEndings)
         const sourceStart = sourceEdits.length > 0
           ? sourcePositionForDisplayOffset(displayStart, sourceEdits, false)
-          : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody, normalizedLineEndings)
+          : sourceOffset + originalOffsetForNormalizedPosition(segment.start, normalizedLineEndings)
         const sourceEnd = sourceEdits.length > 0
           ? sourcePositionForDisplayOffset(displayEnd, sourceEdits, true)
-          : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + mappedRawLength, normalizedLineEndings)
-        const inline = token.type === 'paragraph'
-          ? collectInlineTokenRanges(token.tokens || [], raw)
-          : { items: [], safe: false }
-        const inlineItems = inline.safe ? inline.items.map((item, itemIndex) => {
-          const itemDisplayStart = displayOffset +
-            originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayStart, normalizedLineEndings)
-          const itemDisplayEnd = displayOffset +
-            originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayEnd, normalizedLineEndings)
-          return {
-            index: itemIndex,
-            type: item.type,
-            from: sourceEdits.length > 0
-              ? sourcePositionForDisplayOffset(itemDisplayStart, sourceEdits, false)
-              : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayStart, normalizedLineEndings),
-            to: sourceEdits.length > 0
-              ? sourcePositionForDisplayOffset(itemDisplayEnd, sourceEdits, true)
-              : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + item.displayEnd, normalizedLineEndings)
-          }
-        }) : []
+          : sourceOffset + originalOffsetForNormalizedPosition(segment.end, normalizedLineEndings)
         htmlParts.push(`<div class="preview-source-block" data-source-start-line="${startLine}" data-source-end-line="${endLine}">${html}</div>`)
         blocks.push({
-          tokenIndex: index, startLine, endLine, sourceStart, sourceEnd,
-          type: token.type === 'mathBlock' ? 'formula' : token.type,
-          inlineItems, inlineSafe: inline.safe
+          tokenIndex, startLine, endLine, sourceStart, sourceEnd,
+          type: 'directive', inlineItems: [], inlineSafe: false
         })
       }
+      tokenIndex += segmentTokens.length
+      continue
     }
 
-    line += lineBreaks(raw)
-    sourceOffsetInBody += raw.length
+    let line = segmentLine
+    let segmentOffset = segment.start
+    for (const token of segmentTokens) {
+      const raw = token.raw || ''
+      const mappedRawLength = sourceRangeLength(token, raw)
+      const visibleStart = raw.search(/\S/)
+      const content = trimTrailingLineBreaks(raw)
+
+      if (token.type !== 'space' && token.type !== 'def' && visibleStart >= 0 && content.trim().length > 0) {
+        const startLine = line + lineBreaks(raw.slice(0, visibleStart))
+        const endLine = line + lineBreaks(content)
+        const tokenList = [token]
+        tokenList.links = segmentTokens.links
+        const html = marked.parser(tokenList)
+        if (html.trim().length > 0) {
+          const displayStart = displayOffset +
+            originalOffsetForNormalizedPosition(segmentOffset, normalizedLineEndings)
+          const displayEnd = displayOffset +
+            originalOffsetForNormalizedPosition(segmentOffset + mappedRawLength, normalizedLineEndings)
+          const sourceStart = sourceEdits.length > 0
+            ? sourcePositionForDisplayOffset(displayStart, sourceEdits, false)
+            : sourceOffset + originalOffsetForNormalizedPosition(segmentOffset, normalizedLineEndings)
+          const sourceEnd = sourceEdits.length > 0
+            ? sourcePositionForDisplayOffset(displayEnd, sourceEdits, true)
+            : sourceOffset + originalOffsetForNormalizedPosition(segmentOffset + mappedRawLength, normalizedLineEndings)
+          const inline = token.type === 'paragraph'
+            ? collectInlineTokenRanges(token.tokens || [], raw)
+            : { items: [], safe: false }
+          const inlineItems = inline.safe ? inline.items.map((item, itemIndex) => {
+            const itemDisplayStart = displayOffset +
+              originalOffsetForNormalizedPosition(segmentOffset + item.displayStart, normalizedLineEndings)
+            const itemDisplayEnd = displayOffset +
+              originalOffsetForNormalizedPosition(segmentOffset + item.displayEnd, normalizedLineEndings)
+            return {
+              index: itemIndex,
+              type: item.type,
+              from: sourceEdits.length > 0
+                ? sourcePositionForDisplayOffset(itemDisplayStart, sourceEdits, false)
+                : sourceOffset + originalOffsetForNormalizedPosition(segmentOffset + item.displayStart, normalizedLineEndings),
+              to: sourceEdits.length > 0
+                ? sourcePositionForDisplayOffset(itemDisplayEnd, sourceEdits, true)
+                : sourceOffset + originalOffsetForNormalizedPosition(segmentOffset + item.displayEnd, normalizedLineEndings)
+            }
+          }) : []
+          htmlParts.push(`<div class="preview-source-block" data-source-start-line="${startLine}" data-source-end-line="${endLine}">${html}</div>`)
+          blocks.push({
+            tokenIndex, startLine, endLine, sourceStart, sourceEnd,
+            type: token.type === 'mathBlock' ? 'formula' : token.type,
+            inlineItems, inlineSafe: inline.safe
+          })
+        }
+      }
+
+      line += lineBreaks(raw)
+      segmentOffset += raw.length
+      tokenIndex++
+    }
   }
 
   return { html: htmlParts.join(''), blocks }

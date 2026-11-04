@@ -122,6 +122,7 @@ test('locked block anchor contains source identity and visible geometry only', (
     from: 12,
     to: 48,
     inlineItems: [],
+    inlineSafe: false,
     left: 20,
     top: 30,
     width: 100,
@@ -130,6 +131,28 @@ test('locked block anchor contains source identity and visible geometry only', (
     viewportHeight: 600
   })
   assert.equal(Object.hasOwn(anchor, 'text'), false)
+})
+
+test('locked block anchors preserve whether a paragraph supports inline editing', () => {
+  const block = {
+    dataset: {
+      editLocked: 'true',
+      inlineSafe: 'false',
+      sourceType: 'paragraph',
+      sourceFrom: '4',
+      sourceTo: '30'
+    }
+  }
+  const anchor = lockedBlockAnchor(block, {
+    left: 10,
+    top: 20,
+    right: 110,
+    bottom: 60,
+    width: 100,
+    height: 40
+  }, 400, 600)
+
+  assert.equal(anchor.inlineSafe, false)
 })
 
 test('paragraph anchors expose validated inline item identities and exact source ranges', () => {

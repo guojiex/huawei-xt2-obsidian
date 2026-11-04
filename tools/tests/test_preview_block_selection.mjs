@@ -81,6 +81,7 @@ test('preview anchor bridge accepts exact inline identities and rejects invalid 
     from: 10,
     to: 80,
     inlineItems: [{ index: 0, type: 'link', from: 18, to: 35 }],
+    inlineSafe: true,
     inlineIndex: 0,
     tapType: 'link',
     itemFrom: 18,
@@ -98,6 +99,7 @@ test('preview anchor bridge accepts exact inline identities and rejects invalid 
     { index: 0, type: 'link', from: 18, to: 35 }
   ])
   assert.equal(anchor.inlineIndex, 0)
+  assert.equal(anchor.inlineSafe, true)
   assert.equal(anchor.itemFrom, 18)
   assert.equal(anchor.itemTo, 35)
   assert.equal(anchor.x, 45)
@@ -109,6 +111,14 @@ test('preview anchor bridge accepts exact inline identities and rejects invalid 
   assert.deepEqual(JSON.parse(JSON.stringify(invalid.inlineItems)), [])
   assert.equal(invalid.inlineIndex, -1)
   assert.equal(invalid.tapType, '')
+})
+
+test('HTML, directive, and mixed-syntax blocks explain read-only mode and retain the source action', () => {
+  assert.match(indexSource, /this\.blockPanelAnchor\.type === 'html' \|\| this\.blockPanelAnchor\.type === 'directive'/)
+  assert.match(indexSource, /this\.blockPanelAnchor\.type === 'mixed'/)
+  assert.match(indexSource, /this\.blockPanelAnchor\.type === 'paragraph' && !this\.blockPanelAnchor\.inlineSafe/)
+  assert.match(indexSource, /Text\('此内容请在专业模式编辑'\)/)
+  assert.match(indexSource, /Text\(this\.blockSourceActionLabel\(\)\)[\s\S]*?this\.openBlockSourceDrawer\(\)/)
 })
 
 test('rendered inline nodes receive metadata only after every item maps', () => {
@@ -149,6 +159,7 @@ test('rendered inline nodes receive metadata only after every item maps', () => 
 
   annotate(block, { inlineSafe: true, inlineItems: items })
   assert.equal(block.dataset.inlineItemsReady, 'true')
+  assert.equal(block.dataset.inlineSafe, 'true')
   assert.equal(link.dataset.previewInlineIndex, '0')
   assert.equal(wikiLink.dataset.previewInlineType, 'wikilink')
   assert.equal(code.dataset.previewInlineFrom, '40')
@@ -165,6 +176,7 @@ test('rendered inline nodes receive metadata only after every item maps', () => 
   }
   annotate(mismatchedBlock, { inlineSafe: true, inlineItems: items.slice(0, 2) })
   assert.equal(mismatchedBlock.dataset.inlineItemsReady, 'false')
+  assert.equal(mismatchedBlock.dataset.inlineSafe, 'true')
   assert.equal(mismatchedLink.dataset.previewInlineIndex, undefined)
 })
 

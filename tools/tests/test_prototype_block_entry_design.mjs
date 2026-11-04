@@ -19,6 +19,11 @@ assert.match(bar, /aria-label="当前块操作"/);
 assert.match(prototype, /function openBlockUi\(/);
 assert.match(prototype, /function openComplexFor\(/);
 assert.match(prototype, /function annotateComplexBlocks\(/);
+assert.match(prototype, /function unknownColonRanges\(/);
+assert.match(prototype, /block\.classList\.contains\('md-unknown-colon'\)/);
+assert.match(prototype, /\.simple-protected::after\{content:'此内容请在专业模式编辑'/);
+assert.match(prototype, /tgt\.closest\('\.md-unknown-colon'\)\|\|tgt\.closest/);
+assert.match(prototype, /case 'directive':return \{title:'指令块',html:CBH\.info\('此内容请在专业模式编辑'\)\+CBH\.source\(\)\}/);
 
 // D-1 to D-8: complex blocks each have a distinct entry path in simple mode.
 for (const marker of [

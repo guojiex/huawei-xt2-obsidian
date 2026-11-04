@@ -88,6 +88,7 @@ export interface PreviewBlockAnchor {
   from: number;
   to: number;
   inlineItems: PreviewBlockInlineItem[];
+  inlineSafe: boolean;
   inlineIndex: number;
   itemFrom: number;
   itemTo: number;
@@ -188,6 +189,7 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
     from: from,
     to: to,
     inlineItems: inlineItems,
+    inlineSafe: source['inlineSafe'] === true,
     inlineIndex: inlineIndex,
     itemFrom: itemFrom,
     itemTo: itemTo,

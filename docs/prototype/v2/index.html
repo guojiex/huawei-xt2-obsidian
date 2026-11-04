@@ -476,14 +476,30 @@ for(const event of ['select','keyup','pointerup','blur'])$('editor').addEventLis
 function openSource(id){if(!currentNotes().some(n=>n.id===id))return;rememberEditorPosition();reference=id;referenceEnabled=true;if(focused)setFocused(false);if(viewport==='double')$('window').classList.add('nav-hidden');if(phone){$('window').classList.remove('nav-open');$('window').classList.add('ref-open');}rememberVault();renderReference();activatePane('right',true);applySplits();$('referenceTitle').focus();$('reference').parentElement.scrollTop=0;}
 for(const [id,pane]of [['article','left'],['reference','right']]){const article=$(id);article.addEventListener('click',event=>{const target=event.target.closest('[data-preview-image]');if(target&&article.contains(target)){openImageViewer(target);return;}const create=event.target.closest('[data-wiki-create]');if(create&&article.contains(create)){event.preventDefault();activatePane(pane,true);openMissingWikiTarget(pane,create.dataset.wikiCreate);return;}const problem=event.target.closest('[data-wiki-problem]');if(problem&&article.contains(problem)){event.preventDefault();toast('目标不唯一，请补全路径或扩展名',false);return;}const button=event.target.closest('[data-source]');if(button&&article.contains(button))openSource(button.dataset.source);});article.addEventListener('keydown',event=>{if(event.target.matches('img[data-preview-image]')&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openImageViewer(event.target);}});}
 function markdownBody(text){const frontmatter=text.match(/^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/);return frontmatter?{text:text.slice(frontmatter[0].length),offset:frontmatter[0].length}:{text,offset:0};}
-function renderMarkdown(text,anchors,prefix='section-',n=note(current)){
- const source=markdownBody(text),lines=[];let offset=source.offset;
+function unknownColonRanges(lines,sourceLength){
+ const ranges=[];let startIndex=-1,depth=0,fence=null,math=false;
+ for(let i=0;i<lines.length;i++){const line=lines[i].text,openingFence=markdownFence(line);
+  if(fence){if(closesMarkdownFence(line,fence))fence=null;continue;}
+  if(openingFence){fence=openingFence;continue;}
+  if(line.trim()==='$$'){math=!math;continue;}if(math)continue;
+  const open=/^ {0,3}:{3,}[ \t]*[A-Za-z][A-Za-z0-9_-]*(?:\b[^\n]*)?$/.test(line);
+  const close=/^ {0,3}:{3,}[ \t]*$/.test(line);
+  if(open){if(depth===0)startIndex=i;depth++;continue;}
+  if(close&&depth>0){depth--;if(depth===0){ranges.push({startIndex,endIndex:i,from:lines[startIndex].start,to:lines[i].end,
+    bodyStart:lines[startIndex+1]?.start??lines[startIndex].end,bodyEnd:lines[i].start});startIndex=-1;}}
+ }
+ if(depth>0&&startIndex>=0)ranges.push({startIndex,endIndex:lines.length-1,from:lines[startIndex].start,to:sourceLength,
+  bodyStart:lines[startIndex+1]?.start??lines[startIndex].end,bodyEnd:sourceLength});
+ return ranges;
+}
+function renderMarkdown(text,anchors,prefix='section-',n=note(current),rawSource=false,suppressUnknownContainers=false){
+ const source=rawSource?{text,offset:0}:markdownBody(text),lines=[];let offset=source.offset;
  for(const match of source.text.matchAll(/[^\r\n]*(?:\r\n|\n|\r|$)/g)){
   const raw=match[0];if(!raw&&match.index===source.text.length)break;
   const line=raw.replace(/(?:\r\n|\n|\r)$/,'');
   lines.push({text:line,start:offset,end:offset+line.length});offset+=raw.length;
  }
- let html=tagProperties(text),list=null,index=0,code=null,fence=null,codeStart=0,table=null,callout=null,mathBlock=null;
+ let html=rawSource?'':tagProperties(text),list=null,index=0,code=null,fence=null,codeStart=0,table=null,callout=null,mathBlock=null;
  const range=(start,end)=>' data-source-start="'+start+'" data-source-end="'+end+'"';
  const listItem=line=>line.match(/^(\s*)([-*+]|\d+[.)]) (.*)$/);
 const tableRow=line=>/^\s*\|.*\|\s*$/.test(line);
@@ -515,7 +531,15 @@ const simpleTableCellDisplay=source=>source.replace(/&#(?:([0-9]+)|x([0-9a-f]+))
     return '<'+tag+' data-simple-table-cell="true" data-simple-table-editable="'+String(editable)+'" data-cell-source-from="'+cell.from+'" data-cell-source-to="'+cell.to+'" data-cell-source="'+esc(cell.text)+'" data-table-row="'+rowIndex+'" data-table-column="'+column+'" aria-label="'+(editable?'编辑表格第 '+(rowIndex+1)+' 行第 '+(column+1)+' 列':'此单元格含复杂语法，请在专业模式编辑')+'">'+inline(simpleTableCellDisplay(cell.text),n)+'</'+tag+'>';
    }).join('')+'</tr>';});
   html+=out+'</table>'+((!valid||hasReadOnly)?'<small class="simple-table-hint" data-simple-table-hint="true">'+(!valid?'表格结构不规范，请在专业模式编辑':'复杂单元格请在专业模式编辑')+'</small>':'');table=null;};
- for(const item of lines){const line=item.text;
+ const directives=suppressUnknownContainers?[]:unknownColonRanges(lines,text.length);
+ const directiveStarts=new Map(directives.map(block=>[block.startIndex,block]));
+ for(let lineIndex=0;lineIndex<lines.length;lineIndex++){const item=lines[lineIndex],line=item.text,block=directiveStarts.get(lineIndex);
+  if(block){closeList();closeTable();closeCallout();const inner=text.slice(block.bodyStart,block.bodyEnd);
+   const rendered=renderMarkdown(inner,false,prefix,n,true,true)
+    .replace(/ data-source-(?:start|end)="\d+"/g,'')
+    .replace(/ data-simple-table-editable="true"/g,' data-simple-table-editable="false"');
+   html+='<div class="md-unknown-colon"'+range(block.from,block.to)+'>'+rendered+'</div>';
+   lineIndex=block.endIndex;continue;}
   if(code!==null&&closesMarkdownFence(line,fence)){html+='<pre'+range(codeStart,item.end)+'><code>'+esc(code.join('\n'))+'</code></pre>';code=null;fence=null;continue;}
   if(code===null&&markdownFence(line)){closeList();closeTable();fence=markdownFence(line);code=[];codeStart=item.start;continue;}
   if(code!==null){code.push(line);continue;}
@@ -760,8 +784,9 @@ function prepareSimpleBlocks(pane='left'){
   if(block.dataset.blockType&&block.tagName!=='TABLE'){block.classList.remove('simple-protected');block.removeAttribute('contenteditable');continue;}
   const raw=text.slice(Number(block.dataset.sourceStart),Number(block.dataset.sourceEnd));
   const tableBlock=block.tagName==='TABLE',tableValid=tableBlock&&block.dataset.tableValid==='true';
-  const protectedBlock=tableBlock?!tableValid:(block.tagName==='PRE'||block.tagName==='HR'||
-   !!block.dataset.blockId|| (!!text.trim()&&!simpleBlockAllowed(raw)));
+  const protectedBlock=block.classList.contains('md-unknown-colon')||
+   (tableBlock?!tableValid:(block.tagName==='PRE'||block.tagName==='HR'||
+   !!block.dataset.blockId|| (!!text.trim()&&!simpleBlockAllowed(raw))));
   const allowed=id.length>0&&activePane===pane&&!protectedBlock;
   block.classList.toggle('simple-protected',protectedBlock);
   if(tableBlock){
@@ -1297,7 +1322,7 @@ for(const root of [$('article'),$('reference')]){
    设计：docs/prototype/v2/简单模式复杂块设计稿.md（对齐 engineering/简单模式复杂块编辑设计.md 的 C + D 方向）
    原则：所有写入只替换目标块 / 目标行内片段的源码区间；写入前校验区间内容未变；每次写入一个撤销步。
    ====================================================================== */
-const CB_TYPE_NAME={code:'代码块',inlinecode:'行内代码',link:'链接',wiki:'双链',image:'图片',math:'公式',mathInline:'行内公式',callout:'提示块',props:'属性',para:'这一段',table:'表格'};
+const CB_TYPE_NAME={code:'代码块',inlinecode:'行内代码',link:'链接',wiki:'双链',image:'图片',math:'公式',mathInline:'行内公式',callout:'提示块',props:'属性',para:'这一段',table:'表格',directive:'指令块'};
 const CB_LANGS=[['','纯文本'],['javascript','JavaScript'],['typescript','TypeScript'],['python','Python'],['java','Java'],['kotlin','Kotlin'],['swift','Swift'],['go','Go'],['rust','Rust'],['c','C'],['cpp','C++'],['json','JSON'],['yaml','YAML'],['bash','Shell'],['sql','SQL'],['html','HTML'],['css','CSS'],['markdown','Markdown'],['mermaid','Mermaid 图表']];
 const CB_CALLOUTS=[['note','笔记'],['abstract','摘要'],['info','信息'],['todo','待办'],['tip','提示'],['success','完成'],['question','问题'],['warning','注意'],['failure','失败'],['danger','危险'],['bug','缺陷'],['example','示例'],['quote','引用']];
 var cbTarget=null,cbReturnFocus=null;
@@ -1322,6 +1347,7 @@ function cbTargetFor(el,kindHint){
  let kind=kindHint,range,anchor=el;
  if(!kind){
   if(el.matches('pre'))kind='code';
+  else if(el.matches('.md-unknown-colon'))kind='directive';
   else if(el.matches('.md-math'))kind='math';
   else if(el.matches('.md-callout'))kind='callout';
   else if(el.matches('.md-props-entry'))kind='props';
@@ -1467,6 +1493,7 @@ function cbSpec(t){
    html:CBH.group(CBH.field('类型',CBH.select('type',opts,known?type:m.type),known?'':'未知类型会原样保留')+CBH.field('标题',CBH.input('title',m.title,'留空则显示类型名'))+CBH.field('折叠',CBH.seg('fold',[['','不折叠'],['+','默认展开'],['-','默认收起']],m.fold,'折叠方式'),'阅读时是否可以收起正文'))+CBH.info('提示块的正文直接在正文里点击修改。')+CBH.source(),
    onField:(k,v)=>{if(k==='type')cbWrite(t,cbCalloutRaw(m,{type:v}),'已改为'+((CB_CALLOUTS.find(([x])=>x===v)||[0,v])[1]));else if(k==='title')cbWrite(t,cbCalloutRaw(m,{title:v.trim()}),'已更新标题');},
    onSeg:(k,v)=>{if(k==='fold')cbWrite(t,cbCalloutRaw(m,{fold:v}),'已更新折叠方式');}};}
+ case 'directive':return {title:'指令块',html:CBH.info('此内容请在专业模式编辑')+CBH.source()};
  case 'props':{const m=cbPropsModel(t.raw);if(!m)return {title:'属性',html:CBH.info('文档头不是标准 YAML，暂时只能改源码。','warn')+CBH.source()};
   const rows=m.entries.map((e,i)=>{if(!e.key)return '';const rm='<button type="button" class="cb-remove" data-cb-act="rm:'+i+'" aria-label="移除属性 '+esc(e.key)+'">移除</button>';
    if(e.kind==='list')return CBH.field(esc(e.key)+rm,CBH.input('v:'+i,e.items.join('、'),'用顿号或逗号分隔'),e.key==='tags'?'标签':e.key==='aliases'?'别名':'列表');
@@ -1602,7 +1629,7 @@ function annotateComplexBlocks(pane){
  if(root.dataset.cbBound==='1')return;root.dataset.cbBound='1';
  root.addEventListener('click',event=>{
   if(experience!=='simple'||!event.target.closest)return;const tgt=event.target;
-  const hit=tgt.closest('.block-chip,.block-copy,[data-inline],.md-props-entry,.md-callout-head,.md-math,.cb-para');if(!hit||!root.contains(hit))return;
+  const hit=tgt.closest('.md-unknown-colon')||tgt.closest('.block-chip,.block-copy,[data-inline],.md-props-entry,.md-callout-head,.md-math,.cb-para');if(!hit||!root.contains(hit))return;
   if(hit.matches('.block-copy')){event.preventDefault();event.stopPropagation();const pre=hit.closest('.md-code').querySelector('pre'),m=cbCodeModel(note(simpleNoteId(cbPaneOf(pre))).text.slice(Number(pre.dataset.sourceStart),Number(pre.dataset.sourceEnd)));(navigator.clipboard&&m?navigator.clipboard.writeText(m.content):Promise.reject()).then(()=>toast('已复制代码',false),()=>toast('原型环境无法访问剪贴板',false));return;}
   if(hit.matches('.block-chip')){event.preventDefault();event.stopPropagation();openComplexFor(hit.closest('.md-code').querySelector('pre'),'code');return;}
   if(hit.matches('.md-callout-head')&&tgt.closest('.md-callout-fold')){event.preventDefault();event.stopPropagation();hit.parentElement.classList.toggle('is-folded');return;}
@@ -1618,7 +1645,7 @@ function annotateComplexBlocks(pane){
    if(event.key==='Escape'){tgt.blur();return;}
    return;
   }
-  const hit=tgt.closest&&tgt.closest('[data-inline],.md-props-entry,.md-callout-head,.md-math,.cb-para,table.simple-table');if(!hit||!root.contains(hit))return;
+  const hit=tgt.closest&&(tgt.closest('.md-unknown-colon')||tgt.closest('[data-inline],.md-props-entry,.md-callout-head,.md-math,.cb-para,table.simple-table'));if(!hit||!root.contains(hit))return;
   const menu=(event.key==='F10'&&event.shiftKey)||event.key==='ContextMenu',activate=(event.key==='Enter'||event.key===' ')&&!hit.matches('table');
   if(hit.matches('table')){if(menu){event.preventDefault();event.stopPropagation();openBlockUi(hit,hit.querySelector('td'));applyBlockOp('more');}return;}
   if(menu||activate){event.preventDefault();event.stopPropagation();openComplexFor(hit.matches('.md-callout-head')?hit.parentElement:hit);}

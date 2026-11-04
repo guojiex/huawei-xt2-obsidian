@@ -724,6 +724,29 @@ test('v1.14 prototype maps table cells and keeps complex or malformed cells read
  assert.match(code,/commitSimpleTableCell/);
 });
 
+test('unknown colon containers stay read-only and route nested clicks to the whole-block source drawer',()=>{
+ const f=fixture(),source=':::custom\n[链接](https://example.test)\n\n| 标题 | 值 |\n| --- | --- |\n| a | b |\n:::';
+ const rendered=f.run('renderMarkdown('+JSON.stringify(source)+',true)');
+ assert.match(rendered,/class="md-unknown-colon" data-source-start="0" data-source-end="[^"]+"/);
+ assert.match(rendered,/data-simple-table-editable="false"/);
+ assert.doesNotMatch(rendered,/data-simple-table-editable="true"/);
+
+ f.get('article').contains=()=>true;
+ f.run("experience='simple';openComplexFor=(target)=>{window.__directiveTarget=target};annotateComplexBlocks('left')");
+ const directive={matches:selector=>selector==='.md-unknown-colon'};
+ const inline={matches:selector=>selector==='[data-inline]'};
+ const target={closest:selector=>selector==='.md-unknown-colon'?directive:
+  selector==='.block-chip,.block-copy,[data-inline],.md-props-entry,.md-callout-head,.md-math,.cb-para'?inline:null};
+ let prevented=false,stopped=false;
+ f.get('article').listeners.click.at(-1)({
+  target,
+  preventDefault(){prevented=true},
+  stopPropagation(){stopped=true}
+ });
+ assert(prevented&&stopped);
+ assert.equal(f.run('window.__directiveTarget'),directive);
+});
+
 test('update-check prototype covers outcomes, disables repeat checks, and leaves the system dialog external',()=>{
  const f=fixture();
  const aboutInsert=f.get('aboutHero').insertions[0];

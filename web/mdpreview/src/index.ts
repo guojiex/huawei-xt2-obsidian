@@ -1277,6 +1277,7 @@ function annotateInlineItems(block: HTMLElement, source: {
 }): void {
   const items = source.inlineItems ?? []
   block.dataset.inlineItemsReady = 'false'
+  block.dataset.inlineSafe = String(source.inlineSafe === true)
   if (source.inlineSafe !== true || items.length === 0) return
   const candidates: Record<string, HTMLElement[]> = {
     link: Array.from(block.querySelectorAll('a:not([data-footnote-reference])')),

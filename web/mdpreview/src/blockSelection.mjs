@@ -83,6 +83,7 @@ export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
     from,
     to,
     inlineItems: inlineItemsForBlock(block),
+    inlineSafe: block.dataset.inlineSafe === 'true',
     left,
     top,
     width,

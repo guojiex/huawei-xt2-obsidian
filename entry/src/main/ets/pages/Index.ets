@@ -2812,6 +2812,7 @@ struct Index {
               from: anchor.from,
               to: anchor.to,
               inlineItems: anchor.inlineItems.length > 0 ? anchor.inlineItems : currentAnchor.inlineItems,
+              inlineSafe: anchor.inlineSafe,
               inlineIndex: currentAnchor.inlineIndex,
               itemFrom: currentAnchor.itemFrom,
               itemTo: currentAnchor.itemTo,
@@ -3018,6 +3019,12 @@ struct Index {
         return '提示块';
       case 'footnoteDefinition':
         return '脚注';
+      case 'html':
+        return 'HTML';
+      case 'directive':
+        return '指令块';
+      case 'mixed':
+        return '混合语法';
       case 'paragraph':
         return '这一段';
       case 'heading':
@@ -3210,6 +3217,7 @@ struct Index {
       from: anchor.from,
       to: anchor.to,
       inlineItems: this.blockPanelInlineItems,
+      inlineSafe: anchor.inlineSafe,
       inlineIndex: item.index,
       itemFrom: item.from,
       itemTo: item.to,
@@ -3469,6 +3477,7 @@ struct Index {
       from: latestAnchor.from,
       to: latestAnchor.to + language.length - expected.length,
       inlineItems: latestAnchor.inlineItems,
+      inlineSafe: latestAnchor.inlineSafe,
       inlineIndex: latestAnchor.inlineIndex,
       itemFrom: latestAnchor.itemFrom,
       itemTo: latestAnchor.itemTo,
@@ -4439,6 +4448,7 @@ struct Index {
       from: anchor.from,
       to: anchor.to + delta,
       inlineItems: items,
+      inlineSafe: anchor.inlineSafe,
       inlineIndex: anchor.inlineIndex,
       itemFrom: anchor.inlineIndex >= 0 ? anchor.itemFrom : -1,
       itemTo: anchor.inlineIndex >= 0 ? anchor.itemTo + delta : -1,
@@ -8979,7 +8989,16 @@ struct Index {
       Column() {
         Scroll() {
           Column() {
-            if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'paragraph' &&
+            if (this.blockPanelAnchor !== null &&
+              (this.blockPanelAnchor.type === 'html' || this.blockPanelAnchor.type === 'directive' ||
+              this.blockPanelAnchor.type === 'mixed' ||
+              (this.blockPanelAnchor.type === 'paragraph' && !this.blockPanelAnchor.inlineSafe))) {
+              Text('此内容请在专业模式编辑')
+                .fontSize(FontSize.caption)
+                .fontColor($r('app.color.text_secondary'))
+                .width('100%')
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'paragraph' &&
               this.blockPanelAnchor.tapType === '' && this.blockPanelAnchor.inlineIndex < 0) {
               if (this.blockPanelInlineItems.length > 0) {
                 ForEach(this.blockPanelInlineItems, (item: PreviewBlockInlineItem): void => {
