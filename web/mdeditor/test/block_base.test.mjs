@@ -427,6 +427,23 @@ test('20.5 链接、双链与图片属性的每次提交各占一个撤销步', 
   assert.ok(result.undoSources.every((step) => step.applied))
 })
 
+test('14.6 同一表格单元格连续输入一次撤销恢复原文', () => {
+  const source = 'before\n\n| a | b |\n| --- | --- |\n| c | d |\n\nafter'
+  const cellFrom = source.indexOf('| c | d |') + '| c | '.length
+  const result = base.applyInputPatchesWithHistory(source, [
+    { from: cellFrom, to: cellFrom + 1, expected: 'd', replacement: 'de' },
+    { from: cellFrom, to: cellFrom + 2, expected: 'de', replacement: 'def' }
+  ])
+
+  assert.deepEqual(result, {
+    after: source.slice(0, cellFrom) + 'def' + source.slice(cellFrom + 1),
+    undoApplied: true,
+    undone: source,
+    redoApplied: true,
+    redone: source.slice(0, cellFrom) + 'def' + source.slice(cellFrom + 1)
+  })
+})
+
 test('19.6 转为纯文本是独立撤销步，撤销后逐字恢复反引号和内容', () => {
   const source = 'before `x` after'
   const contentFrom = source.indexOf('x')

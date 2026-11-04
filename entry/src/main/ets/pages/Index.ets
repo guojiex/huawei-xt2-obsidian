@@ -2817,7 +2817,7 @@ struct Index {
       applied = await editor.replaceBlockSource(request.from, request.to, request.expectedSource,
         request.replacement, revision, request.userEvent, false);
     } catch {
-      hilog.warn(DOMAIN, TAG, '代码块内容回写失败');
+      hilog.warn(DOMAIN, TAG, '简单模式块内容回写失败');
     }
     if (!this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId) ||
       editor.currentDocumentRevision !== revision) {
@@ -2830,7 +2830,7 @@ struct Index {
       this.leftCodeEditPending = false;
     }
     if (!applied && this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId)) {
-      promptAction.showToast({ message: '代码块已变化，未应用输入' });
+      promptAction.showToast({ message: '内容已变化，未应用编辑' });
     }
   }
 
@@ -8647,6 +8647,9 @@ struct Index {
             onCodeBlockCopyFailed: (): void => {
               promptAction.showToast({ message: '代码块已变化，未能复制' });
             },
+            onSimpleFormatUnsupported: (): void => {
+              promptAction.showToast({ message: '表格单元格仅支持加粗和斜体' });
+            },
             onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
               this.openBlockPropertyPanel('right', anchor);
             },
@@ -8850,6 +8853,9 @@ struct Index {
           },
           onCodeBlockCopyFailed: (): void => {
             promptAction.showToast({ message: '代码块已变化，未能复制' });
+          },
+          onSimpleFormatUnsupported: (): void => {
+            promptAction.showToast({ message: '表格单元格仅支持加粗和斜体' });
           },
           onLockedContentTap: (anchor: PreviewBlockAnchor | null): void => {
             this.openBlockPropertyPanel('left', anchor);

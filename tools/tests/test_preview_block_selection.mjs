@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import test from 'node:test'
 import { createRequire } from 'node:module'
+import { isPseudoTableSource } from '../../web/mdpreview/src/tableCells.mjs'
 
 const root = new URL('../../', import.meta.url)
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url))
@@ -175,16 +176,19 @@ test('protected paragraphs show prototype-aligned hints for supported and unsupp
   context.containsLockedSyntax = () => true
   context.editableElementFor = (block) => block.paragraph
   context.sourceText = ''
+  context.isPseudoTableSource = isPseudoTableSource
 
   const makeRoot = (inlineItemsReady) => {
     const paragraph = { tagName: 'P', dataset: {}, setAttribute() {}, removeAttribute() {} }
     const block = {
       dataset: { sourceType: 'paragraph', inlineItemsReady },
       paragraph,
-      setAttribute() {},
+      attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value },
       removeAttribute() {}
     }
     return {
+      block,
       paragraph,
       root: {
         querySelectorAll(selector) {
@@ -204,6 +208,16 @@ test('protected paragraphs show prototype-aligned hints for supported and unsupp
   const unsupported = makeRoot('false')
   configure(unsupported.root, 0)
   assert.equal(unsupported.paragraph.dataset.simpleModeHint, 'unsupported')
+
+  const pseudoTableSource = '| a | b |\n| c | d |'
+  context.sourceText = pseudoTableSource
+  const pseudoTable = makeRoot('true')
+  pseudoTable.block.dataset.sourceFrom = '0'
+  pseudoTable.block.dataset.sourceTo = String(pseudoTableSource.length)
+  configure(pseudoTable.root, 0)
+  assert.equal(pseudoTable.block.dataset.editLocked, 'true')
+  assert.equal(pseudoTable.block.attributes['aria-label'], '表格结构不规范，请在专业模式编辑')
+  assert.equal(pseudoTable.paragraph.dataset.simpleModeHint, 'unsupported')
 })
 
 test('generated preview uses the same protected-paragraph copy and v2 visual tokens', () => {

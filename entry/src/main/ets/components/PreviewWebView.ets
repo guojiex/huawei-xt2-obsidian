@@ -206,6 +206,7 @@ class PreviewNativeProxy {
   codeBlockEditingChangeHandler: (editing: boolean) => void = (_editing: boolean) => {};
   codeBlockCopyHandler: (content: string) => void = (_content: string) => {};
   codeBlockCopyFailedHandler: () => void = () => {};
+  simpleFormatUnsupportedHandler: () => void = () => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -286,6 +287,10 @@ class PreviewNativeProxy {
 
   onCodeBlockCopyFailed(): void {
     this.codeBlockCopyFailedHandler();
+  }
+
+  onSimpleFormatUnsupported(): void {
+    this.simpleFormatUnsupportedHandler();
   }
 }
 
@@ -796,6 +801,7 @@ export struct PreviewWebView {
   onCodeBlockEditingChange: (editing: boolean) => void = (_editing: boolean) => {};
   onCopyCodeBlockContent: (content: string) => void = (_content: string) => {};
   onCodeBlockCopyFailed: () => void = () => {};
+  onSimpleFormatUnsupported: () => void = () => {};
   onLockedContentTap: (anchor: PreviewBlockAnchor | null) => void =
     (_anchor: PreviewBlockAnchor | null) => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
@@ -864,6 +870,9 @@ export struct PreviewWebView {
     };
     this.proxy.codeBlockCopyFailedHandler = (): void => {
       this.onCodeBlockCopyFailed();
+    };
+    this.proxy.simpleFormatUnsupportedHandler = (): void => {
+      this.onSimpleFormatUnsupported();
     };
     this.bridge.onEditableContentChange = (content: string): void => {
       this.onEditableContentChange(content);
@@ -964,7 +973,7 @@ export struct PreviewWebView {
         ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
           'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onCodeBlockEditingChange',
-          'onCopyCodeBlockContent', 'onCodeBlockCopyFailed']);
+          'onCopyCodeBlockContent', 'onCodeBlockCopyFailed', 'onSimpleFormatUnsupported']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (_error) {

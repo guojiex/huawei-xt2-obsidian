@@ -700,11 +700,28 @@ test('prototype renders common Markdown and preserves simple list prefixes',()=>
  assert.match(rendered,/<del>old<\/del>/);
  assert.match(rendered,/<ol start="3">/);
  assert.match(rendered,/<li data-depth="1"/);
- assert.match(rendered,/<table class="simple-table md-table" data-source-start="\d+" data-source-end="\d+"/);
- assert.match(rendered,/<th>a<\/th><th>b<\/th>/);
+ assert.match(rendered,/<table class="simple-table md-table" data-block-type="table" data-table-valid="true" data-source-start="\d+" data-source-end="\d+"/);
+ assert.match(rendered,/<th[^>]*>a<\/th><th[^>]*>b<\/th>/);
  assert.equal(f.run('simplePrefix("  - child")'),'  - ');
  assert.equal(f.run('simplePrefix("3. first")'),'3. ');
  assert.equal(f.run('simpleBlockAllowed("~~old~~")'),false);
+});
+
+test('v1.14 prototype maps table cells and keeps complex or malformed cells read-only',()=>{
+ const f=fixture(),source='before\n\n| 名称 | 内容 |\n| --- | --- |\n| A\\|B | **加粗** |\n| [链接](https://example.test) | 普通文本 |\n\nafter';
+ const rendered=f.run('renderMarkdown('+JSON.stringify(source)+',false)');
+ const cellFrom=source.indexOf('A\\|B');
+ assert.match(rendered,/data-table-valid="true"/);
+ assert.ok(rendered.includes('data-cell-source-from="'+cellFrom+'" data-cell-source-to="'+(cellFrom+4)+'"'));
+ assert.match(rendered,/<td[^>]*data-simple-table-editable="true"[^>]*>A\|B<\/td>/);
+ assert.match(rendered,/<td[^>]*data-simple-table-editable="false"[^>]*>.*?>链接<\/a><\/td>/);
+ assert.match(rendered,/复杂单元格请在专业模式编辑/);
+ const malformed=f.run('renderMarkdown("| a | b |\\n| c | d |",false)');
+ assert.match(malformed,/data-table-valid="false"/);
+ assert.match(malformed,/表格结构不规范，请在专业模式编辑/);
+ assert.match(malformed,/data-simple-table-editable="false"/);
+ assert.match(code,/navigateSimpleTableCell/);
+ assert.match(code,/commitSimpleTableCell/);
 });
 
 test('update-check prototype covers outcomes, disables repeat checks, and leaves the system dialog external',()=>{

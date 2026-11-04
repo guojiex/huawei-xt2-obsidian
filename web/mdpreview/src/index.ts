@@ -26,6 +26,9 @@ import {
 } from './blockSelection.mjs'
 import { appendShareWatermark } from './shareWatermark.mjs'
 import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './codeBlock.mjs'
+import {
+  isPseudoTableSource, parseTableSource, replaceTableCellSource, serializeTableCellContent
+} from './tableCells.mjs'
 
 declare global {
   interface Window {
@@ -46,6 +49,7 @@ declare global {
       onCodeBlockEditingChange?: (editing: boolean) => void
       onCopyCodeBlockContent?: (contentB64: string) => void
       onCodeBlockCopyFailed?: () => void
+      onSimpleFormatUnsupported?: () => void
     }
   }
 }
@@ -131,10 +135,38 @@ interface PendingCodeEdit {
   session: CodeEditSession;
 }
 
+interface TableCellEditSession {
+  block: HTMLElement;
+  target: HTMLElement;
+  from: number;
+  to: number;
+  expected: string;
+  committedHtml: string;
+  pendingHtml: string;
+  pendingSource: string;
+  dirty: boolean;
+  exiting: boolean;
+}
+
+interface PendingTableCellEdit {
+  id: number;
+  from: number;
+  to: number;
+  expected: string;
+  replacement: string;
+  html: string;
+  block: HTMLElement;
+  session: TableCellEditSession;
+}
+
 let codeEditSession: CodeEditSession | null = null
 let pendingCodeEdit: PendingCodeEdit | null = null
+let tableCellEditSession: TableCellEditSession | null = null
+const tableCellEditSessions = new Map<HTMLElement, TableCellEditSession>()
+let pendingTableCellEdit: PendingTableCellEdit | null = null
 let nextCodeEditId = 1
 const codeEditFlushWaiters: number[] = []
+let blockEditingNotified = false
 
 /**
  * 渲染后处理 <img>：本地相对引用 → __arkts.readAsset 换成 data URI。
@@ -775,7 +807,10 @@ function attachCodeBlockLanguageButton(block: HTMLElement, pre: HTMLElement, lan
   container.insertBefore(bar, pre)
 }
 
-function notifyCodeBlockEditingChange(editing: boolean): void {
+function notifyBlockEditingState(): void {
+  const editing = codeEditSession !== null || tableCellEditSessions.size > 0
+  if (editing === blockEditingNotified) return
+  blockEditingNotified = editing
   const arkts = window.__arkts
   if (arkts && typeof arkts.onCodeBlockEditingChange === 'function') {
     arkts.onCodeBlockEditingChange(editing)
@@ -799,8 +834,9 @@ function notifyCodeBlockCopyFailed(): void {
 }
 
 function notifyCodeEditWaiters(): void {
-  if (pendingCodeEdit !== null ||
-    (codeEditSession !== null && codeEditSession.pendingText !== codeEditSession.committedText)) {
+  if (pendingCodeEdit !== null || pendingTableCellEdit !== null ||
+    (codeEditSession !== null && codeEditSession.pendingText !== codeEditSession.committedText) ||
+    Array.from(tableCellEditSessions.values()).some((session) => session.dirty)) {
     return
   }
   const waiters = codeEditFlushWaiters.splice(0)
@@ -820,8 +856,9 @@ function finishCodeEditSession(session: CodeEditSession): void {
     return
   }
   codeEditSession = null
-  notifyCodeBlockEditingChange(false)
+  notifyBlockEditingState()
   notifyCodeEditWaiters()
+  drainBlockSourceEdits()
 }
 
 function applyCodeSourcePatch(patch: PendingCodeEdit): boolean {
@@ -844,8 +881,272 @@ function applyCodeSourcePatch(patch: PendingCodeEdit): boolean {
   return true
 }
 
+function setTableEditHint(block: HTMLElement, message: string): void {
+  block.querySelector('[data-simple-table-hint="true"]')?.remove()
+  const hint = document.createElement('span')
+  hint.className = 'preview-edit-hint'
+  hint.dataset.simpleTableHint = 'true'
+  hint.textContent = message
+  block.appendChild(hint)
+}
+
+function annotateTableCells(block: HTMLElement, tableSource: string, sourceFrom: number,
+  enableEdit: boolean): boolean {
+  const tableElement = block.querySelector('table') as HTMLTableElement | null
+  const model = parseTableSource(tableSource)
+  const domRows = tableElement ? Array.from(tableElement.querySelectorAll('tr')) : []
+  const modelRows = model ? [model.header, ...model.rows] : []
+  if (!tableElement || !model || domRows.length !== modelRows.length ||
+    domRows.some((row, index) => row.cells.length !== modelRows[index].length)) {
+    block.dataset.editLocked = 'true'
+    block.setAttribute('aria-label', '表格结构不规范，请在专业模式编辑')
+    if (tableElement) {
+      for (const cell of Array.from(tableElement.querySelectorAll('th,td'))) {
+        const element = cell as HTMLElement
+        element.removeAttribute('contenteditable')
+        element.removeAttribute('aria-label')
+        delete element.dataset.simpleTableCell
+        delete element.dataset.simpleTableEditable
+        delete element.dataset.cellSourceFrom
+        delete element.dataset.cellSourceTo
+        delete element.dataset.cellSource
+      }
+    }
+    setTableEditHint(block, '表格结构不规范，请在专业模式编辑')
+    return false
+  }
+
+  let hasReadOnlyCells = false
+  let hasEditableCells = false
+  for (let rowIndex = 0; rowIndex < modelRows.length; rowIndex++) {
+    const cells = Array.from(domRows[rowIndex].cells)
+    for (let columnIndex = 0; columnIndex < modelRows[rowIndex].length; columnIndex++) {
+      const cell = modelRows[rowIndex][columnIndex]
+      const element = cells[columnIndex] as HTMLElement
+      const editableCell = enableEdit && cell.editable
+      hasEditableCells ||= editableCell
+      element.dataset.simpleTableCell = 'true'
+      element.dataset.simpleTableEditable = String(editableCell)
+      element.dataset.cellSourceFrom = String(sourceFrom + cell.from)
+      element.dataset.cellSourceTo = String(sourceFrom + cell.to)
+      element.dataset.cellSource = cell.source
+      element.dataset.tableRow = String(rowIndex)
+      element.dataset.tableColumn = String(columnIndex)
+      element.setAttribute('aria-label', editableCell
+        ? `编辑表格第 ${rowIndex + 1} 行第 ${columnIndex + 1} 列`
+        : '此单元格含复杂语法，请在专业模式编辑')
+      if (editableCell) {
+        element.setAttribute('contenteditable', 'true')
+        element.removeAttribute('tabindex')
+        element.spellcheck = false
+      } else {
+        element.removeAttribute('contenteditable')
+        element.tabIndex = 0
+        hasReadOnlyCells = true
+      }
+    }
+  }
+
+  block.dataset.editLocked = String(!hasEditableCells)
+  block.setAttribute('aria-label', hasReadOnlyCells
+    ? (hasEditableCells ? '部分表格单元格请在专业模式编辑' : '表格请在专业模式编辑')
+    : '可编辑表格')
+  if (hasReadOnlyCells) setTableEditHint(block, '复杂单元格请在专业模式编辑')
+  else block.querySelector('[data-simple-table-hint="true"]')?.remove()
+  return true
+}
+
+function applyTableCellSourcePatch(patch: PendingTableCellEdit): boolean {
+  const blockFrom = Number(patch.block.dataset.sourceFrom)
+  const blockTo = Number(patch.block.dataset.sourceTo)
+  if (!Number.isInteger(blockFrom) || !Number.isInteger(blockTo) ||
+    blockFrom < 0 || blockTo < blockFrom || blockTo > sourceText.length ||
+    patch.from < blockFrom || patch.to > blockTo) return false
+  const tableSource = sourceText.slice(blockFrom, blockTo)
+  const updatedTable = replaceTableCellSource(tableSource, patch.from - blockFrom,
+    patch.to - blockFrom, patch.expected, patch.replacement)
+  if (updatedTable === null) return false
+
+  const delta = updatedTable.length - tableSource.length
+  sourceText = sourceText.slice(0, blockFrom) + updatedTable + sourceText.slice(blockTo)
+  for (const session of tableCellEditSessions.values()) {
+    if (session.target === patch.session.target) {
+      session.from = patch.from
+      session.to = patch.from + patch.replacement.length
+      session.expected = patch.replacement
+    } else if (session.from >= patch.to) {
+      session.from += delta
+      session.to += delta
+    }
+  }
+  const blocks = contentElement.querySelectorAll('.preview-source-block, .empty[data-source-from]')
+  for (let index = 0; index < blocks.length; index++) {
+    const block = blocks[index] as HTMLElement
+    const from = Number(block.dataset.sourceFrom)
+    const to = Number(block.dataset.sourceTo)
+    if (!Number.isInteger(from) || !Number.isInteger(to)) continue
+    if (block === patch.block) {
+      block.dataset.sourceTo = String(to + delta)
+    } else if (from >= blockTo) {
+      block.dataset.sourceFrom = String(from + delta)
+      block.dataset.sourceTo = String(to + delta)
+    }
+  }
+  if (!editable) return true
+  return annotateTableCells(patch.block, updatedTable, blockFrom, true)
+}
+
+function finishTableCellEditSession(session: TableCellEditSession): void {
+  if (tableCellEditSessions.get(session.target) !== session || pendingTableCellEdit?.session === session ||
+    session.dirty || !session.exiting) return
+  tableCellEditSessions.delete(session.target)
+  if (tableCellEditSession === session) tableCellEditSession = null
+  notifyBlockEditingState()
+  notifyCodeEditWaiters()
+}
+
+function submitTableCellEdit(session: TableCellEditSession): void {
+  if (tableCellEditSessions.get(session.target) !== session || pendingCodeEdit !== null ||
+    pendingTableCellEdit !== null || editableComposing || !session.dirty) return
+  const from = session.from
+  const to = session.to
+  const expected = session.expected
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) {
+    session.target.innerHTML = session.committedHtml
+    session.dirty = false
+    session.exiting = true
+    finishTableCellEditSession(session)
+    notifyCodeEditWaiters()
+    return
+  }
+  if (expected === session.pendingSource) {
+    session.committedHtml = session.pendingHtml
+    session.dirty = false
+    finishTableCellEditSession(session)
+    notifyCodeEditWaiters()
+    return
+  }
+  const id = nextCodeEditId++
+  const request: PendingTableCellEdit = {
+    id,
+    from,
+    to,
+    expected,
+    replacement: session.pendingSource,
+    html: session.pendingHtml,
+    block: session.block,
+    session
+  }
+  pendingTableCellEdit = request
+  const arkts = window.__arkts
+  if (!arkts || typeof arkts.onCodeBlockEdit !== 'function') {
+    api.completeCodeBlockEdit(id, false)
+    return
+  }
+  try {
+    arkts.onCodeBlockEdit(id, request.from, request.to, b64encode(request.expected),
+      b64encode(request.replacement), 'input.type')
+  } catch {
+    api.completeCodeBlockEdit(id, false)
+  }
+}
+
+function drainBlockSourceEdits(): void {
+  if (pendingCodeEdit !== null || pendingTableCellEdit !== null || editableComposing) return
+  if (codeEditSession !== null &&
+    (codeEditSession.pendingText !== codeEditSession.committedText || codeEditSession.exiting)) {
+    submitCodeBodyEdit(codeEditSession)
+    if (pendingCodeEdit !== null) return
+  }
+  for (const session of tableCellEditSessions.values()) {
+    if (session.dirty) {
+      submitTableCellEdit(session)
+      if (pendingTableCellEdit !== null) return
+    } else if (session.exiting) {
+      finishTableCellEditSession(session)
+    }
+  }
+}
+
+function startTableCellEditSession(target: HTMLElement): void {
+  const block = sourceBlockForNode(target)
+  if (!block || target.dataset.simpleTableEditable !== 'true' || !target.isContentEditable) return
+  const existing = tableCellEditSessions.get(target)
+  if (existing) {
+    existing.exiting = false
+    tableCellEditSession = existing
+    return
+  }
+  if (codeEditSession !== null) {
+    codeEditSession.exiting = true
+    drainBlockSourceEdits()
+  }
+  if (tableCellEditSession !== null) {
+    tableCellEditSession.exiting = true
+    drainBlockSourceEdits()
+  }
+  const session: TableCellEditSession = {
+    block,
+    target,
+    from: Number(target.dataset.cellSourceFrom),
+    to: Number(target.dataset.cellSourceTo),
+    expected: target.dataset.cellSource ?? '',
+    committedHtml: target.innerHTML,
+    pendingHtml: target.innerHTML,
+    pendingSource: target.dataset.cellSource ?? '',
+    dirty: false,
+    exiting: false
+  }
+  tableCellEditSessions.set(target, session)
+  tableCellEditSession = session
+  notifyBlockEditingState()
+}
+
+function captureTableCellEdit(session: TableCellEditSession): void {
+  session.pendingHtml = session.target.innerHTML
+  session.pendingSource = serializeTableCellContent(session.target)
+  session.dirty = session.pendingHtml !== session.committedHtml
+}
+
+function updateTableCellEditSessionFromDom(target: HTMLElement): void {
+  const session = tableCellEditSessions.get(target)
+  if (!session) return
+  captureTableCellEdit(session)
+  tableCellEditSessions.delete(target)
+  tableCellEditSessions.set(target, session)
+  drainBlockSourceEdits()
+}
+
+function preventTableNavigationDuringComposition(event: KeyboardEvent): boolean {
+  if (!editableComposing && !event.isComposing) return false
+  if (event.key === 'Tab' || event.key === 'Enter') event.preventDefault()
+  return true
+}
+
+function navigateTableCell(event: KeyboardEvent, cell: HTMLElement): boolean {
+  if (preventTableNavigationDuringComposition(event)) return true
+  if (cell.dataset.simpleTableEditable !== 'true') return false
+  const table = cell.closest('table') as HTMLTableElement | null
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    const row = Number(cell.dataset.tableRow)
+    const column = Number(cell.dataset.tableColumn)
+    const next = table?.rows[row + 1]?.cells[column] as HTMLElement | undefined
+    if (next) next.focus()
+    return true
+  }
+  if (event.key !== 'Tab') return false
+  const editableCells = table?.querySelectorAll('[data-simple-table-editable="true"]') ?? []
+  const cells = Array.from(editableCells) as HTMLElement[]
+  const nextIndex = cells.indexOf(cell) + (event.shiftKey ? -1 : 1)
+  event.preventDefault()
+  if (nextIndex >= 0 && nextIndex < cells.length) cells[nextIndex].focus()
+  return true
+}
+
 function submitCodeBodyEdit(session: CodeEditSession): void {
-  if (codeEditSession !== session || session.inFlight || editableComposing) return
+  if (codeEditSession !== session || session.inFlight || pendingTableCellEdit !== null ||
+    pendingCodeEdit !== null || editableComposing) return
   if (session.pendingText === session.committedText) {
     finishCodeEditSession(session)
     notifyCodeEditWaiters()
@@ -892,9 +1193,13 @@ function startCodeEditSession(target: HTMLElement): void {
   const block = sourceBlockForNode(target)
   if (!block || target.dataset.simpleCodeEditable !== 'true') return
   if (codeEditSession?.target === target) return
+  if (tableCellEditSession !== null) {
+    tableCellEditSession.exiting = true
+    drainBlockSourceEdits()
+  }
   if (codeEditSession !== null) {
     codeEditSession.exiting = true
-    submitCodeBodyEdit(codeEditSession)
+    drainBlockSourceEdits()
   }
   const text = target.textContent ?? ''
   codeEditSession = {
@@ -905,14 +1210,14 @@ function startCodeEditSession(target: HTMLElement): void {
     inFlight: false,
     exiting: false
   }
-  notifyCodeBlockEditingChange(true)
+  notifyBlockEditingState()
 }
 
 function updateCodeEditSessionFromDom(target: HTMLElement): void {
   const session = codeEditSession
   if (!session || session.target !== target) return
   session.pendingText = target.textContent ?? ''
-  submitCodeBodyEdit(session)
+  drainBlockSourceEdits()
 }
 
 function insertPlainTextAtSelection(target: HTMLElement, text: string): boolean {
@@ -927,14 +1232,18 @@ function insertPlainTextAtSelection(target: HTMLElement, text: string): boolean 
   range.collapse(true)
   selection.removeAllRanges()
   selection.addRange(range)
-  updateCodeEditSessionFromDom(target)
+  if (target.dataset.simpleTableCell === 'true') updateTableCellEditSessionFromDom(target)
+  else updateCodeEditSessionFromDom(target)
   return true
 }
 
 function resetCodeEditSession(): void {
-  const session = codeEditSession
   codeEditSession = null
-  if (session) notifyCodeBlockEditingChange(false)
+  tableCellEditSession = null
+  tableCellEditSessions.clear()
+  pendingTableCellEdit = null
+  blockEditingNotified = true
+  notifyBlockEditingState()
 }
 
 function sourceBlockForNode(node: Node | null): HTMLElement | null {
@@ -1064,7 +1373,7 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
   setActiveLockedBlocks(root, [])
   publishLockedBlockAnchor(null)
   const previousEditables = root.querySelectorAll(
-    '[data-simple-editable="true"], [data-simple-code-editable="true"]'
+    '[data-simple-editable="true"], [data-simple-code-editable="true"], [data-simple-table-cell]'
   )
   for (let index = 0; index < previousEditables.length; index++) {
     const element = previousEditables[index] as HTMLElement
@@ -1072,6 +1381,14 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     element.removeAttribute('aria-label')
     element.removeAttribute('data-simple-editable')
     element.removeAttribute('data-simple-code-editable')
+    element.removeAttribute('data-simple-table-cell')
+    element.removeAttribute('data-simple-table-editable')
+    element.removeAttribute('data-cell-source-from')
+    element.removeAttribute('data-cell-source-to')
+    element.removeAttribute('data-cell-source')
+    element.removeAttribute('data-table-row')
+    element.removeAttribute('data-table-column')
+    element.removeAttribute('tabindex')
   }
   const blocks = root.querySelectorAll('.preview-source-block')
   for (let index = 0; index < blocks.length; index++) {
@@ -1113,6 +1430,27 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
       continue
     }
     if (!editable) continue
+    if (type === 'table') {
+      const from = Number(block.dataset.sourceFrom)
+      const to = Number(block.dataset.sourceTo)
+      const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from &&
+        to <= sourceText.length ? sourceText.slice(from, to) : ''
+      annotateTableCells(block, raw, from, true)
+      continue
+    }
+    if (type === 'paragraph') {
+      const from = Number(block.dataset.sourceFrom)
+      const to = Number(block.dataset.sourceTo)
+      const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from &&
+        to <= sourceText.length ? sourceText.slice(from, to) : ''
+      if (isPseudoTableSource(raw)) {
+        block.dataset.editLocked = 'true'
+        block.setAttribute('aria-label', '表格结构不规范，请在专业模式编辑')
+        const paragraph = editableElementFor(block)
+        if (paragraph) paragraph.dataset.simpleModeHint = 'unsupported'
+        continue
+      }
+    }
     if (!supported || containsLockedSyntax(block)) {
       block.dataset.editLocked = 'true'
       block.setAttribute('aria-label', '此内容请在专业模式编辑')
@@ -1188,17 +1526,30 @@ contentElement.addEventListener('compositionstart', (): void => {
   const arkts = window.__arkts
   if (arkts && typeof arkts.onCompositionChange === 'function') arkts.onCompositionChange('start')
 })
-contentElement.addEventListener('compositionend', (): void => {
-  if (!editable) return
+contentElement.addEventListener('compositionend', (event: CompositionEvent): void => {
   editableComposing = false
   const arkts = window.__arkts
   if (arkts && typeof arkts.onCompositionChange === 'function') arkts.onCompositionChange('end')
+  const eventTarget = event.target instanceof HTMLElement ? event.target : null
   const codeTarget = document.activeElement instanceof HTMLElement
     ? document.activeElement.closest('[data-simple-code-editable="true"]') as HTMLElement | null : null
   const sessionTarget = codeEditSession?.target.isConnected ? codeEditSession.target : null
-  const committedCodeTarget = sessionTarget ?? codeTarget
+  const eventCodeTarget = eventTarget?.closest('[data-simple-code-editable="true"]') as HTMLElement | null
+  const committedCodeTarget = sessionTarget ?? eventCodeTarget ?? codeTarget
   if (committedCodeTarget) {
     updateCodeEditSessionFromDom(committedCodeTarget)
+    return
+  }
+  const eventTableSession = eventTarget ? tableCellEditSessions.get(eventTarget) : undefined
+  const tableTarget = document.activeElement instanceof HTMLElement
+    ? document.activeElement.closest('[data-simple-table-editable="true"]') as HTMLElement | null : null
+  const committedTableTarget = eventTableSession?.target ?? tableTarget
+  if (committedTableTarget) {
+    updateTableCellEditSessionFromDom(committedTableTarget)
+    return
+  }
+  if (!editable) {
+    drainBlockSourceEdits()
     return
   }
   const target = sourceBlockForNode(window.getSelection()?.anchorNode ?? document.activeElement)
@@ -1209,18 +1560,34 @@ contentElement.addEventListener('focusin', (event: FocusEvent): void => {
   if (!editable || !(event.target instanceof HTMLElement)) return
   const target = event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null
   if (target) startCodeEditSession(target)
+  const tableCell = event.target.closest('[data-simple-table-editable="true"]') as HTMLElement | null
+  if (tableCell) startTableCellEditSession(tableCell)
 })
 contentElement.addEventListener('focusout', (event: FocusEvent): void => {
+  const tableSession = event.target instanceof HTMLElement
+    ? tableCellEditSessions.get(event.target) : undefined
+  if (tableSession) {
+    captureTableCellEdit(tableSession)
+    tableSession.exiting = true
+    if (tableSession.dirty) {
+      tableCellEditSessions.delete(tableSession.target)
+      tableCellEditSessions.set(tableSession.target, tableSession)
+    }
+    drainBlockSourceEdits()
+    return
+  }
   const session = codeEditSession
   if (!session || event.target !== session.target) return
   const next = event.relatedTarget
   if (next instanceof Node && session.block.contains(next)) return
   session.pendingText = session.target.textContent ?? ''
   session.exiting = true
-  submitCodeBodyEdit(session)
+  drainBlockSourceEdits()
 })
 contentElement.addEventListener('keydown', (event: KeyboardEvent): void => {
   if (!editable || !(event.target instanceof HTMLElement)) return
+  const cell = event.target.closest('[data-simple-table-cell="true"]') as HTMLElement | null
+  if (cell && navigateTableCell(event, cell)) return
   const target = event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null
   if (!target) return
   if (event.key === 'Tab') {
@@ -1233,6 +1600,12 @@ contentElement.addEventListener('keydown', (event: KeyboardEvent): void => {
 })
 contentElement.addEventListener('beforeinput', (event: InputEvent): void => {
   if (!editable) return
+  const tableCell = event.target instanceof HTMLElement
+    ? event.target.closest('[data-simple-table-editable="true"]') as HTMLElement | null : null
+  if (tableCell && (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak')) {
+    event.preventDefault()
+    return
+  }
   const codeTarget = event.target instanceof HTMLElement
     ? event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null : null
   if (codeTarget && (event.inputType === 'insertParagraph' || event.inputType === 'insertLineBreak')) {
@@ -1245,10 +1618,28 @@ contentElement.addEventListener('beforeinput', (event: InputEvent): void => {
   const range = selection.getRangeAt(0)
   const startBlock = sourceBlockForNode(range.startContainer)
   const endBlock = sourceBlockForNode(range.endContainer)
-  if (startBlock !== endBlock) event.preventDefault()
+  const startCell = (range.startContainer instanceof HTMLElement
+    ? range.startContainer : range.startContainer.parentElement)?.closest('[data-simple-table-cell="true"]')
+  const endCell = (range.endContainer instanceof HTMLElement
+    ? range.endContainer : range.endContainer.parentElement)?.closest('[data-simple-table-cell="true"]')
+  if (startBlock !== endBlock || startCell !== endCell) event.preventDefault()
+})
+contentElement.addEventListener('paste', (event: ClipboardEvent): void => {
+  if (!editable || !(event.target instanceof HTMLElement)) return
+  const tableCell = event.target.closest('[data-simple-table-editable="true"]') as HTMLElement | null
+  if (!tableCell) return
+  event.preventDefault()
+  const text = (event.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?|\n/g, ' ')
+  insertPlainTextAtSelection(tableCell, text)
 })
 contentElement.addEventListener('input', (event: Event): void => {
   if (!editable || editableComposing) return
+  const tableCell = event.target instanceof HTMLElement
+    ? event.target.closest('[data-simple-table-editable="true"]') as HTMLElement | null : null
+  if (tableCell) {
+    updateTableCellEditSessionFromDom(tableCell)
+    return
+  }
   const codeTarget = event.target instanceof HTMLElement
     ? event.target.closest('[data-simple-code-editable="true"]') as HTMLElement | null : null
   if (codeTarget) {
@@ -1286,6 +1677,8 @@ document.addEventListener('selectionchange', (): void => {
 contentElement.addEventListener('click', (event: MouseEvent): void => {
   if (!editable || !(event.target instanceof HTMLElement)) return
   if (replayingLockedTap) return
+  const tableCell = event.target.closest('[data-simple-table-cell="true"]') as HTMLElement | null
+  if (tableCell) return
   const lockedBlock = event.target.closest(
     '.preview-source-block[data-edit-locked="true"]'
   ) as HTMLElement | null
@@ -1429,9 +1822,13 @@ const api: MdPreviewApi = {
 
   setEditable(value: boolean): void {
     editable = value
-    if (!editable && codeEditSession !== null) {
-      codeEditSession.exiting = true
-      submitCodeBodyEdit(codeEditSession)
+    if (!editable) {
+      if (codeEditSession !== null) codeEditSession.exiting = true
+      for (const session of tableCellEditSessions.values()) {
+        if (session === tableCellEditSession && session.target.isConnected) captureTableCellEdit(session)
+        session.exiting = true
+      }
+      drainBlockSourceEdits()
     }
     if (!editable) lastLockedTapTarget = null
     const split = splitFrontmatter(sourceText)
@@ -1452,6 +1849,23 @@ const api: MdPreviewApi = {
     const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null
     const start = range?.startContainer instanceof HTMLElement ? range.startContainer : range?.startContainer.parentElement
     const block = sourceBlockForNode(start ?? null)
+    const tableCell = start?.closest('[data-simple-table-cell="true"]') as HTMLElement | null
+    if (tableCell) {
+      const end = range?.endContainer instanceof HTMLElement ? range.endContainer : range?.endContainer.parentElement
+      if (tableCell.dataset.simpleTableEditable !== 'true' ||
+        end?.closest('[data-simple-table-cell="true"]') !== tableCell) return
+      if (kind !== 'bold' && kind !== 'italic') {
+        const arkts = window.__arkts
+        if (arkts && typeof arkts.onSimpleFormatUnsupported === 'function') {
+          arkts.onSimpleFormatUnsupported()
+        }
+        return
+      }
+      startTableCellEditSession(tableCell)
+      document.execCommand(kind)
+      updateTableCellEditSessionFromDom(tableCell)
+      return
+    }
     const target = block ? editableElementFor(block) : null
     if (!block || !target || !target.isContentEditable) return
     const commands: Record<string, string> = {
@@ -1534,8 +1948,10 @@ const api: MdPreviewApi = {
       window.clearTimeout(editableChangeTimer)
       editableChangeTimer = undefined
     }
-    if (pendingCodeEdit !== null ||
-      (codeEditSession !== null && codeEditSession.pendingText !== codeEditSession.committedText)) {
+    drainBlockSourceEdits()
+    if (pendingCodeEdit !== null || pendingTableCellEdit !== null ||
+      (codeEditSession !== null && codeEditSession.pendingText !== codeEditSession.committedText) ||
+      Array.from(tableCellEditSessions.values()).some((session) => session.dirty)) {
       codeEditFlushWaiters.push(id)
       return
     }
@@ -1544,24 +1960,42 @@ const api: MdPreviewApi = {
 
   completeCodeBlockEdit(id: number, applied: boolean): void {
     const pending = pendingCodeEdit
-    if (!pending || pending.id !== id) return
-    pendingCodeEdit = null
-    const session = pending.session
-    session.inFlight = false
-    if (!applied || !applyCodeSourcePatch(pending)) {
-      session.target.textContent = session.committedText
-      session.pendingText = session.committedText
-      session.exiting = true
-      finishCodeEditSession(session)
+    if (pending && pending.id === id) {
+      pendingCodeEdit = null
+      const session = pending.session
+      session.inFlight = false
+      if (!applied || !applyCodeSourcePatch(pending)) {
+        session.target.textContent = session.committedText
+        session.pendingText = session.committedText
+        session.exiting = true
+        finishCodeEditSession(session)
+      } else {
+        session.committedText = pending.bodyText
+        if (session.pendingText === session.committedText) session.pendingText = session.committedText
+      }
+      drainBlockSourceEdits()
       notifyCodeEditWaiters()
       return
     }
-    session.committedText = pending.bodyText
-    if (session.pendingText !== session.committedText) {
-      submitCodeBodyEdit(session)
+
+    const tablePending = pendingTableCellEdit
+    if (!tablePending || tablePending.id !== id) return
+    pendingTableCellEdit = null
+    const session = tablePending.session
+    if (!applied || !applyTableCellSourcePatch(tablePending)) {
+      if (session.target.isConnected) session.target.innerHTML = session.committedHtml
+      session.pendingHtml = session.committedHtml
+      session.pendingSource = session.expected
+      session.dirty = false
+      session.exiting = true
+      finishTableCellEditSession(session)
     } else {
-      finishCodeEditSession(session)
+      session.committedHtml = tablePending.html
+      session.dirty = session.pendingSource !== tablePending.replacement
+      session.expected = tablePending.replacement
+      if (!session.dirty && session.exiting) finishTableCellEditSession(session)
     }
+    drainBlockSourceEdits()
     notifyCodeEditWaiters()
   },
 

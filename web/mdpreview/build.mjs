@@ -216,6 +216,12 @@ const html = `<!doctype html>
   #content th:last-child, #content td:last-child { border-right: none; }
   #content tbody tr:last-child td { border-bottom: none; }
   #content th { background: var(--nav); font-weight: 600; color: var(--ink); }
+  #content [data-simple-table-editable="true"] { outline: none; cursor: text; }
+  #content [data-simple-table-editable="true"]:focus { outline: none; background: var(--blue-soft); }
+  #content .preview-edit-hint {
+    display: block; margin: 0 0 var(--s4); color: var(--muted);
+    font-size: var(--caption); line-height: var(--leading);
+  }
   #content hr { border: none; border-top: var(--stroke) solid var(--line); margin: var(--s8) 0; }
   #content img { max-width: 100%; border-radius: var(--small-r); }
   #content img.preview-local-image {
