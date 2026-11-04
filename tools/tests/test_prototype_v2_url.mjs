@@ -49,6 +49,18 @@ function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience
  const run=s=>vm.runInContext(s,context);run(code);
  return {get,run,href:()=>location.href,flush(){while(pending.length)pending.shift()()},event(area,type,event={}){for(const fn of events[area][type]||[])fn(event)},back(){assert(index>0);location=new URL(history[--index]);for(const fn of events.window.popstate||[])fn({})},forward(){assert(index<history.length-1);location=new URL(history[++index]);for(const fn of events.window.popstate||[])fn({})},history};
 }
+test('vault manager shares the selected library as ZIP and restores focus',()=>{
+ const f=fixture();f.run("openVaultManager(false);gitShareDemo=true");
+ assert.match(f.get('vaultCards').innerHTML,/data-vault-action="share"/);
+ const before=f.run('activeVault');const trigger={isConnected:true,focus(){this.focused=true}};
+ f.get('vaultCards').onclick({target:{closest:()=>({dataset:{vaultAction:'share',vaultId:'projects'},...trigger,focus:trigger.focus})}});
+ assert.equal(f.run('activeVault'),before);assert.equal(f.run('shareSnapshot.title'),'项目笔记');
+ assert.equal(f.run('shareSnapshot.scope'),'vault');assert(f.run('shareSnapshot.zip'));
+ assert(f.get('shareScopeSeg').classList.contains('hidden'));assert(f.get('shareRemoteLink').classList.contains('hidden'));
+ f.run(html.match(/\$\('shareDialog'\)\.addEventListener\('close',\(\)=>\{if\(!shareVaultTarget\)return;[^\n]+/)[0]);
+ const back=f.run('shareReturnFocus');f.get('shareDialog').dispatch('close',{});assert(back.focused);assert.equal(f.run('shareVaultTarget'),'');
+ f.run("notes.filter(n=>n.vault==='local').forEach(n=>n.deleted=true);renderVaultManager()");assert.match(f.get('vaultCards').innerHTML,/data-vault-action="share" data-vault-id="local" disabled/);
+});
 test('settings header returns one level at a time in single-pane layouts',()=>{
  const f=fixture();f.run("setViewport('phone');openSettings();chooseSettings('about',false);$('openHistory').onclick()");
  assert(f.run('historyOpen'));f.get('closeSettings').onclick();assert(!f.run('historyOpen'));assert(f.run('settingsOpen'));assert(f.get('settingsPage').classList.contains('detail-open'));
