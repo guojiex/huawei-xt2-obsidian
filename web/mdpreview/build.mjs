@@ -84,6 +84,7 @@ const html = `<!doctype html>
     font-family: var(--font);
     word-break: break-word;
   }
+  #content:focus { outline: none; }
   #content .preview-body { zoom: var(--preview-scale, 1); }
   #content .share-watermark {
     margin-top: var(--s8); padding-top: var(--s3); border-top: var(--stroke) solid var(--line);

@@ -41,12 +41,10 @@ test('selection feedback outlines locked rendered children using v2 tokens', () 
   ))
 })
 
-test('preview WebView configures a transparent system focus box', () => {
-  const webStart = previewComponentSource.indexOf("Web({ src: $rawfile('mdpreview/index.html'")
-  const webEnd = previewComponentSource.indexOf('\n\n      if (!this.pageReady)', webStart)
-  assert.ok(webStart >= 0 && webEnd > webStart)
-  assert.match(previewComponentSource.slice(webStart, webEnd),
-    /\.focusBox\(\{\s*strokeWidth: LengthMetrics\.vp\(0\),\s*strokeColor: ColorMetrics\.rgba\(0,\s*0,\s*0,\s*0\)\s*\}\)/)
+test('focused preview scroll area suppresses its default outline, not block outlines', () => {
+  assert.match(buildSource, /#content:focus\s*\{\s*outline:\s*none;\s*\}/)
+  assert.ok(generatedPreview.includes('#content:focus { outline: none; }'))
+  assert.doesNotMatch(previewComponentSource, /\.focusBox\(/)
 })
 
 test('locked block taps route links and images without synthesizing a block selection', () => {
