@@ -3,6 +3,7 @@ import { test } from 'node:test'
 import { build } from 'esbuild'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { prepareCodeBodyEdit, prepareCodeLanguageEdit, prepareInlineCodeUnwrap } from '../../mdpreview/src/codeBlock.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const result = await build({
@@ -130,6 +131,31 @@ const result = await build({
         const undone = editor.doc.toString()
         const redoApplied = redo({ state: editor, dispatch: (transaction) => { editor = editor.update(transaction).state } })
         return { after, undoApplied, undone, redoApplied, redone: editor.doc.toString() }
+      }
+      export function applyPatchesAndUndo(source, patches, undoCount) {
+        let editor = sourceEditState(source)
+        for (const patch of patches) {
+          const edit = prepareBlockSourceEdit(editor, patch.from, patch.to,
+            patch.expected, patch.replacement, '\\n')
+          if (!edit) return null
+          editor = editor.update({
+            changes: edit.changes,
+            selection: { anchor: edit.selection.from, head: edit.selection.to },
+            annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
+            userEvent: patch.userEvent
+          }).state
+        }
+        const after = editor.doc.toString()
+        const undoSources = []
+        for (let index = 0; index < undoCount; index++) {
+          let applied = false
+          undo({ state: editor, dispatch: (transaction) => {
+            editor = editor.update(transaction).state
+            applied = true
+          } })
+          undoSources.push({ applied, source: editor.doc.toString() })
+        }
+        return { after, undoSources }
       }
       export function rejectsMismatchedSourceEdit(source, from, to, replacement, declaredRange) {
         const editor = sourceEditState(source)
@@ -346,6 +372,50 @@ test('19.1 空代码块首输可零长度回写，连续输入一次撤销还原
     undone: source,
     redoApplied: true,
     redone: '```js\nab\n```\nafter'
+  })
+})
+
+test('19.6 语言切换和连续块内输入分别形成撤销步', () => {
+  const source = '```javascript\nx\n```\n'
+  const bodyEdit = prepareCodeBodyEdit(source, 0, source.lastIndexOf('\n'), 'typed')
+  assert.ok(bodyEdit)
+  const afterTyping = source.slice(0, bodyEdit.from) + bodyEdit.replacement + source.slice(bodyEdit.to)
+  const languageEdit = prepareCodeLanguageEdit(afterTyping, 0, afterTyping.lastIndexOf('\n'), 'python')
+  assert.ok(languageEdit)
+
+  const result = base.applyPatchesAndUndo(source, [
+    { ...bodyEdit, userEvent: 'input.type' },
+    { ...languageEdit, userEvent: 'input' }
+  ], 2)
+
+  assert.deepEqual(result, {
+    after: '```python\ntyped\n```\n',
+    undoSources: [
+      { applied: true, source: '```javascript\ntyped\n```\n' },
+      { applied: true, source }
+    ]
+  })
+})
+
+test('19.6 转为纯文本是独立撤销步，撤销后逐字恢复反引号和内容', () => {
+  const source = 'before `x` after'
+  const contentFrom = source.indexOf('x')
+  const afterTyping = source.slice(0, contentFrom) + 'xy' + source.slice(contentFrom + 1)
+  const inlineFrom = afterTyping.indexOf('`')
+  const unwrap = prepareInlineCodeUnwrap(afterTyping, inlineFrom, afterTyping.indexOf('`', inlineFrom + 1) + 1)
+  assert.ok(unwrap)
+
+  const result = base.applyPatchesAndUndo(source, [
+    { from: contentFrom, to: contentFrom + 1, expected: 'x', replacement: 'xy', userEvent: 'input.type' },
+    { ...unwrap, userEvent: 'input' }
+  ], 2)
+
+  assert.deepEqual(result, {
+    after: 'before xy after',
+    undoSources: [
+      { applied: true, source: 'before `xy` after' },
+      { applied: true, source }
+    ]
   })
 })
 
