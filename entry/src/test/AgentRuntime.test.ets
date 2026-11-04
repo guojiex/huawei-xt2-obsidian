@@ -12,6 +12,7 @@ let files: Map<string, string> = new Map<string, string>();
 let mock: MockKit;
 let fixtureSerial: number = 0;
 let failNextSave: boolean = false;
+let nextCreateFailure: Error | null = null;
 
 function makeConfig(enabled: string[] = ALL_TOOLS, allowed: string[] = ALL_TOOLS): AgentRunConfig {
   return {
@@ -75,20 +76,19 @@ function makeMocks(): void {
       return Promise.resolve();
     });
 
-  const createMock: Function = mock.mockPrivateFunc(NoteService as Object, 'createNote');
-  when(createMock)(ArgumentMatchers.any, ArgumentMatchers.any, ArgumentMatchers.any)
-    .afterAction((_registry: Object, _vaultId: string, path: string): string => {
-      let actualPath: string = path;
-      let suffix: number = 2;
-      const dot: number = path.lastIndexOf('.');
-      const stem: string = dot < 0 ? path : path.substring(0, dot);
-      const extension: string = dot < 0 ? '' : path.substring(dot);
-      while (files.has(actualPath)) {
-        actualPath = stem + '-' + suffix.toString() + extension;
-        suffix++;
+  const createWithContentMock: Function = mock.mockPrivateFunc(NoteService as Object, 'createNoteWithContent');
+  when(createWithContentMock)(ArgumentMatchers.any, ArgumentMatchers.any, ArgumentMatchers.any,
+    ArgumentMatchers.any)
+    .afterAction((_registry: Object, vaultId: string, path: string, content: string): Promise<void> => {
+      if (nextCreateFailure !== null) {
+        const failure: Error = nextCreateFailure;
+        nextCreateFailure = null;
+        return Promise.reject(failure);
       }
-      files.set(actualPath, '');
-      return actualPath;
+      if (files.has(path)) {
+        return Promise.reject(new Error('CREATE_CONFLICT：目标笔记路径已被占用，未覆盖现有文件。'));
+      }
+      return NoteService.saveNote(TEST_REGISTRY, vaultId, path, content);
     });
 
   const deleteMock: Function = mock.mockPrivateFunc(NoteService as Object, 'deletePath');
@@ -108,6 +108,7 @@ export default function agentRuntimeTest() {
     beforeEach((): void => {
       files = new Map<string, string>();
       failNextSave = false;
+      nextCreateFailure = null;
     });
 
     it('returns the supported questions without running tools for unmatched input', 0,
@@ -157,7 +158,7 @@ export default function agentRuntimeTest() {
       mock.ignoreMock(NoteService as Object, 'exists');
       mock.ignoreMock(NoteService as Object, 'tryReadNote');
       mock.ignoreMock(NoteService as Object, 'saveNote');
-      mock.ignoreMock(NoteService as Object, 'createNote');
+      mock.ignoreMock(NoteService as Object, 'createNoteWithContent');
       mock.ignoreMock(NoteService as Object, 'deletePath');
       for (let i = 0; i < ALL_TOOLS.length; i++) {
         AgentConfigStore.setToolEnabled(ALL_TOOLS[i], true);
@@ -243,6 +244,16 @@ export default function agentRuntimeTest() {
           makeSession('vault-create-failure-' + fixtureSerial.toString()), '新建读书小结');
         expect(failed.toolEvents[0].status).assertEqual('failed');
         expect(failed.writeResult === null).assertTrue();
+        expect(failed.toolEvents[0].result.indexOf('模拟 AtomicFile 保存失败') < 0).assertTrue();
+        expect(failed.parts[0].text.indexOf('原因未确定') >= 0).assertTrue();
+        expect(files.size).assertEqual(0);
+
+        nextCreateFailure = new Error('CREATE_CONFLICT：目标已存在 /private/vault/secret.md');
+        const conflictVaultId: string = 'vault-create-conflict-' + fixtureSerial.toString();
+        const conflict = await run(conflictVaultId, makeSession(conflictVaultId), '新建读书小结');
+        expect(conflict.toolEvents[0].errorCode).assertEqual('CREATE_CONFLICT');
+        expect(conflict.toolEvents[0].result.indexOf('未覆盖现有笔记') >= 0).assertTrue();
+        expect(conflict.toolEvents[0].result.indexOf('/private/vault/secret.md') < 0).assertTrue();
         expect(files.size).assertEqual(0);
       });
 
@@ -303,6 +314,8 @@ export default function agentRuntimeTest() {
           '把这轮结论追加到笔记 [[A.md]] [[B.md]]');
         expect(multiple.toolEvents[1].status).assertEqual('failed');
         expect(multiple.toolEvents[1].errorCode).assertEqual('AMBIGUOUS_TARGET');
+        expect(multiple.toolEvents[1].result.indexOf('本步骤未执行') >= 0).assertTrue();
+        expect(multiple.parts[0].text.indexOf('请明确单一目标后重试') >= 0).assertTrue();
         expect(files.get('A.md') ?? '').assertEqual('A');
         expect(files.get('B.md') ?? '').assertEqual('B');
       });

@@ -1,5 +1,6 @@
 import { Icon } from '../common/Icons';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { shareFailureMessage } from '../model/UserErrorMessages';
 
 @CustomDialog
 export struct ShareTextPreviewDialog {
@@ -39,8 +40,7 @@ export struct ShareTextPreviewDialog {
     try {
       await this.onConfirm(this.contentDraft);
     } catch (error) {
-      const err = error as Error;
-      this.errorMessage = err.message.length > 0 ? err.message : '系统分享面板无法接收此文本，请改用 Markdown / ZIP';
+      this.errorMessage = shareFailureMessage(error, 'handoff');
     } finally {
       this.sharing = false;
     }
@@ -55,8 +55,7 @@ export struct ShareTextPreviewDialog {
     try {
       await this.onRetryPreparation();
     } catch (error) {
-      const err = error as Error;
-      this.errorMessage = err.message.length > 0 ? err.message : '文本准备失败，请重试';
+      this.errorMessage = shareFailureMessage(error, 'text_prepare');
     } finally {
       this.preparing = false;
     }

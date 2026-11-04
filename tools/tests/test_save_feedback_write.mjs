@@ -99,6 +99,9 @@ function createHarness(options = {}) {
     showSaveFeedback() { calls.push('save-success'); },
     hideSaveFeedback() { calls.push('hide-success'); },
     clearStaleSaveNotice() {},
+    showFailureFeedback(_operation, _phase, _category, _outcome, _nextStep, detail) {
+      calls.push(`toast:${detail}`);
+    },
     handleEditorSaveError() { calls.push('toast:保存失败'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
     refreshBacklinks() {}
@@ -127,7 +130,9 @@ test('a rejected note write returns failure and never shows success feedback', a
 test('editor read failure and unchanged content both skip the write and success feedback', async () => {
   const readFailure = createHarness({ readFails: true });
   assert.equal(await readFailure.app.flushSave(), false);
-  assert.deepEqual(readFailure.calls, ['read', 'warn', 'toast:保存失败，请稍后重试']);
+  assert.deepEqual(readFailure.calls, [
+    'read', 'warn', 'toast:未能读取编辑器内容；本次未写入文件，当前编辑仍保留。请稍后重试。'
+  ]);
 
   const unchanged = createHarness({ content: 'old content' });
   assert.equal(await unchanged.app.flushSave(), true);
@@ -158,7 +163,10 @@ test('a failed draft write blocks the formal write and preserves pending editor 
   const { app, calls } = createHarness({ draftWriteFails: true });
 
   assert.equal(await app.flushSave(), false);
-  assert.deepEqual(calls, ['read', 'draft-persist', 'toast:恢复草稿写入失败，笔记尚未保存']);
+  assert.deepEqual(calls, [
+    'read', 'draft-persist',
+    'toast:恢复草稿写入失败；正式笔记尚未保存，当前编辑仍保留。请稍后重试。'
+  ]);
   assert.equal(app.lastSavedText, 'old content');
   assert.equal(app.editorDirty, true);
 });
@@ -167,7 +175,10 @@ test('a conflicting recovery draft is not replaced by an automatic save', async 
   const { app, calls } = createHarness({ draftConflict: true });
 
   assert.equal(await app.flushSave(), false);
-  assert.deepEqual(calls, ['read', 'draft-persist', 'toast:恢复草稿无法安全更新，已暂停保存']);
+  assert.deepEqual(calls, [
+    'read', 'draft-persist',
+    'toast:恢复草稿未能安全写入；正式笔记未保存，当前编辑仍保留。请稍后重试。'
+  ]);
   assert.equal(app.lastSavedText, 'old content');
   assert.equal(app.editorDirty, true);
 });
@@ -176,7 +187,10 @@ test('draft cleanup failure does not report a failed formal save', async () => {
   const { app, calls } = createHarness({ draftClearFails: true });
 
   assert.equal(await app.flushSave(), true);
-  assert.deepEqual(calls, ['read', 'draft-persist', 'write', 'draft-clear', 'warn', 'save-success']);
+  assert.deepEqual(calls, [
+    'read', 'draft-persist', 'write', 'draft-clear', 'warn',
+    'toast:笔记已保存；恢复草稿清理未完成，重开时可能再次提示恢复。', 'save-success'
+  ]);
   assert.equal(app.lastSavedText, 'new content');
   assert.equal(app.editorDirty, false);
 });

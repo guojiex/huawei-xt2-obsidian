@@ -556,10 +556,10 @@ export struct EditorWebView {
         this.loadFailed = false;
         hilog.info(EDITOR_DOMAIN, EDITOR_TAG, 'Web 编辑器页面就绪，桥接已建立');
         this.onReady();
-      }).catch((error: Error): void => {
+      }).catch((_error: Error): void => {
         this.bridge.notifyUnavailable();
         this.loadFailed = true;
-        this.onError('编辑器初始化失败: ' + error.message);
+        this.onError('编辑器初始化失败；原因未确定');
       });
     } else if (name === 'content') {
       // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContent Promise
@@ -631,7 +631,7 @@ export struct EditorWebView {
         .onErrorReceive((event) => {
           this.loadFailed = true;
           this.bridge.notifyUnavailable();
-          this.onError('Web 加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
+          this.onError('编辑器加载失败；原因未确定');
         })
         .width('100%')
         .height('100%')
@@ -640,7 +640,7 @@ export struct EditorWebView {
 
       if (!this.pageReady) {
         Column() {
-          Text(this.loadFailed ? '编辑器加载失败' : '正在加载编辑器…')
+          Text(this.loadFailed ? '编辑器加载失败；原因未确定，请重新打开笔记重试' : '正在加载编辑器…')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.text_secondary'))
         }

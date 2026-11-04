@@ -984,11 +984,10 @@ export struct PreviewWebView {
       this.loadFailed = false;
       this.onReady();
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '预览页面就绪，桥接已建立');
-    } catch (error) {
-      const err = error as Error;
+    } catch (_error) {
       this.bridge.notifyUnavailable();
       this.loadFailed = true;
-      this.onError('预览初始化失败: ' + err.message);
+      this.onError('预览初始化失败；原因未确定');
     }
   }
 
@@ -1059,7 +1058,7 @@ export struct PreviewWebView {
         .onErrorReceive((event) => {
           this.loadFailed = true;
           this.bridge.notifyUnavailable();
-          this.onError('预览加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
+          this.onError('预览加载失败；原因未确定');
         })
         .width('100%')
         .height('100%')
@@ -1068,7 +1067,7 @@ export struct PreviewWebView {
 
       if (!this.pageReady) {
         Column() {
-          Text(this.loadFailed ? '预览加载失败' : '正在加载预览…')
+          Text(this.loadFailed ? '预览加载失败；原因未确定，请重新打开笔记重试' : '正在加载预览…')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.text_secondary'))
         }

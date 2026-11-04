@@ -1,5 +1,6 @@
 import { Icon } from '../common/Icons';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { shareFailureMessage } from '../model/UserErrorMessages';
 
 export interface ShareImagePreviewImage {
   uri: string;
@@ -51,8 +52,7 @@ export struct ShareImagePreviewDialog {
     try {
       await this.onRetry();
     } catch (error) {
-      const err = error as Error;
-      this.errorMessage = err.message.length > 0 ? err.message : '长图生成失败，请检查图片和存储空间后重试';
+      this.errorMessage = shareFailureMessage(error, 'image_prepare');
     } finally {
       this.retrying = false;
     }
@@ -67,8 +67,7 @@ export struct ShareImagePreviewDialog {
     try {
       await this.onConfirm();
     } catch (error) {
-      const err = error as Error;
-      this.errorMessage = err.message.length > 0 ? err.message : '系统分享面板无法打开，请重试';
+      this.errorMessage = shareFailureMessage(error, 'handoff');
     } finally {
       this.sharing = false;
     }

@@ -22,7 +22,7 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
     if (name !== 'ListVaults' && name !== 'CreateVault' && !isNoteTool) {
       return {
         code: -1,
-        result: { message: '不支持的端插件工具：' + name }
+        result: { message: '不支持的端插件工具。' }
       };
     }
 
@@ -75,14 +75,16 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
           message: '已找到 ' + vaults.length.toString() + ' 个已注册知识库。'
         }
       };
-    } catch (error) {
-      const err = error as Error;
+    } catch (_error) {
+      let message: string = '笔记操作失败；操作完成状态未确认。原因未确定，请在应用内检查目标笔记和操作记录后再决定是否重试。';
+      if (name === 'CreateVault') {
+        message = '创建知识库失败；创建结果未确认。原因未确定，请检查知识库列表后再决定是否重试。';
+      } else if (name === 'ListVaults') {
+        message = '读取知识库列表失败；知识库未修改。原因未确定，请稍后重试查询。';
+      }
       return {
         code: -1,
-        result: {
-          message: (name === 'CreateVault' ? '创建知识库失败：' :
-            name === 'ListVaults' ? '读取知识库列表失败：' : '笔记操作失败：') + err.message
-        }
+        result: { message }
       };
     }
   }

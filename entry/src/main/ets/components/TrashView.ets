@@ -179,14 +179,14 @@ export struct TrashView {
 
         if (this.isExpanded()) {
           if (this.loadFailed) {
-            Text('回收站暂时无法读取')
+            Text('回收站读取失败；内容未从回收站移除。重新打开本页后重试。')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_tertiary'))
               .width('100%')
               .padding({ left: Space.s8, right: Space.s2, top: Space.s2, bottom: Space.s2 })
           } else {
             if (this.legacyMigrationFailed) {
-              Text('旧回收站尚未完全复制，原目录已保留')
+              Text('旧回收站迁移未完成；原目录已保留。重新打开本页后可重试。')
                 .fontSize(FontSize.caption)
                 .fontColor($r('app.color.text_tertiary'))
                 .width('100%')

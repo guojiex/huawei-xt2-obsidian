@@ -9,6 +9,15 @@ const { transformSync } = require('esbuild');
 const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const dialogSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/ShareFilePreviewDialog.ets', import.meta.url));
+const userErrorSource = readSourceFile(
+  new URL('../../entry/src/main/ets/model/UserErrorMessages.ets', import.meta.url));
+const userErrorCode = transformSync(`
+${userErrorSource.replace(/^export /gm, '')}
+module.exports = { shareFailureMessage };
+`, { loader: 'ts', format: 'cjs' }).code;
+const userErrorModule = { exports: {} };
+new Function('module', 'exports', userErrorCode)(userErrorModule, userErrorModule.exports);
+const { shareFailureMessage } = userErrorModule.exports;
 
 const shareMethodStart = dialogSource.indexOf('  private async share(): Promise<void> {');
 const shareMethodEnd = dialogSource.indexOf('\n  @Builder', shareMethodStart);
@@ -39,7 +48,9 @@ module.exports = IndexSharePreviewHarness;
 
 function createDialogHarness() {
   const module = { exports: {} };
-  vm.runInContext(dialogHarnessCode, vm.createContext({ module, exports: module.exports }));
+  vm.runInContext(dialogHarnessCode, vm.createContext({
+    module, exports: module.exports, shareFailureMessage
+  }));
   const app = new module.exports();
   app.sharing = false;
   app.preparing = false;
@@ -89,7 +100,8 @@ test('file preview lists its entries and remains open with a retryable error aft
 
   await app.share();
 
-  assert.equal(app.errorMessage, 'target unavailable');
+  assert.equal(app.errorMessage,
+    '系统分享交接未完成；接收端状态未知。原因未确定，请重试或选择其他格式。');
   assert.equal(app.sharing, false);
   assert.equal(closeCount, 0);
 });
@@ -134,7 +146,8 @@ test('file preparation failure is shown in the detail and retries preparation in
   dialog.errorMessage = '';
   dialog.onRetryPreparation = async () => { throw new Error('存储空间不足'); };
   await dialog.retryPreparation();
-  assert.equal(dialog.errorMessage, '存储空间不足');
+  assert.equal(dialog.errorMessage,
+    '文件准备失败；知识库未修改。原因未确定，请检查访问状态和本地空间后重试。');
   assert.equal(dialog.preparing, false);
 });
 

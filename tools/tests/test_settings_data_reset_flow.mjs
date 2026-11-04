@@ -65,12 +65,13 @@ test('a reset already in progress cannot start another service request', async (
   assert.equal(app.resetError, 'previous reset error');
 });
 
-test('a reset failure re-enables the action and shows the existing error message', async () => {
+test('a reset failure re-enables the action and hides the raw system error', async () => {
   const { app, calls } = createHarness({ resetError: new Error('injected reset failure') });
 
   await app.resetData();
 
   assert.equal(calls[1][0], 'reset');
   assert.equal(app.resetting, false);
-  assert.equal(app.resetError, '重置未完成，部分访问令牌可能已清除。injected reset failure');
+  assert.equal(app.resetError,
+    '重置未完成；部分访问令牌可能已清除，本地数据清理状态未确认。原因未确定，请重新打开设置检查后再处理。');
 });

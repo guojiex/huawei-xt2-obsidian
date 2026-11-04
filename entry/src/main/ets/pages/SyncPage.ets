@@ -113,8 +113,7 @@ struct SyncPage {
       }
     } catch (error) {
       // 清理失败不阻塞导入页本身
-      const err = error as BusinessError;
-      this.appendLog('旧令牌清理失败（可忽略）：' + err.message);
+      this.appendLog('旧令牌清理未完成（可忽略）；如仍需迁移，请稍后重试。');
     }
   }
 
@@ -142,7 +141,7 @@ struct SyncPage {
     if (message.includes('ENOTFOUND') || message.includes('ECONNREFUSED') || message.includes('timed out')) {
       return '网络不可达，请检查网络或 VPN';
     }
-    return message;
+    return '原因未确定，请检查网络、仓库地址和当前库状态后重试';
   }
 
   /** 将导入到的库 id（随地址输入实时推导，UI 预览用） */
@@ -293,7 +292,7 @@ struct SyncPage {
       this.syncStatusText = lines.join('\n');
     } catch (error) {
       const err = error as BusinessError;
-      this.syncStatusText = '无法读取 Git 状态：' + this.explainError(err.message ?? String(error));
+      this.syncStatusText = '无法读取 Git 状态；原因未确定。请稍后刷新，操作前先核对当前库。';
     }
   }
 
@@ -376,7 +375,10 @@ struct SyncPage {
     } catch (error) {
       const err = error as BusinessError;
       this.progressText = '失败';
-      this.appendLog(this.explainError(err.message ?? String(error)));
+      const label: string = operation === 'stage' ? '暂存' : operation === 'commit' ? '本地提交' :
+        operation === 'fetch' ? '获取远端状态' : '推送';
+      this.appendLog(label + '失败；当前状态未确认。' +
+        this.explainError(err.message ?? String(error)) + '。请刷新 Git 状态后再决定是否重试。');
     } finally {
       this.busy = false;
     }
@@ -387,7 +389,8 @@ struct SyncPage {
     this.busy = false;
     if (!ok) {
       this.progressText = '失败';
-      this.appendLog('导入失败：' + this.explainError(message));
+      this.appendLog('Git 导入失败；当前库未登记，临时目录清理已尝试。' +
+        this.explainError(message) + '。');
       this.cleanupTempDir();
       return;
     }
@@ -419,9 +422,8 @@ struct SyncPage {
       promptAction.showToast({ message: '已导入 ' + entry.id });
       router.back();
     } catch (error) {
-      const err = error as BusinessError;
       this.progressText = '失败';
-      this.appendLog('登记库失败：' + err.message);
+      this.appendLog('Git 导入登记失败；当前库和导入目录状态未确认。原因未确定，请返回主页检查库列表。');
       this.cleanupTempDir();
     }
   }
@@ -435,8 +437,7 @@ struct SyncPage {
       VaultRegistry.get().cleanupGitImport(this.pendingFinalId, this.pendingTempId);
       this.appendLog('已清理本次导入目录');
     } catch (error) {
-      const err = error as BusinessError;
-      this.appendLog('导入目录清理失败（恢复标记保留供下次启动重试）：' + err.message);
+      this.appendLog('导入目录清理未完成；恢复标记保留，应用下次启动会重试。');
     }
     this.pendingTempId = '';
     this.pendingFinalId = '';

@@ -21,6 +21,7 @@ const code = transformSync(`class IndexHarness {
   ${methods.join('\n\n  ')}
   activeFilePath() { return this.activePane === 'right' ? this.rightFilePath : this.currentFilePath; }
   ensureWorkspaceSessionStore() {}
+  recordBackgroundFailure(...args) { this.failures.push(args); }
 }; module.exports = IndexHarness;`, {
   loader: 'ts',
   format: 'cjs'
@@ -29,8 +30,11 @@ const code = transformSync(`class IndexHarness {
 function createHarness(overrides = {}) {
   const timer = { nextId: 1, pending: null };
   const saved = [];
+  const failures = [];
   const context = vm.createContext({
     module: { exports: {} },
+    DOMAIN: 1,
+    TAG: 'Index',
     setTimeout(callback, delay) {
       timer.pending = { id: timer.nextId++, callback, delay };
       return timer.pending.id;
@@ -66,6 +70,7 @@ function createHarness(overrides = {}) {
     chapterPath: '',
     chapterEntries: [],
     selectedChapterIndex: -1,
+    failures,
     leftEditorScrollTop: 0,
     leftPreviewScrollTop: 0,
     rightEditorScrollTop: 0,
@@ -78,7 +83,7 @@ function createHarness(overrides = {}) {
     },
     ...overrides
   });
-  return { app, saved, timer };
+  return { app, saved, timer, failures };
 }
 
 function firePendingTimer(timer) {
@@ -154,4 +159,22 @@ test('a library switch can persist an empty workspace snapshot from a secondary 
   assert.equal(saved[0].vaultId, 'personal');
   assert.equal(saved[0].leftPath, '');
   assert.equal(saved[0].rightPath, '');
+});
+
+test('session save failure is recorded once until a save succeeds', () => {
+  const { app, failures } = createHarness({
+    workspaceSessionStore: { save() { return false; } }
+  });
+
+  assert.equal(app.saveWorkspaceSessionNow(), false);
+  assert.equal(app.saveWorkspaceSessionNow(), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(failures)), [[
+    'workspace', 'save', 'storage_failure', 'not_completed', 'check_status'
+  ]]);
+
+  app.workspaceSessionStore.save = () => true;
+  assert.equal(app.saveWorkspaceSessionNow(), true);
+  app.workspaceSessionStore.save = () => false;
+  assert.equal(app.saveWorkspaceSessionNow(), false);
+  assert.equal(failures.length, 2);
 });

@@ -48,6 +48,11 @@ import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } 
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
+import {
+  formatRecentErrorFeedback, RecentErrorCategory, RecentErrorNextStep, RecentErrorOperation,
+  RecentErrorOutcome, RecentErrorPhase, RecentErrorStore
+} from '../model/RecentErrorStore';
+import { shareFailureMessage } from '../model/UserErrorMessages';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
@@ -181,6 +186,7 @@ struct Index {
   @State quickSwitchFiles: string[] = [];
   @State recentOpenPaths: string[] = [];
   private recentOpenStore: RecentOpenStore | null = null;
+  private recentErrorStore: RecentErrorStore | null = null;
   /** sm 抽屉开关（瞬态 @State：UIAbility 折叠切换不重建则存活，api_notes A4 ✅） */
   @State drawerOpen: boolean = false;
   /** md/lg 侧栏收起态（瞬态 @State） */
@@ -337,6 +343,7 @@ struct Index {
   private workspaceSessionRestoring: boolean = false;
   private workspaceSessionSavingEnabled: boolean = false;
   private workspaceSessionSaveTimer: number = -1;
+  private workspaceSessionSaveFailureRecorded: boolean = false;
   private workspaceOpenRequests: number = 0;
   private leftOpenRequestId: number = 0;
   private rightOpenRequestId: number = 0;
@@ -1113,17 +1120,24 @@ struct Index {
   }
 
   private restoreWorkspaceScrollPositions(): void {
+    let restoreFailed: boolean = false;
     try {
       this.editorBridge.restoreScrollTop(this.leftEditorScrollTop);
       this.previewBridge.restoreScrollTop(this.leftPreviewScrollTop);
     } catch (error) {
+      restoreFailed = true;
       hilog.warn(DOMAIN, TAG, '恢复左栏滚动位置失败');
     }
     try {
       this.rightEditorBridge.restoreScrollTop(this.rightEditorScrollTop);
       this.rightPreviewBridge.restoreScrollTop(this.rightPreviewScrollTop);
     } catch (error) {
+      restoreFailed = true;
       hilog.warn(DOMAIN, TAG, '恢复右栏滚动位置失败');
+    }
+    if (restoreFailed) {
+      this.recordBackgroundFailure('workspace', 'restore', 'unknown', 'completed_with_warning',
+        'check_status');
     }
   }
 
@@ -1235,8 +1249,14 @@ struct Index {
     };
     this.ensureWorkspaceSessionStore();
     const saved: boolean = (this.workspaceSessionStore as WorkspaceSessionStore).save(session);
-    if (!saved) {
+    if (saved) {
+      this.workspaceSessionSaveFailureRecorded = false;
+    } else {
       hilog.warn(DOMAIN, TAG, '工作区会话保存失败');
+      if (!this.workspaceSessionSaveFailureRecorded) {
+        this.workspaceSessionSaveFailureRecorded = true;
+        this.recordBackgroundFailure('workspace', 'save', 'storage_failure', 'not_completed', 'check_status');
+      }
     }
     return saved;
   }
@@ -1610,6 +1630,33 @@ struct Index {
     }
   }
 
+  private ensureRecentErrorStore(): void {
+    if (this.recentErrorStore === null) {
+      this.recentErrorStore = new RecentErrorStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private recordFailureFeedback(operation: RecentErrorOperation, phase: RecentErrorPhase,
+    category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep,
+    detail: string): string {
+    this.recordBackgroundFailure(operation, phase, category, outcome, nextStep);
+    return formatRecentErrorFeedback(operation, phase, category, outcome, nextStep) + detail;
+  }
+
+  private recordBackgroundFailure(operation: RecentErrorOperation, phase: RecentErrorPhase,
+    category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep): void {
+    this.ensureRecentErrorStore();
+    (this.recentErrorStore as RecentErrorStore).recordFailure(operation, phase, category, outcome, nextStep);
+  }
+
+  private showFailureFeedback(operation: RecentErrorOperation, phase: RecentErrorPhase,
+    category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep,
+    detail: string): void {
+    promptAction.showToast({
+      message: this.recordFailureFeedback(operation, phase, category, outcome, nextStep, detail)
+    });
+  }
+
   /** 从注册表刷新库列表与当前库（切库/新建/改名/删除后调用） */
   private refreshFromRegistry(): void {
     const reg: VaultRegistry = VaultRegistry.get();
@@ -1895,11 +1942,15 @@ struct Index {
     const message: string = err.message ?? JSON.stringify(error);
     if (message.indexOf('STALE_CONTENT：') === 0 || message.indexOf('STALE_CONTENT:') === 0) {
       hilog.warn(DOMAIN, TAG, '保存因笔记版本已变化而拒绝，保留本地编辑器内容');
+      this.recentErrorStore = this.recentErrorStore ??
+        new RecentErrorStore(VaultRegistry.get().abilityContext());
+      (this.recentErrorStore as RecentErrorStore).recordFailure(
+        'note', 'save', 'conflict', 'not_completed', 'check_status');
       this.showStaleSaveConflict(vaultId, path,
         '写入前发现笔记内容已变化；本次本地编辑未保存，也没有覆盖外部版本。');
       return;
     }
-    this.toastRegistryError('保存失败', error);
+    this.toastRegistryError('保存失败', error, 'note', 'save');
   }
 
   /** Keep a recoverable snapshot in the app-private store before attempting the vault write. */
@@ -1909,11 +1960,13 @@ struct Index {
       const persisted: boolean = await NoteDraftService.persist(VaultRegistry.get(), vaultId,
         path, baseText, content);
       if (!persisted) {
-        promptAction.showToast({ message: '恢复草稿无法安全更新，已暂停保存' });
+        this.showFailureFeedback('note', 'save', 'storage_failure', 'not_completed', 'retry',
+          '恢复草稿未能安全写入；正式笔记未保存，当前编辑仍保留。请稍后重试。');
       }
       return persisted;
     } catch (error) {
-      promptAction.showToast({ message: '恢复草稿写入失败，笔记尚未保存' });
+      this.showFailureFeedback('note', 'save', 'unknown', 'not_completed', 'retry',
+        '恢复草稿写入失败；正式笔记尚未保存，当前编辑仍保留。请稍后重试。');
       return false;
     }
   }
@@ -1924,6 +1977,8 @@ struct Index {
       await NoteDraftService.clearIfMatches(VaultRegistry.get(), vaultId, path, content);
     } catch (error) {
       hilog.warn(DOMAIN, TAG, '笔记已保存，恢复草稿清理将在后续重试');
+      this.showFailureFeedback('note', 'restore', 'storage_failure', 'completed_with_warning', 'retry',
+        '笔记已保存；恢复草稿清理未完成，重开时可能再次提示恢复。');
     }
   }
 
@@ -2175,9 +2230,9 @@ struct Index {
     let selection: ExternalDirectorySelection | null = null;
     try {
       selection = await authorization.pickDirectory();
-    } catch (error) {
-      const err = error as Error;
-      promptAction.showToast({ message: err.message.length > 0 ? err.message : '选择目录失败，请重试' });
+    } catch (_error) {
+      this.showFailureFeedback('authorization', 'permission', 'unknown', 'not_completed', 'restore_permission',
+        '目录尚未关联；请重新选择目录或检查系统授权后重试。');
       return null;
     }
     if (selection === null) {
@@ -2197,6 +2252,7 @@ struct Index {
       createExternalVaultAuthorization(VaultRegistry.get().abilityContext());
     let grant: ExternalDirectoryGrant | null = null;
     let registered: VaultEntry | null = null;
+    let revokeFailed: boolean = false;
     try {
       grant = await authorization.persistSelection(selection);
       registered = VaultRegistry.get().registerExternal(grant.displayName, grant.uri, grant.grantedAt);
@@ -2204,12 +2260,14 @@ struct Index {
       if (grant !== null) {
         try {
           await authorization.revoke(grant.uri);
-        } catch (revokeError) {
-          // 注册失败时尽力回收授权；不删除也不改写原目录。
+        } catch (_revokeError) {
+          revokeFailed = true;
         }
       }
-      const err = error as Error;
-      promptAction.showToast({ message: err.message.length > 0 ? err.message : '关联目录失败，请重试' });
+      const detail: string = revokeFailed
+        ? '知识库未确认登记；授权回收状态未确认，外部笔记未改写。请检查授权和库列表后再处理。'
+        : '知识库未完成登记；请重新选择目录后重试，外部笔记未改写。';
+      this.showFailureFeedback('authorization', 'permission', 'unknown', 'status_unknown', 'check_status', detail);
       return false;
     }
 
@@ -2249,7 +2307,8 @@ struct Index {
     const vaultId: string = this.currentVaultId;
     const text: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, path);
     if (text === null) {
-      promptAction.showToast({ message: '打开笔记失败' });
+      this.showFailureFeedback('note', 'read', 'unknown', 'not_completed', 'reopen_note',
+        '目标笔记未打开；当前笔记仍保留。请从文件树重新选择或重试。');
       return;
     }
     // Agent 页打开期间 Web 编辑器已卸载；不能 flush 它持有的旧内容覆盖 Agent 写入。
@@ -2300,7 +2359,7 @@ struct Index {
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
     } catch (error) {
-      this.toastRegistryError('切换库失败', error);
+      this.toastRegistryError('切换库失败', error, 'vault', 'switch');
     }
   }
 
@@ -3423,7 +3482,7 @@ struct Index {
     try {
       source = await editor.getContent();
     } catch {
-      promptAction.showToast({ message: '读取代码块失败，未修改语言' });
+      promptAction.showToast({ message: '读取代码语言失败；笔记未修改。请关闭面板后重新打开再试。' });
       return;
     }
     const from: number = latestAnchor.codeLanguageFrom;
@@ -3448,7 +3507,7 @@ struct Index {
     try {
       applied = await editor.replaceBlockSource(from, to, expected, language, revision);
     } catch {
-      promptAction.showToast({ message: '修改代码语言失败，请重试' });
+      promptAction.showToast({ message: '代码语言修改未完成；当前源码仍保留。请重新打开面板后重试。' });
     }
     if (!applied) {
       if (!wasDirty && !wasUnsaved &&
@@ -4249,8 +4308,8 @@ struct Index {
       source = await editor.getContent();
     } catch {
       this.blockPanelLinkReady = true;
-      this.blockPanelLinkMessage = '读取链接失败，请关闭面板后重试';
-      promptAction.showToast({ message: '读取链接失败' });
+      this.blockPanelLinkMessage = '读取链接源码失败；笔记未修改。请关闭面板后重新打开再试。';
+      promptAction.showToast({ message: '读取链接源码失败；笔记未修改，请重新打开面板重试' });
       return;
     }
     if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
@@ -4312,8 +4371,8 @@ struct Index {
       source = await editor.getContent();
     } catch {
       this.blockPanelImageReady = true;
-      this.blockPanelImageMessage = '读取图片失败，请关闭面板后重试';
-      promptAction.showToast({ message: '读取图片失败' });
+      this.blockPanelImageMessage = '读取图片源码失败；笔记未修改。请关闭面板后重新打开再试。';
+      promptAction.showToast({ message: '读取图片源码失败；笔记未修改，请重新打开面板重试' });
       return;
     }
     if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
@@ -4377,7 +4436,7 @@ struct Index {
     try {
       source = await editor.getContent();
     } catch {
-      promptAction.showToast({ message: '读取当前内容失败，未修改' });
+      promptAction.showToast({ message: '读取块内容失败；笔记未修改。请重新打开面板后再试。' });
       return false;
     }
     const from: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemFrom : latestAnchor.from;
@@ -4543,8 +4602,8 @@ struct Index {
       source = await editor.getContent();
     } catch {
       this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '读取双链失败，请关闭面板后重试';
-      promptAction.showToast({ message: '读取双链失败' });
+      this.blockPanelWikiMessage = '读取双链源码失败；笔记未修改。请关闭面板后重新打开再试。';
+      promptAction.showToast({ message: '读取双链源码失败；笔记未修改，请重新打开面板重试' });
       return;
     }
     if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
@@ -4571,8 +4630,8 @@ struct Index {
       files = WikiLinkService.files(VaultRegistry.get(), vaultId);
     } catch {
       this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '读取当前库笔记列表失败，请关闭面板后重试';
-      promptAction.showToast({ message: '读取当前库笔记列表失败' });
+      this.blockPanelWikiMessage = '读取当前库笔记列表失败；双链未修改。请关闭面板后重试。';
+      promptAction.showToast({ message: '读取当前库笔记列表失败；双链未修改，请关闭面板后重试' });
       return;
     }
 
@@ -4856,7 +4915,7 @@ struct Index {
     try {
       source = await editor.getContent();
     } catch {
-      promptAction.showToast({ message: '读取行内代码失败，未转换' });
+      promptAction.showToast({ message: '读取行内代码源码失败；内容未转换。请重新打开面板后再试。' });
       return;
     }
     const from: number = latestAnchor.itemFrom;
@@ -4999,7 +5058,7 @@ struct Index {
     try {
       source = await bridge.getContent();
     } catch {
-      promptAction.showToast({ message: '读取块源码失败' });
+      promptAction.showToast({ message: '读取块源码失败；笔记未修改。请重新打开面板后再试。' });
       return;
     }
     const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
@@ -5094,7 +5153,7 @@ struct Index {
             this.scheduleSave();
           }
         }
-        promptAction.showToast({ message: '块源码回写失败，请重试' });
+        promptAction.showToast({ message: '块源码应用失败；笔记内容仍保留在编辑区。请检查后重试保存。' });
         return;
       }
       if (!wasDirty && !wasUnsaved &&
@@ -5107,7 +5166,8 @@ struct Index {
         }
       }
       promptAction.showToast({ message: requestFailed
-        ? '块源码回写失败，请重试' : '块内容已变化，请重新打开后再编辑' });
+        ? '块源码应用失败；笔记内容仍保留在编辑区。请检查后重试保存。'
+        : '块内容已变化；本次修改未应用。请重新打开块源码后再编辑。' });
       return;
     }
     if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
@@ -5489,7 +5549,8 @@ struct Index {
         this.reportDraftRecovery(targetVaultId, relPath, recovery);
       } catch (error) {
         if (this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
-          promptAction.showToast({ message: '恢复草稿读取失败，已打开正式笔记' });
+          this.showFailureFeedback('note', 'restore', 'unknown', 'status_unknown', 'check_status',
+            '正式笔记已打开，但恢复草稿未能读取；草稿状态未确认。请先检查笔记，再重试恢复。');
         }
       }
     }
@@ -5593,7 +5654,8 @@ struct Index {
         this.reportDraftRecovery(targetVaultId, relPath, recovery);
       } catch (error) {
         if (this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
-          promptAction.showToast({ message: '恢复草稿读取失败，已打开正式笔记' });
+          this.showFailureFeedback('note', 'restore', 'unknown', 'status_unknown', 'check_status',
+            '正式笔记已打开，但恢复草稿未能读取；草稿状态未确认。请先检查笔记，再重试恢复。');
         }
       }
     }
@@ -5675,7 +5737,8 @@ struct Index {
         if (this.isCurrentRightOpenTarget(relPath, vaultId, requestId)) {
           this.rightFilePath = previousPath;
           this.rightEditorBridge.restoreDocumentTransition(documentTransition);
-          promptAction.showToast({ message: '打开笔记失败' });
+          this.showFailureFeedback('note', 'read', 'unknown', 'not_completed', 'reopen_note',
+            '右栏目标笔记未打开；原右栏笔记仍保留。请重新选择或重试。');
         }
         return;
       }
@@ -5718,7 +5781,8 @@ struct Index {
     try {
       text = await this.rightEditorBridge.getContent();
     } catch (error) {
-      promptAction.showToast({ message: '保存失败，请稍后重试' });
+      this.showFailureFeedback('note', 'bridge', 'unknown', 'not_completed', 'retry',
+        '未能读取右栏编辑内容；本次未写入文件，当前编辑仍保留。请稍后重试。');
       return false;
     }
     if (this.rightComposing || (targetPath.length > 0 && targetPath === this.currentFilePath &&
@@ -5971,7 +6035,8 @@ struct Index {
         }
         this.currentFilePath = prev;
         this.editorBridge.restoreDocumentTransition(documentTransition);
-        promptAction.showToast({ message: '打开笔记失败' });
+        this.showFailureFeedback('note', 'read', 'unknown', 'not_completed', 'reopen_note',
+          '目标笔记未打开；原笔记仍保留。请从文件树重新选择或重试。');
         return;
       }
       if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
@@ -6037,7 +6102,8 @@ struct Index {
     } catch (_error) {
       // 拉不到内容：放弃这次保存（拿空串落盘会清空文件），但绝不让异常外泄挡住调用方
       hilog.warn(DOMAIN, TAG, 'flushSave 拉取编辑器内容失败，跳过保存');
-      promptAction.showToast({ message: '保存失败，请稍后重试' });
+      this.showFailureFeedback('note', 'bridge', 'unknown', 'not_completed', 'retry',
+        '未能读取编辑器内容；本次未写入文件，当前编辑仍保留。请稍后重试。');
       return false;
     }
     const sharedNoteCompositionStarted: boolean = path === this.currentFilePath &&
@@ -6257,7 +6323,7 @@ struct Index {
         await this.loadFile(createdPath);
       }
     } catch (error) {
-      this.toastRegistryError('创建链接目标失败', error);
+      this.toastRegistryError('创建链接目标失败', error, 'file', 'create');
     }
   }
 
@@ -6428,8 +6494,8 @@ struct Index {
         editorBridge.insertText(imported.markdownReference);
       }
     } catch (error) {
-      const err = error as BusinessError;
-      promptAction.showToast({ message: err.message.length > 0 ? '图片导入失败：' + err.message : '图片导入失败' });
+      this.showFailureFeedback('note', 'create', 'unknown', 'status_unknown', 'check_status',
+        '图片导入或引用插入未完成；请重新打开笔记并检查附件后，再决定是否重试。');
     } finally {
       if (isRight) {
         this.rightImagePickerBusy = false;
@@ -6530,7 +6596,7 @@ struct Index {
         this.workspaceSessionSavingEnabled = true;
         this.scheduleWorkspaceSessionSave();
       }
-      this.toastRegistryError('切换库失败', error);
+      this.toastRegistryError('切换库失败', error, 'vault', 'switch');
     }
   }
 
@@ -6541,7 +6607,7 @@ struct Index {
       // 原型行为：新建后自动切到新库（doCreate → switchVault）
       void this.switchVault(entry.id);
     } catch (error) {
-      this.toastRegistryError('新建库失败', error);
+      this.toastRegistryError('新建库失败', error, 'vault', 'create');
     }
   }
 
@@ -6564,7 +6630,7 @@ struct Index {
         this.scheduleWorkspaceSessionSave();
       }
     } catch (error) {
-      this.toastRegistryError('改名失败', error);
+      this.toastRegistryError('改名失败', error, 'vault', 'rename');
     }
   }
 
@@ -6612,7 +6678,7 @@ struct Index {
       if (deletingCurrent && this.currentVaultId === id && wasSessionSavingEnabled) {
         this.workspaceSessionSavingEnabled = true;
       }
-      this.toastRegistryError('删除失败', error);
+      this.toastRegistryError('删除失败', error, 'vault', 'delete');
     }
   }
 
@@ -6641,7 +6707,7 @@ struct Index {
         this.smMode = 'edit';
       }
     } catch (error) {
-      this.toastRegistryError('新建笔记失败', error);
+      this.toastRegistryError('新建笔记失败', error, 'file', 'create');
     }
   }
 
@@ -6667,7 +6733,7 @@ struct Index {
         this.drawerOpen = false;
       }
     } catch (error) {
-      this.toastRegistryError('新建文件夹失败', error);
+      this.toastRegistryError('新建文件夹失败', error, 'file', 'create');
     }
   }
 
@@ -6710,14 +6776,70 @@ struct Index {
       this.revealPath = '';
       this.refreshFileTree();
     } catch (error) {
-      this.toastRegistryError('删除失败', error);
+      this.toastRegistryError('删除失败', error, 'file', 'delete');
     }
   }
 
-  /** 注册表操作失败：固定文案 toast；异常可能包含用户路径，因此不写入日志。 */
-  private toastRegistryError(prefix: string, error: Object): void {
+  /** 注册表操作失败：展示固定阶段与状态说明，不读取异常原文。 */
+  private toastRegistryError(prefix: string, _error: Object,
+    operation: RecentErrorOperation = 'file', phase: RecentErrorPhase = 'delete'): void {
     hilog.warn(DOMAIN, TAG, '%{public}s', prefix);
-    promptAction.showToast({ message: prefix });
+    let nextStep: RecentErrorNextStep = 'check_status';
+    let detail: string = '操作结果未确认；请先检查当前知识库和文件列表，再决定是否重试。';
+    switch (prefix) {
+      case '保存失败':
+        operation = 'note';
+        phase = 'save';
+        nextStep = 'retry';
+        detail = '当前编辑和恢复草稿仍保留；正式笔记保存结果未确认。请先核对笔记，再重试保存。';
+        break;
+      case '切换库失败':
+        operation = 'vault';
+        phase = 'switch';
+        detail = '请先检查当前知识库和已打开笔记，再决定是否重试。';
+        break;
+      case '新建库失败':
+        operation = 'vault';
+        phase = 'create';
+        detail = '新建结果未确认；请检查知识库列表后再决定是否重试。';
+        break;
+      case '改名失败':
+        operation = 'vault';
+        phase = 'rename';
+        detail = '改名结果未确认；请检查知识库列表和当前库后再决定是否重试。';
+        break;
+      case '新建笔记失败':
+        operation = 'file';
+        phase = 'create';
+        detail = '笔记创建结果未确认；请刷新文件列表并检查目标后再决定是否重试。';
+        break;
+      case '新建文件夹失败':
+        operation = 'file';
+        phase = 'create';
+        detail = '文件夹创建结果未确认；请刷新文件列表并检查目标后再决定是否重试。';
+        break;
+      case '创建链接目标失败':
+        operation = 'file';
+        phase = 'create';
+        detail = '链接目标创建结果未确认；请检查文件列表后再决定是否重试。';
+        break;
+      case '重命名失败':
+        operation = 'file';
+        phase = 'rename';
+        detail = '重命名结果未确认；请刷新文件列表并检查原位置和新位置。';
+        break;
+      case '移动失败':
+        operation = 'file';
+        phase = 'move';
+        detail = '移动结果未确认；请刷新文件列表并检查原位置和目标位置。';
+        break;
+      case '删除失败':
+        detail = operation === 'vault'
+          ? '知识库删除结果未确认；请检查知识库列表和本地数据后再决定是否重试。'
+          : '文件操作结果未确认；请刷新文件列表和回收站，确认目标位置后再决定是否重试。';
+        break;
+    }
+    this.showFailureFeedback(operation, phase, 'unknown', 'status_unknown', nextStep, detail);
   }
 
   // ===== 1.7 回收站：删除入站 + 5 秒撤销条 =====
@@ -6763,7 +6885,7 @@ struct Index {
       };
       this.showUndo('已移入回收站：「' + name + '」', snap);
     } catch (error) {
-      this.toastRegistryError('删除失败', error);
+      this.toastRegistryError('删除失败', error, 'file', 'delete');
     }
   }
 
@@ -6810,7 +6932,9 @@ struct Index {
         }
       }
     } catch (error) {
-      this.showUndo('原位置已有同名文件，请先处理重名', null);
+      this.showUndo(this.recordFailureFeedback('file', 'restore_trash', 'unknown',
+        'status_unknown', 'check_status',
+        '回收站恢复未完成；原位置和回收站状态未确认，请检查后再重试。'), null);
     }
   }
 
@@ -6824,7 +6948,8 @@ struct Index {
       this.refreshFileTree();
       this.trashSeq++;
     } catch (error) {
-      promptAction.showToast({ message: '原位置已有同名文件，请先处理重名' });
+      this.showFailureFeedback('file', 'restore_trash', 'unknown', 'status_unknown', 'check_status',
+        '恢复状态未确认；请检查原位置和回收站后再重试。');
     }
   }
 
@@ -6861,7 +6986,7 @@ struct Index {
       }
       this.showReferenceUpdateFailures(mutation.referenceUpdates);
     } catch (error) {
-      this.toastRegistryError('重命名失败', error);
+      this.toastRegistryError('重命名失败', error, 'file', 'rename');
     }
   }
 
@@ -6894,7 +7019,7 @@ struct Index {
       }
       this.showReferenceUpdateFailures(mutation.referenceUpdates);
     } catch (error) {
-      this.toastRegistryError('移动失败', error);
+      this.toastRegistryError('移动失败', error, 'file', 'move');
     }
   }
 
@@ -7082,8 +7207,7 @@ struct Index {
           });
           scopeOptions[i].notice = linkResult.accessNotice;
         } catch (error) {
-          const err = error as Error;
-          scopeOptions[i].notice = err.message + '；仍可分享本地文件。';
+          scopeOptions[i].notice = '远端链接准备失败；原因未确定，仍可分享本地文件。';
         }
       }
     }
@@ -7133,7 +7257,7 @@ struct Index {
                 height: 0,
                 theme: this.shareCaptureTheme,
                 scaled: false
-              }, notePath, vaultId, error.message);
+              }, notePath, vaultId, shareFailureMessage(error, 'image_prepare'));
             });
         },
         onCancel: (): void => {
@@ -7201,22 +7325,22 @@ struct Index {
       if (this.shareCaptureCancelled) {
         return;
       }
-      const err = error as Error;
-      const message: string = err.message.length > 0 ? err.message : '系统分享面板无法打开，请重试';
       if (scope === 'note' && format === 'text') {
-        this.openShareTextPreview(NoteTextShareService.createPreview(path, ''), path, message,
+        this.openShareTextPreview(NoteTextShareService.createPreview(path, ''), path,
+          shareFailureMessage(error, 'text_prepare'),
           (): Promise<void> => { return this.prepareShare(scope, path, format, itemName, vault); });
         return;
       }
       if (format !== 'link') {
         const detailFormat: string = format === 'file' ? 'Markdown / ZIP' : 'ZIP';
-        this.openShareFilePreview('', itemName, detailFormat, [], '文件准备失败', scope, path, registry, message,
+        this.openShareFilePreview('', itemName, detailFormat, [], '文件准备失败', scope, path, registry,
+          shareFailureMessage(error, 'file_prepare'),
           (): Promise<void> => { return this.prepareShare(scope, path, format, itemName, vault); });
         return;
       }
       void this.getUIContext().getPromptAction().showDialog({
         title: '分享失败',
-        message: message,
+        message: '分享链接准备失败；原因未确定。请重试，或返回后选择其他分享方式。',
         buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
       });
     }

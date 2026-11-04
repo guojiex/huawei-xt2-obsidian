@@ -41,9 +41,10 @@ test('data tab presents a danger row with in-group confirmation instead of a dia
   assert.match(source, /private openResetConfirm\(\): void \{/);
   assert.match(source, /this\.resetConfirmOpen = true;/);
   assert.doesNotMatch(source, /ResetDataDialog/);
-  // 语义不变：仍走同一个 AppDataResetService.reset，失败信息照旧。
+  // 语义不变：仍走同一个 AppDataResetService.reset，失败反馈不暴露系统异常。
   assert.match(source, /await AppDataResetService\.reset\(getContext\(this\) as common\.UIAbilityContext\);/);
-  assert.match(source, /'重置未完成，部分访问令牌可能已清除。'/);
+  assert.match(source, /'重置未完成；部分访问令牌可能已清除，本地数据清理状态未确认。'/);
+  assert.doesNotMatch(source, /this\.resetError\s*=\s*'[^']*'\s*\+\s*err\.message/);
   assert.match(source, /会清除本地笔记库、草稿、回收站、最近打开、同步配置和访问令牌/);
 });
 

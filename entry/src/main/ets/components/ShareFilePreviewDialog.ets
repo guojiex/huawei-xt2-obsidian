@@ -1,6 +1,7 @@
 import { Icon } from '../common/Icons';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
+import { shareFailureMessage } from '../model/UserErrorMessages';
 
 @CustomDialog
 export struct ShareFilePreviewDialog {
@@ -57,8 +58,7 @@ export struct ShareFilePreviewDialog {
     try {
       await this.onConfirm();
     } catch (error) {
-      const err = error as Error;
-      this.errorMessage = err.message.length > 0 ? err.message : '系统分享面板无法打开，请重试';
+      this.errorMessage = shareFailureMessage(error, 'handoff');
     } finally {
       this.sharing = false;
     }
@@ -73,8 +73,7 @@ export struct ShareFilePreviewDialog {
     try {
       await this.onRetryPreparation();
     } catch (error) {
-      const err = error as Error;
-      this.errorMessage = err.message.length > 0 ? err.message : '文件生成失败，请检查本地空间后重试';
+      this.errorMessage = shareFailureMessage(error, 'file_prepare');
     } finally {
       this.preparing = false;
     }

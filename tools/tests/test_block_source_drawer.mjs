@@ -43,7 +43,7 @@ test('18.7 回写复用编辑器事务，脏状态在异步回写前设置，冲
   assert.match(save, /this\.rightEditorDirty = true/)
   assert.match(save, /scheduleRightSave\(\)/)
   assert.match(save, /scheduleSave\(\)/)
-  assert.match(save, /块内容已变化，请重新打开后再编辑/)
+  assert.match(save, /块内容已变化；本次修改未应用。请重新打开块源码后再编辑/)
   assert.match(editorSource, /async replaceBlockSource\(/)
   assert.match(editorSource, /handleBlockSourceEditResult/)
 })

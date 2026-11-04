@@ -10,6 +10,15 @@ const indexSource = readSourceFile(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const dialogSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/ShareTextPreviewDialog.ets', import.meta.url));
+const userErrorSource = readSourceFile(
+  new URL('../../entry/src/main/ets/model/UserErrorMessages.ets', import.meta.url));
+const userErrorCode = transformSync(`
+${userErrorSource.replace(/^export /gm, '')}
+module.exports = { shareFailureMessage };
+`, { loader: 'ts', format: 'cjs' }).code;
+const userErrorModule = { exports: {} };
+new Function('module', 'exports', userErrorCode)(userErrorModule, userErrorModule.exports);
+const { shareFailureMessage } = userErrorModule.exports;
 
 function extract(startMarker, endMarker) {
   const start = dialogSource.indexOf(startMarker);
@@ -28,7 +37,9 @@ module.exports = ShareTextPreviewHarness;
 
 function createHarness() {
   const module = { exports: {} };
-  vm.runInContext(methods, vm.createContext({ module, exports: module.exports }));
+  vm.runInContext(methods, vm.createContext({
+    module, exports: module.exports, shareFailureMessage
+  }));
   const dialog = new module.exports();
   dialog.sharing = false;
   dialog.preparing = false;
@@ -46,7 +57,8 @@ test('text Share Kit failure stays in the detail and leaves the text available f
 
   await dialog.confirm();
 
-  assert.equal(dialog.errorMessage, 'target unavailable');
+  assert.equal(dialog.errorMessage,
+    '系统分享交接未完成；接收端状态未知。原因未确定，请重试或选择其他格式。');
   assert.equal(dialog.sharing, false);
 });
 

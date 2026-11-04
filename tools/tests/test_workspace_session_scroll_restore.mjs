@@ -35,13 +35,14 @@ function createHarness(calls, overrides = {}) {
     previewBridge: { restoreScrollTop: (top) => calls.restored.push(['left-preview', top]) },
     rightEditorBridge: { restoreScrollTop: (top) => calls.restored.push(['right-edit', top]) },
     rightPreviewBridge: { restoreScrollTop: (top) => calls.restored.push(['right-preview', top]) },
+    recordBackgroundFailure: (...args) => calls.failures.push(args),
     ...overrides
   });
   return app;
 }
 
 test('session restores each pane and mode scroll position to its matching bridge', () => {
-  const calls = { restored: [], warnings: [] };
+  const calls = { restored: [], warnings: [], failures: [] };
   const app = createHarness(calls);
 
   app.restoreWorkspaceScrollPositions();
@@ -53,10 +54,11 @@ test('session restores each pane and mode scroll position to its matching bridge
     ['right-preview', 48.5]
   ]);
   assert.equal(calls.warnings.length, 0);
+  assert.equal(calls.failures.length, 0);
 });
 
 test('a left pane restore failure does not block restoring the right pane', () => {
-  const calls = { restored: [], warnings: [] };
+  const calls = { restored: [], warnings: [], failures: [] };
   const app = createHarness(calls, {
     editorBridge: {
       restoreScrollTop: () => {
@@ -73,4 +75,7 @@ test('a left pane restore failure does not block restoring the right pane', () =
   ]);
   assert.equal(calls.warnings.length, 1);
   assert.equal(calls.warnings[0][2], '恢复左栏滚动位置失败');
+  assert.deepEqual(calls.failures, [[
+    'workspace', 'restore', 'unknown', 'completed_with_warning', 'check_status'
+  ]]);
 });

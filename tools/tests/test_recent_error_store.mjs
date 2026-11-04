@@ -14,6 +14,7 @@ ${storeSource
 module.exports = {
   RecentErrorStore,
   formatRecentError,
+  formatRecentErrorFeedback,
   formatRecentErrorsForCopy,
   parseRecentErrorSnapshot,
   serializeRecentErrorSnapshot
@@ -25,6 +26,7 @@ new Function('module', 'exports', harnessCode)(mod, mod.exports);
 const {
   RecentErrorStore,
   formatRecentError,
+  formatRecentErrorFeedback,
   formatRecentErrorsForCopy,
   parseRecentErrorSnapshot,
   serializeRecentErrorSnapshot
@@ -55,6 +57,24 @@ test('persists fixed diagnostics across store recreation', () => {
   assert.equal(records.length, 1);
   assert.match(formatRecentError(records[0]), /复制构建提交号/);
   assert.match(formatRecentErrorsForCopy(records), /下一步：稍后重试/);
+});
+
+test('formats an actionable status-unknown failure without inventing a cause', () => {
+  const message = formatRecentErrorFeedback(
+    'note', 'save', 'unknown', 'status_unknown', 'check_status'
+  );
+  assert.match(message, /笔记 \/ 保存失败/);
+  assert.match(message, /完成状态未确认/);
+  assert.match(message, /原因未确定/);
+  assert.match(message, /检查当前状态/);
+  assert.equal(serializeRecentErrorSnapshot([{
+    timestamp: 1,
+    operation: 'note',
+    phase: 'save',
+    category: 'unknown',
+    outcome: 'status_unknown',
+    nextStep: 'check_status'
+  }]).length > 0, true);
 });
 
 test('retains the newest twenty records and stays within the serialized size cap', () => {

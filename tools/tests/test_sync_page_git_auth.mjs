@@ -162,7 +162,7 @@ test('common authentication, missing repository and network errors receive actio
   assert.match(f.page.explainError('HTTP 401'), /Gitee 认证失败/);
   assert.match(f.page.explainError('NotFound 404'), /仓库或分支不存在/);
   assert.match(f.page.explainError('ECONNREFUSED'), /网络不可达/);
-  assert.equal(f.page.explainError('unclassified failure'), 'unclassified failure');
+  assert.equal(f.page.explainError('unclassified failure'), '原因未确定，请检查网络、仓库地址和当前库状态后重试');
 });
 
 test('clone refuses a mismatched returned directory or unexpected branch before success', async () => {

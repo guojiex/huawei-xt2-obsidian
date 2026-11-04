@@ -244,8 +244,8 @@ export class AgentRuntime {
         } catch (error) {
           const err = error as Error;
           event.errorCode = AgentRuntime.errorCode(err.message);
-          event.result = err.message;
-          AgentRuntime.setAssistantText(assistant, '执行未完成：' + err.message + ' 已成功步骤保留在记录中，未跳过限制或伪造结果。');
+          event.result = AgentRuntime.failureMessage(event.errorCode);
+          AgentRuntime.setAssistantText(assistant, event.result + ' 已成功步骤保留在记录中。');
           return assistant;
         }
       }
@@ -789,7 +789,57 @@ export class AgentRuntime {
 
   private static errorCode(message: string): string {
     const colon: number = message.indexOf('：');
-    return colon > 0 ? message.substring(0, colon) : 'TOOL_FAILED';
+    const candidate: string = colon > 0 ? message.substring(0, colon) : 'TOOL_FAILED';
+    const allowed: string[] = [
+      'OUT_OF_SCOPE', 'INVALID_REFERENCE', 'UNSAVED_EDITOR', 'STALE_REFERENCE', 'READ_FAILED',
+      'NOTHING_TO_UNDO', 'UNDO_CONFLICT', 'NO_REFERENCE', 'STALE_CONTENT', 'READ_BEFORE_WRITE',
+      'INVALID_PATH', 'OPERATION_REPLAY_MISMATCH', 'OPERATION_REPLAY_UNRESOLVED',
+      'PERMISSION_DENIED', 'EMPTY_WRITE', 'UNKNOWN_TOOL', 'ANCHOR_NOT_UNIQUE',
+      'AMBIGUOUS_TARGET', 'CREATE_CONFLICT'
+    ];
+    return allowed.indexOf(candidate) >= 0 ? candidate : 'TOOL_FAILED';
+  }
+
+  private static failureMessage(code: string): string {
+    switch (code) {
+      case 'AMBIGUOUS_TARGET':
+        return '本轮引用了多篇笔记，无法确定唯一写入目标；本步骤未执行。请明确单一目标后重试。';
+      case 'CREATE_CONFLICT':
+        return '新建目标已被占用；未覆盖现有笔记。请检查目标后重试。';
+      case 'OUT_OF_SCOPE':
+      case 'INVALID_REFERENCE':
+      case 'INVALID_PATH':
+        return '笔记引用无效或不属于当前知识库；未执行此步骤。请从当前知识库文件树重新选择目标。';
+      case 'UNSAVED_EDITOR':
+        return '目标笔记有未保存修改；本步骤未执行。请先保存或完成当前编辑后重试。';
+      case 'STALE_REFERENCE':
+      case 'STALE_CONTENT':
+        return '引用目标已变化或失效；本步骤未覆盖新内容。请重新读取笔记后再试。';
+      case 'READ_FAILED':
+        return '引用笔记读取失败；草稿仍保留，未执行后续写入。请检查当前笔记后重试。';
+      case 'NOTHING_TO_UNDO':
+        return '当前没有可撤销的操作；笔记未改变。';
+      case 'UNDO_CONFLICT':
+        return '目标笔记已变化或不存在；撤销未执行，当前内容未覆盖。请重新打开笔记确认。';
+      case 'NO_REFERENCE':
+        return '没有可读取的笔记引用；未执行此步骤。请从当前知识库选择笔记后重试。';
+      case 'READ_BEFORE_WRITE':
+        return '写入前读取未完成；本步骤未写入。请重新读取目标笔记后再试。';
+      case 'OPERATION_REPLAY_MISMATCH':
+        return '操作参数与已有记录不一致；未重复执行。请检查当前笔记和操作记录。';
+      case 'OPERATION_REPLAY_UNRESOLVED':
+        return '上次操作状态需要核对；未重复执行。请先检查笔记和操作记录。';
+      case 'PERMISSION_DENIED':
+        return '当前工具开关或 Skill 权限不允许此操作；本步骤未执行。请检查相关设置后重试。';
+      case 'EMPTY_WRITE':
+        return '追加内容为空；笔记未修改。请提供内容后重试。';
+      case 'UNKNOWN_TOOL':
+        return '固定场景工具无法识别；本步骤未执行。原因未确定，请检查当前配置。';
+      case 'ANCHOR_NOT_UNIQUE':
+        return '原文范围不存在或不唯一；笔记未修改。请重新选择准确内容后重试。';
+      default:
+        return '工具步骤失败；完成状态未确认，原因未确定。已成功步骤保留，请检查笔记和操作记录后再决定是否重试。';
+    }
   }
 
   private static hashText(text: string): string {

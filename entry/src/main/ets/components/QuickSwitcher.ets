@@ -96,11 +96,11 @@ export struct QuickSwitcher {
         this.fullTextSearching = false;
         this.fullTextProgress = '';
       }
-    } catch (error) {
+    } catch (_error) {
       if (requestId === this.searchRequestId) {
         this.fullTextSearching = false;
         this.fullTextProgress = '';
-        this.fullTextError = (error as Error).message;
+        this.fullTextError = '正文搜索失败；原因未确定。请检查当前知识库后重试。';
       }
     }
   }

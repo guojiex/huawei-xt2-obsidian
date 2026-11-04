@@ -10,6 +10,15 @@ const indexSource = readSourceFile(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const previewSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/ShareImagePreviewDialog.ets', import.meta.url));
+const userErrorSource = readSourceFile(
+  new URL('../../entry/src/main/ets/model/UserErrorMessages.ets', import.meta.url));
+const userErrorCode = transformSync(`
+${userErrorSource.replace(/^export /gm, '')}
+module.exports = { shareFailureMessage };
+`, { loader: 'ts', format: 'cjs' }).code;
+const userErrorModule = { exports: {} };
+new Function('module', 'exports', userErrorCode)(userErrorModule, userErrorModule.exports);
+const { shareFailureMessage } = userErrorModule.exports;
 
 function extract(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -28,7 +37,9 @@ module.exports = ShareImagePreviewHarness;
 
 function createPreviewHarness() {
   const module = { exports: {} };
-  vm.runInContext(previewMethods, vm.createContext({ module, exports: module.exports }));
+  vm.runInContext(previewMethods, vm.createContext({
+    module, exports: module.exports, shareFailureMessage
+  }));
   const dialog = new module.exports();
   dialog.sharing = false;
   dialog.retrying = false;
@@ -59,7 +70,8 @@ test('Share Kit rejection remains visible in the long-image detail and can be re
 
   await dialog.share();
 
-  assert.equal(dialog.errorMessage, 'target unavailable');
+  assert.equal(dialog.errorMessage,
+    '系统分享交接未完成；接收端状态未知。原因未确定，请重试或选择其他格式。');
   assert.equal(dialog.sharing, false);
 
   let retries = 0;
@@ -76,7 +88,8 @@ test('failed long-image generation keeps its detail error and offers an alternat
 
   await dialog.retry();
 
-  assert.equal(dialog.errorMessage, '本地图片缺失');
+  assert.equal(dialog.errorMessage,
+    '长图准备失败；原笔记未修改。原因未确定，请重试或改用 Markdown / ZIP。');
   assert.equal(dialog.retrying, false);
   assert.match(indexSource, /onRetry: \(\): Promise<void> => \{\s*return this\.prepareNoteImageShare/);
 });

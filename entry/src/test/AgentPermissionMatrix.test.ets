@@ -75,20 +75,14 @@ function makeMocks(): void {
       return Promise.resolve();
     });
 
-  const createMock: Function = mock.mockPrivateFunc(NoteService as Object, 'createNote');
-  when(createMock)(ArgumentMatchers.any, ArgumentMatchers.any, ArgumentMatchers.any)
-    .afterAction((_registry: Object, _vaultId: string, path: string): string => {
-      let actualPath: string = path;
-      let suffix: number = 2;
-      const dot: number = path.lastIndexOf('.');
-      const stem: string = dot < 0 ? path : path.substring(0, dot);
-      const extension: string = dot < 0 ? '' : path.substring(dot);
-      while (files.has(actualPath)) {
-        actualPath = stem + '-' + suffix.toString() + extension;
-        suffix++;
+  const createWithContentMock: Function = mock.mockPrivateFunc(NoteService as Object, 'createNoteWithContent');
+  when(createWithContentMock)(ArgumentMatchers.any, ArgumentMatchers.any, ArgumentMatchers.any,
+    ArgumentMatchers.any)
+    .afterAction((_registry: Object, vaultId: string, path: string, content: string): Promise<void> => {
+      if (files.has(path)) {
+        return Promise.reject(new Error('CREATE_CONFLICT：目标笔记路径已被占用，未覆盖现有文件。'));
       }
-      files.set(actualPath, '');
-      return actualPath;
+      return NoteService.saveNote(TEST_REGISTRY, vaultId, path, content);
     });
 
   const deleteMock: Function = mock.mockPrivateFunc(NoteService as Object, 'deletePath');
@@ -173,7 +167,7 @@ export default function agentPermissionMatrixTest() {
       mock.ignoreMock(NoteService as Object, 'exists');
       mock.ignoreMock(NoteService as Object, 'tryReadNote');
       mock.ignoreMock(NoteService as Object, 'saveNote');
-      mock.ignoreMock(NoteService as Object, 'createNote');
+      mock.ignoreMock(NoteService as Object, 'createNoteWithContent');
       mock.ignoreMock(NoteService as Object, 'deletePath');
     });
   });

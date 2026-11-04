@@ -92,6 +92,9 @@ function createHarness(options = {}) {
     topView: 'note',
     clearStaleSaveNotice() {},
     showSaveFeedback() {},
+    showFailureFeedback(_operation, _phase, _category, _outcome, _nextStep, detail) {
+      calls.push('failure-feedback:' + detail);
+    },
     refreshBacklinks() {},
     handleEditorSaveError() { calls.push('save-error'); },
     showEditorMismatchRecovery(_vault, path) { calls.push('mismatch:' + path); }
@@ -138,7 +141,10 @@ test('right pane keeps pending edits when the recovery draft cannot be persisted
   const app = createHarness({ draftPersistResult: false });
 
   assert.equal(await app.flushRightSave(), false);
-  assert.deepEqual(app.calls, ['right-read']);
+  assert.deepEqual(app.calls, [
+    'right-read',
+    'failure-feedback:恢复草稿未能安全写入；正式笔记未保存，当前编辑仍保留。请稍后重试。'
+  ]);
   assert.deepEqual(app.writes, []);
   assert.equal(app.rightLastSavedText, 'saved-right');
   assert.equal(app.rightEditorDirty, true);

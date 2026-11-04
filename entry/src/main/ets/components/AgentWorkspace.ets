@@ -397,9 +397,9 @@ export struct AgentWorkspace {
       if (assistant.writeResult !== null) {
         this.onNotesChanged();
       }
-    } catch (error) {
-      const err = error as Error;
-      this.statusText = err.message;
+    } catch (_error) {
+      this.statusText = '操作未完成或结果保存失败；输入仍保留，笔记与执行状态未确认。' +
+        '原因未确定，请检查笔记和最近操作后再重试。';
     } finally {
       this.running = false;
     }
@@ -416,9 +416,8 @@ export struct AgentWorkspace {
       this.messages = session.messages.slice();
       this.statusText = '已撤销 ' + result.path + '；对话和历史结果保留。';
       this.onNotesChanged();
-    } catch (error) {
-      const err = error as Error;
-      this.statusText = err.message;
+    } catch (_error) {
+      this.statusText = '撤销未完成；笔记与操作记录状态未确认。原因未确定，请检查笔记后再重试。';
     }
   }
 

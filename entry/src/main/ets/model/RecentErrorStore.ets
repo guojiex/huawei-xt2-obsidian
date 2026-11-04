@@ -15,7 +15,8 @@ export type RecentErrorCategory =
   'storage_failure' | 'bridge_timeout' | 'permission_failure' | 'network_failure' |
   'conflict' | 'clipboard_failure' | 'unknown';
 
-export type RecentErrorOutcome = 'not_completed' | 'partially_completed' | 'completed_with_warning';
+export type RecentErrorOutcome =
+  'not_completed' | 'partially_completed' | 'completed_with_warning' | 'status_unknown';
 
 export type RecentErrorNextStep =
   'retry' | 'reopen_note' | 'restore_permission' | 'check_network' | 'check_status';
@@ -47,7 +48,9 @@ const CATEGORY_VALUES: string[] = [
   'storage_failure', 'bridge_timeout', 'permission_failure', 'network_failure', 'conflict',
   'clipboard_failure', 'unknown'
 ];
-const OUTCOME_VALUES: string[] = ['not_completed', 'partially_completed', 'completed_with_warning'];
+const OUTCOME_VALUES: string[] = [
+  'not_completed', 'partially_completed', 'completed_with_warning', 'status_unknown'
+];
 const NEXT_STEP_VALUES: string[] = [
   'retry', 'reopen_note', 'restore_permission', 'check_network', 'check_status'
 ];
@@ -195,6 +198,12 @@ export function formatRecentErrorsForCopy(records: RecentErrorRecord[]): string 
   return lines.join('\n\n');
 }
 
+export function formatRecentErrorFeedback(operation: RecentErrorOperation, phase: RecentErrorPhase,
+  category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep): string {
+  return operationLabel(operation) + ' / ' + phaseLabel(phase) + '失败；' + outcomeLabel(outcome) +
+    '；' + categoryLabel(category) + '。下一步：' + nextStepLabel(nextStep) + '。';
+}
+
 function parseRecentErrorRecord(value: Object): RecentErrorRecord | null {
   if (value === null || typeof value !== 'object') {
     return null;
@@ -278,7 +287,8 @@ function outcomeLabel(value: RecentErrorOutcome): string {
   switch (value) {
     case 'not_completed': return '未完成';
     case 'partially_completed': return '部分完成';
-    default: return '已完成但有警告';
+    case 'completed_with_warning': return '已完成但有警告';
+    default: return '完成状态未确认';
   }
 }
 

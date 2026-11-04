@@ -61,6 +61,7 @@ function createHarness(options = {}) {
     async readRightAndPush(path) { calls.push(`clear-right:${path}`); },
     refreshFileTree() { calls.push('refresh-tree'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
+    recordFailureFeedback() { return '安全失败反馈'; },
     showUndo(message, snapshot) {
       calls.push('show-undo');
       shownUndos.push({ message, snapshot });
@@ -138,7 +139,7 @@ test('a restore conflict keeps the file untouched and replaces undo with a no-ac
   await app.undoTrashRestore();
 
   assert.deepEqual(calls, ['hide-undo', 'restore:local:folder/removed.md', 'show-undo']);
-  assert.deepEqual(shownUndos, [{ message: '原位置已有同名文件，请先处理重名', snapshot: null }]);
+  assert.deepEqual(shownUndos, [{ message: '安全失败反馈', snapshot: null }]);
   assert.equal(app.undoSnap, null);
   assert.equal(app.trashSeq, 0);
 });

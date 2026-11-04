@@ -274,10 +274,10 @@ export struct SettingsView {
     this.resetError = '';
     try {
       await AppDataResetService.reset(getContext(this) as common.UIAbilityContext);
-    } catch (error) {
-      const err = error as Error;
+    } catch (_error) {
       this.resetting = false;
-      this.resetError = '重置未完成，部分访问令牌可能已清除。' + err.message;
+      this.resetError = '重置未完成；部分访问令牌可能已清除，本地数据清理状态未确认。' +
+        '原因未确定，请重新打开设置检查后再处理。';
     }
   }
 
@@ -324,9 +324,8 @@ export struct SettingsView {
       AgentConfigStore.saveSystemPrompt(this.systemPromptDraft);
       this.configRevision++;
       this.agentMessage = '已保存；从下一轮开始生效，运行中的轮次继续使用原快照。';
-    } catch (error) {
-      const err = error as Error;
-      this.agentMessage = err.message;
+    } catch (_error) {
+      this.agentMessage = '系统提示词保存失败；原设置未更改。原因未确定，请重试。';
     }
   }
 
@@ -336,9 +335,8 @@ export struct SettingsView {
       this.systemPromptDraft = BUILTIN_AGENT_PROMPT;
       this.configRevision++;
       this.agentMessage = '已恢复内置系统提示词；笔记、对话和工具开关未改变。';
-    } catch (error) {
-      const err = error as Error;
-      this.agentMessage = err.message;
+    } catch (_error) {
+      this.agentMessage = '恢复内置系统提示词失败；原设置未更改。原因未确定，请重试。';
     }
   }
 
@@ -351,9 +349,8 @@ export struct SettingsView {
       AgentConfigStore.saveSkillPrompt(skills[index].id, this.skillPrompts[index]);
       this.configRevision++;
       this.agentMessage = '已保存「' + skills[index].name + '」；从下一轮开始生效。';
-    } catch (error) {
-      const err = error as Error;
-      this.agentMessage = err.message;
+    } catch (_error) {
+      this.agentMessage = 'Skill 提示词保存失败；原设置未更改。原因未确定，请重试。';
     }
   }
 
@@ -369,9 +366,8 @@ export struct SettingsView {
       this.skillPrompts = prompts;
       this.configRevision++;
       this.agentMessage = '已恢复「' + skills[index].name + '」的内置提示词；其他设置与笔记未改变。';
-    } catch (error) {
-      const err = error as Error;
-      this.agentMessage = err.message;
+    } catch (_error) {
+      this.agentMessage = '恢复内置 Skill 提示词失败；原设置未更改。原因未确定，请重试。';
     }
   }
 
@@ -387,9 +383,8 @@ export struct SettingsView {
       this.toolEnabled = values;
       this.configRevision++;
       this.agentMessage = '工具开关已更新；只影响新一轮，Skill 权限限制仍然生效。';
-    } catch (error) {
-      const err = error as Error;
-      this.agentMessage = err.message;
+    } catch (_error) {
+      this.agentMessage = '工具开关保存失败；原设置未更改。原因未确定，请重试。';
     }
   }
 
