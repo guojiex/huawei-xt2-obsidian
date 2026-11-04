@@ -91,6 +91,12 @@ const html = `<!doctype html>
     color: var(--muted); font-size: var(--caption); line-height: var(--leading); text-align: right;
   }
   .preview-source-block { display: contents; }
+  #content [data-simple-mode-hint]::after {
+    display: block; margin-top: var(--s1); color: var(--muted);
+    font-size: var(--caption); line-height: var(--leading);
+  }
+  #content [data-simple-mode-hint="inline-items"]::after { content: '含链接、代码或公式 · 点按逐项编辑'; }
+  #content [data-simple-mode-hint="unsupported"]::after { content: '此内容请在专业模式编辑'; }
   .preview-zoom {
     position: static; align-self: flex-end; flex: none; margin: 0 var(--s4) var(--s2);
     display: flex; align-items: center; gap: var(--s1); padding: var(--s1);

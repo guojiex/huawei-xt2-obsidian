@@ -1116,6 +1116,13 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     if (!supported || containsLockedSyntax(block)) {
       block.dataset.editLocked = 'true'
       block.setAttribute('aria-label', '此内容请在专业模式编辑')
+      if (type === 'paragraph') {
+        const paragraph = editableElementFor(block)
+        if (paragraph?.tagName === 'P') {
+          paragraph.dataset.simpleModeHint = block.dataset.inlineItemsReady === 'true'
+            ? 'inline-items' : 'unsupported'
+        }
+      }
       continue
     }
     if (editableElementFor(block)) {
@@ -1289,23 +1296,14 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
   const tapTarget = event.target.closest('a, img') as HTMLElement | null
   const inlineTarget = event.target.closest('[data-preview-inline-index]') as HTMLElement | null
   let tapPayload = payload
-  if (lockedBlock && payload.length > 0 && (tapTarget || inlineTarget)) {
+  if (lockedBlock && payload.length > 0 && inlineTarget) {
     if (tapTarget) lastLockedTapTarget = tapTarget
-    if (payload.length > 0) {
-      const anchor = JSON.parse(payload) as Record<string, string | number | Array<Object>>
-      if (inlineTarget) {
-        anchor.tapType = inlineTarget.dataset.previewInlineType ?? ''
-        anchor.inlineIndex = Number(inlineTarget.dataset.previewInlineIndex)
-        anchor.itemFrom = Number(inlineTarget.dataset.previewInlineFrom)
-        anchor.itemTo = Number(inlineTarget.dataset.previewInlineTo)
-      } else if (tapTarget?.tagName === 'IMG') {
-        anchor.tapType = 'image'
-      } else if (tapTarget) {
-        const href = (tapTarget as HTMLAnchorElement).getAttribute('href') ?? ''
-        anchor.tapType = href.indexOf('#wikilink:') === 0 ? 'wikilink' : 'link'
-      }
-      tapPayload = JSON.stringify(anchor)
-    }
+    const anchor = JSON.parse(payload) as Record<string, string | number | Array<Object>>
+    anchor.tapType = inlineTarget.dataset.previewInlineType ?? ''
+    anchor.inlineIndex = Number(inlineTarget.dataset.previewInlineIndex)
+    anchor.itemFrom = Number(inlineTarget.dataset.previewInlineFrom)
+    anchor.itemTo = Number(inlineTarget.dataset.previewInlineTo)
+    tapPayload = JSON.stringify(anchor)
   }
   if (tapTarget) {
     event.preventDefault()

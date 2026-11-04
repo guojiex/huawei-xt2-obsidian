@@ -99,6 +99,37 @@ test('paragraphs containing unsupported inline syntax do not expose a partial it
   assert.deepEqual(result.blocks[0].inlineItems, [])
 })
 
+test('20.4 rejects unsupported link forms before exposing inline source ranges', () => {
+  const cases = [
+    '引用 [文本][ref]\n\n[ref]: https://example.test',
+    '[外[内](https://inner.test)](https://outer.test)',
+    '[外层 [内层]](https://outer.test)',
+    '[有标题](https://example.test "title")',
+    '[含空格](https://example.test/a b)',
+    '[含括号](https://example.test/a(b))',
+    '[![图片](images/a.png)](https://example.test)',
+    '![含[链接](https://example.test)](images/a.png)',
+    '[有空格](<path with space>)'
+  ]
+
+  for (const source of cases) {
+    const paragraph = renderMarkdownWithSourceBlocks(source).blocks[0]
+    assert.equal(paragraph.inlineSafe, false, source)
+    assert.deepEqual(paragraph.inlineItems, [], source)
+  }
+})
+
+test('20.4 keeps escaped parentheses and encoded spaces eligible for exact mapping', () => {
+  const source = String.raw`[括号](docs/a\(b\)) 与 [编码空格](docs/a%20b)`
+  const paragraph = renderMarkdownWithSourceBlocks(source).blocks[0]
+
+  assert.equal(paragraph.inlineSafe, true)
+  assert.deepEqual(paragraph.inlineItems.map((item) => source.slice(item.from, item.to)), [
+    String.raw`[括号](docs/a\(b\))`,
+    '[编码空格](docs/a%20b)'
+  ])
+})
+
 test('source line lookup disambiguates repeated headings and chooses the nearest block for blank lines', () => {
   const blocks = [
     { startLine: 2, endLine: 2 },

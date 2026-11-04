@@ -55,8 +55,9 @@ test('locked block taps route links and images without synthesizing a block sele
 
   assert.doesNotMatch(handler, /setActiveLockedBlocks\(/)
   assert.match(handler, /event\.target\.closest\('input, button'\)\) return/)
-  assert.match(handler, /anchor\.tapType = 'image'/)
-  assert.match(handler, /anchor\.tapType = href\.indexOf\('#wikilink:'\) === 0 \? 'wikilink' : 'link'/)
+  assert.match(handler, /if \(lockedBlock && payload\.length > 0 && inlineTarget\)/)
+  assert.doesNotMatch(handler, /anchor\.tapType = href\.indexOf/)
+  assert.doesNotMatch(handler, /anchor\.tapType = 'image'/)
   assert.match(handler, /anchor\.inlineIndex = Number\(inlineTarget\.dataset\.previewInlineIndex\)/)
   assert.match(handler, /event\.preventDefault\(\)/)
   assert.match(handler, /onLockedContentTap\(tapPayload\)/)
@@ -159,6 +160,59 @@ test('rendered inline nodes receive metadata only after every item maps', () => 
   annotate(mismatchedBlock, { inlineSafe: true, inlineItems: items.slice(0, 2) })
   assert.equal(mismatchedBlock.dataset.inlineItemsReady, 'false')
   assert.equal(mismatchedBlock.querySelectorAll('a')[0].dataset.previewInlineIndex, undefined)
+})
+
+test('protected paragraphs show prototype-aligned hints for supported and unsupported syntax', () => {
+  const { fn: configure, context } = loadFunction(
+    previewSource,
+    'function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {',
+    '\nfunction replaceSourceBlock',
+    'configureEditableBlocks'
+  )
+  context.editable = true
+  context.setActiveLockedBlocks = () => {}
+  context.publishLockedBlockAnchor = () => {}
+  context.containsLockedSyntax = () => true
+  context.editableElementFor = (block) => block.paragraph
+  context.sourceText = ''
+
+  const makeRoot = (inlineItemsReady) => {
+    const paragraph = { tagName: 'P', dataset: {}, setAttribute() {}, removeAttribute() {} }
+    const block = {
+      dataset: { sourceType: 'paragraph', inlineItemsReady },
+      paragraph,
+      setAttribute() {},
+      removeAttribute() {}
+    }
+    return {
+      paragraph,
+      root: {
+        querySelectorAll(selector) {
+          return selector === '.preview-source-block' ? [block] : []
+        },
+        querySelector(selector) {
+          return selector === '.preview-source-block' ? block : null
+        }
+      }
+    }
+  }
+
+  const supported = makeRoot('true')
+  configure(supported.root, 0)
+  assert.equal(supported.paragraph.dataset.simpleModeHint, 'inline-items')
+
+  const unsupported = makeRoot('false')
+  configure(unsupported.root, 0)
+  assert.equal(unsupported.paragraph.dataset.simpleModeHint, 'unsupported')
+})
+
+test('generated preview uses the same protected-paragraph copy and v2 visual tokens', () => {
+  assert.match(buildSource, /data-simple-mode-hint="inline-items"[\s\S]*?content: '含链接、代码或公式 · 点按逐项编辑'/)
+  assert.match(buildSource, /data-simple-mode-hint="unsupported"[\s\S]*?content: '此内容请在专业模式编辑'/)
+  assert.match(buildSource, /margin-top: var\(--s1\); color: var\(--muted\)/)
+  assert.ok(generatedPreview.includes('含链接、代码或公式 · 点按逐项编辑'))
+  assert.ok(generatedPreview.includes('此内容请在专业模式编辑'))
+  assert.ok(generatedPreview.includes('font-size: var(--caption); line-height: var(--leading);'))
 })
 
 test('replaying a paragraph action activates only the selected repeated inline item', () => {

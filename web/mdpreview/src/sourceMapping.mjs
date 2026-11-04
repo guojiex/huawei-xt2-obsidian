@@ -62,6 +62,55 @@ const SAFE_INLINE_TOKEN_TYPES = new Set([
 
 const UNSUPPORTED_INLINE_PATTERN = /!?\[\[[^\]]*\]\]|%%|\[\^[^\]]+\]|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m
 
+function isEscaped(source, index) {
+  let slashes = 0
+  for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor--) slashes++
+  return slashes % 2 === 1
+}
+
+function hasNestedLinkOrImage(token) {
+  const pending = [...(token.tokens ?? [])]
+  while (pending.length > 0) {
+    const child = pending.pop()
+    if (child.type === 'link' || child.type === 'image') return true
+    if (Array.isArray(child.tokens)) pending.push(...child.tokens)
+  }
+  return false
+}
+
+function isSupportedLinkToken(token) {
+  if (token.title || hasNestedLinkOrImage(token)) return false
+  const source = token.type === 'image' ? token.raw.slice(1) : token.raw
+  if (source.length < 4 || source[0] !== '[' || source[source.length - 1] !== ')') return false
+
+  let labelEnd = -1
+  for (let index = 1; index < source.length - 1; index++) {
+    if (isEscaped(source, index)) continue
+    if (source[index] === '[') return false
+    if (source[index] === ']') {
+      labelEnd = index
+      break
+    }
+  }
+  if (labelEnd < 0 || source[labelEnd + 1] !== '(') return false
+
+  const contentStart = labelEnd + 2
+  const contentEnd = source.length - 1
+  const angleDestination = source[contentStart] === '<'
+  const destinationStart = angleDestination ? contentStart + 1 : contentStart
+  const destinationEnd = angleDestination ? contentEnd - 1 : contentEnd
+  if (angleDestination && (contentEnd <= contentStart + 1 || source[contentEnd - 1] !== '>')) return false
+  if (destinationStart >= destinationEnd) return false
+
+  for (let index = destinationStart; index < destinationEnd; index++) {
+    const character = source[index]
+    if (isEscaped(source, index)) continue
+    if (/\s/.test(character) || character === '(' || character === ')' ||
+      (angleDestination && (character === '<' || character === '>'))) return false
+  }
+  return true
+}
+
 function collectInlineTokenRanges(tokens, parentRaw) {
   const items = []
   let safe = true
@@ -73,6 +122,10 @@ function collectInlineTokenRanges(tokens, parentRaw) {
     }
     const itemType = INLINE_ITEM_TYPES[token.type]
     if (itemType) {
+      if ((token.type === 'link' || token.type === 'image') && !isSupportedLinkToken(token)) {
+        safe = false
+        return
+      }
       items.push({ type: itemType, displayStart: tokenOffset, displayEnd: tokenOffset + token.raw.length })
       return
     }
