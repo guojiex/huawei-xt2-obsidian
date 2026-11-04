@@ -153,3 +153,11 @@ test('native theme colors and ArkTS numeric tokens match v2 mappings', () => {
   assert.equal(cssNumber(light, '--panel-height'), 80)
   assert.equal(numericToken(tokens, 'LINE_HEIGHT_BODY'), cssNumber(light, '--leading'))
 })
+
+test('reset pane widths action uses the v2 brand-blue token', () => {
+  const settingsView = readSourceFile(path.join(root, 'entry/src/main/ets/components/SettingsView.ets'))
+  const action = settingsView.match(/Text\('恢复等分栏宽'\)([\s\S]*?)\.onClick/)
+  assert.ok(action, 'Missing reset pane widths action')
+  assert.match(action[1], /\.fontColor\(\$r\('app\.color\.brand'\)\)/)
+  assert.match(prototypeHtml, /#resetPaneWidths \.hs-title\{color:var\(--blue\)\}/)
+})
