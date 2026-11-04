@@ -30,6 +30,17 @@ class SyncPageGitAuthHarness {
 module.exports = SyncPageGitAuthHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
 
+const actionCode = transformSync(`
+class SyncPageActionHarness {
+  ${method('  private async performGitAction(', '\n  /** clone 结果')}
+  ${method('  private remoteHost(', '\n  private urlHasInlineCredentials(')}
+  ${method('  private isGitHubRemote(', '\n  private urlHasInlineCredentials(')}
+  ${method('  private explainError(', '\n  /** 将导入到的库 id')}
+  appendLog(line) { this.logs.push(line); }
+}
+module.exports = SyncPageActionHarness;
+`, { loader: 'ts', format: 'cjs' }).code;
+
 function harness({
   clonePathMismatch = false,
   cloneError = null,
@@ -78,6 +89,117 @@ function harness({
   });
   return { page, cloneCalls, registryCalls, toasts };
 }
+
+function actionHarness(metadataFailures = [], failFirstAction = true) {
+  const calls = [];
+  const logs = [];
+  const module = { exports: {} };
+  const registry = {
+    currentEntry() { return { id: 'repo', type: 'git' }; },
+    vaultDirOf(id) { calls.push('path:' + id); return '/isolated/' + id; },
+    updateGitAuthUsername() {
+      calls.push('save-username');
+      if (metadataFailures.includes('username')) throw new Error('private username metadata failure');
+    },
+    recordGitSync() {
+      calls.push('record-sync');
+      if (metadataFailures.includes('sync')) throw new Error('private sync metadata failure');
+    }
+  };
+  vm.runInContext(actionCode, vm.createContext({
+    module,
+    exports: module.exports,
+    VaultRegistry: { get: () => registry },
+    GitNativeService: {
+      async action(options) {
+        calls.push('action:' + options.operation);
+        if (failFirstAction && (options.operation === 'stage' || options.operation === 'commit' ||
+          options.operation === 'fetch' || options.operation === 'push')) {
+          if (calls.filter(call => call === 'action:' + options.operation).length === 1) {
+            throw new Error('path=/private/vault/note.md token=private-token');
+          }
+        }
+        return options.operation === 'fetch' ? 'updated' : '1234567890abcdef';
+      },
+      progressLabel() { return 'progress'; }
+    },
+    GitCredentialStore: {
+      saveToken() {
+        if (metadataFailures.includes('token')) throw new Error('private token metadata failure');
+      }
+    },
+    promptAction: { showToast() {} }
+  }));
+  const page = new module.exports();
+  Object.assign(page, {
+    syncMode: true,
+    syncVaultId: 'repo',
+    syncRemote: 'https://github.com/team/repo.git',
+    syncToken: '',
+    syncUsername: '',
+    commitMessage: 'controlled test',
+    authorName: 'Test',
+    authorEmail: 'test@example.invalid',
+    busy: false,
+    progressText: '',
+    logs,
+    refreshSyncStatus() { calls.push('refresh-status'); }
+  });
+  return { page, calls, logs };
+}
+
+test('Git stage, commit, fetch, and push failures stay private and can be retried explicitly', async () => {
+  const labels = new Map([
+    ['stage', '暂存'],
+    ['commit', '本地提交'],
+    ['fetch', '获取远端状态'],
+    ['push', '推送']
+  ]);
+  const successLogs = new Map([
+    ['stage', '已暂存工作区更改'],
+    ['commit', '本地提交完成'],
+    ['fetch', '已获取 xt2 远端状态'],
+    ['push', '已推送到 xt2']
+  ]);
+  for (const operation of labels.keys()) {
+    const f = actionHarness();
+    await f.page.performGitAction(operation);
+    assert.equal(f.page.busy, false);
+    assert.equal(f.page.progressText, '失败');
+    assert.match(f.logs[0], new RegExp(labels.get(operation) + '失败；当前状态未确认'));
+    assert.match(f.logs[0], /原因未确定/);
+    assert.match(f.logs[0], /刷新 Git 状态后再决定是否重试/);
+    assert.ok(!f.logs.join('\n').includes('/private/vault/note.md'));
+    assert.ok(!f.logs.join('\n').includes('private-token'));
+    assert.equal(f.calls.filter(call => call.startsWith('action:')).length, 1);
+
+    await f.page.performGitAction(operation);
+    assert.equal(f.calls.filter(call => call === 'action:' + operation).length, 2);
+    assert.equal(f.page.busy, false);
+    assert.equal(f.page.progressText, operation === 'push' ? '推送完成' : '完成');
+    assert.ok(f.logs.some(line => line.includes(successLogs.get(operation))));
+  }
+});
+
+test('remote success remains success when sync metadata persistence fails', async () => {
+  for (const [operation, metadataFailures, expectedWarning] of [
+    ['fetch', ['username', 'token'], '令牌未能安全保存'],
+    ['push', ['username', 'token', 'sync'], '推送成功，但上次同步时间未能保存']
+  ]) {
+    const f = actionHarness(metadataFailures, false);
+    f.page.syncToken = 'synthetic-private-token';
+
+    await f.page.performGitAction(operation);
+
+    assert.equal(f.page.busy, false);
+    assert.equal(f.page.progressText, operation === 'push' ? '推送完成' : '完成',
+      `${operation} logs=${JSON.stringify(f.logs)} calls=${JSON.stringify(f.calls)}`);
+    assert.ok(f.logs.some(line => line.includes(expectedWarning)));
+    assert.ok(f.logs.some(line => line.includes(operation === 'push' ? '已推送到 xt2' : '已获取 xt2')));
+    assert.ok(!f.logs.join('\n').includes('metadata failure'));
+    assert.ok(!f.logs.join('\n').includes('synthetic-private-token'));
+  }
+});
 
 test('GitHub clone sends the token as bearer auth and omits username/password', async () => {
   const f = harness();

@@ -31,8 +31,10 @@ export struct FormulaPreviewWeb {
   @Prop @Watch('onFormulaChanged') expression: string = '';
   @Prop @Watch('onFormulaChanged') displayMode: boolean = false;
   @StorageProp('appTheme') @Watch('onFormulaChanged') appTheme: string = 'light';
+  onError: () => void = () => {};
   private controller: webview.WebviewController = new webview.WebviewController();
   private pageReady: boolean = false;
+  private failureReported: boolean = false;
 
   private onFormulaChanged(): void {
     this.updateFormulaPreview();
@@ -50,7 +52,14 @@ export struct FormulaPreviewWeb {
     const script: string = `window.__mdpreview.setTheme('${theme}');` +
       'window.__mdpreview.setPreviewZoomControlsVisible(false);' +
       `window.__mdpreview.setContent('${payload}','${payload}','');`;
-    void this.controller.runJavaScript(script).catch((): void => {});
+    void this.controller.runJavaScript(script).then((): void => {
+      this.failureReported = false;
+    }).catch((): void => {
+      if (!this.failureReported) {
+        this.failureReported = true;
+        this.onError();
+      }
+    });
   }
 
   build() {
@@ -62,7 +71,12 @@ export struct FormulaPreviewWeb {
         this.updateFormulaPreview();
       })
       .onConsole((): boolean => true)
-      .onErrorReceive((): void => {})
+      .onErrorReceive((): void => {
+        if (!this.failureReported) {
+          this.failureReported = true;
+          this.onError();
+        }
+      })
   }
 }
 
@@ -342,9 +356,12 @@ class PreviewImpl {
   private controller: webview.WebviewController;
   private readyFlag: boolean = false;
   private pending: string[] = [];
+  private scriptFailureReported: boolean = false;
+  private onScriptFailure: () => void;
 
-  constructor(controller: webview.WebviewController) {
+  constructor(controller: webview.WebviewController, onScriptFailure: () => void = () => {}) {
     this.controller = controller;
+    this.onScriptFailure = onScriptFailure;
   }
 
   get ready(): boolean {
@@ -496,7 +513,14 @@ class PreviewImpl {
 
   private enqueue(script: string): void {
     if (this.readyFlag) {
-      void this.controller.runJavaScript(script);
+      void this.controller.runJavaScript(script).then((): void => {
+        this.scriptFailureReported = false;
+      }).catch((): void => {
+        if (!this.scriptFailureReported) {
+          this.scriptFailureReported = true;
+          this.onScriptFailure();
+        }
+      });
     } else {
       this.pending.push(script);
     }
@@ -1046,7 +1070,9 @@ export struct PreviewWebView {
           }
           // 就绪：绑定 bridge、冲队列、下发主题。onPageEnd 时内联脚本已执行，
           // window.__mdpreview 必然存在（构建产物单文件内联，无外链资源）。
-          const impl = new PreviewImpl(this.controller);
+          const impl = new PreviewImpl(this.controller, (): void => {
+            this.onError('预览更新失败；原因未确定');
+          });
           this.boundImpl = impl;
           this.bridge.bind(impl);
           void this.finishPageInitialization(impl);

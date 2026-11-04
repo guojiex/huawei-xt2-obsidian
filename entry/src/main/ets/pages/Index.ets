@@ -9726,7 +9726,10 @@ struct Index {
                 .accessibilityText('LaTeX 公式')
               FormulaPreviewWeb({
                 expression: this.blockPanelFormulaValue,
-                displayMode: !this.blockPanelFormulaModel?.inline
+                displayMode: !this.blockPanelFormulaModel?.inline,
+                onError: (): void => {
+                  this.recordBackgroundFailure('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry');
+                }
               })
                 .width('100%')
                 .height(Size.touch * 3)
@@ -10168,7 +10171,8 @@ struct Index {
               this.openBlockPropertyPanel('right', anchor);
             },
             onError: (msg: string): void => {
-              hilog.error(DOMAIN, TAG, '右栏预览 Web 加载失败');
+              hilog.error(DOMAIN, TAG, '右栏预览 Web 失败');
+              this.recordBackgroundFailure('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry');
               this.handleInitialWorkspaceSurfaceError('right', 'preview');
             }
           })
@@ -10375,7 +10379,8 @@ struct Index {
             this.openBlockPropertyPanel('left', anchor);
           },
           onError: (msg: string): void => {
-            hilog.error(DOMAIN, TAG, '预览 Web 加载失败');
+            hilog.error(DOMAIN, TAG, '预览 Web 失败');
+            this.recordBackgroundFailure('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry');
             this.handleInitialWorkspaceSurfaceError('left', 'preview');
           }
         })

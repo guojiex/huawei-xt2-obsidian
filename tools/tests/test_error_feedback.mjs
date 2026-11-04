@@ -111,6 +111,10 @@ test('critical failure surfaces do not display raw system exception text', () =>
   assert.doesNotMatch(sourceFiles.preview, /getErrorInfo\(\)|err\.message/);
   assert.match(sourceFiles.index, /recordFailure\(operation, phase, category, outcome, nextStep\)/);
   assert.match(sourceFiles.index, /private toastRegistryError\([\s\S]*RecentErrorOperation[\s\S]*RecentErrorPhase/);
+  assert.equal(
+    (sourceFiles.index.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length,
+    3
+  );
   assert.match(sourceFiles.agentRuntime, /event\.result = AgentRuntime\.failureMessage\(event\.errorCode\)/);
   assert.doesNotMatch(sourceFiles.agentRuntime, /event\.result\s*=\s*err\.message/);
   assert.doesNotMatch(sourceFiles.agentRuntime, /setAssistantText\(assistant,\s*'执行未完成：'\s*\+\s*err\.message/);
