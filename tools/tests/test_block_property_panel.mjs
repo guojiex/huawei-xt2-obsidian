@@ -22,6 +22,8 @@ const linkMethodsStart = source.indexOf('  private async loadBlockPanelLink()')
 const linkMethodsEnd = source.indexOf('\n  private async convertInlineCodeToPlainText()', linkMethodsStart)
 const sourceTargetMethodsStart = source.indexOf('  private isCurrentBlockSourceTarget(')
 const sourceTargetMethodsEnd = source.indexOf('\n  private async openBlockSourceDrawer()', sourceTargetMethodsStart)
+const imagePickerStart = source.indexOf('  private async pickImageForCurrentNote(')
+const imagePickerEnd = source.indexOf('\n  /** 状态栏右侧读数', imagePickerStart)
 const copyMethodsStart = source.indexOf('  private async copyCodeTextToPasteboard(')
 const copyMethodsEnd = source.indexOf('\n  private async changeBlockCodeLanguage(', copyMethodsStart)
 assert.ok(anchorChangeStart >= 0 && anchorChangeEnd > anchorChangeStart)
@@ -30,6 +32,7 @@ assert.ok(panelBuilderStart >= 0 && panelBuilderEnd > panelBuilderStart)
 assert.ok(linkFieldBuilderStart >= 0 && linkFieldBuilderEnd > linkFieldBuilderStart)
 assert.ok(linkMethodsStart >= 0 && linkMethodsEnd > linkMethodsStart)
 assert.ok(sourceTargetMethodsStart >= 0 && sourceTargetMethodsEnd > sourceTargetMethodsStart)
+assert.ok(imagePickerStart >= 0 && imagePickerEnd > imagePickerStart)
 assert.ok(copyMethodsStart >= 0 && copyMethodsEnd > copyMethodsStart)
 
 const inlineParserSource = fs.readFileSync(
@@ -63,6 +66,7 @@ const code = transformSync(
     ${source.slice(panelStart, panelEnd).trim()}
     ${source.slice(linkMethodsStart, linkMethodsEnd).trim()}
     ${source.slice(sourceTargetMethodsStart, sourceTargetMethodsEnd).trim()}
+    ${source.slice(imagePickerStart, imagePickerEnd).trim()}
   }; module.exports = BlockPanelHarness;`,
   { loader: 'ts', format: 'cjs' }
 ).code
@@ -75,6 +79,11 @@ const copyMethodsCode = transformSync(
 
 function makeApp() {
   const notices = []
+  const removedImageAssets = []
+  let importPickedImage = async () => ({
+    markdownReference: '![new](attachments/new.png)',
+    assetPath: 'attachments/new.png'
+  })
   let wikiFiles = ['target.md', 'folder/next.md']
   const context = vm.createContext({
     module: { exports: {} },
@@ -85,7 +94,24 @@ function makeApp() {
       resolve: (target, sourcePath, files) =>
         wikiParserModule.exports.resolve(target, sourcePath, files)
     },
-    VaultRegistry: { get: () => ({}) },
+    NoteShareService: {
+      isRemoteImage: (source) => source.startsWith('//') || /^(https?:|data:|blob:)/i.test(source)
+    },
+    NoteImageService: {
+      selectedUri: (uris) => uris.length > 0 ? uris[0] : '',
+      importPickedImage: (...args) => importPickedImage(...args),
+      removeImportedImage: (...args) => removedImageAssets.push(args)
+    },
+    photoAccessHelper: {
+      PhotoSelectOptions: class {},
+      PhotoViewPicker: class {
+        async select() {
+          return { photoUris: ['picker-uri'] }
+        }
+      },
+      PhotoViewMIMETypes: { IMAGE_TYPE: 'image' }
+    },
+    VaultRegistry: { get: () => ({ abilityContext: () => ({}) }) },
     Breakpoint: { SM: 'SM' },
     Placement: { TopLeft: 'top-left', BottomLeft: 'bottom-left' },
     SheetSize: { MEDIUM: 'medium', FIT_CONTENT: 'fit-content' },
@@ -106,6 +132,8 @@ function makeApp() {
   const app = new context.module.exports()
   Object.assign(app, {
     notices,
+    removedImageAssets,
+    setImageImport(handler) { importPickedImage = handler },
     setWikiFiles(files) { wikiFiles = files },
     experienceMode: 'simple',
     topView: 'note',
@@ -206,6 +234,53 @@ function prepareWikiPanel(source, files = ['target.md', 'folder/next.md']) {
     content: () => content,
     setContent: (nextContent) => { content = nextContent }
   }
+}
+
+function prepareImagePanel(source, imageFrom, imageTo) {
+  const app = makeApp()
+  const item = { index: 0, type: 'image', from: imageFrom, to: imageTo }
+  const anchor = {
+    type: 'paragraph', tapType: 'image', from: 0, to: source.length,
+    inlineItems: [item], inlineIndex: 0, itemFrom: imageFrom, itemTo: imageTo,
+    x: 160, y: 200, width: 100, height: 40
+  }
+  let content = source
+  const writes = []
+  const history = []
+  app.blockPanelPane = 'left'
+  app.blockPanelAnchor = anchor
+  app.blockPanelInlineItems = [item]
+  app.leftBlockPanelOpen = true
+  app.rightBlockPanelOpen = false
+  app.activePane = 'left'
+  app.blockPanelSourceVaultId = 'vault-a'
+  app.blockPanelSourcePath = 'note.md'
+  app.editorBridge = {
+    currentDocumentRevision: 11,
+    getContent: async () => content,
+    replaceBlockSource: async (...args) => {
+      writes.push(args)
+      if (app.editorBridge.currentDocumentRevision !== args[4] ||
+        content.slice(args[0], args[1]) !== args[2]) {
+        return false
+      }
+      history.push(content)
+      content = content.slice(0, args[0]) + args[3] + content.slice(args[1])
+      app.editorBridge.currentDocumentRevision++
+      return true
+    },
+    undo: () => {
+      if (history.length > 0) {
+        content = history.pop()
+        app.editorBridge.currentDocumentRevision++
+      }
+    }
+  }
+  app.closeBlockPropertyPanel = () => {
+    app.leftBlockPanelOpen = false
+    app.rightBlockPanelOpen = false
+  }
+  return { app, writes, history, content: () => content }
 }
 
 const linkAnchor = {
@@ -833,6 +908,124 @@ test('20.2 stale source ranges reject wiki-link edits without writing', async ()
 
   assert.equal(content(), 'the source changed')
   assert.equal(writes.length, 0)
+})
+
+test('20.3 image width and deletion touch only the selected image range and undo as one edit', async () => {
+  const original = '前文 ![本地图片|360](attachments/old.png) 后文'
+  const imageFrom = original.indexOf('![')
+  const imageTo = original.indexOf(')', imageFrom) + 1
+  const { app, writes, history, content } = prepareImagePanel(original, imageFrom, imageTo)
+
+  await app.loadBlockPanelImage()
+  assert.equal(app.blockPanelImageReady, true)
+  assert.equal(app.blockPanelImageAlt, '本地图片')
+  assert.equal(app.blockPanelImageWidth, '360')
+  assert.equal(app.blockPanelImageRemote(), false)
+
+  await app.saveBlockPanelImageField('width', '480')
+  assert.equal(content(), '前文 ![本地图片|480](attachments/old.png) 后文')
+  assert.deepEqual(writes[0].slice(0, 4), [
+    imageFrom,
+    imageTo,
+    '![本地图片|360](attachments/old.png)',
+    '![本地图片|480](attachments/old.png)'
+  ])
+  assert.equal(history.length, 1)
+  app.editorBridge.undo()
+  assert.equal(content(), original)
+
+  await app.loadBlockPanelImage()
+  await app.deleteBlockPanelImage()
+  assert.equal(content(), '前文  后文')
+  assert.equal(history.length, 1)
+  assert.doesNotMatch(source.slice(source.indexOf('private async deleteBlockPanelImage()'),
+    source.indexOf('\n  private openBlockPanelWikiTarget()', source.indexOf('private async deleteBlockPanelImage()'))),
+  /NoteImageService/)
+})
+
+test('20.3 external image addresses are editable while local image paths are not', async () => {
+  const original = '前文 ![远端图|240](<https://example.test/old.png>) 后文'
+  const imageFrom = original.indexOf('![')
+  const imageTo = original.indexOf(')', imageFrom) + 1
+  const { app, writes, content } = prepareImagePanel(original, imageFrom, imageTo)
+  await app.loadBlockPanelImage()
+
+  assert.equal(app.blockPanelImageRemote(), true)
+  await app.saveBlockPanelImageField('destination', '  ')
+  assert.equal(writes.length, 0)
+  assert.equal(app.notices.at(-1), '图片地址不能为空或包含空格，未修改')
+
+  await app.saveBlockPanelImageField('destination', 'https://example.test/new.png')
+  assert.equal(content(), '前文 ![远端图|240](<https://example.test/new.png>) 后文')
+  assert.equal(writes.length, 1)
+
+  const local = prepareImagePanel(
+    '![本地](attachments/image.png)', 0, '![本地](attachments/image.png)'.length
+  )
+  await local.app.loadBlockPanelImage()
+  await local.app.saveBlockPanelImageField('destination', 'https://example.test/new.png')
+  assert.equal(local.writes.length, 0)
+})
+
+test('20.3 replacing a local image preserves its alt text and width in one source replacement', async () => {
+  const original = '前文 ![本地图片|360](attachments/old.png) 后文'
+  const imageFrom = original.indexOf('![')
+  const imageTo = original.indexOf(')', imageFrom) + 1
+  const { app } = prepareImagePanel(original, imageFrom, imageTo)
+  const writes = []
+  app.currentFilePath = 'note.md'
+  app.previewBridge.ready = true
+  app.replaceBlockPanelInlineSource = async (...args) => {
+    writes.push(args)
+    return true
+  }
+  await app.loadBlockPanelImage()
+
+  await app.pickImageForCurrentNote('left', true)
+
+  assert.deepEqual(writes[0].slice(0, 2), [
+    '![本地图片|360](attachments/old.png)',
+    '![本地图片|360](attachments/new.png)'
+  ])
+  assert.deepEqual(app.removedImageAssets, [])
+})
+
+test('20.3 removes only the new attachment when the selected image changes during import', async () => {
+  const original = '前文 ![本地图片](attachments/old.png) 后文'
+  const imageFrom = original.indexOf('![')
+  const imageTo = original.indexOf(')', imageFrom) + 1
+  const { app, content } = prepareImagePanel(original, imageFrom, imageTo)
+  const writes = []
+  app.currentFilePath = 'note.md'
+  app.previewBridge.ready = true
+  app.replaceBlockPanelInlineSource = async (...args) => {
+    writes.push(args)
+    return true
+  }
+  app.setImageImport(async () => {
+    app.editorBridge.currentDocumentRevision++
+    return { markdownReference: '![new](attachments/new.png)', assetPath: 'attachments/new.png' }
+  })
+  await app.loadBlockPanelImage()
+
+  await app.pickImageForCurrentNote('left', true)
+
+  assert.equal(content(), original)
+  assert.equal(writes.length, 0)
+  assert.equal(app.removedImageAssets.length, 1)
+  assert.equal(app.removedImageAssets[0][1], 'vault-a')
+  assert.equal(app.removedImageAssets[0][2], 'attachments/new.png')
+  assert.equal(app.notices.at(-1), '图片已变化，未替换')
+})
+
+test('20.3 image panel only offers address editing for external images', () => {
+  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  assert.match(builder, /tapType === 'image'/)
+  assert.match(builder, /blockPanelImageRemote\(\)/)
+  assert.match(builder, /BlockPanelImageField\(\s*'destination', '图片地址'/)
+  assert.match(builder, /if \(!this\.blockPanelImageRemote\(\)\) \{[\s\S]*pickImageForCurrentNote\(this\.blockPanelPane, true\)/)
+  assert.match(builder, /this\.deleteBlockPanelImage\(\)/)
+  assert.match(source, /private async pickImageForCurrentNote\([\s\S]*NoteImageService\.importPickedImage/)
 })
 
 test('language picker changes only the language range and retains updated panel state', async () => {

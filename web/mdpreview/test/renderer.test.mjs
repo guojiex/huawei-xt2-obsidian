@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  applyImageMarkdownAttributes,
   frontmatterTags,
   renderMarkdown,
   renderNoteTags,
@@ -60,6 +61,52 @@ test('renders image syntax with its source and alternative text', () => {
   const html = renderMarkdown('![示例图片](assets/example.png)')
 
   assert.match(html, /<img src="assets\/example\.png" alt="示例图片">/)
+})
+
+test('applies custom image width while keeping alt text accessible and responsive', () => {
+  const image = {
+    alt: '城市夜景',
+    dataset: { markdownWidth: '360' },
+    style: {},
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = value
+    }
+  }
+
+  applyImageMarkdownAttributes(image)
+
+  assert.equal(image.alt, '城市夜景')
+  assert.equal(image.style.width, '360px')
+  assert.equal(image.style.maxWidth, '100%')
+  assert.equal(image.style.height, 'auto')
+  assert.equal(image.attributes['aria-label'], undefined)
+})
+
+test('preserves escaped pipes in image alt text while rendering a separate width suffix', () => {
+  const html = renderMarkdown(String.raw`![城市\|360|240](assets/example.png)`)
+  assert.match(html, /<img data-markdown-width="240" src="assets\/example\.png" alt="城市\|360">/)
+
+  const literalPipe = renderMarkdown(String.raw`![城市\|360](assets/example.png)`)
+  assert.match(literalPipe, /<img src="assets\/example\.png" alt="城市\|360">/)
+  assert.doesNotMatch(literalPipe, /data-markdown-width=/)
+})
+
+test('gives empty image alt text a readable accessible name without changing Markdown', () => {
+  const image = {
+    alt: '',
+    dataset: {},
+    style: {},
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = value
+    }
+  }
+
+  applyImageMarkdownAttributes(image)
+
+  assert.equal(image.alt, '')
+  assert.equal(image.attributes['aria-label'], '图片')
 })
 
 test('renders inline and block KaTeX while keeping Markdown source unchanged', () => {

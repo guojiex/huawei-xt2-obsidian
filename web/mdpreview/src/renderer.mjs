@@ -29,6 +29,39 @@ function escapeHtml(value) {
   })
 }
 
+export function applyImageMarkdownAttributes(image) {
+  const width = image.dataset.markdownWidth ?? ''
+  if (/^\d{2,4}$/.test(width) && Number(width) > 0) {
+    image.style.width = `${Number(width)}px`
+    image.style.maxWidth = '100%'
+    image.style.height = 'auto'
+  }
+  if (image.alt.length === 0) {
+    image.setAttribute('aria-label', '图片')
+  }
+}
+
+function imageWidthFromRaw(raw) {
+  let labelEnd = -1
+  for (let index = 2; index < raw.length - 1; index++) {
+    if (raw[index] === '\\') {
+      index++
+    } else if (raw[index] === ']' && raw[index + 1] === '(') {
+      labelEnd = index
+      break
+    }
+  }
+  if (labelEnd < 0) return ''
+
+  const alt = raw.slice(2, labelEnd)
+  const separator = alt.lastIndexOf('|')
+  if (separator < 0) return ''
+  let slashes = 0
+  for (let index = separator - 1; index >= 0 && alt[index] === '\\'; index--) slashes++
+  const width = alt.slice(separator + 1)
+  return slashes % 2 === 0 && /^\d{2,4}$/.test(width) ? width : ''
+}
+
 marked.use({
   extensions: [
     {
@@ -96,6 +129,23 @@ marked.use({
     }
   ],
   renderer: {
+    image(token) {
+      const width = imageWidthFromRaw(token.raw)
+      if (!width) return false
+
+      const alt = this.parser.parseInline(token.tokens, this.parser.textRenderer)
+      const suffix = `|${width}`
+      if (!alt.endsWith(suffix)) return false
+      const renderer = new marked.Renderer()
+      renderer.options = this.options
+      renderer.parser = this.parser
+      const html = renderer.image({
+        href: token.href,
+        title: token.title,
+        text: alt.slice(0, -suffix.length)
+      })
+      return html.replace('<img ', `<img data-markdown-width="${width}" `)
+    },
     code(token) {
       if (token.lang?.trim().toLowerCase() !== 'mermaid') return false
       return `<div class="mermaid-block"><pre class="mermaid-source">${escapeHtml(token.text)}</pre></div>\n`

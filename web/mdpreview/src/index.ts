@@ -15,7 +15,10 @@
  */
 
 import { marked } from 'marked'
-import { renderMermaidSvg, renderNoteTags, resolveVaultImagePath, shareCaptureBottomPadding, splitFrontmatter } from './renderer.mjs'
+import {
+  applyImageMarkdownAttributes, renderMermaidSvg, renderNoteTags, resolveVaultImagePath,
+  shareCaptureBottomPadding, splitFrontmatter
+} from './renderer.mjs'
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
 import {
@@ -142,6 +145,7 @@ function localizeImages(root: HTMLElement): void {
   const imgs = root.querySelectorAll('img')
   for (let i = 0; i < imgs.length; i++) {
     const img = imgs[i] as HTMLImageElement
+    applyImageMarkdownAttributes(img)
     const src = img.getAttribute('src') ?? ''
     if (src.length === 0 || src.startsWith('//') || /^(https?:|data:|blob:)/i.test(src)) {
       continue
@@ -157,6 +161,9 @@ function localizeImages(root: HTMLElement): void {
           img.classList.add('preview-local-image')
           img.tabIndex = 0
           img.setAttribute('role', 'button')
+          if (img.alt.length === 0) {
+            img.setAttribute('aria-label', '查看完整图片')
+          }
           img.setAttribute('title', '点击查看完整图片')
           img.addEventListener('click', () => {
             if (!editable) openImage(img)
@@ -171,6 +178,7 @@ function localizeImages(root: HTMLElement): void {
         } else {
           img.dataset.shareMissing = 'true'
           img.alt = src + '（图片不存在）'
+          img.removeAttribute('aria-label')
         }
       } else {
         img.dataset.shareMissing = 'true'

@@ -31,7 +31,9 @@ import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 import { FileTree } from '../model/FileTree';
 import { WikiLinkCandidate, WikiLinkParser, WikiLinkReference, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
-import { MarkdownInlineParser, MarkdownLinkParts } from '../model/MarkdownInlineParser';
+import {
+  MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts
+} from '../model/MarkdownInlineParser';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
 import { SettingsView } from '../components/SettingsView';
@@ -234,6 +236,13 @@ struct Index {
   @State blockPanelWikiResolutionStatus: string = '';
   @State blockPanelWikiResolutionPath: string = '';
   private blockPanelWikiRaw: string = '';
+  @State blockPanelImageReady: boolean = false;
+  @State blockPanelImageAlt: string = '';
+  @State blockPanelImageDestination: string = '';
+  @State blockPanelImageWidth: string = '';
+  @State blockPanelImageMessage: string = '';
+  private blockPanelImageRaw: string = '';
+  private blockPanelImageParts: MarkdownImageParts | null = null;
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -3032,6 +3041,13 @@ struct Index {
     this.blockPanelWikiResolutionStatus = '';
     this.blockPanelWikiResolutionPath = '';
     this.blockPanelWikiRaw = '';
+    this.blockPanelImageReady = false;
+    this.blockPanelImageAlt = '';
+    this.blockPanelImageDestination = '';
+    this.blockPanelImageWidth = '';
+    this.blockPanelImageMessage = anchor.tapType === 'image' ? '正在读取图片…' : '';
+    this.blockPanelImageRaw = '';
+    this.blockPanelImageParts = null;
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3050,6 +3066,8 @@ struct Index {
       void this.loadBlockPanelLink();
     } else if (anchor.tapType === 'wikilink') {
       void this.loadBlockPanelWikiLink();
+    } else if (anchor.tapType === 'image') {
+      void this.loadBlockPanelImage();
     }
   }
 
@@ -3097,10 +3115,19 @@ struct Index {
     this.blockPanelWikiResolutionStatus = '';
     this.blockPanelWikiResolutionPath = '';
     this.blockPanelWikiRaw = '';
+    this.blockPanelImageReady = false;
+    this.blockPanelImageAlt = '';
+    this.blockPanelImageDestination = '';
+    this.blockPanelImageWidth = '';
+    this.blockPanelImageMessage = itemAnchor.tapType === 'image' ? '正在读取图片…' : '';
+    this.blockPanelImageRaw = '';
+    this.blockPanelImageParts = null;
     if (itemAnchor.tapType === 'link') {
       void this.loadBlockPanelLink();
     } else if (itemAnchor.tapType === 'wikilink') {
       void this.loadBlockPanelWikiLink();
+    } else if (itemAnchor.tapType === 'image') {
+      void this.loadBlockPanelImage();
     }
   }
 
@@ -3316,6 +3343,70 @@ struct Index {
     this.blockPanelLinkReady = true;
   }
 
+  private async loadBlockPanelImage(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.tapType !== 'image' ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      this.blockPanelImageReady = true;
+      this.blockPanelImageMessage = '图片已变化，请重新打开面板';
+      return;
+    }
+
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelImageReady = true;
+      this.blockPanelImageMessage = '无法同步当前笔记，请关闭面板后重试';
+      promptAction.showToast({ message: '无法同步当前笔记，图片暂时不能编辑' });
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
+      return;
+    }
+
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelImageReady = true;
+      this.blockPanelImageMessage = '读取图片失败，请关闭面板后重试';
+      promptAction.showToast({ message: '读取图片失败' });
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
+      return;
+    }
+    const from: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemFrom : latestAnchor.from;
+    const to: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemTo : latestAnchor.to;
+    if (from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
+      this.blockPanelImageReady = true;
+      this.blockPanelImageMessage = '图片范围无效，请以源码编辑此项';
+      return;
+    }
+
+    const raw: string = source.slice(from, to);
+    const parts: MarkdownImageParts | null = MarkdownInlineParser.parseImage(raw);
+    this.blockPanelImageRaw = raw;
+    this.blockPanelImageParts = parts;
+    if (parts === null) {
+      this.blockPanelImageMessage = '此图片写法暂不支持结构化编辑';
+    } else {
+      this.blockPanelImageAlt = parts.alt;
+      this.blockPanelImageDestination = parts.destination;
+      this.blockPanelImageWidth = parts.width;
+      this.blockPanelImageMessage = '';
+    }
+    this.blockPanelImageReady = true;
+  }
+
   private async replaceBlockPanelInlineSource(expectedSource: string, replacement: string,
     failureMessage: string): Promise<boolean> {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
@@ -3324,7 +3415,7 @@ struct Index {
     const path: string = this.blockPanelSourcePath;
     const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
     const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.inlineIndex < 0 ||
+    if (anchor === null || (anchor.inlineIndex < 0 && anchor.tapType !== 'image') ||
       !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
       return false;
     }
@@ -3352,8 +3443,8 @@ struct Index {
       promptAction.showToast({ message: '读取当前内容失败，未修改' });
       return false;
     }
-    const from: number = latestAnchor.itemFrom;
-    const to: number = latestAnchor.itemTo;
+    const from: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemFrom : latestAnchor.from;
+    const to: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemTo : latestAnchor.to;
     if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
       !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
       from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from ||
@@ -3404,7 +3495,8 @@ struct Index {
     const delta: number = replacementLength - (to - from);
     const items: PreviewBlockInlineItem[] = [];
     for (const item of anchor.inlineItems) {
-      if (item.index === anchor.inlineIndex) {
+      if ((anchor.inlineIndex >= 0 && item.index === anchor.inlineIndex) ||
+        (anchor.inlineIndex < 0 && item.from === from && item.to === to)) {
         items.push({ index: item.index, type: item.type, from: item.from, to: item.to + delta });
       } else if (item.from >= to) {
         items.push({ index: item.index, type: item.type, from: item.from + delta, to: item.to + delta });
@@ -3420,8 +3512,8 @@ struct Index {
       to: anchor.to + delta,
       inlineItems: items,
       inlineIndex: anchor.inlineIndex,
-      itemFrom: anchor.itemFrom,
-      itemTo: anchor.itemTo + delta,
+      itemFrom: anchor.inlineIndex >= 0 ? anchor.itemFrom : -1,
+      itemTo: anchor.inlineIndex >= 0 ? anchor.itemTo + delta : -1,
       codeLanguage: anchor.codeLanguage,
       codeLanguageFrom: anchor.codeLanguageFrom,
       codeLanguageTo: anchor.codeLanguageTo,
@@ -3666,6 +3758,111 @@ struct Index {
     }
     const applied: boolean = await this.replaceBlockPanelInlineSource(
       this.blockPanelWikiRaw, this.blockPanelWikiDisplayText(), '移除双链失败，请重试');
+    if (applied) {
+      this.closeBlockPropertyPanel();
+    }
+  }
+
+  private blockPanelImageRemote(): boolean {
+    const parts: MarkdownImageParts | null = this.blockPanelImageParts;
+    return parts !== null && NoteShareService.isRemoteImage(parts.destination);
+  }
+
+  private blockPanelImageWidthOptions(): SelectOption[] {
+    return [
+      { value: '原始' },
+      { value: '小 · 240 px' },
+      { value: '中 · 360 px' },
+      { value: '大 · 480 px' }
+    ];
+  }
+
+  private blockPanelImageWidthIndex(): number {
+    switch (this.blockPanelImageWidth) {
+      case '':
+        return 0;
+      case '240':
+        return 1;
+      case '360':
+        return 2;
+      case '480':
+        return 3;
+      default:
+        return -1;
+    }
+  }
+
+  private blockPanelImageWidthValue(): string {
+    if (this.blockPanelImageWidth.length === 0) {
+      return '原始';
+    }
+    const selected: number = this.blockPanelImageWidthIndex();
+    if (selected >= 0) {
+      return this.blockPanelImageWidthOptions()[selected].value as string;
+    }
+    return '当前 ' + this.blockPanelImageWidth + ' px';
+  }
+
+  private blockPanelImageWidthForIndex(index: number): string {
+    switch (index) {
+      case 0:
+        return '';
+      case 1:
+        return '240';
+      case 2:
+        return '360';
+      case 3:
+        return '480';
+      default:
+        return '';
+    }
+  }
+
+  private async saveBlockPanelImageField(field: string, value: string): Promise<void> {
+    const parts: MarkdownImageParts | null = this.blockPanelImageParts;
+    if (!this.blockPanelImageReady || parts === null ||
+      (field !== 'alt' && field !== 'width' && field !== 'destination')) {
+      return;
+    }
+    let replacement: string | null = null;
+    if (field === 'alt') {
+      replacement = MarkdownInlineParser.replaceImageAlt(this.blockPanelImageRaw, parts, value);
+    } else if (field === 'width') {
+      replacement = MarkdownInlineParser.replaceImageWidth(this.blockPanelImageRaw, parts, value);
+      if (replacement === null) {
+        promptAction.showToast({ message: '图片宽度选项无效，未修改' });
+        return;
+      }
+    } else {
+      if (!this.blockPanelImageRemote()) {
+        return;
+      }
+      replacement = MarkdownInlineParser.replaceImageDestination(
+        this.blockPanelImageRaw, parts, value);
+      if (replacement === null) {
+        promptAction.showToast({ message: '图片地址不能为空或包含空格，未修改' });
+        return;
+      }
+    }
+    if (!await this.replaceBlockPanelInlineSource(
+      this.blockPanelImageRaw, replacement, '修改图片失败，请重试')) {
+      return;
+    }
+    this.blockPanelImageRaw = replacement;
+    this.blockPanelImageParts = MarkdownInlineParser.parseImage(replacement);
+    if (this.blockPanelImageParts !== null) {
+      this.blockPanelImageAlt = this.blockPanelImageParts.alt;
+      this.blockPanelImageDestination = this.blockPanelImageParts.destination;
+      this.blockPanelImageWidth = this.blockPanelImageParts.width;
+    }
+  }
+
+  private async deleteBlockPanelImage(): Promise<void> {
+    if (this.blockPanelImageParts === null || this.blockPanelImageRaw.length === 0) {
+      return;
+    }
+    const applied: boolean = await this.replaceBlockPanelInlineSource(
+      this.blockPanelImageRaw, '', '删除图片失败，请重试');
     if (applied) {
       this.closeBlockPropertyPanel();
     }
@@ -5170,12 +5367,25 @@ struct Index {
   }
 
   /** Select one Gallery image, copy it into the current vault, and insert its relative Markdown path. */
-  private async pickImageForCurrentNote(pane: string = 'left'): Promise<void> {
+  private async pickImageForCurrentNote(pane: string = 'left',
+    replaceSelectedImage: boolean = false): Promise<void> {
     const isRight: boolean = pane === 'right';
     const notePath: string = isRight ? this.rightFilePath : this.currentFilePath;
     const editorBridge: EditorBridge = isRight ? this.rightEditorBridge : this.editorBridge;
     const previewBridge: PreviewBridge = isRight ? this.rightPreviewBridge : this.previewBridge;
+    const imageAnchor: PreviewBlockAnchor | null = replaceSelectedImage ? this.blockPanelAnchor : null;
+    const imageRaw: string = replaceSelectedImage ? this.blockPanelImageRaw : '';
+    const imageParts: MarkdownImageParts | null = replaceSelectedImage ? this.blockPanelImageParts : null;
+    const requestId: number = isRight ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const documentRevision: number = editorBridge.currentDocumentRevision;
     if (this.imagePickerBusy || this.rightImagePickerBusy) {
+      return;
+    }
+    if (replaceSelectedImage && (imageAnchor === null || imageParts === null || imageRaw.length === 0 ||
+      pane !== this.blockPanelPane || imageAnchor.tapType !== 'image' ||
+      !this.isCurrentBlockSourceTarget(pane, this.blockPanelSourceVaultId, notePath,
+        requestId, documentRevision))) {
+      promptAction.showToast({ message: '图片已变化，请重新打开面板' });
       return;
     }
     if (this.currentVaultId.length === 0 || notePath.length === 0) {
@@ -5210,6 +5420,12 @@ struct Index {
         promptAction.showToast({ message: '当前笔记已变化，未导入图片' });
         return;
       }
+      if (replaceSelectedImage && (imageAnchor === null ||
+        !this.isCurrentBlockSourceTarget(pane, vaultId, notePath, requestId, documentRevision) ||
+        !this.isSameBlockPanelTarget(this.blockPanelAnchor, imageAnchor))) {
+        promptAction.showToast({ message: '图片已变化，未替换' });
+        return;
+      }
 
       const imported = await NoteImageService.importPickedImage(registry, registry.abilityContext(),
         vaultId, notePath, uri);
@@ -5217,6 +5433,49 @@ struct Index {
       if (vaultId !== this.currentVaultId || notePath !== currentPathAfterImport) {
         NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
         promptAction.showToast({ message: '笔记已切换，图片未插入' });
+        return;
+      }
+      if (replaceSelectedImage && (imageAnchor === null ||
+        !this.isCurrentBlockSourceTarget(pane, vaultId, notePath, requestId, documentRevision) ||
+        !this.isSameBlockPanelTarget(this.blockPanelAnchor, imageAnchor))) {
+        NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
+        promptAction.showToast({ message: '图片已变化，未替换' });
+        return;
+      }
+      if (replaceSelectedImage) {
+        const importedParts: MarkdownImageParts | null =
+          MarkdownInlineParser.parseImage(imported.markdownReference);
+        if (imageParts === null || importedParts === null) {
+          NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
+          promptAction.showToast({ message: '新图片引用无效，未替换原图片' });
+          return;
+        }
+        let replacement: string = MarkdownInlineParser.replaceImageAlt(
+          imported.markdownReference, importedParts, imageParts.alt);
+        let replacementParts: MarkdownImageParts | null = MarkdownInlineParser.parseImage(replacement);
+        if (replacementParts !== null && imageParts.width.length > 0) {
+          const withWidth: string | null = MarkdownInlineParser.replaceImageWidth(
+            replacement, replacementParts, imageParts.width);
+          if (withWidth === null) {
+            NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
+            promptAction.showToast({ message: '原图片宽度写法不支持，未替换图片' });
+            return;
+          }
+          replacement = withWidth;
+        }
+        const applied: boolean = await this.replaceBlockPanelInlineSource(
+          imageRaw, replacement, '替换图片失败，请重试');
+        if (!applied) {
+          NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
+          return;
+        }
+        this.blockPanelImageRaw = replacement;
+        this.blockPanelImageParts = MarkdownInlineParser.parseImage(replacement);
+        if (this.blockPanelImageParts !== null) {
+          this.blockPanelImageAlt = this.blockPanelImageParts.alt;
+          this.blockPanelImageDestination = this.blockPanelImageParts.destination;
+          this.blockPanelImageWidth = this.blockPanelImageParts.width;
+        }
         return;
       }
       if (this.experienceMode === 'simple') {
@@ -7879,6 +8138,94 @@ struct Index {
                   .width('100%')
                   .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
               }
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'image') {
+              if (this.blockPanelActionLabel().length > 0) {
+                Row() {
+                  Text(this.blockPanelActionLabel())
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .layoutWeight(1)
+                }
+                .width('100%')
+                .height(Size.touch)
+                .padding({ left: Space.s3, right: Space.s3 })
+                .focusable(true)
+                .accessibilityText('查看大图')
+                .onClick((): void => { void this.performBlockPanelAction(); })
+              }
+              if (this.blockPanelImageReady && this.blockPanelImageParts !== null) {
+                this.BlockPanelImageField('alt', '替代文字', this.blockPanelImageAlt, '描述图片内容')
+                if (this.blockPanelImageRemote()) {
+                  this.BlockPanelImageField(
+                    'destination', '图片地址', this.blockPanelImageDestination, 'https://…');
+                  Text('外链图片只修改地址，不下载或转为本地附件')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .width('100%')
+                    .padding({ left: Space.s3, right: Space.s3, bottom: Space.s2 })
+                }
+                Column({ space: Space.s1 }) {
+                  Text('显示宽度')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                  Select(this.blockPanelImageWidthOptions())
+                    .selected(this.blockPanelImageWidthIndex())
+                    .value(this.blockPanelImageWidthValue())
+                    .fontColor($r('app.color.text_primary'))
+                    .width('100%')
+                    .onSelect((index: number, value: string): void => {
+                      void this.saveBlockPanelImageField('width', this.blockPanelImageWidthForIndex(index));
+                    })
+                  Text(this.blockPanelImageWidthIndex() < 0
+                    ? '当前宽度 ' + this.blockPanelImageWidth + ' px'
+                    : '按 Markdown 写作 ![替代文字|宽度](路径)')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_tertiary'))
+                    .width('100%')
+                }
+                .width('100%')
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                if (!this.blockPanelImageRemote()) {
+                  Row() {
+                    Text('替换图片')
+                      .fontSize(FontSize.body2)
+                      .fontColor($r('app.color.text_primary'))
+                      .layoutWeight(1)
+                    Text('从图库选择')
+                      .fontSize(FontSize.caption)
+                      .fontColor($r('app.color.text_secondary'))
+                  }
+                  .width('100%')
+                  .height(Size.touch)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .focusable(true)
+                  .enabled(!this.isImagePickerBusy(this.blockPanelPane))
+                  .accessibilityText('替换图片，从图库选择')
+                  .onClick((): void => { void this.pickImageForCurrentNote(this.blockPanelPane, true); })
+                }
+                Row() {
+                  Text('删除图片')
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.danger'))
+                    .layoutWeight(1)
+                  Text('仅移除引用')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                }
+                .width('100%')
+                .height(Size.touch)
+                .padding({ left: Space.s3, right: Space.s3 })
+                .focusable(true)
+                .accessibilityText('删除图片引用，保留附件文件')
+                .onClick((): void => { void this.deleteBlockPanelImage(); })
+              } else {
+                Text(this.blockPanelImageMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              }
             } else if (this.blockPanelActionLabel().length > 0) {
               Row() {
                 Text(this.blockPanelActionLabel())
@@ -8021,6 +8368,43 @@ struct Index {
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
       }
+    }
+    .width('100%')
+    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+  }
+
+  @Builder
+  BlockPanelImageField(field: string, label: string, value: string, placeholder: string) {
+    Column({ space: Space.s1 }) {
+      Text(label)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      Row({ space: Space.s1 }) {
+        TextInput({ text: value, placeholder: placeholder })
+          .height(Size.buttonH)
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .padding({ left: Space.s2, right: Space.s2 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.control)
+          .layoutWeight(1)
+          .onChange((nextValue: string): void => {
+            if (field === 'alt') {
+              this.blockPanelImageAlt = nextValue;
+            } else {
+              this.blockPanelImageDestination = nextValue;
+            }
+          })
+        Button('保存')
+          .onClick((): void => {
+            const nextValue: string = field === 'alt'
+              ? this.blockPanelImageAlt : this.blockPanelImageDestination;
+            void this.saveBlockPanelImageField(field, nextValue);
+          })
+      }
+      .width('100%')
     }
     .width('100%')
     .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })

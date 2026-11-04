@@ -8,6 +8,18 @@ export interface MarkdownLinkParts {
   angleDestination: boolean;
 }
 
+export interface MarkdownImageParts {
+  alt: string;
+  destination: string;
+  width: string;
+  labelStart: number;
+  labelEnd: number;
+  destinationStart: number;
+  destinationEnd: number;
+  widthStart: number;
+  angleDestination: boolean;
+}
+
 export class MarkdownInlineParser {
   static parseLink(source: string): MarkdownLinkParts | null {
     if (source.length < 4 || source[0] !== '[' || source[source.length - 1] !== ')') {
@@ -50,6 +62,70 @@ export class MarkdownInlineParser {
       destinationEnd: destinationEnd,
       angleDestination: angleDestination
     };
+  }
+
+  static parseImage(source: string): MarkdownImageParts | null {
+    if (source.length < 5 || source[0] !== '!') {
+      return null;
+    }
+    const linkSource: string = source.substring(1);
+    const link: MarkdownLinkParts | null = MarkdownInlineParser.parseLink(linkSource);
+    if (link === null) {
+      return null;
+    }
+    const rawAlt: string = linkSource.substring(1, link.labelEnd);
+    let altSource: string = rawAlt;
+    let width: string = '';
+    let widthStart: number = -1;
+    const widthSeparator: number = rawAlt.lastIndexOf('|');
+    if (widthSeparator >= 0 && !MarkdownInlineParser.isEscaped(rawAlt, widthSeparator)) {
+      const candidate: string = rawAlt.substring(widthSeparator + 1);
+      if (/^\d{2,4}$/.test(candidate)) {
+        width = candidate;
+        altSource = rawAlt.substring(0, widthSeparator);
+        widthStart = widthSeparator + 2;
+      }
+    }
+    return {
+      alt: MarkdownInlineParser.unescapePunctuation(altSource),
+      destination: link.destination,
+      width: width,
+      labelStart: 2,
+      labelEnd: link.labelEnd + 1,
+      destinationStart: link.destinationStart + 1,
+      destinationEnd: link.destinationEnd + 1,
+      widthStart: widthStart,
+      angleDestination: link.angleDestination
+    };
+  }
+
+  static replaceImageAlt(source: string, parts: MarkdownImageParts, alt: string): string {
+    const label: string = MarkdownInlineParser.escapeLabel(alt).replace(/\|/g, '\\|') +
+      (parts.width.length > 0 ? '|' + parts.width : '');
+    return source.substring(0, parts.labelStart) + label + source.substring(parts.labelEnd);
+  }
+
+  static replaceImageWidth(source: string, parts: MarkdownImageParts, width: string): string | null {
+    if (width !== '' && !/^\d{2,4}$/.test(width)) {
+      return null;
+    }
+    if (parts.width.length === 0) {
+      return source.substring(0, parts.labelEnd) +
+        (width.length > 0 ? '|' + width : '') + source.substring(parts.labelEnd);
+    }
+    return source.substring(0, parts.widthStart) +
+      (width.length > 0 ? '|' + width : '') + source.substring(parts.labelEnd);
+  }
+
+  static replaceImageDestination(source: string, parts: MarkdownImageParts, destination: string): string | null {
+    const value: string = destination.trim();
+    if (value.length === 0 || /\s/.test(value)) {
+      return null;
+    }
+    const escaped: string = parts.angleDestination
+      ? MarkdownInlineParser.escapeAngleDestination(value)
+      : MarkdownInlineParser.escapeDestination(value);
+    return source.substring(0, parts.destinationStart) + escaped + source.substring(parts.destinationEnd);
   }
 
   static replaceLabel(source: string, parts: MarkdownLinkParts, label: string): string {
