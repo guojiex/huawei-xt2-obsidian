@@ -9,6 +9,11 @@ test('footer links to the current v2 design notes without restoring the deleted 
  assert.match(html,/<a href="\.\/设计说明\.md">设计说明<\/a>/);
  assert.doesNotMatch(html,/href="\.\.\/index\.html"/);
 });
+test('phone scrim closes navigation and simple toolbar follows editor focus',()=>{
+ const f=fixture();const extension=html.match(/\/\/ v1\.29: first tap[\s\S]*?(?=<\/script>)/)[0];f.run(extension);
+ f.run("setViewport('phone');$('window').classList.add('nav-open')");let prevented=false,stopped=false;f.get('navScrim').dispatch('click',{preventDefault(){prevented=true},stopPropagation(){stopped=true}});assert(prevented&&stopped);assert(!f.get('window').classList.contains('nav-open'));assert(f.get('menu').focused);
+ f.run("experience='simple';activePane='left';document.activeElement={closest:s=>s==='[contenteditable=true]'?{}:null,blur(){document.activeElement=null}};$('leftPane').contains=()=>true;refreshSimpleTextFocus()");assert(!f.get('simpleTools').classList.contains('hidden'));assert(f.get('simpleToolsRight').classList.contains('hidden'));f.get('simpleDone').onclick();assert(f.get('simpleTools').classList.contains('hidden'));assert(f.get('leftTitle').focused);
+});
 test('save-success feedback stays hidden until the simulated save succeeds, then fades out',()=>{
  assert.match(html,/\.save-feedback\{position:absolute;left:var\(--s5\)/);
  assert.match(code,/scheduleSaveFeedback\(\).*setTimeout\(\(\)=>\{const feedback=saveFeedback\(\);feedback\.classList\.remove\('hidden'\);saveFeedbackHideTimer=setTimeout\(\(\)=>feedback\.classList\.add\('hidden'\),3500\);\},800\)/);
