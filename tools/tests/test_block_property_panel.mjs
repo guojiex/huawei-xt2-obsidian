@@ -64,6 +64,7 @@ function makeApp() {
     breakpoint: 'MD',
     activePane: 'left',
     currentVaultId: 'vault-a',
+    rightOpenRequestId: 7,
     leftOpenRequestId: 7,
     leftBlockPanelOpen: false,
     rightBlockPanelOpen: false,
@@ -231,6 +232,66 @@ test('selection refresh preserves the chosen repeated inline target through acti
   app.blockPanelPendingAction = true
   app.onBlockPropertyPanelDisappear()
   assert.deepEqual(app.previewBridge.activated, [[10, 60, 1]])
+})
+
+test('plain-text action unwraps only the selected inline code in either pane', async () => {
+  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  assert.match(builder, /\.onClick\(\(\): void => \{ void this\.performBlockPanelAction\(\); \}\)/)
+
+  for (const pane of ['left', 'right']) {
+    const sourceText = pane === 'left'
+      ? 'left: before ``a`b`` after'
+      : 'right: before `value` after'
+    const itemFrom = sourceText.indexOf('`')
+    const itemTo = sourceText.indexOf(' after')
+    const item = { index: 0, type: 'inlinecode', from: itemFrom, to: itemTo }
+    const paragraphAnchor = {
+      type: 'paragraph', tapType: '', from: 0, to: sourceText.length,
+      inlineItems: [item], inlineIndex: -1, itemFrom: -1, itemTo: -1,
+      x: 160, y: 200, width: 100, height: 40
+    }
+    const calls = []
+    let content = sourceText
+    const editor = {
+      currentDocumentRevision: 11,
+      getContent: async () => content,
+      replaceBlockSource: async (...args) => {
+        calls.push(args)
+        if (content.slice(args[0], args[1]) !== args[2]) return false
+        content = content.slice(0, args[0]) + args[3] + content.slice(args[1])
+        editor.currentDocumentRevision++
+        return true
+      }
+    }
+    const app = makeApp()
+    app.editorBridgeForPane = (targetPane) => {
+      assert.equal(targetPane, pane)
+      return editor
+    }
+    app.openBlockPropertyPanel(pane, paragraphAnchor)
+    app.openBlockInlineItem(item)
+    app.onBlockAnchorChange(pane, { ...paragraphAnchor, x: 170, y: 220 })
+
+    assert.equal(app.blockPanelPane, pane)
+    assert.equal(app.blockPanelAnchor.tapType, 'inlinecode')
+    assert.equal(app.blockPanelAnchor.inlineIndex, item.index)
+    assert.equal(app.blockPanelAnchor.itemFrom, item.from)
+    assert.equal(app.blockPanelAnchor.itemTo, item.to)
+    assert.equal(app.blockPanelActionLabel(), '转为纯文本')
+
+    await app.performBlockPanelAction()
+
+    assert.equal(content, pane === 'left' ? 'left: before a`b after' : 'right: before value after')
+    assert.equal(calls.length, 1)
+    assert.deepEqual(calls[0].slice(0, 4), [
+      item.from,
+      item.to,
+      sourceText.slice(item.from, item.to),
+      pane === 'left' ? 'a`b' : 'value'
+    ])
+    assert.equal(app.leftBlockPanelOpen || app.rightBlockPanelOpen, false)
+    assert.deepEqual(app.previewBridge.activated, [])
+  }
 })
 
 test('inline item source drawer reads only the selected exact source range', async () => {

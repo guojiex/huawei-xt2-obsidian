@@ -3200,6 +3200,99 @@ struct Index {
     return `${label} ${ordinal}`;
   }
 
+  private async convertInlineCodeToPlainText(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null || anchor.tapType !== 'inlinecode' || anchor.inlineIndex < 0 ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      promptAction.showToast({ message: '无法同步当前笔记，未转换行内代码' });
+      return;
+    }
+
+    const revision: number = editor.currentDocumentRevision;
+    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
+      latestAnchor.tapType !== 'inlinecode' || latestAnchor.inlineIndex < 0) {
+      promptAction.showToast({ message: '行内代码已变化，请重新打开面板' });
+      return;
+    }
+
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      promptAction.showToast({ message: '读取行内代码失败，未转换' });
+      return;
+    }
+    const from: number = latestAnchor.itemFrom;
+    const to: number = latestAnchor.itemTo;
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
+      from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
+      promptAction.showToast({ message: '行内代码已变化，请重新打开面板' });
+      return;
+    }
+
+    const expected: string = source.slice(from, to);
+    const openingMatch = /^`+/.exec(expected);
+    const closingMatch = /`+$/.exec(expected);
+    const opening: string = openingMatch === null ? '' : openingMatch[0];
+    const closing: string = closingMatch === null ? '' : closingMatch[0];
+    if (opening.length === 0 || opening.length !== closing.length || expected.length <= opening.length * 2) {
+      promptAction.showToast({ message: '行内代码格式已变化，未转换' });
+      return;
+    }
+    const replacement: string = expected.slice(opening.length, expected.length - closing.length);
+    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
+    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
+    WorkspaceEditGuard.mark(pane, vaultId, path);
+    if (pane === 'right') {
+      this.rightEditorDirty = true;
+    } else {
+      this.editorDirty = true;
+    }
+
+    let applied: boolean = false;
+    let requestFailed: boolean = false;
+    try {
+      applied = await editor.replaceBlockSource(from, to, expected, replacement, revision, 'input', false);
+    } catch {
+      requestFailed = true;
+    }
+    if (!applied) {
+      if (!wasDirty && !wasUnsaved &&
+        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
+        WorkspaceEditGuard.clear(pane, vaultId, path);
+        if (pane === 'right') {
+          this.rightEditorDirty = false;
+        } else {
+          this.editorDirty = false;
+        }
+      }
+      promptAction.showToast({ message: requestFailed
+        ? '转为纯文本失败，请重试' : '行内代码已变化，未转换' });
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return;
+    }
+    if (pane === 'right') {
+      this.scheduleRightSave();
+    } else {
+      this.scheduleSave();
+    }
+    this.closeBlockPropertyPanel(false);
+  }
+
   private blockSourceActionLabel(): string {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     if (anchor !== null && anchor.type === 'paragraph') {
@@ -3415,9 +3508,20 @@ struct Index {
         return '打开链接';
       case 'wikilink':
         return '打开目标笔记';
+      case 'inlinecode':
+        return '转为纯文本';
       default:
         return '';
     }
+  }
+
+  private async performBlockPanelAction(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor !== null && anchor.tapType === 'inlinecode') {
+      await this.convertInlineCodeToPlainText();
+      return;
+    }
+    this.closeBlockPanelForContentAction();
   }
 
   private closeBlockPanelForContentAction(): void {
@@ -7179,7 +7283,7 @@ struct Index {
               .padding({ left: Space.s3, right: Space.s3 })
               .focusable(true)
               .accessibilityText(this.blockPanelActionLabel())
-              .onClick((): void => { this.closeBlockPanelForContentAction(); })
+              .onClick((): void => { void this.performBlockPanelAction(); })
             } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'code') {
               Row() {
                 Text('复制代码')
