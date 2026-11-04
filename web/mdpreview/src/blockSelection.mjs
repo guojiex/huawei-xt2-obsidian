@@ -49,7 +49,7 @@ export function inlineItemsForBlock(block) {
     const type = node.dataset.previewInlineType
     if (!Number.isInteger(index) || index <= previousIndex || !Number.isInteger(itemFrom) ||
       !Number.isInteger(itemTo) || itemFrom < from || itemTo > to || itemTo <= itemFrom ||
-      !['link', 'wikilink', 'image', 'inlinecode', 'mathInline'].includes(type)) {
+      !['link', 'wikilink', 'image', 'inlinecode', 'mathInline', 'footnoteRef'].includes(type)) {
       return []
     }
     items.push({ index, type, from: itemFrom, to: itemTo })

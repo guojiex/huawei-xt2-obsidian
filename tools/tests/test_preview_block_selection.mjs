@@ -127,10 +127,12 @@ test('rendered inline nodes receive metadata only after every item maps', () => 
   const wikiLink = makeNode('#wikilink:opaque')
   const code = makeNode()
   const math = makeNode()
+  const footnote = makeNode('#footnote-definition-note')
   const block = {
     dataset: {},
     querySelectorAll(selector) {
-      if (selector === 'a') return [link, wikiLink]
+      if (selector === 'a:not([data-footnote-reference])') return [link, wikiLink]
+      if (selector === '[data-footnote-reference]') return [footnote]
       if (selector === 'img') return []
       if (selector === 'code') return [code]
       if (selector === '.katex') return [math]
@@ -141,7 +143,8 @@ test('rendered inline nodes receive metadata only after every item maps', () => 
     { index: 0, type: 'link', from: 2, to: 12 },
     { index: 1, type: 'link', from: 20, to: 35 },
     { index: 2, type: 'inlinecode', from: 40, to: 47 },
-    { index: 3, type: 'mathInline', from: 50, to: 53 }
+    { index: 3, type: 'mathInline', from: 50, to: 53 },
+    { index: 4, type: 'footnoteRef', from: 60, to: 68 }
   ]
 
   annotate(block, { inlineSafe: true, inlineItems: items })
@@ -150,17 +153,19 @@ test('rendered inline nodes receive metadata only after every item maps', () => 
   assert.equal(wikiLink.dataset.previewInlineType, 'wikilink')
   assert.equal(code.dataset.previewInlineFrom, '40')
   assert.equal(math.dataset.previewInlineTo, '53')
+  assert.equal(footnote.dataset.previewInlineType, 'footnoteRef')
 
+  const mismatchedLink = makeNode()
   const mismatchedBlock = {
     dataset: {},
     querySelectorAll(selector) {
-      if (selector === 'a') return [makeNode()]
+      if (selector === 'a:not([data-footnote-reference])') return [mismatchedLink]
       return []
     }
   }
   annotate(mismatchedBlock, { inlineSafe: true, inlineItems: items.slice(0, 2) })
   assert.equal(mismatchedBlock.dataset.inlineItemsReady, 'false')
-  assert.equal(mismatchedBlock.querySelectorAll('a')[0].dataset.previewInlineIndex, undefined)
+  assert.equal(mismatchedLink.dataset.previewInlineIndex, undefined)
 })
 
 test('protected paragraphs show prototype-aligned hints for supported and unsupported syntax', () => {

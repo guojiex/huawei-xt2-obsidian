@@ -1279,13 +1279,16 @@ function annotateInlineItems(block: HTMLElement, source: {
   block.dataset.inlineItemsReady = 'false'
   if (source.inlineSafe !== true || items.length === 0) return
   const candidates: Record<string, HTMLElement[]> = {
-    link: Array.from(block.querySelectorAll('a')),
+    link: Array.from(block.querySelectorAll('a:not([data-footnote-reference])')),
     image: Array.from(block.querySelectorAll('img')),
     inlinecode: Array.from(block.querySelectorAll('code')).filter((node) => node.closest('pre') === null),
     mathInline: Array.from(block.querySelectorAll('.katex'))
-      .filter((node) => node.closest('.katex-display') === null)
+      .filter((node) => node.closest('.katex-display') === null),
+    footnoteRef: Array.from(block.querySelectorAll('[data-footnote-reference]'))
   }
-  const cursors: Record<string, number> = { link: 0, image: 0, inlinecode: 0, mathInline: 0 }
+  const cursors: Record<string, number> = {
+    link: 0, image: 0, inlinecode: 0, mathInline: 0, footnoteRef: 0
+  }
   const targets: Array<{ node: HTMLElement; item: { index: number; type: string; from: number; to: number } }> = []
   for (const item of items) {
     const nodes = candidates[item.type]

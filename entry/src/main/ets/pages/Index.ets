@@ -35,8 +35,8 @@ import {
   MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts
 } from '../model/MarkdownInlineParser';
 import {
-  CalloutSourceModel, FormulaSourceModel, FrontmatterPropertyModel, FrontmatterSourceModel,
-  MarkdownComplexBlockEdit
+  CalloutSourceModel, FootnoteSourceModel, FootnoteSourceRange, FormulaSourceModel,
+  FrontmatterPropertyModel, FrontmatterSourceModel, MarkdownComplexBlockEdit
 } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerView } from '../components/VaultManagerView';
@@ -271,6 +271,19 @@ struct Index {
   private blockPanelFrontmatterRaw: string = '';
   private blockPanelFrontmatterModel: FrontmatterSourceModel | null = null;
   private blockPanelFrontmatterSaveTail: Promise<void> = Promise.resolve();
+  @State blockPanelFootnoteReady: boolean = false;
+  @State blockPanelFootnoteEditable: boolean = false;
+  @State blockPanelFootnoteHasDefinition: boolean = false;
+  @State blockPanelFootnoteBody: string = '';
+  @State blockPanelFootnoteMessage: string = '';
+  @State blockPanelFootnoteSaving: boolean = false;
+  @State blockPanelFootnoteJumpFrom: number = -1;
+  private blockPanelFootnoteLabel: string = '';
+  private blockPanelFootnoteSourceSnapshot: string = '';
+  private blockPanelFootnoteDefinitionFrom: number = -1;
+  private blockPanelFootnoteDefinitionTo: number = -1;
+  private blockPanelFootnoteDefinitionRaw: string = '';
+  private blockPanelFootnoteModel: FootnoteSourceModel | null = null;
   @State blockPanelLanguagePickerOpen: boolean = false;
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
@@ -2980,6 +2993,8 @@ struct Index {
         return '行内代码';
       case 'mathInline':
         return '行内公式';
+      case 'footnoteRef':
+        return '脚注';
     }
     switch (anchor.type) {
       case 'table':
@@ -2998,6 +3013,8 @@ struct Index {
         return '公式';
       case 'callout':
         return '提示块';
+      case 'footnoteDefinition':
+        return '脚注';
       case 'paragraph':
         return '这一段';
       case 'heading':
@@ -3127,6 +3144,20 @@ struct Index {
     this.blockPanelFrontmatterRaw = '';
     this.blockPanelFrontmatterModel = null;
     this.blockPanelFrontmatterSaveTail = Promise.resolve();
+    this.blockPanelFootnoteReady = false;
+    this.blockPanelFootnoteEditable = false;
+    this.blockPanelFootnoteHasDefinition = false;
+    this.blockPanelFootnoteBody = '';
+    this.blockPanelFootnoteMessage = anchor.tapType === 'footnoteRef' ||
+      anchor.type === 'footnoteDefinition' ? '正在读取脚注…' : '';
+    this.blockPanelFootnoteSaving = false;
+    this.blockPanelFootnoteJumpFrom = -1;
+    this.blockPanelFootnoteLabel = '';
+    this.blockPanelFootnoteSourceSnapshot = '';
+    this.blockPanelFootnoteDefinitionFrom = -1;
+    this.blockPanelFootnoteDefinitionTo = -1;
+    this.blockPanelFootnoteDefinitionRaw = '';
+    this.blockPanelFootnoteModel = null;
     this.blockPanelLanguagePickerOpen = false;
     this.blockPanelTitle = this.blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
@@ -3153,6 +3184,8 @@ struct Index {
       void this.loadBlockPanelCallout();
     } else if (anchor.type === 'frontmatter') {
       void this.loadBlockPanelFrontmatter();
+    } else if (anchor.tapType === 'footnoteRef' || anchor.type === 'footnoteDefinition') {
+      void this.loadBlockPanelFootnote();
     }
   }
 
@@ -3212,6 +3245,19 @@ struct Index {
     this.blockPanelFormulaMessage = itemAnchor.tapType === 'mathInline' ? '正在读取公式…' : '';
     this.blockPanelFormulaRaw = '';
     this.blockPanelFormulaModel = null;
+    this.blockPanelFootnoteReady = false;
+    this.blockPanelFootnoteEditable = false;
+    this.blockPanelFootnoteHasDefinition = false;
+    this.blockPanelFootnoteBody = '';
+    this.blockPanelFootnoteMessage = itemAnchor.tapType === 'footnoteRef' ? '正在读取脚注…' : '';
+    this.blockPanelFootnoteSaving = false;
+    this.blockPanelFootnoteJumpFrom = -1;
+    this.blockPanelFootnoteLabel = '';
+    this.blockPanelFootnoteSourceSnapshot = '';
+    this.blockPanelFootnoteDefinitionFrom = -1;
+    this.blockPanelFootnoteDefinitionTo = -1;
+    this.blockPanelFootnoteDefinitionRaw = '';
+    this.blockPanelFootnoteModel = null;
     if (itemAnchor.tapType === 'link') {
       void this.loadBlockPanelLink();
     } else if (itemAnchor.tapType === 'wikilink') {
@@ -3220,6 +3266,8 @@ struct Index {
       void this.loadBlockPanelImage();
     } else if (itemAnchor.tapType === 'mathInline') {
       void this.loadBlockPanelFormula();
+    } else if (itemAnchor.tapType === 'footnoteRef') {
+      void this.loadBlockPanelFootnote();
     }
   }
 
@@ -3445,6 +3493,276 @@ struct Index {
     this.blockPanelFormulaRaw = replacement;
     this.blockPanelFormulaModel = MarkdownComplexBlockEdit.parseFormula(replacement, model.inline);
     this.blockPanelFormulaMessage = '';
+  }
+
+  private async loadBlockPanelFootnote(): Promise<void> {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    this.blockPanelFootnoteReady = false;
+    this.blockPanelFootnoteEditable = false;
+    this.blockPanelFootnoteHasDefinition = false;
+    this.blockPanelFootnoteJumpFrom = -1;
+    if (anchor === null || (anchor.tapType !== 'footnoteRef' && anchor.type !== 'footnoteDefinition') ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      this.blockPanelFootnoteReady = true;
+      this.blockPanelFootnoteMessage = '脚注已变化，请重新打开面板';
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelFootnoteReady = true;
+      this.blockPanelFootnoteMessage = '无法同步当前笔记，请关闭面板后重试';
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelFootnoteReady = true;
+      this.blockPanelFootnoteMessage = '读取脚注失败，请关闭面板后重试';
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
+      return;
+    }
+
+    let label: string | null = null;
+    if (anchor.tapType === 'footnoteRef') {
+      if (anchor.itemFrom >= anchor.from && anchor.itemTo <= anchor.to &&
+        anchor.itemTo <= source.length) {
+        label = MarkdownComplexBlockEdit.parseFootnoteReference(
+          source.slice(anchor.itemFrom, anchor.itemTo));
+      }
+    } else {
+      const definitions: FootnoteSourceRange[] = MarkdownComplexBlockEdit.findFootnoteDefinitions(source, '');
+      for (const definition of definitions) {
+        if (definition.from === anchor.from) {
+          label = definition.label;
+          break;
+        }
+      }
+    }
+    if (label === null) {
+      this.blockPanelFootnoteReady = true;
+      this.blockPanelFootnoteMessage = '脚注范围无效，请以源码编辑';
+      return;
+    }
+
+    const definitions: FootnoteSourceRange[] =
+      MarkdownComplexBlockEdit.findFootnoteDefinitions(source, label);
+    this.blockPanelFootnoteLabel = label;
+    this.blockPanelFootnoteSourceSnapshot = source;
+    this.blockPanelFootnoteReady = true;
+    this.blockPanelFootnoteHasDefinition = definitions.length > 0;
+    if (definitions.length > 1) {
+      this.blockPanelFootnoteMessage = '存在多个同名定义，无法安全编辑，请以源码编辑';
+      return;
+    }
+    if (definitions.length === 0) {
+      if (anchor.tapType !== 'footnoteRef') {
+        this.blockPanelFootnoteMessage = '脚注定义无法解析，请以源码编辑';
+        return;
+      }
+      this.blockPanelFootnoteEditable = true;
+      this.blockPanelFootnoteBody = '';
+      this.blockPanelFootnoteMessage = '当前引用缺少定义；应用正文时会在文末创建定义';
+      return;
+    }
+
+    const definition: FootnoteSourceRange = definitions[0];
+    const model: FootnoteSourceModel | null =
+      MarkdownComplexBlockEdit.parseFootnoteDefinition(definition.source);
+    if (model === null) {
+      this.blockPanelFootnoteMessage = '此脚注定义写法暂不支持结构化编辑，请以源码编辑';
+      return;
+    }
+    this.blockPanelFootnoteEditable = true;
+    this.blockPanelFootnoteBody = model.body;
+    this.blockPanelFootnoteDefinitionFrom = definition.from;
+    this.blockPanelFootnoteDefinitionTo = definition.to;
+    this.blockPanelFootnoteDefinitionRaw = definition.source;
+    this.blockPanelFootnoteModel = model;
+    if (anchor.tapType === 'footnoteRef') {
+      this.blockPanelFootnoteJumpFrom = definition.from;
+    } else {
+      const reference: FootnoteSourceRange | null =
+        MarkdownComplexBlockEdit.findFootnoteReference(source, label);
+      this.blockPanelFootnoteJumpFrom = reference === null ? -1 : reference.from;
+    }
+    this.blockPanelFootnoteMessage = '';
+  }
+
+  private async saveBlockPanelFootnote(): Promise<void> {
+    if (!this.blockPanelFootnoteReady || !this.blockPanelFootnoteEditable ||
+      this.blockPanelFootnoteSaving) {
+      return;
+    }
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (anchor === null ||
+      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return;
+    }
+    let replacement: string | null = null;
+    let from: number = this.blockPanelFootnoteDefinitionFrom;
+    let to: number = this.blockPanelFootnoteDefinitionTo;
+    let expectedSource: string = this.blockPanelFootnoteDefinitionRaw;
+    let appendedPrefix: string = '';
+    if (this.blockPanelFootnoteHasDefinition) {
+      const model: FootnoteSourceModel | null = this.blockPanelFootnoteModel;
+      if (model === null) {
+        this.blockPanelFootnoteMessage = '脚注定义无法解析，请以源码编辑';
+        return;
+      }
+      replacement = MarkdownComplexBlockEdit.serializeFootnoteDefinition(model, this.blockPanelFootnoteBody);
+    } else {
+      const source: string = this.blockPanelFootnoteSourceSnapshot;
+      const lineEnding: string = MarkdownComplexBlockEdit.sourceLineEnding(source);
+      appendedPrefix = source.length === 0 ? '' : source.endsWith(lineEnding + lineEnding)
+        ? '' : source.endsWith(lineEnding) ? lineEnding : lineEnding + lineEnding;
+      const definition: string | null = MarkdownComplexBlockEdit.createFootnoteDefinition(
+        this.blockPanelFootnoteLabel, this.blockPanelFootnoteBody, lineEnding, lineEnding);
+      replacement = definition === null ? null : appendedPrefix + definition;
+      from = source.length;
+      to = source.length;
+      expectedSource = '';
+    }
+    if (replacement === null) {
+      this.blockPanelFootnoteMessage = this.blockPanelFootnoteBody.trim().length === 0
+        ? '脚注正文不能为空' : '脚注正文格式暂不支持';
+      return;
+    }
+    this.blockPanelFootnoteSaving = true;
+    try {
+      const flushError: string = await this.flushSimplePreviewChanges();
+      if (flushError.length > 0) {
+        this.blockPanelFootnoteMessage = '无法同步当前笔记，未修改脚注';
+        return;
+      }
+      const revision: number = editor.currentDocumentRevision;
+      let source: string = '';
+      try {
+        source = await editor.getContent();
+      } catch {
+        this.blockPanelFootnoteMessage = '读取当前笔记失败，未修改脚注';
+        return;
+      }
+      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+        !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
+        source !== this.blockPanelFootnoteSourceSnapshot ||
+        from < 0 || to < from || to > source.length || source.slice(from, to) !== expectedSource) {
+        this.blockPanelFootnoteMessage = '笔记内容已变化，未修改脚注；请重新打开面板';
+        return;
+      }
+      if (replacement === expectedSource) {
+        this.blockPanelFootnoteMessage = '';
+        return;
+      }
+
+      const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
+      const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
+      WorkspaceEditGuard.mark(pane, vaultId, path);
+      if (pane === 'right') {
+        this.rightEditorDirty = true;
+      } else {
+        this.editorDirty = true;
+      }
+      let applied: boolean = false;
+      try {
+        applied = await editor.replaceBlockSource(from, to, expectedSource, replacement, revision, 'input', false);
+      } catch {}
+      if (!applied) {
+        if (!wasDirty && !wasUnsaved &&
+          this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
+          WorkspaceEditGuard.clear(pane, vaultId, path);
+          if (pane === 'right') {
+            this.rightEditorDirty = false;
+          } else {
+            this.editorDirty = false;
+          }
+        }
+        this.blockPanelFootnoteMessage = '脚注已变化或保存失败，未修改内容';
+        return;
+      }
+      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+        return;
+      }
+      const updatedSource: string = source.slice(0, from) + replacement + source.slice(to);
+      this.blockPanelFootnoteSourceSnapshot = updatedSource;
+      this.blockPanelFootnoteHasDefinition = true;
+      if (expectedSource.length === 0) {
+        this.blockPanelFootnoteDefinitionFrom = from + appendedPrefix.length;
+        this.blockPanelFootnoteDefinitionTo = this.blockPanelFootnoteDefinitionFrom + replacement.length - appendedPrefix.length;
+        this.blockPanelFootnoteDefinitionRaw = replacement.slice(appendedPrefix.length);
+      } else {
+        this.blockPanelFootnoteDefinitionTo = from + replacement.length;
+        this.blockPanelFootnoteDefinitionRaw = replacement;
+      }
+      this.blockPanelFootnoteModel = MarkdownComplexBlockEdit.parseFootnoteDefinition(
+        this.blockPanelFootnoteDefinitionRaw);
+      this.blockPanelFootnoteJumpFrom = this.blockPanelAnchor?.tapType === 'footnoteRef'
+        ? this.blockPanelFootnoteDefinitionFrom
+        : MarkdownComplexBlockEdit.findFootnoteReference(updatedSource, this.blockPanelFootnoteLabel)?.from ?? -1;
+      this.blockPanelFootnoteMessage = '';
+      if (pane === 'right') {
+        this.scheduleRightSave();
+      } else {
+        this.scheduleSave();
+      }
+    } finally {
+      this.blockPanelFootnoteSaving = false;
+    }
+  }
+
+  private async jumpBlockPanelFootnote(): Promise<void> {
+    const from: number = this.blockPanelFootnoteJumpFrom;
+    const pane: string = this.blockPanelPane;
+    const vaultId: string = this.blockPanelSourceVaultId;
+    const path: string = this.blockPanelSourcePath;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    const editor: EditorBridge = this.editorBridgeForPane(pane);
+    if (from < 0 || !this.isCurrentBlockSourceTarget(
+      pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
+      return;
+    }
+    const flushError: string = await this.flushSimplePreviewChanges();
+    if (flushError.length > 0) {
+      this.blockPanelFootnoteMessage = '无法同步当前笔记，暂时不能跳转';
+      return;
+    }
+    const revision: number = editor.currentDocumentRevision;
+    let source: string = '';
+    try {
+      source = await editor.getContent();
+    } catch {
+      this.blockPanelFootnoteMessage = '读取当前笔记失败，暂时不能跳转';
+      return;
+    }
+    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
+      source !== this.blockPanelFootnoteSourceSnapshot || from > source.length) {
+      this.blockPanelFootnoteMessage = '笔记内容已变化，请重新打开面板后跳转';
+      return;
+    }
+    let line: number = 1;
+    for (let index = 0; index < from; index++) {
+      if (source[index] === '\n') {
+        line++;
+      }
+    }
+    const target: PreviewFollowAnchor = {
+      line, lineProgress: 0, viewportRatio: 0.2, atStart: false, atEnd: false
+    };
+    this.previewBridgeForPane(pane).scrollToSourceLine(target);
   }
 
   private async loadBlockPanelFrontmatter(): Promise<void> {
@@ -8820,6 +9138,50 @@ struct Index {
                     .fontColor($r('app.color.text_secondary'))
                     .width('100%')
                     .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s2 })
+                }
+              }
+            } else if (this.blockPanelAnchor !== null &&
+              (this.blockPanelAnchor.tapType === 'footnoteRef' ||
+              this.blockPanelAnchor.type === 'footnoteDefinition')) {
+              if (!this.blockPanelFootnoteReady) {
+                Text(this.blockPanelFootnoteMessage)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+              } else {
+                if (this.blockPanelFootnoteMessage.length > 0) {
+                  Text(this.blockPanelFootnoteMessage)
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                }
+                if (this.blockPanelFootnoteEditable) {
+                  Text('脚注正文')
+                    .fontSize(FontSize.caption)
+                    .fontColor($r('app.color.text_secondary'))
+                    .width('100%')
+                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2 })
+                  TextArea({ text: this.blockPanelFootnoteBody })
+                    .height(Size.touch * 4)
+                    .fontSize(FontSize.body2)
+                    .fontColor($r('app.color.text_primary'))
+                    .fontFamily('monospace')
+                    .backgroundColor($r('app.color.bg_secondary'))
+                    .onChange((value: string): void => {
+                      if (!this.blockPanelFootnoteSaving) {
+                        this.blockPanelFootnoteBody = value;
+                      }
+                    })
+                    .accessibilityText('脚注正文')
+                  Button('应用')
+                    .enabled(!this.blockPanelFootnoteSaving)
+                    .onClick((): void => { void this.saveBlockPanelFootnote(); })
+                }
+                if (this.blockPanelFootnoteJumpFrom >= 0) {
+                  Button(this.blockPanelAnchor.tapType === 'footnoteRef' ? '跳到定义处' : '跳回引用处')
+                    .onClick((): void => { void this.jumpBlockPanelFootnote(); })
                 }
               }
             } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'link') {

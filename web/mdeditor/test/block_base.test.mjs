@@ -262,6 +262,29 @@ test('18.1 行内块与双链也有身份，行模式与语法树结果不重复
   assert.ok(types.includes('block-id'))
 })
 
+test('21.4 multi-line footnote definitions and references have exact CRLF ranges', () => {
+  const source = 'Before [^note].\r\n\r\n[^note]: first\r\n  second\r\n\r\nAfter.'
+  const ranges = base.blocks(source)
+  const normalized = source.replace(/\r\n/g, '\n')
+  const definition = ranges.find((range) => range.type === 'footnote-def')
+  const reference = ranges.find((range) => range.type === 'footnote-ref')
+
+  assert.ok(definition)
+  assert.equal(normalized.slice(definition.from, definition.to), '[^note]: first\n  second\n')
+  assert.ok(reference)
+  assert.equal(normalized.slice(reference.from, reference.to), '[^note]')
+  assert.ok(definition.to < normalized.indexOf('After.'))
+})
+
+test('21.4 footnote definitions inside frontmatter and fenced code are not registered', () => {
+  const source = '---\nvalue: |\n  [^meta]: not a definition\n---\n\n' +
+    '```md\n[^code]: not a definition\n```\n\n[^real]: definition\n'
+  const definitions = base.blocks(source).filter((range) => range.type === 'footnote-def')
+
+  assert.equal(definitions.length, 1)
+  assert.equal(source.slice(definitions[0].from, definitions[0].to), '[^real]: definition\n')
+})
+
 test('18.1 与 v1.7 的保护范围同源：注册表区间覆盖与 simpleMode 受保护区间一致', () => {
   const sources = [
     '正文\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n',
@@ -373,6 +396,20 @@ test('19.1 空代码块首输可零长度回写，连续输入一次撤销还原
     redoApplied: true,
     redone: '```js\nab\n```\nafter'
   })
+})
+
+test('21.4 appending a missing footnote definition at EOF is one undoable zero-length edit', () => {
+  const source = '正文引用 [^note]\r\n'
+  const result = base.replaceSourceWithHistory(
+    source, source.length, source.length, '', '[^note]: 脚注正文\r\n', '\r\n'
+  )
+
+  assert.ok(result)
+  assert.equal(result.after, '正文引用 [^note]\r\n[^note]: 脚注正文\r\n')
+  assert.equal(result.undoApplied, true)
+  assert.equal(result.undone, source)
+  assert.equal(result.redoApplied, true)
+  assert.equal(result.redone, result.after)
 })
 
 test('19.6 语言切换和连续块内输入分别形成撤销步', () => {

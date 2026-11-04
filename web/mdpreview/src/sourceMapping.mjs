@@ -9,6 +9,12 @@ function trimTrailingLineBreaks(text) {
   return text.replace(/(?:\r?\n)+$/, '')
 }
 
+function sourceRangeLength(token, raw) {
+  if (token.type !== 'footnoteDefinition') return raw.length
+  const trailingLineBreaks = raw.match(/\n+$/)?.[0].length ?? 0
+  return raw.length - Math.max(0, trailingLineBreaks - 1)
+}
+
 function crlfOffsets(markdown) {
   const offsets = []
   let originalOffset = 0
@@ -52,7 +58,8 @@ const INLINE_ITEM_TYPES = {
   link: 'link',
   image: 'image',
   codespan: 'inlinecode',
-  mathInline: 'mathInline'
+  mathInline: 'mathInline',
+  footnoteRef: 'footnoteRef'
 }
 
 const SAFE_INLINE_TOKEN_TYPES = new Set([
@@ -60,7 +67,7 @@ const SAFE_INLINE_TOKEN_TYPES = new Set([
   ...Object.keys(INLINE_ITEM_TYPES)
 ])
 
-const UNSUPPORTED_INLINE_PATTERN = /!?\[\[[^\]]*\]\]|%%|\[\^[^\]]+\]|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m
+const UNSUPPORTED_INLINE_PATTERN = /!?\[\[[^\]]*\]\]|%%|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m
 
 function isEscaped(source, index) {
   let slashes = 0
@@ -169,6 +176,7 @@ export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceO
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index]
     const raw = token.raw || ''
+    const mappedRawLength = sourceRangeLength(token, raw)
     const visibleStart = raw.search(/\S/)
     const content = trimTrailingLineBreaks(raw)
 
@@ -182,13 +190,13 @@ export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceO
         const displayStart = displayOffset +
           originalOffsetForNormalizedPosition(sourceOffsetInBody, normalizedLineEndings)
         const displayEnd = displayOffset +
-          originalOffsetForNormalizedPosition(sourceOffsetInBody + raw.length, normalizedLineEndings)
+          originalOffsetForNormalizedPosition(sourceOffsetInBody + mappedRawLength, normalizedLineEndings)
         const sourceStart = sourceEdits.length > 0
           ? sourcePositionForDisplayOffset(displayStart, sourceEdits, false)
           : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody, normalizedLineEndings)
         const sourceEnd = sourceEdits.length > 0
           ? sourcePositionForDisplayOffset(displayEnd, sourceEdits, true)
-          : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + raw.length, normalizedLineEndings)
+          : sourceOffset + originalOffsetForNormalizedPosition(sourceOffsetInBody + mappedRawLength, normalizedLineEndings)
         const inline = token.type === 'paragraph'
           ? collectInlineTokenRanges(token.tokens || [], raw)
           : { items: [], safe: false }

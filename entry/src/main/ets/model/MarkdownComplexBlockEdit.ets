@@ -45,6 +45,29 @@ export class FrontmatterSourceModel {
   lineEnding: string = '\n';
 }
 
+export class FootnoteLineModel {
+  text: string = '';
+  from: number = 0;
+  to: number = 0;
+  ending: string = '';
+}
+
+export class FootnoteSourceRange {
+  label: string = '';
+  from: number = 0;
+  to: number = 0;
+  source: string = '';
+}
+
+export class FootnoteSourceModel {
+  label: string = '';
+  prefix: string = '';
+  body: string = '';
+  continuationIndent: string = '  ';
+  lineEnding: string = '\n';
+  trailingLineEnding: string = '';
+}
+
 class FrontmatterValueParts {
   token: string = '';
   suffix: string = '';
@@ -87,6 +110,251 @@ export class MarkdownComplexBlockEdit {
   static calloutLabels(): string[] {
     return ['笔记', '摘要', '信息', '待办', '提示', '完成', '问题',
       '注意', '失败', '危险', '缺陷', '示例', '引用'];
+  }
+
+  static parseFootnoteReference(source: string): string | null {
+    const match: RegExpExecArray | null = /^\[\^([^\]\r\n]+)\]$/.exec(source);
+    return match === null ? null : match[1];
+  }
+
+  static parseFootnoteDefinition(source: string): FootnoteSourceModel | null {
+    const lines: FootnoteLineModel[] = MarkdownComplexBlockEdit.splitFootnoteLines(source);
+    if (lines.length === 0) {
+      return null;
+    }
+    const header: RegExpExecArray | null =
+      /^(\uFEFF? {0,3}\[\^([^\]\r\n]+)\]:[ \t]*)(.*)$/.exec(lines[0].text);
+    if (header === null) {
+      return null;
+    }
+
+    const model: FootnoteSourceModel = new FootnoteSourceModel();
+    model.label = header[2];
+    model.prefix = header[1];
+    model.lineEnding = lines[0].ending.length > 0 ? lines[0].ending : '\n';
+    model.trailingLineEnding = lines[lines.length - 1].ending;
+    const bodyLines: string[] = [header[3]];
+    let continuationIndent: string = '';
+    for (let index = 1; index < lines.length; index++) {
+      const text: string = lines[index].text;
+      if (text.length === 0) {
+        if (index + 1 < lines.length && /^[ \t]{2,}/.test(lines[index + 1].text)) {
+          bodyLines.push('');
+          continue;
+        }
+        return null;
+      }
+      const indentation: RegExpExecArray | null = /^(?: {2,}|\t)/.exec(text);
+      if (indentation === null) {
+        return null;
+      }
+      if (continuationIndent.length === 0) {
+        continuationIndent = indentation[0].startsWith('\t') ? '\t' : '  ';
+      }
+      if (!text.startsWith(continuationIndent)) {
+        return null;
+      }
+      bodyLines.push(text.slice(continuationIndent.length));
+    }
+    model.continuationIndent = continuationIndent.length > 0 ? continuationIndent : '  ';
+    model.body = bodyLines.join('\n');
+    return model;
+  }
+
+  static findFootnoteDefinitions(source: string, label: string): FootnoteSourceRange[] {
+    const lines: FootnoteLineModel[] = MarkdownComplexBlockEdit.splitFootnoteLines(source);
+    const matches: FootnoteSourceRange[] = [];
+    const frontmatter: RegExpExecArray | null =
+      /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source);
+    const frontmatterEnd: number = frontmatter === null ? 0 : frontmatter[0].length;
+    let fenceCharacter: string = '';
+    let fenceLength: number = 0;
+    for (let index = 0; index < lines.length; index++) {
+      const fence: RegExpExecArray | null = /^ {0,3}(`{3,}|~{3,})/.exec(lines[index].text);
+      if (fenceCharacter.length > 0) {
+        if (fence !== null && fence[1][0] === fenceCharacter && fence[1].length >= fenceLength) {
+          fenceCharacter = '';
+          fenceLength = 0;
+        }
+        continue;
+      }
+      if (fence !== null) {
+        fenceCharacter = fence[1][0];
+        fenceLength = fence[1].length;
+        continue;
+      }
+      if (lines[index].from < frontmatterEnd) {
+        continue;
+      }
+      const header: RegExpExecArray | null =
+        /^\uFEFF? {0,3}\[\^([^\]\r\n]+)\]:/.exec(lines[index].text);
+      if (header === null) {
+        continue;
+      }
+      let lastLine: number = index;
+      for (let next = index + 1; next < lines.length; next++) {
+        if (lines[next].text.length === 0) {
+          if (next + 1 < lines.length &&
+            /^(?: {2,}|\t)/.test(lines[next + 1].text)) {
+            lastLine = next;
+            continue;
+          }
+          break;
+        }
+        if (!/^(?: {2,}|\t)/.test(lines[next].text)) {
+          break;
+        }
+        lastLine = next;
+      }
+      const range: FootnoteSourceRange = new FootnoteSourceRange();
+      range.label = header[1];
+      range.from = lines[index].from;
+      range.to = lines[lastLine].to;
+      range.source = source.slice(range.from, range.to);
+      if (label.length === 0 || header[1] === label) {
+        matches.push(range);
+      }
+      index = lastLine;
+    }
+    return matches;
+  }
+
+  static findFootnoteReference(source: string, label: string): FootnoteSourceRange | null {
+    const excluded: FootnoteSourceRange[] = MarkdownComplexBlockEdit.findFootnoteDefinitions(source, '');
+    const lines: FootnoteLineModel[] = MarkdownComplexBlockEdit.splitFootnoteLines(source);
+    const frontmatter: RegExpExecArray | null =
+      /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(source);
+    const frontmatterEnd: number = frontmatter === null ? 0 : frontmatter[0].length;
+    let fenceCharacter: string = '';
+    let fenceLength: number = 0;
+    let codeFenceFrom: number = -1;
+    const codeFenceRanges: FootnoteSourceRange[] = [];
+    for (const line of lines) {
+      const fence: RegExpExecArray | null = /^ {0,3}(`{3,}|~{3,})/.exec(line.text);
+      if (fenceCharacter.length === 0 && fence !== null) {
+        fenceCharacter = fence[1][0];
+        fenceLength = fence[1].length;
+        codeFenceFrom = line.from;
+      } else if (fenceCharacter.length > 0 && fence !== null &&
+        fence[1][0] === fenceCharacter && fence[1].length >= fenceLength) {
+        const range: FootnoteSourceRange = new FootnoteSourceRange();
+        range.from = codeFenceFrom;
+        range.to = line.to;
+        codeFenceRanges.push(range);
+        fenceCharacter = '';
+        fenceLength = 0;
+        codeFenceFrom = -1;
+      }
+    }
+    if (fenceCharacter.length > 0 && codeFenceFrom >= 0) {
+      const range: FootnoteSourceRange = new FootnoteSourceRange();
+      range.from = codeFenceFrom;
+      range.to = source.length;
+      codeFenceRanges.push(range);
+    }
+    const inlineCodeRanges: FootnoteSourceRange[] = [];
+    for (let index = 0; index < source.length;) {
+      if (source[index] !== '`') {
+        index++;
+        continue;
+      }
+      let slashCount: number = 0;
+      for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor--) {
+        slashCount++;
+      }
+      let end: number = index + 1;
+      while (end < source.length && source[end] === '`') {
+        end++;
+      }
+      if (slashCount % 2 === 1) {
+        index = end;
+        continue;
+      }
+      const delimiterLength: number = end - index;
+      let close: number = end;
+      let closeEnd: number = -1;
+      while (close < source.length) {
+        const next: number = source.indexOf('`', close);
+        if (next < 0) {
+          break;
+        }
+        let nextEnd: number = next + 1;
+        while (nextEnd < source.length && source[nextEnd] === '`') {
+          nextEnd++;
+        }
+        if (nextEnd - next === delimiterLength) {
+          closeEnd = nextEnd;
+          break;
+        }
+        close = nextEnd;
+      }
+      if (closeEnd > end) {
+        const range: FootnoteSourceRange = new FootnoteSourceRange();
+        range.from = index;
+        range.to = closeEnd;
+        inlineCodeRanges.push(range);
+        index = closeEnd;
+      } else {
+        index = end;
+      }
+    }
+
+    const expression: RegExp = /\[\^([^\]\r\n]+)\]/g;
+    let match: RegExpExecArray | null = expression.exec(source);
+    while (match !== null) {
+      const from: number = match.index;
+      const to: number = from + match[0].length;
+      let slashCount: number = 0;
+      for (let cursor = from - 1; cursor >= 0 && source[cursor] === '\\'; cursor--) {
+        slashCount++;
+      }
+      if (match[1] === label && slashCount % 2 === 0 && from >= frontmatterEnd &&
+        !MarkdownComplexBlockEdit.footnoteRangeContains(excluded, from) &&
+        !MarkdownComplexBlockEdit.footnoteRangeContains(codeFenceRanges, from) &&
+        !MarkdownComplexBlockEdit.footnoteRangeContains(inlineCodeRanges, from)) {
+        const result: FootnoteSourceRange = new FootnoteSourceRange();
+        result.label = label;
+        result.from = from;
+        result.to = to;
+        result.source = match[0];
+        return result;
+      }
+      match = expression.exec(source);
+    }
+    return null;
+  }
+
+  static serializeFootnoteDefinition(model: FootnoteSourceModel, body: string): string | null {
+    if (body.includes('\r') || model.label.length === 0 || model.label.includes(']') ||
+      model.label.includes('\n')) {
+      return null;
+    }
+    const lines: string[] = body.split('\n');
+    let result: string = model.prefix + lines[0];
+    for (let index = 1; index < lines.length; index++) {
+      const line: string = lines[index];
+      result += model.lineEnding + (line.length > 0 ? model.continuationIndent + line : '');
+    }
+    return result + model.trailingLineEnding;
+  }
+
+  static createFootnoteDefinition(label: string, body: string, lineEnding: string,
+    trailingLineEnding: string): string | null {
+    if (label.trim().length === 0 || label.includes(']') || /[\r\n]/.test(label) ||
+      body.trim().length === 0 || body.includes('\r')) {
+      return null;
+    }
+    const lines: string[] = body.split('\n');
+    let result: string = `[^${label}]: ${lines[0]}`;
+    for (let index = 1; index < lines.length; index++) {
+      result += lineEnding + (lines[index].length > 0 ? `  ${lines[index]}` : '');
+    }
+    return result + trailingLineEnding;
+  }
+
+  static sourceLineEnding(source: string): string {
+    const newline: number = source.indexOf('\n');
+    return newline > 0 && source[newline - 1] === '\r' ? '\r\n' : '\n';
   }
 
   static parseCallout(source: string): CalloutSourceModel | null {
@@ -336,6 +604,39 @@ export class MarkdownComplexBlockEdit {
       start = newline + 1;
     }
     return lines;
+  }
+
+  private static splitFootnoteLines(source: string): FootnoteLineModel[] {
+    const lines: FootnoteLineModel[] = [];
+    let start: number = 0;
+    while (start < source.length) {
+      const newline: number = source.indexOf('\n', start);
+      const line: FootnoteLineModel = new FootnoteLineModel();
+      if (newline < 0) {
+        line.text = source.slice(start);
+        line.from = start;
+        line.to = source.length;
+        lines.push(line);
+        break;
+      }
+      const crlf: boolean = newline > start && source[newline - 1] === '\r';
+      line.text = source.slice(start, crlf ? newline - 1 : newline);
+      line.from = start;
+      line.to = newline + 1;
+      line.ending = crlf ? '\r\n' : '\n';
+      lines.push(line);
+      start = newline + 1;
+    }
+    return lines;
+  }
+
+  private static footnoteRangeContains(ranges: FootnoteSourceRange[], offset: number): boolean {
+    for (const range of ranges) {
+      if (offset >= range.from && offset < range.to) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static parseFrontmatterKeyLine(line: string): FrontmatterKeyLine | null {

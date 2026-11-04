@@ -20,6 +20,23 @@ test('renders headings, ordered and unordered lists, and blockquotes', () => {
   assert.match(html, /<blockquote>[\s\S]*?引用内容[\s\S]*?<\/blockquote>/)
 })
 
+test('21.4 renders footnote references as links to visible multi-line definitions', () => {
+  const html = renderMarkdown('引用 [^note] 与第二行。\n\n[^note]: **说明** 第一行\n  第二行')
+
+  assert.match(html, /<sup><a class="footnote-reference" href="#footnote-definition-[a-f0-9-]+"/)
+  assert.match(html, /<div class="footnote-definition" id="footnote-definition-[a-f0-9-]+" data-footnote-label="note">/)
+  assert.match(html, /<strong>说明<\/strong> 第一行\n第二行/)
+})
+
+test('escapes footnote labels and leaves escaped references as text', () => {
+  const html = renderMarkdown(String.raw`[^<unsafe>] \[^literal]`)
+
+  assert.match(html, /data-footnote-reference="&lt;unsafe&gt;"/)
+  assert.match(html, /&lt;unsafe&gt;/)
+  assert.match(html, /\[\^literal\]/)
+  assert.doesNotMatch(html, /data-footnote-reference="literal"/)
+})
+
 test('renders callout types, custom titles and folded callouts with content kept in the DOM', () => {
   const html = renderMarkdown('> [!note] 记录提示\n> **正文内容**\n\n> [!WARNING] 边界\n> 保持原样\n\n> [!tip]- 可折叠提示\n> 折叠内容仍在 DOM 中。')
 

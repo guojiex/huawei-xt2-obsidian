@@ -65,6 +65,46 @@ function imageWidthFromRaw(raw) {
 marked.use({
   extensions: [
     {
+      name: 'footnoteDefinition',
+      level: 'block',
+      start(source) {
+        const match = /(?:^|\n)(\uFEFF? {0,3}\[\^[^\]\r\n]+\]:)/.exec(source)
+        if (!match) return undefined
+        return match.index + match[0].length - match[1].length
+      },
+      tokenizer(source) {
+        const token = tokenizeFootnoteDefinition(source)
+        if (!token) return undefined
+        token.tokens = this.lexer.blockTokens(token.body, [])
+        return token
+      },
+      renderer(token) {
+        const id = footnoteDefinitionId(token.label)
+        const body = this.parser.parse(token.tokens)
+        return `<div class="footnote-definition" id="${id}" data-footnote-label="${escapeHtml(token.label)}">` +
+          `${body}</div>\n`
+      }
+    },
+    {
+      name: 'footnoteRef',
+      level: 'inline',
+      start(source) {
+        const index = unescapedFootnoteStart(source)
+        return index < 0 ? undefined : index
+      },
+      tokenizer(source) {
+        const match = /^\[\^([^\]\r\n]+)\]/.exec(source)
+        if (!match) return undefined
+        return { type: 'footnoteRef', raw: match[0], label: match[1] }
+      },
+      renderer(token) {
+        const id = footnoteDefinitionId(token.label)
+        const label = escapeHtml(token.label)
+        return `<sup><a class="footnote-reference" href="#${id}" ` +
+          `data-footnote-reference="${label}" aria-label="脚注 ${label}">${label}</a></sup>`
+      }
+    },
+    {
       name: 'callout',
       level: 'block',
       start(source) {
@@ -201,6 +241,53 @@ const CALLOUT_ICON_SHAPE = {
 function calloutIcon(group) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ` +
     `stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${CALLOUT_ICON_SHAPE[group]}</svg>`
+}
+
+function footnoteDefinitionId(label) {
+  const key = Array.from(label, (character) => character.codePointAt(0).toString(16)).join('-')
+  return `footnote-definition-${key}`
+}
+
+function footnoteContinuation(line) {
+  return /^ {2,}/.test(line) || line.startsWith('\t')
+}
+
+function tokenizeFootnoteDefinition(source) {
+  const first = /^\uFEFF? {0,3}\[\^([^\]\r\n]+)\]:[ \t]*(.*?)(?:\r?\n|$)/.exec(source)
+  if (!first) return undefined
+
+  const body = [first[2]]
+  let raw = first[0]
+  let rest = source.slice(first[0].length)
+  while (rest.length > 0) {
+    const line = /^(.*?)(?:\r?\n|$)/.exec(rest)
+    if (!line || line[0].length === 0) break
+    if (line[1].length === 0) {
+      const next = /^(.*?)(?:\r?\n|$)/.exec(rest.slice(line[0].length))
+      if (!next || !footnoteContinuation(next[1])) break
+      body.push('')
+      raw += line[0]
+      rest = rest.slice(line[0].length)
+      continue
+    }
+    if (!footnoteContinuation(line[1])) break
+    const indentation = line[1].startsWith('\t') ? '\t' : '  '
+    body.push(line[1].slice(indentation.length))
+    raw += line[0]
+    rest = rest.slice(line[0].length)
+  }
+  return { type: 'footnoteDefinition', raw, label: first[1], body: body.join('\n') }
+}
+
+function unescapedFootnoteStart(source) {
+  let index = source.indexOf('[^')
+  while (index >= 0) {
+    let slashes = 0
+    for (let cursor = index - 1; cursor >= 0 && source[cursor] === '\\'; cursor--) slashes++
+    if (slashes % 2 === 0) return index
+    index = source.indexOf('[^', index + 2)
+  }
+  return -1
 }
 
 /** Split one Obsidian callout out of a blockquote, or return undefined for a normal quote. */

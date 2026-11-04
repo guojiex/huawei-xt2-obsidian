@@ -146,6 +146,21 @@ test('paragraph anchors expose validated inline item identities and exact source
   ])
 })
 
+test('21.4 paragraph anchors accept exact footnote reference ranges', () => {
+  const block = {
+    dataset: { inlineItemsReady: 'true', sourceFrom: '10', sourceTo: '40' },
+    querySelectorAll: () => [
+      { dataset: {
+        previewInlineIndex: '0', previewInlineType: 'footnoteRef',
+        previewInlineFrom: '18', previewInlineTo: '25'
+      } }
+    ]
+  }
+  assert.deepEqual(inlineItemsForBlock(block), [
+    { index: 0, type: 'footnoteRef', from: 18, to: 25 }
+  ])
+})
+
 test('invalid or incomplete inline item metadata fails closed', () => {
   const block = {
     dataset: { inlineItemsReady: 'true', sourceFrom: '10', sourceTo: '80' },

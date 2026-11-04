@@ -115,7 +115,7 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
   }
   const type: string = source['type'] as string;
   const rawTapType: string = typeof source['tapType'] === 'string' ? source['tapType'] as string : '';
-  let tapType: string = ['image', 'link', 'wikilink', 'inlinecode', 'mathInline'].includes(rawTapType)
+  let tapType: string = ['image', 'link', 'wikilink', 'inlinecode', 'mathInline', 'footnoteRef'].includes(rawTapType)
     ? rawTapType : '';
   const from: number = source['from'] as number;
   const to: number = source['to'] as number;
@@ -124,7 +124,8 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
   if (Array.isArray(rawInlineItems)) {
     for (let index = 0; index < rawInlineItems.length; index++) {
       const item: PreviewBlockInlineItem = rawInlineItems[index];
-      if (item.index !== index || !['image', 'link', 'wikilink', 'inlinecode', 'mathInline'].includes(item.type) ||
+      if (item.index !== index ||
+        !['image', 'link', 'wikilink', 'inlinecode', 'mathInline', 'footnoteRef'].includes(item.type) ||
         !Number.isInteger(item.from) || !Number.isInteger(item.to) || item.from < from || item.to > to ||
         item.to <= item.from) {
         inlineItems.length = 0;

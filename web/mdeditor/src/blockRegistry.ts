@@ -195,6 +195,69 @@ function directiveBlocks(source: string): BlockRange[] {
   return ranges
 }
 
+function footnoteDefinitionBlocks(source: string): BlockRange[] {
+  const ranges: BlockRange[] = []
+  const lines = source.split(/\r?\n/)
+  const offsets: number[] = []
+  const frontmatter = frontmatterBlock(source)
+  const frontmatterEnd = frontmatter?.to ?? 0
+  let fenceCharacter = ''
+  let fenceLength = 0
+  let offset = 0
+  for (const line of lines) {
+    offsets.push(offset)
+    offset += line.length
+    if (offset < source.length) offset += source.startsWith('\r\n', offset) ? 2 : 1
+  }
+  for (let index = 0; index < lines.length; index++) {
+    if (offsets[index] < frontmatterEnd) continue
+    const fence = /^ {0,3}(`{3,}|~{3,})/.exec(lines[index])
+    if (fenceCharacter.length > 0) {
+      if (fence && fence[1][0] === fenceCharacter && fence[1].length >= fenceLength) {
+        fenceCharacter = ''
+        fenceLength = 0
+      }
+      continue
+    }
+    if (fence) {
+      fenceCharacter = fence[1][0]
+      fenceLength = fence[1].length
+      continue
+    }
+    const header = /^\uFEFF? {0,3}\[\^([^\]\r\n]+)\]:/.exec(lines[index])
+    if (header === null) {
+      continue
+    }
+    const from = offsets[index]
+    let lastLine = index
+    for (let next = index + 1; next < lines.length; next++) {
+      if (lines[next].length === 0) {
+        if (next + 1 < lines.length && /^(?: {2,}|\t)/.test(lines[next + 1])) {
+          lastLine = next
+          continue
+        }
+        break
+      }
+      if (!/^(?: {2,}|\t)/.test(lines[next])) {
+        break
+      }
+      lastLine = next
+    }
+    const lineEnd = offsets[lastLine] + lines[lastLine].length
+    const lineEndingLength = lineEnd >= source.length ? 0 :
+      (source.startsWith('\r\n', lineEnd) ? 2 : 1)
+    const to = lineEnd + lineEndingLength
+    ranges.push({
+      from,
+      to,
+      type: 'footnote-def',
+      id: blockId('footnote-def', from, to)
+    })
+    index = lastLine
+  }
+  return ranges
+}
+
 /**
  * 行模式块（v1.7 的 `customProtectedRanges()` 原样迁移，只补了 type）。
  * 语法树识别不了的（callout、表格、公式、指令块、双链、脚注、块 ID…）都在这里。
@@ -306,7 +369,7 @@ export function customBlockRanges(source: string): BlockRange[] {
   appendPatternBlocks(source, ranges, /(?<!~)~[^~\r\n]+~(?!~)/g, 'subscript')
   appendPatternBlocks(source, ranges, /\^[A-Za-z0-9][A-Za-z0-9_-]*\^/g, 'superscript')
   appendPatternBlocks(source, ranges, /\[\^[^\]\r\n]+\]/g, 'footnote-ref')
-  appendPatternBlocks(source, ranges, /^\[\^[^\]\r\n]+\]:[^\r\n]*$/gm, 'footnote-def')
+  ranges.push(...footnoteDefinitionBlocks(source))
   appendPatternBlocks(source, ranges, /\^[A-Za-z0-9][A-Za-z0-9_-]*[ \t]*$/gm, 'block-id')
   appendPatternBlocks(source, ranges, /\$(?!\$)(?:\\.|[^\\$\n])+?\$/g, 'math-inline')
   return ranges

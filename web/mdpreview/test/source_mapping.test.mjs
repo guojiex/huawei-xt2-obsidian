@@ -70,6 +70,24 @@ test('paragraph inline items keep distinct source ranges across CRLF and nested 
   ])
 })
 
+test('21.4 footnote references and definitions map to exact CRLF source ranges', () => {
+  const source = 'Before [^note] after.\r\n\r\n[^note]: first\r\n  second\r\n\r\nAfter.'
+  const result = renderMarkdownWithSourceBlocks(source)
+  const paragraph = result.blocks[0]
+  const definition = result.blocks[1]
+  const reference = paragraph.inlineItems[0]
+
+  assert.equal(paragraph.inlineSafe, true)
+  assert.equal(reference.type, 'footnoteRef')
+  assert.equal(source.slice(reference.from, reference.to), '[^note]')
+  assert.equal(definition.type, 'footnoteDefinition')
+  assert.equal(source.slice(definition.sourceStart, definition.sourceEnd),
+    '[^note]: first\r\n  second\r\n')
+  assert.equal(source.slice(definition.sourceEnd).startsWith('\r\nAfter.'), true)
+  assert.match(result.html, /data-footnote-reference="note"/)
+  assert.match(result.html, /data-footnote-label="note"/)
+})
+
 test('escaped Markdown syntax stays plain text while nested repeated links map exactly', () => {
   const source = '转义的 \\[方括号\\] 与 \\[[不是双链\\]\\]，**[重复](https://first.test)** 和 ' +
     '[重复](https://second.test)，\\`不是代码\\`，还有 `code`'
@@ -81,6 +99,14 @@ test('escaped Markdown syntax stays plain text while nested repeated links map e
     '[重复](https://second.test)',
     '`code`'
   ])
+})
+
+test('21.4 missing and escaped footnote references render without unsafe labels', () => {
+  const source = String.raw`Missing [^<unsafe>] and escaped \[^literal].`
+  const paragraph = renderMarkdownWithSourceBlocks(source).blocks[0]
+
+  assert.equal(paragraph.inlineSafe, true)
+  assert.deepEqual(paragraph.inlineItems.map((item) => source.slice(item.from, item.to)), ['[^<unsafe>]'])
 })
 
 test('wiki-link display edits map an inline item back to the exact source range', () => {

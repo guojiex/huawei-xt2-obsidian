@@ -193,3 +193,86 @@ test('21.3 malformed frontmatter is rejected for structured edits and panel sour
   assert.match(index, /Checkbox\(\{ name: entry\.key \}\)/)
   assert.match(index, /DatePicker\(\{[\s\S]*?onDateChange/)
 })
+
+test('21.4 footnote definitions parse, edit, and preserve CRLF continuation formatting', () => {
+  const source = '[^note]: first line\r\n    second line\r\n'
+  const model = MarkdownComplexBlockEdit.parseFootnoteDefinition(source)
+  assert.ok(model)
+  assert.equal(model.label, 'note')
+  assert.equal(model.body, 'first line\n  second line')
+  assert.equal(
+    MarkdownComplexBlockEdit.serializeFootnoteDefinition(model, 'edited\n  continuation'),
+    '[^note]: edited\r\n    continuation\r\n'
+  )
+  assert.equal(MarkdownComplexBlockEdit.parseFootnoteDefinition('[^note]: first\nnot continued'), null)
+})
+
+test('21.4 BOM and tab-indented footnote definitions retain their source formatting', () => {
+  const source = '\uFEFF[^note]: first\n\tsecond\n'
+  const definitions = MarkdownComplexBlockEdit.findFootnoteDefinitions(source, 'note')
+  assert.equal(definitions.length, 1)
+  const model = MarkdownComplexBlockEdit.parseFootnoteDefinition(definitions[0].source)
+  assert.ok(model)
+  assert.equal(model.body, 'first\nsecond')
+  assert.equal(
+    MarkdownComplexBlockEdit.serializeFootnoteDefinition(model, 'edited\ncontinued'),
+    '\uFEFF[^note]: edited\n\tcontinued\n'
+  )
+})
+
+test('21.4 footnote lookup ignores frontmatter, code, escaped references, and definitions', () => {
+  const source = '\uFEFF---\nexample: "[^note]"\n---\n' +
+    'Inline `[^note]` and escaped \\[^note].\n\n' +
+    '```md\n[^note]\n[^note]: code\n```\n\n' +
+    'Citation [^note].\n\n[^note]: definition\n'
+  const definitions = MarkdownComplexBlockEdit.findFootnoteDefinitions(source, 'note')
+  assert.equal(definitions.length, 1)
+  assert.equal(source.slice(definitions[0].from, definitions[0].to), '[^note]: definition\n')
+  const reference = MarkdownComplexBlockEdit.findFootnoteReference(source, 'note')
+  assert.ok(reference)
+  assert.equal(source.slice(reference.from, reference.to), '[^note]')
+  assert.equal(source.slice(0, reference.from).endsWith('Citation '), true)
+  assert.deepEqual(
+    Array.from(MarkdownComplexBlockEdit.findFootnoteDefinitions(source, 'missing')),
+    []
+  )
+  assert.equal(
+    MarkdownComplexBlockEdit.createFootnoteDefinition('missing', 'body\nsecond line', '\r\n', '\r\n'),
+    '[^missing]: body\r\n  second line\r\n'
+  )
+  assert.equal(MarkdownComplexBlockEdit.createFootnoteDefinition('missing', '  ', '\n', ''), null)
+})
+
+test('21.4 duplicate matching definitions are ambiguous, not missing', () => {
+  const source = 'Citation [^note].\n\n[^note]: first\n\n[^note]: duplicate\n'
+  const definitions = MarkdownComplexBlockEdit.findFootnoteDefinitions(source, 'note')
+  assert.equal(definitions.length, 2)
+  assert.ok(definitions.every((definition) => definition.label === 'note'))
+})
+
+test('21.4 new footnote definitions use the source line ending without a terminal newline', () => {
+  assert.equal(MarkdownComplexBlockEdit.sourceLineEnding('正文\r\n引用'), '\r\n')
+  assert.equal(MarkdownComplexBlockEdit.sourceLineEnding('正文\n引用'), '\n')
+  assert.equal(MarkdownComplexBlockEdit.sourceLineEnding('正文'), '\n')
+})
+
+test('21.4 native panel wires footnote references, definitions, jumps, and guarded writes', () => {
+  const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
+  const preview = fs.readFileSync(new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8')
+  const renderer = fs.readFileSync(new URL('web/mdpreview/src/renderer.mjs', root), 'utf8')
+  const mapping = fs.readFileSync(new URL('web/mdpreview/src/sourceMapping.mjs', root), 'utf8')
+
+  assert.match(index, /anchor\.tapType === 'footnoteRef'[\s\S]*?loadBlockPanelFootnote\(\)/)
+  assert.match(index, /MarkdownComplexBlockEdit\.findFootnoteDefinitions/)
+  assert.match(index, /MarkdownComplexBlockEdit\.findFootnoteReference/)
+  assert.match(index, /MarkdownComplexBlockEdit\.createFootnoteDefinition/)
+  assert.match(index, /definitions\.length > 1/)
+  assert.match(index, /source !== this\.blockPanelFootnoteSourceSnapshot/)
+  assert.match(index, /replaceBlockSource\(from, to, expectedSource, replacement, revision, 'input', false\)/)
+  assert.match(index, /scrollToSourceLine\(target\)/)
+  assert.match(index, /脚注正文/)
+  assert.match(preview, /'footnoteRef'/)
+  assert.match(renderer, /name: 'footnoteDefinition'/)
+  assert.match(renderer, /name: 'footnoteRef'/)
+  assert.match(mapping, /sourceRangeLength/)
+})
