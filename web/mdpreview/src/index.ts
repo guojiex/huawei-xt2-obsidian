@@ -62,6 +62,7 @@ interface MdPreviewApi {
   isLockedTapActivation(): boolean
   setEditable(editable: boolean): void
   applyFormat(kind: string): void
+  editHistory(action: 'undo' | 'redo'): void
   insertText(b64: string): void
   flushEditableContent(id: number): void
   setNoteDir(b64: string): void
@@ -1973,6 +1974,29 @@ const api: MdPreviewApi = {
     const updatedTarget = editableElementFor(block)
     replaceSourceBlock(block)
     if (updatedTarget) block.focus()
+  },
+
+  editHistory(action: 'undo' | 'redo'): void {
+    if (!editable || editableComposing) return
+    const selection = window.getSelection()
+    if (!selection) return
+    if (savedEditableSelection && contentElement.contains(savedEditableSelection.commonAncestorContainer)) {
+      selection.removeAllRanges()
+      selection.addRange(savedEditableSelection)
+    }
+    if (selection.rangeCount === 0) return
+    const range = selection.getRangeAt(0)
+    const start = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement
+    const block = sourceBlockForNode(start ?? null)
+    const target = block ? editableElementFor(block) : null
+    if (!block || !target || !target.isContentEditable) return
+    const previousHtml = block.innerHTML
+    const previousSource = sourceText
+    document.execCommand(action)
+    if (block.innerHTML === previousHtml) return
+    if (sourceText === previousSource) replaceSourceBlock(block)
+    const updatedTarget = editableElementFor(block)
+    if (updatedTarget) updatedTarget.focus()
   },
 
   insertText(b64: string): void {

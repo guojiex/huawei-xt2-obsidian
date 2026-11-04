@@ -26,6 +26,8 @@ export interface PreviewCaptureResult {
   scrollTop: number;
 }
 
+export type PreviewEditHistoryAction = 'undo' | 'redo';
+
 @Component
 export struct FormulaPreviewWeb {
   @Prop @Watch('onFormulaChanged') expression: string = '';
@@ -407,6 +409,10 @@ class PreviewImpl {
     if (allowed.includes(kind)) this.enqueue(`window.__mdpreview.applyFormat('${kind}')`);
   }
 
+  editHistory(action: PreviewEditHistoryAction): void {
+    this.enqueue(`window.__mdpreview.editHistory('${action}')`);
+  }
+
   insertText(text: string): void {
     const payload = BridgeCodec.encode(text);
     this.enqueue(`window.__mdpreview.insertText('${payload}')`);
@@ -641,6 +647,10 @@ export class PreviewBridge {
 
   applyFormat(kind: string): void {
     this.impl?.applyFormat(kind);
+  }
+
+  editHistory(action: PreviewEditHistoryAction): void {
+    this.impl?.editHistory(action);
   }
 
   completeCodeBlockEdit(id: number, applied: boolean): void {

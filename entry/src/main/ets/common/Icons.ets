@@ -44,6 +44,8 @@ const P_MOVE: string = 'M4 12h16M9 7l-5 5 5 5M15 7l5 5-5 5';
 const P_TRASH: string = 'M4 7h16M10 4h4M6 7l1 14h10l1-14M10 11v6M14 11v6';
 const P_RESTORE: string = 'M9 5L4 10L9 15M4 10H13L17 12L20 16V19';
 const P_ARCHIVE: string = 'M3 5h18v4H3zM5 9v10h14V9M9 13h6';
+const P_UNDO: string = 'M9 7L4 12L9 17M4 12H14C17.314 12 20 14.686 20 18C20 20.209 18.209 22 16 22H12';
+const P_REDO: string = 'M15 7L20 12L15 17M20 12H10C6.686 12 4 14.686 4 18C4 20.209 5.791 22 8 22H12';
 // 同步（refresh）：3/4 圆环 + 箭头（纯折线逼近，无弧线）
 const P_SYNC: string = 'M20 12L17.66 17.66L12 20L6.34 17.66L4 12L6.34 6.34L12 4M12 4L15.5 5.5M12 4L13.5 8.5';
 // 设置（sliders）：三条等长横线 + 三个圆形滑钮（对齐 v2 settingsBtn：knob 用三段三次贝塞尔画圆，避免 A 命令 flag 被 scalePath 缩放）
@@ -104,6 +106,10 @@ function pathOf(name: string): string {
     return P_RESTORE;
   } else if (name === 'archive') {
     return P_ARCHIVE;
+  } else if (name === 'undo') {
+    return P_UNDO;
+  } else if (name === 'redo') {
+    return P_REDO;
   } else if (name === 'sync') {
     return P_SYNC;
   } else if (name === 'settings') {

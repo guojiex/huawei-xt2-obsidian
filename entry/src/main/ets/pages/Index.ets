@@ -58,7 +58,7 @@ import { GitNativeService } from '../git/GitNativeService';
 import { EditorWebView, EditorBridge } from '../components/EditorWebView';
 import {
   PreviewWebView, FormulaPreviewWeb, PreviewBridge, PreviewBlockAnchor, PreviewBlockInlineItem, PreviewCaptureResult,
-  PreviewCodeEditRequest
+  PreviewCodeEditRequest, PreviewEditHistoryAction
 } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
@@ -213,7 +213,8 @@ struct Index {
   @State formatPopupOffsetX: number = 0;
   @State formatPopupOffsetY: number = -Space.s2;
   @State formatMenuWidth: number = Size.formatMenuW;
-  @State formatMenuMaxHeight: number = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
+  @State formatMenuMaxHeight: number =
+    Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2 + Size.touch + Space.s2;
   private leftFormatPaneArea: number[] = [0, 0, 0, 0];
   private rightFormatPaneArea: number[] = [0, 0, 0, 0];
   private leftFormatAnchorArea: number[] = [0, 0, 0, 0];
@@ -3034,7 +3035,8 @@ struct Index {
     this.formatMenuSourceVaultId = this.currentVaultId;
     this.formatMenuSourcePath = this.paneFilePath(pane);
     this.formatMenuWidth = Size.formatMenuW;
-    this.formatMenuMaxHeight = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
+    this.formatMenuMaxHeight =
+      Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2 + Size.touch + Space.s2;
     this.formatMenuOpen = true;
     this.updateFormatPopupLayout(pane);
   }
@@ -5387,7 +5389,8 @@ struct Index {
       return;
     }
 
-    const naturalHeight: number = Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2;
+    const naturalHeight: number =
+      Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2 + Size.touch + Space.s2;
     const gap: number = Space.s2;
     const defaultPopupLeft: number = pane === 'right' ? anchorX - anchorWidth + gap : anchorX;
     const layout: AnchoredPopupLayout | null = this.calculateAnchoredPopupLayout(
@@ -9020,6 +9023,33 @@ struct Index {
     })
   }
 
+  private applyFormatHistoryAction(action: PreviewEditHistoryAction): void {
+    const pane: string = this.formatMenuPane;
+    if (!this.isPaneEditable(pane) || this.currentVaultId !== this.formatMenuSourceVaultId ||
+      this.paneFilePath(pane) !== this.formatMenuSourcePath) {
+      this.closeFormatMenu();
+      return;
+    }
+    this.previewBridgeForPane(pane).editHistory(action);
+  }
+
+  @Builder
+  FormatHistoryButton(action: PreviewEditHistoryAction, label: string) {
+    Row({ space: Space.s2 }) {
+      Icon(action, Space.s4, $r('app.color.text_secondary'))
+      Text(label)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_secondary'))
+    }
+    .layoutWeight(1)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.control)
+    .onClick((): void => { this.applyFormatHistoryAction(action); })
+    .accessibilityText(label)
+  }
+
   @Builder
   FormatMenu() {
     Column() {
@@ -9099,6 +9129,13 @@ struct Index {
           .alignItems(HorizontalAlign.Start)
           .border({ width: { top: 1 }, color: $r('app.color.line') })
           .padding({ top: Space.s4 })
+          Row({ space: Space.s2 }) {
+            this.FormatHistoryButton('undo', '撤销')
+            this.FormatHistoryButton('redo', '重做')
+          }
+          .width('100%')
+          .border({ width: { top: 1 }, color: $r('app.color.line') })
+          .padding({ top: Space.s4, left: Space.s5, right: Space.s5 })
         }
         .width('100%')
         .margin({ top: Space.s4 })
