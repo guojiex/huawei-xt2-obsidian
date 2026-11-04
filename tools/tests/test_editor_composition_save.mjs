@@ -93,7 +93,8 @@ function createHarness(options = {}) {
     clearStaleSaveNotice() {},
     showSaveFeedback() {},
     refreshBacklinks() {},
-    handleEditorSaveError() { calls.push('save-error'); }
+    handleEditorSaveError() { calls.push('save-error'); },
+    showEditorMismatchRecovery(_vault, path) { calls.push('mismatch:' + path); }
   });
   return app;
 }
@@ -196,6 +197,27 @@ test('right composition that begins during the editor read prevents the pending 
   assert.equal(app.rightLastSavedText, 'saved-right');
 });
 
+test('unchanged mixed line endings do not block switching or rewrite the original note', async () => {
+  const app = createHarness();
+  app.editorDirty = false;
+  app.lastSavedText = 'first\r\nsecond\nthird';
+  app.editorBridge.getContent = async () => 'first\r\nsecond\r\nthird';
+  assert.equal(await app.flushSave(), true);
+  assert.deepEqual(app.writes, []);
+  assert.deepEqual(app.draftCalls, []);
+  assert.equal(app.lastSavedText, 'first\r\nsecond\nthird');
+});
+
+test('unchanged mixed line endings do not block switching in the right pane', async () => {
+  const app = createHarness();
+  app.rightEditorDirty = false;
+  app.rightLastSavedText = 'first\r\nsecond\nthird';
+  app.rightEditorBridge.getContent = async () => 'first\r\nsecond\r\nthird';
+  assert.equal(await app.flushRightSave(), true);
+  assert.deepEqual(app.writes, []);
+  assert.deepEqual(app.draftCalls, []);
+});
+
 test('composition that begins in either shared-note editor during the read blocks the save', async () => {
   const app = createHarness();
   app.rightFilePath = app.currentFilePath;
@@ -225,7 +247,7 @@ test('an unmarked stale left editor value is rejected instead of overwriting the
   app.editorDirty = false;
 
   assert.equal(await app.flushSave(), false);
-  assert.deepEqual(app.calls, ['left-read']);
+  assert.deepEqual(app.calls, ['left-read', 'mismatch:left.md']);
   assert.deepEqual(app.writes, []);
   assert.equal(app.lastSavedText, 'saved-left');
 });
@@ -235,7 +257,7 @@ test('an unmarked stale right editor value is rejected instead of overwriting th
   app.rightEditorDirty = false;
 
   assert.equal(await app.flushRightSave(), false);
-  assert.deepEqual(app.calls, ['right-read']);
+  assert.deepEqual(app.calls, ['right-read', 'mismatch:right.md']);
   assert.deepEqual(app.writes, []);
   assert.equal(app.rightLastSavedText, 'saved-right');
 });

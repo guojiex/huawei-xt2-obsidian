@@ -455,6 +455,7 @@ struct Index {
   private externalVaultAccessErrorShown: boolean = false;
   private externalVaultNoteReadErrorKeys: string[] = [];
   private staleSaveNoticeKeys: string[] = [];
+  private editorMismatchDialogOpen: boolean = false;
   private lastDraftRecoveryNoticeKey: string = '';
 
   /**
@@ -1806,6 +1807,29 @@ struct Index {
     if (index >= 0) {
       this.externalVaultNoteReadErrorKeys.splice(index, 1);
     }
+  }
+
+  private showEditorMismatchRecovery(vaultId: string, path: string): void {
+    if (this.editorMismatchDialogOpen) {
+      return;
+    }
+    this.editorMismatchDialogOpen = true;
+    void this.getUIContext().getPromptAction().showDialog({
+      title: '编辑内容与笔记不一致',
+      message: '为避免覆盖笔记，当前编辑区内容未保存。你可以留在当前页面并先复制需要保留的内容，或放弃编辑区未保存内容，重新载入笔记后再切换。',
+      buttons: [
+        { text: '留在当前页面', color: $r('app.color.text_secondary') },
+        { text: '放弃并重新载入', color: $r('app.color.brand') }
+      ]
+    }).then((result): void => {
+      this.editorMismatchDialogOpen = false;
+      if (result.index === 1) {
+        void this.reloadStaleVaultNote(vaultId, path);
+      }
+    }).catch((): void => {
+      this.editorMismatchDialogOpen = false;
+      promptAction.showToast({ message: '无法打开恢复提示，请稍后重试' });
+    });
   }
 
   private showStaleSaveConflict(vaultId: string, path: string, message: string): void {
@@ -5289,7 +5313,10 @@ struct Index {
       return false;
     }
     if (text !== savedText && !this.rightEditorDirty) {
-      promptAction.showToast({ message: '编辑区与已打开笔记不一致，已取消保存' });
+      if (text.replace(/\r\n/g, '\n') === savedText.replace(/\r\n/g, '\n')) {
+        return true;
+      }
+      this.showEditorMismatchRecovery(targetVaultId, targetPath);
       return false;
     }
     if (text === savedText) {
@@ -5612,7 +5639,10 @@ struct Index {
     const sharedNoteDirty: boolean = path === this.currentFilePath && path === this.rightFilePath &&
       (this.editorDirty || this.rightEditorDirty);
     if (text !== expectedText && !sourceDirty && !sharedNoteDirty) {
-      promptAction.showToast({ message: '编辑区与已打开笔记不一致，已取消保存' });
+      if (text.replace(/\r\n/g, '\n') === expectedText.replace(/\r\n/g, '\n')) {
+        return true;
+      }
+      this.showEditorMismatchRecovery(vaultId, path);
       return false;
     }
     if (text === expectedText) {
