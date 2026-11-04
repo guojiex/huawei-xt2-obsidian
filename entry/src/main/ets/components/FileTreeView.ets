@@ -123,6 +123,7 @@ export struct FileTreeView {
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
   @State pathMenuPath: string = '';
+  @State helpHintOpen: boolean = false;
   private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
   private treeSource: TreeRowDataSource = new TreeRowDataSource();
@@ -344,13 +345,25 @@ export struct FileTreeView {
         this.TreeList()
       }
       if (!this.referenceOnly) {
-        Text('左滑文件可操作 · 拖动行尾图标到任一栏')
+        Text('左滑操作 · 拖图标到任一栏')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .padding({ top: Space.s2, left: Space.s2, right: Space.s2, bottom: Space.s1 })
+          .onHover((isHover: boolean): void => {
+            this.helpHintOpen = isHover;
+          })
+          .accessibilityText('左滑文件可操作；拖动行尾图标到任一栏打开')
+          .bindPopup(this.helpHintOpen, {
+            builder: this.HelpHint(),
+            placement: Placement.Top,
+            enableArrow: false,
+            mask: false,
+            autoCancel: false,
+            popupColor: Color.Transparent
+          })
 
         TrashView({
           vaultId: this.vaultId,
@@ -361,6 +374,17 @@ export struct FileTreeView {
     }
     .layoutWeight(1)
     .width('100%')
+  }
+
+  @Builder
+  HelpHint() {
+    Text('左滑文件可操作；拖动行尾图标到任一栏打开')
+      .fontSize(FontSize.caption)
+      .fontColor($r('app.color.text_primary'))
+      .padding(Space.s2)
+      .backgroundColor($r('app.color.bg_card'))
+      .borderRadius(Radius.control)
+      .border({ width: 1, color: $r('app.color.line') })
   }
 
   /** 空库提示（新建库、或库里全是别的文件类型时） */

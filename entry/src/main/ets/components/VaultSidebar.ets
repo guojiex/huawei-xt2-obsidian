@@ -53,6 +53,7 @@ export struct VaultSidebar {
   @Prop revealPath: string = '';
   /** 下拉菜单开关（瞬态） */
   @State menuOpen: boolean = false;
+  @State noteCountHintOpen: boolean = false;
   @State collapsedChapterKeys: string[] = [];
   /**
    * 弹层宽（vp）：原型 .vault-menu 是 left:0; right:0 于 .vault-switch —— **与卡片同宽**，
@@ -255,6 +256,17 @@ export struct VaultSidebar {
    * 后声明的绘制在上层，于是菜单会被文件树盖住（2026-10-18 实测复现）。
    * 弹层挂在窗口覆盖层上，层级高于页面内所有组件，天然不会被遮挡。
    */
+  @Builder
+  NoteCountHint() {
+    Text('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
+      .fontSize(FontSize.caption)
+      .fontColor($r('app.color.text_primary'))
+      .padding(Space.s2)
+      .backgroundColor($r('app.color.bg_card'))
+      .borderRadius(Radius.control)
+      .border({ width: 1, color: $r('app.color.line') })
+  }
+
   @Builder
   VaultMenu() {
     Column() {
@@ -503,12 +515,24 @@ export struct VaultSidebar {
       if (!this.referenceOnly) {
         // 目录头：文件数、搜索与根目录新建；宽屏收起由顶栏汉堡统一控制。
         Row() {
-          Text('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
+          Text(this.noteCount.toString() + ' 篇笔记')
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_tertiary'))
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .onHover((isHover: boolean): void => {
+              this.noteCountHintOpen = isHover;
+            })
+            .accessibilityText('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
+            .bindPopup(this.noteCountHintOpen, {
+              builder: this.NoteCountHint(),
+              placement: Placement.Top,
+              enableArrow: false,
+              mask: false,
+              autoCancel: false,
+              popupColor: Color.Transparent
+            })
           Row() {
             Icon('search', 18, $r('app.color.text_secondary'))
           }
