@@ -397,6 +397,36 @@ test('19.6 语言切换和连续块内输入分别形成撤销步', () => {
   })
 })
 
+test('20.5 链接、双链与图片属性的每次提交各占一个撤销步', () => {
+  const source = '前 [旧文字](https://old.test) / [[old.md|旧别名]] / ![旧图|240](attachments/old.png) 后'
+  let current = source
+  const patches = []
+  const checkpoints = []
+  const replace = (expected, replacement) => {
+    const from = current.indexOf(expected)
+    assert.notEqual(from, -1, `missing source range: ${expected}`)
+    const to = from + expected.length
+    patches.push({ from, to, expected, replacement, userEvent: 'input' })
+    current = current.slice(0, from) + replacement + current.slice(to)
+    checkpoints.push(current)
+  }
+
+  replace('[旧文字](https://old.test)', '[新文字](https://old.test)')
+  replace('[新文字](https://old.test)', '[新文字](https://new.test)')
+  replace('[[old.md|旧别名]]', '[[new.md|旧别名]]')
+  replace('[[new.md|旧别名]]', '[[new.md|新别名]]')
+  replace('![旧图|240](attachments/old.png)', '![新图|240](attachments/old.png)')
+  replace('![新图|240](attachments/old.png)', '![新图|480](attachments/old.png)')
+  replace('![新图|480](attachments/old.png)', '![新图|480](attachments/new.png)')
+
+  const result = base.applyPatchesAndUndo(source, patches, patches.length)
+
+  assert.equal(result.after, current)
+  assert.deepEqual(result.undoSources.map((step) => step.source),
+    [...checkpoints.slice(0, -1).reverse(), source])
+  assert.ok(result.undoSources.every((step) => step.applied))
+})
+
 test('19.6 转为纯文本是独立撤销步，撤销后逐字恢复反引号和内容', () => {
   const source = 'before `x` after'
   const contentFrom = source.indexOf('x')

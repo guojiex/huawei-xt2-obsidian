@@ -370,6 +370,9 @@ test('20.1 loads and edits only the selected link range, preserving other inline
   const linkFrom = content.indexOf('[二]')
   const linkTo = content.indexOf(')', linkFrom) + 1
   const app = makeApp()
+  const scheduled = []
+  app.scheduleSave = () => scheduled.push('left')
+  app.scheduleRightSave = () => scheduled.push('right')
   const editor = prepareLinkEditor(app, content)
   app.blockPanelAnchor = makeSelectedLinkAnchor(content, linkFrom, linkTo)
 
@@ -391,6 +394,8 @@ test('20.1 loads and edits only the selected link range, preserving other inline
   assert.equal(editor.calls[0][3], '[改名](https://second.test)')
   assert.equal(editor.calls[1][2], '[改名](https://second.test)')
   assert.equal(editor.calls[1][3], '[改名](https://updated.test/path)')
+  assert.deepEqual(scheduled, ['left', 'left'])
+  assert.equal(app.editorDirty, true)
   assert.equal(app.blockPanelAnchor.itemTo - app.blockPanelAnchor.itemFrom,
     '[改名](https://updated.test/path)'.length)
 })
