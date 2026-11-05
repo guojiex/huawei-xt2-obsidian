@@ -1081,6 +1081,14 @@ instancePath '/overrides/signingConfig', keyword 'propertyNames',
 实测：`BUILD SUCCESSFUL` + `entry-default-signed.hap`，`build-profile.json5` 保持 `[]`。
 凭据抽取走 `.\tools\signing.ps1 -Import`。
 
+### I5 `CustomDialogControllerOptions.onWillDismiss` ✅ SDK 声明可用于 API 24；运行时待验
+
+本机 DevEco API 26 SDK 的
+`ets/component/custom_dialog_controller.d.ts` 声明 `onWillDismiss?: Callback<DismissDialogAction>`
+与 `DismissDialogAction.dismiss` 均为 `@since 12`。回调注册后，遮罩、系统返回、Esc 和侧滑不会直接关闭弹窗；
+调用 `action.dismiss()` 才执行关闭。API 24 高于声明起始版本，故 v1.27 可用该回调在同步期间阻止交互式关闭。
+此结论仅来自 SDK 声明；API24 / XT2 的实际关闭行为仍需设备验收。
+
 ---
 
 ## J 组：视觉基线的三个待核实项（J-1 / J-2 / J-3）—— ✅ 全部核实完毕（2026-10-18）
