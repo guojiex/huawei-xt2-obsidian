@@ -69,6 +69,16 @@ test('settings backup shares the current library and blocks empty-library export
  f.run("notes.filter(n=>n.vault===activeVault).forEach(n=>n.deleted=true);syncExportBackup()");
  assert(f.get('exportVaultBackup').disabled);f.get('shareDialog').open=false;f.get('resetExportFirst').onclick();assert.equal(f.get('shareDialog').open,false);
 });
+test('decision prototypes handle TSV, cross-vault search and ZIP import states',()=>{
+ const f=fixture();const extension=html.match(/\/\/ v1\.14 14\.4:[\s\S]*?(?=\/\/ v1\.32 32\.1:)/)[0];f.run(extension);
+ assert.equal(f.run("tableMarkdown(parseTsv('A\\tB\\n1\\t2'))"),'| A | B |\n| --- | --- |\n| 1 | 2 |');
+ assert.equal(f.run("parseTsv('A\\tB\\n1')"),null);
+ f.get('quickSearchInput').value='笔记';f.run("setSearchScope('all')");assert.match(f.get('quickSearchResults').innerHTML,/search-group/);
+ f.run('openQuickSearch()');assert.equal(f.run('searchScope'),'current');
+ f.run('openImportVault()');f.get('importZipTab').onclick();assert(f.get('confirmImportVault').disabled);
+ f.get('importFailDemo').onclick();assert.equal(f.run('importZipState'),'error');assert(f.get('confirmImportVault').disabled);
+ f.get('chooseImportZip').onclick();assert.equal(f.run('importZipState'),'selected');assert.equal(f.get('confirmImportVault').disabled,false);
+});
 test('release notes hide versions newer than the installed version',()=>{
  const f=fixture();assert.equal(f.run("versionNotAfter('1.0.0','0.2.0')"),false);assert.equal(f.run("versionNotAfter('0.2.0','0.2.0')"),true);
  assert.match(f.run("renderReleaseEntries([{version:'1.0.0',title:'future',date:'',changes:[]}])"),/当前版本的更新说明将在发布后显示/);
@@ -783,7 +793,7 @@ test('update-check prototype covers outcomes, disables repeat checks, and leaves
   ['network','网络不可用'],
   ['background','不在前台'],
   ['privacy','隐私协议'],
-  ['limited','稍后重试']
+  ['limited','上次检查']
  ]){
   demo.value=state;demo.onchange();
   assert.equal(f.get('updateCheckGroup').dataset.state,state);
