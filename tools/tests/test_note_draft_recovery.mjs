@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import fs from 'node:fs';
+import { readSourceFile } from './lib/source.mjs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../../entry/src/main/ets/model/NoteDraftService.ets', import.meta.url), 'utf8');
+const source = readSourceFile(new URL('../../entry/src/main/ets/model/NoteDraftService.ets', import.meta.url));
 
 function loadDraftService(files = new Map(), directories = new Set()) {
   const context = vm.createContext({

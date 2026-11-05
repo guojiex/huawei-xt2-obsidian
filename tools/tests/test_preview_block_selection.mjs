@@ -1,21 +1,21 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
 import test from 'node:test'
 import { createRequire } from 'node:module'
 import { isPseudoTableSource } from '../../web/mdpreview/src/tableCells.mjs'
+import { readSourceFile } from './lib/source.mjs'
 
 const root = new URL('../../', import.meta.url)
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url))
 const { transformSync } = require('esbuild')
 const vm = require('node:vm')
-const previewSource = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root), 'utf8')
-const previewComponentSource = fs.readFileSync(
-  new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8'
+const previewSource = readSourceFile(new URL('web/mdpreview/src/index.ts', root))
+const previewComponentSource = readSourceFile(
+  new URL('entry/src/main/ets/components/PreviewWebView.ets', root)
 )
-const indexSource = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
-const buildSource = fs.readFileSync(new URL('web/mdpreview/build.mjs', root), 'utf8')
-const generatedPreview = fs.readFileSync(
-  new URL('entry/src/main/resources/rawfile/mdpreview/index.html', root), 'utf8'
+const indexSource = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', root))
+const buildSource = readSourceFile(new URL('web/mdpreview/build.mjs', root))
+const generatedPreview = readSourceFile(
+  new URL('entry/src/main/resources/rawfile/mdpreview/index.html', root)
 )
 
 function loadFunction(source, startMarker, endMarker, name, isExported = false) {

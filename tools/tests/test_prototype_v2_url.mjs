@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readSourceFile } from './lib/source.mjs';
 import vm from 'node:vm';
-const html=fs.readFileSync(new URL('../../docs/prototype/v2/index.html',import.meta.url),'utf8');
+const html=readSourceFile(new URL('../../docs/prototype/v2/index.html',import.meta.url));
 const code=html.match(/<script>([\s\S]*?)<\/script>/)[1];
 const markupIds=new Set(Array.from(html.matchAll(/\bid="([^"]+)"/g),match=>match[1]));
 test('footer links to the current v2 design notes without restoring the deleted prototype entry',()=>{
@@ -247,7 +247,9 @@ test('URL overrides other browser width preferences and keeps collapsed folders 
 
 test('reported phone link renders relative sample images when switched from edit to preview',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&rotate=0&theme=light&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&rm=preview&dual=1&focus=0&side=files&nav=0&nw=0.2582&cw=0.5000&view=notes&settings=general&detail=0&history=0&panel=none&scroll_editor=1135');
- const source=f.get('editor').value;assert(source.includes('![长图排版示例](../50_Assets/长图排版示例.svg)'));assert(f.run('editing'));f.get('previewTab').onclick();assert(!f.run('editing'));assert.match(f.get('article').innerHTML,/<img[^>]*src="data:image\/svg\+xml;base64,[^"]+"[^>]*alt="长图排版示例">/);assert(!f.get('article').innerHTML.includes('![长图排版示例]'));assert.equal(f.get('editor').value,source);
+  const source=f.get('editor').value;assert(source.includes('![长图排版示例](../50_Assets/长图排版示例.svg)'));assert(f.run('editing'));f.get('previewTab').onclick();assert(!f.run('editing'));assert.match(f.get('article').innerHTML,/<img[^>]*src="data:image\/svg\+xml;base64,[^"]+"[^>]*alt="长图排版示例">/);
+  // data-md 行内编辑属性会保留原始 markdown，正文文本不得再出现它
+  assert(!f.get('article').innerHTML.replace(/ data-md="[^"]*"/g,'').includes('![长图排版示例]'));assert.equal(f.get('editor').value,source);
 });
 test('right pane and share preview resolve images against their own note folder',()=>{
  const f=fixture();f.run("switchVault('local');openInPane('inbox','left');openInPane('stream','right')");assert.match(f.get('reference').innerHTML,/<img[^>]+alt="长图排版示例">/);f.get('shareBtn').onclick();f.get('shareImage').onclick();assert.match(f.get('sharePreview').innerHTML,/<img[^>]+alt="长图排版示例">/);
@@ -290,10 +292,10 @@ test('frontmatter handling preserves source offsets and does not strip body or i
 });
 
 test('frontmatter tags render as chips without exposing raw YAML or changing source',()=>{
- const f=fixture();f.run("openInPane('reading_reading_journal','left');openInPane('reading_reading_journal','right')");const source=f.get('editor').value;for(const id of ['article','reference']){assert(f.get(id).innerHTML.includes('aria-label="笔记标签"'));assert(!f.get(id).innerHTML.includes('note-tags-label'));assert(f.get(id).innerHTML.includes('>#样例</span>'));assert(f.get(id).innerHTML.includes('>#阅读</span>'));assert(!f.get(id).innerHTML.includes('tags:'));assert(!f.get(id).innerHTML.includes('title:'));}assert.equal(f.get('editor').value,source);const tags=f.run('frontmatterTags('+JSON.stringify('---\ntags: ["Tag", "nested/tag", "tag", "1984", "y1984"]\n---\n# Note')+')');assert.deepEqual(Array.from(tags),['Tag','nested/tag','y1984']);
+   const f=fixture();f.run("openInPane('reading_reading_journal','left');openInPane('reading_reading_journal','right')");const source=f.get('editor').value;for(const id of ['article','reference']){assert(f.get(id).innerHTML.includes('aria-label="笔记属性与标签"'));assert(!f.get(id).innerHTML.includes('note-tags-label'));assert(f.get(id).innerHTML.includes('>#样例</span>'));assert(f.get(id).innerHTML.includes('>#阅读</span>'));assert(!f.get(id).innerHTML.includes('tags:'));assert(!f.get(id).innerHTML.includes('title:'));}assert.equal(f.get('editor').value,source);const tags=f.run('frontmatterTags('+JSON.stringify('---\ntags: ["Tag", "nested/tag", "tag", "1984", "y1984"]\n---\n# Note')+')');assert.deepEqual(Array.from(tags),['Tag','nested/tag','y1984']);
 });
 test('inline tags render outside code and links, keeping nested/unicode tags and numeric text correct',()=>{
- const f=fixture();const rendered=f.run('renderMarkdown('+JSON.stringify('# Heading\n\n#样例 #写作/练习 #1984 #y1984\n\n`#code` [link](https://example.com/#fragment)\n\n```\n#fenced\n```')+',false)');assert(rendered.includes('>#样例</span>'));assert(rendered.includes('>#写作/练习</span>'));assert(rendered.includes('>#y1984</span>'));assert(!rendered.includes('>#1984</span>'));assert(rendered.includes('<code>#code</code>'));assert.match(rendered,/<pre data-source-start="\d+" data-source-end="\d+"><code>#fenced<\/code><\/pre>/);assert(!rendered.includes('>#fragment</span>'));
+  const f=fixture();const rendered=f.run('renderMarkdown('+JSON.stringify('# Heading\n\n#样例 #写作/练习 #1984 #y1984\n\n`#code` [link](https://example.com/#fragment)\n\n```\n#fenced\n```')+',false)');assert(rendered.includes('>#样例</span>'));assert(rendered.includes('>#写作/练习</span>'));assert(rendered.includes('>#y1984</span>'));assert(!rendered.includes('>#1984</span>'));assert(rendered.includes('data-inline="code" data-md="`#code`" data-occ="0">#code</code>'));assert.match(rendered,/<pre data-source-start="\d+" data-source-end="\d+"><code>#fenced<\/code><\/pre>/);assert(!rendered.includes('>#fragment</span>'));
 });
 
 test('phone hides redundant pane switching for same note and preserves current edit/preview controls',()=>{
@@ -526,8 +528,9 @@ test('manual preview scroll pauses follow until the editor is actively scrolled 
 
 test('source offsets map through markdown blocks without using document scroll percentage',()=>{
  const f=fixture();const source='\uFEFF---\r\ntitle: sample\r\n---\r\n# 同名\r\n# 同名\r\n\r\n~~~js\r\n代码\r\n~~~\r\n正文';
- const html=f.run('renderMarkdown('+JSON.stringify(source)+',true)'),ranges=[...html.matchAll(/data-source-start="(\d+)" data-source-end="(\d+)"/g)].map(match=>[Number(match[1]),Number(match[2])]);
- assert.deepEqual(ranges,[[source.indexOf('# 同名'),source.indexOf('# 同名')+4],[source.indexOf('# 同名',source.indexOf('# 同名')+1),source.indexOf('# 同名',source.indexOf('# 同名')+1)+4],[source.indexOf('~~~js'),source.indexOf('~~~\r\n正文')+3],[source.indexOf('正文'),source.indexOf('正文')+2]]);
+  const html=f.run('renderMarkdown('+JSON.stringify(source)+',true)'),ranges=[...html.matchAll(/data-source-start="(\d+)" data-source-end="(\d+)"/g)].map(match=>[Number(match[1]),Number(match[2])]);
+  // frontmatter 的笔记属性入口块也带 0..frontmatterEnd 的源区间
+  assert.deepEqual(ranges,[[0,source.indexOf('# 同名')],[source.indexOf('# 同名'),source.indexOf('# 同名')+4],[source.indexOf('# 同名',source.indexOf('# 同名')+1),source.indexOf('# 同名',source.indexOf('# 同名')+1)+4],[source.indexOf('~~~js'),source.indexOf('~~~\r\n正文')+3],[source.indexOf('正文'),source.indexOf('正文')+2]]);
  assert.equal(f.run('previewPositionForOffset(15,[{start:0,end:10,top:20,height:100},{start:20,end:30,top:200,height:40}])'),120);
  assert.equal(f.run('previewPositionForOffset(100,[{start:0,end:10,top:20,height:100}])'),120);
 });

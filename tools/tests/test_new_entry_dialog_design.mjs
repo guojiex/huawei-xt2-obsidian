@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import test from 'node:test';
+import { readSourceFile } from './lib/source.mjs';
 
-const dialogSource = fs.readFileSync(
-  new URL('../../entry/src/main/ets/components/NoteDialogs.ets', import.meta.url), 'utf8');
-const tokensSource = fs.readFileSync(
-  new URL('../../entry/src/main/ets/common/Tokens.ets', import.meta.url), 'utf8');
-const prototype = fs.readFileSync(
-  new URL('../../docs/prototype/v2/index.html', import.meta.url), 'utf8');
+const dialogSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/NoteDialogs.ets', import.meta.url));
+const tokensSource = readSourceFile(
+  new URL('../../entry/src/main/ets/common/Tokens.ets', import.meta.url));
+const prototype = readSourceFile(
+  new URL('../../docs/prototype/v2/index.html', import.meta.url));
 
 const hintStart = dialogSource.indexOf('  private hintText(): string {');
 const hintEnd = dialogSource.indexOf('\n  private confirm(): void {', hintStart);

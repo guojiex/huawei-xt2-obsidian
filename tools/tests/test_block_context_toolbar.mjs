@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
 import test from 'node:test'
 import { createRequire } from 'node:module'
+import { readSourceFile } from './lib/source.mjs'
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url))
 const { transformSync } = require('esbuild')
-const source = fs.readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8')
+const source = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url))
 const start = source.indexOf('  private hasBlockToolbarForPane(pane: string): boolean {')
 const end = source.indexOf('\n  private calculateAnchoredPopupLayout(', start)
 const anchorChangeStart = source.indexOf('  private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {')

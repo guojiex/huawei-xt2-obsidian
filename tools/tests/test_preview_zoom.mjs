@@ -1,20 +1,20 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import fs from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
+import { readSourceFile } from './lib/source.mjs'
 import {
   PREVIEW_ZOOM_PRESETS,
   normalizePreviewZoomPercent
 } from '../../web/mdpreview/src/previewZoom.mjs'
 
 const repoRoot = new URL('../../', import.meta.url)
-const previewSource = fs.readFileSync(new URL('web/mdpreview/src/index.ts', repoRoot), 'utf8')
-const previewBridgeSource = fs.readFileSync(new URL('entry/src/main/ets/components/PreviewWebView.ets', repoRoot), 'utf8')
-const indexSource = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', repoRoot), 'utf8')
-const buildSource = fs.readFileSync(new URL('web/mdpreview/build.mjs', repoRoot), 'utf8')
-const generatedPreview = fs.readFileSync(new URL('entry/src/main/resources/rawfile/mdpreview/index.html', repoRoot), 'utf8')
-const prototypeSource = fs.readFileSync(new URL('docs/prototype/v2/index.html', repoRoot), 'utf8')
+const previewSource = readSourceFile(new URL('web/mdpreview/src/index.ts', repoRoot))
+const previewBridgeSource = readSourceFile(new URL('entry/src/main/ets/components/PreviewWebView.ets', repoRoot))
+const indexSource = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', repoRoot))
+const buildSource = readSourceFile(new URL('web/mdpreview/build.mjs', repoRoot))
+const generatedPreview = readSourceFile(new URL('entry/src/main/resources/rawfile/mdpreview/index.html', repoRoot))
+const prototypeSource = readSourceFile(new URL('docs/prototype/v2/index.html', repoRoot))
 
 const require = createRequire(new URL('web/mdpreview/package.json', repoRoot))
 const { transformSync } = require('esbuild')
@@ -61,8 +61,10 @@ test('zoom controls fade during scrolling, remain visible while focused, and can
   assert.match(previewSource, /function schedulePreviewZoomFade\(\): void \{[\s\S]*?previewZoomControlFocused\(\)/)
   assert.match(previewSource, /previewZoomControls\.addEventListener\('focusin'/)
   assert.match(previewSource, /setPreviewZoomControlsVisible\(visible: boolean\): void/)
-  assert.match(indexSource, /zoomControlsVisible: this\.experienceMode === 'simple' \|\| !this\.rightEditing/)
-  assert.match(indexSource, /zoomControlsVisible: this\.experienceMode === 'simple' \|\| this\.smMode === 'preview'/)
+  // v1.30 30.5：缩放控件在“有文件打开”前提下按模式分支——
+  // 简单模式编辑聚焦（simpleTextFocus）时隐藏、结束编辑恢复；专业模式维持编辑期隐藏。
+  assert.match(indexSource, /zoomControlsVisible: this\.rightFilePath\.length > 0 &&\s*\(this\.experienceMode === 'simple' \? !this\.rightSimpleTextFocus : !this\.rightEditing\)/)
+  assert.match(indexSource, /zoomControlsVisible: this\.currentFilePath\.length > 0 &&\s*\(this\.experienceMode === 'simple' \? !this\.leftSimpleTextFocus : this\.smMode === 'preview'\)/)
 })
 
 test('left and right preview bridges retain independent zoom values across WebView rebinding', async () => {

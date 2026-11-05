@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import test from 'node:test';
+import { readSourceFile } from './lib/source.mjs';
 
-const index = fs.readFileSync(
-  new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
-const icons = fs.readFileSync(
-  new URL('../../entry/src/main/ets/common/Icons.ets', import.meta.url), 'utf8');
-const prototype = fs.readFileSync(
-  new URL('../../docs/prototype/v2/index.html', import.meta.url), 'utf8');
+const index = readSourceFile(
+  new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const icons = readSourceFile(
+  new URL('../../entry/src/main/ets/common/Icons.ets', import.meta.url));
+const prototype = readSourceFile(
+  new URL('../../docs/prototype/v2/index.html', import.meta.url));
 
 const itemStart = index.indexOf('  PaneMoreMenuItem(');
 const itemEnd = index.indexOf('\n  @Builder\n  PaneMoreMenu(', itemStart);

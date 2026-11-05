@@ -10,15 +10,15 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import { readSourceFile } from './lib/source.mjs';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 
-const source = fs.readFileSync(
-  new URL('../../entry/src/main/ets/model/FileTree.ets', import.meta.url), 'utf8');
+const source = readSourceFile(
+  new URL('../../entry/src/main/ets/model/FileTree.ets', import.meta.url));
 const start = source.indexOf('export class FileTree {');
 const end = source.indexOf('/**\n * ExpandStore');
 assert.ok(start >= 0 && end > start, '找不到 FileTree 类体');

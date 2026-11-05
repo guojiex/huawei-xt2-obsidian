@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import fs from 'node:fs';
+import { readSourceFile } from './lib/source.mjs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { resolveVaultImagePath } from '../../web/mdpreview/src/renderer.mjs';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const source = fs.readFileSync(new URL('../../entry/src/main/ets/model/NoteImageService.ets', import.meta.url), 'utf8');
+const source = readSourceFile(new URL('../../entry/src/main/ets/model/NoteImageService.ets', import.meta.url));
 const start = source.indexOf('  static selectedUri(');
 const end = source.indexOf('\n  private static imageExtension(', start);
 assert.ok(start >= 0 && end > start, 'could not find NoteImageService import reference methods');
@@ -45,7 +45,7 @@ test('a copied image is accepted only when its non-empty byte size matches', () 
   assert.throws(() => NoteImageService.validateCopiedSize(0, 0), /图片副本不完整/);
 });
 
-const fullSource = fs.readFileSync(new URL('../../entry/src/main/ets/model/NoteImageService.ets', import.meta.url), 'utf8');
+const fullSource = readSourceFile(new URL('../../entry/src/main/ets/model/NoteImageService.ets', import.meta.url));
 
 function loadFullImageService() {
   const sourceCode = transformSync(
@@ -126,7 +126,7 @@ test('a writeNewBinary name conflict preserves the pre-existing attachment and r
   assert.deepEqual(removeCalls, [], 'the caller must not delete a target after the access layer rejects a collision');
   assert.equal(result, undefined, 'a failed copy must not return a Markdown reference');
 
-  const indexSource = fs.readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+  const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
   const importStart = indexSource.indexOf('  private async pickImageForCurrentNote(');
   const importEnd = indexSource.indexOf('\n  private statusRightText(', importStart);
   assert.ok(importStart >= 0 && importEnd > importStart, 'could not find image insertion handler');

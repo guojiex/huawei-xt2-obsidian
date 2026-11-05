@@ -12,16 +12,16 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
+import { readSourceFile } from './lib/source.mjs';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 
 function loadPaneLayout() {
-  const raw = fs.readFileSync(
-    new URL('../../entry/src/main/ets/model/PaneLayout.ets', import.meta.url), 'utf8');
+  const raw = readSourceFile(
+    new URL('../../entry/src/main/ets/model/PaneLayout.ets', import.meta.url));
   const stripped = raw.replace(/^import[\s\S]*?from\s+'[^']+';\s*$/gm, '');
   const code = transformSync(stripped, { loader: 'ts', format: 'cjs' }).code;
   const sandbox = {
@@ -96,8 +96,8 @@ test('越界进度按端点处理，不产生负宽', () => {
   assert.equal(under.nav, 0);
 });
 
-const indexSource = fs.readFileSync(
-  new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+const indexSource = readSourceFile(
+  new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 
 function sliceBetween(startMarker, endMarker) {
   const start = indexSource.indexOf(startMarker);

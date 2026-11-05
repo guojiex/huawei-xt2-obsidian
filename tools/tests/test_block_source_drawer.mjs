@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readSourceFile } from './lib/source.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
-const indexSource = fs.readFileSync(path.join(root, 'entry/src/main/ets/pages/Index.ets'), 'utf8')
-const editorSource = fs.readFileSync(path.join(root, 'entry/src/main/ets/components/EditorWebView.ets'), 'utf8')
-const tokenSource = fs.readFileSync(path.join(root, 'entry/src/main/ets/common/Tokens.ets'), 'utf8')
+const indexSource = readSourceFile(path.join(root, 'entry/src/main/ets/pages/Index.ets'))
+const editorSource = readSourceFile(path.join(root, 'entry/src/main/ets/components/EditorWebView.ets'))
+const tokenSource = readSourceFile(path.join(root, 'entry/src/main/ets/common/Tokens.ets'))
 const panelStart = indexSource.indexOf('  @Builder\n  BlockPropertyPanel() {')
 const panelEnd = indexSource.indexOf('\n  @Builder\n  PreviewBlockPanel(', panelStart)
 const panel = indexSource.slice(panelStart, panelEnd)

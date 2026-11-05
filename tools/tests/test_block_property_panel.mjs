@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
 import test from 'node:test'
 import { createRequire } from 'node:module'
+import { readSourceFile } from './lib/source.mjs'
 
 const root = new URL('../../', import.meta.url)
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url))
 const { transformSync } = require('esbuild')
 const vm = require('node:vm')
-const source = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
-const previewSource = fs.readFileSync(new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8')
-const mdpreviewSource = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root), 'utf8')
+const source = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', root))
+const previewSource = readSourceFile(new URL('entry/src/main/ets/components/PreviewWebView.ets', root))
+const mdpreviewSource = readSourceFile(new URL('web/mdpreview/src/index.ts', root))
 const anchorChangeStart = source.indexOf('  private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {')
 const anchorChangeEnd = source.indexOf('\n  private recordBlockToolbarPaneArea(', anchorChangeStart)
 const panelStart = source.indexOf('  private hasBlockPropertyPanelForPane(')
@@ -41,8 +41,8 @@ assert.ok(sourceTargetMethodsStart >= 0 && sourceTargetMethodsEnd > sourceTarget
 assert.ok(imagePickerStart >= 0 && imagePickerEnd > imagePickerStart)
 assert.ok(copyMethodsStart >= 0 && copyMethodsEnd > copyMethodsStart)
 
-const inlineParserSource = fs.readFileSync(
-  new URL('entry/src/main/ets/model/MarkdownInlineParser.ets', root), 'utf8'
+const inlineParserSource = readSourceFile(
+  new URL('entry/src/main/ets/model/MarkdownInlineParser.ets', root)
 )
 const inlineParserModule = { exports: {} }
 vm.runInNewContext(
@@ -52,8 +52,8 @@ vm.runInNewContext(
   }).code,
   { module: inlineParserModule }
 )
-const complexEditSource = fs.readFileSync(
-  new URL('entry/src/main/ets/model/MarkdownComplexBlockEdit.ets', root), 'utf8'
+const complexEditSource = readSourceFile(
+  new URL('entry/src/main/ets/model/MarkdownComplexBlockEdit.ets', root)
 )
 const complexEditModule = { exports: {} }
 vm.runInNewContext(
@@ -63,8 +63,8 @@ vm.runInNewContext(
   }).code,
   { module: complexEditModule }
 )
-const wikiParserSource = fs.readFileSync(
-  new URL('entry/src/main/ets/model/WikiLinkParser.ets', root), 'utf8'
+const wikiParserSource = readSourceFile(
+  new URL('entry/src/main/ets/model/WikiLinkParser.ets', root)
 )
 const wikiParserModule = { exports: {} }
 vm.runInNewContext(
