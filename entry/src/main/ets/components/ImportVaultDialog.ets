@@ -16,7 +16,10 @@ export struct ImportVaultDialog {
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
   @State pickedName: string = '';
+  @State directoryState: string = 'unselected';
+  @State directoryStatus: string = '';
   @State working: boolean = false;
+  @State associating: boolean = false;
   @State source: string = 'local';
   @State gitRemote: string = '';
   @State gitBranch: string = 'main';
@@ -28,8 +31,14 @@ export struct ImportVaultDialog {
   onChooseDirectory: () => Promise<string | null> = async (): Promise<string | null> => null;
   /** 返回是否关联成功；失败时父侧提示，弹窗保持打开供重试。 */
   onAssociateDirectory: () => Promise<boolean> = async (): Promise<boolean> => false;
+  onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
   onContinueGit: (draft: GitImportDraft) => void = (_draft: GitImportDraft) => {};
   onCancel: () => void = () => {};
+
+  private setWorking(working: boolean): void {
+    this.working = working;
+    this.onBusyChange(working);
+  }
 
   private isGiteeRemote(): boolean {
     const scheme: number = this.gitRemote.indexOf('://');
@@ -63,6 +72,9 @@ export struct ImportVaultDialog {
   }
 
   private close(): void {
+    if (this.working) {
+      return;
+    }
     this.clearGitCredentials();
     this.controller?.close();
     this.onCancel();
@@ -80,21 +92,62 @@ export struct ImportVaultDialog {
 
   /** 是否已选好目录：只认弹窗自己的状态，不看父组件回传。 */
   private hasPicked(): boolean {
-    return this.pickedName.length > 0;
+    return this.directoryState === 'selected' && this.pickedName.length > 0;
+  }
+
+  private directoryTitle(): string {
+    if (this.directoryState === 'selected') {
+      return this.pickedName;
+    }
+    return this.directoryState === 'failed' ? '未获得目录授权' : '选择笔记目录';
+  }
+
+  private directoryDescription(): string {
+    if (this.directoryState === 'selected') {
+      return '系统授权目录 · 关联后直接读写';
+    }
+    if (this.directoryState === 'failed') {
+      return this.pickedName.length > 0
+        ? '「' + this.pickedName + '」未完成授权；没有登记知识库，可重新选择目录。'
+        : '没有登记知识库，可重新选择目录。';
+    }
+    return '在系统选择器中选一个文件夹';
+  }
+
+  private directoryActionLabel(): string {
+    if (this.directoryState === 'selected') {
+      return '更换';
+    }
+    return this.directoryState === 'failed' ? '重试' : '选择';
+  }
+
+  private directoryCardAccessibilityText(): string {
+    return this.directoryTitle() + '，' + this.directoryDescription();
   }
 
   private async pickDirectory(): Promise<void> {
-    if (this.working) {
+    if (this.working || this.source !== 'local') {
       return;
     }
-    this.working = true;
+    this.setWorking(true);
+    this.directoryStatus = '正在打开系统目录选择器…';
     try {
       const name: string | null = await this.onChooseDirectory();
-      if (name !== null && name.length > 0) {
+      if (name === null) {
+        this.directoryStatus = '已取消选择';
+      } else if (name.length > 0) {
         this.pickedName = name;
+        this.directoryState = 'selected';
+        this.directoryStatus = '';
+      } else {
+        this.directoryState = 'failed';
+        this.directoryStatus = '目录授权未完成；没有登记知识库，请重新选择目录。';
       }
+    } catch (_error) {
+      this.directoryState = 'failed';
+      this.directoryStatus = '目录授权未完成；没有登记知识库，请重新选择目录。';
     } finally {
-      this.working = false;
+      this.setWorking(false);
     }
   }
 
@@ -102,11 +155,23 @@ export struct ImportVaultDialog {
     if (!this.hasPicked() || this.working) {
       return;
     }
-    this.working = true;
+    this.setWorking(true);
+    this.associating = true;
+    this.directoryStatus = '正在关联目录…';
     try {
-      await this.onAssociateDirectory();
+      const associated: boolean = await this.onAssociateDirectory();
+      if (associated) {
+        this.directoryStatus = '目录已关联';
+      } else {
+        this.directoryState = 'failed';
+        this.directoryStatus = '关联未完成；没有登记知识库，原目录未改写。请重新选择目录后重试。';
+      }
+    } catch (_error) {
+      this.directoryState = 'failed';
+      this.directoryStatus = '关联未完成；没有登记知识库，原目录未改写。请重新选择目录后重试。';
     } finally {
-      this.working = false;
+      this.associating = false;
+      this.setWorking(false);
     }
   }
 
@@ -161,50 +226,99 @@ export struct ImportVaultDialog {
       Scroll() {
         Column({ space: Space.s3 }) {
           if (this.source === 'local') {
-            Text('使用手机里的笔记目录')
-              .fontSize(FontSize.body2)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
-            Text('选择已有 Markdown 目录，授权后直接作为笔记库使用。')
-              .fontSize(FontSize.body3)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
             Row({ space: Space.s3 }) {
-              Icon('folder', Space.s6, $r('app.color.brand'))
+              Stack({ alignContent: Alignment.Center }) {
+                Icon('folder', Space.s6, this.directoryState === 'failed'
+                  ? $r('app.color.danger') : $r('app.color.brand'))
+                if (this.directoryState === 'selected') {
+                  Row() {
+                    Icon('check', Space.s3, $r('app.color.on_brand'))
+                  }
+                  .width(Space.s5)
+                  .height(Space.s5)
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(VerticalAlign.Center)
+                  .borderRadius(Radius.full)
+                  .backgroundColor($r('app.color.brand'))
+                  .align(Alignment.BottomEnd)
+                } else if (this.directoryState === 'failed') {
+                  Text('!')
+                    .fontSize(FontSize.caption)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor($r('app.color.on_brand'))
+                    .width(Space.s5)
+                    .height(Space.s5)
+                    .textAlign(TextAlign.Center)
+                    .borderRadius(Radius.full)
+                    .backgroundColor($r('app.color.danger'))
+                    .align(Alignment.BottomEnd)
+                }
+              }
+              .width(Space.s12)
+              .height(Space.s12)
+              .borderRadius(Radius.control)
+              .backgroundColor(this.directoryState === 'selected'
+                ? $r('app.color.brand') : this.directoryState === 'failed'
+                  ? $r('app.color.danger_bg') : $r('app.color.bg_card'))
               Column({ space: Space.s1 }) {
-                Text(this.hasPicked() ? this.pickedName : '选择本地目录')
+                Text(this.directoryTitle())
                   .fontSize(FontSize.body2)
                   .fontWeight(FontWeight.Medium)
-                  .fontColor($r('app.color.text_primary'))
+                  .fontColor(this.directoryState === 'failed'
+                    ? $r('app.color.danger') : $r('app.color.text_primary'))
                   .maxLines(2)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                Text(this.hasPicked() ? '已选择文件夹，关联后直接读写' : '从系统目录选择器中选择文件夹')
+                Text(this.directoryDescription())
                   .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_tertiary'))
+                  .fontColor(this.directoryState === 'failed'
+                    ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
               .layoutWeight(1)
-              Text('↗')
-                .fontSize(FontSize.body1)
-                .fontColor($r('app.color.text_secondary'))
+              Text(this.directoryActionLabel())
+                .fontSize(FontSize.caption)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.directoryState === 'failed'
+                  ? $r('app.color.danger') : $r('app.color.brand'))
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s1 })
+                .borderRadius(Radius.full)
+                .backgroundColor(this.directoryState === 'failed'
+                  ? $r('app.color.danger_bg') : $r('app.color.brand_bg'))
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
             .padding(Space.s4)
-            .borderRadius(Radius.card)
-            .border({ width: 1, color: this.hasPicked()
-              ? $r('app.color.brand') : $r('app.color.line_strong'),
-              style: this.hasPicked() ? BorderStyle.Solid : BorderStyle.Dashed })
-            .backgroundColor(this.hasPicked()
-              ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
+            .borderRadius(Radius.menu)
+            .border({ width: 1, color: this.directoryState === 'failed'
+              ? $r('app.color.danger') : this.directoryState === 'selected'
+                ? $r('app.color.brand') : $r('app.color.brand'),
+              style: this.directoryState === 'unselected' ? BorderStyle.Dashed : BorderStyle.Solid })
+            .backgroundColor(this.directoryState === 'failed'
+              ? $r('app.color.danger_bg') : this.directoryState === 'selected'
+                ? $r('app.color.brand_bg') : $r('app.color.bg_card'))
+            .focusable(!this.working)
+            .id('import-directory-card')
+            .accessibilityText(this.directoryCardAccessibilityText())
+            .accessibilityTextHint(this.directoryState === 'selected'
+              ? '更换系统授权目录'
+              : this.directoryState === 'failed' ? '重新选择目录' : '打开系统目录选择器')
+            .onAppear((): void => {
+              setTimeout((): void => {
+                this.getUIContext().getFocusController().requestFocus('import-directory-card');
+              }, 0);
+            })
             .onClick(() => { void this.pickDirectory(); })
-            Text('直接读写原目录，不复制文件。移除库只解除关联，原目录和文件保留。')
-              .fontSize(FontSize.body3)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-              .padding(Space.s3)
-              .borderRadius(Radius.control)
-              .backgroundColor($r('app.color.bg_secondary'))
+            if (this.directoryStatus.length > 0) {
+              Text(this.directoryStatus)
+                .fontSize(FontSize.caption)
+                .fontColor(this.directoryState === 'failed'
+                  ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                .width('100%')
+                .accessibilityText(this.directoryStatus)
+            }
+            this.DirectoryFact('link', '直接使用原目录', '不复制文件，笔记改动直接写回该目录')
+            this.DirectoryFact('check', '移除只解除关联', '原目录和其中的文件都会保留')
           } else {
             Text('连接远端 Git 仓库')
               .fontSize(FontSize.body2)
@@ -344,21 +458,41 @@ export struct ImportVaultDialog {
   }
 
   @Builder
+  DirectoryFact(icon: string, title: string, description: string) {
+    Row({ space: Space.s3 }) {
+      Icon(icon, Space.s5, $r('app.color.brand'))
+      Column({ space: Space.s1 }) {
+        Text(title)
+          .fontSize(FontSize.body3)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+        Text(description)
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
+  }
+
+  @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, !this.working, (): void => {
         this.close();
-      })
+      }, true)
       if (this.source === 'local') {
-        UtilityDialogAction(this.working ? '处理中…' : '关联此目录', 'primary',
+        UtilityDialogAction(this.associating ? '正在关联…' : '关联此目录', 'primary',
           this.singleScreen, this.hasPicked() && !this.working, (): void => {
             void this.associateDirectory();
-          })
+          }, true)
       } else {
         UtilityDialogAction(this.working ? '处理中…' : '导入 Git 仓库', 'primary',
           this.singleScreen, this.gitRemote.trim().length > 0 && !this.working, (): void => {
             this.continueGit();
-          })
+          }, true)
       }
     }
     .width('100%')
@@ -368,7 +502,7 @@ export struct ImportVaultDialog {
   build() {
     UtilityDialogShell({
       title: '导入库',
-      subtitle: '把已有的笔记，带进你的工作台。',
+      subtitle: '关联已有的 Markdown 笔记目录',
       headerIcon: 'folder',
       closeLabel: '关闭导入库',
       singleScreen: this.singleScreen,

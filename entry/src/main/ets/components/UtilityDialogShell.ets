@@ -132,7 +132,8 @@ export function UtilityDialogAction(
   tone: string,
   singleScreen: boolean,
   enabled: boolean,
-  onClick: () => void
+  onClick: () => void,
+  keyboardFocusable: boolean = false
 ) {
   Text(label)
     .fontSize(FontSize.body1)
@@ -150,4 +151,5 @@ export function UtilityDialogAction(
     .enabled(enabled)
     .opacity(enabled ? 1 : 0.45)
     .onClick(onClick)
+    .focusable(keyboardFocusable && enabled)
 }

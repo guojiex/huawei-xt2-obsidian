@@ -518,6 +518,8 @@ struct Index {
   /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
   private importVaultCtl: CustomDialogController | null = null;
+  private restoreImportTriggerFocus: () => void = () => {};
+  @State private importVaultDialogBusy: boolean = false;
   private gitSyncCtl: CustomDialogController | null = null;
   private gitSyncBusy: boolean = false;
   private pendingExternalDirectory: ExternalDirectorySelection | null = null;
@@ -2282,13 +2284,30 @@ struct Index {
   }
 
   /** 统一导入入口：文件树选择器与库管理页共用。 */
-  private async openImportVaultDialog(): Promise<void> {
+  private async openImportVaultDialog(focusReturnId: string): Promise<void> {
     if (!await this.flushWorkspaceSaves()) {
       promptAction.showToast({ message: '当前笔记未保存，暂不能导入知识库' });
       return;
     }
     this.pendingExternalDirectory = null;
+    this.importVaultDialogBusy = false;
     const importSheet: boolean = this.isSingleScreenLayout();
+    let focusRestored: boolean = false;
+    const restoreImportFocus = (): void => {
+      if (focusRestored || focusReturnId.length === 0) {
+        return;
+      }
+      focusRestored = true;
+      setTimeout((): void => {
+        this.getUIContext().getFocusController().requestFocus(focusReturnId);
+      }, 0);
+    };
+    this.restoreImportTriggerFocus = restoreImportFocus;
+    const clearImportDraft = (): void => {
+      GitImportDraftStore.clear();
+      this.pendingExternalDirectory = null;
+      restoreImportFocus();
+    };
     this.importVaultCtl = new CustomDialogController({
       builder: ImportVaultDialog({
         singleScreen: importSheet,
@@ -2296,21 +2315,25 @@ struct Index {
         windowHeightVp: this.windowHeightVp,
         onChooseDirectory: (): Promise<string | null> => this.chooseExternalDirectory(),
         onAssociateDirectory: (): Promise<boolean> => this.associateExternalDirectory(),
+        onBusyChange: (busy: boolean): void => { this.importVaultDialogBusy = busy; },
         onContinueGit: (draft: GitImportDraft): void => {
           void this.openGitSyncPage(draft);
         },
-        onCancel: (): void => {
-          GitImportDraftStore.clear();
-          this.pendingExternalDirectory = null;
-        }
+        onCancel: clearImportDraft
       }),
       cancel: (): void => {
-        GitImportDraftStore.clear();
-        this.pendingExternalDirectory = null;
+        if (!this.importVaultDialogBusy) {
+          clearImportDraft();
+        }
       },
       autoCancel: true,
       alignment: importSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      customStyle: true
+      customStyle: true,
+      onWillDismiss: (action: DismissDialogAction): void => {
+        if (!this.importVaultDialogBusy) {
+          action.dismiss();
+        }
+      }
     });
     this.importVaultCtl.open();
   }
@@ -2323,9 +2346,10 @@ struct Index {
     try {
       selection = await authorization.pickDirectory();
     } catch (_error) {
+      this.pendingExternalDirectory = null;
       this.showFailureFeedback('authorization', 'permission', 'unknown', 'not_completed', 'restore_permission',
         '目录尚未关联；请重新选择目录或检查系统授权后重试。');
-      return null;
+      throw new Error('目录授权未完成');
     }
     if (selection === null) {
       return null;
@@ -2359,17 +2383,20 @@ struct Index {
       const detail: string = revokeFailed
         ? '知识库未确认登记；授权回收状态未确认，外部笔记未改写。请检查授权和库列表后再处理。'
         : '知识库未完成登记；请重新选择目录后重试，外部笔记未改写。';
+      this.pendingExternalDirectory = null;
       this.showFailureFeedback('authorization', 'permission', 'unknown', 'status_unknown', 'check_status', detail);
       return false;
     }
 
     this.pendingExternalDirectory = null;
+    this.importVaultDialogBusy = false;
     this.importVaultCtl?.close();
     this.refreshFromRegistry();
     promptAction.showToast({ message: '目录已关联为知识库' });
     if (registered !== null) {
       void this.switchVault(registered.id);
     }
+    this.restoreImportTriggerFocus();
     return true;
   }
 
@@ -9190,8 +9217,7 @@ struct Index {
         this.openQuickSwitcher();
       },
       onImportVault: (): void => {
-        this.closeNoteNavigation();
-        void this.openImportVaultDialog();
+        void this.openImportVaultDialog('vault-switcher-trigger');
       },
       onCreateNote: (): void => {
         this.closeNoteNavigation();
@@ -11146,7 +11172,7 @@ struct Index {
         this.openCreateDialog();
       },
       onImportVault: (): void => {
-        void this.openImportVaultDialog();
+        void this.openImportVaultDialog('vault-manager-import-button');
       }
     })
   }
@@ -11205,7 +11231,7 @@ struct Index {
       onOpenNote: (path: string): void => { this.openAgentNote(path); },
       onSwitchVault: (id: string): void => { this.doSwitchVault(id); },
       onManageVaults: (): void => { void this.openVaultManager('agent'); },
-      onImportVault: (): void => { void this.openImportVaultDialog(); },
+      onImportVault: (): void => { void this.openImportVaultDialog('vault-switcher-trigger'); },
       onNavigationDragStart: (): void => { this.startNavigationDrag(true); },
       onNavigationDrag: (offsetX: number): void => { this.updateNavigationDrag(offsetX, true); },
       onSplitDragEnd: (): void => { this.endSplitDrag(); },

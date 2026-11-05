@@ -477,6 +477,8 @@ export struct VaultSidebar {
         // 原型 --elev-1 的单层近似
         .shadow({ radius: 8, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 2 })
         .alignItems(VerticalAlign.Center)
+        .focusable(true)
+        .id('vault-switcher-trigger')
         .onClick(() => {
           this.menuOpen = !this.menuOpen;
         })

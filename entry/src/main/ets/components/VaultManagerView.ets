@@ -183,6 +183,8 @@ export struct VaultManagerView {
             .borderRadius(Radius.card)
             .border({ width: 1, color: $r('app.color.line_strong'), style: BorderStyle.Dashed })
             .margin({ top: Space.s2 })
+            .focusable(true)
+            .id('vault-manager-import-button')
             .onClick(() => { this.onImportVault(); })
 
           // 解除关联只移除 App 记录，外部目录和原文件保留

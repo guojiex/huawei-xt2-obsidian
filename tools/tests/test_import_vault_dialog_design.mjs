@@ -10,6 +10,7 @@ const dialogSource = readSourceFile(new URL('../../entry/src/main/ets/components
 const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const syncSource = readSourceFile(new URL('../../entry/src/main/ets/pages/SyncPage.ets', import.meta.url));
 const vaultManagerSource = readSourceFile(new URL('../../entry/src/main/ets/components/VaultManagerView.ets', import.meta.url));
+const utilityShellSource = readSourceFile(new URL('../../entry/src/main/ets/components/UtilityDialogShell.ets', import.meta.url));
 
 function extract(startMarker, endMarker) {
   const start = dialogSource.indexOf(startMarker);
@@ -20,16 +21,23 @@ function extract(startMarker, endMarker) {
 
 const harnessCode = transformSync(`
 class ImportVaultDialogHarness {
+  ${extract('  private setWorking(', '\n  private isGiteeRemote(')}
   ${extract('  private isGiteeRemote(', '\n  private clearGitCredentials(')}
   ${extract('  private clearGitCredentials(', '\n  private toggleGitTokenVisibility(')}
   ${extract('  private toggleGitTokenVisibility(', '\n  private close(')}
   ${extract('  private close(', '\n  aboutToDisappear(')}
   ${extract('  aboutToDisappear(): void {', '\n  private chooseSource(')}
-  ${extract('  private chooseSource(', '\n  @Builder')}
+  ${extract('  private chooseSource(', '\n  private hasPicked(')}
+  ${extract('  private hasPicked(', '\n  private continueGit(')}
+  ${extract('  private continueGit(', '\n  @Builder')}
   constructor() {
     this.source = 'local';
     this.working = false;
     this.pickedName = '';
+    this.directoryState = 'unselected';
+    this.directoryStatus = '';
+    this.associating = false;
+    this.busyChanges = [];
     this.gitRemote = '';
     this.gitBranch = 'main';
     this.gitUsername = '';
@@ -40,11 +48,19 @@ class ImportVaultDialogHarness {
     this.drafts = [];
     this.calls = [];
     this.pickResult = null;
+    this.pickError = false;
     this.associateResult = false;
     this.controller = { close: () => { this.closed++; } };
     this.onContinueGit = draft => this.drafts.push(draft);
     this.onCancel = () => { this.cancelled = true; };
-    this.onChooseDirectory = async () => { this.calls.push('choose'); return this.pickResult; };
+    this.onBusyChange = busy => this.busyChanges.push(busy);
+    this.onChooseDirectory = async () => {
+      this.calls.push('choose');
+      if (this.pickError) {
+        throw new Error('private picker detail');
+      }
+      return this.pickResult;
+    };
     this.onAssociateDirectory = async () => { this.calls.push('associate'); return this.associateResult; };
   }
 }
@@ -65,7 +81,7 @@ function plain(value) {
 test('import dialog exposes local and Git sources and defaults to local', () => {
   assert.match(dialogSource, /title: '导入库'/);
   assert.match(dialogSource, /closeLabel: '关闭导入库'/);
-  assert.match(dialogSource, /subtitle: '把已有的笔记，带进你的工作台。'/);
+  assert.match(dialogSource, /subtitle: '关联已有的 Markdown 笔记目录'/);
   assert.match(dialogSource, /@State source: string = 'local'/);
   const content = dialogSource.slice(
     dialogSource.indexOf('  DialogContent() {'),
@@ -86,12 +102,15 @@ test('source tabs ignore changes while the import dialog is busy', () => {
   assert.equal(dialog.source, 'git');
 });
 
-test('local directory card shows selection affordance and the non-copy/remove boundary', () => {
-  assert.match(dialogSource, /Text\('使用手机里的笔记目录'\)/);
-  assert.match(dialogSource, /Icon\('folder', Space\.s6, \$r\('app\.color\.brand'\)\)/);
-  assert.match(dialogSource, /this\.hasPicked\(\) \? this\.pickedName : '选择本地目录'/);
-  assert.match(dialogSource, /从系统目录选择器中选择文件夹/);
-  assert.match(dialogSource, /直接读写原目录，不复制文件。移除库只解除关联，原目录和文件保留。/);
+test('local directory card exposes three states and the non-copy/remove boundary', () => {
+  assert.match(dialogSource, /return this\.directoryState === 'failed' \? '未获得目录授权' : '选择笔记目录'/);
+  assert.match(dialogSource, /return '系统授权目录 · 关联后直接读写'/);
+  assert.match(dialogSource, /没有登记知识库，可重新选择目录。/);
+  assert.match(dialogSource, /return this\.directoryState === 'failed' \? '重试' : '选择'/);
+  assert.match(dialogSource, /this\.DirectoryFact\('link', '直接使用原目录', '不复制文件，笔记改动直接写回该目录'\)/);
+  assert.match(dialogSource, /this\.DirectoryFact\('check', '移除只解除关联', '原目录和其中的文件都会保留'\)/);
+  assert.match(dialogSource, /\.focusable\(!this\.working\)[\s\S]*?\.id\('import-directory-card'\)[\s\S]*?\.accessibilityText\(this\.directoryCardAccessibilityText\(\)\)/);
+  assert.doesNotMatch(dialogSource, /selection\.uri|rootUri/);
   assert.match(dialogSource, /void this\.pickDirectory\(\)/);
 });
 
@@ -120,7 +139,8 @@ test('Git source collects provider credentials in the dialog and documents safe 
   assert.match(syncSource, /TextInput\(\{ placeholder: '私有库填 Access Token/);
   assert.match(indexSource, /onContinueGit: \(draft: GitImportDraft\): void => \{\s*void this\.openGitSyncPage\(draft\);/);
   assert.match(indexSource, /GitImportDraftStore\.set\(draft\);[\s\S]*?router\.pushUrl\(\{ url: 'pages\/SyncPage' \}\)/);
-  assert.match(indexSource, /cancel: \(\): void => \{\s*GitImportDraftStore\.clear\(\);/);
+  assert.match(indexSource, /cancel: \(\): void => \{\s*if \(!this\.importVaultDialogBusy\) \{\s*clearImportDraft\(\);/);
+  assert.match(indexSource, /onCancel: clearImportDraft/);
 });
 
 test('Git handoff keeps credentials in memory and clears dialog state before navigation', () => {
@@ -180,11 +200,20 @@ test('picked directory lives in dialog @State, not in a @Prop the parent cannot 
   // 「关联此目录」会一直是灰的。弹窗必须自己持有选中状态。
   assert.doesNotMatch(dialogSource, /@Prop hasDirectorySelection|@Prop directoryName|@Prop busy/);
   assert.match(dialogSource, /@State pickedName: string = ''/);
+  assert.match(dialogSource, /@State directoryState: string = 'unselected'/);
+  assert.match(dialogSource, /@State directoryStatus: string = ''/);
   assert.match(dialogSource, /@State working: boolean = false/);
-  assert.match(dialogSource, /UtilityDialogAction\(this\.working \? '处理中…' : '关联此目录', 'primary',\s*this\.singleScreen, this\.hasPicked\(\) && !this\.working/);
+  assert.match(dialogSource, /UtilityDialogAction\(this\.associating \? '正在关联…' : '关联此目录', 'primary',\s*this\.singleScreen, this\.hasPicked\(\) && !this\.working/);
   assert.match(indexSource, /onChooseDirectory: \(\): Promise<string \| null> => this\.chooseExternalDirectory\(\)/);
   assert.match(indexSource, /onAssociateDirectory: \(\): Promise<boolean> => this\.associateExternalDirectory\(\)/);
-  assert.doesNotMatch(indexSource, /importHasDirectorySelection|importDirectoryName|importVaultBusy/);
+  assert.match(indexSource, /onBusyChange: \(busy: boolean\): void => \{ this\.importVaultDialogBusy = busy; \}/);
+  assert.match(indexSource, /onWillDismiss: \(action: DismissDialogAction\): void => \{\s*if \(!this\.importVaultDialogBusy\) \{\s*action\.dismiss\(\);/);
+  assert.match(indexSource, /this\.pendingExternalDirectory = null;\s*this\.showFailureFeedback\('authorization', 'permission', 'unknown', 'status_unknown'/);
+  assert.match(indexSource, /restoreImportFocus\(\);[\s\S]*?this\.importVaultDialogBusy = false;\s*this\.importVaultCtl\?\.close\(\)/);
+  assert.match(indexSource, /vault-manager-import-button/);
+  assert.match(vaultManagerSource, /\.focusable\(true\)\s*\.id\('vault-manager-import-button'\)/);
+  assert.doesNotMatch(indexSource, /importHasDirectorySelection|importDirectoryName/);
+  assert.match(utilityShellSource, /\.onClick\(onClick\)\s*\.focusable\(keyboardFocusable && enabled\)/);
 });
 
 test('directory pick updates the dialog state and releases the busy guard', async () => {
@@ -193,14 +222,58 @@ test('directory pick updates the dialog state and releases the busy guard', asyn
   await dialog.pickDirectory();
   assert.equal(dialog.pickedName, '', 'cancelled pick must not enable the associate button');
   assert.equal(dialog.hasPicked(), false);
+  assert.equal(dialog.directoryState, 'unselected');
+  assert.equal(dialog.directoryStatus, '已取消选择');
   assert.equal(dialog.working, false);
   assert.deepEqual(plain(dialog.calls), ['choose']);
 
   dialog.pickResult = '笔记';
   await dialog.pickDirectory();
   assert.equal(dialog.pickedName, '笔记');
+  assert.equal(dialog.directoryState, 'selected');
+  assert.equal(dialog.directoryStatus, '');
   assert.equal(dialog.hasPicked(), true);
   assert.equal(dialog.working, false);
+
+  dialog.pickResult = null;
+  await dialog.pickDirectory();
+  assert.equal(dialog.pickedName, '笔记', 'cancel after selection must preserve the previous directory');
+  assert.equal(dialog.directoryState, 'selected');
+  assert.equal(dialog.directoryStatus, '已取消选择');
+});
+
+test('picker failure shows a retry state without exposing the raw error', async () => {
+  const dialog = createHarness();
+  dialog.pickError = true;
+  await dialog.pickDirectory();
+  assert.equal(dialog.directoryState, 'failed');
+  assert.equal(dialog.directoryStatus, '目录授权未完成；没有登记知识库，请重新选择目录。');
+  assert.equal(dialog.hasPicked(), false);
+  assert.equal(dialog.directoryStatus.includes('private picker detail'), false);
+  assert.deepEqual(plain(dialog.busyChanges), [true, false]);
+});
+
+test('pending picker locks duplicate taps and dialog dismissal until it returns', async () => {
+  const dialog = createHarness();
+  let finishPick;
+  dialog.onChooseDirectory = () => {
+    dialog.calls.push('choose');
+    return new Promise(resolve => { finishPick = resolve; });
+  };
+
+  const picking = dialog.pickDirectory();
+  assert.equal(dialog.working, true);
+  dialog.close();
+  await dialog.pickDirectory();
+  assert.equal(dialog.closed, 0, 'dismissal must not race an active picker');
+  assert.deepEqual(plain(dialog.calls), ['choose'], 'a second tap must not open another picker');
+
+  finishPick(null);
+  await picking;
+  assert.equal(dialog.directoryState, 'unselected');
+  assert.equal(dialog.directoryStatus, '已取消选择');
+  assert.equal(dialog.working, false);
+  assert.deepEqual(plain(dialog.busyChanges), [true, false]);
 });
 
 test('associate runs only after a pick and stays open when the parent reports failure', async () => {
@@ -210,10 +283,15 @@ test('associate runs only after a pick and stays open when the parent reports fa
   assert.equal(dialog.working, false);
 
   dialog.pickedName = '笔记';
+  dialog.directoryState = 'selected';
   dialog.associateResult = false;
   await dialog.associateDirectory();
   assert.deepEqual(plain(dialog.calls), ['associate']);
   assert.equal(dialog.working, false, 'a failed associate must release the busy guard so it can be retried');
+  assert.equal(dialog.associating, false);
+  assert.equal(dialog.directoryState, 'failed');
+  assert.match(dialog.directoryStatus, /没有登记知识库，原目录未改写/);
+  assert.equal(dialog.pickedName, '笔记', 'failure keeps the chosen display name available for context');
   assert.equal(dialog.closed, 0, 'the dialog stays open; the parent owns closing on success');
 });
 
@@ -221,6 +299,10 @@ test('narrow and short windows keep the dialog within bounds and scroll the cont
   assert.match(dialogSource, /preferredWidthVp: Size\.importDialogW/);
   assert.match(dialogSource, /singleScreen: this\.singleScreen/);
   assert.match(dialogSource, /\.constraintSize\(\{ maxHeight: Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 6\) \}\)/);
+  assert.match(dialogSource, /UtilityDialogShell\(\{[\s\S]*?scrollContent: false,[\s\S]*?content: this\.DialogContent,[\s\S]*?footer: this\.DialogFooter/);
+  assert.match(dialogSource, /\.focusable\(!this\.working\)[\s\S]*?\.id\('import-directory-card'\)/);
+  assert.match(dialogSource, /UtilityDialogAction\('取消', 'secondary', this\.singleScreen, !this\.working/);
   assert.match(indexSource, /singleScreen: importSheet,[\s\S]*?windowWidthVp: this\.windowWidthVp,\s*windowHeightVp: this\.windowHeightVp/);
   assert.match(indexSource, /alignment: importSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
+  assert.match(indexSource, /requestFocus\(focusReturnId\)/);
 });
