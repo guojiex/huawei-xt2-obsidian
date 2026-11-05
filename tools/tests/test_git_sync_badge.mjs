@@ -87,7 +87,10 @@ test('Git entry visibility does not gate remote-link sharing', () => {
   const { app } = createHarness({ aheadCount: 123 });
   app.gitAheadCommitCount = 123;
   assert.equal(app.gitAheadBadgeLabel(), '99+');
-  assert.match(source, /Text\(this\.gitAheadCommitCount\.toString\(\) \+ ' 个待推送'\)/);
+  // v1.31 31.4：单屏菜单待推送改为蓝底圆形计数徽标（gitAheadBadgeLabel），不再是链接样式小字
+  assert.match(source, /Text\(this\.gitAheadBadgeLabel\(\)\)/);
+  assert.match(source, /' 个提交待推送'/);
+  assert.doesNotMatch(source, /' 个待推送'/);
   assert.match(source, /this\.GitSyncButton\(\)/);
   assert.match(source, /const GIT_ENTRY_UI_ENABLED: boolean = true/);
   assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);

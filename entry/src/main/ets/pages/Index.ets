@@ -63,7 +63,7 @@ import {
 } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
 import { Icon } from '../common/Icons';
-import { Space, Radius, FontSize, Size, Motion } from '../common/Tokens';
+import { Space, Radius, FontSize, Size, Motion, Shadow } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
 import { EditorExperienceMode, DEFAULT_EDITOR_EXPERIENCE } from '../model/EditorExperiencePolicy';
@@ -220,6 +220,8 @@ struct Index {
   @State agentRenameSeq: number = 0;
   @State moreMenuOpen: boolean = false;
   @State focusMoreMenuOnAppear: boolean = false;
+  /** v1.31 31.2：单屏更多菜单当前悬停项（hover 高亮 --nav 底） */
+  @State mobileMoreHoveredAction: string = '';
   @State paneMoreHoveredAction: string = '';
   @State formatMenuOpen: boolean = false;
   @State formatMenuPane: string = 'left';
@@ -2568,6 +2570,12 @@ struct Index {
 
   private currentNoteName(): string {
     const name: string = this.currentFileName();
+    return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
+  }
+
+  /** v1.31 31.1：切换笔记项显示笔记标题（去 .md），不显示带扩展名的文件名 */
+  private paneNoteTitle(path: string): string {
+    const name: string = path.substring(path.lastIndexOf('/') + 1);
     return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
   }
 
@@ -9645,13 +9653,15 @@ struct Index {
       builder: this.MoreMenu(),
       placement: Placement.BottomRight,
       enableArrow: false,
-      offset: { x: 0, y: Space.s2 },
+      offset: { x: 0, y: Space.s1 },
       mask: false,
       autoCancel: true,
       popupColor: Color.Transparent,
       onWillDismiss: (action: DismissPopupAction): void => {
         action.dismiss();
         this.moreMenuOpen = false;
+        // v1.31 31.6：点外部关闭后把焦点还给「…」
+        this.getUIContext().getFocusController().requestFocus('workspace-more-button');
       }
     })
   }
@@ -9659,134 +9669,191 @@ struct Index {
   @Builder
   MoreMenu() {
     Column() {
-      Text('编辑模式')
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_tertiary'))
-        .width('100%')
-        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s1 })
-      this.ExperienceMenuItem('simple', '简单模式', 'simpleMode')
-      this.ExperienceMenuItem('professional', '专业模式', 'professionalMode')
-      if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
-        Row() {
-          Text('同步到 Git')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-          if (this.gitAheadCommitCount > 0) {
-            Text(this.gitAheadCommitCount.toString() + ' 个待推送')
-              .fontSize(FontSize.caption)
-              .fontColor($r('app.color.brand'))
-              .maxLines(1)
-          }
-        }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .onClick((): void => {
-          void this.openGitSyncPage();
-        })
-      }
-      Row() {
-        Text('分享笔记')
-          .fontSize(FontSize.body2)
-          .fontColor(this.activeFilePath().length > 0
-            ? $r('app.color.text_primary') : $r('app.color.text_disabled'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .enabled(this.activeFilePath().length > 0)
-      .onClick(() => {
-        this.moreMenuOpen = false;
-        this.openShareNoteDialog();
-      })
-      Row() {
-        Text('设置与关于')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .onClick(() => {
-        this.moreMenuOpen = false;
-        this.openSettings('note', 'general');
-      })
-      Row() {
-        Text(this.activeFilePath().length > 0 && this.backlinksExpanded &&
-          this.backlinksPane === this.activePane ? '隐藏反链' : '查看反链')
-          .fontSize(FontSize.body2)
-          .fontColor(this.activeFilePath().length > 0
-            ? $r('app.color.text_primary') : $r('app.color.text_disabled'))
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s3, right: Space.s3 })
-      .enabled(this.activeFilePath().length > 0)
-      .onClick((): void => {
-        this.moreMenuOpen = false;
-        this.toggleBacklinks(this.activePane);
-      })
-      if (this.experienceMode === 'professional' && this.currentFilePath.length > 0 && this.rightFilePath.length > 0 &&
-        this.currentFilePath !== this.rightFilePath) {
-        Row() {
-          Text('切换到 ' + (this.activePane === 'left'
-            ? this.rightFilePath.substring(this.rightFilePath.lastIndexOf('/') + 1)
-            : this.currentFilePath.substring(this.currentFilePath.lastIndexOf('/') + 1)))
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .onClick((): void => {
-          this.moreMenuOpen = false;
-          this.toggleActivePane();
-        })
-      }
+      // 31.1 三组：当前笔记 / 编辑模式 / 应用
+      this.MobileMoreMenuNoteGroup()
+      this.MobileMoreMenuExperienceGroup()
+      this.MobileMoreMenuAppGroup()
     }
-    .width(Size.sidebarW)
-    .padding(Space.s2)
+    // 31.6 外形：min-width s16×4.25（272），上下内边距 s1，--r 圆角 + --float-shadow
+    .constraintSize({ minWidth: Space.s16 * 4.25 })
+    .padding({ top: Space.s1, bottom: Space.s1 })
     .borderRadius(Radius.menu)
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
+    .shadow({ radius: Shadow.floatBlur, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 8 })
+    // 31.6：Escape 关闭并把焦点还给「…」
+    .onKeyEvent((event: KeyEvent): boolean => {
+      if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+        this.moreMenuOpen = false;
+        this.getUIContext().getFocusController().requestFocus('workspace-more-button');
+        return true;
+      }
+      return false;
+    })
   }
 
+  /** v1.31 31.1：组一「当前笔记」——分享 → 反链 → 切换（切换仅两栏为不同笔记时）；组间 --line 细分隔线 */
   @Builder
-  ExperienceMenuItem(mode: EditorExperienceMode, label: string, icon: string) {
-    Row({ space: Space.s2 }) {
-      Icon(icon, Space.s4, this.experienceMode === mode
-        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+  MobileMoreMenuNoteGroup() {
+    Column() {
+      this.MobileMoreMenuItem('share', 'share', '分享笔记',
+        this.activeFilePath().length > 0, (): void => {
+          this.openShareNoteDialog();
+        })
+      this.MobileMoreMenuItem('backlinks', 'link',
+        this.backlinksExpanded && this.backlinksPane === this.activePane ? '隐藏反链' : '查看反链',
+        this.activeFilePath().length > 0, (): void => {
+          this.toggleBacklinks(this.activePane);
+        })
+      if (this.experienceMode === 'professional' && this.currentFilePath.length > 0 &&
+        this.rightFilePath.length > 0 && this.currentFilePath !== this.rightFilePath) {
+        this.MobileMoreMenuItem('switch', 'swap',
+          '切换到笔记：' + (this.activePane === 'left'
+            ? this.paneNoteTitle(this.rightFilePath)
+            : this.paneNoteTitle(this.currentFilePath)),
+          true, (): void => {
+            this.toggleActivePane();
+          })
+      }
+    }
+    .width('100%')
+    .padding({ top: Space.s1, bottom: Space.s1, left: Space.s2, right: Space.s2 })
+  }
+
+  /** v1.31 31.3：组二「编辑模式」——笔线稿 + 标题与简单/专业分段同行；选中 --blue-soft 底 + --blue 字 + 600 字重 */
+  @Builder
+  MobileMoreMenuExperienceGroup() {
+    Row() {
+      Row({ space: Space.s3 }) {
+        Icon('rename', Space.s5, $r('app.color.text_primary'))
+        Text('编辑模式')
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.text_primary'))
+      }
+      Row({ space: Space.s1 }) {
+        this.MobileMoreSegButton('simple', '简单')
+        this.MobileMoreSegButton('professional', '专业')
+      }
+      .padding(Space.s1)
+      .borderRadius(Radius.full)
+      .backgroundColor($r('app.color.bg_secondary'))
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.SpaceBetween)
+    .alignItems(VerticalAlign.Center)
+    .padding({ top: Space.s2, bottom: Space.s2, left: Space.s5, right: Space.s2 })
+    .border({ width: { top: 1 }, color: $r('app.color.line') })
+  }
+
+  /** v1.31 31.1：组三「应用」——同步到 Git（仅 Git 库）→ 设置与关于（设置始终在末尾） */
+  @Builder
+  MobileMoreMenuAppGroup() {
+    Column() {
+      if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
+        this.MobileMoreGitSyncItem()
+      }
+      this.MobileMoreMenuItem('settings', 'settings', '设置与关于', true, (): void => {
+        this.openSettings('note', 'general');
+      })
+    }
+    .width('100%')
+    .padding({ top: Space.s1, bottom: Space.s1, left: Space.s2, right: Space.s2 })
+    .border({ width: { top: 1 }, color: $r('app.color.line') })
+  }
+
+  /** v1.31 31.2：单屏菜单图标行——20 线稿 + body 文本 + 48 行高 + hover --nav 底；文本过长省略；31.5 禁用 40% */
+  @Builder
+  MobileMoreMenuItem(action: string, icon: string, label: string, isEnabled: boolean, onTap: () => void) {
+    Row({ space: Space.s3 }) {
+      Icon(icon, Space.s5, $r('app.color.text_secondary'))
       Text(label)
-        .fontSize(FontSize.body2)
-        .fontColor(this.experienceMode === mode ? $r('app.color.brand') : $r('app.color.text_primary'))
-        .fontWeight(this.experienceMode === mode ? FontWeight.Medium : FontWeight.Normal)
+        .fontSize(FontSize.body1)
+        .fontColor($r('app.color.text_primary'))
         .layoutWeight(1)
-      if (this.experienceMode === mode) {
-        Text('✓')
-          .fontSize(FontSize.body2)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.brand'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .borderRadius(Radius.control)
+    .backgroundColor(this.mobileMoreHoveredAction === action
+      ? $r('app.color.bg_secondary') : Color.Transparent)
+    .opacity(isEnabled ? 1 : 0.4)
+    .enabled(isEnabled)
+    .focusable(true)
+    .onHover((isHover: boolean): void => {
+      this.mobileMoreHoveredAction = isHover && isEnabled ? action : '';
+    })
+    .onClick((): void => {
+      this.moreMenuOpen = false;
+      onTap();
+    })
+    .accessibilityText(label)
+  }
+
+  /** v1.31 31.3：分段按钮——选择后立即生效并关闭菜单（沿用 v1.7 行为） */
+  @Builder
+  MobileMoreSegButton(mode: EditorExperienceMode, label: string) {
+    Text(label)
+      .fontSize(FontSize.body2)
+      .fontWeight(this.experienceMode === mode ? 600 : 400)
+      .fontColor(this.experienceMode === mode ? $r('app.color.brand') : $r('app.color.text_primary'))
+      .textAlign(TextAlign.Center)
+      .height(Space.s10)
+      .padding({ left: Space.s4, right: Space.s4 })
+      .borderRadius(Radius.full)
+      .backgroundColor(this.experienceMode === mode ? $r('app.color.brand_bg') : Color.Transparent)
+      .focusable(true)
+      .accessibilityText(label + (this.experienceMode === mode ? '，已选中' : ''))
+      .onClick((): void => {
+        this.moreMenuOpen = false;
+        void this.selectEditorExperience(mode);
+      })
+  }
+
+  /** v1.31 31.4：同步到 Git——待推送为 --blue 底圆形计数徽标（与顶栏角标一致），读屏「N 个提交待推送」 */
+  @Builder
+  MobileMoreGitSyncItem() {
+    Row({ space: Space.s3 }) {
+      Icon('sync', Space.s5, $r('app.color.text_secondary'))
+      Text('同步到 Git')
+        .fontSize(FontSize.body1)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.gitAheadCommitCount > 0) {
+        Text(this.gitAheadBadgeLabel())
+          .fontSize(FontSize.caption)
+          .fontWeight(600)
+          .lineHeight(Space.s5)
+          .fontColor($r('app.color.on_brand'))
+          .textAlign(TextAlign.Center)
+          .constraintSize({ minWidth: Space.s5 })
+          .padding({ left: Space.s1, right: Space.s1 })
+          .borderRadius(Radius.full)
+          .backgroundColor($r('app.color.brand'))
+          .accessibilityText(this.gitAheadCommitCount.toString() + ' 个提交待推送')
       }
     }
     .width('100%')
     .height(Size.touch)
     .padding({ left: Space.s3, right: Space.s3 })
     .borderRadius(Radius.control)
-    .backgroundColor(this.experienceMode === mode ? $r('app.color.brand_bg') : Color.Transparent)
+    .backgroundColor(this.mobileMoreHoveredAction === 'sync'
+      ? $r('app.color.bg_secondary') : Color.Transparent)
     .focusable(true)
-    .accessibilityText(label + (this.experienceMode === mode ? '，已选中' : ''))
+    .onHover((isHover: boolean): void => {
+      this.mobileMoreHoveredAction = isHover ? 'sync' : '';
+    })
     .onClick((): void => {
       this.moreMenuOpen = false;
-      void this.selectEditorExperience(mode);
+      void this.openGitSyncPage();
     })
+    .accessibilityText('同步到 Git')
+    .accessibilityTextHint(this.gitAheadCommitCount > 0
+      ? '有 ' + this.gitAheadCommitCount.toString() + ' 个提交待推送' : '打开 Git 同步页')
   }
 
   @Builder

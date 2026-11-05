@@ -107,8 +107,9 @@ test('the workspace loads mode independently of restored editor and preview flag
   assert.ok(selection.indexOf('await this.flushWorkspaceSaves()') < selection.indexOf('save(mode)'));
   assert.match(selection, /this\.experienceMode = mode;/);
   assert.match(indexSource, /偏好保存失败；重启后无法保证保留本次选择/);
-  assert.match(indexSource, /this\.ExperienceMenuItem\('simple', '简单模式'/);
-  assert.match(indexSource, /this\.ExperienceMenuItem\('professional', '专业模式'/);
+  // v1.31 31.3：编辑模式改为一行分段（简单/专业），不再用两行菜单项
+  assert.match(indexSource, /this\.MobileMoreSegButton\('simple', '简单'\)/);
+  assert.match(indexSource, /this\.MobileMoreSegButton\('professional', '专业'\)/);
   assert.match(indexSource, /onExperienceModeChange: \(mode: EditorExperienceMode\): void => \{ void this\.selectEditorExperience\(mode\); \}/);
   assert.match(settingsSource, /ExperienceModeRow\('simple', '简单模式'/);
   assert.match(settingsSource, /ExperienceModeRow\('professional', '专业模式'/);
