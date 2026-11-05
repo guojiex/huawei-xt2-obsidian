@@ -28,6 +28,7 @@ function session(overrides = {}) {
     leftMode: 'edit',
     rightEditing: false,
     activePane: 'left',
+    rightPaneIntentionallyEmpty: false,
     referenceVisible: true,
     sidebarCollapsed: true,
     drawerOpen: false,
@@ -59,6 +60,19 @@ test('workspace session rejects unknown versions and invalid enum or scroll stat
   assert.equal(parseWorkspaceSession(JSON.stringify(session({ leftMode: 'share' }))), null);
   assert.equal(parseWorkspaceSession(JSON.stringify(session({ rightPreviewScrollTop: -1 }))), null);
   assert.equal(parseWorkspaceSession('{broken'), null);
+});
+
+test('older workspace sessions default the intentional-empty marker to false', () => {
+  const older = session();
+  delete older.rightPaneIntentionallyEmpty;
+  assert.equal(parseWorkspaceSession(JSON.stringify(older)).rightPaneIntentionallyEmpty, false);
+  assert.equal(parseWorkspaceSession(JSON.stringify(session({
+    rightPaneIntentionallyEmpty: true,
+    rightPath: ''
+  }))).rightPaneIntentionallyEmpty, true);
+  assert.equal(parseWorkspaceSession(JSON.stringify(session({
+    rightPaneIntentionallyEmpty: 'true'
+  }))), null);
 });
 
 test('single-screen recovery keeps only the previously visible pane', () => {

@@ -22,6 +22,7 @@ const methods = [
   extract('  private setSimplePreviewDirty(', '\n  /** 等预览页就绪'),
   extract('  private waitForPreviewReady(', '\n  private simplePreviewDirty('),
   extract('  private simplePreviewDirty(', '\n  /**\n   * 把预览里最后一次'),
+  extract('  private async flushSimplePreviewPane(', '\n  private async flushSimplePreviewChanges('),
   extract('  private async flushSimplePreviewChanges(', '\n  private handleSimplePreviewEdit('),
   extract('  private handleSimplePreviewEdit(', '\n  private async refreshPreviewsForExperienceMode('),
   extract('  private async refreshPreviewsForExperienceMode(', '\n  private setShowLineNumbers('),
@@ -35,6 +36,7 @@ const methods = [
 ];
 const code = transformSync(`class IndexHarness {
   ${methods.join('\n\n  ')}
+  paneFilePath(pane) { return pane === 'right' ? this.rightFilePath : this.currentFilePath; }
   ensureEditorExperienceStore() {}
 }; module.exports = IndexHarness;`, { loader: 'ts', format: 'cjs' }).code;
 

@@ -197,6 +197,10 @@ struct Index {
   @State quickSwitchOpen: boolean = false;
   @State quickSwitchFiles: string[] = [];
   @State recentOpenPaths: string[] = [];
+  @State leftLastClosedPath: string = '';
+  @State rightLastClosedPath: string = '';
+  @State private quickSwitchTargetPane: string = 'left';
+  @State paneCloseHovered: string = '';
   private recentOpenStore: RecentOpenStore | null = null;
   private recentErrorStore: RecentErrorStore | null = null;
   /** sm 抽屉开关（瞬态 @State：UIAbility 折叠切换不重建则存活，api_notes A4 ✅） */
@@ -367,6 +371,9 @@ struct Index {
   private workspaceSessionSaveTimer: number = -1;
   private workspaceSessionSaveFailureRecorded: boolean = false;
   private workspaceOpenRequests: number = 0;
+  private paneCloseRequestSequence: number = 0;
+  private leftCloseRequestId: number = 0;
+  private rightCloseRequestId: number = 0;
   private leftOpenRequestId: number = 0;
   private rightOpenRequestId: number = 0;
   private sharedEditabilityGeneration: number = 0;
@@ -396,6 +403,7 @@ struct Index {
   @State @Watch('onFormatContextChanged') currentFilePath: string = '';
   /** v2 的第二栏单独记住笔记；同篇双编辑仍通过现有 NoteService 保存到同一文件。 */
   @State @Watch('onFormatContextChanged') rightFilePath: string = '';
+  @State rightPaneIntentionallyEmpty: boolean = false;
   @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
   @State showLineNumbers: boolean = false;
   @State followPreviewEnabled: boolean = true;
@@ -576,6 +584,7 @@ struct Index {
     this.experienceMode = (this.editorExperienceStore as EditorExperienceStore).load();
     this.synchronizePreviewFollowContext();
     this.ensureRecentOpenStore();
+    this.refreshRecentOpenPaths();
     this.ensureSplitLayoutStore();
     const splitState = (this.splitLayoutStore as SplitLayoutStore).load();
     this.navigationRatio = splitState.navigationRatio;
@@ -781,70 +790,69 @@ struct Index {
    * 把预览里最后一次（可能还在防抖里没上报的）编辑回写进编辑器源码。
    * @returns 空串＝同步完成；非空＝失败原因，直接进 toast，用户能看出卡在哪一栏哪一步。
    */
-  private async flushSimplePreviewChanges(): Promise<string> {
-    for (const pane of ['left', 'right']) {
-      const label: string = pane === 'right' ? '右栏' : '左栏';
-      const notePath = pane === 'right' ? this.rightFilePath : this.currentFilePath;
-      if (notePath.length === 0) {
-        continue;
-      }
-      const vaultId: string = this.currentVaultId;
-      const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+  private async flushSimplePreviewPane(pane: string): Promise<string> {
+    const label: string = pane === 'right' ? '右栏' : '左栏';
+    const notePath: string = this.paneFilePath(pane);
+    if (notePath.length === 0) {
+      return '';
+    }
+    const vaultId: string = this.currentVaultId;
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+      return label + '笔记目标已变化';
+    }
+    if (!this.simplePreviewEditable(pane)) {
+      return '';
+    }
+    const preview: PreviewBridge = this.previewBridgeForPane(pane);
+    if (!preview.ready) {
+      await this.waitForPreviewReady(preview);
       if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
         return label + '笔记目标已变化';
       }
-      // 预览不可编辑（同篇双开时的非活动栏等）时内容不可能被改动，没有可同步的东西。
-      if (!this.simplePreviewEditable(pane)) {
-        continue;
+    }
+    if (!preview.ready) {
+      return this.simplePreviewDirty(pane) ? label + '预览尚未就绪，未能同步正文' : '';
+    }
+    const dirty: boolean = this.simplePreviewDirty(pane);
+    try {
+      await (pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit);
+      if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+        return label + '笔记目标已变化';
       }
-      const preview = this.previewBridgeForPane(pane);
-      if (!preview.ready) {
-        // 页面还没就绪就去等它就绪，而不是直接判失败把用户挡在模式切换外面。
-        await this.waitForPreviewReady(preview);
-        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
-          return label + '笔记目标已变化';
-        }
-      }
-      // 等完仍未就绪＝这一栏的预览根本没挂载，内存里不存在可编辑内容，无需同步。
-      if (!preview.ready) {
-        continue;
-      }
-      const dirty: boolean = this.simplePreviewDirty(pane);
+      let content: string = '';
       try {
-        await (pane === 'right' ? this.rightSimplePreviewCommit : this.leftSimplePreviewCommit);
+        content = await preview.requestEditableContent();
+      } catch {
         if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
           return label + '笔记目标已变化';
         }
-        let content: string = '';
-        try {
-          content = await preview.requestEditableContent();
-        } catch {
-          if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
-            return label + '笔记目标已变化';
-          }
-          // 页面不可见时预览可能不回内容：没改动就放弃这次收尾同步，有改动才拦住切换。
-          hilog.warn(DOMAIN, TAG, '%{public}s预览未回传正文', label);
-          if (dirty) {
-            return label + '预览未回传正文（页面可能不可见）';
-          }
-          continue;
-        }
-        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
-          return label + '笔记目标已变化';
-        }
-        if (!await this.commitSimplePreviewContent(pane, content, vaultId, notePath, requestId)) {
-          return label + '正文回写编辑器失败';
-        }
-        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
-          return label + '笔记目标已变化';
-        }
-      } catch (error) {
-        if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
-          return label + '笔记目标已变化';
-        }
-        const err = error as BusinessError;
-        hilog.error(DOMAIN, TAG, '%{public}s预览同步异常，错误码 %{public}d', label, err?.code ?? -1);
-        return label + '预览同步异常（code=' + (err?.code ?? -1).toString() + '）';
+        hilog.warn(DOMAIN, TAG, '%{public}s预览未回传正文', label);
+        return dirty ? label + '预览未回传正文（页面可能不可见）' : '';
+      }
+      if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+        return label + '笔记目标已变化';
+      }
+      if (!await this.commitSimplePreviewContent(pane, content, vaultId, notePath, requestId)) {
+        return label + '正文回写编辑器失败';
+      }
+      return this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)
+        ? '' : label + '笔记目标已变化';
+    } catch (error) {
+      if (!this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+        return label + '笔记目标已变化';
+      }
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '%{public}s预览同步异常，错误码 %{public}d', label, err?.code ?? -1);
+      return label + '预览同步异常（code=' + (err?.code ?? -1).toString() + '）';
+    }
+  }
+
+  private async flushSimplePreviewChanges(): Promise<string> {
+    for (const pane of ['left', 'right']) {
+      const error: string = await this.flushSimplePreviewPane(pane);
+      if (error.length > 0) {
+        return error;
       }
     }
     return '';
@@ -1010,6 +1018,7 @@ struct Index {
         const registry: VaultRegistry = VaultRegistry.get();
         const hasVault: boolean = registry.list().some((entry: VaultEntry): boolean => entry.id === session.vaultId);
         if (!hasVault) {
+          this.rightPaneIntentionallyEmpty = false;
           leftOpened = await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
             await this.readAndPush(path, false), async (): Promise<void> => {
               this.currentFilePath = '';
@@ -1039,6 +1048,7 @@ struct Index {
         this.smMode = session.leftMode;
         this.rightEditing = session.rightEditing;
         this.activePane = session.activePane;
+        this.rightPaneIntentionallyEmpty = session.rightPaneIntentionallyEmpty;
         this.sidebarTab = session.sidebarTab;
         this.selectedChapterIndex = -1;
         this.chapterPath = '';
@@ -1082,6 +1092,7 @@ struct Index {
         rightOpened = false;
         this.currentFilePath = '';
         this.rightFilePath = '';
+        this.rightPaneIntentionallyEmpty = false;
         this.sidebarTab = 'files';
         this.pendingRestoredChapterOffset = -1;
         this.committedLeftPath = '';
@@ -1263,6 +1274,7 @@ struct Index {
       leftMode: this.smMode,
       rightEditing: this.rightEditing,
       activePane: this.activePane,
+      rightPaneIntentionallyEmpty: this.rightPaneIntentionallyEmpty,
       referenceVisible: this.referenceVisible,
       sidebarCollapsed: this.sidebarCollapsed,
       drawerOpen: this.drawerOpen,
@@ -1716,9 +1728,37 @@ struct Index {
   }
 
   private refreshCurrentVaultNoteCount(): void {
-    this.currentVaultNoteCount = this.currentVaultId.length > 0
-      ? FileTree.allNotesOf(VaultRegistry.get().accessFor(this.currentVaultId)).length
-      : 0;
+    const paths: string[] = this.currentVaultId.length > 0
+      ? FileTree.allNotesOf(VaultRegistry.get().accessFor(this.currentVaultId)) : [];
+    this.currentVaultNoteCount = paths.length;
+    this.refreshRecentOpenPaths(paths);
+  }
+
+  private refreshRecentOpenPaths(validPaths?: string[]): void {
+    if (this.currentVaultId.length === 0) {
+      this.recentOpenPaths = [];
+      this.leftLastClosedPath = '';
+      this.rightLastClosedPath = '';
+      return;
+    }
+    const paths: string[] = validPaths === undefined
+      ? FileTree.allNotesOf(VaultRegistry.get().accessFor(this.currentVaultId)) : validPaths;
+    this.ensureRecentOpenStore();
+    const store: RecentOpenStore = this.recentOpenStore as RecentOpenStore;
+    this.recentOpenPaths = store.load(this.currentVaultId, paths);
+    this.leftLastClosedPath = store.loadClosed(this.currentVaultId, 'left', paths);
+    this.rightLastClosedPath = store.loadClosed(this.currentVaultId, 'right', paths);
+  }
+
+  private recordPaneOpened(vaultId: string, path: string, pane: string): void {
+    if (vaultId.length === 0 || path.length === 0) {
+      return;
+    }
+    this.ensureRecentOpenStore();
+    const store: RecentOpenStore = this.recentOpenStore as RecentOpenStore;
+    store.record(vaultId, path);
+    store.clearClosed(vaultId, pane);
+    this.refreshRecentOpenPaths();
   }
 
   /** 文件树内容变化时同步更新计数，并通知侧栏重扫。 */
@@ -2438,8 +2478,7 @@ struct Index {
     this.editorDirty = false;
     this.topView = 'note';
     await this.readAndPush(path);
-    this.ensureRecentOpenStore();
-    (this.recentOpenStore as RecentOpenStore).record(vaultId, path);
+    this.recordPaneOpened(vaultId, path, 'left');
   }
 
   /**
@@ -2468,6 +2507,7 @@ struct Index {
       this.refreshFromRegistry();
       this.currentFilePath = '';
       this.rightFilePath = '';
+      this.rightPaneIntentionallyEmpty = false;
       this.quickSwitchOpen = false;
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
@@ -2642,13 +2682,16 @@ struct Index {
     return this.activeEditorBridge();
   }
 
-  private setActivePane(pane: string): void {
-    this.activePane = pane === 'right' ? 'right' : 'left';
+  private setActivePane(pane: string, preserveEmpty: boolean = false): void {
+    const nextPane: string = pane === 'right' ? 'right' : 'left';
+    const paneChanged: boolean = this.activePane !== nextPane;
+    this.activePane = nextPane;
     this.scheduleWorkspaceSessionSave();
     void this.refreshSharedEditability();
     void this.refreshActiveChaptersFromBridge();
     void this.refreshBacklinks();
-    if (this.activePane === 'right' && this.rightFilePath.length === 0 && this.currentFilePath.length > 0) {
+    if (paneChanged && !preserveEmpty && !this.rightPaneIntentionallyEmpty && this.activePane === 'right' &&
+      this.rightFilePath.length === 0 && this.currentFilePath.length > 0) {
       void this.loadRightFile(this.currentFilePath);
     }
   }
@@ -5754,7 +5797,11 @@ struct Index {
    * 单屏态额外做两件事：关抽屉 + 回编辑态 —— 在只有一个栏位的地方点了文件，
    * 默认意图是「看/改它」，而不是开抽屉也不看 preview。
    */
-  private onSelectFile(relPath: string): void {
+  private onSelectFile(relPath: string, targetPane: string = this.activePane, returnFocus: boolean = false): void {
+    const pane: string = targetPane === 'right' ? 'right' : 'left';
+    if (pane !== this.activePane) {
+      this.setActivePane(pane, true);
+    }
     if (this.isSingleScreenLayout()) {
       this.setDrawerOpen(false);
       if (this.isSingleLandscape()) {
@@ -5762,10 +5809,250 @@ struct Index {
       }
       this.smMode = 'edit';
     }
-    if (this.activePane === 'right') {
-      void this.loadRightFile(relPath);
+    const vaultId: string = this.currentVaultId;
+    const opening: Promise<void> = pane === 'right'
+      ? this.loadRightFile(relPath) : this.loadFile(relPath);
+    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+    if (returnFocus) {
+      void opening.then((): void => {
+        const currentPath: string = this.paneFilePath(pane);
+        const currentRequestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
+        if (this.currentVaultId === vaultId && currentPath === relPath && currentRequestId === requestId) {
+          this.focusPaneBody(pane);
+        }
+      });
+    }
+  }
+
+  private async closePaneNote(paneName: string): Promise<void> {
+    const pane: string = paneName === 'right' ? 'right' : 'left';
+    const path: string = this.paneFilePath(pane);
+    const vaultId: string = this.currentVaultId;
+    if (this.topView !== 'note' || path.length === 0 || vaultId.length === 0) {
+      return;
+    }
+    if ((pane === 'right' ? this.rightCloseRequestId : this.leftCloseRequestId) > 0) {
+      return;
+    }
+    if (this.workspaceOpenRequests > 0) {
+      promptAction.showToast({ message: '笔记正在切换，请稍后再关闭' });
+      return;
+    }
+    const sharedNote: boolean = path === (pane === 'right' ? this.currentFilePath : this.rightFilePath);
+    const composing: boolean = pane === 'right' ? this.rightComposing : this.leftComposing;
+    if (composing || (sharedNote && (this.leftComposing || this.rightComposing))) {
+      promptAction.showToast({ message: '请先完成当前输入，再关闭笔记' });
+      return;
+    }
+
+    const leftRequestId: number = this.leftOpenRequestId;
+    const rightRequestId: number = this.rightOpenRequestId;
+    const previousRightEmpty: boolean = this.rightPaneIntentionallyEmpty;
+    const closeId: number = ++this.paneCloseRequestSequence;
+    if (pane === 'right') {
+      this.rightCloseRequestId = closeId;
     } else {
-      void this.loadFile(relPath);
+      this.leftCloseRequestId = closeId;
+    }
+    const isCurrentClose = (): boolean => this.currentVaultId === vaultId &&
+      this.paneFilePath(pane) === path && this.leftOpenRequestId === leftRequestId &&
+      this.rightOpenRequestId === rightRequestId && this.workspaceOpenRequests === 0 &&
+      (pane === 'right' ? this.rightCloseRequestId : this.leftCloseRequestId) === closeId;
+    let transition: number = -1;
+    let clearRequestId: number = 0;
+    let pointerCleared: boolean = false;
+    let clearCommitted: boolean = false;
+
+    try {
+      if (this.experienceMode === 'simple') {
+        const savePane: string = sharedNote ? this.simpleWorkspacePane() : pane;
+        const previewError: string = await this.flushSimplePreviewPane(savePane);
+        if (!isCurrentClose()) {
+          return;
+        }
+        if (previewError.length > 0) {
+          this.showFailureFeedback('note', 'bridge', 'unknown', 'not_completed', 'retry',
+            '笔记仍保持打开；' + previewError + '。请检查内容后重试。');
+          return;
+        }
+      }
+
+      let saved: boolean = false;
+      if (pane === 'right') {
+        saved = await this.flushRightSave(path, vaultId, false);
+      } else {
+        const source: EditorBridge = sharedNote ? this.sharedNoteEditor() : this.editorBridge;
+        saved = await this.flushSave(path, vaultId, source, false);
+      }
+      if (!saved || !isCurrentClose()) {
+        return;
+      }
+
+      this.setActivePane(pane, true);
+      if (this.formatMenuOpen && this.formatMenuPane === pane) {
+        this.closeFormatMenu();
+      }
+      if (this.tableGridOpen && this.tableGridPane === pane) {
+        this.tableGridOpen = false;
+      }
+      if (this.blockPanelPane === pane && this.isBlockPropertyPanelOpen()) {
+        this.closeBlockPropertyPanel(false);
+      }
+      if (this.blockToolbarPane === pane) {
+        this.closeBlockToolbar(false);
+      }
+      if (this.paneMorePane === pane) {
+        this.paneMoreOpen = false;
+        this.paneMoreHoveredAction = '';
+      }
+      if (this.backlinksPane === pane) {
+        this.backlinksExpanded = false;
+        this.backlinksPane = '';
+      }
+      this.paneCloseHovered = '';
+
+      const bridge: EditorBridge = pane === 'right' ? this.rightEditorBridge : this.editorBridge;
+      transition = bridge.beginDocumentTransition();
+      if (pane === 'right') {
+        clearRequestId = ++this.rightOpenRequestId;
+        this.rightFilePath = '';
+        this.rightPaneIntentionallyEmpty = true;
+      } else {
+        clearRequestId = ++this.leftOpenRequestId;
+        this.currentFilePath = '';
+      }
+      pointerCleared = true;
+      const cleared: boolean = pane === 'right'
+        ? await this.readRightAndPush('', clearRequestId, vaultId)
+        : await this.readAndPush('', false, clearRequestId, vaultId, this.rightOpenRequestId);
+      const clearStillCurrent: boolean = this.currentVaultId === vaultId &&
+        this.paneFilePath(pane).length === 0 &&
+        (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) === clearRequestId;
+      if (!clearStillCurrent) {
+        return;
+      }
+      if (!cleared) {
+        if (pane === 'right') {
+          this.rightFilePath = path;
+          this.rightPaneIntentionallyEmpty = false;
+          this.rightEditorBridge.restoreDocumentTransition(transition);
+          void this.readRightAndPush(path, clearRequestId, vaultId);
+        } else {
+          this.currentFilePath = path;
+          this.editorBridge.restoreDocumentTransition(transition);
+          void this.readAndPush(path, false, clearRequestId, vaultId, this.rightOpenRequestId);
+        }
+        this.showFailureFeedback('note', 'bridge', 'unknown', 'not_completed', 'reopen_note',
+          '笔记已保存，但栏位未能清空；原笔记仍保留，请重试关闭。');
+        return;
+      }
+
+      clearCommitted = true;
+      this.ensureRecentOpenStore();
+      const store: RecentOpenStore = this.recentOpenStore as RecentOpenStore;
+      store.recordClosed(vaultId, pane, path);
+      try {
+        this.refreshRecentOpenPaths();
+      } catch (error) {
+        hilog.warn(DOMAIN, TAG, '关闭后刷新最近笔记失败');
+      }
+      if (!this.flushWorkspaceSessionSave(true)) {
+        this.showFailureFeedback('workspace', 'save', 'storage_failure', 'not_completed', 'check_status',
+          '笔记已保存并关闭，但空栏状态未能写入工作区会话；重启后可能恢复旧布局。请检查存储状态。');
+      }
+      this.focusEmptyPane(pane);
+    } catch (error) {
+      const clearStillCurrent: boolean = pointerCleared && this.currentVaultId === vaultId &&
+        this.paneFilePath(pane).length === 0 &&
+        (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) === clearRequestId;
+      if (!clearCommitted && clearStillCurrent) {
+        if (pane === 'right') {
+          this.rightFilePath = path;
+          this.rightPaneIntentionallyEmpty = previousRightEmpty;
+          this.rightEditorBridge.restoreDocumentTransition(transition);
+          try {
+            await this.readRightAndPush(path, clearRequestId, vaultId);
+          } catch (restoreError) {
+            hilog.warn(DOMAIN, TAG, '关闭失败后恢复右栏内容失败');
+          }
+        } else {
+          this.currentFilePath = path;
+          this.editorBridge.restoreDocumentTransition(transition);
+          try {
+            await this.readAndPush(path, false, clearRequestId, vaultId, this.rightOpenRequestId);
+          } catch (restoreError) {
+            hilog.warn(DOMAIN, TAG, '关闭失败后恢复左栏内容失败');
+          }
+        }
+      }
+      if (clearCommitted) {
+        hilog.error(DOMAIN, TAG, '栏位已关闭，但关闭后的状态更新失败');
+        this.showFailureFeedback('workspace', 'save', 'storage_failure', 'not_completed', 'check_status',
+          '笔记已关闭，但工作区状态更新失败；重启后可能恢复旧布局。请检查存储状态。');
+      } else if (clearStillCurrent || isCurrentClose()) {
+        this.showFailureFeedback('note', 'save', 'unknown', 'not_completed', 'retry',
+          '笔记未关闭，当前内容仍保留。请检查保存状态后重试。');
+      }
+    } finally {
+      if (pane === 'right' && this.rightCloseRequestId === closeId) {
+        this.rightCloseRequestId = 0;
+      } else if (pane === 'left' && this.leftCloseRequestId === closeId) {
+        this.leftCloseRequestId = 0;
+      }
+    }
+  }
+
+  private focusEmptyPane(pane: string): void {
+    const focusId: string = this.paneLastClosedPath(pane).length > 0
+      ? 'pane-empty-reopen-' + pane : 'pane-empty-new-' + pane;
+    setTimeout((): void => {
+      this.getUIContext().getFocusController().requestFocus(focusId);
+    }, 0);
+  }
+
+  private focusPaneBody(pane: string): void {
+    const editing: boolean = this.experienceMode === 'professional' &&
+      (pane === 'right' ? this.rightEditing : this.smMode === 'edit');
+    if (editing) {
+      (pane === 'right' ? this.rightEditorBridge : this.editorBridge).focus();
+      return;
+    }
+    this.getUIContext().getFocusController().requestFocus(
+      pane === 'right' ? 'note-right-preview-web' : 'note-left-preview-web');
+  }
+
+  private paneLastClosedPath(pane: string): string {
+    return pane === 'right' ? this.rightLastClosedPath : this.leftLastClosedPath;
+  }
+
+  private paneRecentPaths(pane: string): string[] {
+    const closedPath: string = this.paneLastClosedPath(pane);
+    const paths: string[] = [];
+    for (const path of this.recentOpenPaths) {
+      if (path !== closedPath && paths.length < 4) {
+        paths.push(path);
+      }
+    }
+    return paths;
+  }
+
+  private noteTitleForPath(path: string): string {
+    const name: string = path.substring(path.lastIndexOf('/') + 1);
+    return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
+  }
+
+  private noteFolderForPath(path: string): string {
+    const slash: number = path.lastIndexOf('/');
+    return slash >= 0 ? path.substring(0, slash) : '根目录';
+  }
+
+  private openNoteNavigation(): void {
+    if (this.focused) {
+      this.focusNavigationOpen = true;
+    } else if (this.breakpoint === Breakpoint.SM) {
+      this.setDrawerOpen(true);
+    } else {
+      this.setSidebarCollapsed(false);
     }
   }
 
@@ -5784,10 +6071,15 @@ struct Index {
   }
 
   /** 打开快切时重新扫描当前库，候选与目录展开状态无关。 */
-  private openQuickSwitcher(): void {
+  private openQuickSwitcher(targetPane: string = this.activePane): void {
     if (this.topView !== 'note' || this.currentVaultId.length === 0) {
       return;
     }
+    const pane: string = targetPane === 'right' ? 'right' : 'left';
+    if (pane !== this.activePane) {
+      this.setActivePane(pane, true);
+    }
+    this.quickSwitchTargetPane = pane;
     const registry: VaultRegistry = VaultRegistry.get();
     const files: string[] = FileTree.allNotesOf(registry.accessFor(this.currentVaultId));
     this.ensureRecentOpenStore();
@@ -5799,7 +6091,7 @@ struct Index {
 
   private selectQuickSwitchFile(relPath: string): void {
     this.quickSwitchOpen = false;
-    this.onSelectFile(relPath);
+    this.onSelectFile(relPath, this.quickSwitchTargetPane, true);
   }
 
   private isCurrentLeftOpenTarget(path: string, vaultId: string, requestId: number = -1): boolean {
@@ -5886,7 +6178,8 @@ struct Index {
       this.editorBridge.restoreScrollTop(this.leftEditorScrollTop);
       this.previewBridge.restoreScrollTop(this.leftPreviewScrollTop);
     }
-    if (initializeRight && relPath.length > 0 && this.rightFilePath.length === 0) {
+    if (initializeRight && relPath.length > 0 && this.rightFilePath.length === 0 &&
+      !this.rightPaneIntentionallyEmpty) {
       if (effectiveRightRequestId === this.rightOpenRequestId) {
         this.rightFilePath = relPath;
         await this.readRightAndPush(relPath, effectiveRightRequestId, targetVaultId);
@@ -5999,6 +6292,9 @@ struct Index {
     }
     this.committedRightPath = relPath;
     this.committedRightVaultId = targetVaultId;
+    if (relPath.length > 0) {
+      this.rightPaneIntentionallyEmpty = false;
+    }
     this.applyRestoredChapterSelection();
     if (!this.workspaceSessionRestoring && relPath.length > 0 && this.topView === 'note') {
       this.workspaceSessionSavingEnabled = true;
@@ -6046,10 +6342,7 @@ struct Index {
       if (!this.isCurrentRightOpenTarget(relPath, vaultId, requestId)) {
         return;
       }
-      if (relPath.length > 0) {
-        this.ensureRecentOpenStore();
-        (this.recentOpenStore as RecentOpenStore).record(vaultId, relPath);
-      }
+      this.recordPaneOpened(vaultId, relPath, 'right');
     } finally {
       this.workspaceOpenRequests = Math.max(0, this.workspaceOpenRequests - 1);
       this.scheduleWorkspaceSessionSave();
@@ -6343,8 +6636,7 @@ struct Index {
       if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
         return;
       }
-      this.ensureRecentOpenStore();
-      (this.recentOpenStore as RecentOpenStore).record(vaultId, relPath);
+      this.recordPaneOpened(vaultId, relPath, 'left');
     } finally {
       this.workspaceOpenRequests = Math.max(0, this.workspaceOpenRequests - 1);
       this.scheduleWorkspaceSessionSave();
@@ -6868,6 +7160,7 @@ struct Index {
     const previousVaultId: string = this.currentVaultId;
     const previousFilePath: string = this.currentFilePath;
     const previousRightFilePath: string = this.rightFilePath;
+    const previousRightEmpty: boolean = this.rightPaneIntentionallyEmpty;
     const sessionSavingWasEnabled: boolean = this.workspaceSessionSavingEnabled;
     if (this.vaultSwitchInProgress || id === previousVaultId) {
       return;
@@ -6886,6 +7179,7 @@ struct Index {
       this.refreshFromRegistry();
       this.currentFilePath = '';
       this.rightFilePath = '';
+      this.rightPaneIntentionallyEmpty = false;
       this.quickSwitchOpen = false;
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
@@ -6907,6 +7201,7 @@ struct Index {
           }
           this.currentFilePath = previousFilePath;
           this.rightFilePath = previousRightFilePath;
+          this.rightPaneIntentionallyEmpty = previousRightEmpty;
           const leftRequestId: number = ++this.leftOpenRequestId;
           const rightRequestId: number = ++this.rightOpenRequestId;
           const leftRestored: boolean = await this.readAndPush(previousFilePath, false,
@@ -6927,6 +7222,7 @@ struct Index {
           this.refreshFromRegistry();
           this.currentFilePath = '';
           this.rightFilePath = '';
+          this.rightPaneIntentionallyEmpty = false;
           this.committedLeftPath = '';
           this.committedRightPath = '';
           this.committedLeftVaultId = '';
@@ -7040,7 +7336,7 @@ struct Index {
    * 3. 置 currentFilePath / revealPath / treeSeq —— 让用户立刻看到刚建的那篇。
    * 失败一律 toast，且**不改动任何 UI 状态**（笔记没建成就不该「选中」它）。
    */
-  private doCreateNote(rawName: string): void {
+  private doCreateNote(rawName: string, targetPane: string = 'left'): void {
     if (this.currentVaultId.length === 0) {
       promptAction.showToast({ message: '还没有笔记本' });
       return;
@@ -7049,8 +7345,8 @@ struct Index {
       const reg: VaultRegistry = VaultRegistry.get();
       const rel: string = NoteService.normalizeRelPath(rawName);
       const actual: string = NoteService.createNote(reg, this.currentVaultId, rel);
-      // 新笔记是空文件：先 flush 旧文件编辑，再指向新文件并加载空内容（loadFile 内部处理）
-      void this.loadFile(actual);
+      // 新笔记是空文件：沿用目标栏的加载与保存保护。
+      this.onSelectFile(actual, targetPane, true);
       this.revealPath = actual;
       this.refreshFileTree();
       if (this.breakpoint === Breakpoint.SM) {
@@ -8114,7 +8410,7 @@ struct Index {
    *        **固定为 vault 根目录**（2026-10-18 用户拍板：移除底部「新建笔记」按钮，头部「＋」
    *        作为根目录创建入口，与文件夹行尾「＋」（指定目录）两级入口一致，不再记忆上次目录）。
    */
-  private openCreateNoteDialog(initialDir: string = ''): void {
+  private openCreateNoteDialog(initialDir: string = '', targetPane: string = 'left'): void {
     // 目录选择器的候选：全量目录（不受展开状态影响）
     let dirs: string[] = [];
     try {
@@ -8136,7 +8432,7 @@ struct Index {
           if (createType === 'folder') {
             this.doCreateFolder(rawName);
           } else {
-            this.doCreateNote(rawName);
+            this.doCreateNote(rawName, targetPane);
           }
         }
       }),
@@ -8390,16 +8686,7 @@ struct Index {
   }
 
   private simpleWorkspacePane(): string {
-    if (this.activePane === 'right' && this.rightFilePath.length > 0) {
-      return 'right';
-    }
-    if (this.activePane === 'left' && this.currentFilePath.length > 0) {
-      return 'left';
-    }
-    if (this.currentFilePath.length > 0) {
-      return 'left';
-    }
-    return this.rightFilePath.length > 0 ? 'right' : this.activePane;
+    return this.activePane === 'right' ? 'right' : 'left';
   }
 
   private simplePreviewEditable(pane: string): boolean {
@@ -8504,8 +8791,10 @@ struct Index {
       if (this.hasBlockPropertyPanelForPane(pane)) {
         this.PaneMoreMenuItem(pane, 'block', 'settings', '块操作')
       }
-      this.PaneMoreMenuItem(pane, 'backlinks', 'link',
-        this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
+      if (this.paneFilePath(pane).length > 0) {
+        this.PaneMoreMenuItem(pane, 'backlinks', 'link',
+          this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
+      }
     }
     .width(Size.sidebarW)
     .padding(Space.s1)
@@ -8575,31 +8864,201 @@ struct Index {
 
   @Builder
   PaneTitle($$: PaneHeadParam) {
-    Text(this.paneFilePath($$.pane).length > 0 ? this.paneFilePath($$.pane) : '未选择笔记')
-      .fontSize(FontSize.caption)
-      .fontColor($r('app.color.text_tertiary'))
-      .maxLines(1)
-      .textOverflow({ overflow: TextOverflow.Ellipsis })
+    if (this.paneFilePath($$.pane).length > 0) {
+      Row() {
+        Text(this.paneFilePath($$.pane))
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+        Row() {
+          Icon('close', Space.s5, $r('app.color.text_secondary'))
+        }
+        .width(Size.paneClose)
+        .height(Size.paneClose)
+        .justifyContent(FlexAlign.Center)
+        .borderRadius(Radius.full)
+        .backgroundColor(this.paneCloseHovered === $$.pane
+          ? ($$.pane === 'right' ? $r('app.color.bg_tertiary') : $r('app.color.bg_secondary'))
+          : Color.Transparent)
+        .focusable(true)
+        .enabled($$.pane === 'right' ? this.rightCloseRequestId === 0 : this.leftCloseRequestId === 0)
+        .id('pane-close-' + $$.pane)
+        .onHover((isHover: boolean): void => {
+          this.paneCloseHovered = isHover ? $$.pane : '';
+        })
+        .onClick((): void => { void this.closePaneNote($$.pane); })
+        .accessibilityText('关闭笔记：' + this.noteTitleForPath(this.paneFilePath($$.pane)))
+      }
       .width('100%')
-      .padding({ left: Space.s4, right: Space.s4, top: Space.s1, bottom: Space.s1 })
+      .height(Size.touch)
+      .padding({ left: Space.s4, right: Space.s1 })
+      .alignItems(VerticalAlign.Center)
       .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+    }
   }
 
   @Builder
-  EmptyPane() {
-    Column({ space: Space.s2 }) {
-      Icon('doc', 28, $r('app.color.text_tertiary'))
-      Text('未选择笔记')
-        .fontSize(FontSize.body1)
-        .fontColor($r('app.color.text_secondary'))
-      Text('先打开一篇笔记')
-        .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_tertiary'))
+  EmptyPaneAction(pane: string, action: string, label: string, icon: string, primary: boolean,
+    focusId: string = '') {
+    Row({ space: Space.s2 }) {
+      Icon(icon, Space.s4, primary ? $r('app.color.on_brand') : $r('app.color.text_secondary'))
+      Text(label)
+        .fontSize(FontSize.body2)
+        .fontWeight(primary ? FontWeight.Medium : FontWeight.Normal)
+        .fontColor(primary ? $r('app.color.on_brand') : $r('app.color.text_primary'))
+    }
+    .height(Size.touch)
+    .padding({ left: Space.s4, right: Space.s4 })
+    .borderRadius(Radius.full)
+    .backgroundColor(primary ? $r('app.color.brand') : $r('app.color.bg_secondary'))
+    .border({ width: 1, color: primary ? $r('app.color.brand') : $r('app.color.line') })
+    .margin({ left: Space.s1, right: Space.s1, bottom: Space.s2 })
+    .focusable(true)
+    .id(focusId)
+    .onClick((): void => {
+      this.setActivePane(pane, true);
+      if (action === 'new') {
+        this.openCreateNoteDialog('', pane);
+      } else if (action === 'search') {
+        this.openQuickSwitcher(pane);
+      } else {
+        this.openNoteNavigation();
+      }
+    })
+    .accessibilityText(label)
+  }
+
+  @Builder
+  EmptyPaneRecentNote(pane: string, path: string) {
+    Row({ space: Space.s3 }) {
+      Icon('note', Space.s5, $r('app.color.text_tertiary'))
+      Column({ space: Space.s1 }) {
+        Text(this.noteTitleForPath(path))
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.noteFolderForPath(path) +
+          (path === (pane === 'right' ? this.currentFilePath : this.rightFilePath)
+            ? ' · 另一栏已打开' : ''))
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .height(Size.paneEmptyRecentRowH)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .borderRadius(Radius.control)
+    .focusable(true)
+    .onClick((): void => { this.onSelectFile(path, pane, true); })
+    .accessibilityText(this.noteTitleForPath(path) + '，' + this.noteFolderForPath(path) +
+      (path === (pane === 'right' ? this.currentFilePath : this.rightFilePath)
+        ? '，另一栏已打开' : ''))
+  }
+
+  @Builder
+  EmptyPane(pane: string) {
+    Scroll() {
+      Column() {
+        Column({ space: Space.s3 }) {
+          Text('曜石笔记')
+            .fontSize(FontSize.caption)
+            .letterSpacing(Size.paneEmptyBrandTracking)
+            .fontColor($r('app.color.text_tertiary'))
+          Text(this.currentVaultNoteCount === 0 ? '空白，是最好的开始。' : '把空间，留给思考。')
+            .fontSize(pane === 'right' ? Size.paneEmptyTitleRight :
+              this.isSingleScreenLayout() ? Size.paneEmptyTitleSingle : Size.paneEmptyTitleWide)
+            .fontWeight(Size.paneEmptyTitleWeight)
+            .fontColor($r('app.color.text_primary'))
+            .textAlign(TextAlign.Center)
+            .width('100%')
+          if (this.currentVaultNoteCount === 0) {
+            Text('这个库还没有笔记。新建第一篇，开始写作。')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_secondary'))
+              .textAlign(TextAlign.Center)
+          } else {
+            Text(this.isSingleScreenLayout()
+              ? '从文件列表选一篇笔记，或新建一篇。' : '从文件列表选一篇，或拖到这一栏打开。')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_secondary'))
+              .textAlign(TextAlign.Center)
+          }
+          if (this.currentVaultNoteCount === 0) {
+            this.EmptyPaneAction(pane, 'new', '新建笔记', 'plus', true, 'pane-empty-new-' + pane)
+          } else {
+            if (this.paneLastClosedPath(pane).length > 0) {
+              Row({ space: Space.s2 }) {
+                Icon('restore', Space.s4, $r('app.color.brand'))
+                Text('重新打开「' + this.noteTitleForPath(this.paneLastClosedPath(pane)) + '」')
+                  .fontSize(FontSize.body2)
+                  .fontColor($r('app.color.text_primary'))
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .width('100%')
+              .height(Size.touch)
+              .padding({ left: Space.s4, right: Space.s4 })
+              .borderRadius(Radius.full)
+              .border({ width: 1, color: $r('app.color.line') })
+              .backgroundColor($r('app.color.bg_tertiary'))
+              .focusable(true)
+              .id('pane-empty-reopen-' + pane)
+              .onClick((): void => { this.onSelectFile(this.paneLastClosedPath(pane), pane, true); })
+              .accessibilityText('重新打开「' + this.noteTitleForPath(this.paneLastClosedPath(pane)) + '」')
+            }
+            Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center,
+              alignItems: ItemAlign.Center }) {
+              this.EmptyPaneAction(pane, 'new', '新建笔记', 'plus', true, 'pane-empty-new-' + pane)
+              this.EmptyPaneAction(pane, 'search', '搜索笔记', 'search', false)
+              if (this.isSingleScreenLayout()) {
+                this.EmptyPaneAction(pane, 'files', '文件列表', 'menu', false)
+              }
+            }
+            .width('100%')
+          }
+          if (this.currentVaultNoteCount > 0 && this.paneRecentPaths(pane).length > 0) {
+            Column({ space: Space.s1 }) {
+              Text('最近打开')
+                .fontSize(FontSize.caption)
+                .fontColor($r('app.color.text_tertiary'))
+                .width('100%')
+                .padding({ left: Space.s3, bottom: Space.s1 })
+              ForEach(this.paneRecentPaths(pane), (path: string): void => {
+                this.EmptyPaneRecentNote(pane, path)
+              }, (path: string): string => path)
+            }
+            .width('100%')
+            .margin({ top: Space.s3 })
+            .accessibilityGroup(true)
+            .accessibilityText('最近打开')
+          }
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: Size.paneEmptyMaxW })
+        .alignItems(HorizontalAlign.Center)
+        .accessibilityGroup(true)
+        .accessibilityText(pane === 'right' ? '右栏未打开笔记' : '左栏未打开笔记')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Center)
+      .padding({
+        left: Space.s4,
+        right: Space.s4,
+        top: Math.min(this.windowHeightVp * Size.paneEmptyTopRatio, Size.paneEmptyTopMax),
+        bottom: Space.s8
+      })
     }
     .width('100%')
     .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
+    .scrollBar(BarState.Off)
     .backgroundColor($r('app.color.bg_card'))
   }
 
@@ -8986,9 +9445,11 @@ struct Index {
           if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
             this.GitSyncButton()
           }
-          this.IconButton('share', $r('app.color.text_secondary'), (): void => {
-            this.openShareNoteDialog();
-          })
+          if (this.activeFilePath().length > 0) {
+            this.IconButton('share', $r('app.color.text_secondary'), (): void => {
+              this.openShareNoteDialog();
+            })
+          }
         }
         this.WorkspaceLayoutButton()
         this.MoreMenuButton()
@@ -10744,11 +11205,12 @@ struct Index {
   @Builder
   RightWorkspacePane() {
     Column() {
-      if (this.experienceMode === 'professional') {
+      if (this.experienceMode === 'professional' && this.rightFilePath.length > 0) {
         this.PaneHead({ pane: 'right' })
-        this.PaneTitle({ pane: 'right' })
       }
-      if (!this.rightEditing && this.backlinksExpanded && this.backlinksPane === 'right') {
+      this.PaneTitle({ pane: 'right' })
+      if (this.rightFilePath.length > 0 && !this.rightEditing &&
+        this.backlinksExpanded && this.backlinksPane === 'right') {
         this.BacklinkPanel()
       }
       Stack({ alignContent: Alignment.Bottom }) {
@@ -10805,7 +11267,8 @@ struct Index {
           PreviewWebView({
             bridge: this.rightPreviewBridge,
             editable: this.simplePreviewEditable('right'),
-            zoomControlsVisible: this.experienceMode === 'simple' || !this.rightEditing,
+            zoomControlsVisible: this.rightFilePath.length > 0 &&
+              (this.experienceMode === 'simple' || !this.rightEditing),
             componentId: 'note-right-preview-web',
             onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
             onScrollPositionChange: (top: number): void => {
@@ -10857,7 +11320,7 @@ struct Index {
         this.PreviewBlockPanel('right')
         this.PreviewBlockToolbar('right')
           if (this.rightFilePath.length === 0) {
-            this.EmptyPane()
+            this.EmptyPane('right')
           }
         }
         .width('100%')
@@ -10891,10 +11354,10 @@ struct Index {
   @Builder
   EditorPane(showHingeWarning: boolean) {
     Column() {
-      if (this.experienceMode === 'professional') {
+      if (this.experienceMode === 'professional' && this.currentFilePath.length > 0) {
         this.PaneHead({ pane: 'left' })
-        this.PaneTitle({ pane: 'left' })
       }
+      this.PaneTitle({ pane: 'left' })
 
       Stack({ alignContent: Alignment.Bottom }) {
         Stack() {
@@ -10973,7 +11436,7 @@ struct Index {
             .translate({ x: Space.s1 })
         }
         if (this.currentFilePath.length === 0) {
-          this.EmptyPane()
+          this.EmptyPane('left')
         }
         }
         .width('100%')
@@ -11001,18 +11464,19 @@ struct Index {
   @Builder
   PreviewPane() {
     Column() {
-      if (this.experienceMode === 'professional') {
+      if (this.experienceMode === 'professional' && this.currentFilePath.length > 0) {
         this.PaneHead({ pane: 'left' })
-        this.PaneTitle({ pane: 'left' })
       }
-      if (this.backlinksExpanded && this.backlinksPane === 'left') {
+      this.PaneTitle({ pane: 'left' })
+      if (this.currentFilePath.length > 0 && this.backlinksExpanded && this.backlinksPane === 'left') {
         this.BacklinkPanel()
       }
       Stack() {
         PreviewWebView({
           bridge: this.previewBridge,
           editable: this.simplePreviewEditable('left'),
-          zoomControlsVisible: this.experienceMode === 'simple' || this.smMode === 'preview',
+          zoomControlsVisible: this.currentFilePath.length > 0 &&
+            (this.experienceMode === 'simple' || this.smMode === 'preview'),
           componentId: 'note-left-preview-web',
           onReadAsset: (relPath: string): string => {
             return this.readVaultAsset(relPath);
@@ -11066,7 +11530,7 @@ struct Index {
         this.PreviewBlockPanel('left')
         this.PreviewBlockToolbar('left')
         if (this.currentFilePath.length === 0) {
-          this.EmptyPane()
+          this.EmptyPane('left')
         }
       }
       .layoutWeight(1)

@@ -25,6 +25,7 @@
  * 坐标来源：历史设计稿 `4b1fa3d^:docs/prototype/index.html` 的内联 SVG（弧线图标已改写为折线）；当前视觉基线见 `docs/prototype/v2/index.html`。
  */
 const P_MENU: string = 'M4 7h16M4 12h16M4 17h16';
+const P_CLOSE: string = 'M6 6L18 18M18 6L6 18';
 const P_BACK: string = 'M15 5l-7 7 7 7';
 const P_CHEVRON_DOWN: string = 'M6 9.5l6 6 6-6';
 const P_CHEVRON_UP: string = 'M6 14.5l6-6 6 6';
@@ -74,6 +75,8 @@ const P_PROFESSIONAL_MODE: string = 'M4 4h16v16H4zM8 9l3 3-3 3M13 15h3';
 function pathOf(name: string): string {
   if (name === 'menu') {
     return P_MENU;
+  } else if (name === 'close') {
+    return P_CLOSE;
   } else if (name === 'back') {
     return P_BACK;
   } else if (name === 'chevronDown') {

@@ -14,6 +14,7 @@ export interface WorkspaceSession {
   leftMode: string;
   rightEditing: boolean;
   activePane: string;
+  rightPaneIntentionallyEmpty: boolean;
   referenceVisible: boolean;
   sidebarCollapsed: boolean;
   drawerOpen: boolean;
@@ -72,6 +73,8 @@ export function parseWorkspaceSession(raw: string): WorkspaceSession | null {
       (value['leftMode'] !== 'edit' && value['leftMode'] !== 'preview') ||
       typeof value['rightEditing'] !== 'boolean' || typeof value['activePane'] !== 'string' ||
       (value['activePane'] !== 'left' && value['activePane'] !== 'right') ||
+      (typeof value['rightPaneIntentionallyEmpty'] !== 'undefined' &&
+        typeof value['rightPaneIntentionallyEmpty'] !== 'boolean') ||
       typeof value['referenceVisible'] !== 'boolean' || typeof value['sidebarCollapsed'] !== 'boolean' ||
       typeof value['drawerOpen'] !== 'boolean' || typeof value['focused'] !== 'boolean' ||
       typeof value['sidebarTab'] !== 'string' ||
@@ -97,6 +100,8 @@ export function parseWorkspaceSession(raw: string): WorkspaceSession | null {
       leftMode: value['leftMode'] as string,
       rightEditing: value['rightEditing'] as boolean,
       activePane: value['activePane'] as string,
+      rightPaneIntentionallyEmpty: typeof value['rightPaneIntentionallyEmpty'] === 'boolean'
+        ? value['rightPaneIntentionallyEmpty'] as boolean : false,
       referenceVisible: value['referenceVisible'] as boolean,
       sidebarCollapsed: value['sidebarCollapsed'] as boolean,
       drawerOpen: value['drawerOpen'] as boolean,

@@ -70,6 +70,16 @@ export class Size {
   static readonly importDialogW: number = 480; // v2 --import-width
   static readonly shareW: number = 520;
   static readonly paneMinW: number = 240;
+  static readonly paneClose: number = Space.s10;
+  static readonly paneEmptyMaxW: number = Space.s16 * 5.5;
+  static readonly paneEmptyTopMax: number = Space.s16 * 1.5;
+  static readonly paneEmptyTopRatio: number = 0.14;
+  static readonly paneEmptyBrandTracking: number = FontSize.caption * 0.12;
+  static readonly paneEmptyRecentRowH: number = Space.s12 + Space.s1;
+  static readonly paneEmptyTitleWeight: number = 600;
+  static readonly paneEmptyTitleWide: number = FontSize.s3 + Space.s2;
+  static readonly paneEmptyTitleSingle: number = FontSize.s3 + Space.s1;
+  static readonly paneEmptyTitleRight: number = FontSize.s3;
   static readonly formatMenuW: number = 360;  // Aa 浮层宽度（v2 --format-width）
   static readonly blockPanelW: number = 380;
   static readonly blockSourceW: number = 480;

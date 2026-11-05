@@ -76,9 +76,39 @@ test('retargets one file without changing similarly prefixed paths', () => {
 
 test('retargets a moved directory subtree while leaving sibling directories alone', () => {
   const { store, values } = createStore({
-    recent_a: '["folder/a.md","folder/sub/b.md","folderish/c.md"]'
+    recent_a: '["folder/a.md","folder/sub/b.md","folderish/c.md"]',
+    recent_closed_a_left: 'folder/sub/b.md'
   });
 
   store.retarget('a', 'folder', 'archive/folder', true);
   assert.equal(values.get('recent_a'), '["archive/folder/a.md","archive/folder/sub/b.md","folderish/c.md"]');
+  assert.equal(values.get('recent_closed_a_left'), 'archive/folder/sub/b.md');
+});
+
+test('keeps one closed note per pane and vault and clears it after reopening', () => {
+  const { store, values } = createStore();
+  store.recordClosed('a', 'left', 'left.md');
+  store.recordClosed('a', 'right', 'right.md');
+  store.recordClosed('b', 'left', 'other-vault.md');
+
+  assert.equal(store.loadClosed('a', 'left', ['left.md']), 'left.md');
+  assert.equal(store.loadClosed('a', 'right', ['right.md']), 'right.md');
+  assert.equal(store.loadClosed('b', 'left', ['other-vault.md']), 'other-vault.md');
+
+  store.recordClosed('a', 'left', 'new-left.md');
+  assert.equal(store.loadClosed('a', 'left', ['left.md', 'new-left.md']), 'new-left.md');
+  store.clearClosed('a', 'left');
+  assert.equal(store.loadClosed('a', 'left', ['new-left.md']), '');
+  assert.equal(values.get('recent_closed_a_left'), '');
+  assert.equal(values.get('recent_closed_a_right'), 'right.md');
+});
+
+test('drops a deleted closed note and rejects unknown pane names', () => {
+  const { store, values } = createStore({ recent_closed_a_left: 'deleted.md' });
+
+  assert.equal(store.loadClosed('a', 'left', ['kept.md']), '');
+  assert.equal(values.get('recent_closed_a_left'), '');
+  store.recordClosed('a', 'middle', 'ignored.md');
+  assert.equal(store.loadClosed('a', 'middle', ['ignored.md']), '');
+  assert.equal(values.has('recent_closed_a_middle'), false);
 });

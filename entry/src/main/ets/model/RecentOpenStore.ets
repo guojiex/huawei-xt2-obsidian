@@ -54,6 +54,41 @@ export class RecentOpenStore {
     this.write(vaultId, next);
   }
 
+  /** 每库、每栏只保留最近一次关闭的路径。 */
+  recordClosed(vaultId: string, pane: string, relPath: string): void {
+    if (vaultId.length === 0 || relPath.length === 0 || !this.isPane(pane)) {
+      return;
+    }
+    this.writeClosed(vaultId, pane, relPath);
+  }
+
+  /** 已删除或移动的关闭目标不再提供重新打开入口。 */
+  loadClosed(vaultId: string, pane: string, validPaths: string[]): string {
+    if (vaultId.length === 0 || !this.isPane(pane) || this.store === null) {
+      return '';
+    }
+    const key: string = this.closedKey(vaultId, pane);
+    try {
+      const path: string = this.store.getSync(key, '') as string;
+      if (path.length === 0) {
+        return '';
+      }
+      if (validPaths.indexOf(path) >= 0) {
+        return path;
+      }
+      this.writeClosed(vaultId, pane, '');
+    } catch (error) {
+      return '';
+    }
+    return '';
+  }
+
+  clearClosed(vaultId: string, pane: string): void {
+    if (vaultId.length > 0 && this.isPane(pane)) {
+      this.writeClosed(vaultId, pane, '');
+    }
+  }
+
   /** 改名或移动成功后同步更新对应历史路径，避免留下旧入口。 */
   retarget(vaultId: string, oldPath: string, newPath: string, isDir: boolean): void {
     if (vaultId.length === 0 || oldPath === newPath) {
@@ -72,6 +107,17 @@ export class RecentOpenStore {
       }
     }
     this.write(vaultId, next);
+    for (const pane of ['left', 'right']) {
+      let closed: string = '';
+      try {
+        closed = this.store?.getSync(this.closedKey(vaultId, pane), '') as string;
+      } catch (error) {
+        continue;
+      }
+      if (closed === oldPath || (isDir && closed.startsWith(oldPath + '/'))) {
+        this.writeClosed(vaultId, pane, newPath + closed.substring(oldPath.length));
+      }
+    }
   }
 
   private read(vaultId: string): string[] {
@@ -107,6 +153,27 @@ export class RecentOpenStore {
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(RECENT_DOMAIN, RECENT_TAG, '最近打开写入失败 code=%{public}d', err.code);
+    }
+  }
+
+  private isPane(pane: string): boolean {
+    return pane === 'left' || pane === 'right';
+  }
+
+  private closedKey(vaultId: string, pane: string): string {
+    return 'recent_closed_' + vaultId + '_' + pane;
+  }
+
+  private writeClosed(vaultId: string, pane: string, path: string): void {
+    if (this.store === null || vaultId.length === 0 || !this.isPane(pane)) {
+      return;
+    }
+    try {
+      this.store.putSync(this.closedKey(vaultId, pane), path);
+      this.store.flush();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(RECENT_DOMAIN, RECENT_TAG, '最近关闭写入失败 code=%{public}d', err.code);
     }
   }
 

@@ -16,7 +16,10 @@ function extractMethod(signature, nextMarker) {
 }
 
 const switchFromNavigationMethod = extractMethod('switchVaultFromNavigation(id: string): void {', '\n  private async switchVault(');
-const selectFileMethod = extractMethod('onSelectFile(relPath: string): void {', '\n  private openFileInOtherPane(');
+const selectFileMethod = extractMethod(
+  'onSelectFile(relPath: string, targetPane: string = this.activePane, returnFocus: boolean = false): void {',
+  '\n  private async closePaneNote('
+);
 const code = transformSync(`
 class IndexHarness {
   ${switchFromNavigationMethod}
@@ -45,6 +48,7 @@ function createHarness(singleScreen) {
     isSingleLandscape: () => false,
     closeNoteNavigation() { calls.push('close-navigation'); },
     setDrawerOpen(open) { calls.push(`drawer:${open}`); this.drawerOpen = open; },
+    setActivePane(pane) { calls.push(`active:${pane}`); this.activePane = pane; },
     doSwitchVault(id) { calls.push(`switch:${id}`); },
     loadFile(path) { calls.push(`left:${path}`); },
     loadRightFile(path) { calls.push(`right:${path}`); }
@@ -78,6 +82,15 @@ test('a selected note opens in the active right pane after leaving single-screen
   app.onSelectFile('notes/right.md');
 
   assert.deepEqual(calls, ['drawer:false', 'right:notes/right.md']);
+});
+
+test('an explicit empty-pane target opens the selected note in that pane', () => {
+  const { app, calls } = createHarness(false);
+
+  app.onSelectFile('notes/target.md', 'right');
+
+  assert.equal(app.activePane, 'right');
+  assert.deepEqual(calls, ['active:right', 'right:notes/target.md']);
 });
 
 test('non-single-screen vault switching keeps its existing navigation-close callback path', () => {

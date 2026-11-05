@@ -78,8 +78,7 @@ test('a slower earlier left-pane open cannot publish its note after a newer requ
     readAndPush: async (path) => { reads.push(path); return true; },
     scheduleSave() {},
     scheduleWorkspaceSessionSave() {},
-    ensureRecentOpenStore() {},
-    recentOpenStore: { record: (_vault, path) => calls.push('recent:' + path) }
+    recordPaneOpened: (_vault, path) => calls.push('recent:' + path)
   });
 
   const openingB = app.loadFile('b.md');
