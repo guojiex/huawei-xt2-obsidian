@@ -25,6 +25,7 @@ class NavigationHarness {
   scheduleWorkspaceSessionSave() {}
   ${method('  private setSidebarCollapsed(collapsed: boolean): void {', '\n  private setDrawerOpen(')}
   ${method('  private setDrawerOpen(open: boolean): void {', '\n  private closeNoteNavigation(')}
+  ${method('  private singleScreenNavigationOpen(): boolean {', '\n  private ensureRecentOpenStore()')}
   ${method('  private syncNavigationForBreakpoint(): void {', '\n  private async refreshAfterBreakpointChange(')}
   ${method('  private isReferenceShown(): boolean {', '\n  private toggleFocus(')}
   ${method('  private toggleFocus(): void {', '\n  private previewActiveNoteInOtherPane(')}
@@ -66,7 +67,12 @@ const bodySource = source.slice(bodyStart, bodyEnd);
 
 function createHarness(overrides = {}) {
   const module = { exports: {} };
-  vm.runInContext(code, vm.createContext({ module, exports: module.exports, Breakpoint }));
+  vm.runInContext(code, vm.createContext({
+    module,
+    exports: module.exports,
+    Breakpoint,
+    setTimeout: (callback) => callback()
+  }));
   const app = new module.exports();
   Object.assign(app, {
     topView: 'note',
@@ -83,7 +89,19 @@ function createHarness(overrides = {}) {
     moreMenuOpen: true,
     paneMoreOpen: true,
     agentHamburgerSeq: 0,
-    activePaneChanges: []
+    activePaneChanges: [],
+    singleLandscape: false,
+    focusRequests: [],
+    isSingleScreenLayout() {
+      return this.breakpoint === Breakpoint.SM || this.singleLandscape;
+    },
+    getUIContext() {
+      return {
+        getFocusController: () => ({
+          requestFocus: (id) => this.focusRequests.push(id)
+        })
+      };
+    }
   }, overrides);
   return app;
 }
@@ -328,4 +346,66 @@ test('active workspace shell animates single-screen translation and wide-screen 
   assert.match(shellSource, /\.width\(this\.noteContentWidth\(\)\)/);
   assert.doesNotMatch(shellSource, /visibility\(.*(?:drawerOpen|sidebarCollapsed)/);
   assert.match(bodySource, /\.enabled\(this\.notePaneWidth\('right'\) !== 0\)/);
+});
+
+test('single-screen scrim closes only the visible navigation and restores hamburger focus', () => {
+  const sm = createHarness({
+    drawerOpen: true,
+    drawerProgress: 1,
+    activePane: 'right',
+    currentFilePath: 'notes/active.md',
+    editorDirty: true,
+    selectionRange: [4, 12],
+    scrollTop: 96
+  });
+  assert.equal(sm.singleScreenNavigationOpen(), true);
+  sm.closeSingleScreenNavigationFromScrim();
+  assert.equal(sm.drawerOpen, false);
+  assert.equal(sm.drawerProgress, 0);
+  assert.equal(sm.activePane, 'right');
+  assert.equal(sm.currentFilePath, 'notes/active.md');
+  assert.equal(sm.editorDirty, true);
+  assert.deepEqual(sm.selectionRange, [4, 12]);
+  assert.equal(sm.scrollTop, 96);
+  assert.deepEqual(sm.focusRequests, ['workspace-navigation-button']);
+
+  const landscape = createHarness({
+    breakpoint: Breakpoint.MD,
+    singleLandscape: true,
+    sidebarCollapsed: false,
+    sidebarProgress: 1
+  });
+  landscape.closeSingleScreenNavigationFromScrim();
+  assert.equal(landscape.sidebarCollapsed, true);
+  assert.equal(landscape.sidebarProgress, 0);
+
+  const focused = createHarness({
+    breakpoint: Breakpoint.LG,
+    singleLandscape: true,
+    focused: true,
+    focusNavigationOpen: true
+  });
+  focused.closeSingleScreenNavigationFromScrim();
+  assert.equal(focused.focusNavigationOpen, false);
+  assert.deepEqual(focused.focusRequests, ['workspace-navigation-button']);
+});
+
+test('single-screen scrim blocks only while open and is excluded from focus and accessibility', () => {
+  const navigationIndex = shellSource.indexOf('this.NoteNavigation(this.breakpoint === Breakpoint.SM)');
+  const contentIndex = shellSource.indexOf('this.NoteWorkspaceContent()');
+  const scrimIndex = shellSource.indexOf("backgroundColor($r('app.color.mask'))", contentIndex);
+  assert.ok(navigationIndex >= 0 && navigationIndex < contentIndex && contentIndex < scrimIndex);
+  assert.match(shellSource, /\.opacity\(this\.singleScreenNavigationOpen\(\) \? 1 : 0\)/);
+  assert.match(shellSource, /\.hitTestBehavior\(this\.singleScreenNavigationOpen\(\) \? HitTestMode\.Block : HitTestMode\.None\)/);
+  assert.match(shellSource, /\.focusable\(false\)/);
+  assert.match(shellSource, /\.accessibilityLevel\('no'\)/);
+  assert.match(shellSource, /\.animation\(\{ duration: this\.workspaceTransitionDuration\(\), curve: Motion\.navCurve \}\)/);
+});
+
+test('note hamburger is a stable keyboard focus return target', () => {
+  const buttonSource = method('  NoteNavigationToggleButton() {', '\n  @Builder\n  FocusModeButton()');
+  assert.match(source, /if \(this\.topView === 'note'\) \{\s*this\.NoteNavigationToggleButton\(\)/);
+  assert.match(buttonSource, /\.focusable\(true\)/);
+  assert.match(buttonSource, /\.id\('workspace-navigation-button'\)/);
+  assert.match(buttonSource, /\.accessibilityText\('展开或收起笔记列表'\)/);
 });

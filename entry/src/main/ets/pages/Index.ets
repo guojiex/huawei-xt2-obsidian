@@ -1663,6 +1663,32 @@ struct Index {
     }
   }
 
+  private singleScreenNavigationOpen(): boolean {
+    if (!this.isSingleScreenLayout()) {
+      return false;
+    }
+    if (this.breakpoint === Breakpoint.SM) {
+      return this.drawerOpen;
+    }
+    return this.focused ? this.focusNavigationOpen : !this.sidebarCollapsed;
+  }
+
+  private closeSingleScreenNavigationFromScrim(): void {
+    if (!this.singleScreenNavigationOpen()) {
+      return;
+    }
+    if (this.breakpoint === Breakpoint.SM) {
+      this.setDrawerOpen(false);
+    } else if (this.focused) {
+      this.focusNavigationOpen = false;
+    } else {
+      this.setSidebarCollapsed(true);
+    }
+    setTimeout((): void => {
+      this.getUIContext().getFocusController().requestFocus('workspace-navigation-button');
+    }, 0);
+  }
+
   private ensureRecentOpenStore(): void {
     if (this.recentOpenStore === null) {
       this.recentOpenStore = new RecentOpenStore(VaultRegistry.get().abilityContext());
@@ -8600,6 +8626,24 @@ struct Index {
   }
 
   @Builder
+  NoteNavigationToggleButton() {
+    Row() {
+      Icon('menu', Space.s5, $r('app.color.text_secondary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(Radius.icon)
+    .backgroundColor(Color.Transparent)
+    .focusable(true)
+    .id('workspace-navigation-button')
+    .accessibilityText('展开或收起笔记列表')
+    .onClick((): void => {
+      this.onHamburger();
+    })
+  }
+
+  @Builder
   FocusModeButton() {
     Row() {
       Icon(this.focused ? 'exitFocus' : 'focus', Space.s5,
@@ -9100,14 +9144,34 @@ struct Index {
           .enabled(this.breakpoint === Breakpoint.SM ? this.drawerOpen : !this.sidebarCollapsed)
           .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
-          Column() {
-            this.NoteWorkspaceContent()
+          Stack({ alignContent: Alignment.TopStart }) {
+            Column() {
+              this.NoteWorkspaceContent()
+            }
+            .width('100%')
+            .height('100%')
+            .translate({ x: this.drawerNavigationWidth() *
+              (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress()) })
+            .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
+
+            // 关闭态立即退让命中测试，视觉透明度仍随导航动画淡出。
+            Column() {}
+              .width('100%')
+              .height('100%')
+              .translate({ x: this.drawerNavigationWidth() *
+                (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress()) })
+              .backgroundColor($r('app.color.mask'))
+              .opacity(this.singleScreenNavigationOpen() ? 1 : 0)
+              .hitTestBehavior(this.singleScreenNavigationOpen() ? HitTestMode.Block : HitTestMode.None)
+              .focusable(false)
+              .accessibilityLevel('no')
+              .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
+              .onClick((): void => {
+                this.closeSingleScreenNavigationFromScrim();
+              })
           }
           .width('100%')
           .height('100%')
-          .translate({ x: this.drawerNavigationWidth() *
-            (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress()) })
-          .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
         }
         .width('100%')
         .height('100%')
@@ -9407,9 +9471,13 @@ struct Index {
           }
         })
       } else {
-        this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
-          this.onHamburger();
-        })
+        if (this.topView === 'note') {
+          this.NoteNavigationToggleButton()
+        } else {
+          this.IconButton('menu', $r('app.color.text_secondary'), (): void => {
+            this.onHamburger();
+          })
+        }
         if (this.topView === 'agent') {
           this.IconButton('doc', $r('app.color.text_secondary'), (): void => {
             this.moreMenuOpen = false;

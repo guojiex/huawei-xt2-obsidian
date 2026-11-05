@@ -1410,6 +1410,12 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 2026-11-04 API 26 `Huawei_TripleFold` 模拟器实测：冷启动首屏无框；点按正文后黑框沿滚动正文视口出现。HDC hilog 记录 `Web/secure_field RequestFocusImmediately`、ArkWeb `GestureTap` 与 `OnCursorUpdate`，但未提供 DOM 命中标签。`#content:focus:not(:focus-visible)` 未能消除黑框；改为 `#content:focus { outline: none; }` 后，同一位置点按不再出现黑框，点击及光标更新事件仍出现。仅为 API 26 模拟器证据，不外推 API 24 / XT2。
 - 2026-11-04 最终包复验：临时 DOM 诊断在普通段落点按时记录 `target=p`、`block=paragraph`、`active=body`、`outline=none`；移除诊断代码后重建并以匹配 `appSignType=none` 的 unsigned HAP 覆盖安装，重启后同类点按截图无黑框。安装失败与复验时间线见 [v1.18 §6](../releases/v1.18/需求文档.md#2026-11-04-184-最终-hap-普通段落点按复验)。仅为 API 26 模拟器结果。
 
+### L-17 v1.29 单屏导航遮罩的命中与无障碍属性（本机 SDK 声明）⚠️
+
+- 本机 DevEco Studio API 26 SDK 的 `ets/component/enums.d.ts` 声明 `HitTestMode.Block` 与 `HitTestMode.None` 均自 API 9 起；注释分别说明 Block 节点自身接收命中并阻止子级、兄弟及祖先参与，None 节点不接收命中且不阻止下层节点。
+- `ets/component/common.d.ts` 声明 `hitTestBehavior()` 自 API 9、`focusable()` 自 API 8、`accessibilityLevel()` 自 API 12 起，均低于工程 API 24 兼容上限；`accessibilityLevel('no')` 将该组件排除在无障碍服务识别之外。焦点 ID 与 `requestFocus()` 的版本见 L-13。
+- 这些声明支持采用非焦点、读屏隐藏的遮罩，并在导航打开时阻止命中穿透；它们不证明 API 24 / XT2 上 ArkWeb 的实际事件路由。设备触控、焦点和读屏表现仍待用户验收；系统减少动态效果偏好仍按 U1 保持未核实。
+
 ---
 
 ## 落地决策表
