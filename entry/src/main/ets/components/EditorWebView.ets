@@ -51,6 +51,7 @@ class EditorImpl {
   /** getContent 往返：reqId → 回调（Web 侧以 content 事件回内容，不走 runJavaScript 返回值） */
   private contentWaiters: Map<number, (b64: string) => void> = new Map();
   private blockSourceWaiters: Map<number, (applied: boolean) => void> = new Map();
+  private historyUndoWaiters: Map<number, (applied: boolean) => void> = new Map();
   private nextReqId: number = 1;
 
   constructor(controller: webview.WebviewController) {
@@ -142,7 +143,8 @@ class EditorImpl {
   }
 
   async replaceBlockSource(from: number, to: number, expectedSource: string, replacement: string,
-    expectedRevision: number, userEvent: string = 'input', focusAfter: boolean = true): Promise<boolean> {
+    expectedRevision: number, userEvent: string = 'input', focusAfter: boolean = true,
+    historyIsolated: boolean = false): Promise<boolean> {
     const reqId: number = this.nextReqId;
     this.nextReqId += 1;
     const expectedB64: string = BridgeCodec.encode(expectedSource);
@@ -167,7 +169,29 @@ class EditorImpl {
       });
       this.enqueue(`window.__mdeditor.replaceBlockSource(${reqId},${from},${to},` +
         `'${expectedB64}','${replacementB64}',${expectedRevision},` +
-        `'${userEvent === 'input.type' ? 'input.type' : 'input'}',${focusAfter})`);
+        `'${userEvent === 'input.type' ? 'input.type' : 'input'}',${focusAfter},${historyIsolated})`);
+    });
+  }
+
+  async undoHistoryIfContentMatches(expectedContent: string, expectedRevision: number): Promise<boolean> {
+    const reqId: number = this.nextReqId;
+    this.nextReqId += 1;
+    const expectedB64: string = BridgeCodec.encode(expectedContent);
+    return new Promise<boolean>((resolve: (applied: boolean) => void, reject: (error: Error) => void) => {
+      let settled: boolean = false;
+      const timerId = setTimeout((): void => {
+        if (settled) return;
+        settled = true;
+        this.historyUndoWaiters.delete(reqId);
+        reject(new Error('撤销操作超时'));
+      }, 3000);
+      this.historyUndoWaiters.set(reqId, (applied: boolean): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timerId);
+        resolve(applied);
+      });
+      this.enqueue(`window.__mdeditor.undoHistoryIfContentMatches(${reqId},'${expectedB64}',${expectedRevision})`);
     });
   }
 
@@ -184,6 +208,14 @@ class EditorImpl {
     const waiter = this.blockSourceWaiters.get(reqId);
     if (waiter) {
       this.blockSourceWaiters.delete(reqId);
+      waiter(applied);
+    }
+  }
+
+  handleHistoryUndoResult(reqId: number, applied: boolean): void {
+    const waiter = this.historyUndoWaiters.get(reqId);
+    if (waiter) {
+      this.historyUndoWaiters.delete(reqId);
       waiter(applied);
     }
   }
@@ -379,12 +411,20 @@ export class EditorBridge {
   }
 
   async replaceBlockSource(from: number, to: number, expectedSource: string, replacement: string,
-    expectedRevision: number, userEvent: string = 'input', focusAfter: boolean = true): Promise<boolean> {
+    expectedRevision: number, userEvent: string = 'input', focusAfter: boolean = true,
+    historyIsolated: boolean = false): Promise<boolean> {
     if (!this.impl) {
       return false;
     }
     return await this.impl.replaceBlockSource(from, to, expectedSource, replacement, expectedRevision,
-      userEvent, focusAfter);
+      userEvent, focusAfter, historyIsolated);
+  }
+
+  async undoHistoryIfContentMatches(expectedContent: string, expectedRevision: number): Promise<boolean> {
+    if (!this.impl) {
+      return false;
+    }
+    return await this.impl.undoHistoryIfContentMatches(expectedContent, expectedRevision);
   }
 
   insertText(text: string): void {
@@ -566,6 +606,8 @@ export struct EditorWebView {
       this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
     } else if (name === 'blockSourceEdit') {
       this.impl?.handleBlockSourceEditResult(msg['id'] as number, msg['applied'] as boolean);
+    } else if (name === 'historyUndoResult') {
+      this.impl?.handleHistoryUndoResult(msg['id'] as number, msg['applied'] as boolean);
     } else if (name === 'change') {
       if (this.impl?.isCurrentDocumentRevision(msg['revision'] as number)) {
         this.onChange((msg['len'] as number) ?? 0);

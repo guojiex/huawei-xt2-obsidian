@@ -89,6 +89,39 @@ test('floating-toolbar anchor follows the selection focus block', () => {
   assert.equal(toolbarBlockForSelection([first], { rangeCount: 0 }, resolveBlock), null)
 })
 
+test('valid editable tables get a toolbar anchor without becoming locked blocks', () => {
+  const table = {
+    dataset: {
+      editLocked: 'false',
+      sourceType: 'table',
+      tableStructureEditable: 'true'
+    }
+  }
+  const invalidTable = {
+    dataset: {
+      editLocked: 'true',
+      sourceType: 'table',
+      tableStructureEditable: 'false'
+    }
+  }
+
+  assert.equal(toolbarBlockForSelection([table], {
+    rangeCount: 1,
+    isCollapsed: true,
+    anchorNode: { block: table }
+  }, resolveBlock), table)
+  assert.equal(toolbarBlockForSelection([invalidTable], {
+    rangeCount: 1,
+    isCollapsed: true,
+    anchorNode: { block: invalidTable }
+  }, resolveBlock), invalidTable)
+  assert.equal(toolbarBlockForSelection([], {
+    rangeCount: 1,
+    isCollapsed: true,
+    anchorNode: { block: table }
+  }, resolveBlock), null)
+})
+
 test('code copy resolves only the exact code block source range', () => {
   const first = { dataset: { sourceType: 'code', sourceFrom: '10', sourceTo: '28' } }
   const otherType = { dataset: { sourceType: 'paragraph', sourceFrom: '30', sourceTo: '48' } }
@@ -105,7 +138,12 @@ test('locked block anchor contains source identity and visible geometry only', (
       editLocked: 'true',
       sourceType: 'table',
       sourceFrom: '12',
-      sourceTo: '48'
+      sourceTo: '48',
+      tableActiveRow: '1',
+      tableActiveColumn: '2',
+      tableRows: '4',
+      tableColumns: '3',
+      tableStructureEditable: 'true'
     }
   }
   const anchor = lockedBlockAnchor(block, {
@@ -121,6 +159,11 @@ test('locked block anchor contains source identity and visible geometry only', (
     type: 'table',
     from: 12,
     to: 48,
+    tableRow: 1,
+    tableColumn: 2,
+    tableRows: 4,
+    tableColumns: 3,
+    tableStructureEditable: true,
     inlineItems: [],
     inlineSafe: false,
     left: 20,
@@ -153,6 +196,26 @@ test('locked block anchors preserve whether a paragraph supports inline editing'
   }, 400, 600)
 
   assert.equal(anchor.inlineSafe, false)
+})
+
+test('structurally valid tables can anchor actions while their cells remain editable', () => {
+  const block = {
+    dataset: {
+      editLocked: 'false',
+      sourceType: 'table',
+      tableStructureEditable: 'true',
+      sourceFrom: '8',
+      sourceTo: '40'
+    }
+  }
+  assert.equal(lockedBlockAnchor(block, {
+    left: 10,
+    top: 20,
+    right: 110,
+    bottom: 60,
+    width: 100,
+    height: 40
+  }, 400, 600).type, 'table')
 })
 
 test('paragraph anchors expose validated inline item identities and exact source ranges', () => {

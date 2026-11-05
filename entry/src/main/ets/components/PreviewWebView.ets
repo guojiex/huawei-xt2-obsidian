@@ -96,6 +96,14 @@ export interface PreviewCodeEditRequest {
   expectedSource: string;
   replacement: string;
   userEvent: string;
+  historyIsolated: boolean;
+  refreshPreview: boolean;
+  showUndo: boolean;
+  undoMessage: string;
+  focusTableFrom: number;
+  focusTableTo: number;
+  focusTableRow: number;
+  focusTableColumn: number;
 }
 
 export interface PreviewBlockAnchor {
@@ -114,6 +122,11 @@ export interface PreviewBlockAnchor {
   codeLanguageSelectable: boolean;
   codeLanguages: string[];
   codeEditable: boolean;
+  tableRow: number;
+  tableColumn: number;
+  tableRows: number;
+  tableColumns: number;
+  tableStructureEditable: boolean;
   x: number;
   y: number;
   width: number;
@@ -182,6 +195,12 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
     ? source['codeLanguageTo'] as number : -1;
   const codeLanguageSelectable: boolean = source['codeLanguageSelectable'] === true;
   const codeEditable: boolean = source['codeEditable'] === true;
+  const tableRow: number = Number.isInteger(source['tableRow']) ? source['tableRow'] as number : -1;
+  const tableColumn: number = Number.isInteger(source['tableColumn']) ? source['tableColumn'] as number : -1;
+  const tableRows: number = Number.isInteger(source['tableRows']) ? source['tableRows'] as number : 0;
+  const tableColumns: number = Number.isInteger(source['tableColumns'])
+    ? source['tableColumns'] as number : 0;
+  const tableStructureEditable: boolean = source['tableStructureEditable'] === true;
   const codeLanguages: string[] = [];
   const rawCodeLanguages: string[] = source['codeLanguages'] as string[];
   if (Array.isArray(rawCodeLanguages)) {
@@ -216,6 +235,12 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
       codeLanguageTo >= codeLanguageFrom && codeLanguageTo <= to,
     codeLanguages: codeLanguages,
     codeEditable: codeEditable,
+    tableRow: tableRow,
+    tableColumn: tableColumn,
+    tableRows: tableRows,
+    tableColumns: tableColumns,
+    tableStructureEditable: type === 'table' && tableStructureEditable &&
+      tableRow >= 0 && tableRow < tableRows && tableColumn >= 0 && tableColumn < tableColumns,
     x: area[0] + left * scaleX,
     y: area[1] + top * scaleY,
     width: width * scaleX,
@@ -262,6 +287,7 @@ class PreviewNativeProxy {
   previewZoomChangeHandler: (percent: number) => void = (_percent: number) => {};
   codeBlockEditHandler: (request: PreviewCodeEditRequest) => void =
     (_request: PreviewCodeEditRequest) => {};
+  tableActionMessageHandler: (message: string) => void = (_message: string) => {};
   codeBlockEditingChangeHandler: (editing: boolean) => void = (_editing: boolean) => {};
   codeBlockCopyHandler: (content: string) => void = (_content: string) => {};
   codeBlockCopyFailedHandler: () => void = () => {};
@@ -312,7 +338,10 @@ class PreviewNativeProxy {
   }
 
   onCodeBlockEdit(id: number, from: number, to: number, expectedB64: string,
-    replacementB64: string, userEvent: string): void {
+    replacementB64: string, userEvent: string, historyIsolated: boolean = false,
+    refreshPreview: boolean = false, showUndo: boolean = false, undoMessageB64: string = '',
+    focusTableFrom: number = -1, focusTableTo: number = -1,
+    focusTableRow: number = -1, focusTableColumn: number = -1): void {
     if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(from) ||
       !Number.isInteger(to) || from < 0 || to < from ||
       (userEvent !== 'input.type' && userEvent !== 'input')) {
@@ -325,8 +354,24 @@ class PreviewNativeProxy {
         to: to,
         expectedSource: BridgeCodec.decode(expectedB64),
         replacement: BridgeCodec.decode(replacementB64),
-        userEvent: userEvent
+        userEvent: userEvent,
+        historyIsolated: historyIsolated,
+        refreshPreview: refreshPreview,
+        showUndo: showUndo,
+        undoMessage: undoMessageB64.length > 0 ? BridgeCodec.decode(undoMessageB64) : '',
+        focusTableFrom: focusTableFrom,
+        focusTableTo: focusTableTo,
+        focusTableRow: focusTableRow,
+        focusTableColumn: focusTableColumn
       });
+    } catch {
+      return;
+    }
+  }
+
+  onTableActionMessage(messageB64: string): void {
+    try {
+      this.tableActionMessageHandler(BridgeCodec.decode(messageB64));
     } catch {
       return;
     }
@@ -407,6 +452,29 @@ class PreviewImpl {
   applyFormat(kind: string): void {
     const allowed = ['paragraph', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'list', 'ordered', 'task', 'quote'];
     if (allowed.includes(kind)) this.enqueue(`window.__mdpreview.applyFormat('${kind}')`);
+  }
+
+  applyTableStructureOperation(type: string, side: string, row: number, column: number,
+    from: number, to: number): void {
+    if (!['insertRow', 'insertColumn', 'deleteRow', 'deleteColumn'].includes(type) ||
+      !['up', 'down', 'left', 'right'].includes(side) ||
+      !Number.isInteger(row) || !Number.isInteger(column) ||
+      !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) return;
+    this.enqueue(`window.__mdpreview.applyTableStructureOperation('${type}','${side}',${row},${column},${from},${to})`);
+  }
+
+  insertTable(rows: number, columns: number): void {
+    if (Number.isInteger(rows) && rows > 0 && rows <= 8 &&
+      Number.isInteger(columns) && columns > 0 && columns <= 6) {
+      this.enqueue(`window.__mdpreview.insertTable(${rows},${columns})`);
+    }
+  }
+
+  focusTableCell(from: number, to: number, row: number, column: number): void {
+    if (Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from &&
+      Number.isInteger(row) && row >= 0 && Number.isInteger(column) && column >= 0) {
+      this.enqueue(`window.__mdpreview.focusTableCell(${from},${to},${row},${column})`);
+    }
   }
 
   editHistory(action: PreviewEditHistoryAction): void {
@@ -649,6 +717,19 @@ export class PreviewBridge {
     this.impl?.applyFormat(kind);
   }
 
+  applyTableStructureOperation(type: string, side: string, row: number, column: number,
+    from: number, to: number): void {
+    this.impl?.applyTableStructureOperation(type, side, row, column, from, to);
+  }
+
+  insertTable(rows: number, columns: number): void {
+    this.impl?.insertTable(rows, columns);
+  }
+
+  focusTableCell(from: number, to: number, row: number, column: number): void {
+    this.impl?.focusTableCell(from, to, row, column);
+  }
+
   editHistory(action: PreviewEditHistoryAction): void {
     this.impl?.editHistory(action);
   }
@@ -875,6 +956,7 @@ export struct PreviewWebView {
   onCompositionChange: (composing: boolean) => void = (_composing: boolean) => {};
   onCodeBlockEdit: (request: PreviewCodeEditRequest) => void =
     (_request: PreviewCodeEditRequest) => {};
+  onTableActionMessage: (message: string) => void = (_message: string) => {};
   onCodeBlockEditingChange: (editing: boolean) => void = (_editing: boolean) => {};
   onCopyCodeBlockContent: (content: string) => void = (_content: string) => {};
   onCodeBlockCopyFailed: () => void = () => {};
@@ -938,6 +1020,9 @@ export struct PreviewWebView {
     };
     this.proxy.codeBlockEditHandler = (request: PreviewCodeEditRequest): void => {
       this.onCodeBlockEdit(request);
+    };
+    this.proxy.tableActionMessageHandler = (message: string): void => {
+      this.onTableActionMessage(message);
     };
     this.proxy.codeBlockEditingChangeHandler = (editing: boolean): void => {
       this.onCodeBlockEditingChange(editing);
@@ -1048,7 +1133,8 @@ export struct PreviewWebView {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
         ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
-          'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onCodeBlockEditingChange',
+          'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onTableActionMessage',
+          'onCodeBlockEditingChange',
           'onCopyCodeBlockContent', 'onCodeBlockCopyFailed', 'onSimpleFormatUnsupported']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');

@@ -17,8 +17,20 @@ function extract(startMarker, endMarker) {
 }
 
 function createSessionHarness() {
-  const sessionFunctions = extract(
+  const editSessionFunctions = extract(
     'function finishTableCellEditSession(',
+    'function notifyTableActionMessage('
+  )
+  const blockSessionFunctions = extract(
+    'function startTableCellEditSession(',
+    'function preventTableNavigationDuringComposition('
+  )
+  const drainFunction = extract(
+    'function drainBlockSourceEdits(',
+    'function startTableCellEditSession('
+  )
+  const navigationFunctions = extract(
+    'function preventTableNavigationDuringComposition(',
     'function submitCodeBodyEdit('
   )
   const completeMethodStart = previewSource.indexOf(
@@ -33,6 +45,7 @@ function createSessionHarness() {
   const code = transformSync(`
     let codeEditSession = null;
     let pendingCodeEdit = null;
+    let pendingTableSourceEdit = null;
     let tableCellEditSession = null;
     const tableCellEditSessions = new Map();
     let pendingTableCellEdit = null;
@@ -41,6 +54,7 @@ function createSessionHarness() {
     let blockEditingNotified = false;
     const codeEditFlushWaiters = [];
     const requests = [];
+    const structureRequests = [];
     const window = { __arkts: { onCodeBlockEdit(...args) { requests.push(args); } } };
     const api = { completeCodeBlockEdit() {} };
     function sourceBlockForNode(target) { return target.block; }
@@ -50,7 +64,12 @@ function createSessionHarness() {
     function notifyCodeEditWaiters() {}
     function postEditableContent() {}
     function applyTableCellSourcePatch() { return true; }
-    ${sessionFunctions}
+    function drainQueuedTableEdit() {}
+    function queueTableStructureOperation(...args) { structureRequests.push(args); }
+    ${editSessionFunctions}
+    ${drainFunction}
+    ${blockSessionFunctions}
+    ${navigationFunctions}
     ${completeMethod}
     module.exports = {
       startTableCellEditSession,
@@ -59,6 +78,7 @@ function createSessionHarness() {
       completeCodeBlockEdit,
       preventTableNavigationDuringComposition,
       requests,
+      structureRequests,
       sessions: tableCellEditSessions,
       get pending() { return pendingTableCellEdit; }
     };
@@ -209,6 +229,7 @@ test('14.3 Tab, Shift+Tab, Enter, and navigation boundaries stay within table ce
       tableColumn: String(index % 2)
     },
     closest() { return table },
+    block: { dataset: { sourceFrom: '10', sourceTo: '40' } },
     focus() { focused.push(index) }
   }))
   const table = {
@@ -244,6 +265,8 @@ test('14.3 Tab, Shift+Tab, Enter, and navigation boundaries stay within table ce
   const lastTab = key('Tab')
   harness.navigateTableCell(lastTab, cells[3])
   assert.deepEqual(focused, [1, 0, 2])
+  assert.equal(JSON.stringify(harness.structureRequests),
+    JSON.stringify([['insertRow', 'down', 1, 0, 10, 40]]))
   assert.equal(lastTab.prevented, true)
 })
 

@@ -21,6 +21,7 @@
 
 import { basicSetup } from 'codemirror'
 import { autocompletion } from '@codemirror/autocomplete'
+import { isolateHistory, undo } from '@codemirror/commands'
 import { Compartment, EditorState, Range, StateField } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
@@ -39,6 +40,7 @@ import { hasCodeBlockSelection, normalizeEditorText, serializeEditorText, toggle
 import { toggleMarkdownFormat, toggleTaskStatus } from './markdownFormat'
 import { createChangeNotificationTimer } from './changeNotification'
 import { blockSourceEditRange, isBlockSourceEditTransaction, prepareBlockSourceEdit } from './blockModel'
+import { historySnapshotMatches } from './historyGuard'
 
 declare global {
   interface Window {
@@ -62,7 +64,9 @@ interface MdEditorApi {
   setContent(b64: string, documentRevision: number, vaultIdB64: string, noteDirB64: string): void
   replaceContentFromPreview(b64: string, expectedRevision: number): void
   replaceBlockSource(id: number, from: number, to: number, expectedB64: string,
-    replacementB64: string, expectedRevision: number, userEvent?: string, focusAfter?: boolean): void
+    replacementB64: string, expectedRevision: number, userEvent?: string, focusAfter?: boolean,
+    historyIsolated?: boolean): void
+  undoHistoryIfContentMatches(id: number, expectedB64: string, expectedRevision: number): void
   /** ArkTS 侧不再直接用 getContent 的返回值（见上），保留仅供调试控制台用 */
   getContent(): string
   requestContent(reqId: number): void
@@ -823,7 +827,7 @@ const api: MdEditorApi = {
 
   replaceBlockSource(id: number, from: number, to: number, expectedB64: string,
     replacementB64: string, expectedRevision: number, userEvent: string = 'input',
-    focusAfter: boolean = true): void {
+    focusAfter: boolean = true, historyIsolated: boolean = false): void {
     let applied = false
     if (view && isEditable && simpleExperience && expectedRevision === documentRevision) {
       const edit = prepareBlockSourceEdit(view.state, from, to, b64decode(expectedB64),
@@ -833,7 +837,10 @@ const api: MdEditorApi = {
         view.dispatch({
           changes: edit.changes,
           selection: { anchor: edit.selection.from, head: edit.selection.to },
-          annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
+          annotations: historyIsolated
+            ? [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to }),
+              isolateHistory.of('full')]
+            : [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
           scrollIntoView: focusAfter,
           userEvent: transactionUserEvent
         })
@@ -842,6 +849,16 @@ const api: MdEditorApi = {
       }
     }
     postToArkts({ type: 'event', name: 'blockSourceEdit', id: id, applied: applied })
+  },
+
+  undoHistoryIfContentMatches(id: number, expectedB64: string, expectedRevision: number): void {
+    let applied = false
+    if (view && isEditable && simpleExperience && historySnapshotMatches(
+      serializeEditorText(view.state.doc.toString(), documentLineEnding),
+      b64decode(expectedB64), documentRevision, expectedRevision)) {
+      applied = undo(view)
+    }
+    postToArkts({ type: 'event', name: 'historyUndoResult', id: id, applied: applied })
   },
 
   getContent(): string {

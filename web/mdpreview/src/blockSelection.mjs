@@ -19,7 +19,9 @@ export function toolbarBlockForSelection(blocks, selection, sourceBlockForNode) 
   if (!selection || selection.rangeCount === 0) return null
   const candidates = Array.from(blocks)
   const block = sourceBlockForNode(selection.focusNode ?? selection.anchorNode)
-  return block?.dataset.editLocked === 'true' && candidates.includes(block) ? block : null
+  const tableReady = block?.dataset.sourceType === 'table' &&
+    block.dataset.tableStructureEditable === 'true'
+  return (block?.dataset.editLocked === 'true' || tableReady) && candidates.includes(block) ? block : null
 }
 
 export function codeBlockForSourceRange(blocks, from, to) {
@@ -59,7 +61,9 @@ export function inlineItemsForBlock(block) {
 }
 
 export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
-  if (!block || block.dataset.editLocked !== 'true') return null
+  const type = block?.dataset.sourceType ?? ''
+  const tableReady = type === 'table' && block.dataset.tableStructureEditable === 'true'
+  if (!block || (block.dataset.editLocked !== 'true' && !tableReady)) return null
   const from = Number(block.dataset.sourceFrom)
   const to = Number(block.dataset.sourceTo)
   const left = Number(rect?.left)
@@ -76,7 +80,6 @@ export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
     right <= 0 || bottom <= 0 || left >= viewportWidth || top >= viewportHeight) {
     return null
   }
-  const type = block.dataset.sourceType ?? ''
   if (type.length === 0) return null
   const anchor = {
     type,
@@ -90,6 +93,15 @@ export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
     height,
     viewportWidth,
     viewportHeight
+  }
+  if (type === 'table') {
+    Object.assign(anchor, {
+      tableRow: Number(block.dataset.tableActiveRow ?? -1),
+      tableColumn: Number(block.dataset.tableActiveColumn ?? -1),
+      tableRows: Number(block.dataset.tableRows ?? 0),
+      tableColumns: Number(block.dataset.tableColumns ?? 0),
+      tableStructureEditable: tableReady
+    })
   }
   if (type === 'code') {
     let codeLanguages = []

@@ -11,13 +11,14 @@ const result = await build({
     contents: `
       import { EditorState } from '@codemirror/state'
       import { markdown } from '@codemirror/lang-markdown'
-      import { history, redo, undo } from '@codemirror/commands'
+      import { history, isolateHistory, redo, undo } from '@codemirror/commands'
       import { blockSourceEditRange, isBlockSourceEditTransaction, prepareBlockSourceEdit,
         applyBlockEdit, applyBlockText, blockEditKeepsOutside, parseBlock, stringifyBlock,
         registerBlockCodec, codecFor } from '../src/blockModel.ts'
       import { collectBlockRanges, customBlockRanges, findBlockAt, findBlockInSelection,
         isBlockRegistryReady, BLOCK_TYPE_LABELS } from '../src/blockRegistry.ts'
       import { collectSimpleModeRanges } from '../src/simpleMode.ts'
+      import { historySnapshotMatches as matchesHistorySnapshot } from '../src/historyGuard.ts'
 
       function state(source) {
         return EditorState.create({ doc: source, extensions: [markdown()] })
@@ -54,6 +55,9 @@ const result = await build({
       }
       export function labels() {
         return BLOCK_TYPE_LABELS
+      }
+      export function historySnapshotMatches(currentContent, expectedContent, currentRevision, expectedRevision) {
+        return matchesHistorySnapshot(currentContent, expectedContent, currentRevision, expectedRevision)
       }
       export function find(pos, source) {
         return findBlockAt(collectBlockRanges(state(source)), pos)
@@ -141,7 +145,10 @@ const result = await build({
           editor = editor.update({
             changes: edit.changes,
             selection: { anchor: edit.selection.from, head: edit.selection.to },
-            annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
+            annotations: patch.historyIsolated
+              ? [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to }),
+                isolateHistory.of('full')]
+              : [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to })],
             userEvent: patch.userEvent
           }).state
         }
@@ -156,6 +163,29 @@ const result = await build({
           undoSources.push({ applied, source: editor.doc.toString() })
         }
         return { after, undoSources }
+      }
+      export function undoIfSnapshotMatches(source, patch, expectedContent, currentRevision, expectedRevision) {
+        let editor = sourceEditState(source)
+        const edit = prepareBlockSourceEdit(editor, patch.from, patch.to,
+          patch.expected, patch.replacement, '\\n')
+        if (!edit) return null
+        editor = editor.update({
+          changes: edit.changes,
+          selection: { anchor: edit.selection.from, head: edit.selection.to },
+          annotations: [blockSourceEditRange.of({ from: edit.changes.from, to: edit.changes.to }),
+            isolateHistory.of('full')],
+          userEvent: 'input'
+        }).state
+        const currentContent = editor.doc.toString()
+        const allowed = matchesHistorySnapshot(currentContent, expectedContent,
+          currentRevision, expectedRevision)
+        let applied = false
+        if (allowed) {
+          applied = undo({ state: editor, dispatch: (transaction) => {
+            editor = editor.update(transaction).state
+          } })
+        }
+        return { allowed, applied, currentContent, result: editor.doc.toString() }
       }
       export function rejectsMismatchedSourceEdit(source, from, to, replacement, declaredRange) {
         const editor = sourceEditState(source)
@@ -479,6 +509,57 @@ test('14.6 同一表格单元格连续输入一次撤销恢复原文', () => {
     redoApplied: true,
     redone: source.slice(0, cellFrom) + 'def' + source.slice(cellFrom + 1)
   })
+})
+
+test('14.6 表格结构操作隔离为单独撤销步，保留操作前的其他编辑', () => {
+  const source = '前文\n\n| A | B |\n| --- | --- |\n| one | two |\n\n后文'
+  const typedSource = source.replace('前文', '编辑前文')
+  const tableFrom = typedSource.indexOf('| A | B |')
+  const tableTo = typedSource.indexOf('\n\n后文')
+  const structuredSource = '| A | B |\n| --- | --- |\n| one | two |\n|  |  |'
+  const result = base.applyPatchesAndUndo(source, [
+    {
+      from: 0,
+      to: '前文'.length,
+      expected: '前文',
+      replacement: '编辑前文',
+      userEvent: 'input.type'
+    },
+    {
+      from: tableFrom,
+      to: tableTo,
+      expected: typedSource.slice(tableFrom, tableTo),
+      replacement: structuredSource,
+      userEvent: 'input',
+      historyIsolated: true
+    }
+  ], 2)
+
+  assert.equal(result.after, typedSource.slice(0, tableFrom) + structuredSource + typedSource.slice(tableTo))
+  assert.deepEqual(result.undoSources, [
+    { applied: true, source: typedSource },
+    { applied: true, source }
+  ])
+})
+
+test('14.6 全文快照不匹配时拒绝撤销表格结构操作', () => {
+  const source = '| A | B |\n| --- | --- |\n| one | two |'
+  const replacement = `${source}\n|  |  |`
+  const result = base.undoIfSnapshotMatches(source, {
+    from: 0,
+    to: source.length,
+    expected: source,
+    replacement
+  }, `${replacement}\n外部编辑`, 4, 4)
+
+  assert.ok(result)
+  assert.equal(result.allowed, false)
+  assert.equal(result.applied, false)
+  assert.equal(result.currentContent, replacement)
+  assert.equal(result.result, replacement)
+  assert.equal(base.historySnapshotMatches(replacement, replacement, 4, 4), true)
+  assert.equal(base.historySnapshotMatches(replacement, `${replacement}\n外部编辑`, 4, 4), false)
+  assert.equal(base.historySnapshotMatches(replacement, replacement, 5, 4), false)
 })
 
 test('19.6 转为纯文本是独立撤销步，撤销后逐字恢复反引号和内容', () => {

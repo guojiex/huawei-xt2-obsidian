@@ -128,6 +128,15 @@ interface BlockToolbarAction {
   onActivate: () => void;
 }
 
+interface TableEditUndoState {
+  pane: string;
+  vaultId: string;
+  path: string;
+  requestId: number;
+  documentRevision: number;
+  expectedContent: string;
+}
+
 /** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
 function formLabelOf(bp: string, widthVp: number, heightVp: number): string {
   if (isSingleLandscapeWindow(widthVp, heightVp)) {
@@ -209,6 +218,10 @@ struct Index {
   @State paneMoreHoveredAction: string = '';
   @State formatMenuOpen: boolean = false;
   @State formatMenuPane: string = 'left';
+  @State tableGridOpen: boolean = false;
+  @State tableGridPane: string = 'left';
+  @State tableGridFocusedRows: number = 1;
+  @State tableGridFocusedColumns: number = 1;
   @State formatPopupPlacement: Placement = Placement.Top;
   @State formatPopupOffsetX: number = 0;
   @State formatPopupOffsetY: number = -Space.s2;
@@ -220,6 +233,8 @@ struct Index {
   private leftFormatAnchorArea: number[] = [0, 0, 0, 0];
   private rightFormatAnchorArea: number[] = [0, 0, 0, 0];
   private formatWindowArea: number[] = [0, 0, 0, 0];
+  private readonly tableGridRowOptions: number[] = [1, 2, 3, 4, 5, 6, 7, 8];
+  private readonly tableGridColumnOptions: number[] = [1, 2, 3, 4, 5, 6];
   @State blockToolbarOpen: boolean = false;
   @State blockToolbarPane: string = 'left';
   @State blockToolbarPlacement: Placement = Placement.BottomLeft;
@@ -236,6 +251,8 @@ struct Index {
   @State blockPanelTitle: string = '当前块';
   @State blockPanelAnchor: PreviewBlockAnchor | null = null;
   @State blockPanelInlineItems: PreviewBlockInlineItem[] = [];
+  @State tableInsertRowSide: string = 'down';
+  @State tableInsertColumnSide: string = 'right';
   @State blockPanelLinkReady: boolean = false;
   @State blockPanelLinkLabel: string = '';
   @State blockPanelLinkDestination: string = '';
@@ -451,6 +468,7 @@ struct Index {
   @State undoVisible: boolean = false;
   @State undoMsg: string = '';
   private undoSnap: UndoSnap | null = null;
+  private tableEditUndoState: TableEditUndoState | null = null;
   private undoTimer: number = -1;
   /** 单屏态「编辑 / 预览」二选一（v0.2 §3.4-3.3）。
    * 只有一块屏放不下两栏；md/lg 两栏同时可见，这个状态不参与布局。
@@ -2739,6 +2757,12 @@ struct Index {
     if (this.topView !== 'note') {
       this.resetSaveFeedback();
     }
+    if (this.tableGridOpen && (this.topView !== 'note' ||
+      this.currentVaultId !== this.formatMenuSourceVaultId ||
+      this.paneFilePath(this.tableGridPane) !== this.formatMenuSourcePath ||
+      !this.isPaneEditable(this.tableGridPane))) {
+      this.tableGridOpen = false;
+    }
     this.synchronizePreviewFollowContext();
     if (this.isBlockPropertyPanelOpen()) {
       if (this.topView !== 'note' || this.activePane !== this.blockPanelPane ||
@@ -2911,6 +2935,11 @@ struct Index {
               codeLanguageSelectable: anchor.codeLanguageSelectable,
               codeLanguages: anchor.codeLanguages,
               codeEditable: anchor.codeEditable,
+              tableRow: anchor.tableRow,
+              tableColumn: anchor.tableColumn,
+              tableRows: anchor.tableRows,
+              tableColumns: anchor.tableColumns,
+              tableStructureEditable: anchor.tableStructureEditable,
               x: anchor.x,
               y: anchor.y,
               width: anchor.width,
@@ -2965,6 +2994,25 @@ struct Index {
       preview.completeCodeBlockEdit(request.id, false);
       return;
     }
+    let expectedAfter: string = '';
+    if (request.historyIsolated || request.refreshPreview || request.showUndo) {
+      let before: string = '';
+      try {
+        before = await editor.getContent();
+      } catch {
+        preview.completeCodeBlockEdit(request.id, false);
+        promptAction.showToast({ message: '无法确认当前笔记，未应用表格操作' });
+        return;
+      }
+      if (!this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId) ||
+        editor.currentDocumentRevision !== revision || request.to > before.length ||
+        before.slice(request.from, request.to) !== request.expectedSource) {
+        preview.completeCodeBlockEdit(request.id, false);
+        promptAction.showToast({ message: '内容已变化，未应用表格操作' });
+        return;
+      }
+      expectedAfter = before.slice(0, request.from) + request.replacement + before.slice(request.to);
+    }
     if (pane === 'right') {
       this.rightCodeEditPending = true;
     } else {
@@ -2973,7 +3021,7 @@ struct Index {
     let applied: boolean = false;
     try {
       applied = await editor.replaceBlockSource(request.from, request.to, request.expectedSource,
-        request.replacement, revision, request.userEvent, false);
+        request.replacement, revision, request.userEvent, false, request.historyIsolated);
     } catch {
       hilog.warn(DOMAIN, TAG, '简单模式块内容回写失败');
     }
@@ -2989,6 +3037,51 @@ struct Index {
     }
     if (!applied && this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId)) {
       promptAction.showToast({ message: '内容已变化，未应用编辑' });
+      return;
+    }
+    if (applied && request.refreshPreview) {
+      let content: string = '';
+      try {
+        content = await editor.getContent();
+      } catch {
+        if (pane === 'right') {
+          void this.syncRightContentToLeft();
+        } else {
+          this.schedulePreviewUpdate();
+        }
+        if (request.showUndo) {
+          this.showUndo(`${request.undoMessage}；无法确认撤销目标`, null);
+        }
+        return;
+      }
+      if (!this.isCurrentSimplePreviewTarget(pane, path, vaultId, requestId) ||
+        editor.currentDocumentRevision !== revision) {
+        return;
+      }
+      if (pane === 'right') {
+        this.pushRightPreview(content, true);
+      } else {
+        this.pushPreview(content, true);
+      }
+      if (request.focusTableFrom >= 0 && request.focusTableTo >= request.focusTableFrom) {
+        preview.focusTableCell(request.focusTableFrom, request.focusTableTo,
+          request.focusTableRow, request.focusTableColumn);
+      }
+      if (request.showUndo) {
+        if (content === expectedAfter) {
+          this.showUndo(request.undoMessage, null);
+          this.tableEditUndoState = {
+            pane: pane,
+            vaultId: vaultId,
+            path: path,
+            requestId: requestId,
+            documentRevision: revision,
+            expectedContent: expectedAfter
+          };
+        } else {
+          this.showUndo(`${request.undoMessage}；内容已变化，无法撤销`, null);
+        }
+      }
     }
   }
 
@@ -3041,6 +3134,70 @@ struct Index {
     this.updateFormatPopupLayout(pane);
   }
 
+  private toggleTableGrid(pane: string): void {
+    if (this.tableGridOpen && this.tableGridPane === pane) {
+      this.tableGridOpen = false;
+      return;
+    }
+    if (this.experienceMode !== 'simple' || !this.isPaneEditable(pane)) {
+      return;
+    }
+    this.setActivePane(pane);
+    this.tableGridPane = pane;
+    this.formatMenuSourceVaultId = this.currentVaultId;
+    this.formatMenuSourcePath = this.paneFilePath(pane);
+    this.tableGridFocusedRows = 1;
+    this.tableGridFocusedColumns = 1;
+    this.tableGridOpen = true;
+  }
+
+  private tableGridCellFocusId(pane: string, rows: number, columns: number): string {
+    return `table-grid-${pane}-${rows}-${columns}`;
+  }
+
+  private onTableGridCellKey(pane: string, rows: number, columns: number, event: KeyEvent): boolean {
+    if (event.type !== KeyType.Down) {
+      return false;
+    }
+    let nextRows: number = rows;
+    let nextColumns: number = columns;
+    if (event.keyCode === KeyCode.KEYCODE_DPAD_UP) {
+      nextRows = Math.max(1, rows - 1);
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_DOWN) {
+      nextRows = Math.min(8, rows + 1);
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_LEFT) {
+      nextColumns = Math.max(1, columns - 1);
+    } else if (event.keyCode === KeyCode.KEYCODE_DPAD_RIGHT) {
+      nextColumns = Math.min(6, columns + 1);
+    } else if (event.keyCode === KeyCode.KEYCODE_ENTER ||
+      event.keyCode === KeyCode.KEYCODE_DPAD_CENTER) {
+      this.insertTableFromGrid(pane, rows, columns);
+      return true;
+    } else if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+      this.tableGridOpen = false;
+      return true;
+    } else {
+      return false;
+    }
+    this.tableGridFocusedRows = nextRows;
+    this.tableGridFocusedColumns = nextColumns;
+    this.getUIContext().getFocusController().requestFocus(
+      this.tableGridCellFocusId(pane, nextRows, nextColumns));
+    return true;
+  }
+
+  private insertTableFromGrid(pane: string, rows: number, columns: number): void {
+    if (!this.tableGridOpen || this.tableGridPane !== pane ||
+      this.currentVaultId !== this.formatMenuSourceVaultId ||
+      this.paneFilePath(pane) !== this.formatMenuSourcePath || !this.isPaneEditable(pane)) {
+      this.tableGridOpen = false;
+      promptAction.showToast({ message: '笔记已变化，请重新选择插入位置' });
+      return;
+    }
+    this.tableGridOpen = false;
+    this.previewBridgeForPane(pane).insertTable(rows, columns);
+  }
+
   private onFormatMenuKey(pane: string, event: KeyEvent): void {
     if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
       this.closeFormatMenu(true);
@@ -3049,10 +3206,32 @@ struct Index {
 
   private hasBlockToolbarForPane(pane: string): boolean {
     const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    const tableActions: boolean = anchor !== null &&
+      anchor.type === 'table' && anchor.tableStructureEditable;
     return this.experienceMode === 'simple' && this.topView === 'note' && this.activePane === pane &&
-      !this.formatMenuOpen && this.isPaneEditable(pane) && anchor !== null && this.blockToolbarActions.length > 0 &&
-      anchor.type !== 'code' &&
+      !this.formatMenuOpen && this.isPaneEditable(pane) && anchor !== null &&
+      (tableActions || (this.blockToolbarActions.length > 0 && anchor.type !== 'code')) &&
       (pane !== 'right' || this.notePaneVisible(pane));
+  }
+
+  private applyTableStructureOperation(pane: string, type: string, side: string): void {
+    const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    if (anchor === null || anchor.type !== 'table' || !anchor.tableStructureEditable ||
+      !this.isPaneEditable(pane)) {
+      return;
+    }
+    this.previewBridgeForPane(pane).applyTableStructureOperation(type, side, anchor.tableRow,
+      anchor.tableColumn, anchor.from, anchor.to);
+  }
+
+  private tableToolbarForPane(pane: string): boolean {
+    const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    return anchor !== null && anchor.type === 'table' && anchor.tableStructureEditable;
+  }
+
+  private tableToolbarCanDeleteRow(pane: string): boolean {
+    const anchor: PreviewBlockAnchor | null = pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    return anchor !== null && anchor.type === 'table' && anchor.tableRow > 0;
   }
 
   private hasBlockPropertyPanelForPane(pane: string, requestedAnchor: PreviewBlockAnchor | null = null): boolean {
@@ -3317,6 +3496,11 @@ struct Index {
       codeLanguageSelectable: anchor.codeLanguageSelectable,
       codeLanguages: anchor.codeLanguages,
       codeEditable: anchor.codeEditable,
+      tableRow: anchor.tableRow,
+      tableColumn: anchor.tableColumn,
+      tableRows: anchor.tableRows,
+      tableColumns: anchor.tableColumns,
+      tableStructureEditable: anchor.tableStructureEditable,
       x: anchor.x,
       y: anchor.y,
       width: anchor.width,
@@ -3577,6 +3761,11 @@ struct Index {
       codeLanguageSelectable: true,
       codeLanguages: latestAnchor.codeLanguages,
       codeEditable: latestAnchor.codeEditable,
+      tableRow: latestAnchor.tableRow,
+      tableColumn: latestAnchor.tableColumn,
+      tableRows: latestAnchor.tableRows,
+      tableColumns: latestAnchor.tableColumns,
+      tableStructureEditable: latestAnchor.tableStructureEditable,
       x: latestAnchor.x,
       y: latestAnchor.y,
       width: latestAnchor.width,
@@ -4548,6 +4737,11 @@ struct Index {
       codeLanguageSelectable: anchor.codeLanguageSelectable,
       codeLanguages: anchor.codeLanguages,
       codeEditable: anchor.codeEditable,
+      tableRow: anchor.tableRow,
+      tableColumn: anchor.tableColumn,
+      tableRows: anchor.tableRows,
+      tableColumns: anchor.tableColumns,
+      tableStructureEditable: anchor.tableStructureEditable,
       x: anchor.x,
       y: anchor.y,
       width: anchor.width,
@@ -5425,7 +5619,8 @@ struct Index {
       return;
     }
     const anchorArea: number[] = [anchor.x, anchor.y, anchor.width, anchor.height];
-    const actionCount: number = Math.min(4, this.blockToolbarActions.length) + 1;
+    const actionCount: number = anchor.type === 'table'
+      ? 4 : Math.min(4, this.blockToolbarActions.length) + 1;
     const naturalWidth: number = actionCount * Size.touch + Space.s2 * Math.max(0, actionCount - 1) +
       Space.s4 * 2;
     const naturalHeight: number = Size.touch + Space.s4 * 2;
@@ -6975,6 +7170,7 @@ struct Index {
   private showUndo(msg: string, snap: UndoSnap | null): void {
     this.undoMsg = msg;
     this.undoSnap = snap;
+    this.tableEditUndoState = null;
     this.undoVisible = true;
     if (this.undoTimer !== -1) {
       clearTimeout(this.undoTimer);
@@ -6982,6 +7178,7 @@ struct Index {
     this.undoTimer = setTimeout((): void => {
       this.undoTimer = -1;
       this.undoVisible = false;
+      this.tableEditUndoState = null;
     }, Motion.snack);
   }
 
@@ -7017,6 +7214,56 @@ struct Index {
       this.showUndo(this.recordFailureFeedback('file', 'restore_trash', 'unknown',
         'status_unknown', 'check_status',
         '回收站恢复未完成；原位置和回收站状态未确认，请检查后再重试。'), null);
+    }
+  }
+
+  private async undoTableEdit(): Promise<void> {
+    const state: TableEditUndoState | null = this.tableEditUndoState;
+    this.hideUndo();
+    this.tableEditUndoState = null;
+    if (state === null || !this.isCurrentSimplePreviewTarget(
+      state.pane, state.path, state.vaultId, state.requestId)) {
+      this.showUndo('笔记已变化，未撤销表格转换', null);
+      return;
+    }
+    const editor: EditorBridge = this.editorBridgeForPane(state.pane);
+    const revision: number = editor.currentDocumentRevision;
+    if (revision !== state.documentRevision) {
+      this.showUndo('笔记已变化，未撤销表格转换', null);
+      return;
+    }
+    let undone: boolean = false;
+    try {
+      undone = await editor.undoHistoryIfContentMatches(state.expectedContent, revision);
+    } catch {
+      this.showUndo('撤销未完成，当前内容仍保留', null);
+      return;
+    }
+    if (!this.isCurrentSimplePreviewTarget(state.pane, state.path, state.vaultId, state.requestId) ||
+      editor.currentDocumentRevision !== revision) {
+      return;
+    }
+    if (!undone) {
+      this.showUndo('内容已变化，未撤销表格转换', null);
+      return;
+    }
+    try {
+      const content: string = await editor.getContent();
+      if (!this.isCurrentSimplePreviewTarget(state.pane, state.path, state.vaultId, state.requestId) ||
+        editor.currentDocumentRevision !== revision) {
+        return;
+      }
+      if (state.pane === 'right') {
+        this.pushRightPreview(content, true);
+      } else {
+        this.pushPreview(content, true);
+      }
+    } catch {
+      if (state.pane === 'right') {
+        void this.syncRightContentToLeft();
+      } else {
+        this.schedulePreviewUpdate();
+      }
     }
   }
 
@@ -8528,7 +8775,15 @@ struct Index {
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
-      if (this.undoSnap !== null) {
+      if (this.tableEditUndoState !== null) {
+        Text('撤销')
+          .fontSize(FontSize.body2)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.snack_action'))
+          .onClick((): void => {
+            void this.undoTableEdit();
+          })
+      } else if (this.undoSnap !== null) {
         Text('撤销')
           .fontSize(FontSize.body2)
           .fontWeight(FontWeight.Medium)
@@ -8993,6 +9248,94 @@ struct Index {
   }
 
   @Builder
+  TableGridCell(pane: string, rows: number, columns: number, selected: boolean) {
+    Row() {
+      Text(`${rows}×${columns}`)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_primary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.control)
+    .backgroundColor(selected ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
+    .focusable(true)
+    .id(this.tableGridCellFocusId(pane, rows, columns))
+    .enabled(this.isPaneEditable(pane))
+    .onAppear((): void => {
+      if (selected && this.tableGridOpen && this.tableGridPane === pane) {
+        this.getUIContext().getFocusController().requestFocus(this.tableGridCellFocusId(pane, rows, columns));
+      }
+    })
+    .onKeyEvent((event: KeyEvent): boolean => {
+      return this.onTableGridCellKey(pane, rows, columns, event);
+    })
+    .onClick((): void => {
+      this.insertTableFromGrid(pane, rows, columns);
+    })
+    .accessibilityText(`插入 ${rows} 行 ${columns} 列表格`)
+  }
+
+  @Builder
+  TableGridPicker(pane: string) {
+    Column({ space: Space.s2 }) {
+      Text('选择表格大小')
+        .fontSize(FontSize.body2)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+      Scroll() {
+        Column({ space: Space.s1 }) {
+          ForEach(this.tableGridRowOptions, (rows: number): void => {
+            Row({ space: Space.s1 }) {
+              ForEach(this.tableGridColumnOptions, (columns: number): void => {
+                this.TableGridCell(pane, rows, columns,
+                  this.tableGridFocusedRows === rows && this.tableGridFocusedColumns === columns)
+              }, (columns: number): string => String(columns))
+            }
+            .width('100%')
+          }, (rows: number): string => String(rows))
+        }
+        .width('100%')
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: Math.max(Size.touch, this.formatMenuMaxHeight - Size.touch * 2) })
+      .scrollBar(BarState.Auto)
+    }
+    .width(Size.touch * 6 + Space.s1 * 5 + Space.s5 * 2)
+    .constraintSize({ maxHeight: this.formatMenuMaxHeight })
+    .padding(Space.s5)
+    .borderRadius(Radius.card)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
+  }
+
+  @Builder
+  TableInsertAction(pane: string) {
+    Row() {
+      Icon('plus', Space.s5, $r('app.color.text_primary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.icon)
+    .enabled(this.isPaneEditable(pane))
+    .onClick((): void => { this.toggleTableGrid(pane); })
+    .bindPopup(this.tableGridOpen && this.tableGridPane === pane, {
+      builder: this.TableGridPicker(pane),
+      placement: Placement.Top,
+      enableArrow: false,
+      mask: false,
+      autoCancel: true,
+      popupColor: Color.Transparent
+    })
+    .accessibilityText('插入表格')
+  }
+
+  @Builder
   FormatCell(glyph: string, caption: string, kind: string) {
     Column({ space: Space.s1 }) {
       Text(glyph)
@@ -9156,36 +9499,66 @@ struct Index {
   }
 
   @Builder
+  TableToolbarAction(icon: string, label: string, type: string, side: string, enabled: boolean) {
+    Row() {
+      Icon(icon, Space.s5, $r('app.color.text_primary'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.icon)
+    .enabled(enabled)
+    .onClick((): void => {
+      this.blockToolbarOpen = false;
+      if (type === 'more') {
+        this.openBlockPropertyPanel(this.blockToolbarPane);
+      } else {
+        this.applyTableStructureOperation(this.blockToolbarPane, type, side);
+      }
+    })
+    .accessibilityText(label)
+  }
+
+  @Builder
   BlockToolbarContent() {
     Row({ space: Space.s1 }) {
-      ForEach(this.blockToolbarActions.slice(0, 4), (action: BlockToolbarAction) => {
-        Row() {
-          Icon(action.icon, Space.s5, $r('app.color.text_primary'))
+      if (this.tableToolbarForPane(this.blockToolbarPane)) {
+        this.TableToolbarAction('plus', '下方加行', 'insertRow', 'down', true)
+        this.TableToolbarAction('plus', '右侧加列', 'insertColumn', 'right', true)
+        this.TableToolbarAction('trash', '删除当前行', 'deleteRow', 'down',
+          this.tableToolbarCanDeleteRow(this.blockToolbarPane))
+        this.TableToolbarAction('more', '更多表格操作', 'more', '', true)
+      } else {
+        ForEach(this.blockToolbarActions.slice(0, 4), (action: BlockToolbarAction) => {
+          Row() {
+            Icon(action.icon, Space.s5, $r('app.color.text_primary'))
+          }
+          .width(Size.touch)
+          .height(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
+          .onClick((): void => {
+            this.blockToolbarOpen = false;
+            action.onActivate();
+          })
+          .accessibilityText(action.accessibilityText)
+        }, (action: BlockToolbarAction) => action.id)
+        if (this.blockToolbarActions.length > 0) {
+          Row() {
+            Icon('more', Space.s5, $r('app.color.text_primary'))
+          }
+          .width(Size.touch)
+          .height(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
+          .onClick((): void => {
+            this.openBlockPropertyPanel(this.blockToolbarPane);
+          })
+          .accessibilityText('更多')
         }
-        .width(Size.touch)
-        .height(Size.touch)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .borderRadius(Radius.icon)
-        .onClick((): void => {
-          this.blockToolbarOpen = false;
-          action.onActivate();
-        })
-        .accessibilityText(action.accessibilityText)
-      }, (action: BlockToolbarAction) => action.id)
-      if (this.blockToolbarActions.length > 0) {
-        Row() {
-          Icon('more', Space.s5, $r('app.color.text_primary'))
-        }
-        .width(Size.touch)
-        .height(Size.touch)
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-        .borderRadius(Radius.icon)
-        .onClick((): void => {
-          this.openBlockPropertyPanel(this.blockToolbarPane);
-        })
-        .accessibilityText('更多')
       }
     }
     .width(this.blockToolbarWidth)
@@ -9239,6 +9612,114 @@ struct Index {
   }
 
   @Builder
+  TableDirectionOption(axis: string, side: string, label: string, selected: boolean) {
+    Text(label)
+      .fontSize(FontSize.body2)
+      .fontColor(selected ? $r('app.color.brand') : $r('app.color.text_primary'))
+      .width(Size.touch * 1.5)
+      .height(Size.touch)
+      .textAlign(TextAlign.Center)
+      .backgroundColor(selected ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
+      .borderRadius(Radius.control)
+      .focusable(true)
+      .onClick((): void => {
+        if (axis === 'row') {
+          this.tableInsertRowSide = side;
+        } else {
+          this.tableInsertColumnSide = side;
+        }
+      })
+      .accessibilityText(`${axis === 'row' ? '行' : '列'}插入方向：${label}`)
+  }
+
+  @Builder
+  TableStructurePanelAction(label: string, icon: string, type: string, side: string, enabled: boolean) {
+    Row({ space: Space.s2 }) {
+      Icon(icon, Space.s5, $r('app.color.text_primary'))
+      Text(label)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .backgroundColor($r('app.color.bg_secondary'))
+    .borderRadius(Radius.control)
+    .enabled(enabled)
+    .focusable(true)
+    .onClick((): void => {
+      this.applyTableStructureOperation(this.blockPanelPane, type, side);
+    })
+    .accessibilityText(label)
+  }
+
+  @Builder
+  TableStructurePanel() {
+    if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tableStructureEditable) {
+      Column({ space: Space.s2 }) {
+        Text('插入行')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+        Row({ space: Space.s2 }) {
+          this.TableDirectionOption('row', 'up', '上方',
+            this.tableInsertRowSide === 'up')
+          this.TableDirectionOption('row', 'down', '下方',
+            this.tableInsertRowSide === 'down')
+        }
+        .width('100%')
+        this.TableStructurePanelAction('插入行', 'plus', 'insertRow', this.tableInsertRowSide,
+          this.blockPanelAnchor.tableRow > 0 || this.tableInsertRowSide === 'down')
+        if (this.blockPanelAnchor.tableRow === 0 && this.tableInsertRowSide === 'up') {
+          Text('表头上方不能插入行')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+        }
+
+        Text('插入列')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .padding({ top: Space.s2 })
+        Row({ space: Space.s2 }) {
+          this.TableDirectionOption('column', 'left', '左侧',
+            this.tableInsertColumnSide === 'left')
+          this.TableDirectionOption('column', 'right', '右侧',
+            this.tableInsertColumnSide === 'right')
+        }
+        .width('100%')
+        this.TableStructurePanelAction('插入列', 'plus', 'insertColumn', this.tableInsertColumnSide, true)
+
+        Text('删除')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .padding({ top: Space.s2 })
+        this.TableStructurePanelAction('删除当前行', 'trash', 'deleteRow', 'down',
+          this.blockPanelAnchor.tableRow > 0)
+        if (this.blockPanelAnchor.tableRow === 0) {
+          Text('表头行不能删除')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+        }
+        this.TableStructurePanelAction('删除当前列', 'trash', 'deleteColumn', 'left',
+          this.blockPanelAnchor.tableColumns > 1)
+        if (this.blockPanelAnchor.tableColumns <= 1) {
+          Text('至少保留一列')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+        }
+      }
+      .width('100%')
+      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+    }
+  }
+
+  @Builder
   BlockPropertyPanel() {
     if (this.blockSourceEditing) {
       Column() {
@@ -9287,6 +9768,8 @@ struct Index {
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')
                 .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'table') {
+              this.TableStructurePanel()
             } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'paragraph' &&
               this.blockPanelAnchor.tapType === '' && this.blockPanelAnchor.inlineIndex < 0) {
               if (this.blockPanelInlineItems.length > 0) {
@@ -10157,6 +10640,9 @@ struct Index {
           this.FormatAction('I', 'italic', pane)
         }
         this.FormatAction('☐', 'task', pane)
+        if (this.experienceMode === 'simple') {
+          this.TableInsertAction(pane)
+        }
         if (this.paneFilePath(pane).length > 0) {
           this.ImageFormatAction(pane)
         }
@@ -10265,6 +10751,9 @@ struct Index {
             },
             onCodeBlockEdit: (request: PreviewCodeEditRequest): void => {
               void this.handlePreviewCodeBlockEdit('right', request);
+            },
+            onTableActionMessage: (message: string): void => {
+              promptAction.showToast({ message: message });
             },
             onCodeBlockEditingChange: (editing: boolean): void => {
               this.onCodeBlockEditingChange('right', editing);
@@ -10473,6 +10962,9 @@ struct Index {
           },
           onCodeBlockEdit: (request: PreviewCodeEditRequest): void => {
             void this.handlePreviewCodeBlockEdit('left', request);
+          },
+          onTableActionMessage: (message: string): void => {
+            promptAction.showToast({ message: message });
           },
           onCodeBlockEditingChange: (editing: boolean): void => {
             this.onCodeBlockEditingChange('left', editing);
