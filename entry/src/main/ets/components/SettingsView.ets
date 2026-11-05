@@ -48,6 +48,8 @@ export struct SettingsView {
   @Prop paneWidthSummary: string = '—';
   /** 当前库 id（诊断区显示库目录） */
   @Prop currentVaultId: string = '';
+  /** 当前库笔记数（统一库访问层计数，Index 维护，不在设置页另行遍历；空库时备份行禁用，37.3） */
+  @Prop currentVaultNoteCount: number = 0;
   @Prop showLineNumbers: boolean = false;
   @Prop experienceMode: EditorExperienceMode = 'simple';
   @StorageProp('appTheme') appTheme: string = 'light';
@@ -59,6 +61,8 @@ export struct SettingsView {
   onOpenPrivacyPolicy: () => void = () => {};
   onClosePrivacyPolicy: () => void = () => {};
   onOpenHistory: () => void = () => {};
+  /** 数据页「导出当前知识库」：复用 25.18 库级分享（37.2）；focusId 为分享面板关闭后的焦点返还目标 */
+  onExportCurrentVault: (focusId: string) => void = (_focusId: string) => {};
   onResetSplit: () => void = () => {};
   onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
   onExperienceModeChange: (mode: EditorExperienceMode) => void = (_mode: EditorExperienceMode) => {};
@@ -482,6 +486,28 @@ export struct SettingsView {
     } catch (error) {
       return 'vaults/' + this.currentVaultId;
     }
+  }
+
+  /**
+   * 备份行是否禁用：无库或空库（37.3，照原型 syncExportBackup 的 disabled 条件）。
+   */
+  private exportBackupDisabled(): boolean {
+    return this.currentVaultId.length === 0 || this.currentVaultNoteCount === 0;
+  }
+
+  /**
+   * 备份行说明（37.1 / 37.3，照原型 syncExportBackup 三态文案）。
+   * 库名即 VaultEntry.id（目录名 = 显示名，与分享面板 itemName 同源）。
+   */
+  private exportBackupHint(): string {
+    if (this.currentVaultId.length === 0) {
+      return '当前没有知识库';
+    }
+    if (this.currentVaultNoteCount === 0) {
+      return '当前知识库没有笔记，无需导出';
+    }
+    return '「' + this.currentVaultId + '」· ' + this.currentVaultNoteCount.toString() +
+      ' 篇笔记 · 打包为 ZIP，可保存到文件或发给自己';
   }
 
   /**
@@ -1136,6 +1162,48 @@ export struct SettingsView {
         .focusable(true)
         .id('settings-heading-data')
         .onAppear((): void => { this.focusCategoryHeading('data'); })
+      // 备份分组（v1.37 37.1，照原型 h4 备份 + .hs-group 行 + .hs-note 注脚）
+      this.GroupTitle('备份')
+      Column() {
+        Row() {
+          Column() {
+            Text('导出当前知识库（ZIP）')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .width('100%')
+            Text(this.exportBackupHint())
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+              .margin({ top: Space.s1 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Icon('chevronRight', 16, $r('app.color.text_tertiary'))
+        }
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+        .borderRadius(Radius.control)
+        .focusable(!this.exportBackupDisabled())
+        .enabled(!this.exportBackupDisabled())
+        .opacity(this.exportBackupDisabled() ? 0.4 : 1)
+        .id('settings-export-vault-row')
+        .accessibilityText(this.exportBackupDisabled()
+          ? '导出当前知识库，已禁用，' + this.exportBackupHint() : '导出当前知识库')
+        .onClick((): void => {
+          this.onExportCurrentVault('settings-export-vault-row');
+        })
+      }
+      .width('100%')
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      Text('不包含应用设置、草稿、回收站与访问令牌。其他知识库可在「管理库」中逐个分享。')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4 })
+        .margin({ top: Space.s2 })
       this.GroupTitle('本地数据')
       Column() {
         // 危险行（v2 .hs-row.hs-danger：透明底、标题用 danger 色），确认在组内展开
@@ -1159,6 +1227,24 @@ export struct SettingsView {
               .fontWeight(FontWeight.Medium)
               .fontColor($r('app.color.text_primary'))
               .width('100%')
+            // v1.37 37.4：重置前建议先导出，行内链接复用 37.2 的分享入口；不改变重置步骤
+            Text() {
+              Span('建议先')
+              Span('导出当前知识库')
+                .fontColor($r('app.color.brand'))
+                .onClick((): void => {
+                  if (this.exportBackupDisabled()) {
+                    return;
+                  }
+                  this.resetConfirmOpen = false;
+                  this.onExportCurrentVault('settings-export-vault-row');
+                })
+              Span('作为备份。')
+            }
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .margin({ top: Space.s2 })
             Text('本页编辑、插入图片、文件操作和回收站将恢复为初始样例，栏宽偏好也会清除，无法撤销。')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_secondary'))

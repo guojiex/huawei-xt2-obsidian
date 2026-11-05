@@ -11950,6 +11950,7 @@ struct Index {
       windowHeightVp: this.windowHeightVp,
       paneWidthSummary: this.settingsPaneWidthSummary(),
       currentVaultId: this.currentVaultId,
+      currentVaultNoteCount: this.currentVaultNoteCount,
       vaults: this.vaults,
       showLineNumbers: this.showLineNumbers,
       experienceMode: this.experienceMode,
@@ -11968,6 +11969,9 @@ struct Index {
       onOpenPrivacyPolicy: (): void => { this.settingsPrivacyPolicyOpen = true; },
       onClosePrivacyPolicy: (): void => { this.settingsPrivacyPolicyOpen = false; },
       onOpenHistory: (): void => { this.topView = 'history'; },
+      onExportCurrentVault: (focusId: string): void => {
+        this.openShareVaultFromManager(this.currentVaultId, focusId);
+      },
       onResetSplit: (): void => { this.resetSplitLayout(); },
       onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); },
       onExperienceModeChange: (mode: EditorExperienceMode): void => { void this.selectEditorExperience(mode); }
