@@ -725,6 +725,19 @@ test('switching to simple mode preserves the open split layout',()=>{
  assert.equal(f.run('experience'),'professional');assert.equal(f.run('referenceShown()'),true);
 });
 
+test('prototype hides paragraph block IDs in preview while preserving source and ordinary carets',()=>{
+ const f=fixture();
+ const source='正文 ^demo-paragraph';
+ f.run('globalThis.blockIdSource='+JSON.stringify(source));
+ const rendered=f.run('renderMarkdown(blockIdSource,false)');
+ assert.match(rendered, /data-block-id="demo-paragraph"/);
+ assert.match(rendered, />正文<\/p>/);
+ assert(!rendered.includes('^demo-paragraph'));
+ assert.equal(f.run('blockIdSource'), source);
+ assert.match(f.run('renderMarkdown('+JSON.stringify('普通 ^ 符号')+',false)'), />普通 \^ 符号<\/p>/);
+ assert.match(f.run('renderMarkdown('+JSON.stringify('普通段落')+',false)'), />普通段落<\/p>/);
+});
+
 test('prototype renders common Markdown and preserves simple list prefixes',()=>{
  const f=fixture();
  const rendered=f.run('renderMarkdown("~~old~~\\n\\n3. first\\n  - child\\n\\n| a | b |\\n| --- | --- |\\n| c | d |",false)');

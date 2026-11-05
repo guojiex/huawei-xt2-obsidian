@@ -584,7 +584,7 @@ const simpleTableCellDisplay=source=>source.replace(/&#(?:([0-9]+)|x([0-9a-f]+))
   else if(line.trim()==='---')html+='<hr'+attrs+'>';
   else if(line.trim()){
    const blockId=cbBlockId(line);
-   html+='<p'+attrs+(blockId?' data-block-id="'+esc(blockId.id)+'"':'')+'>'+inline(line,n)+'</p>';
+   html+='<p'+attrs+(blockId?' data-block-id="'+esc(blockId.id)+'"':'')+'>'+inline(blockId?line.slice(0,blockId.index).replace(/[ \t]+$/,''):line,n)+'</p>';
   }
  }
  closeTable();closeCallout();
