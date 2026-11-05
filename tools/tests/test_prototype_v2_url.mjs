@@ -61,6 +61,18 @@ test('vault manager shares the selected library as ZIP and restores focus',()=>{
  const back=f.run('shareReturnFocus');f.get('shareDialog').dispatch('close',{});assert(back.focused);assert.equal(f.run('shareVaultTarget'),'');
  f.run("notes.filter(n=>n.vault==='local').forEach(n=>n.deleted=true);renderVaultManager()");assert.match(f.get('vaultCards').innerHTML,/data-vault-action="share" data-vault-id="local" disabled/);
 });
+test('settings backup shares the current library and blocks empty-library export',()=>{
+ const f=fixture();const extension=html.match(/\/\/ v1\.37: data page backup export[\s\S]*?(?=<\/script>)/)[0];f.run(extension);
+ assert.equal(f.get('exportVaultBackup').disabled,false);f.get('exportVaultBackup').onclick();
+ assert.equal(f.run('shareSnapshot.title'),'阅读笔记');assert.equal(f.run('shareSnapshot.scope'),'vault');assert(f.run('shareSnapshot.zip'));
+ f.get('resetConfirm').classList.remove('hidden');f.get('resetExportFirst').onclick();assert(f.get('resetConfirm').classList.contains('hidden'));
+ f.run("notes.filter(n=>n.vault===activeVault).forEach(n=>n.deleted=true);syncExportBackup()");
+ assert(f.get('exportVaultBackup').disabled);f.get('shareDialog').open=false;f.get('resetExportFirst').onclick();assert.equal(f.get('shareDialog').open,false);
+});
+test('release notes hide versions newer than the installed version',()=>{
+ const f=fixture();assert.equal(f.run("versionNotAfter('1.0.0','0.2.0')"),false);assert.equal(f.run("versionNotAfter('0.2.0','0.2.0')"),true);
+ assert.match(f.run("renderReleaseEntries([{version:'1.0.0',title:'future',date:'',changes:[]}])"),/当前版本的更新说明将在发布后显示/);
+});
 test('settings header returns one level at a time in single-pane layouts',()=>{
  const f=fixture();f.run("setViewport('phone');openSettings();chooseSettings('about',false);$('openHistory').onclick()");
  assert(f.run('historyOpen'));f.get('closeSettings').onclick();assert(!f.run('historyOpen'));assert(f.run('settingsOpen'));assert(f.get('settingsPage').classList.contains('detail-open'));
