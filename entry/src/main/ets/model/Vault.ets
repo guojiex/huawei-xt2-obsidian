@@ -20,6 +20,8 @@ export interface VaultEntry {
   remote?: string;
   /** Git 库：跟踪分支（clone 时的 ref） */
   branch?: string;
+  /** Git 库：手机推送目标分支；旧注册表缺省为 xt2。 */
+  pushBranch?: string;
   /**
    * Git 库：认证用户名（Gitee / 自建 GitLab 私有库需要，GitHub 留空）。
    * 非敏感、可明文，随注册表存 preferences；令牌本身只进 Asset Store Kit。

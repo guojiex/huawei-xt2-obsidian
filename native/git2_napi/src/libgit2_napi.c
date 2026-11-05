@@ -18,6 +18,12 @@
 #define MAX_ARGUMENT_BYTES 8192
 #define OPENHARMONY_SYSTEM_CA_FILE "/etc/ssl/certs/cacert.pem"
 
+typedef enum {
+  PROGRESS_PHASE_NONE = 0,
+  PROGRESS_PHASE_FETCH,
+  PROGRESS_PHASE_PUSH,
+} progress_phase_t;
+
 typedef struct {
   unsigned int total_objects;
   unsigned int indexed_objects;
@@ -26,6 +32,7 @@ typedef struct {
   unsigned int total_deltas;
   unsigned int indexed_deltas;
   size_t received_bytes;
+  progress_phase_t phase;
 } progress_event_t;
 
 typedef struct {
@@ -50,6 +57,7 @@ typedef struct {
   napi_async_work async_work;
   char *operation;
   char *repository_path;
+  char *target_branch;
   char *username;
   char *password;
   char *bearer_token;
@@ -60,7 +68,8 @@ typedef struct {
   char *result_text;
   char *error_message;
   char *push_status;
-  bool remote_xt2_exists;
+  bool remote_branch_exists;
+  progress_phase_t progress_phase;
   napi_threadsafe_function progress_function;
   int result_code;
 } git_operation_work_t;
@@ -79,6 +88,7 @@ static bool url_has_embedded_credentials(const char *url);
 static napi_value throw_type_error(napi_env env, const char *message);
 static property_status_t read_string_property(napi_env env, napi_value object,
                                              const char *name, char **output);
+static bool is_valid_branch_name(const char *branch);
 static bool has_parent_segment(const char *path);
 static bool is_trash_path(const char *path);
 static int stage_all(git_repository *repository);
@@ -107,7 +117,7 @@ static void call_progress_on_js_thread(napi_env env, napi_value callback,
   if (env != NULL && callback != NULL) {
     napi_value global;
     napi_value progress;
-    if (napi_get_global(env, &global) == napi_ok &&
+    bool ready = napi_get_global(env, &global) == napi_ok &&
         napi_create_object(env, &progress) == napi_ok &&
         set_progress_number(env, progress, "totalObjects", event->total_objects) &&
         set_progress_number(env, progress, "indexedObjects", event->indexed_objects) &&
@@ -115,7 +125,15 @@ static void call_progress_on_js_thread(napi_env env, napi_value callback,
         set_progress_number(env, progress, "localObjects", event->local_objects) &&
         set_progress_number(env, progress, "totalDeltas", event->total_deltas) &&
         set_progress_number(env, progress, "indexedDeltas", event->indexed_deltas) &&
-        set_progress_number(env, progress, "receivedBytes", (double)event->received_bytes)) {
+        set_progress_number(env, progress, "receivedBytes", (double)event->received_bytes);
+    const char *phase_name = event->phase == PROGRESS_PHASE_FETCH ? "fetch" :
+                             event->phase == PROGRESS_PHASE_PUSH ? "push" : NULL;
+    if (ready && phase_name != NULL) {
+      napi_value phase;
+      ready = napi_create_string_utf8(env, phase_name, NAPI_AUTO_LENGTH, &phase) == napi_ok &&
+              napi_set_named_property(env, progress, "operation", phase) == napi_ok;
+    }
+    if (ready) {
       (void)napi_call_function(env, global, callback, 1, &progress, NULL);
     }
   }
@@ -139,6 +157,7 @@ static int report_transfer_progress(const git_indexer_progress *stats, void *pay
   event->total_deltas = stats->total_deltas;
   event->indexed_deltas = stats->indexed_deltas;
   event->received_bytes = stats->received_bytes;
+  event->phase = PROGRESS_PHASE_NONE;
 
   if (napi_call_threadsafe_function(work->progress_function, event,
                                     napi_tsfn_nonblocking) != napi_ok) {
@@ -169,11 +188,27 @@ static int report_operation_progress(const git_indexer_progress *stats, void *pa
   event->total_deltas = stats->total_deltas;
   event->indexed_deltas = stats->indexed_deltas;
   event->received_bytes = stats->received_bytes;
+  event->phase = work->progress_phase;
   if (napi_call_threadsafe_function(work->progress_function, event,
                                     napi_tsfn_nonblocking) != napi_ok) {
     free(event);
   }
   return 0;
+}
+
+static void emit_operation_phase(git_operation_work_t *work, progress_phase_t phase) {
+  if (work == NULL || work->progress_function == NULL) {
+    return;
+  }
+  progress_event_t *event = (progress_event_t *)calloc(1, sizeof(*event));
+  if (event == NULL) {
+    return;
+  }
+  event->phase = phase;
+  if (napi_call_threadsafe_function(work->progress_function, event,
+                                    napi_tsfn_nonblocking) != napi_ok) {
+    free(event);
+  }
 }
 
 static int acquire_operation_credentials(git_credential **out, const char *url,
@@ -252,9 +287,9 @@ static int configure_remote_auth(git_operation_work_t *work, const char *url,
   return 0;
 }
 
-static int fetch_xt2(git_remote *remote, git_operation_work_t *work,
-                     const git_remote_callbacks *callbacks,
-                     const git_strarray *headers) {
+static int fetch_target_branch(git_remote *remote, git_operation_work_t *work,
+                               const git_remote_callbacks *callbacks,
+                               const git_strarray *headers) {
   git_remote_connect_options connect_options;
   if (git_remote_connect_options_init(&connect_options,
                                      GIT_REMOTE_CONNECT_OPTIONS_VERSION) < 0) {
@@ -269,12 +304,20 @@ static int fetch_xt2(git_remote *remote, git_operation_work_t *work,
   const git_remote_head **heads = NULL;
   size_t head_count = 0;
   const int list_result = git_remote_ls(&heads, &head_count, remote);
-  bool xt2_exists = false;
+  char remote_head[MAX_ARGUMENT_BYTES + 12];
+  const int remote_head_length = snprintf(remote_head, sizeof(remote_head),
+                                          "refs/heads/%s", work->target_branch);
+  if (remote_head_length < 0 || (size_t)remote_head_length >= sizeof(remote_head)) {
+    git_remote_disconnect(remote);
+    work->error_message = strdup("目标分支名过长");
+    return -1;
+  }
+  bool branch_exists = false;
   if (list_result == 0) {
     for (size_t i = 0; i < head_count; i++) {
       if (heads[i] != NULL && heads[i]->name != NULL &&
-          strcmp(heads[i]->name, "refs/heads/xt2") == 0) {
-        xt2_exists = true;
+          strcmp(heads[i]->name, remote_head) == 0) {
+        branch_exists = true;
         break;
       }
     }
@@ -283,12 +326,12 @@ static int fetch_xt2(git_remote *remote, git_operation_work_t *work,
   if (list_result < 0) {
     return list_result;
   }
-  if (!xt2_exists) {
-    work->remote_xt2_exists = false;
+  if (!branch_exists) {
+    work->remote_branch_exists = false;
     work->result_text = strdup("missing");
     return work->result_text != NULL ? 0 : -1;
   }
-  work->remote_xt2_exists = true;
+  work->remote_branch_exists = true;
 
   git_fetch_options fetch_options;
   if (git_fetch_options_init(&fetch_options, GIT_FETCH_OPTIONS_VERSION) < 0) {
@@ -296,19 +339,32 @@ static int fetch_xt2(git_remote *remote, git_operation_work_t *work,
   }
   fetch_options.callbacks = *callbacks;
   fetch_options.custom_headers = *headers;
-  char *refspec_text = "+refs/heads/xt2:refs/remotes/origin/xt2";
+  const char remote_prefix[] = "+refs/heads/";
+  const char tracking_suffix[] = ":refs/remotes/origin/";
+  const size_t branch_length = strlen(work->target_branch);
+  const size_t refspec_length = sizeof(remote_prefix) - 1 + branch_length +
+                                sizeof(tracking_suffix) - 1 + branch_length;
+  char *refspec_text = (char *)malloc(refspec_length + 1);
+  if (refspec_text == NULL) {
+    return -1;
+  }
+  (void)snprintf(refspec_text, refspec_length + 1, "%s%s%s%s",
+                 remote_prefix, work->target_branch, tracking_suffix, work->target_branch);
   git_strarray refspecs = { &refspec_text, 1 };
-  if (git_remote_fetch(remote, &refspecs, &fetch_options, "fetch xt2") < 0) {
+  const int fetch_result = git_remote_fetch(remote, &refspecs, &fetch_options,
+                                            "fetch configured branch");
+  free(refspec_text);
+  if (fetch_result < 0) {
     return -1;
   }
   work->result_text = strdup("fetched");
   return work->result_text != NULL ? 0 : -1;
 }
 
-static int push_xt2(git_repository *repository, git_remote *remote,
-                    git_operation_work_t *work,
-                    const git_remote_callbacks *callbacks,
-                    const git_strarray *headers) {
+static int push_target_branch(git_repository *repository, git_remote *remote,
+                              git_operation_work_t *work,
+                              const git_remote_callbacks *callbacks,
+                              const git_strarray *headers) {
   git_reference *head = NULL;
   git_reference *tracking = NULL;
   git_oid local_oid;
@@ -355,9 +411,21 @@ static int push_xt2(git_repository *repository, git_remote *remote,
   }
   git_status_list_free(status);
 
-  if (work->remote_xt2_exists) {
+  char tracking_name[MAX_ARGUMENT_BYTES + 24];
+  char target_refname[MAX_ARGUMENT_BYTES + 12];
+  const int tracking_name_length = snprintf(tracking_name, sizeof(tracking_name),
+                                            "refs/remotes/origin/%s", work->target_branch);
+  const int target_refname_length = snprintf(target_refname, sizeof(target_refname),
+                                             "refs/heads/%s", work->target_branch);
+  if (tracking_name_length < 0 || (size_t)tracking_name_length >= sizeof(tracking_name) ||
+      target_refname_length < 0 || (size_t)target_refname_length >= sizeof(target_refname)) {
+    result = -1;
+    goto cleanup;
+  }
+
+  if (work->remote_branch_exists) {
     int tracking_result = git_reference_lookup(&tracking, repository,
-                                               "refs/remotes/origin/xt2");
+                                               tracking_name);
     if (tracking_result < 0 || git_reference_target(tracking) == NULL) {
       result = tracking_result < 0 ? tracking_result : -1;
       goto cleanup;
@@ -365,7 +433,13 @@ static int push_xt2(git_repository *repository, git_remote *remote,
     remote_oid = *git_reference_target(tracking);
     if (!git_oid_equal(&local_oid, &remote_oid) &&
         git_graph_descendant_of(repository, &local_oid, &remote_oid) != 1) {
-      work->error_message = strdup("远端 xt2 已变化且不包含本地提交；拒绝覆盖，请在 PC 端解决冲突");
+      const size_t message_length = strlen(work->target_branch) + 100;
+      work->error_message = (char *)malloc(message_length);
+      if (work->error_message != NULL) {
+        (void)snprintf(work->error_message, message_length,
+                       "远端 %s 已前进且不包含本地提交；拒绝覆盖，请在 PC 端解决冲突",
+                       work->target_branch);
+      }
       result = -1;
       goto cleanup;
     }
@@ -380,14 +454,16 @@ static int push_xt2(git_repository *repository, git_remote *remote,
   push_options.custom_headers = *headers;
   char *refspec_text = NULL;
   const size_t refname_length = strlen(local_refname);
-  const char suffix[] = ":refs/heads/xt2";
-  refspec_text = (char *)malloc(refname_length + sizeof(suffix));
+  const size_t suffix_length = strlen(target_refname) + 1;
+  refspec_text = (char *)malloc(refname_length + suffix_length + 1);
   if (refspec_text == NULL) {
     result = -1;
     goto cleanup;
   }
   memcpy(refspec_text, local_refname, refname_length);
-  memcpy(refspec_text + refname_length, suffix, sizeof(suffix));
+  refspec_text[refname_length] = ':';
+  memcpy(refspec_text + refname_length + 1, target_refname,
+         strlen(target_refname) + 1);
   git_strarray refspecs = { &refspec_text, 1 };
   const int push_result = git_remote_push(remote, &refspecs, &push_options);
   free(refspec_text);
@@ -399,9 +475,9 @@ static int push_xt2(git_repository *repository, git_remote *remote,
   } else {
     git_reference_free(tracking);
     tracking = NULL;
-    if (git_reference_create(&tracking, repository, "refs/remotes/origin/xt2",
-                             &local_oid, 1, "update after push to xt2") < 0) {
-      work->error_message = strdup("远端已接收推送，但本地 xt2 跟踪状态未更新；可重试推送");
+    if (git_reference_create(&tracking, repository, tracking_name,
+                             &local_oid, 1, "update after push") < 0) {
+      work->error_message = strdup("远端已接收推送，但本地跟踪状态未更新；可重试推送");
       result = -1;
       goto cleanup;
     }
@@ -424,6 +500,7 @@ cleanup:
 static void free_git_operation(git_operation_work_t *work) {
   free(work->operation);
   free(work->repository_path);
+  free(work->target_branch);
   free(work->username);
   free(work->password);
   free(work->bearer_token);
@@ -491,11 +568,15 @@ static void execute_git_operation(napi_env env, void *data) {
       result = -1;
       goto operation_failed;
     }
-    result = fetch_xt2(remote, work, &callbacks, &headers);
+    work->progress_phase = PROGRESS_PHASE_FETCH;
+    emit_operation_phase(work, PROGRESS_PHASE_FETCH);
+    result = fetch_target_branch(remote, work, &callbacks, &headers);
     if (result == 0 && strcmp(work->operation, "push") == 0) {
       free(work->result_text);
       work->result_text = NULL;
-      result = push_xt2(repository, remote, work, &callbacks, &headers);
+      work->progress_phase = PROGRESS_PHASE_PUSH;
+      emit_operation_phase(work, PROGRESS_PHASE_PUSH);
+      result = push_target_branch(repository, remote, work, &callbacks, &headers);
     }
   } else {
     work->error_message = strdup("unsupported Git operation");
@@ -554,6 +635,7 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
   bool progress_enabled = false;
   property_status_t operation_status;
   property_status_t path_status;
+  property_status_t target_branch_status;
   property_status_t username_status;
   property_status_t password_status;
   property_status_t bearer_status;
@@ -576,6 +658,7 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
   work->env = env;
   operation_status = read_string_property(env, argv[0], "operation", &work->operation);
   path_status = read_string_property(env, argv[0], "repositoryPath", &work->repository_path);
+  target_branch_status = read_string_property(env, argv[0], "targetBranch", &work->target_branch);
   username_status = read_string_property(env, argv[0], "username", &work->username);
   password_status = read_string_property(env, argv[0], "password", &work->password);
   bearer_status = read_string_property(env, argv[0], "bearerToken", &work->bearer_token);
@@ -598,6 +681,7 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
     progress_enabled = progress_type == napi_function;
   }
   if (operation_status == PROPERTY_READ_ERROR || path_status == PROPERTY_READ_ERROR ||
+      target_branch_status == PROPERTY_READ_ERROR ||
       username_status == PROPERTY_READ_ERROR || password_status == PROPERTY_READ_ERROR ||
       bearer_status == PROPERTY_READ_ERROR || ca_status == PROPERTY_READ_ERROR ||
       message_status == PROPERTY_READ_ERROR || author_name_status == PROPERTY_READ_ERROR ||
@@ -605,8 +689,16 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
     free_git_operation(work);
     return throw_type_error(env, "Git operation values must be strings no longer than 8192 bytes");
   }
+  if (target_branch_status == PROPERTY_MISSING) {
+    work->target_branch = strdup("xt2");
+    if (work->target_branch == NULL) {
+      free_git_operation(work);
+      return throw_type_error(env, "could not allocate target branch");
+    }
+  }
   if (operation_status != PROPERTY_PRESENT || path_status != PROPERTY_PRESENT ||
       work->repository_path[0] != '/' || has_parent_segment(work->repository_path) ||
+      !is_valid_branch_name(work->target_branch) ||
       (username_status == PROPERTY_PRESENT) != (password_status == PROPERTY_PRESENT) ||
       (username_status == PROPERTY_PRESENT &&
        (work->username[0] == '\0' || work->password[0] == '\0')) ||
@@ -858,6 +950,32 @@ static property_status_t read_string_property(napi_env env, napi_value object,
   return PROPERTY_PRESENT;
 }
 
+static bool is_valid_branch_name(const char *branch) {
+  if (!ensure_libgit2_initialized()) {
+    return false;
+  }
+  if (branch == NULL || branch[0] == '\0' || strcmp(branch, "HEAD") == 0 ||
+      branch[0] == '/' || branch[0] == '.' || branch[0] == '-') {
+    return false;
+  }
+  const size_t length = strlen(branch);
+  if (length == 0 || length > 400 || branch[length - 1] == '/' ||
+      branch[length - 1] == '.' ||
+      (length >= 5 && strcmp(branch + length - 5, ".lock") == 0)) {
+    return false;
+  }
+  size_t codepoints = 0;
+  for (size_t i = 0; i < length; i++) {
+    if (((unsigned char)branch[i] & 0xc0) != 0x80 && ++codepoints > 100) {
+      return false;
+    }
+  }
+  char refname[MAX_ARGUMENT_BYTES + 12];
+  const int refname_length = snprintf(refname, sizeof(refname), "refs/heads/%s", branch);
+  return refname_length >= 0 && (size_t)refname_length < sizeof(refname) &&
+         git_reference_is_valid_name(refname) == 1;
+}
+
 static bool has_parent_segment(const char *path) {
   const char *segment = path;
   for (const char *cursor = path;; ++cursor) {
@@ -1046,11 +1164,12 @@ static bool is_trash_path(const char *path) {
 }
 
 static napi_value get_repository_state(napi_env env, napi_callback_info info) {
-  size_t argc = 1;
-  napi_value argv[1];
+  size_t argc = 2;
+  napi_value argv[2];
   napi_valuetype type;
   size_t path_length = 0;
   char *path = NULL;
+  char *push_branch = NULL;
   git_repository *repository = NULL;
   git_reference *head = NULL;
   git_status_list *status = NULL;
@@ -1060,23 +1179,28 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
   napi_value status_count_value;
   napi_value pack_count_value;
   napi_value head_value;
+  napi_value tracking_known_value;
   napi_value ahead_count_value;
   napi_value behind_count_value;
+  napi_value changes_value;
   char pack_directory[MAX_ARGUMENT_BYTES + 32];
   size_t pack_file_count = 0;
   size_t status_count = 0;
+  size_t change_index = 0;
   size_t ahead_count = 0;
   size_t behind_count = 0;
   const char *branch = "";
   char head_text[GIT_OID_HEXSZ + 1] = "";
   git_oid head_oid;
   bool clean = false;
+  bool tracking_known = false;
 
-  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc != 1 ||
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok ||
+      (argc != 1 && argc != 2) ||
       napi_typeof(env, argv[0], &type) != napi_ok || type != napi_string ||
       napi_get_value_string_utf8(env, argv[0], NULL, 0, &path_length) != napi_ok ||
       path_length == 0 || path_length > MAX_ARGUMENT_BYTES) {
-    return throw_type_error(env, "getRepositoryState expects one absolute repository path");
+    return throw_type_error(env, "getRepositoryState expects a repository path and optional branch");
   }
 
   path = (char *)malloc(path_length + 1);
@@ -1087,8 +1211,40 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
     return throw_type_error(env, "repository path must be absolute");
   }
 
+  push_branch = strdup("xt2");
+  if (argc == 2) {
+    size_t branch_length = 0;
+    napi_valuetype branch_type;
+    if (napi_typeof(env, argv[1], &branch_type) != napi_ok || branch_type != napi_string ||
+        napi_get_value_string_utf8(env, argv[1], NULL, 0, &branch_length) != napi_ok ||
+        branch_length == 0 || branch_length > MAX_ARGUMENT_BYTES) {
+      free(path);
+      free(push_branch);
+      return throw_type_error(env, "push branch must be a nonempty string");
+    }
+    char *provided_branch = (char *)malloc(branch_length + 1);
+    size_t copied_branch_length = 0;
+    if (provided_branch == NULL ||
+        napi_get_value_string_utf8(env, argv[1], provided_branch, branch_length + 1,
+                                   &copied_branch_length) != napi_ok ||
+        copied_branch_length != branch_length) {
+      free(path);
+      free(push_branch);
+      free(provided_branch);
+      return throw_type_error(env, "could not read push branch");
+    }
+    free(push_branch);
+    push_branch = provided_branch;
+  }
+  if (push_branch == NULL || !is_valid_branch_name(push_branch)) {
+    free(path);
+    free(push_branch);
+    return throw_type_error(env, "invalid push branch");
+  }
+
   if (!ensure_libgit2_initialized()) {
     free(path);
+    free(push_branch);
     return throw_type_error(env, "libgit2 initialization failed");
   }
   pthread_mutex_lock(&g_clone_mutex);
@@ -1096,6 +1252,7 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
     git_repository_free(repository);
     pthread_mutex_unlock(&g_clone_mutex);
     free(path);
+    free(push_branch);
     return throw_git_error(env, "repository could not be opened");
   }
 
@@ -1111,6 +1268,7 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
     git_repository_free(repository);
     pthread_mutex_unlock(&g_clone_mutex);
     free(path);
+    free(push_branch);
     return throw_git_error(env, "repository status options failed");
   }
   status_options.show = GIT_STATUS_SHOW_INDEX_AND_WORKDIR;
@@ -1120,7 +1278,16 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
     git_repository_free(repository);
     pthread_mutex_unlock(&g_clone_mutex);
     free(path);
+    free(push_branch);
     return throw_git_error(env, "repository status failed");
+  }
+  if (napi_create_array_with_length(env, 0, &changes_value) != napi_ok) {
+    git_status_list_free(status);
+    git_repository_free(repository);
+    pthread_mutex_unlock(&g_clone_mutex);
+    free(path);
+    free(push_branch);
+    return throw_type_error(env, "could not read repository changes");
   }
   for (size_t i = 0; i < git_status_list_entrycount(status); i++) {
     const git_status_entry *entry = git_status_byindex(status, i);
@@ -1136,6 +1303,30 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
     }
     if (!is_trash_path(old_path) && !is_trash_path(new_path)) {
       status_count++;
+      const char *change_path = new_path != NULL ? new_path : old_path;
+      const git_status_t flags = entry != NULL ? entry->status : GIT_STATUS_CURRENT;
+      const char *change_kind =
+          (flags & (GIT_STATUS_INDEX_NEW | GIT_STATUS_WT_NEW)) != 0 ? "A" :
+          (flags & (GIT_STATUS_INDEX_DELETED | GIT_STATUS_WT_DELETED)) != 0 ? "D" : "M";
+      napi_value change;
+      napi_value change_path_value;
+      napi_value change_kind_value;
+      if (change_path != NULL &&
+          (napi_create_object(env, &change) != napi_ok ||
+           napi_create_string_utf8(env, change_path, NAPI_AUTO_LENGTH,
+                                   &change_path_value) != napi_ok ||
+           napi_set_named_property(env, change, "path", change_path_value) != napi_ok ||
+           napi_create_string_utf8(env, change_kind, NAPI_AUTO_LENGTH,
+                                   &change_kind_value) != napi_ok ||
+           napi_set_named_property(env, change, "status", change_kind_value) != napi_ok ||
+           napi_set_element(env, changes_value, (uint32_t)change_index++, change) != napi_ok)) {
+        git_status_list_free(status);
+        git_repository_free(repository);
+        pthread_mutex_unlock(&g_clone_mutex);
+        free(path);
+        free(push_branch);
+        return throw_type_error(env, "could not read changed file path");
+      }
     }
   }
   clean = status_count == 0;
@@ -1143,11 +1334,20 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
   if (git_reference_name_to_id(&head_oid, repository, "HEAD") == 0) {
     git_oid_tostr(head_text, sizeof(head_text), &head_oid);
     git_reference *remote_tracking = NULL;
-    if (git_reference_lookup(&remote_tracking, repository,
-                             "refs/remotes/origin/xt2") == 0 &&
+    char tracking_name[MAX_ARGUMENT_BYTES + 24];
+    const int tracking_name_length = snprintf(tracking_name, sizeof(tracking_name),
+                                              "refs/remotes/origin/%s", push_branch);
+    if (tracking_name_length >= 0 &&
+        (size_t)tracking_name_length < sizeof(tracking_name) &&
+        git_reference_lookup(&remote_tracking, repository, tracking_name) == 0 &&
         git_reference_target(remote_tracking) != NULL) {
-      (void)git_graph_ahead_behind(&ahead_count, &behind_count, repository,
-                                   &head_oid, git_reference_target(remote_tracking));
+      if (git_graph_ahead_behind(&ahead_count, &behind_count, repository,
+                                 &head_oid, git_reference_target(remote_tracking)) == 0) {
+        tracking_known = true;
+      } else {
+        ahead_count = 0;
+        behind_count = 0;
+      }
     }
     git_reference_free(remote_tracking);
   }
@@ -1179,15 +1379,19 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
       napi_set_named_property(env, result, "statusEntryCount", status_count_value) != napi_ok ||
       napi_create_double(env, (double)pack_file_count, &pack_count_value) != napi_ok ||
       napi_set_named_property(env, result, "packFileCount", pack_count_value) != napi_ok ||
+      napi_get_boolean(env, tracking_known, &tracking_known_value) != napi_ok ||
+      napi_set_named_property(env, result, "trackingKnown", tracking_known_value) != napi_ok ||
       napi_create_double(env, (double)ahead_count, &ahead_count_value) != napi_ok ||
       napi_set_named_property(env, result, "aheadCount", ahead_count_value) != napi_ok ||
       napi_create_double(env, (double)behind_count, &behind_count_value) != napi_ok ||
-      napi_set_named_property(env, result, "behindCount", behind_count_value) != napi_ok) {
+      napi_set_named_property(env, result, "behindCount", behind_count_value) != napi_ok ||
+      napi_set_named_property(env, result, "changes", changes_value) != napi_ok) {
     git_status_list_free(status);
     git_reference_free(head);
     git_repository_free(repository);
     pthread_mutex_unlock(&g_clone_mutex);
     free(path);
+    free(push_branch);
     return throw_type_error(env, "could not read repository state");
   }
 
@@ -1196,6 +1400,7 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
   git_repository_free(repository);
   pthread_mutex_unlock(&g_clone_mutex);
   free(path);
+  free(push_branch);
   return result;
 }
 

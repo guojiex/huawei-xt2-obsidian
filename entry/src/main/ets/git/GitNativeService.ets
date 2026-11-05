@@ -9,8 +9,8 @@ export class GitNativeService {
     return nativeGit2.gitAction(options);
   }
 
-  static repositoryState(path: string): Git2RepositoryState {
-    return nativeGit2.getRepositoryState(path);
+  static repositoryState(path: string, targetBranch: string = 'xt2'): Git2RepositoryState {
+    return nativeGit2.getRepositoryState(path, targetBranch);
   }
 
   static version(): string {

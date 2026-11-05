@@ -44,6 +44,7 @@ import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { ImportVaultDialog } from '../components/ImportVaultDialog';
+import { GitSyncDialog } from '../components/GitSyncDialog';
 import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } from '../components/NoteDialogs';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
@@ -517,6 +518,8 @@ struct Index {
   /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
   private importVaultCtl: CustomDialogController | null = null;
+  private gitSyncCtl: CustomDialogController | null = null;
+  private gitSyncBusy: boolean = false;
   private pendingExternalDirectory: ExternalDirectorySelection | null = null;
   private renameDialogCtl: CustomDialogController | null = null;
   private deleteDialogCtl: CustomDialogController | null = null;
@@ -2202,14 +2205,15 @@ struct Index {
 
   /** 首页角标仅查询本地 Git 状态；失败或非 Git 库时清掉旧数值，不做后台同步。 */
   private refreshGitAheadCommitCount(): void {
-    if (this.currentVaultId.length === 0 || !this.currentVaultIsGit()) {
+    const entry: VaultEntry | null = VaultRegistry.get().currentEntry();
+    if (entry === null || entry.type !== 'git') {
       this.gitAheadCommitCount = 0;
       return;
     }
     try {
-      const repositoryPath: string = VaultRegistry.get().vaultDirOf(this.currentVaultId);
-      const aheadCount: number = GitNativeService.repositoryState(repositoryPath).aheadCount;
-      this.gitAheadCommitCount = aheadCount > 0 ? aheadCount : 0;
+      const repositoryPath: string = VaultRegistry.get().vaultDirOf(entry.id);
+      const state = GitNativeService.repositoryState(repositoryPath, entry.pushBranch ?? 'xt2');
+      this.gitAheadCommitCount = state.trackingKnown && state.aheadCount > 0 ? state.aheadCount : 0;
     } catch (_error) {
       this.gitAheadCommitCount = 0;
     }
@@ -2225,13 +2229,56 @@ struct Index {
       return;
     }
     this.moreMenuOpen = false;
-    if (draft === null) {
-      GitImportDraftStore.clear();
-    } else {
+    if (draft !== null) {
       // 令牌只在进程内交接，不进路由参数、日志或 preferences。
       GitImportDraftStore.set(draft);
+      router.pushUrl({ url: 'pages/SyncPage' });
+      return;
     }
-    router.pushUrl({ url: 'pages/SyncPage' });
+    GitImportDraftStore.clear();
+    const entry: VaultEntry | null = VaultRegistry.get().currentEntry();
+    if (entry === null || entry.type !== 'git') {
+      promptAction.showToast({ message: '当前库不是 Git 库' });
+      return;
+    }
+    this.gitSyncBusy = false;
+    let focusRestored: boolean = false;
+    const focusReturnId: string = this.isSingleScreenLayout()
+      ? 'workspace-more-button' : 'git-sync-button';
+    const restoreFocus = (): void => {
+      if (focusRestored) {
+        return;
+      }
+      focusRestored = true;
+      setTimeout((): void => {
+        this.getUIContext().getFocusController().requestFocus(focusReturnId);
+      }, 0);
+    };
+    const syncSheet: boolean = this.isSingleScreenLayout();
+    this.gitSyncCtl = new CustomDialogController({
+      builder: GitSyncDialog({
+        vaultId: entry.id,
+        singleScreen: syncSheet,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onBusyChange: (busy: boolean): void => { this.gitSyncBusy = busy; },
+        onDismiss: restoreFocus
+      }),
+      cancel: (): void => {
+        if (!this.gitSyncBusy) {
+          restoreFocus();
+        }
+      },
+      autoCancel: true,
+      alignment: syncSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      customStyle: true,
+      onWillDismiss: (action: DismissDialogAction): void => {
+        if (!this.gitSyncBusy) {
+          action.dismiss();
+        }
+      }
+    });
+    this.gitSyncCtl.open();
   }
 
   /** 统一导入入口：文件树选择器与库管理页共用。 */
@@ -8303,6 +8350,7 @@ struct Index {
     .onClick((): void => {
       void this.openGitSyncPage();
     })
+    .id('git-sync-button')
     // v1.10 读屏：纯图标按钮补名称与待推送状态
     .accessibilityText('Git 同步')
     .accessibilityTextHint(this.gitAheadCommitCount > 0

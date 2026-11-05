@@ -12,6 +12,7 @@ export interface Git2Progress {
   totalDeltas: number;
   indexedDeltas: number;
   receivedBytes: number;
+  operation?: 'fetch' | 'push';
 }
 
 export interface Git2CloneOptions {
@@ -31,13 +32,21 @@ export interface Git2RepositoryState {
   clean: boolean;
   statusEntryCount: number;
   packFileCount: number;
+  trackingKnown: boolean;
   aheadCount: number;
   behindCount: number;
+  changes: Git2FileChange[];
+}
+
+export interface Git2FileChange {
+  path: string;
+  status: 'M' | 'A' | 'D';
 }
 
 export interface Git2ActionOptions {
   operation: 'stage' | 'commit' | 'fetch' | 'push';
   repositoryPath: string;
+  targetBranch?: string;
   username?: string;
   password?: string;
   bearerToken?: string;
@@ -51,7 +60,7 @@ export interface Git2ActionOptions {
 declare const nativeGit2: {
   getVersion(): string;
   getFeatures(): Git2Features;
-  getRepositoryState(path: string): Git2RepositoryState;
+  getRepositoryState(path: string, targetBranch?: string): Git2RepositoryState;
   clone(options: Git2CloneOptions): Promise<string>;
   gitAction(options: Git2ActionOptions): Promise<string>;
 };

@@ -44,6 +44,7 @@ interface VaultEntryRaw {
   createdAt?: Object;
   remote?: Object;
   branch?: Object;
+  pushBranch?: Object;
   authUsername?: Object;
   lastSyncAt?: Object;
   rootKind?: Object;
@@ -163,6 +164,12 @@ export class VaultRegistry {
       }
       if (v.branch !== undefined) {
         item.branch = v.branch;
+      }
+      if (v.type === 'git') {
+        item.pushBranch = v.pushBranch ?? 'xt2';
+      }
+      if (v.pushBranch !== undefined) {
+        item.pushBranch = v.pushBranch;
       }
       if (v.authUsername !== undefined) {
         item.authUsername = v.authUsername;
@@ -311,6 +318,7 @@ export class VaultRegistry {
     if (branch.length > 0) {
       entry.branch = branch;
     }
+    entry.pushBranch = 'xt2';
     if (authUsername.length > 0) {
       entry.authUsername = authUsername;
     }
@@ -432,6 +440,31 @@ export class VaultRegistry {
       } else {
         entry.authUsername = previous;
       }
+      this.persist();
+      const err = error as BusinessError;
+      throw new Error(err.message);
+    }
+  }
+
+  /** 更新当前库的非敏感推送目标；注册表写失败时恢复内存值。 */
+  updateGitPushBranch(id: string, pushBranch: string): void {
+    const entry: VaultEntry | null = this.findEntry(id);
+    if (entry === null || entry.type !== 'git') {
+      throw new Error('目标不是已登记的 Git 库: ' + id);
+    }
+    const normalized: string = pushBranch.trim();
+    if (normalized.length === 0) {
+      throw new Error('推送分支不能为空');
+    }
+    const previous: string | undefined = entry.pushBranch;
+    if (previous === normalized) {
+      return;
+    }
+    entry.pushBranch = normalized;
+    try {
+      this.persist(true);
+    } catch (error) {
+      entry.pushBranch = previous;
       this.persist();
       const err = error as BusinessError;
       throw new Error(err.message);
@@ -827,6 +860,8 @@ export class VaultRegistry {
         if (typeof item.branch === 'string') {
           entry.branch = item.branch;
         }
+        entry.pushBranch = typeof item.pushBranch === 'string' && item.pushBranch.length > 0
+          ? item.pushBranch : 'xt2';
         if (typeof item.authUsername === 'string') {
           entry.authUsername = item.authUsername;
         }

@@ -160,6 +160,57 @@ test('external registration persistence failure rolls back the entry and accesso
   assert.equal(registry.accessCache.size, 0);
 });
 
+test('Git push branch defaults to xt2 and stays with its vault through rename', () => {
+  const { registry } = createRegistry([], ['/sandbox/vaults/repo']);
+  const entry = registry.registerGit('repo', 'https://example.invalid/repo.git', 'main', '');
+
+  assert.equal(entry.pushBranch, 'xt2');
+  registry.updateGitPushBranch('repo', 'phone/notes');
+  assert.equal(registry.list()[0].pushBranch, 'phone/notes');
+
+  const renamed = registry.rename('repo', 'renamed');
+  assert.equal(renamed.pushBranch, 'phone/notes');
+  assert.equal(registry.list()[0].pushBranch, 'phone/notes');
+});
+
+test('Git push branches are isolated by vault', () => {
+  const { registry } = createRegistry([], ['/sandbox/vaults/first', '/sandbox/vaults/second']);
+  registry.registerGit('first', 'https://example.invalid/first.git', 'main', '');
+  registry.registerGit('second', 'https://example.invalid/second.git', 'master', '');
+
+  registry.updateGitPushBranch('first', 'phone/notes');
+  registry.updateGitPushBranch('second', 'tablet/notes');
+
+  assert.deepEqual(Array.from(registry.list(), (entry) => entry.pushBranch),
+    ['phone/notes', 'tablet/notes']);
+});
+
+test('legacy Git registry entries without a push branch default to xt2', () => {
+  const { registry } = createRegistry();
+
+  const loaded = registry.parseState(JSON.stringify({
+    vaults: [{ id: 'repo', type: 'git', createdAt: 1, branch: 'main' }],
+    currentVaultId: 'repo'
+  }));
+
+  assert.equal(loaded.vaults[0].branch, 'main');
+  assert.equal(loaded.vaults[0].pushBranch, 'xt2');
+});
+
+test('Git push branch persistence failure restores the previous per-vault value', () => {
+  const { registry } = createRegistry();
+  const entry = {
+    id: 'repo', vaultKey: 'repo-key', type: 'git', createdAt: 1, pushBranch: 'xt2'
+  };
+  registry.state.vaults.push(entry);
+  registry.persist = (mustSucceed = false) => {
+    if (mustSucceed) throw new Error('preferences flush failed');
+  };
+
+  assert.throws(() => registry.updateGitPushBranch('repo', 'phone/notes'), /preferences flush failed/);
+  assert.equal(entry.pushBranch, 'xt2');
+});
+
 test('rename to an occupied name takes the next suffix and leaves the other vault untouched', () => {
   const { registry, fileOps } = createRegistry(['A', 'A-2'], ['/sandbox/vaults/A', '/sandbox/vaults/A-2']);
 

@@ -3,7 +3,7 @@ import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
 import { afterAll, beforeAll, describe, expect, it } from '@ohos/hypium';
-import nativeGit2, { Git2RepositoryState } from 'libgit2_napi.so';
+import nativeGit2, { Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
 import { VaultRegistry } from '../../../main/ets/model/VaultRegistry';
 
 interface Git2NativeTarget {
@@ -306,7 +306,11 @@ export default function git2NativeTest() {
           expect(writeFailed).assertTrue();
           expect(await sha256(indexPath)).assertEqual(indexHashBeforeFailure);
           expect(await sha256(notePath)).assertEqual(expectedHash);
-          expect(nativeGit2.getRepositoryState(current.path).statusEntryCount).assertEqual(1);
+          const dirtyState: Git2RepositoryState = nativeGit2.getRepositoryState(current.path);
+          expect(dirtyState.statusEntryCount).assertEqual(1);
+          expect(dirtyState.changes.length).assertEqual(1);
+          expect(dirtyState.changes[0].path).assertEqual(noteRelPath);
+          expect(dirtyState.changes[0].status).assertEqual('M');
 
           await nativeGit2.gitAction({ operation: 'stage', repositoryPath: current.path });
           await nativeGit2.gitAction({ operation: 'stage', repositoryPath: current.path });
@@ -401,6 +405,148 @@ export default function git2NativeTest() {
           removeTree(current.path);
           removeTree(stale.path);
           removeTree(remoteCheck.path);
+        }
+      });
+
+    it('lists modified, added, and deleted worktree files', 0,
+      async (): Promise<void> => {
+        const target = newTarget('status_changes');
+        const noteRelPath: string = '笔记/中文.md';
+        const addedRelPath: string = '新增笔记.md';
+        try {
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: target.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          writeText(registry.absoluteIn(target.id, noteRelPath), '# 已修改\n');
+          writeText(registry.absoluteIn(target.id, addedRelPath), '# 新建\n');
+          fileIo.unlinkSync(registry.absoluteIn(target.id, 'branch.txt'));
+
+          const state: Git2RepositoryState = nativeGit2.getRepositoryState(target.path);
+          expect(state.statusEntryCount).assertEqual(3);
+          let foundModified: boolean = false;
+          let foundAdded: boolean = false;
+          let foundDeleted: boolean = false;
+          for (let i: number = 0; i < state.changes.length; i++) {
+            const change = state.changes[i];
+            if (change.path === noteRelPath && change.status === 'M') foundModified = true;
+            if (change.path === addedRelPath && change.status === 'A') foundAdded = true;
+            if (change.path === 'branch.txt' && change.status === 'D') foundDeleted = true;
+          }
+          expect(foundModified).assertTrue();
+          expect(foundAdded).assertTrue();
+          expect(foundDeleted).assertTrue();
+        } finally {
+          removeTree(target.path);
+        }
+      });
+
+    it('pushes to a configured branch, reports missing tracking as unknown, and rejects stale updates',
+      0, async (): Promise<void> => {
+        const current = newTarget('configured_branch');
+        const stale = newTarget('configured_branch_stale');
+        const branchName: string = 'device/notes';
+        const noteRelPath: string = '笔记/中文.md';
+        const currentNotePath: string = registry.absoluteIn(current.id, noteRelPath);
+        const staleNotePath: string = registry.absoluteIn(stale.id, noteRelPath);
+        try {
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: current.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: stale.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+
+          const unknownState: Git2RepositoryState =
+            nativeGit2.getRepositoryState(current.path, branchName);
+          expect(unknownState.trackingKnown).assertFalse();
+          let invalidBranchRejected: boolean = false;
+          try {
+            nativeGit2.getRepositoryState(current.path, 'bad name');
+          } catch (error) {
+            invalidBranchRejected = String(error).indexOf('invalid push branch') >= 0;
+          }
+          expect(invalidBranchRejected).assertTrue();
+
+          const missingBranch: string = await nativeGit2.gitAction({
+            operation: 'fetch',
+            repositoryPath: current.path,
+            targetBranch: branchName,
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          expect(missingBranch).assertEqual('missing');
+
+          writeText(currentNotePath, '# 自定义分支\n第一台设备的更新。\n');
+          const currentHash: string = await sha256(currentNotePath);
+          await nativeGit2.gitAction({ operation: 'stage', repositoryPath: current.path });
+          await nativeGit2.gitAction({
+            operation: 'commit',
+            repositoryPath: current.path,
+            message: 'test: configured branch update',
+            authorName: 'Isolated Fixture',
+            authorEmail: 'fixture@example.invalid',
+          });
+          const progressPhases: string[] = [];
+          const pushedOid: string = await nativeGit2.gitAction({
+            operation: 'push',
+            repositoryPath: current.path,
+            targetBranch: branchName,
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+            onProgress: (progress: Git2Progress): void => {
+              if (progress.operation !== undefined) {
+                progressPhases.push(progress.operation);
+              }
+            },
+          });
+          expect(progressPhases.indexOf('fetch') >= 0).assertTrue();
+          expect(progressPhases.indexOf('push') >= 0).assertTrue();
+          const pushedState: Git2RepositoryState =
+            nativeGit2.getRepositoryState(current.path, branchName);
+          expect(pushedState.trackingKnown).assertTrue();
+          expect(pushedState.aheadCount).assertEqual(0);
+          expect(await sha256(currentNotePath)).assertEqual(currentHash);
+
+          writeText(staleNotePath, '# 另一台设备\n不应覆盖自定义分支上的新提交。\n');
+          const staleHash: string = await sha256(staleNotePath);
+          await nativeGit2.gitAction({ operation: 'stage', repositoryPath: stale.path });
+          await nativeGit2.gitAction({
+            operation: 'commit',
+            repositoryPath: stale.path,
+            message: 'test: stale configured branch update',
+            authorName: 'Isolated Fixture',
+            authorEmail: 'fixture@example.invalid',
+          });
+          let conflictRejected: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'push',
+              repositoryPath: stale.path,
+              targetBranch: branchName,
+              username: FIXTURE_USERNAME,
+              password: FIXTURE_PASSWORD,
+            });
+          } catch {
+            conflictRejected = true;
+          }
+          expect(conflictRejected).assertTrue();
+          expect(await sha256(staleNotePath)).assertEqual(staleHash);
+          expect(nativeGit2.getRepositoryState(current.path, branchName).head).assertEqual(pushedOid);
+        } finally {
+          removeTree(current.path);
+          removeTree(stale.path);
         }
       });
 

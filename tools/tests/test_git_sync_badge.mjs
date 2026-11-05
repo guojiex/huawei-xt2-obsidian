@@ -20,14 +20,19 @@ const methodCode = transformSync(`
 class GitSyncBadgeHarness {
   ${method('  private refreshGitAheadCommitCount(): void {', '\n  private gitAheadBadgeLabel()')}
   ${method('  private gitAheadBadgeLabel(): string {', '\n  private async openGitSyncPage(')}
-  currentVaultIsGit() { return this.gitVault; }
 }
 module.exports = GitSyncBadgeHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
 
-function createHarness({ gitVault = true, aheadCount = 0, fail = false } = {}) {
+function createHarness({
+  gitVault = true,
+  aheadCount = 0,
+  trackingKnown = true,
+  fail = false
+} = {}) {
   const calls = [];
   const registry = {
+    currentEntry() { return gitVault ? { id: 'repo', type: 'git', pushBranch: 'phone/notes' } : null; },
     vaultDirOf(id) { calls.push(`path:${id}`); return `/isolated/${id}`; }
   };
   const module = { exports: {} };
@@ -36,10 +41,11 @@ function createHarness({ gitVault = true, aheadCount = 0, fail = false } = {}) {
     exports: module.exports,
     VaultRegistry: { get: () => registry },
     GitNativeService: {
-      repositoryState(path) {
+      repositoryState(path, branch) {
         calls.push(`state:${path}`);
+        assert.equal(branch, 'phone/notes');
         if (fail) throw new Error('test failure');
-        return { aheadCount };
+        return { aheadCount, trackingKnown };
       }
     }
   }));
@@ -48,7 +54,7 @@ function createHarness({ gitVault = true, aheadCount = 0, fail = false } = {}) {
   return { app, calls };
 }
 
-test('Git home badge reflects local commits ahead of origin/xt2 without network work', () => {
+test('Git home badge reflects local commits ahead of its configured branch without network work', () => {
   const { app, calls } = createHarness({ aheadCount: 3 });
   app.refreshGitAheadCommitCount();
   assert.equal(app.gitAheadCommitCount, 3);
@@ -62,6 +68,13 @@ test('non-Git vaults clear the badge without reading the Native repository state
   app.refreshGitAheadCommitCount();
   assert.equal(app.gitAheadCommitCount, 0);
   assert.deepEqual(calls, []);
+});
+
+test('missing configured tracking references never produce a push badge', () => {
+  const { app, calls } = createHarness({ aheadCount: 5, trackingKnown: false });
+  app.refreshGitAheadCommitCount();
+  assert.equal(app.gitAheadCommitCount, 0);
+  assert.deepEqual(calls, ['path:repo', 'state:/isolated/repo']);
 });
 
 test('repository errors clear stale badge state instead of showing a false count', () => {
@@ -89,4 +102,9 @@ test('Git entry visibility does not gate remote-link sharing', () => {
 test('badge refresh runs when Index appears and when its registry snapshot changes', () => {
   assert.match(source, /this\.currentVaultId = reg\.currentId\(\)[\s\S]*?this\.refreshGitAheadCommitCount\(\);/);
   assert.match(source, /onPageShow\(\): void \{[\s\S]*?this\.refreshGitAheadCommitCount\(\);/);
+});
+
+test('sync dialog does not restore entry focus while a busy dismiss is blocked', () => {
+  assert.match(source, /cancel: \(\): void => \{\s*if \(!this\.gitSyncBusy\) \{\s*restoreFocus\(\);/);
+  assert.match(source, /onWillDismiss: \(action: DismissDialogAction\): void => \{\s*if \(!this\.gitSyncBusy\) \{\s*action\.dismiss\(\);/);
 });
