@@ -70,6 +70,9 @@ const P_FOCUS: string = 'M8 3H3v5M16 3h5v5M3 16v5h5M21 16v5h-5';
 const P_EXIT_FOCUS: string = 'M3 8H8V3M16 3v5h5M3 16h5v5M16 21v-5h5';
 const P_SIMPLE_MODE: string = 'M4 6h16M4 12h11M4 18h16';
 const P_PROFESSIONAL_MODE: string = 'M4 4h16v16H4zM8 9l3 3-3 3M13 15h3';
+// 完成编辑（v1.30 30.4，原型 simpleDone）：键盘形外框（rx=2 用贝塞尔逼近）+ 三个按键点 + 空格键 + 收起箭头
+const P_KEYBOARD_DONE: string = 'M5 4H19C20.1 4 21 4.9 21 6V13C21 14.1 20.1 15 19 15H5C3.9 15 3 14.1 3 13V6C3 4.9 3.9 4 5 4' +
+  'M7 8h.01M11 8h.01M15 8h.01M7 11h10M9 19L12 21L15 19';
 
 /** 名字 → 路径；未知名字返回空串（画不出东西，但不会崩） */
 function pathOf(name: string): string {
@@ -145,6 +148,8 @@ function pathOf(name: string): string {
     return P_SIMPLE_MODE;
   } else if (name === 'professionalMode') {
     return P_PROFESSIONAL_MODE;
+  } else if (name === 'keyboardDone') {
+    return P_KEYBOARD_DONE;
   }
   return '';
 }

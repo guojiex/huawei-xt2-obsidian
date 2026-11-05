@@ -56,6 +56,7 @@ declare global {
       onCopyCodeBlockContent?: (contentB64: string) => void
       onCodeBlockCopyFailed?: () => void
       onSimpleFormatUnsupported?: () => void
+      onSimpleTextFocusChange?: (focused: boolean) => void
     }
   }
 }
@@ -66,6 +67,7 @@ interface MdPreviewApi {
   isEditable(): boolean
   isLockedTapActivation(): boolean
   setEditable(editable: boolean): void
+  finishSimpleEditing(): void
   applyFormat(kind: string): void
   editHistory(action: 'undo' | 'redo'): void
   insertText(b64: string): void
@@ -1969,6 +1971,24 @@ contentElement.addEventListener('focusout', (event: FocusEvent): void => {
   session.exiting = true
   drainBlockSourceEdits()
 })
+
+// v1.30 30.1：简单模式编辑焦点跟踪 —— 正文可编辑块（含代码/表格/标注编辑目标）
+// 聚焦/失焦时通知原生，原生据此显示/收起停靠格式栏；组合输入期间由原生侧去抖保护。
+let simpleTextFocused = false
+function notifySimpleTextFocus(focused: boolean): void {
+  if (focused === simpleTextFocused) return
+  simpleTextFocused = focused
+  const arkts = window.__arkts
+  if (arkts && typeof arkts.onSimpleTextFocusChange === 'function') arkts.onSimpleTextFocusChange(focused)
+}
+function refreshSimpleTextFocus(): void {
+  const active = document.activeElement
+  const focused = !!(active instanceof HTMLElement && contentElement.contains(active) && active.isContentEditable)
+  notifySimpleTextFocus(focused)
+}
+document.addEventListener('focusin', () => refreshSimpleTextFocus())
+document.addEventListener('focusout', () => setTimeout(refreshSimpleTextFocus, 0))
+
 contentElement.addEventListener('keydown', (event: KeyboardEvent): void => {
   if (!editable || !(event.target instanceof HTMLElement)) return
   if (pendingTableSourceEdit !== null) {
@@ -2246,6 +2266,7 @@ const api: MdPreviewApi = {
   setEditable(value: boolean): void {
     editable = value
     if (!editable) {
+      notifySimpleTextFocus(false)
       if (codeEditSession !== null) codeEditSession.exiting = true
       for (const session of tableCellEditSessions.values()) {
         if (session === tableCellEditSession && session.target.isConnected) captureTableCellEdit(session)
@@ -2257,6 +2278,15 @@ const api: MdPreviewApi = {
     const split = splitFrontmatter(sourceText)
     const bodyOffset = sourceText.length - split.body.length
     configureEditableBlocks(contentElement, bodyOffset)
+  },
+
+  // v1.30 30.4：完成编辑 —— 收起软键盘（blur 当前可编辑块）、通知失焦，由原生收起停靠格式栏。
+  finishSimpleEditing(): void {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active.isContentEditable && contentElement.contains(active)) {
+      active.blur()
+    }
+    notifySimpleTextFocus(false)
   },
 
   applyFormat(kind: string): void {

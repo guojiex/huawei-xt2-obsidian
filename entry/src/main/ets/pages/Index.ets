@@ -429,6 +429,12 @@ struct Index {
   @State rightPaneWidthVp: number = 0;
   @State leftComposing: boolean = false;
   @State rightComposing: boolean = false;
+  /** v1.30 30.1：简单模式各栏正文编辑焦点（web 侧可编辑块聚焦/失焦跟踪） */
+  @State leftSimpleTextFocus: boolean = false;
+  @State rightSimpleTextFocus: boolean = false;
+  /** v1.30 30.1：停靠格式栏失焦隐藏去抖定时器（组合输入期间不收起） */
+  private leftSimpleFocusHideTimer: number = -1;
+  private rightSimpleFocusHideTimer: number = -1;
   @State rightEditorDirty: boolean = false;
   @State rightEditorLen: number = 0;
   @State leftCodeBlockActive: boolean = false;
@@ -2875,6 +2881,74 @@ struct Index {
     }
     return this.editorBridge.ready && (this.leftComposing || (this.smMode === 'edit' &&
       (!sharedNote || (!this.rightComposing && this.activePane === 'left'))));
+  }
+
+  /** v1.30 30.1：web 侧正文焦点变化 → 停靠格式栏显隐（失焦 250ms 去抖 + 组合输入保护） */
+  private setSimpleTextFocus(pane: string, focused: boolean): void {
+    if (focused) {
+      this.clearSimpleFocusHideTimer(pane);
+      this.applySimpleTextFocus(pane, true);
+      return;
+    }
+    this.scheduleSimpleFocusHide(pane);
+  }
+
+  private applySimpleTextFocus(pane: string, focused: boolean): void {
+    if (pane === 'right') {
+      this.rightSimpleTextFocus = focused;
+    } else {
+      this.leftSimpleTextFocus = focused;
+    }
+  }
+
+  private clearSimpleFocusHideTimer(pane: string): void {
+    if (pane === 'right') {
+      if (this.rightSimpleFocusHideTimer !== -1) {
+        clearTimeout(this.rightSimpleFocusHideTimer);
+        this.rightSimpleFocusHideTimer = -1;
+      }
+    } else if (this.leftSimpleFocusHideTimer !== -1) {
+      clearTimeout(this.leftSimpleFocusHideTimer);
+      this.leftSimpleFocusHideTimer = -1;
+    }
+  }
+
+  private scheduleSimpleFocusHide(pane: string): void {
+    this.clearSimpleFocusHideTimer(pane);
+    const timerId: number = setTimeout((): void => {
+      this.clearSimpleFocusHideTimer(pane);
+      const composing: boolean = pane === 'right' ? this.rightComposing : this.leftComposing;
+      if (composing) {
+        this.scheduleSimpleFocusHide(pane);
+        return;
+      }
+      this.applySimpleTextFocus(pane, false);
+    }, 250);
+    if (pane === 'right') {
+      this.rightSimpleFocusHideTimer = timerId;
+    } else {
+      this.leftSimpleFocusHideTimer = timerId;
+    }
+  }
+
+  /** v1.30 30.1/30.6：停靠格式栏可见 = 该栏正文聚焦，或该栏 Aa 面板/表格网格持焦 */
+  private simpleFormatBarVisible(pane: string): boolean {
+    if (this.experienceMode !== 'simple') {
+      return false;
+    }
+    if ((this.formatMenuOpen && this.formatMenuPane === pane) ||
+      (this.tableGridOpen && this.tableGridPane === pane)) {
+      return true;
+    }
+    return pane === 'right' ? this.rightSimpleTextFocus : this.leftSimpleTextFocus;
+  }
+
+  /** v1.30 30.4：完成编辑 —— 收键盘、结束编辑焦点、收起停靠栏，焦点移到该栏路径行 */
+  private finishSimpleEditingFor(pane: string): void {
+    this.previewBridgeForPane(pane).finishSimpleEditing();
+    this.clearSimpleFocusHideTimer(pane);
+    this.applySimpleTextFocus(pane, false);
+    this.getUIContext().getFocusController().requestFocus('pane-title-' + pane);
   }
 
   private isImagePickerBusy(pane: string): boolean {
@@ -8939,6 +9013,9 @@ struct Index {
       .height(Size.touch)
       .padding({ left: Space.s4, right: Space.s1 })
       .alignItems(VerticalAlign.Center)
+      // v1.30 30.4：「完成编辑」后焦点移到该栏路径行
+      .focusable(true)
+      .id('pane-title-' + $$.pane)
       .border({ width: { bottom: 1 }, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
     }
@@ -11203,52 +11280,61 @@ struct Index {
     }
   }
 
+  /** v1.30 30.2：格式按钮序列（Aa/B/I/任务/表格/图片）；专业浮条与简单模式停靠栏共用，按钮集合不变（30.7） */
+  @Builder
+  FormatActionsRow(pane: string, gap: number) {
+    Row({ space: gap }) {
+      Row() {
+        Text('Aa')
+          .fontSize(FontSize.s3)
+          .fontColor($r('app.color.text_primary'))
+      }
+      .width(Size.touch)
+      .height(Size.touch)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(Radius.full)
+      .enabled(this.isPaneEditable(pane))
+      .onClick((): void => {
+        this.toggleFormatMenu(pane);
+      })
+      .onAreaChange((oldArea: Area, newArea: Area) => {
+        this.recordFormatAnchorArea(pane, newArea);
+      })
+      .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
+      .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
+        builder: this.FormatMenu(),
+        placement: this.formatPopupPlacement,
+        enableArrow: false,
+        offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
+        mask: false,
+        autoCancel: true,
+        popupColor: Color.Transparent,
+        onWillDismiss: (action: DismissPopupAction): void => {
+          action.dismiss();
+          this.formatMenuOpen = false;
+        }
+      })
+      this.FormatAction('B', 'bold', pane)
+      if ((pane === 'right' ? this.rightPaneWidthVp : this.leftPaneWidthVp) >= 280) {
+        this.FormatAction('I', 'italic', pane)
+      }
+      this.FormatAction('☐', 'task', pane)
+      if (this.experienceMode === 'simple') {
+        this.TableInsertAction(pane)
+      }
+      if (this.paneFilePath(pane).length > 0) {
+        this.ImageFormatAction(pane)
+      }
+    }
+  }
+
+  /** 专业模式浮动格式条（v1.7 样式，v1.30 30.7 不调整） */
   @Builder
   FormatToolbar(pane: string) {
     Row() {
       Blank()
       Row() {
-        Row() {
-          Text('Aa')
-            .fontSize(FontSize.s3)
-            .fontColor($r('app.color.text_primary'))
-        }
-        .width(Size.touch)
-        .height(Size.touch)
-        .justifyContent(FlexAlign.Center)
-        .borderRadius(Radius.full)
-        .enabled(this.isPaneEditable(pane))
-        .onClick((): void => {
-          this.toggleFormatMenu(pane);
-        })
-        .onAreaChange((oldArea: Area, newArea: Area) => {
-          this.recordFormatAnchorArea(pane, newArea);
-        })
-        .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
-        .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
-          builder: this.FormatMenu(),
-          placement: this.formatPopupPlacement,
-          enableArrow: false,
-          offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
-          mask: false,
-          autoCancel: true,
-          popupColor: Color.Transparent,
-          onWillDismiss: (action: DismissPopupAction): void => {
-            action.dismiss();
-            this.formatMenuOpen = false;
-          }
-        })
-        this.FormatAction('B', 'bold', pane)
-        if ((pane === 'right' ? this.rightPaneWidthVp : this.leftPaneWidthVp) >= 280) {
-          this.FormatAction('I', 'italic', pane)
-        }
-        this.FormatAction('☐', 'task', pane)
-        if (this.experienceMode === 'simple') {
-          this.TableInsertAction(pane)
-        }
-        if (this.paneFilePath(pane).length > 0) {
-          this.ImageFormatAction(pane)
-        }
+        this.FormatActionsRow(pane, 0)
       }
       .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
       .alignItems(VerticalAlign.Center)
@@ -11263,6 +11349,69 @@ struct Index {
     .padding({ bottom: Space.s5 })
     .margin({ bottom: this.keyboardInsetVp() })
     .alignItems(VerticalAlign.Bottom)
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      if (typeof newArea.width === 'number') {
+        this.recordPaneWidth(pane, newArea.width);
+      }
+    })
+  }
+
+  /** v1.30 30.4：「完成编辑」—— 收起软键盘并结束编辑焦点，读屏名「完成编辑」 */
+  @Builder
+  SimpleDoneAction(pane: string) {
+    Row() {
+      Icon('keyboardDone', Space.s5, $r('app.color.brand'))
+    }
+    .width(Size.touch)
+    .height(Size.touch)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.icon)
+    .margin({ left: Space.s2 })
+    .onClick((): void => { this.finishSimpleEditingFor(pane); })
+    .accessibilityText('完成编辑')
+  }
+
+  /**
+   * v1.30 30.2/30.3：简单模式停靠格式栏 —— 该栏底部整行：通栏宽、顶部分隔线、
+   * bg_card 底、无阴影圆角；宽屏按钮靠左、完成编辑靠右；单屏按钮居中、完成编辑在末尾；
+   * 按钮超出横向滑动。内容区经 layoutWeight 自动收缩，末行不被遮挡。
+   */
+  @Builder
+  SimpleFormatDock(pane: string) {
+    Row() {
+      Scroll() {
+        Row({ space: Space.s1 }) {
+          this.FormatActionsRow(pane, Space.s1)
+          if (this.isSingleScreenLayout()) {
+            this.SimpleDoneAction(pane)
+          }
+        }
+        .constraintSize({ minWidth: '100%' })
+        .justifyContent(this.isSingleScreenLayout() ? FlexAlign.Center : FlexAlign.Start)
+        .padding({
+          left: this.isSingleScreenLayout() ? Space.s3 : Space.s5,
+          right: Space.s3
+        })
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .layoutWeight(1)
+      if (!this.isSingleScreenLayout()) {
+        this.SimpleDoneAction(pane)
+      }
+    }
+    .width('100%')
+    .height(Size.touch + Space.s1 * 2)
+    .padding({
+      top: Space.s1,
+      bottom: Space.s1,
+      right: this.isSingleScreenLayout() ? 0 : Space.s3
+    })
+    .alignItems(VerticalAlign.Center)
+    .border({ width: { top: 1 }, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
+    .margin({ bottom: this.keyboardInsetVp() })
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
         this.recordPaneWidth(pane, newArea.width);
@@ -11335,8 +11484,9 @@ struct Index {
           PreviewWebView({
             bridge: this.rightPreviewBridge,
             editable: this.simplePreviewEditable('right'),
+            // v1.30 30.5：该栏编辑聚焦时隐藏缩放控件，结束编辑恢复
             zoomControlsVisible: this.rightFilePath.length > 0 &&
-              (this.experienceMode === 'simple' || !this.rightEditing),
+              (this.experienceMode === 'simple' ? !this.rightSimpleTextFocus : !this.rightEditing),
             componentId: 'note-right-preview-web',
             onReadAsset: (relPath: string): string => { return this.readVaultAsset(relPath); },
             onScrollPositionChange: (top: number): void => {
@@ -11353,6 +11503,9 @@ struct Index {
             },
             onCompositionChange: (composing: boolean): void => {
               this.onRightCompositionChange(composing);
+            },
+            onSimpleTextFocusChange: (focused: boolean): void => {
+              this.setSimpleTextFocus('right', focused);
             },
             onCodeBlockEdit: (request: PreviewCodeEditRequest): void => {
               void this.handlePreviewCodeBlockEdit('right', request);
@@ -11397,12 +11550,17 @@ struct Index {
         .onAreaChange((oldArea: Area, newArea: Area) => {
           this.recordBlockToolbarPaneArea('right', newArea);
         })
-        if ((this.experienceMode === 'simple' || this.rightEditing) && this.rightFilePath.length > 0) {
+        if (this.rightEditing && this.rightFilePath.length > 0) {
           this.FormatToolbar('right')
         }
       }
       .layoutWeight(1)
       .width('100%')
+      // v1.30 30.2：简单模式停靠格式栏 —— 在内容 Stack 之下整行停靠，不再浮动盖正文
+      if (this.experienceMode === 'simple' && this.rightFilePath.length > 0 &&
+        this.simpleFormatBarVisible('right')) {
+        this.SimpleFormatDock('right')
+      }
     }
     .width('100%')
     .height('100%')
@@ -11543,8 +11701,9 @@ struct Index {
         PreviewWebView({
           bridge: this.previewBridge,
           editable: this.simplePreviewEditable('left'),
+          // v1.30 30.5：该栏编辑聚焦时隐藏缩放控件，结束编辑恢复
           zoomControlsVisible: this.currentFilePath.length > 0 &&
-            (this.experienceMode === 'simple' || this.smMode === 'preview'),
+            (this.experienceMode === 'simple' ? !this.leftSimpleTextFocus : this.smMode === 'preview'),
           componentId: 'note-left-preview-web',
           onReadAsset: (relPath: string): string => {
             return this.readVaultAsset(relPath);
@@ -11565,6 +11724,9 @@ struct Index {
           },
           onCompositionChange: (composing: boolean): void => {
             this.onLeftCompositionChange(composing);
+          },
+          onSimpleTextFocusChange: (focused: boolean): void => {
+            this.setSimpleTextFocus('left', focused);
           },
           onCodeBlockEdit: (request: PreviewCodeEditRequest): void => {
             void this.handlePreviewCodeBlockEdit('left', request);
@@ -11606,8 +11768,10 @@ struct Index {
       .onAreaChange((oldArea: Area, newArea: Area) => {
         this.recordBlockToolbarPaneArea('left', newArea);
       })
-      if (this.experienceMode === 'simple' && this.currentFilePath.length > 0) {
-        this.FormatToolbar('left')
+      // v1.30 30.1/30.2：简单模式停靠格式栏 —— 仅编辑聚焦时出现，栏底整行停靠
+      if (this.experienceMode === 'simple' && this.currentFilePath.length > 0 &&
+        this.simpleFormatBarVisible('left')) {
+        this.SimpleFormatDock('left')
       }
     }
     .width('100%')

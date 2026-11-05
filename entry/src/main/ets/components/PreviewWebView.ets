@@ -292,6 +292,7 @@ class PreviewNativeProxy {
   codeBlockCopyHandler: (content: string) => void = (_content: string) => {};
   codeBlockCopyFailedHandler: () => void = () => {};
   simpleFormatUnsupportedHandler: () => void = () => {};
+  simpleTextFocusChangeHandler: (focused: boolean) => void = (_focused: boolean) => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -396,6 +397,10 @@ class PreviewNativeProxy {
   onSimpleFormatUnsupported(): void {
     this.simpleFormatUnsupportedHandler();
   }
+
+  onSimpleTextFocusChange(focused: boolean): void {
+    this.simpleTextFocusChangeHandler(focused);
+  }
 }
 
 /** 桥接内部实现：页面就绪前收到的指令先进队列，onPageEnd 后按序补发 */
@@ -452,6 +457,11 @@ class PreviewImpl {
   applyFormat(kind: string): void {
     const allowed = ['paragraph', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'bold', 'italic', 'list', 'ordered', 'task', 'quote'];
     if (allowed.includes(kind)) this.enqueue(`window.__mdpreview.applyFormat('${kind}')`);
+  }
+
+  /** v1.30 30.4：完成编辑 —— Web 侧 blur 当前可编辑块并通知失焦（收键盘 + 收停靠栏） */
+  finishSimpleEditing(): void {
+    this.enqueue('window.__mdpreview.finishSimpleEditing()');
   }
 
   applyTableStructureOperation(type: string, side: string, row: number, column: number,
@@ -717,6 +727,11 @@ export class PreviewBridge {
     this.impl?.applyFormat(kind);
   }
 
+  /** v1.30 30.4：完成编辑（简单模式停靠格式栏的「完成编辑」按钮） */
+  finishSimpleEditing(): void {
+    this.impl?.finishSimpleEditing();
+  }
+
   applyTableStructureOperation(type: string, side: string, row: number, column: number,
     from: number, to: number): void {
     this.impl?.applyTableStructureOperation(type, side, row, column, from, to);
@@ -961,6 +976,8 @@ export struct PreviewWebView {
   onCopyCodeBlockContent: (content: string) => void = (_content: string) => {};
   onCodeBlockCopyFailed: () => void = () => {};
   onSimpleFormatUnsupported: () => void = () => {};
+  /** v1.30 30.1：简单模式正文可编辑块聚焦/失焦通知（停靠格式栏显隐依据） */
+  onSimpleTextFocusChange: (focused: boolean) => void = (_focused: boolean) => {};
   onLockedContentTap: (anchor: PreviewBlockAnchor | null) => void =
     (_anchor: PreviewBlockAnchor | null) => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
@@ -1035,6 +1052,9 @@ export struct PreviewWebView {
     };
     this.proxy.simpleFormatUnsupportedHandler = (): void => {
       this.onSimpleFormatUnsupported();
+    };
+    this.proxy.simpleTextFocusChangeHandler = (focused: boolean): void => {
+      this.onSimpleTextFocusChange(focused);
     };
     this.bridge.onEditableContentChange = (content: string): void => {
       this.onEditableContentChange(content);
@@ -1135,7 +1155,7 @@ export struct PreviewWebView {
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
           'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onTableActionMessage',
           'onCodeBlockEditingChange',
-          'onCopyCodeBlockContent', 'onCodeBlockCopyFailed', 'onSimpleFormatUnsupported']);
+          'onCopyCodeBlockContent', 'onCodeBlockCopyFailed', 'onSimpleFormatUnsupported', 'onSimpleTextFocusChange']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (_error) {
