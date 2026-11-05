@@ -182,12 +182,21 @@ test('no-note demo toggle grays out note-scoped controls and restores the select
  f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();f.get('noNoteDemo').checked=false;f.get('noNoteDemo').onchange();
  assert.equal(f.run('current'),'reading_stream');
 });
+test('wide dialogs stay inside the application window and phone remains a sheet',()=>{
+ const f=fixture();f.run("setViewport('wide')");
+ f.get('window').rect={left:100,right:700,top:100,bottom:700,width:600,height:600};
+ const dialog=f.get('importVaultDialog');dialog.offsetWidth=300;dialog.offsetHeight=240;
+ f.run("positionSheetDialog($('importVaultDialog'))");
+ assert.equal(dialog.style.left,'250px');assert(Number.parseInt(dialog.style.top)>=100);
+ assert(Number.parseInt(dialog.style.top)+240<=700);assert(!dialog.classList.contains('as-sheet'));
+ f.run("setViewport('phone');positionSheetDialog($('importVaultDialog'))");assert(dialog.classList.contains('as-sheet'));
+});
 test('no-note empty state offers create and search actions',()=>{
  const f=fixture();
  f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();
  const empty=f.get('leftEmpty');
  assert(!empty.classList.contains('hidden'));
- assert(empty.innerHTML.includes('未打开笔记'));
+ assert(empty.innerHTML.includes('把空间，留给思考。'));
  assert(empty.innerHTML.includes('新建笔记'));
  assert(empty.innerHTML.includes('搜索笔记'));
  assert(f.get('article').classList.contains('hidden'));
