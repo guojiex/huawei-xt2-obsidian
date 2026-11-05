@@ -196,7 +196,7 @@ test('no-note empty state offers create and search actions',()=>{
  f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();
  const empty=f.get('leftEmpty');
  assert(!empty.classList.contains('hidden'));
- assert(empty.innerHTML.includes('把空间，留给思考。'));
+ assert(empty.innerHTML.replace(/<[^>]*>/g,'').includes('把空间，留给思考。'));
  assert(empty.innerHTML.includes('新建笔记'));
  assert(empty.innerHTML.includes('搜索笔记'));
  assert(f.get('article').classList.contains('hidden'));
