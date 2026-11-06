@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readSourceFile } from './lib/source.mjs';
 
-// v1.32 32.11：关于页卡片间距 ——「检查更新」卡片与下方信息卡片之间留 --s4 间距。
-// 修复主体在设计真源（原型 update-check 模板），原生关于页无检查更新卡片（v1.17 落地），
-// 本测试锁定：原型 s4 间距规则 + 原生关于页各卡片间距与 .hs-hero / .hs-group-title 一致。
+// v1.32 32.11：关于页卡片间距 ——「检查更新」卡片与相邻卡片之间留 --s4 间距。
+// 修复主体在设计真源（原型 update-check 模板）；v1.17 检查更新卡片于 2026-11-06 落入原生关于页，
+// 本测试锁定：原型 s4 间距规则 + 原生关于页各卡片（含检查更新卡）间距与 .hs-hero / .hs-group-title 一致。
 const settings = readSourceFile(
   new URL('../../entry/src/main/ets/components/SettingsView.ets', import.meta.url));
 const prototype = readSourceFile(
@@ -43,6 +43,12 @@ test('native about card gaps stay uniform across the tab (32.11)', () => {
     /\.hs-group-title\{margin:var\(--s5\) var\(--s4\) var\(--s2\);font-size:var\(--caption\);font-weight:500;color:var\(--muted\)/);
   assert.match(settings, /\.margin\(\{ top: Space\.s5, bottom: Space\.s2 \}\)/);
   assert.match(about, /this\.GroupTitle\('更新日志'\)/);
-  // 原生无检查更新卡片时不空占位：更新日志组紧随信息卡片，间距由上述 token 保证
-  assert.ok(!about.includes('检查更新'), 'v1.17 前原生关于页不含检查更新卡片');
+  // v1.17 已落地（2026-11-06）：检查更新卡片进入关于页，应用 32.11 的 s4 间距规则 ——
+  // 检查更新卡在信息卡与更新日志之间，与信息卡同用 margin-bottom s4（原型 .update-check-group）
+  const updateCard = about.indexOf('v1.17：检查更新组');
+  assert.ok(updateCard > infoCard, 'v1.17 update-check card sits after the info card');
+  assert.ok(updateCard < about.indexOf("this.GroupTitle('更新日志')"),
+    'v1.17 update-check card sits before the changelog group');
+  const updateBlock = about.slice(updateCard, about.indexOf("this.GroupTitle('更新日志')"));
+  assert.match(updateBlock, /\.margin\(\{ bottom: Space\.s4 \}\)/);
 });

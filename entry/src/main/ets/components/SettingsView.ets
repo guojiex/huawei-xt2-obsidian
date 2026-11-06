@@ -15,7 +15,7 @@
  * 视觉：token 化 + 内容页限宽 760vp 居中（需求 4.9）。
  */
 import { bundleManager, common, Want } from '@kit.AbilityKit';
-import { pasteboard } from '@kit.BasicServicesKit';
+import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
 import { ColorMetrics, LengthMetrics, promptAction } from '@kit.ArkUI';
 import { buildCommitCopyPayload, buildCommitLabel, isBuildCommitKnown } from '../common/BuildCommitInfo';
 import BuildProfile from 'BuildProfile';
@@ -38,6 +38,7 @@ import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
 import { FEEDBACK_EMAIL } from '../model/AppConfig';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { EditorExperienceMode } from '../model/EditorExperiencePolicy';
+import { AppUpdateCheckOutcome, AppUpdateCheckStore, AppUpdateUiPhase, runAppUpdateCheck } from '../model/AppUpdateCheck';
 
 @Component
 export struct SettingsView {
@@ -90,8 +91,13 @@ export struct SettingsView {
   @State diagnosticsExpanded: boolean = false;
   @State recentErrors: RecentErrorRecord[] = [];
   @State recentErrorsAvailable: boolean = false;
+  /** v1.17：关于页检查更新界面阶段（idle/checking/available/latest/network/background/privacy/limited/generic/dialog_failed） */
+  @State appUpdatePhase: AppUpdateUiPhase = 'idle';
+  /** v1.17：冷却 / 最近一次检查的时钟（HH:MM，D-3 跨会话持久化后的显示） */
+  @State appUpdateClock: string = '';
   private deleteSessionDialog: CustomDialogController | null = null;
   private recentErrorStore: RecentErrorStore | null = null;
+  private appUpdateStore: AppUpdateCheckStore | null = null;
 
   private normalizedCategory(category: string): string {
     return category === 'data' || category === 'feedback' || category === 'about' ? category : 'general';
@@ -948,6 +954,55 @@ export struct SettingsView {
     this.refreshRecentErrors();
   }
 
+  /**
+   * v1.17：检查更新 —— 仅由用户主动点击触发（D-2，进入关于页不自动请求）；
+   * 进行中给可见进行态并禁用重复点击（§3.1）；冷却 5 分钟跨会话持久化（D-3）。
+   */
+  private startAppUpdateCheck(): void {
+    if (this.appUpdatePhase === 'checking') {
+      return;
+    }
+    const context: common.UIAbilityContext = getContext(this) as common.UIAbilityContext;
+    if (this.appUpdateStore === null) {
+      this.appUpdateStore = new AppUpdateCheckStore(context);
+    }
+    this.appUpdatePhase = 'checking';
+    const store: AppUpdateCheckStore = this.appUpdateStore;
+    runAppUpdateCheck(context, store).then((outcome: AppUpdateCheckOutcome) => {
+      this.appUpdatePhase = outcome.phase;
+      this.appUpdateClock = outcome.lastCheckClock;
+    }).catch((_error: BusinessError) => {
+      // 理论不可达（runAppUpdateCheck 内部已全捕获）；兜底防止界面停留在「检查中」。
+      this.appUpdatePhase = 'generic';
+    });
+  }
+
+  /** v1.17：检查更新的状态文案（原型 updateDemoStates 八态 + 弹框失败兜底；不显示市场版本号，V3）。 */
+  private appUpdateStatusText(): string {
+    switch (this.appUpdatePhase) {
+      case 'checking':
+        return '正在检查…';
+      case 'available':
+        return '发现可用更新。';
+      case 'latest':
+        return '当前没有可用更新。上次检查：' + this.appUpdateClock + '。';
+      case 'network':
+        return '网络不可用，检查失败。请检查网络后重试。';
+      case 'background':
+        return '应用当前不在前台，请返回后重试。';
+      case 'privacy':
+        return '请先在华为应用市场完成隐私协议确认，再重试。';
+      case 'limited':
+        return '刚刚检查过：当前没有可用更新（上次检查 ' + this.appUpdateClock + '）。5 分钟后可再次联网检查。';
+      case 'dialog_failed':
+        return '暂时无法打开系统更新弹框，请稍后重试，或自行打开华为应用市场完成更新。';
+      case 'generic':
+        return '检查失败，请稍后重试。';
+      default:
+        return '仅在你点按时检查；不会读取笔记内容。';
+    }
+  }
+
   private async copyRecentErrors(): Promise<void> {
     const payload: string = formatRecentErrorsForCopy(this.recentErrors);
     if (payload.length === 0) {
@@ -1411,6 +1466,51 @@ export struct SettingsView {
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(Space.s5)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
+
+      // v1.17：检查更新组（原型 .update-check-group，32.11 s4 下间距规则）；
+      // 仅用户主动点击触发（D-2），结果文案不显示市场版本号（V3），系统弹框接管更新引导（V4）。
+      Column() {
+        Row() {
+          Column() {
+            Text('检查更新')
+              .fontSize(FontSize.body1)
+              .fontColor($r('app.color.text_primary'))
+            Text(this.appUpdateStatusText())
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .margin({ top: Space.s1 })
+              .accessibilityText(this.appUpdateStatusText())
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Button(this.appUpdatePhase === 'checking' ? '检查中…' : '检查更新')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.brand'))
+            .backgroundColor($r('app.color.bg_navigation'))
+            .height(Space.s10)
+            .padding({ left: Space.s4, right: Space.s4 })
+            .enabled(this.appUpdatePhase !== 'checking')
+            .accessibilityText(this.appUpdatePhase === 'checking' ? '正在检查更新' : '检查更新')
+            .onClick((): void => { this.startAppUpdateCheck(); })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        if (this.appUpdatePhase === 'available') {
+          Text('继续操作将由系统升级弹框接管；弹框由系统显示。')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .margin({ top: Space.s2 })
+        }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
