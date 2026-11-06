@@ -195,8 +195,11 @@ export struct ShareImagePreviewDialog {
           .layoutWeight(1)
           .height(Size.touch)
           .fontSize(FontSize.body2)
-          .fontColor($r('app.color.on_brand'))
-          .backgroundColor($r('app.color.brand'))
+          // v1.32 32.12：主按钮禁用态中性化——--line 底、--muted 字、不透明
+          .fontColor(this.sharing || this.retrying
+            ? $r('app.color.text_tertiary') : $r('app.color.on_brand'))
+          .backgroundColor(this.sharing || this.retrying
+            ? $r('app.color.line') : $r('app.color.brand'))
           .enabled(!this.sharing && !this.retrying)
           .onClick(() => {
             if (this.image.uri.length > 0) {
@@ -212,7 +215,7 @@ export struct ShareImagePreviewDialog {
       ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
       : Size.shareW)
     .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s6))
+      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 2))
       : Size.menuMaxH })
     .padding(Space.s5)
     .borderRadius(this.singleScreen

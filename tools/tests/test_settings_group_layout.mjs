@@ -74,7 +74,8 @@ test('about tab centres the hero like .hs-hero and keeps policy and changelog en
   assert.match(hero, /alignItems\(HorizontalAlign\.Center\)/);
   assert.match(hero, /Image\(\$r\('app\.media\.app_icon_1024'\)\)/);
   assert.match(source, /accessibilityText\('查看隐私政策'\)/);
-  assert.match(source, /ChangelogList\(\{ entries: RECENT_CHANGELOG \}\)/);
+  // v1.32 32.9：更新日志按已安装版本过滤后渲染（releasedEntries），不再直接用 RECENT_CHANGELOG
+  assert.match(source, /ChangelogList\(\{ entries: this\.releasedRecentEntries\(\) \}\)/);
   assert.match(source, /Span\(FEEDBACK_EMAIL\)/);
 });
 

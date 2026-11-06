@@ -831,8 +831,11 @@ export struct AgentWorkspace {
           Button(this.running ? '执行中…' : '发送')
             .height(Size.buttonH)
             .fontSize(FontSize.body2)
-            .fontColor($r('app.color.on_brand'))
-            .backgroundColor($r('app.color.brand'))
+            // v1.32 32.12：主按钮禁用态中性化——--line 底、--muted 字、不透明
+            .fontColor(!this.running && this.draft.trim().length > 0
+              ? $r('app.color.on_brand') : $r('app.color.text_tertiary'))
+            .backgroundColor(!this.running && this.draft.trim().length > 0
+              ? $r('app.color.brand') : $r('app.color.line'))
             .borderRadius(Radius.button)
             .enabled(!this.running && this.draft.trim().length > 0)
             .onClick(() => { void this.send(); })

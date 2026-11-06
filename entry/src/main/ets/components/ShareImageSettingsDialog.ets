@@ -112,7 +112,7 @@ export struct ShareImageSettingsDialog {
       ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
       : Size.shareW)
     .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s6))
+      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 2))
       : Size.menuMaxH })
     .padding(Space.s5)
     .borderRadius(this.singleScreen

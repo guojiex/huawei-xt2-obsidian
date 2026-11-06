@@ -188,12 +188,15 @@ export struct ShareFilePreviewDialog {
           : (this.preparing ? '正在重试…' : '重试生成'))
           .fontSize(FontSize.body2)
           .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.on_brand'))
+          // v1.32 32.12：主按钮禁用态中性化——--line 底、--muted 字、不透明
+          .fontColor(this.sharing || this.preparing
+            ? $r('app.color.text_tertiary') : $r('app.color.on_brand'))
           .height(Size.buttonH)
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
           .borderRadius(Radius.control)
-          .backgroundColor($r('app.color.brand'))
+          .backgroundColor(this.sharing || this.preparing
+            ? $r('app.color.line') : $r('app.color.brand'))
           .focusable(true)
           .enabled(!this.sharing && !this.preparing)
           .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
@@ -211,7 +214,7 @@ export struct ShareFilePreviewDialog {
       ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
       : Size.shareW)
     .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s6))
+      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 2))
       : Size.menuMaxH })
     .padding(Space.s5)
     .borderRadius(this.singleScreen

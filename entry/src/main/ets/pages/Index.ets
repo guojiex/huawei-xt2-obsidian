@@ -17,7 +17,7 @@
  * 数值 `Space/Radius/FontSize/Size/Motion`（common/Tokens.ets）、图标 `Icon()`（common/Icons.ets）。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { promptAction, router } from '@kit.ArkUI';
+import { ColorMetrics, LengthMetrics, promptAction, router } from '@kit.ArkUI';
 import { BusinessError, deviceInfo, pasteboard } from '@kit.BasicServicesKit';
 import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
@@ -9023,6 +9023,11 @@ struct Index {
       .alignItems(VerticalAlign.Center)
       // v1.30 30.4：「完成编辑」后焦点移到该栏路径行
       .focusable(true)
+      // v1.32 32.8：程序化聚焦的非交互元素仅键盘遍历时显示品牌蓝焦点环（原型 [tabindex="-1"]:focus-visible）
+      .focusBox({
+        strokeWidth: LengthMetrics.vp(2),
+        strokeColor: ColorMetrics.resourceColor($r('app.color.brand'))
+      })
       .id('pane-title-' + $$.pane)
       .border({ width: { bottom: 1 }, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
@@ -11395,27 +11400,41 @@ struct Index {
     }
   }
 
-  /** 专业模式浮动格式条（v1.7 样式，v1.30 30.7 不调整） */
+  /**
+   * v1.32 32.2：专业模式格式栏停靠 —— 与 v1.30 简单模式停靠栏同形（v2 规则
+   * `.window:not(.simple-mode) …>.edit-tools`）：该栏底部整行、顶部细线、bg_card 底、
+   * 无阴影圆角；宽屏按钮靠左（左内边距 s5）、单屏居中（s3）；无「完成编辑」按钮——
+   * 专业模式走 PaneHead 编辑/预览切换。内容区经 layoutWeight 收缩，源码末行不被遮挡。
+   * 仅编辑状态显示，预览时隐藏（沿用既有规则）。
+   */
   @Builder
-  FormatToolbar(pane: string) {
+  ProfFormatDock(pane: string) {
     Row() {
-      Blank()
-      Row() {
-        this.FormatActionsRow(pane, 0)
+      Scroll() {
+        Row({ space: Space.s1 }) {
+          this.FormatActionsRow(pane, Space.s1)
+        }
+        .constraintSize({ minWidth: '100%' })
+        .justifyContent(this.isSingleScreenLayout() ? FlexAlign.Center : FlexAlign.Start)
+        .padding({
+          left: this.isSingleScreenLayout() ? Space.s3 : Space.s5,
+          right: Space.s3
+        })
       }
-      .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
-      .alignItems(VerticalAlign.Center)
-      .borderRadius(Radius.full)
-      .backgroundColor($r('app.color.bg_card'))
-      .border({ width: 1, color: $r('app.color.line') })
-      .shadow({ radius: 20, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 8 })
-      Blank()
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .layoutWeight(1)
     }
     .width('100%')
-    .height(Size.touch + Space.s5)
-    .padding({ bottom: Space.s5 })
+    .height(Size.touch + Space.s1 * 2)
+    .padding({
+      top: Space.s1,
+      bottom: Space.s1
+    })
+    .alignItems(VerticalAlign.Center)
+    .border({ width: { top: 1 }, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
     .margin({ bottom: this.keyboardInsetVp() })
-    .alignItems(VerticalAlign.Bottom)
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
         this.recordPaneWidth(pane, newArea.width);
@@ -11617,9 +11636,6 @@ struct Index {
         .onAreaChange((oldArea: Area, newArea: Area) => {
           this.recordBlockToolbarPaneArea('right', newArea);
         })
-        if (this.rightEditing && this.rightFilePath.length > 0) {
-          this.FormatToolbar('right')
-        }
       }
       .layoutWeight(1)
       .width('100%')
@@ -11627,6 +11643,11 @@ struct Index {
       if (this.experienceMode === 'simple' && this.rightFilePath.length > 0 &&
         this.simpleFormatBarVisible('right')) {
         this.SimpleFormatDock('right')
+      }
+      // v1.32 32.2：专业模式停靠格式栏 —— 仅源码编辑时出现，预览时隐藏
+      if (this.experienceMode === 'professional' && this.rightEditing &&
+        this.rightFilePath.length > 0) {
+        this.ProfFormatDock('right')
       }
     }
     .width('100%')
@@ -11735,12 +11756,14 @@ struct Index {
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
-        if ((this.experienceMode === 'simple' || this.smMode === 'edit') && this.currentFilePath.length > 0) {
-          this.FormatToolbar('left')
-        }
       }
       .layoutWeight(1)
       .width('100%')
+      // v1.32 32.2：专业模式停靠格式栏 —— 仅源码编辑时出现，预览时隐藏
+      if (this.experienceMode === 'professional' && this.smMode === 'edit' &&
+        this.currentFilePath.length > 0) {
+        this.ProfFormatDock('left')
+      }
     }
     .width('100%')
     .height('100%')

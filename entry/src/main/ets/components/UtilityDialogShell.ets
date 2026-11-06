@@ -32,9 +32,14 @@ export struct UtilityDialogShell {
   }
 
   private dialogMaxHeight(): number {
-    return this.windowHeightVp > 0
-      ? this.windowHeightVp * (this.singleScreen ? 0.86 : 0.8)
-      : Size.menuMaxH;
+    if (this.windowHeightVp <= 0) {
+      return Size.menuMaxH;
+    }
+    if (this.singleScreen) {
+      return this.windowHeightVp * 0.86;
+    }
+    // 32.13：宽屏弹窗限定在应用窗口内 —— 上下边距各 ≥ s8，超出部分在弹窗内滚动。
+    return Math.max(0, this.windowHeightVp - Space.s8 * 2);
   }
 
   private contentMaxHeight(): number {
@@ -138,18 +143,23 @@ export function UtilityDialogAction(
   Text(label)
     .fontSize(FontSize.body1)
     .fontWeight(FontWeight.Medium)
-    .fontColor(tone === 'secondary'
-      ? $r('app.color.text_primary') : $r('app.color.on_brand'))
+    // v1.32 32.12：主 / 危险操作禁用态中性化——--line 底、--muted 字、不透明
+    //（半透明蓝在深色下像可点）；次要操作禁用沿用 45% 不透明度（原型 utility-actions 规则）
+    .fontColor(!enabled && tone !== 'secondary'
+      ? $r('app.color.text_tertiary')
+      : tone === 'secondary' ? $r('app.color.text_primary') : $r('app.color.on_brand'))
     .height(Size.touch)
     .layoutWeight(singleScreen ? 1 : 0)
     .padding({ left: Space.s5, right: Space.s5 })
     .textAlign(TextAlign.Center)
     .borderRadius(Radius.full)
-    .backgroundColor(tone === 'secondary'
-      ? $r('app.color.bg_secondary')
-      : tone === 'danger' ? $r('app.color.danger') : $r('app.color.brand'))
+    .backgroundColor(!enabled && tone !== 'secondary'
+      ? $r('app.color.line')
+      : tone === 'secondary'
+        ? $r('app.color.bg_secondary')
+        : tone === 'danger' ? $r('app.color.danger') : $r('app.color.brand'))
     .enabled(enabled)
-    .opacity(enabled ? 1 : 0.45)
+    .opacity(!enabled && tone === 'secondary' ? 0.45 : 1)
     .onClick(onClick)
     .focusable(keyboardFocusable && enabled)
 }

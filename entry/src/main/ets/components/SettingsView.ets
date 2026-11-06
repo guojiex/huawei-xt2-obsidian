@@ -16,14 +16,15 @@
  */
 import { bundleManager, common, Want } from '@kit.AbilityKit';
 import { pasteboard } from '@kit.BasicServicesKit';
-import { promptAction } from '@kit.ArkUI';
+import { ColorMetrics, LengthMetrics, promptAction } from '@kit.ArkUI';
 import { buildCommitCopyPayload, buildCommitLabel, isBuildCommitKnown } from '../common/BuildCommitInfo';
 import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { AppDataResetService } from '../model/AppDataResetService';
-import { RECENT_CHANGELOG } from '../model/ChangelogData';
+import { ChangelogEntry, RECENT_CHANGELOG } from '../model/ChangelogData';
+import { releasedEntries } from '../model/ChangelogFilter';
 import { ChangelogList } from './ChangelogList';
 import { AgentConfigStore } from '../model/AgentConfigStore';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
@@ -468,6 +469,19 @@ export struct SettingsView {
     return '版本 ' + this.versionName + '（' + this.versionCode.toString() + '）';
   }
 
+  /** v1.32 32.9：包版本读取成功才作为过滤基准；占位值传空串 = 不过滤，保留原有更新说明展示。 */
+  private changelogInstalledVersion(): string {
+    if (this.versionName === '—' || this.versionName === '（读取失败）') {
+      return '';
+    }
+    return this.versionName;
+  }
+
+  /** v1.32 32.9：更新日志只保留版本号 ≤ 已安装版本的条目（原型 releasedEntries）。 */
+  private releasedRecentEntries(): ChangelogEntry[] {
+    return releasedEntries(RECENT_CHANGELOG, this.changelogInstalledVersion());
+  }
+
   /** 断点 → 形态中文标签（照原型 FORMS） */
   private formLabel(): string {
     const label: string = this.singleScreenLayout && this.breakpoint === 'md' ? '单屏横向窗口' :
@@ -682,6 +696,11 @@ export struct SettingsView {
         .width('100%')
         .margin({ bottom: Space.s5 })
         .focusable(true)
+        // v1.32 32.8：程序化聚焦的非交互元素仅键盘遍历时显示品牌蓝焦点环（原型 [tabindex="-1"]:focus-visible）
+        .focusBox({
+          strokeWidth: LengthMetrics.vp(2),
+          strokeColor: ColorMetrics.resourceColor($r('app.color.brand'))
+        })
         .id('settings-heading-general')
         .onAppear((): void => { this.focusCategoryHeading('general'); })
       Text('当前界面随窗口宽度切换布局；旋转后按新的窗口宽高重新排布。')
@@ -1160,6 +1179,11 @@ export struct SettingsView {
         .width('100%')
         .margin({ bottom: Space.s5 })
         .focusable(true)
+        // v1.32 32.8：程序化聚焦的非交互元素仅键盘遍历时显示品牌蓝焦点环（原型 [tabindex="-1"]:focus-visible）
+        .focusBox({
+          strokeWidth: LengthMetrics.vp(2),
+          strokeColor: ColorMetrics.resourceColor($r('app.color.brand'))
+        })
         .id('settings-heading-data')
         .onAppear((): void => { this.focusCategoryHeading('data'); })
       // 备份分组（v1.37 37.1，照原型 h4 备份 + .hs-group 行 + .hs-note 注脚）
@@ -1319,6 +1343,11 @@ export struct SettingsView {
         .width('100%')
         .margin({ bottom: Space.s5 })
         .focusable(true)
+        // v1.32 32.8：程序化聚焦的非交互元素仅键盘遍历时显示品牌蓝焦点环（原型 [tabindex="-1"]:focus-visible）
+        .focusBox({
+          strokeWidth: LengthMetrics.vp(2),
+          strokeColor: ColorMetrics.resourceColor($r('app.color.brand'))
+        })
         .id('settings-heading-about')
         .onAppear((): void => { this.focusCategoryHeading('about'); })
       Text('在这里查看应用版本与更新记录。')
@@ -1393,7 +1422,16 @@ export struct SettingsView {
 
       this.GroupTitle('更新日志')
       Column() {
-        ChangelogList({ entries: RECENT_CHANGELOG })
+        // v1.32 32.9：只显示版本号 ≤ 已安装版本的条目；没有符合条目时显示占位（原型 .release-empty）
+        if (this.releasedRecentEntries().length === 0) {
+          Text('当前版本的更新说明将在发布后显示。')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .padding(Space.s4)
+        } else {
+          ChangelogList({ entries: this.releasedRecentEntries() })
+        }
         Text('查看完整版本记录 ›')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
@@ -1422,6 +1460,11 @@ export struct SettingsView {
         .width('100%')
         .margin({ bottom: Space.s5 })
         .focusable(true)
+        // v1.32 32.8：程序化聚焦的非交互元素仅键盘遍历时显示品牌蓝焦点环（原型 [tabindex="-1"]:focus-visible）
+        .focusBox({
+          strokeWidth: LengthMetrics.vp(2),
+          strokeColor: ColorMetrics.resourceColor($r('app.color.brand'))
+        })
         .id('settings-heading-feedback')
         .onAppear((): void => { this.focusCategoryHeading('feedback'); })
       Text('遇到问题或有建议，欢迎告诉我们。')

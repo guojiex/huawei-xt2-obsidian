@@ -162,30 +162,36 @@ export struct VaultManagerView {
           .margin({ bottom: Space.s4 })
 
           // 本地库新建与两种来源统一导入入口
-          Text('+ 新建本地笔记库')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_secondary'))
-            .width('100%')
-            .height(Size.itemH)
-            .textAlign(TextAlign.Center)
-            .borderRadius(Radius.card)
-            .border({ width: 1, color: $r('app.color.line_strong'), style: BorderStyle.Dashed })
-            .onClick(() => {
-              this.onCreate();
-            })
-
-          Text('+ 导入库')
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_primary'))
-            .width('100%')
-            .height(Size.itemH)
-            .textAlign(TextAlign.Center)
-            .borderRadius(Radius.card)
-            .border({ width: 1, color: $r('app.color.line_strong'), style: BorderStyle.Dashed })
-            .margin({ top: Space.s2 })
-            .focusable(true)
-            .id('vault-manager-import-button')
-            .onClick(() => { this.onImportVault(); })
+          // v1.32 32.10：底部两键等宽并排——「＋ 新建笔记库」主按钮（brand 底 / on_brand 字）、
+          // 「＋ 导入库」次按钮（--nav 底 / --ink 字），pill 圆角、weight 500（原型 .vault-manager-actions）
+          Row({ space: Space.s3 }) {
+            Text('＋ 新建笔记库')
+              .fontSize(FontSize.body1)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.on_brand'))
+              .layoutWeight(1)
+              .height(Size.itemH)
+              .textAlign(TextAlign.Center)
+              .borderRadius(Radius.full)
+              .backgroundColor($r('app.color.brand'))
+              .focusable(true)
+              .onClick(() => {
+                this.onCreate();
+              })
+            Text('＋ 导入库')
+              .fontSize(FontSize.body1)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+              .height(Size.itemH)
+              .textAlign(TextAlign.Center)
+              .borderRadius(Radius.full)
+              .backgroundColor($r('app.color.bg_navigation'))
+              .focusable(true)
+              .id('vault-manager-import-button')
+              .onClick(() => { this.onImportVault(); })
+          }
+          .width('100%')
 
           // 解除关联只移除 App 记录，外部目录和原文件保留
           Column({ space: Space.s1 }) {
