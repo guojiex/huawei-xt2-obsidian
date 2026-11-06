@@ -27,7 +27,15 @@ test('pane menu rows use v2 touch, body, nav-hover, and small-radius tokens', ()
   assert.match(item, /\.onHover\(\(isHover: boolean\)/);
   assert.match(menu, /\.padding\(Space\.s1\)/);
   assert.match(menu, /\.borderRadius\(Radius\.menu\)/);
+  assert.match(menu, /\.shadow\(\{ radius: Shadow\.floatBlur,/);
   assert.match(prototype, /\.pane-more:not\(\.mobile-top-more\) \.pane-more-menu button:hover\{background:var\(--nav\)\}/);
+});
+
+test('menu width follows the v2 min-width rule instead of a fixed width', () => {
+  assert.match(menu, /\.constraintSize\(\{ minWidth: Space\.s16 \* 3\.5 \}\)/);
+  assert.doesNotMatch(menu, /\.width\(Size\.sidebarW\)/);
+  assert.match(prototype,
+    /\.pane-more:not\(\.mobile-top-more\) \.pane-more-menu\{min-width:calc\(var\(--s16\) \* 3\.5\);padding:var\(--s1\);border-radius:var\(--r\)\}/);
 });
 
 test('existing pane actions remain and use the v1.31 line icons', () => {

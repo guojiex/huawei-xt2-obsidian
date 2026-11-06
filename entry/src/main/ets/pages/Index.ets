@@ -8943,12 +8943,14 @@ struct Index {
           this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
       }
     }
-    .width(Size.sidebarW)
+    // v2 32.3 外形：min-width s16×3.5（224）内容自适应，不定宽
+    // （原型 .pane-more:not(.mobile-top-more) .pane-more-menu）
+    .constraintSize({ minWidth: Space.s16 * 3.5 })
     .padding(Space.s1)
     .borderRadius(Radius.menu)
     .backgroundColor($r('app.color.bg_card'))
     .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 20, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 8 })
+    .shadow({ radius: Shadow.floatBlur, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 8 })
   }
 
   @Builder
