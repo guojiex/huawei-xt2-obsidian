@@ -22,7 +22,7 @@ const methods = [
   extractMethod('visiblePaths(): string[] {', '\n  private fileName'),
   extractMethod('fileName(path: string): string {', '\n  /** 快切主标题'),
   extractMethod('displayName(path: string): string {', '\n  private isDuplicate'),
-  extractMethod('isDuplicate(path: string): boolean {', '\n  @Builder\n  DialogContent()')
+  extractMethod('isDuplicate(path: string): boolean {', '\n  @Builder\n  ScopeOption')
 ];
 const code = transformSync(`class QuickSwitcherHarness {\n${methods.join('\n')}\n}; module.exports = QuickSwitcherHarness;`,
   { loader: 'ts', format: 'cjs' }).code;
@@ -30,7 +30,9 @@ const code = transformSync(`class QuickSwitcherHarness {\n${methods.join('\n')}\
 function createHarness() {
   const context = vm.createContext({ module: { exports: {} }, clearTimeout });
   vm.runInContext(code, context);
-  return new context.module.exports();
+  const app = new context.module.exports();
+  app.cancelAllVaultSearch = () => {};
+  return app;
 }
 
 test('filters current-vault paths by case-insensitive file name or relative path', () => {
@@ -97,8 +99,13 @@ test('clears the debounce timer and invalidates pending requests when the panel 
   const app = createHarness();
   app.searchTimer = setTimeout(() => {}, 10000);
   app.searchRequestId = 9;
+  app.allVaultRequestId = 3;
+  let cancelCalls = 0;
+  app.cancelAllVaultSearch = () => { cancelCalls++; };
 
   app.aboutToDisappear();
   assert.equal(app.searchTimer, -1);
   assert.equal(app.searchRequestId, 10);
+  assert.equal(app.allVaultRequestId, 4);
+  assert.equal(cancelCalls, 1);
 });

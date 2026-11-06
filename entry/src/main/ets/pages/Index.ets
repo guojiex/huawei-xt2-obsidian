@@ -92,6 +92,7 @@ import { PreparedArchiveShare, ShareArchiveService, ShareSnapshot } from '../mod
 import { ShareLinkService, ShareLinkScope } from '../model/ShareLinkService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { FullTextSearchResult } from '../model/SearchIndex';
+import { CrossVaultSearchOutcome, CrossVaultSearchService } from '../model/CrossVaultSearchService';
 import {
   ExternalDirectoryGrant, ExternalDirectorySelection, ExternalVaultAuthorizationService
 } from '../model/ExternalVaultAuthorization';
@@ -6197,7 +6198,19 @@ struct Index {
     this.quickSwitchOpen = true;
   }
 
-  private selectQuickSwitchFile(relPath: string): void {
+  /** v1.35 35.4：点开其他库的搜索结果先按现有流程切换到该库，成功后再打开笔记；失败停留原库。 */
+  private async selectQuickSwitchFile(vaultId: string, relPath: string): Promise<void> {
+    if (vaultId !== this.currentVaultId) {
+      if (this.vaultSwitchInProgress) {
+        promptAction.showToast({ message: '正在切换知识库，请稍候' });
+        return;
+      }
+      await this.switchVault(vaultId);
+      if (this.currentVaultId !== vaultId) {
+        // switchVault 内部已给出失败原因并回滚到原库；不打开笔记。
+        return;
+      }
+    }
     this.quickSwitchOpen = false;
     this.onSelectFile(relPath, this.quickSwitchTargetPane, true);
   }
@@ -9413,13 +9426,23 @@ struct Index {
           singleScreen: this.isSingleScreenLayout(),
           windowWidthVp: this.windowWidthVp,
           windowHeightVp: this.windowHeightVp,
+          vaultCount: this.vaults.length,
+          currentVaultId: this.currentVaultId,
           searchContent: (query: string,
             onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> => {
             return FullTextSearchService.search(
               VaultRegistry.get(), this.currentVaultId, query, onProgress);
           },
-          onSelect: (relPath: string): void => {
-            this.selectQuickSwitchFile(relPath);
+          searchAllVaults: (query: string, mode: string,
+            onVaultStart: (vaultName: string) => void): Promise<CrossVaultSearchOutcome> => {
+            return CrossVaultSearchService.run(VaultRegistry.get(), this.vaults,
+              this.currentVaultId, query, mode, onVaultStart);
+          },
+          cancelAllVaultSearch: (): void => {
+            CrossVaultSearchService.cancel();
+          },
+          onSelect: (vaultId: string, relPath: string): void => {
+            void this.selectQuickSwitchFile(vaultId, relPath);
           },
           onClose: (): void => {
             this.quickSwitchOpen = false;
