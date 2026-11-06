@@ -270,7 +270,7 @@ export struct ShareNoteDialog {
       windowHeightVp: this.windowHeightVp,
       scrollContent: false,
       onClose: (): void => { this.dismiss(); },
-      content: this.DialogContent
+      content: (): void => { this.DialogContent(); }
     })
   }
 }

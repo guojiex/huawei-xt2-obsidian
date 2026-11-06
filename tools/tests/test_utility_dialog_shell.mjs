@@ -55,3 +55,33 @@ test('utility actions share primary, secondary, danger, and disabled styling', (
   assert.match(shellSource, /\.opacity\(!enabled && tone === 'secondary' \? 0\.45 : 1\)/);
   assert.match(shellSource, /\.layoutWeight\(singleScreen \? 1 : 0\)/);
 });
+
+// 2026-11-06 真机 JSCrash 修复（官方 FAQ faqs-arkui-229）：成员 @Builder 以
+// `this.xxx` 引用方式传给子组件 @BuilderParam 时，builder 体内 this 指向子组件
+// （UtilityDialogShell），弹窗自己的成员（selectedDir / confirm 等）全部读成
+// undefined —— 新建笔记在重渲染时崩（:239 selectedDir.length）、删除笔记点
+// 确认时崩（:369 this.confirm is not callable）。传递处必须用箭头函数包裹，
+// 让 this 词法绑定回弹窗实例。
+test('shell consumers wrap content and footer builders in arrows to preserve this', () => {
+  const consumers = [
+    { name: 'NoteDialogs', source: noteDialogSource, shells: 4, footers: 4 },
+    { name: 'VaultDialogs', source: vaultDialogSource, shells: 3, footers: 3 },
+    { name: 'QuickSwitcher', source: quickSwitcherSource, shells: 1, footers: 0 },
+    { name: 'ImportVaultDialog', source: importDialogSource, shells: 1, footers: 1 },
+    { name: 'ShareNoteDialog', source: shareDialogSource, shells: 1, footers: 0 }
+  ];
+  for (const consumer of consumers) {
+    const wrappedContent =
+      (consumer.source.match(/content: \(\): void => \{ this\.DialogContent\(\); \}/g) ?? []).length;
+    const wrappedFooter =
+      (consumer.source.match(/footer: \(\): void => \{ this\.DialogFooter\(\); \}/g) ?? []).length;
+    assert.equal(wrappedContent, consumer.shells,
+      `${consumer.name}: every shell usage must pass content as an arrow-wrapped builder`);
+    assert.equal(wrappedFooter, consumer.footers,
+      `${consumer.name}: footer must be arrow-wrapped wherever the shell receives one`);
+    assert.doesNotMatch(consumer.source, /content: this\.DialogContent\b/,
+      `${consumer.name}: passing DialogContent by reference rebinds this to the shell (JSCrash)`);
+    assert.doesNotMatch(consumer.source, /footer: this\.DialogFooter\b/,
+      `${consumer.name}: passing DialogFooter by reference rebinds this to the shell (JSCrash)`);
+  }
+});

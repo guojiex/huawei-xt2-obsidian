@@ -652,7 +652,7 @@ export struct QuickSwitcher {
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
         onClose: this.onClose,
-        content: this.DialogContent
+        content: (): void => { this.DialogContent(); }
       })
     }
     .width('100%')

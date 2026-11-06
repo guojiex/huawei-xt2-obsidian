@@ -299,7 +299,7 @@ test('narrow and short windows keep the dialog within bounds and scroll the cont
   assert.match(dialogSource, /preferredWidthVp: Size\.importDialogW/);
   assert.match(dialogSource, /singleScreen: this\.singleScreen/);
   assert.match(dialogSource, /\.constraintSize\(\{ maxHeight: Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 6\) \}\)/);
-  assert.match(dialogSource, /UtilityDialogShell\(\{[\s\S]*?scrollContent: false,[\s\S]*?content: this\.DialogContent,[\s\S]*?footer: this\.DialogFooter/);
+  assert.match(dialogSource, /UtilityDialogShell\(\{[\s\S]*?scrollContent: false,[\s\S]*?content: \(\): void => \{ this\.DialogContent\(\); \},[\s\S]*?footer: \(\): void => \{ this\.DialogFooter\(\); \}/);
   assert.match(dialogSource, /\.focusable\(!this\.working\)[\s\S]*?\.id\('import-directory-card'\)/);
   assert.match(dialogSource, /UtilityDialogAction\('取消', 'secondary', this\.singleScreen, !this\.working/);
   assert.match(indexSource, /singleScreen: importSheet,[\s\S]*?windowWidthVp: this\.windowWidthVp,\s*windowHeightVp: this\.windowHeightVp/);

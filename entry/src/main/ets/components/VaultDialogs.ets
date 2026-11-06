@@ -104,8 +104,8 @@ export struct CreateVaultDialog {
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
       onClose: (): void => { this.controller?.close(); },
-      content: this.DialogContent,
-      footer: this.DialogFooter
+      content: (): void => { this.DialogContent(); },
+      footer: (): void => { this.DialogFooter(); }
     })
   }
 }
@@ -197,8 +197,8 @@ export struct RenameVaultDialog {
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
       onClose: (): void => { this.controller?.close(); },
-      content: this.DialogContent,
-      footer: this.DialogFooter
+      content: (): void => { this.DialogContent(); },
+      footer: (): void => { this.DialogFooter(); }
     })
   }
 }
@@ -269,8 +269,8 @@ export struct DeleteVaultDialog {
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
       onClose: (): void => { this.controller?.close(); },
-      content: this.DialogContent,
-      footer: this.DialogFooter
+      content: (): void => { this.DialogContent(); },
+      footer: (): void => { this.DialogFooter(); }
     })
   }
 }

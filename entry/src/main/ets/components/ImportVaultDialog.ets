@@ -511,8 +511,8 @@ export struct ImportVaultDialog {
       windowHeightVp: this.windowHeightVp,
       scrollContent: false,
       onClose: (): void => { this.close(); },
-      content: this.DialogContent,
-      footer: this.DialogFooter
+      content: (): void => { this.DialogContent(); },
+      footer: (): void => { this.DialogFooter(); }
     })
   }
 }
