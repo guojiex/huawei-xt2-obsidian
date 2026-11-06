@@ -65,8 +65,7 @@ interface InLink {
 
 /**
  * 只读工具的默认值集合。
- * 数值是 v1.16 的候选默认值，待 [探针实验](../../../../docs/releases/v1.16/探针实验设计.md) 实测后统一调整；
- * 输出预算（outputBudgetChars）未实现，仅做条数与片段长度限制。
+ * 输出预算是本地安全上限，不代表小艺平台的实测限制。
  */
 class XiaoyiToolLimits {
   static readonly searchDefaultLimit: number = 8;
@@ -78,6 +77,7 @@ class XiaoyiToolLimits {
   static readonly readChunkDefaultChars: number = 4000;
   static readonly readChunkMaxChars: number = 8000;
   static readonly linksMaxItems: number = 30;
+  static readonly outputBudgetChars: number = 6000;
 }
 
 /** 小艺后台端插件的本地笔记工具。vaultId 可省略，省略时定位用户当前选择的知识库。 */
@@ -130,7 +130,7 @@ export class InsightIntentNoteService {
     const query: string = typeof queryValue === 'string' ? queryValue.trim().toLocaleLowerCase() : '';
     this.requireVault(vaultId);
     const paths: string[] = FileTree.allNotesOf(this.registry.accessFor(vaultId));
-    const matches: NoteMatch[] = [];
+    let matches: NoteMatch[] = [];
     for (let i = 0; i < paths.length; i++) {
       const path: string = paths[i];
       if (query.length > 0 && path.toLocaleLowerCase().indexOf(query) < 0) {
@@ -141,7 +141,29 @@ export class InsightIntentNoteService {
     }
     const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
     result['matchesJson'] = JSON.stringify(matches);
+    result['total'] = matches.length.toString();
+    result['truncated'] = 'false';
     result['message'] = '在知识库「' + vaultId + '」找到 ' + matches.length.toString() + ' 篇候选笔记。';
+    if (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars) {
+      const fullJson: string = result['matchesJson'] as string;
+      const fixedChars: number = InsightIntentNoteService.outputChars(result) - fullJson.length;
+      const keep: number = InsightIntentNoteService.fitJsonArrayCount(matches as Object[],
+        XiaoyiToolLimits.outputBudgetChars - fixedChars - 64);
+      matches = matches.slice(0, keep);
+      result['matchesJson'] = JSON.stringify(matches);
+      result['truncated'] = 'true';
+      result['message'] = '在知识库「' + vaultId + '」找到 ' + result['total'] +
+        ' 篇候选笔记，结果已按输出预算截断。';
+    }
+    while (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars &&
+      matches.length > 0) {
+      matches.pop();
+      result['matchesJson'] = JSON.stringify(matches);
+      result['truncated'] = 'true';
+      result['message'] = '在知识库「' + vaultId + '」找到 ' + result['total'] +
+        ' 篇候选笔记，结果已按输出预算截断。';
+    }
+    InsightIntentNoteService.ensureOutputBudget(result);
     return result;
   }
 
@@ -163,33 +185,72 @@ export class InsightIntentNoteService {
     result['totalChars'] = content.length.toString();
     const mode: string = this.optionalString(params, 'mode', 'text');
     if (mode === 'outline') {
-      const items: OutlineItem[] = InsightIntentNoteService.buildOutline(content);
+      const allItems: OutlineItem[] = InsightIntentNoteService.buildOutline(content);
+      let items: OutlineItem[] = allItems;
       result['mode'] = 'outline';
       result['content'] = '';
-      result['outlineJson'] = JSON.stringify(items);
       result['offset'] = '0';
       result['returnedChars'] = '0';
       result['hasMore'] = 'false';
+      result['truncated'] = 'false';
+      result['outlineJson'] = JSON.stringify(items);
       result['nextOffset'] = content.length.toString();
-      result['message'] = '已列出「' + path + '」的 ' + items.length.toString() + ' 条标题，未返回正文。';
+      result['message'] = '已列出 ' + items.length.toString() + ' 条标题，未返回正文。';
+      if (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars) {
+        const fullJson: string = result['outlineJson'] as string;
+        const fixedChars: number = InsightIntentNoteService.outputChars(result) - fullJson.length;
+        const keep: number = InsightIntentNoteService.fitJsonArrayCount(allItems as Object[],
+          XiaoyiToolLimits.outputBudgetChars - fixedChars - 64);
+        items = allItems.slice(0, keep);
+        result['outlineJson'] = JSON.stringify(items);
+        result['truncated'] = 'true';
+        result['nextOffset'] = items.length < allItems.length
+          ? allItems[items.length].offset.toString() : content.length.toString();
+        result['message'] = '大纲超过输出预算，已返回前 ' + items.length.toString() +
+          ' 条标题；可从 nextOffset 指定偏移继续读取正文。';
+      }
+      while (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars &&
+        items.length > 0) {
+        items = items.slice(0, items.length - 1);
+        result['outlineJson'] = JSON.stringify(items);
+        result['truncated'] = 'true';
+        result['nextOffset'] = items.length < allItems.length
+          ? allItems[items.length].offset.toString() : content.length.toString();
+        result['message'] = '大纲超过输出预算，已返回前 ' + items.length.toString() +
+          ' 条标题；可从 nextOffset 指定偏移继续读取正文。';
+      }
+      InsightIntentNoteService.ensureOutputBudget(result);
       return result;
     }
     if (mode !== 'text') {
       throw new Error('INVALID_PARAMETER：mode 只支持 text 或 outline。');
     }
-    // 兼容旧契约：未显式传 offset / length 时仍整篇返回（平台旧工具版本不变）。
+    // Keep the legacy whole-note response when it fits; oversized notes use the same offset contract.
     const segmented: boolean = params['offset'] !== undefined || params['length'] !== undefined;
     const offset: number = segmented ? InsightIntentNoteService.parseOffset(params['offset']) : 0;
     const length: number = segmented ? InsightIntentNoteService.parseLimit(params['length'],
       XiaoyiToolLimits.readChunkDefaultChars, XiaoyiToolLimits.readChunkMaxChars, 'length') : content.length;
-    const plan: ChunkPlan = InsightIntentNoteService.planChunk(content, offset, length);
+    const requestedPlan: ChunkPlan = InsightIntentNoteService.planChunk(content, offset, length);
     result['mode'] = 'text';
+    result['content'] = '';
+    result['offset'] = requestedPlan.start.toString();
+    result['returnedChars'] = (requestedPlan.end - requestedPlan.start).toString();
+    result['hasMore'] = requestedPlan.hasMore ? 'true' : 'false';
+    result['nextOffset'] = requestedPlan.end.toString();
+    result['truncated'] = 'false';
+    result['message'] = '已读取笔记内容。';
+    const fixedChars: number = InsightIntentNoteService.outputChars(result);
+    const plan: ChunkPlan = InsightIntentNoteService.fitChunkToOutputBudget(content, offset, length,
+      fixedChars + 64);
+    if (plan.end < requestedPlan.end) {
+      result['offset'] = plan.start.toString();
+      result['returnedChars'] = (plan.end - plan.start).toString();
+      result['hasMore'] = plan.hasMore ? 'true' : 'false';
+      result['nextOffset'] = plan.end.toString();
+      result['truncated'] = 'true';
+    }
     result['content'] = content.substring(plan.start, plan.end);
-    result['offset'] = plan.start.toString();
-    result['returnedChars'] = (plan.end - plan.start).toString();
-    result['hasMore'] = plan.hasMore ? 'true' : 'false';
-    result['nextOffset'] = plan.end.toString();
-    result['message'] = '已读取知识库「' + vaultId + '」中的「' + path + '」。';
+    InsightIntentNoteService.ensureOutputBudget(result);
     return result;
   }
 
@@ -263,14 +324,41 @@ export class InsightIntentNoteService {
       hits.push({ path: path, title: InsightIntentNoteService.lastSegment(path), line: line,
         snippet: snippet, matchIn: matchIn });
     }
-    const end: number = cursor + page.length;
     const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
-    result['hitsJson'] = JSON.stringify(hits);
+    let outputHits: SearchHit[] = hits;
+    let clipped: boolean = false;
     result['total'] = ordered.length.toString();
+    result['hitsJson'] = JSON.stringify(outputHits);
+    let end: number = cursor + outputHits.length;
     result['nextCursor'] = end < ordered.length ? InsightIntentNoteService.encodeCursor(end) : '';
     result['truncated'] = end < ordered.length ? 'true' : 'false';
     result['message'] = '在知识库「' + vaultId + '」找到 ' + ordered.length.toString() +
-      ' 篇候选笔记，本次返回 ' + page.length.toString() + ' 篇。';
+      ' 篇候选笔记，本次返回 ' + outputHits.length.toString() + ' 篇。';
+    while (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars) {
+      let clearedSnippet: boolean = false;
+      for (let i = outputHits.length - 1; i >= 0; i--) {
+        if (outputHits[i].snippet.length > 0) {
+          outputHits[i].snippet = '';
+          clearedSnippet = true;
+          clipped = true;
+          break;
+        }
+      }
+      if (!clearedSnippet && outputHits.length > 0) {
+        outputHits = outputHits.slice(0, outputHits.length - 1);
+        clipped = true;
+      } else if (!clearedSnippet) {
+        break;
+      }
+      end = cursor + outputHits.length;
+      result['hitsJson'] = JSON.stringify(outputHits);
+      result['nextCursor'] = end < ordered.length ? InsightIntentNoteService.encodeCursor(end) : '';
+      result['truncated'] = end < ordered.length || clipped ? 'true' : 'false';
+      result['message'] = '在知识库「' + vaultId + '」找到 ' + ordered.length.toString() +
+        ' 篇候选笔记，本次返回 ' + outputHits.length.toString() +
+        (clipped ? ' 篇；结果已按输出预算裁剪。' : ' 篇。');
+    }
+    InsightIntentNoteService.ensureOutputBudget(result);
     return result;
   }
 
@@ -295,8 +383,8 @@ export class InsightIntentNoteService {
       const stat = access.stat(entries[i].path);
       entries[i].mtime = stat === null ? '' : InsightIntentNoteService.isoDate(stat.mtimeSec);
     }
-    const page: TreeEntry[] = entries.slice(cursor, cursor + limit);
-    const end: number = cursor + page.length;
+    let page: TreeEntry[] = entries.slice(cursor, cursor + limit);
+    let end: number = cursor + page.length;
     const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
     result['entriesJson'] = JSON.stringify(page);
     result['total'] = entries.length.toString();
@@ -304,6 +392,19 @@ export class InsightIntentNoteService {
     result['truncated'] = end < entries.length ? 'true' : 'false';
     result['message'] = '知识库「' + vaultId + '」该层共 ' + entries.length.toString() +
       ' 个条目，本次返回 ' + page.length.toString() + ' 个。';
+    let clipped: boolean = false;
+    while (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars &&
+      page.length > 0) {
+      page = page.slice(0, page.length - 1);
+      end = cursor + page.length;
+      clipped = true;
+      result['entriesJson'] = JSON.stringify(page);
+      result['nextCursor'] = end < entries.length ? InsightIntentNoteService.encodeCursor(end) : '';
+      result['truncated'] = end < entries.length || clipped ? 'true' : 'false';
+      result['message'] = '知识库「' + vaultId + '」该层共 ' + entries.length.toString() +
+        ' 个条目，本次按输出预算返回 ' + page.length.toString() + ' 个。';
+    }
+    InsightIntentNoteService.ensureOutputBudget(result);
     return result;
   }
 
@@ -368,8 +469,35 @@ export class InsightIntentNoteService {
     result['outTotal'] = outTotal.toString();
     result['inTotal'] = inTotal.toString();
     result['truncated'] = (outTotal > outgoing.length || inTotal > incoming.length) ? 'true' : 'false';
-    result['message'] = '「' + path + '」有出链 ' + outTotal.toString() + ' 条、反链 ' +
+    result['message'] = '已读取双链关系：出链 ' + outTotal.toString() + ' 条、反链 ' +
       inTotal.toString() + ' 条。';
+    while (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars) {
+      let clearedContext: boolean = false;
+      for (let i = incoming.length - 1; i >= 0; i--) {
+        if (incoming[i].context.length > 0) {
+          incoming[i].context = '';
+          clearedContext = true;
+          break;
+        }
+      }
+      if (!clearedContext) {
+        if (incoming.length >= outgoing.length && incoming.length > 0) {
+          incoming.pop();
+        } else if (outgoing.length > 0) {
+          outgoing.pop();
+        } else if (incoming.length > 0) {
+          incoming.pop();
+        } else {
+          break;
+        }
+      }
+      result['outJson'] = JSON.stringify(outgoing);
+      result['inJson'] = JSON.stringify(incoming);
+      result['truncated'] = 'true';
+      result['message'] = '已读取双链关系：出链 ' + outTotal.toString() + ' 条、反链 ' +
+        inTotal.toString() + ' 条；结果已按输出预算裁剪。';
+    }
+    InsightIntentNoteService.ensureOutputBudget(result);
     return result;
   }
 
@@ -379,10 +507,12 @@ export class InsightIntentNoteService {
     const content: string = this.requiredString(params, 'text', true);
     this.requireVault(vaultId);
     const normalizedPath: string = this.requireSafeNotePath(vaultId, requestedPath);
+    this.requireAgentWritablePath(vaultId, normalizedPath);
     this.requireAllowedParent(vaultId, normalizedPath);
     this.enterVault(vaultId);
     try {
       const path: string = NoteService.previewCreatePath(this.registry, vaultId, normalizedPath);
+      this.requireAgentWritablePath(vaultId, path);
       this.requireAllowedParent(vaultId, path);
       const record: AgentStoredOperation = await this.beginOperation(
         vaultId, 'CreateNote', path, '', content, true);
@@ -411,6 +541,7 @@ export class InsightIntentNoteService {
     const addition: string = this.requiredString(params, 'text');
     this.requireVault(vaultId);
     this.requireExistingNote(vaultId, path);
+    this.requireAgentWritablePath(vaultId, path);
     if (WorkspaceEditGuard.isUnsaved(vaultId, path)) {
       throw new Error('UNSAVED_EDITOR：目标笔记仍有未保存编辑，未追加。');
     }
@@ -432,6 +563,7 @@ export class InsightIntentNoteService {
     const replacement: string = this.requiredString(params, 'text', true);
     this.requireVault(vaultId);
     this.requireExistingNote(vaultId, path);
+    this.requireAgentWritablePath(vaultId, path);
     if (WorkspaceEditGuard.isUnsaved(vaultId, path)) {
       throw new Error('UNSAVED_EDITOR：目标笔记仍有未保存编辑，未修改。');
     }
@@ -476,6 +608,9 @@ export class InsightIntentNoteService {
       if (record.vaultKey !== this.registry.vaultKeyOf(vaultId)) {
         throw new Error('OUT_OF_SCOPE：该操作不属于指定知识库。');
       }
+      if (record.path === '_wiki.md') {
+        throw new Error('PATH_READONLY：小艺不能修改或撤销修改库规则文件。');
+      }
       if (WorkspaceEditGuard.isUnsaved(vaultId, record.path)) {
         throw new Error('UNSAVED_EDITOR：目标笔记仍有未保存编辑，不能撤销覆盖。');
       }
@@ -512,6 +647,7 @@ export class InsightIntentNoteService {
 
   private async applyExistingMutation(vaultId: string, toolName: string, path: string,
     before: string, after: string): Promise<Record<string, Object>> {
+    this.requireAgentWritablePath(vaultId, path);
     if (WorkspaceEditGuard.isUnsaved(vaultId, path)) {
       throw new Error('UNSAVED_EDITOR：目标笔记出现未保存编辑，未写入。');
     }
@@ -667,6 +803,25 @@ export class InsightIntentNoteService {
     }
   }
 
+  private requireAgentWritablePath(vaultId: string, path: string): void {
+    if (path === '_wiki.md') {
+      throw new Error('PATH_READONLY：小艺不能修改库规则文件「_wiki.md」。');
+    }
+    if (!NoteService.exists(this.registry, vaultId, '_wiki.md')) {
+      return;
+    }
+    const rules: string | null = NoteService.tryReadNote(this.registry, vaultId, '_wiki.md');
+    if (rules === null) {
+      throw new Error('WIKI_RULE_READ_FAILED：无法读取 _wiki.md，已拒绝写入。');
+    }
+    const folders: string[] = InsightIntentNoteService.parseReadOnlyFolders(rules);
+    for (let i = 0; i < folders.length; i++) {
+      if (InsightIntentNoteService.isReadOnlyPath(path, folders[i])) {
+        throw new Error('PATH_READONLY：目标位于 _wiki.md 声明的只读目录。');
+      }
+    }
+  }
+
   private requireVault(vaultId: string): void {
     if (vaultId.trim().length === 0) {
       throw new Error('INVALID_VAULT：必须明确提供知识库 ID。');
@@ -811,6 +966,128 @@ export class InsightIntentNoteService {
     return 'xyo' + offset.toString(36);
   }
 
+  private static outputChars(result: Record<string, Object>): number {
+    const keys: string[] = Object.keys(result);
+    let total: number = 0;
+    for (let i = 0; i < keys.length; i++) {
+      const value: Object = result[keys[i]];
+      if (typeof value === 'string') {
+        total += (value as string).length;
+      }
+    }
+    return total;
+  }
+
+  private static ensureOutputBudget(result: Record<string, Object>): void {
+    if (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars) {
+      throw new Error('OUTPUT_BUDGET_EXCEEDED：不可裁剪的返回信息超过本地输出上限。');
+    }
+  }
+
+  private static fitJsonArrayCount(items: Object[], maxJsonChars: number): number {
+    let low: number = 0;
+    let high: number = items.length;
+    while (low < high) {
+      const middle: number = Math.ceil((low + high) / 2);
+      const jsonChars: number = JSON.stringify(items.slice(0, middle)).length;
+      if (jsonChars <= maxJsonChars) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    return low;
+  }
+
+  private static fitChunkToOutputBudget(content: string, offset: number, length: number,
+    fixedChars: number): ChunkPlan {
+    const requested: ChunkPlan = InsightIntentNoteService.planChunk(content, offset, length);
+    const available: number = Math.max(0, XiaoyiToolLimits.outputBudgetChars - fixedChars);
+    if (requested.end - requested.start <= available) {
+      return requested;
+    }
+    return InsightIntentNoteService.planChunk(content, requested.start, available);
+  }
+
+  /** Parse only the JSON-compatible YAML inline-list subset used by the readonly setting. */
+  private static parseReadOnlyFolders(content: string): string[] {
+    const source: string = content.replace(/^\uFEFF/, '');
+    const lines: string[] = source.split(/\r?\n/);
+    if (lines.length === 0 || lines[0].trim() !== '---') {
+      return [];
+    }
+    let close: number = -1;
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim() === '---' || lines[i].trim() === '...') {
+        close = i;
+        break;
+      }
+    }
+    if (close < 0) {
+      throw new Error('WIKI_RULE_INVALID：_wiki.md frontmatter 未闭合，已拒绝写入。');
+    }
+    let found: boolean = false;
+    let raw: string = '';
+    for (let i = 1; i < close; i++) {
+      const line: string = lines[i].trim();
+      if (line.length === 0 || line.startsWith('#')) {
+        continue;
+      }
+      const matched: RegExpMatchArray | null = line.match(/^readonly\s*:\s*(.*)$/);
+      if (matched !== null) {
+        if (found) {
+          throw new Error('WIKI_RULE_INVALID：_wiki.md 的 readonly 配置重复，已拒绝写入。');
+        }
+        found = true;
+        raw = matched[1].trim();
+      } else if (line === 'readonly' || line.startsWith('readonly ') ||
+        line.startsWith('readonly\t') || line.startsWith('"readonly"') || line.startsWith("'readonly'")) {
+        throw new Error('WIKI_RULE_INVALID：_wiki.md 的 readonly 配置格式无效，已拒绝写入。');
+      }
+    }
+    if (!found) {
+      return [];
+    }
+    let value: Object;
+    try {
+      value = JSON.parse(raw) as Object;
+    } catch (error) {
+      throw new Error('WIKI_RULE_INVALID：readonly 仅支持 JSON 字符串数组，已拒绝写入。');
+    }
+    if (!Array.isArray(value)) {
+      throw new Error('WIKI_RULE_INVALID：readonly 必须是字符串数组，已拒绝写入。');
+    }
+    const folders: string[] = [];
+    const entries: Object[] = value as Object[];
+    for (let i = 0; i < entries.length; i++) {
+      if (typeof entries[i] !== 'string') {
+        throw new Error('WIKI_RULE_INVALID：readonly 必须只包含目录路径，已拒绝写入。');
+      }
+      let folder: string = (entries[i] as string).trim();
+      if (folder.endsWith('/')) {
+        folder = folder.substring(0, folder.length - 1);
+      }
+      if (folder.length === 0 || folder.startsWith('/') || folder.indexOf('\\') >= 0) {
+        throw new Error('WIKI_RULE_INVALID：readonly 包含无效目录路径，已拒绝写入。');
+      }
+      const segments: string[] = folder.split('/');
+      for (let j = 0; j < segments.length; j++) {
+        if (segments[j].length === 0 || segments[j] === '.' || segments[j] === '..' ||
+          segments[j].startsWith('.')) {
+          throw new Error('WIKI_RULE_INVALID：readonly 包含无效目录路径，已拒绝写入。');
+        }
+      }
+      if (folders.indexOf(folder) < 0) {
+        folders.push(folder);
+      }
+    }
+    return folders;
+  }
+
+  private static isReadOnlyPath(path: string, folder: string): boolean {
+    return path === folder || path.startsWith(folder + '/');
+  }
+
   /** 以命中为中心的片段：命中词不被截断，超长用省略号标示。 */
   private static buildSnippet(content: string, matchAt: number, matchLength: number): string {
     if (matchAt < 0) {
@@ -904,6 +1181,13 @@ export class InsightIntentNoteService {
       const newline: number = content.lastIndexOf('\n', end - 1);
       if (newline > start) {
         end = newline + 1;
+      }
+    }
+    if (end > start && end < total) {
+      const current: number = content.charCodeAt(end);
+      const previous: number = content.charCodeAt(end - 1);
+      if (current >= 0xDC00 && current <= 0xDFFF && previous >= 0xD800 && previous <= 0xDBFF) {
+        end--;
       }
     }
     return { start: start, end: end, hasMore: end < total };

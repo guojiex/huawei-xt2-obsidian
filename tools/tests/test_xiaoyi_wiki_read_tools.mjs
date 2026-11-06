@@ -26,7 +26,8 @@ function extractStaticMethod(name) {
 
 const names = ['parseLimit', 'parseOffset', 'parseCursor', 'encodeCursor', 'buildSnippet', 'lineOfOffset',
   'buildOutline', 'planChunk', 'collectTreeEntries', 'withinDepth', 'relativeDepth', 'countNotesUnder',
-  'inFolder', 'lastSegment', 'isoDate'];
+  'inFolder', 'lastSegment', 'isoDate', 'outputChars', 'fitJsonArrayCount', 'fitChunkToOutputBudget',
+  'ensureOutputBudget', 'parseReadOnlyFolders', 'isReadOnlyPath'];
 const methods = names.map(extractStaticMethod).join('\n').replace(/InsightIntentNoteService\./g, '');
 
 const limitsStart = source.indexOf('class XiaoyiToolLimits');
@@ -35,13 +36,14 @@ const limitsEnd = source.indexOf('\n}', limitsStart);
 const limits = source.slice(limitsStart, limitsEnd + 2);
 
 const code = transformSync(`${limits}\n${methods}`, { loader: 'ts', format: 'cjs' }).code +
-  `\nmodule.exports = { ${names.join(', ')} };`;
+  `\nmodule.exports = { XiaoyiToolLimits, ${names.join(', ')} };`;
 const module = { exports: {} };
 const compareVaultNames = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 vm.runInContext(code, vm.createContext({ module, exports: module.exports, Error, Date, compareVaultNames }));
 const { parseLimit, parseOffset, parseCursor, encodeCursor, buildSnippet, lineOfOffset, buildOutline,
   planChunk, collectTreeEntries, withinDepth, relativeDepth, countNotesUnder, inFolder, lastSegment,
-  isoDate } = module.exports;
+  isoDate, outputChars, fitJsonArrayCount, fitChunkToOutputBudget, parseReadOnlyFolders, isReadOnlyPath,
+  ensureOutputBudget, XiaoyiToolLimits } = module.exports;
 
 /** vm realm 产出的数组与宿主数组结构相同但引用不等，比较前先做一次 JSON 往返。 */
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -97,6 +99,33 @@ assert.equal(doc.substring(tail.start, tail.end), '结尾');
 const emoji = '😀abc';
 assert.equal(planChunk(emoji, 1, 10).start, 0, 'offset inside a surrogate pair must step back');
 assert.equal(planChunk(doc, 999, 10).start, doc.length);
+const emojiChunk = planChunk('ab😀cd', 0, 3);
+assert.equal(emojiChunk.end, 2, 'chunk end must not split a surrogate pair');
+assert.equal('ab😀cd'.substring(emojiChunk.start, emojiChunk.end) +
+  'ab😀cd'.substring(emojiChunk.end), 'ab😀cd', 'surrogate-safe chunks must concatenate exactly');
+
+// 输出预算按所有字符串字段的 UTF-16 长度计算
+assert.equal(XiaoyiToolLimits.outputBudgetChars, 6000);
+assert.equal(outputChars({ content: '中文😀', hitsJson: '[{"title":"标题"}]', count: 2 }),
+  '中文😀'.length + '[{"title":"标题"}]'.length);
+assert.equal(ensureOutputBudget({ message: 'm'.repeat(XiaoyiToolLimits.outputBudgetChars) }), undefined);
+assert.throws(() => ensureOutputBudget({ message: 'm'.repeat(XiaoyiToolLimits.outputBudgetChars + 1) }),
+  /OUTPUT_BUDGET_EXCEEDED/);
+const outputItems = [{ path: 'a' }, { path: 'bb' }, { path: 'ccc' }];
+const twoItemsChars = JSON.stringify(outputItems.slice(0, 2)).length;
+assert.equal(fitJsonArrayCount(outputItems, twoItemsChars), 2);
+assert.equal(fitJsonArrayCount(outputItems, twoItemsChars - 1), 1);
+const budgetedContent = '段'.repeat(7000);
+const budgetedPlan = fitChunkToOutputBudget(budgetedContent, 0, 8000, 10);
+assert.equal(budgetedPlan.end - budgetedPlan.start, XiaoyiToolLimits.outputBudgetChars - 10);
+assert.equal(outputChars({
+  metadata: 'm'.repeat(10),
+  content: budgetedContent.substring(budgetedPlan.start, budgetedPlan.end)
+}), XiaoyiToolLimits.outputBudgetChars, 'the exact output budget boundary must be retained');
+assert.equal(fitChunkToOutputBudget('abc', 0, 3, 5997).end, 3,
+  'a response exactly at the budget must not be shortened');
+assert.ok(source.includes('outputChars(result) > XiaoyiToolLimits.outputBudgetChars'),
+  'read-only tools must enforce the shared output budget');
 
 // 目录浏览
 const dirs = ['工作', '工作/周报', '工作/周报/归档'];
@@ -123,6 +152,18 @@ assert.deepEqual(plain(inFolder(notes, '')), notes);
 assert.equal(lastSegment('工作/计划.md'), '计划.md');
 assert.equal(isoDate(0), '1970-01-01');
 
+// Wiki rules: strict inline-list parsing, path-boundary matching, and fail-closed invalid config
+const wikiRules = '\uFEFF---\r\ntitle: Wiki\r\nreadonly: ["raw/", "资料/原始"]\r\n---\r\n正文';
+assert.deepEqual(plain(parseReadOnlyFolders(wikiRules)), ['raw', '资料/原始']);
+assert.deepEqual(plain(parseReadOnlyFolders('# no frontmatter')), []);
+assert.equal(isReadOnlyPath('raw/source.md', 'raw'), true);
+assert.equal(isReadOnlyPath('raw', 'raw'), true);
+assert.equal(isReadOnlyPath('raw-material/source.md', 'raw'), false);
+assert.throws(() => parseReadOnlyFolders('---\nreadonly: ["raw/"]'), /WIKI_RULE_INVALID/);
+assert.throws(() => parseReadOnlyFolders('---\nreadonly: ["../raw/"]\n---'), /WIKI_RULE_INVALID/);
+assert.throws(() => parseReadOnlyFolders('---\nreadonly: ["raw/"]\nreadonly: []\n---'), /WIKI_RULE_INVALID/);
+assert.throws(() => parseReadOnlyFolders('---\nreadonly: raw/\n---'), /WIKI_RULE_INVALID/);
+
 // 源码接线：新只读工具已路由，但不在平台意图清单里（绑定不在本版范围）
 const executor = fs.readFileSync(new URL('../../entry/src/main/ets/entryability/InsightIntentExecutorImpl.ets',
   import.meta.url), 'utf8');
@@ -143,6 +184,22 @@ for (const method of ['searchNotes', 'listTree', 'getLinks']) {
 assert.ok(source.includes('const segmented: boolean ='), 'ReadNote must keep whole-note output when no chunk is requested');
 assert.ok(source.includes('result[\'contentHash\'] = AgentOperationStorage.hashText(content)'),
   'baseHash must stay a whole-note hash even for a chunk');
+assert.ok(source.includes('private requireAgentWritablePath('), 'AI writes must enforce Wiki read-only rules');
+assert.ok(source.includes("if (path === '_wiki.md')"), '_wiki.md must remain read-only to the agent');
+for (const method of ['createNote', 'appendNote', 'editNote', 'applyExistingMutation']) {
+  const start = source.search(new RegExp(`private (?:async )?${method}\\(`));
+  assert.ok(start >= 0, `missing ${method}`);
+  const end = source.indexOf('\n  private ', start + 8);
+  const body = source.slice(start, end < 0 ? source.length : end);
+  assert.ok(body.includes('this.requireAgentWritablePath(vaultId,'), `${method} must enforce Wiki write rules`);
+}
+for (const method of ['queryNotes', 'readNote', 'searchNotes', 'listTree', 'getLinks']) {
+  const start = source.search(new RegExp(`private (?:async )?${method}\\(`));
+  assert.ok(start >= 0, `missing ${method}`);
+  const end = source.indexOf('\n  private ', start + 8);
+  const body = source.slice(start, end < 0 ? source.length : end);
+  assert.ok(body.includes('ensureOutputBudget(result)'), `${method} must enforce the final output budget`);
+}
 assert.ok(!source.includes('hilog'), 'note content must never reach logs');
 assert.ok(!source.includes('console.'), 'note content must never reach logs');
 
