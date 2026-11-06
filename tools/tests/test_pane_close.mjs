@@ -269,3 +269,81 @@ test('the app-bar share entry is hidden while the active pane is empty', () => {
 
   assert.match(noteAppBar, /if \(this\.activeFilePath\(\)\.length > 0\) \{\s*this\.IconButton\('share'/);
 });
+
+// —— v1.28 崩溃回归（DFX JSCrash 2026-11-06）：点击「关闭笔记」闪退 ——
+// 空库时 EmptyPane 只渲染「新建笔记」，不渲染「重新打开」行；且 setTimeout(0)
+// 可能先于空栏挂载执行，requestFocus 抛 150003 必须被兜住。
+const focusStart = source.indexOf('  private focusEmptyPane(pane: string): void {');
+const focusEnd = source.indexOf('\n  private focusPaneBody(', focusStart);
+assert.ok(focusStart >= 0 && focusEnd > focusStart, 'could not find Index.focusEmptyPane');
+const focusMethod = source.slice(focusStart, focusEnd).trim();
+const focusCode = transformSync(`class IndexHarness { ${focusMethod} }; module.exports = IndexHarness;`, {
+  loader: 'ts',
+  format: 'cjs'
+}).code;
+
+function createFocusHarness(options = {}) {
+  const requested = [];
+  const warns = [];
+  const context = vm.createContext({
+    module: { exports: {} },
+    setTimeout: (fn) => fn(),
+    hilog: { warn: (...args) => warns.push(args[2]) },
+    DOMAIN: 0,
+    TAG: 'Index'
+  });
+  vm.runInContext(focusCode, context);
+  const app = new context.module.exports();
+  Object.assign(app, {
+    currentVaultNoteCount: options.noteCount ?? 0,
+    leftLastClosedPath: options.leftLastClosedPath ?? '',
+    rightLastClosedPath: options.rightLastClosedPath ?? '',
+    paneLastClosedPath(pane) {
+      return pane === 'right' ? this.rightLastClosedPath : this.leftLastClosedPath;
+    },
+    getUIContext() {
+      return {
+        getFocusController() {
+          return {
+            requestFocus(id) {
+              if (options.requestFocusThrows) {
+                throw new Error('150003 request focus failed');
+              }
+              requested.push(id);
+            }
+          };
+        }
+      };
+    }
+  });
+  return { app, requested, warns };
+}
+
+test('focusEmptyPane aligns its target with the rendered empty pane branch', () => {
+  // 空库 + 有最近关闭路径：渲染侧只有「新建笔记」，焦点不得指向必然不存在的 reopen 行
+  const emptyVault = createFocusHarness({ noteCount: 0, rightLastClosedPath: 'a.md' });
+  emptyVault.app.focusEmptyPane('right');
+  assert.deepEqual(emptyVault.requested, ['pane-empty-new-right']);
+
+  // 非空库 + 有最近关闭路径：指向 reopen 行
+  const nonEmpty = createFocusHarness({ noteCount: 3, rightLastClosedPath: 'a.md' });
+  nonEmpty.app.focusEmptyPane('right');
+  assert.deepEqual(nonEmpty.requested, ['pane-empty-reopen-right']);
+
+  // 非空库 + 无最近关闭路径：指向新建
+  const noRecent = createFocusHarness({ noteCount: 3 });
+  noRecent.app.focusEmptyPane('right');
+  assert.deepEqual(noRecent.requested, ['pane-empty-new-right']);
+});
+
+test('a requestFocus miss (150003) no longer crashes the close flow', () => {
+  const thrown = createFocusHarness({
+    noteCount: 3,
+    rightLastClosedPath: 'a.md',
+    requestFocusThrows: true
+  });
+
+  assert.doesNotThrow(() => thrown.app.focusEmptyPane('right'));
+  assert.deepEqual(thrown.requested, []);
+  assert.ok(thrown.warns.includes('空栏焦点请求未命中目标组件'));
+});

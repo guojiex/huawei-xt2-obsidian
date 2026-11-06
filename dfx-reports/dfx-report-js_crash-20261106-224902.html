@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DFX 故障分析报告 - 关闭笔记闪退（JSCrash 150003）</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+       color: #1f2328; background: #f6f8fa; margin: 0; padding: 24px; line-height: 1.65; }
+.layout { max-width: 1232px; margin: 0 auto; display: flex; gap: 32px; align-items: flex-start; }
+.page { flex: 1 1 auto; min-width: 0; max-width: 960px; background: #fff; border: 1px solid #d0d7de;
+        border-radius: 10px; padding: 32px 40px; box-shadow: 0 1px 3px rgba(31,35,40,.08); }
+h1 { font-size: 22px; border-bottom: 1px solid #d8dee4; padding-bottom: 10px; margin-top: 0; }
+h2 { font-size: 18px; border-bottom: 1px solid #eaeef2; padding-bottom: 6px; margin-top: 28px; }
+h3 { font-size: 16px; margin-top: 22px; }
+h4, h5, h6 { font-size: 14px; margin-top: 18px; }
+h1, h2, h3, h4, h5, h6 { scroll-margin-top: 16px; }
+.meta { color: #57606a; font-size: 13px; margin-bottom: 20px; }
+.meta .badge { display: inline-block; background: #ddf4ff; color: #0969da; border: 1px solid #54aeff;
+               border-radius: 999px; padding: 1px 10px; margin-right: 10px; font-weight: 600; }
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; margin: 0; font-size: 14px; }
+th, td { border: 1px solid #d8dee4; padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; }
+code { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace;
+       background: #eff1f3; border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+pre { background: #f6f8fa; border: 1px solid #d8dee4; border-radius: 8px; padding: 14px 16px;
+      overflow: auto; line-height: 1.5; max-height: 70vh; }
+pre code { background: none; padding: 0; font-size: 13px; white-space: pre; }
+.tok-kw { color: #cf222e; font-weight: 600; }
+.tok-str { color: #0a3069; }
+.tok-com { color: #6e7781; font-style: italic; }
+.tok-num { color: #0550ae; }
+.diff-ins { color: #116329; background: #dafbe1; display: block; }
+.diff-del { color: #82071e; background: #ffebe9; display: block; }
+.diff-hunk { color: #0550ae; background: #ddf4ff; display: block; }
+.diff-file { color: #57606a; background: #eff1f3; display: block; }
+.diff-txt { display: block; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 20px 0; }
+blockquote { border-left: 3px solid #54aeff; background: #f6f8fa; color: #57606a;
+             margin: 12px 0; padding: 8px 16px; border-radius: 0 6px 6px 0; }
+blockquote p { margin: 4px 0; }
+.footer { color: #6e7781; font-size: 12px; margin-top: 32px; border-top: 1px solid #eaeef2; padding-top: 12px; }
+.toc { flex: 0 0 240px; position: sticky; top: 24px; max-height: calc(100vh - 48px);
+       overflow-y: auto; font-size: 13px; line-height: 1.5; padding: 6px 0 6px 14px;
+       border-left: 2px solid #eaeef2; }
+.toc:empty { display: none; }
+.toc .toc-title { font-weight: 600; color: #1f2328; margin-bottom: 6px; font-size: 12px;
+                  letter-spacing: .5px; }
+.toc a { display: block; color: #57606a; text-decoration: none; padding: 3px 6px; border-radius: 6px; }
+.toc a:hover { color: #0969da; background: #f6f8fa; }
+.toc a.active { color: #0969da; background: #ddf4ff; font-weight: 600; }
+.toc a.toc-1 { font-weight: 600; }
+.toc a.toc-2 { padding-left: 16px; }
+@media (max-width: 1200px) { .toc { display: none; } }
+@media print {
+  body { background: #fff; padding: 0; }
+  .layout { display: block; max-width: none; }
+  .page { border: none; box-shadow: none; max-width: none; }
+  .toc { display: none; }
+  pre { max-height: none; }
+  .table-wrap { overflow: visible; }
+  th, td { overflow-wrap: anywhere; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<div class="page">
+<h1>DFX 故障分析报告 - 关闭笔记闪退（JSCrash 150003）</h1>
+<div class="meta"><span class="badge">ArkTS/JS 崩溃（JSCrash）</span>生成时间：2026-11-06 22:49:02</div>
+<p>分诊结论：js_crash；输入完整度：full；置信度：high</p>
+<h2 id="s-1">JS Crash 分析报告</h2>
+<h3 id="s-2">分析结论摘要</h3>
+<ul><li>根因模块：三方应用</li></ul>
+<p>entry / Index.ets —— <code>focusEmptyPane()</code> 空栏焦点复位逻辑（由提交 <code>947d65d</code>「feat(editor): 实现分栏关闭笔记与空态」（2026-11-05）引入）</p>
+<ul><li>根因总结：用户点击「关闭笔记」按钮后，<code>closePane()</code> 在提交关闭（<code>recordClosed</code> → <code>refreshRecentOpenPaths</code> 触发 EmptyPane 内容重建）后调用 <code>focusEmptyPane()</code>，其 <code>setTimeout(..., 0)</code> 回调在目标焦点组件（<code>pane-empty-reopen-&lt;pane&gt;</code> / <code>pane-empty-new-&lt;pane&gt;</code>）完成挂载前执行 <code>getUIContext().getFocusController().requestFocus(focusId)</code>，ArkUI 因组件「不存在/不可见」抛出 <code>Error 150003</code>，回调内无异常捕获，未捕获异常导致进程崩溃（闪退）。该路径与用户怀疑的 v1.35（<code>68e78ef</code>，2026-11-06）无关——v1.35 对 <code>Index.ets</code> 的 29 行改动全部集中在 QuickSwitcher 跨库搜索接线，未触碰关闭/焦点路径。</li></ul>
+<h3 id="s-3">故障基本信息</h3>
+<ul><li>故障时间：2026-11-06 22:35:36.406</li><li>故障进程：com.jxg.huaweiobsidian</li><li>PID / UID：1658 / 20020063</li><li>应用版本：0.2.0（VersionCode 1000003，debug）</li><li>故障类型：Error</li><li>错误信息：The component doesn&#x27;t exist, is currently invisible, or has been disabled.</li><li>错误码：150003</li><li>页面/Ability：Index 页面（栈顶应用帧 <code>entry/src/main/ets/pages/Index.ets</code>；日志无独立 page 字段）</li><li>日志 Fingerprint（构建指纹/UUID）：d825b789114cfee355a27461ff6007321d6d822e5d45615254eb6bca55824912</li><li>UUID 校验：无法校验（该 Fingerprint 为系统侧构建指纹，非应用 SourceMap 指纹；debug 包未启用混淆，无需反解比对）</li><li>SourceMap 反解状态：日志已还原（debug 包未混淆，栈帧直接含源码路径与行列号）</li><li>SourceMap 输入：未提供（无需提供）</li><li>栈顶应用帧：at anonymous entry (entry/src/main/ets/pages/Index.ets:6117:48)</li><li>源码位置：entry/src/main/ets/pages/Index.ets:6117-6119（<code>focusEmptyPane()</code> 的 <code>setTimeout(0)</code> 回调内 <code>requestFocus</code> 调用，实际调用行为 6118 行）</li></ul>
+<h3 id="s-4">故障模式库匹配</h3>
+<div class="table-wrap"><table><thead><tr><th>层级</th><th>根因</th><th>匹配依据</th></tr></thead><tbody><tr><td>一级根因</td><td><code>JSError</code></td><td>appevent / errorManager / faultlogger 上报 ArkTS 异常崩溃</td></tr><tr><td>二级根因</td><td><code>Error</code></td><td>Reason / Error name 原文均为 <code>Error</code></td></tr><tr><td>三级根因</td><td>未收录子类</td><td>Error message <code>The component doesn&#x27;t exist, is currently invisible, or has been disabled.</code> 与 Error code <code>150003</code> 未收录于 fault-mode-library.md 三级库；实际为 ArkUI <code>FocusController.requestFocus</code> 目标组件不存在/不可见/被禁用错误（HarmonyOS ArkUI 焦点请求通用错误码 150003，由 <code>napi_utils.cpp</code> 抛出，日志 993 行 <code>napi throw errCode 150003</code> 佐证，与 Error message 完全一致）</td></tr></tbody></table></div>
+<p>匹配说明：仅命中二级根因 <code>Error</code>，三级根因结合 Error message + Error code + 栈顶应用帧继续定性为 ArkUI 焦点请求失败，属应用侧时序/逻辑缺陷触发。</p>
+<h3 id="s-5">根因判断</h3>
+<ul><li><strong>类别</strong>：Error（ArkUI 焦点请求错误 150003）</li><li><strong>可信度</strong>：HIGH</li><li><strong>触发点</strong>：<code>entry/src/main/ets/pages/Index.ets:6118</code> —— <code>this.getUIContext().getFocusController().requestFocus(focusId)</code>（<code>focusEmptyPane()</code> 的 <code>setTimeout(0)</code> 回调体内）</li><li><strong>直接原因</strong>：<code>requestFocus(focusId)</code> 的目标组件在调用时刻不存在/不可见，ArkUI NAPI 层抛出 <code>Error 150003</code>；<code>setTimeout</code> 回调内无 try-catch，异常经事件循环未捕获传播，进程崩溃</li><li><strong>根本原因</strong>（应用侧状态与时序管理，两层缺陷叠加）：</li></ul>
+<ol><li><strong>时序竞态</strong>：<code>closePane()</code> 提交关闭后（<code>Index.ets:6062</code> <code>store.recordClosed</code> → <code>:6064</code> <code>refreshRecentOpenPaths()</code> 触发 EmptyPane 内容重建）在 <code>:6072</code> 调用 <code>focusEmptyPane()</code>；其 <code>setTimeout(..., 0)</code> 回调先于（或竞态于）新组件树的 vsync 帧挂载执行，焦点请求时目标组件「当前不可见」。日志时间线佐证：22:35:36.254 点击关闭按钮被接受 → 22:35:36.368 <code>AceFocus: Row/secure_fieldRequest focus sync by id</code> 紧接 <code>napi throw errCode 150003</code> —— 焦点请求与抛错仅间隔一次宏任务调度，未跨渲染帧。</li><li><strong>分支不一致</strong>：<code>focusEmptyPane</code> 选 <code>focusId</code> 只看 <code>paneLastClosedPath(pane).length &gt; 0</code>（<code>Index.ets:6115-6116</code>），而渲染侧在 <code>currentVaultNoteCount === 0</code> 时只渲染 <code>pane-empty-new-&lt;pane&gt;</code> 按钮（<code>Index.ets:9141-9142</code>），不渲染 reopen Row（<code>:9144-9163</code>）——空库下关闭最后一篇笔记时，<code>focusId</code> 指向必然不存在的组件。</li><li><strong>无异常兜底</strong>：<code>requestFocus</code> 失败属可恢复的焦点请求错误（不影响数据与关闭操作本身），应用未捕获该异常直接导致进程崩溃。</li></ol>
+<ul><li><strong>引入定位（澄清「v1.35 回归」怀疑）</strong>：<code>git log -S focusEmptyPane</code> 确认该逻辑由提交 <code>947d65d</code>（2026-11-05，feat(editor): 实现分栏关闭笔记与空态）引入；v1.35 提交 <code>68e78ef</code>（2026-11-06 21:51:46）对 <code>Index.ets</code> 的 29 行改动全部为 QuickSwitcher 跨库搜索接线（<code>selectQuickSwitchFile</code> 签名变更、<code>CrossVaultSearchService</code> 回调），未触碰 <code>closePane</code> / <code>focusEmptyPane</code> / <code>EmptyPane</code> / <code>paneLastClosedPath</code> 任何路径。本次崩溃为 11-05「分栏关闭笔记与空态」功能引入的缺陷，非 v1.35 回归。</li></ul>
+<h3 id="s-6">关键证据链</h3>
+<ol><li>日志字段：<code>Reason: Error</code>；<code>Error message: The component doesn&#x27;t exist, is currently invisible, or has been disabled.</code>；<code>Error code: 150003</code>（均为 faultlog 原文）</li><li>故障模式库证据：JSError -&gt; Error -&gt; 未收录子类（三级需结合 Error message 与栈顶应用帧判断，已定性为 ArkUI 焦点请求失败）</li><li>调用栈证据（全帧 4 帧，≤15 帧全量展示）：</li></ol>
+<pre><code>   at anonymous (obj/foundation/arkui/ace_engine/.../jsUIContext_ohos.js:1274:1)  ← ArkUI JSUIContext 焦点请求实现，校验失败抛出 Error 150003
+   at withInstanceId (obj/foundation/arkui/ace_engine/.../jsUIContext_ohos.js:1991:1)  ← ArkUI 实例上下文包装层
+   at requestFocus (obj/foundation/arkui/ace_engine/.../jsUIContext_ohos.js:1273:1)  ← FocusController.requestFocus 入口（NAPI 桥接）
+   at anonymous entry (entry/src/main/ets/pages/Index.ets:6117:48)  ← 应用帧：focusEmptyPane 的 setTimeout(0) 回调（requestFocus 调用在 6118 行）</code></pre>
+<p>调用方向链：应用 JS（<code>Index.ets:6117</code> setTimeout 回调）→ #02 <code>requestFocus</code> 入口（jsUIContext_ohos.js:1273）→ #01 <code>withInstanceId</code> 实例上下文（:1991）→ #00 NAPI 实现校验目标组件（:1274，<code>napi_utils.cpp(60)</code> 抛 150003）→ 未捕获传播至事件循环 → 进程崩溃。</p>
+<ol><li>时序证据（HiLog 时间线，faultlog 同文件）：</li></ol>
+<ul><li><code>22:35:36.253-36.254</code> <code>InputKeyFlow/AceGesture</code>：<code>Click try accept Row</code>（命中 <code>Stack → Row</code>，关闭按钮点击被接受）</li><li><code>22:35:36.368</code> <code>AceFocus</code>：<code>Row/secure_fieldRequest focus sync by id</code>（焦点请求按 id 查找组件）</li><li><code>22:35:36.368</code> <code>Ace/napi_utils.cpp(60)</code>：<code>napi throw errCode 150003 strMsg The component doesn&#x27;t exist, is currently invisible, or has been disabled.</code></li><li><code>22:35:36.406</code> <code>AppKit</code>：jscrash 落盘，进程终止</li></ul>
+<ol><li>源码证据（工作树与 HEAD 一致，行号无偏差）：</li></ol>
+<ul><li><code>Index.ets:6072</code>：<code>closePane()</code> 成功提交关闭后调用 <code>this.focusEmptyPane(pane)</code></li><li><code>Index.ets:6114-6120</code>：<code>focusEmptyPane</code> 实现——<code>focusId</code> 仅依据 <code>paneLastClosedPath</code> 选择，<code>setTimeout(0)</code> 后 <code>requestFocus(focusId)</code>，无 try-catch</li><li><code>Index.ets:11652-11653</code>（右栏）/ <code>:11775-11776</code>、<code>:11875-11876</code>（左栏）：<code>EmptyPane</code> 渲染条件为栏位路径清空</li><li><code>Index.ets:9141-9142 / 9144-9163 / 9166</code>：<code>EmptyPane</code> 内部按 <code>currentVaultNoteCount</code> 与 <code>paneLastClosedPath</code> 分支渲染 <code>pane-empty-new-&lt;pane&gt;</code> 与 <code>pane-empty-reopen-&lt;pane&gt;</code>，与 <code>focusEmptyPane</code> 的选择条件不对齐</li></ul>
+<ol><li>历史对照：faultlogger 中 2026-11-04 的 8 份 jscrash 为另一错误（<code>17100001</code> WebviewController 未关联 Web 组件，<code>EditorWebView.ets:257</code>），与本次 150003 无关；本次 150003 首次出现于 2026-11-06 22:35（<code>947d65d</code> 合入后的构建），与引入时间线吻合。</li></ol>
+<h3 id="s-7">修复建议（源码可达时需给出源码级修复建议）</h3>
+<ol><li><strong>源码级修复（止血 + 分支一致性）</strong> —— <code>entry/src/main/ets/pages/Index.ets:6114-6120</code>（<code>focusEmptyPane</code>）：为 <code>requestFocus</code> 补 try-catch 兜底（150003 为可恢复的焦点请求失败，不应崩溃进程）；同时将 <code>focusId</code> 选择条件与渲染侧 <code>EmptyPane</code> 的 <code>currentVaultNoteCount === 0</code> 分支对齐，消除空库场景下目标组件必然不存在的缺陷：</li></ol>
+<p><strong>修改 1</strong> — <code>entry/src/main/ets/pages/Index.ets:6115-6119</code>（焦点请求补异常兜底，focusId 分支与渲染侧对齐）</p>
+<pre><code><span class="diff-txt">   -    const focusId: string = this.paneLastClosedPath(pane).length &gt; 0</span>
+<span class="diff-txt">   +    const focusId: string = this.currentVaultNoteCount &gt; 0 &amp;&amp; this.paneLastClosedPath(pane).length &gt; 0</span>
+<span class="diff-txt">         ? &#x27;pane-empty-reopen-&#x27; + pane : &#x27;pane-empty-new-&#x27; + pane;</span>
+<span class="diff-txt">       setTimeout((): void =&gt; {</span>
+<span class="diff-txt">   -      this.getUIContext().getFocusController().requestFocus(focusId);</span>
+<span class="diff-txt">   +      try {</span>
+<span class="diff-txt">   +        this.getUIContext().getFocusController().requestFocus(focusId);</span>
+<span class="diff-txt">   +      } catch (error) {</span>
+<span class="diff-txt">   +        hilog.warn(DOMAIN, TAG, &#x27;空栏焦点复位失败，组件尚未就绪&#x27;);</span>
+<span class="diff-txt">   +      }</span>
+<span class="diff-txt">       }, 0);</span></code></pre>
+<ol><li><strong>根除时序竞态（建议的后续演进方向）</strong>：<code>setTimeout(0)</code> 无法保证组件已完成 vsync 挂载，推送式焦点请求与渲染帧天然竞态。建议改为拉取式——记录待聚焦栏位状态（如 <code>pendingEmptyFocusPane</code>），由 <code>EmptyPane</code> 内目标组件的 <code>onAppear</code> 回调消费该状态并请求焦点，随后清除；组件挂载完成后再请求，从机制上消除「先请求后挂载」的竞态，try-catch 兜底仍建议保留。</li><li><strong>回归验证</strong>：修复后需覆盖两类场景——空库（<code>currentVaultNoteCount === 0</code>）关闭最后一篇笔记、常规多笔记场景关闭右栏笔记；<code>focusEmptyPane</code> 相关逻辑若在 <code>tools/tests/test_pane_close.mjs</code> 等测试中有镜像实现，需同步更新断言。</li></ol>
+<h3 id="s-8">修复执行约束</h3>
+<ul><li><strong>修复执行边界</strong>：报告驱动、主 Agent 执行——dfx 子会话不改业务源码；主 Agent 执行修复时以本报告「修复建议」章节为方案来源。</li><li><strong>修复行为约束</strong>：①最小修复——只改崩溃路径涉及的文件（<code>Index.ets</code> 的 <code>focusEmptyPane</code>），禁止大范围重构；②禁止用重试、任意延迟或防御式重写替代根因修复（单纯的延迟重试不解决分支不一致缺陷）；③本次修复不涉及陌生 <code>@ohos.<em></code> / <code>@kit.</em></code> API，<code>FocusController.requestFocus</code> 的错误码语义以日志实证（150003）为准。</li><li><strong>范围声明</strong>：修复承诺仅限 <code>js_crash</code>。</li></ul>
+<h3 id="s-9">补充说明</h3>
+<ul><li>日志字段缺失：无独立 <code>page</code> 字段（页面由栈顶应用帧推断为 Index 页面）；<code>Reason</code> 与 <code>Error name</code> 同为 <code>Error</code>，无进一步细分。</li><li>SourceMap：故障包为 debug 构建（<code>ReleaseType: debug</code>），未启用名称混淆，栈帧已直接还原源码路径与行列号，无需 hstack 反解；<code>Fingerprint</code> 为系统构建指纹，非 SourceMap 指纹，故未执行 UUID 比对。</li><li>分析局限性：日志无法区分用户关闭的是左栏还是右栏（两侧机制对称，均经 <code>closePane</code> → <code>focusEmptyPane</code>）；无法确定实际传入的 <code>focusId</code> 是 <code>pane-empty-reopen-<em></code> 还是 <code>pane-empty-new-</em></code>，两条路径均命中上述缺陷（时序竞态对两者同时成立，分支不一致对空库场景成立）。</li><li>证据取证环境：x86_64 本机模拟器（<code>127.0.0.1:5555</code>，双 ABI 包）；本次崩溃机制为 ArkTS 层逻辑/时序问题，与 CPU ABI 无关，结论可外推 XT2 真机（arm64）——按仓库口径此处显式标注。</li><li>证据链完整度评估：应用栈帧 + ArkUI 框架帧 + NAPI 抛错日志（<code>napi_utils.cpp</code> 150003）+ <code>AceFocus</code> 焦点请求日志 + HiLog 点击时间线齐备，调用方向清晰；源码可达且行号无偏差（<code>Index.ets</code> 工作树与 HEAD 一致）。</li><li>可信度：HIGH（Reason + 完整 Error message + Error code 150003 + 栈顶应用帧 + 源码机制全部指向同一结论，且完整解释「一点击关闭笔记按钮就闪退」的必现症状；引入提交经 <code>git log -S</code> 实证定位）。</li></ul>
+<div class="footer">本报告由 DevEco Code DFX 故障分析生成 · 代码块含语法高亮，修复建议含源码差异对比</div>
+</div>
+<nav class="toc" id="dfx-toc"><div class="toc-title">目录</div>
+<a href="#s-1" class="toc-1">JS Crash 分析报告</a>
+<a href="#s-2" class="toc-2">分析结论摘要</a>
+<a href="#s-3" class="toc-2">故障基本信息</a>
+<a href="#s-4" class="toc-2">故障模式库匹配</a>
+<a href="#s-5" class="toc-2">根因判断</a>
+<a href="#s-6" class="toc-2">关键证据链</a>
+<a href="#s-7" class="toc-2">修复建议（源码可达时需给出源码级修复建议）</a>
+<a href="#s-8" class="toc-2">修复执行约束</a>
+<a href="#s-9" class="toc-2">补充说明</a></nav>
+</div>
+<script>
+(function () {
+  var nav = document.getElementById("dfx-toc");
+  var links = nav ? Array.prototype.slice.call(nav.querySelectorAll("a[href^='#']")) : [];
+  if (!links.length) return;
+  var targets = [];
+  links.forEach(function (a) {
+    var el = document.getElementById(a.getAttribute("href").slice(1));
+    if (el) targets.push(el);
+  });
+  function update() {
+    var pos = window.scrollY + 96;
+    var idx = 0;
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].offsetTop <= pos) idx = i;
+    }
+    links.forEach(function (a, i) { a.classList.toggle("active", i === idx); });
+  }
+  window.addEventListener("scroll", update, { passive: true });
+  update();
+})();
+</script>
+</body>
+</html>

@@ -6112,10 +6112,18 @@ struct Index {
   }
 
   private focusEmptyPane(pane: string): void {
-    const focusId: string = this.paneLastClosedPath(pane).length > 0
+    // 与 EmptyPane 渲染分支对齐：空库不渲染「重新打开」行，只能聚焦「新建笔记」
+    //（DFX JSCrash 2026-11-06：空库 + 有最近关闭路径时曾指向必然不存在的
+    // pane-empty-reopen-*，requestFocus 抛 150003 未捕获导致闪退）。
+    const focusId: string = this.currentVaultNoteCount > 0 && this.paneLastClosedPath(pane).length > 0
       ? 'pane-empty-reopen-' + pane : 'pane-empty-new-' + pane;
     setTimeout((): void => {
-      this.getUIContext().getFocusController().requestFocus(focusId);
+      try {
+        this.getUIContext().getFocusController().requestFocus(focusId);
+      } catch (error) {
+        // setTimeout(0) 可能先于空栏重渲染挂载目标组件执行；焦点落空不致命，兜底避免闪退。
+        hilog.warn(DOMAIN, TAG, '空栏焦点请求未命中目标组件');
+      }
     }, 0);
   }
 
