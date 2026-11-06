@@ -48,6 +48,12 @@ interface ChunkPlan {
   hasMore: boolean;
 }
 
+interface PageSlice {
+  items: Object[];
+  nextIndex: number;
+  skippedCount: number;
+}
+
 /** v1.16 出链条目（16.1）。 */
 interface OutLink {
   target: string;
@@ -76,6 +82,8 @@ class XiaoyiToolLimits {
   static readonly listTreeMaxDepth: number = 3;
   static readonly readChunkDefaultChars: number = 4000;
   static readonly readChunkMaxChars: number = 8000;
+  static readonly outlineDefaultLimit: number = 100;
+  static readonly outlineMaxLimit: number = 100;
   static readonly linksMaxItems: number = 30;
   static readonly outputBudgetChars: number = 6000;
 }
@@ -186,38 +194,49 @@ export class InsightIntentNoteService {
     const mode: string = this.optionalString(params, 'mode', 'text');
     if (mode === 'outline') {
       const allItems: OutlineItem[] = InsightIntentNoteService.buildOutline(content);
-      let items: OutlineItem[] = allItems;
+      const cursor: number = InsightIntentNoteService.parseCursor(params['cursor']);
+      const limit: number = InsightIntentNoteService.parseLimit(params['limit'],
+        XiaoyiToolLimits.outlineDefaultLimit, XiaoyiToolLimits.outlineMaxLimit, 'limit');
+      const estimatedEnd: number = Math.min(cursor + limit, allItems.length);
       result['mode'] = 'outline';
       result['content'] = '';
       result['offset'] = '0';
       result['returnedChars'] = '0';
       result['hasMore'] = 'false';
       result['truncated'] = 'false';
-      result['outlineJson'] = JSON.stringify(items);
+      result['outlineJson'] = '[]';
+      result['total'] = allItems.length.toString();
+      result['nextCursor'] = InsightIntentNoteService.encodeCursor(estimatedEnd);
+      result['skippedCount'] = '0';
       result['nextOffset'] = content.length.toString();
-      result['message'] = '已列出 ' + items.length.toString() + ' 条标题，未返回正文。';
-      if (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars) {
-        const fullJson: string = result['outlineJson'] as string;
-        const fixedChars: number = InsightIntentNoteService.outputChars(result) - fullJson.length;
-        const keep: number = InsightIntentNoteService.fitJsonArrayCount(allItems as Object[],
-          XiaoyiToolLimits.outputBudgetChars - fixedChars - 64);
-        items = allItems.slice(0, keep);
-        result['outlineJson'] = JSON.stringify(items);
-        result['truncated'] = 'true';
-        result['nextOffset'] = items.length < allItems.length
-          ? allItems[items.length].offset.toString() : content.length.toString();
-        result['message'] = '大纲超过输出预算，已返回前 ' + items.length.toString() +
-          ' 条标题；可从 nextOffset 指定偏移继续读取正文。';
-      }
+      result['message'] = '大纲共 ' + allItems.length.toString() + ' 条标题；本页跳过 0 条。';
+      const availableJsonChars: number = XiaoyiToolLimits.outputBudgetChars -
+        InsightIntentNoteService.outputChars(result) + 2;
+      const page: PageSlice = InsightIntentNoteService.fitPage(allItems as Object[], cursor, limit,
+        availableJsonChars, availableJsonChars);
+      let items: OutlineItem[] = page.items as OutlineItem[];
+      let end: number = page.nextIndex;
+      result['outlineJson'] = JSON.stringify(items);
+      result['skippedCount'] = page.skippedCount.toString();
+      result['nextCursor'] = end < allItems.length
+        ? InsightIntentNoteService.encodeCursor(end) : '';
+      result['nextOffset'] = end < allItems.length
+        ? allItems[end].offset.toString() : content.length.toString();
+      result['truncated'] = end < allItems.length || page.skippedCount > 0 ? 'true' : 'false';
+      result['message'] = '大纲共 ' + allItems.length.toString() + ' 条标题；本页跳过 ' +
+        page.skippedCount.toString() + ' 条。';
       while (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars &&
         items.length > 0) {
         items = items.slice(0, items.length - 1);
+        end--;
         result['outlineJson'] = JSON.stringify(items);
-        result['truncated'] = 'true';
-        result['nextOffset'] = items.length < allItems.length
-          ? allItems[items.length].offset.toString() : content.length.toString();
-        result['message'] = '大纲超过输出预算，已返回前 ' + items.length.toString() +
-          ' 条标题；可从 nextOffset 指定偏移继续读取正文。';
+        result['nextCursor'] = end < allItems.length
+          ? InsightIntentNoteService.encodeCursor(end) : '';
+        result['nextOffset'] = end < allItems.length
+          ? allItems[end].offset.toString() : content.length.toString();
+        result['truncated'] = end < allItems.length || page.skippedCount > 0 ? 'true' : 'false';
+        result['message'] = '大纲共 ' + allItems.length.toString() + ' 条标题；本页跳过 ' +
+          page.skippedCount.toString() + ' 条。';
       }
       InsightIntentNoteService.ensureOutputBudget(result);
       return result;
@@ -418,6 +437,10 @@ export class InsightIntentNoteService {
     }
     const limit: number = InsightIntentNoteService.parseLimit(params['limit'],
       XiaoyiToolLimits.linksMaxItems, XiaoyiToolLimits.linksMaxItems, 'limit');
+    const requestedOutCursor: number = direction === 'in' ? 0 :
+      InsightIntentNoteService.parseCursor(params['outCursor']);
+    const requestedInCursor: number = direction === 'out' ? 0 :
+      InsightIntentNoteService.parseCursor(params['inCursor']);
     this.requireVault(vaultId);
     this.requireExistingNote(vaultId, path);
     if (WorkspaceEditGuard.isUnsaved(vaultId, path)) {
@@ -428,8 +451,7 @@ export class InsightIntentNoteService {
       throw new Error('READ_FAILED：笔记不存在或读取失败。');
     }
     const files: string[] = WikiLinkService.files(this.registry, vaultId);
-    const outgoing: OutLink[] = [];
-    let outTotal: number = 0;
+    const uniqueReferences: WikiLinkReference[] = [];
     if (direction !== 'in') {
       const references: WikiLinkReference[] = WikiLinkParser.parse(content);
       const seen: Set<string> = new Set<string>();
@@ -439,64 +461,71 @@ export class InsightIntentNoteService {
           continue;
         }
         seen.add(reference.target);
-        const resolution: WikiLinkResolution = WikiLinkService.resolve(reference.target, path, files);
-        outTotal++;
-        if (outgoing.length < limit) {
-          outgoing.push({ target: reference.target, resolvedPath: resolution.path,
-            status: resolution.status, alias: reference.alias });
-        }
+        uniqueReferences.push(reference);
       }
     }
-    const incoming: InLink[] = [];
-    let inTotal: number = 0;
+    let sources: string[] = [];
     if (direction !== 'out') {
-      const sources: string[] = await WikiLinkService.backlinks(this.registry, vaultId, path);
-      for (let i = 0; i < sources.length; i++) {
-        inTotal++;
-        if (incoming.length >= limit) {
-          continue;
-        }
-        const sourcePath: string = sources[i];
-        const source: string | null = NoteService.tryReadNote(this.registry, vaultId, sourcePath);
-        incoming.push({ path: sourcePath, title: InsightIntentNoteService.lastSegment(sourcePath),
-          context: source === null ? '' :
-            InsightIntentNoteService.linkContext(source, sourcePath, path, files) });
-      }
+      sources = await WikiLinkService.backlinks(this.registry, vaultId, path);
+    }
+    const outTotal: number = uniqueReferences.length;
+    const inTotal: number = sources.length;
+    const outCursor: number = Math.min(requestedOutCursor, outTotal);
+    const inCursor: number = Math.min(requestedInCursor, inTotal);
+    const outCandidates: OutLink[] = [];
+    for (let i = outCursor; i < Math.min(outCursor + limit, uniqueReferences.length); i++) {
+      const reference: WikiLinkReference = uniqueReferences[i];
+      const resolution: WikiLinkResolution = WikiLinkService.resolve(reference.target, path, files);
+      outCandidates.push({ target: reference.target, resolvedPath: resolution.path,
+        status: resolution.status, alias: reference.alias });
+    }
+    const inCandidates: InLink[] = [];
+    for (let i = inCursor; i < Math.min(inCursor + limit, sources.length); i++) {
+      const sourcePath: string = sources[i];
+      const source: string | null = NoteService.tryReadNote(this.registry, vaultId, sourcePath);
+      inCandidates.push({ path: sourcePath, title: InsightIntentNoteService.lastSegment(sourcePath),
+        context: source === null ? '' :
+          InsightIntentNoteService.linkContext(source, sourcePath, path, files) });
     }
     const result: Record<string, Object> = JSON.parse('{}') as Record<string, Object>;
-    result['outJson'] = JSON.stringify(outgoing);
-    result['inJson'] = JSON.stringify(incoming);
+    result['outJson'] = '[]';
+    result['inJson'] = '[]';
     result['outTotal'] = outTotal.toString();
     result['inTotal'] = inTotal.toString();
-    result['truncated'] = (outTotal > outgoing.length || inTotal > incoming.length) ? 'true' : 'false';
+    const estimatedOutEnd: number = Math.min(outCursor + limit, outTotal);
+    const estimatedInEnd: number = Math.min(inCursor + limit, inTotal);
+    result['outNextCursor'] = direction === 'in' ? '' :
+      InsightIntentNoteService.encodeCursor(estimatedOutEnd);
+    result['inNextCursor'] = direction === 'out' ? '' :
+      InsightIntentNoteService.encodeCursor(estimatedInEnd);
+    result['outSkipped'] = '0';
+    result['inSkipped'] = '0';
+    result['truncated'] = (estimatedOutEnd < outTotal || estimatedInEnd < inTotal) ? 'true' : 'false';
     result['message'] = '已读取双链关系：出链 ' + outTotal.toString() + ' 条、反链 ' +
       inTotal.toString() + ' 条。';
-    while (InsightIntentNoteService.outputChars(result) > XiaoyiToolLimits.outputBudgetChars) {
-      let clearedContext: boolean = false;
-      for (let i = incoming.length - 1; i >= 0; i--) {
-        if (incoming[i].context.length > 0) {
-          incoming[i].context = '';
-          clearedContext = true;
-          break;
-        }
-      }
-      if (!clearedContext) {
-        if (incoming.length >= outgoing.length && incoming.length > 0) {
-          incoming.pop();
-        } else if (outgoing.length > 0) {
-          outgoing.pop();
-        } else if (incoming.length > 0) {
-          incoming.pop();
-        } else {
-          break;
-        }
-      }
-      result['outJson'] = JSON.stringify(outgoing);
-      result['inJson'] = JSON.stringify(incoming);
-      result['truncated'] = 'true';
-      result['message'] = '已读取双链关系：出链 ' + outTotal.toString() + ' 条、反链 ' +
-        inTotal.toString() + ' 条；结果已按输出预算裁剪。';
-    }
+    const arrayChars: number = XiaoyiToolLimits.outputBudgetChars -
+      InsightIntentNoteService.outputChars(result) + 4;
+    const pageArrayChars: number = arrayChars - 2;
+    const outPage: PageSlice = direction === 'in'
+      ? { items: [], nextIndex: 0, skippedCount: 0 }
+      : InsightIntentNoteService.fitPage(outCandidates as Object[], 0, limit, pageArrayChars, pageArrayChars);
+    const outgoing: OutLink[] = outPage.items as OutLink[];
+    const outEnd: number = outCursor + outPage.nextIndex;
+    const outJson: string = JSON.stringify(outgoing);
+    const remainingInChars: number = arrayChars - outJson.length;
+    const inPage: PageSlice = direction === 'out'
+      ? { items: [], nextIndex: 0, skippedCount: 0 }
+      : InsightIntentNoteService.fitPage(inCandidates as Object[], 0, limit, remainingInChars, pageArrayChars);
+    const incoming: InLink[] = inPage.items as InLink[];
+    const inEnd: number = inCursor + inPage.nextIndex;
+    result['outJson'] = outJson;
+    result['inJson'] = JSON.stringify(incoming);
+    result['outNextCursor'] = outEnd < outTotal ? InsightIntentNoteService.encodeCursor(outEnd) : '';
+    result['inNextCursor'] = inEnd < inTotal ? InsightIntentNoteService.encodeCursor(inEnd) : '';
+    result['outSkipped'] = outPage.skippedCount.toString();
+    result['inSkipped'] = inPage.skippedCount.toString();
+    result['truncated'] = (outEnd < outTotal || inEnd < inTotal ||
+      outPage.skippedCount > 0 || inPage.skippedCount > 0) ? 'true' : 'false';
     InsightIntentNoteService.ensureOutputBudget(result);
     return result;
   }
@@ -997,6 +1026,20 @@ export class InsightIntentNoteService {
       }
     }
     return low;
+  }
+
+  private static fitPage(items: Object[], start: number, limit: number, maxJsonChars: number,
+    skipThresholdChars: number): PageSlice {
+    const safeStart: number = Math.min(Math.max(start, 0), items.length);
+    const candidates: Object[] = items.slice(safeStart, safeStart + limit);
+    const count: number = InsightIntentNoteService.fitJsonArrayCount(candidates, maxJsonChars);
+    const skippedCount: number = count === 0 && candidates.length > 0 &&
+      JSON.stringify([candidates[0]]).length > skipThresholdChars ? 1 : 0;
+    return {
+      items: candidates.slice(0, count),
+      nextIndex: safeStart + count + skippedCount,
+      skippedCount: skippedCount
+    };
   }
 
   private static fitChunkToOutputBudget(content: string, offset: number, length: number,

@@ -27,7 +27,7 @@ function extractStaticMethod(name) {
 const names = ['parseLimit', 'parseOffset', 'parseCursor', 'encodeCursor', 'buildSnippet', 'lineOfOffset',
   'buildOutline', 'planChunk', 'collectTreeEntries', 'withinDepth', 'relativeDepth', 'countNotesUnder',
   'inFolder', 'lastSegment', 'isoDate', 'outputChars', 'fitJsonArrayCount', 'fitChunkToOutputBudget',
-  'ensureOutputBudget', 'parseReadOnlyFolders', 'isReadOnlyPath'];
+  'fitPage', 'ensureOutputBudget', 'parseReadOnlyFolders', 'isReadOnlyPath'];
 const methods = names.map(extractStaticMethod).join('\n').replace(/InsightIntentNoteService\./g, '');
 
 const limitsStart = source.indexOf('class XiaoyiToolLimits');
@@ -43,7 +43,7 @@ vm.runInContext(code, vm.createContext({ module, exports: module.exports, Error,
 const { parseLimit, parseOffset, parseCursor, encodeCursor, buildSnippet, lineOfOffset, buildOutline,
   planChunk, collectTreeEntries, withinDepth, relativeDepth, countNotesUnder, inFolder, lastSegment,
   isoDate, outputChars, fitJsonArrayCount, fitChunkToOutputBudget, parseReadOnlyFolders, isReadOnlyPath,
-  ensureOutputBudget, XiaoyiToolLimits } = module.exports;
+  fitPage, ensureOutputBudget, XiaoyiToolLimits } = module.exports;
 
 /** vm realm 产出的数组与宿主数组结构相同但引用不等，比较前先做一次 JSON 往返。 */
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -115,6 +115,32 @@ const outputItems = [{ path: 'a' }, { path: 'bb' }, { path: 'ccc' }];
 const twoItemsChars = JSON.stringify(outputItems.slice(0, 2)).length;
 assert.equal(fitJsonArrayCount(outputItems, twoItemsChars), 2);
 assert.equal(fitJsonArrayCount(outputItems, twoItemsChars - 1), 1);
+const secondPage = fitPage(outputItems, 1, 1, 100, 100);
+assert.deepEqual(plain(secondPage.items), [{ path: 'bb' }]);
+assert.equal(secondPage.nextIndex, 2);
+assert.equal(secondPage.skippedCount, 0);
+const lastPage = fitPage([{ path: 'last' }], 0, 1, 100, 100);
+assert.equal(lastPage.nextIndex, 1, 'the last page must leave no further item');
+assert.equal(lastPage.skippedCount, 0);
+const emptyPage = fitPage([], 0, 1, 100, 100);
+assert.deepEqual(plain(emptyPage.items), []);
+assert.equal(emptyPage.nextIndex, 0);
+assert.equal(emptyPage.skippedCount, 0);
+const oversizedPage = fitPage([{ title: 'x'.repeat(100) }], 0, 1, 10, 10);
+assert.deepEqual(plain(oversizedPage.items), []);
+assert.equal(oversizedPage.nextIndex, 1, 'an unreturnable item must not trap the cursor');
+assert.equal(oversizedPage.skippedCount, 1, 'an unreturnable item must be reported as skipped');
+const resumedAfterSkip = fitPage([{ title: 'x'.repeat(100) }, { title: 'next' }],
+  oversizedPage.nextIndex, 1, 100, 100);
+assert.deepEqual(plain(resumedAfterSkip.items), [{ title: 'next' }]);
+assert.equal(resumedAfterSkip.nextIndex, 2);
+const deferredPage = fitPage([{ title: 'short' }], 0, 1, 2, 100);
+assert.equal(deferredPage.nextIndex, 0,
+  'an item that fits the full response budget must not be skipped due to another page consuming space');
+const budgetClippedPage = fitPage(outputItems, 0, outputItems.length, twoItemsChars - 1,
+  twoItemsChars - 1);
+assert.deepEqual(plain(budgetClippedPage.items), outputItems.slice(0, 1));
+assert.equal(budgetClippedPage.nextIndex, 1, 'budget clipping must resume at the first unreturned item');
 const budgetedContent = '段'.repeat(7000);
 const budgetedPlan = fitChunkToOutputBudget(budgetedContent, 0, 8000, 10);
 assert.equal(budgetedPlan.end - budgetedPlan.start, XiaoyiToolLimits.outputBudgetChars - 10);
@@ -186,6 +212,19 @@ assert.ok(source.includes('result[\'contentHash\'] = AgentOperationStorage.hashT
   'baseHash must stay a whole-note hash even for a chunk');
 assert.ok(source.includes('private requireAgentWritablePath('), 'AI writes must enforce Wiki read-only rules');
 assert.ok(source.includes("if (path === '_wiki.md')"), '_wiki.md must remain read-only to the agent');
+const readNoteStart = source.indexOf('private readNote(');
+const readNoteEnd = source.indexOf('\n  private ', readNoteStart + 8);
+const readNoteBody = source.slice(readNoteStart, readNoteEnd);
+assert.ok(readNoteBody.includes("parseCursor(params['cursor'])"), 'outline paging must use its own cursor');
+assert.ok(readNoteBody.includes("result['nextCursor']"), 'outline paging must return nextCursor');
+assert.ok(readNoteBody.includes("result['total']"), 'outline paging must return total heading count');
+assert.ok(readNoteBody.includes("result['skippedCount']"), 'outline paging must report oversized skipped headings');
+const linksStart = source.indexOf('private async getLinks(');
+const linksEnd = source.indexOf('\n  private ', linksStart + 8);
+const linksBody = source.slice(linksStart, linksEnd);
+for (const field of ['outCursor', 'inCursor', 'outNextCursor', 'inNextCursor', 'outSkipped', 'inSkipped']) {
+  assert.ok(linksBody.includes(field), `GetLinks must support independent ${field}`);
+}
 for (const method of ['createNote', 'appendNote', 'editNote', 'applyExistingMutation']) {
   const start = source.search(new RegExp(`private (?:async )?${method}\\(`));
   assert.ok(start >= 0, `missing ${method}`);
