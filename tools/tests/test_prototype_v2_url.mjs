@@ -59,7 +59,21 @@ test('vault manager shares the selected library as ZIP and restores focus',()=>{
  assert(f.get('shareScopeSeg').classList.contains('hidden'));assert(f.get('shareRemoteLink').classList.contains('hidden'));
  f.run(html.match(/\$\('shareDialog'\)\.addEventListener\('close',\(\)=>\{if\(!shareVaultTarget\)return;[^\n]+/)[0]);
  const back=f.run('shareReturnFocus');f.get('shareDialog').dispatch('close',{});assert(back.focused);assert.equal(f.run('shareVaultTarget'),'');
- f.run("notes.filter(n=>n.vault==='local').forEach(n=>n.deleted=true);renderVaultManager()");assert.match(f.get('vaultCards').innerHTML,/data-vault-action="share" data-vault-id="local" disabled/);
+  f.run("notes.filter(n=>n.vault==='local').forEach(n=>n.deleted=true);renderVaultManager()");assert.match(f.get('vaultCards').innerHTML,/data-vault-action="share" data-vault-id="local" disabled/);
+});
+test('share scope hides the folder segment when it would duplicate the vault root',()=>{
+  const f=fixture();
+  f.get('shareBtn').onclick();
+  assert(!f.get('shareFolderScope').classList.contains('hidden'));
+  assert.equal(f.run('shareSnapshot.scope'),'note');
+  f.run("notes.push({id:'root-note',vault:activeVault,folder:'',title:'根笔记',tag:'',text:'正文',deleted:false});current='root-note'");
+  f.get('shareBtn').onclick();
+  assert(f.get('shareFolderScope').classList.contains('hidden'));
+  assert.equal(f.get('shareScope').value,'note');
+  assert.equal(f.run('shareSnapshot.scope'),'note');
+  f.run("$('shareScope').value='folder';renderShareOptions()");
+  assert.equal(f.get('shareScope').value,'note');
+  assert(f.get('shareFolderScope').classList.contains('hidden'));
 });
 test('settings backup shares the current library and blocks empty-library export',()=>{
  const f=fixture();const extension=html.match(/\/\/ v1\.37: data page backup export[\s\S]*?(?=<\/script>)/)[0];f.run(extension);

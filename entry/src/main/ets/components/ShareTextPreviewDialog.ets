@@ -1,6 +1,7 @@
-import { Icon } from '../common/Icons';
+import { UIUtils } from '@kit.ArkUI';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { shareFailureMessage } from '../model/UserErrorMessages';
+import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 @CustomDialog
 export struct ShareTextPreviewDialog {
@@ -61,131 +62,97 @@ export struct ShareTextPreviewDialog {
     }
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column({ space: Space.s3 }) {
-      Row() {
-        Row({ space: Space.s3 }) {
-          Row() {
-            Icon('message', Space.s5, $r('app.color.brand'))
-          }
-          .width(Space.s10)
-          .height(Space.s10)
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(Radius.control)
-          .backgroundColor($r('app.color.brand_bg'))
-          Column({ space: Space.s1 }) {
-            Text('文本分享')
-              .fontSize(FontSize.s3)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.text_primary'))
-            Text(this.itemName)
+      Text(this.itemName)
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text('可编辑将要交接的纯文本；此处修改不会写回笔记。')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      TextArea({ text: this.contentDraft, placeholder: '纯文本内容' })
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_primary'))
+        .backgroundColor($r('app.color.bg_secondary'))
+        .padding(Space.s3)
+        .height(Size.drawerW * 0.58)
+        .borderRadius(Radius.control)
+        .border({ width: 1, color: $r('app.color.line') })
+        .onChange((value: string): void => {
+          this.contentDraft = value;
+        })
+      if (this.limitations.length > 0) {
+        Column({ space: Space.s1 }) {
+          ForEach(this.limitations, (limitation: string, index: number) => {
+            Text('• ' + limitation)
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_secondary'))
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-        }
-        .layoutWeight(1)
-        Text('×')
-          .fontSize(FontSize.s1)
-          .fontColor($r('app.color.text_secondary'))
-          .width(Size.touch)
-          .height(Size.touch)
-          .textAlign(TextAlign.Center)
-          .accessibilityText('关闭文本预览')
-          .focusable(true)
-          .onClick(() => { this.back(); })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-      Scroll() {
-        Column({ space: Space.s3 }) {
-          Text(this.itemName)
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_secondary'))
-            .width('100%')
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text('可编辑将要交接的纯文本；此处修改不会写回笔记。')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
-            .width('100%')
-          TextArea({ text: this.contentDraft, placeholder: '纯文本内容' })
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .backgroundColor($r('app.color.bg_secondary'))
-            .padding(Space.s3)
-            .height(Size.drawerW * 0.58)
-            .borderRadius(Radius.control)
-            .border({ width: 1, color: $r('app.color.line') })
-            .onChange((value: string): void => { this.contentDraft = value; })
-          if (this.limitations.length > 0) {
-            Column({ space: Space.s1 }) {
-              ForEach(this.limitations, (limitation: string, index: number) => {
-                Text('• ' + limitation)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-              }, (limitation: string, index: number) => index.toString())
-            }
-            .width('100%')
-          }
-          if (this.errorMessage.length > 0) {
-            Text(this.errorMessage)
-              .fontSize(FontSize.caption)
-              .fontColor($r('app.color.danger'))
               .width('100%')
-          }
+          }, (limitation: string, index: number) => index.toString())
         }
         .width('100%')
-        .alignItems(HorizontalAlign.Start)
       }
-      .width('100%')
-      .layoutWeight(1)
-      .constraintSize({ maxHeight: this.windowHeightVp > 0
-        ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 7))
-        : Size.menuMaxH })
-      .scrollBar(BarState.Off)
-      Row({ space: Space.s2 }) {
-        Button('返回格式选择')
-          .layoutWeight(1)
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          .onClick(() => { this.back(); })
-        Button(this.initialError.length > 0
-          ? (this.preparing ? '正在重试…' : '重试获取文本')
-          : (this.sharing ? '正在打开…' : '分享文本'))
-          .layoutWeight(1)
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          // v1.32 32.12：主按钮禁用态中性化——--line 底、--muted 字、不透明
-          .fontColor(this.sharing || this.preparing
-            ? $r('app.color.text_tertiary') : $r('app.color.on_brand'))
-          .backgroundColor(this.sharing || this.preparing
-            ? $r('app.color.line') : $r('app.color.brand'))
-          .enabled(!this.sharing && !this.preparing)
-          .onClick(() => {
-            if (this.initialError.length > 0) {
-              void this.retryPreparation();
-            } else {
-              void this.confirm();
-            }
-          })
+      if (this.errorMessage.length > 0) {
+        Text(this.errorMessage)
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.danger'))
+          .width('100%')
       }
-      .width('100%')
     }
-    .width(this.windowWidthVp > 0
-      ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
-      : Size.shareW)
-    .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 2))
-      : Size.menuMaxH })
-    .padding(Space.s5)
-    .borderRadius(this.singleScreen
-      ? { topLeft: Radius.dialog, topRight: Radius.dialog, bottomLeft: 0, bottomRight: 0 }
-      : Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s3 }) {
+      UtilityDialogAction('返回格式选择', 'secondary', this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => true), (): void => {
+          this.back();
+        }, true)
+      UtilityDialogAction(
+        this.initialError.length > 0
+          ? (this.preparing ? '正在重试…' : '重试获取文本')
+          : (this.sharing ? '正在打开…' : '分享文本'),
+        'primary', this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => !this.sharing && !this.preparing),
+        (): void => {
+          if (this.initialError.length > 0) {
+            void this.retryPreparation();
+          } else {
+            void this.confirm();
+          }
+        }, true)
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '文本分享',
+      subtitle: this.itemName,
+      headerIcon: 'message',
+      closeLabel: '关闭文本预览',
+      singleScreen: this.singleScreen,
+      scrollContent: true,
+      preferredWidthVp: Size.shareW,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => {
+        this.back();
+      },
+      content: (): void => {
+        this.DialogContent();
+      },
+      footer: (): void => {
+        this.DialogFooter();
+      }
+    })
   }
 }

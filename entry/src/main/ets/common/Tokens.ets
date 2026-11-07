@@ -130,3 +130,62 @@ export class Motion {
 
 /** 正文行高（v2 --leading：1.85） */
 export const LINE_HEIGHT_BODY: number = 1.85; // v2 --leading
+
+/**
+ * 启动页品牌遮罩（v1.41）—— 数值真源：v2 原型 `.startup-*`
+ * （docs/prototype/v2/启动页设计.md）；颜色仍走 `$r('app.color.*')`。
+ * 入场为分组错峰浮现（本版拍板：不逐字、不做持续氛围动画，见 v1.41 §2）。
+ */
+export class Startup {
+  /** 应用图标尺寸：原型 `.startup-emblem` 96px */
+  static readonly iconSize: number = 96;
+  /** 图标圆角：原型 `calc(var(--r) + var(--s2))` = 16 + 8 */
+  static readonly iconRadius: number = Radius.menu + Space.s2;
+  /** 光晕外扩：原型 `.startup-halo` `inset: calc(-1 * var(--s10))` */
+  static readonly haloPad: number = Space.s10;
+  /** 光晕透明度：原型 `--sp-glow` = brand 26% */
+  static readonly haloOpacity: number = 0.26;
+  /** 品牌名字号：原型 `calc(var(--large) * 1.4)` = 20 × 1.4 */
+  static readonly nameSize: number = FontSize.s3 * 1.4;
+  /** 品牌名字距（em）：原型 `letter-spacing:.32em`（末字空隙用 offset 半宽补偿居中） */
+  static readonly nameTrackingRatio: number = 0.32;
+  /** 眉题字距（em）：原型 `.42em` */
+  static readonly eyebrowTrackingRatio: number = 0.42;
+  /** 名言字号：原型 `clamp(17px, 1.2vw + 9px, 23px)`，本版拍板取 `--large`（20） */
+  static readonly quoteSize: number = FontSize.s3;
+  /** 名言行高：原型 `line-height: 1.9` */
+  static readonly quoteLeading: number = 1.9;
+  /** 名言字距（em）：原型 `.1em` */
+  static readonly quoteTrackingRatio: number = 0.1;
+  /** 名言最大宽：原型 `max-width: 32em`（按名言字号折算） */
+  static readonly quoteMaxW: number = FontSize.s3 * 32;
+  /** 出处字号：原型 `--small`（14） */
+  static readonly sourceSize: number = FontSize.body2;
+  /** 发丝线宽：原型 `.startup-rule` `width: var(--s16)` */
+  static readonly ruleW: number = Space.s16;
+  /** 发丝线描边宽：原型 `--stroke` */
+  static readonly ruleStroke: number = 1;
+  /** 页脚距底：原型 `.startup-foot` `bottom: var(--s10)` */
+  static readonly footBottom: number = Space.s10;
+  /** 页脚字距（em）：原型 `.24em` */
+  static readonly footTrackingRatio: number = 0.24;
+  /** 入场错峰时刻（ms）：图标 → 品牌名 → 眉题 → 发丝线 → 名言 → 出处 → 页脚 */
+  static readonly enterIconDelay: number = 0;
+  static readonly enterNameDelay: number = 350;
+  static readonly enterEyebrowDelay: number = 1000;
+  static readonly enterRuleDelay: number = 1100;
+  static readonly enterQuoteDelay: number = 1400;
+  static readonly enterSourceDelay: number = 1750;
+  static readonly enterFootDelay: number = 2200;
+  /** 入场单组时长（ms）：原型 `startup-in` 0.7–0.9s 的轻量档 */
+  static readonly enterDur: number = 800;
+  /** 入场上浮行程（vp）：原型图标 14px / 文字 6–8px */
+  static readonly iconEnterFromY: number = 14;
+  static readonly nameEnterFromY: number = 8;
+  static readonly quoteEnterFromY: number = 6;
+  /** 入场起始缩放：原型图标 `scale(.9)` */
+  static readonly iconEnterFromScale: number = 0.9;
+  /** 退出淡出时长与放大终值：原型 `--nav-duration`（240ms）+ `scale(1.03)` */
+  static readonly exitDur: number = Motion.durNav;
+  static readonly exitScaleTo: number = 1.03;
+}

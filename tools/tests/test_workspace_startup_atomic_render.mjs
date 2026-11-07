@@ -114,7 +114,7 @@ test('the workspace is covered until restoration completes, without a second loa
   const buildEnd = indexSource.indexOf('\n  /**', buildStart);
   assert.ok(buildStart >= 0 && buildEnd > buildStart, 'could not find Index.build');
   const buildSource = indexSource.slice(buildStart, buildEnd);
-  assert.match(buildSource, /if \(!this\.workspaceInitialRenderReady\)\s*\{\s*Column\(\)\s*\{\}\s*[\s\S]*?backgroundColor\(\$r\('app\.color\.bg_page'\)\)/);
+  assert.match(buildSource, /StartupMask\(\{ ready: this\.workspaceInitialRenderReady \}\)/);
   assert.doesNotMatch(buildSource, /正在恢复工作区|正在加载笔记/);
 });
 

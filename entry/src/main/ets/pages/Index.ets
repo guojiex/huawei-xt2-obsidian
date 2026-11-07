@@ -31,12 +31,15 @@ import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 import { FileTree } from '../model/FileTree';
 import { WikiLinkCandidate, WikiLinkParser, WikiLinkReference, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
+import { MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts } from '../model/MarkdownInlineParser';
 import {
-  MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts
-} from '../model/MarkdownInlineParser';
-import {
-  CalloutSourceModel, FootnoteSourceModel, FootnoteSourceRange, FormulaSourceModel,
-  FrontmatterPropertyModel, FrontmatterSourceModel, MarkdownComplexBlockEdit
+  CalloutSourceModel,
+  FootnoteSourceModel,
+  FootnoteSourceRange,
+  FormulaSourceModel,
+  FrontmatterPropertyModel,
+  FrontmatterSourceModel,
+  MarkdownComplexBlockEdit
 } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerShareSummary, VaultManagerView } from '../components/VaultManagerView';
@@ -45,39 +48,65 @@ import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { ImportVaultDialog } from '../components/ImportVaultDialog';
 import { GitSyncDialog } from '../components/GitSyncDialog';
-import { CreateNoteDialog, DeletePathDialog, RenamePathDialog, MovePathDialog } from '../components/NoteDialogs';
+import { CreateNoteDialog, DeletePathDialog, MovePathDialog, RenamePathDialog } from '../components/NoteDialogs';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
 import {
-  formatRecentErrorFeedback, RecentErrorCategory, RecentErrorNextStep, RecentErrorOperation,
-  RecentErrorOutcome, RecentErrorPhase, RecentErrorStore
+  formatRecentErrorFeedback,
+  RecentErrorCategory,
+  RecentErrorNextStep,
+  RecentErrorOperation,
+  RecentErrorOutcome,
+  RecentErrorPhase,
+  RecentErrorStore
 } from '../model/RecentErrorStore';
 import { shareFailureMessage } from '../model/UserErrorMessages';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
-import { EditorWebView, EditorBridge } from '../components/EditorWebView';
+import { EditorBridge, EditorWebView } from '../components/EditorWebView';
 import {
-  PreviewWebView, FormulaPreviewWeb, PreviewBridge, PreviewBlockAnchor, PreviewBlockInlineItem, PreviewCaptureResult,
-  PreviewCodeEditRequest, PreviewEditHistoryAction
+  FormulaPreviewWeb,
+  PreviewBlockAnchor,
+  PreviewBlockInlineItem,
+  PreviewBridge,
+  PreviewCaptureResult,
+  PreviewCodeEditRequest,
+  PreviewEditHistoryAction,
+  PreviewWebView
 } from '../components/PreviewWebView';
 import { AgentWorkspace } from '../components/AgentWorkspace';
+import { StartupMask } from '../components/StartupMask';
 import { Icon } from '../common/Icons';
-import { Space, Radius, FontSize, Size, Motion, Shadow } from '../common/Tokens';
+import { FontSize, Motion, Radius, Shadow, Size, Space } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
-import { EditorExperienceMode, DEFAULT_EDITOR_EXPERIENCE } from '../model/EditorExperiencePolicy';
+import { DEFAULT_EDITOR_EXPERIENCE, EditorExperienceMode } from '../model/EditorExperiencePolicy';
 import { EditorExperienceStore } from '../model/EditorExperienceStore';
 import { ShareImagePreferenceStore } from '../model/ShareImagePreferenceStore';
 import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from '../model/PreviewFollowPolicy';
-import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
-  DEFAULT_CONTENT_RATIO, DEFAULT_NAV_RATIO, MAX_NAV_RATIO, MIN_NAV_RATIO, MdPaneWidths,
-  clampContentRatio, clampNavigationWidth, contentMinVp, mdPaneWidths,
-  isSingleLandscapeWindow, navMinVp, navigationWidth
+  restoreWorkspacePane,
+  WorkspaceSession,
+  workspaceSessionPaths,
+  WorkspaceSessionStore
+} from '../model/WorkspaceSessionStore';
+import {
+  clampContentRatio,
+  clampNavigationWidth,
+  contentMinVp,
+  DEFAULT_CONTENT_RATIO,
+  DEFAULT_NAV_RATIO,
+  isSingleLandscapeWindow,
+  MAX_NAV_RATIO,
+  MdPaneWidths,
+  mdPaneWidths,
+  MIN_NAV_RATIO,
+  navigationWidth,
+  navMinVp
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
-import { ShareNoteDialog, ShareFormatOption, ShareScopeOption } from '../components/ShareNoteDialog';
+import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from '../components/ShareNoteDialog';
 import { ShareImageSettingsDialog } from '../components/ShareImageSettingsDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
@@ -86,26 +115,39 @@ import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteImageService } from '../model/NoteImageService';
-import { NoteDraftService, NoteDraftRecovery } from '../model/NoteDraftService';
+import { NoteDraftRecovery, NoteDraftService } from '../model/NoteDraftService';
 import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
 import { PreparedArchiveShare, ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
-import { ShareLinkService, ShareLinkScope } from '../model/ShareLinkService';
+import { ShareLinkScope, ShareLinkService } from '../model/ShareLinkService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { FullTextSearchResult } from '../model/SearchIndex';
 import { CrossVaultSearchOutcome, CrossVaultSearchService } from '../model/CrossVaultSearchService';
 import {
-  ExternalDirectoryGrant, ExternalDirectorySelection, ExternalVaultAuthorizationService
+  ExternalDirectoryGrant,
+  ExternalDirectorySelection,
+  ExternalVaultAuthorizationService
 } from '../model/ExternalVaultAuthorization';
 import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
 import { GitImportDraft, GitImportDraftStore } from '../model/GitImportDraftStore';
 import { VaultPathResolver } from '../model/VaultPathResolver';
 import {
-  ZipChooseOutcome, ZipImportError, ZipImportErrorKind, ZipImportOutcome, ZipImportResult,
-  ZipImportService, ZipParsed, ZipPickResult
+  ZipChooseOutcome,
+  ZipImportError,
+  ZipImportErrorKind,
+  ZipImportOutcome,
+  ZipImportResult,
+  ZipImportService,
+  ZipParsed,
+  ZipPickResult
 } from '../model/ZipImportService';
 import {
-  copyPickerZipToStaging, DeviceZipPicker, freeBytesUnder, removeStagingFile,
-  StagingZipReader, TempVaultZipWriter, ZlibRawInflate
+  copyPickerZipToStaging,
+  DeviceZipPicker,
+  freeBytesUnder,
+  removeStagingFile,
+  StagingZipReader,
+  TempVaultZipWriter,
+  ZlibRawInflate
 } from '../model/ZipImportDevice';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
@@ -8213,127 +8255,86 @@ struct Index {
     return entryScope === 'folder' ? entryPath : NoteShareService.parentOf(notePath);
   }
 
-  private openShareDialog(scope: ShareLinkScope, path: string, targetVaultId: string = this.currentVaultId,
-    vaultNoteCount: number = -1, focusReturnId: string = ''): void {
-    const registry: VaultRegistry = VaultRegistry.get();
-    const entries: VaultEntry[] = registry.list();
-    let vault: VaultEntry | null = null;
-    for (let i = 0; i < entries.length; i++) {
-      if (entries[i].id === targetVaultId) {
-        vault = entries[i];
-        break;
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column() {
+        this.NoteWorkspaceShell()
       }
-    }
-    if (vault === null) {
-      promptAction.showToast({ message: '这个知识库已不存在' });
-      return;
-    }
-    const notePath: string = vault.id === this.currentVaultId ? this.activeFilePath() : '';
-    const noteReady: boolean = notePath.length > 0 && this.editorBridgeForPath(notePath).ready;
-    if (scope === 'note' && !noteReady) {
-      promptAction.showToast({ message: '编辑器尚未就绪，暂时无法分享' });
-      return;
-    }
-    const folderPath: string = this.sharePathForScope('folder', scope, path, notePath);
-    const noteName: string = notePath.substring(notePath.lastIndexOf('/') + 1);
-    const noteOptions: ShareFormatOption[] = [
-      { value: 'image', label: '长图', detail: '整篇笔记合成一张带水印的图片。', icon: 'image' },
-      { value: 'file', label: 'Markdown / ZIP', detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc' },
-      { value: 'text', label: '文本', detail: '预览并编辑本次分享文本，不写回笔记。', icon: 'message' }
-    ];
-    const folderOptions: ShareFormatOption[] = [
-      { value: 'zip', label: 'ZIP 文件', detail: '保留目录结构，并补齐引用的本地图片。', icon: 'archive' }
-    ];
-    const vaultOptions: ShareFormatOption[] = [
-      { value: 'zip', label: 'ZIP 文件', detail: '打包当前知识库中的可分享文件。', icon: 'archive' }
-    ];
-    const noteOption: ShareScopeOption = {
-      scope: 'note',
-      path: notePath,
-      label: '笔记',
-      title: '分享笔记',
-      itemName: noteName,
-      description: '当前笔记及其引用的库内图片，不包含链接到的其他笔记。',
-      summary: '当前编辑内容',
-      notice: '',
-      available: noteReady,
-      options: noteOptions
-    };
-    const folderOption: ShareScopeOption = {
-      scope: 'folder',
-      path: folderPath,
-      label: '文件夹',
-      title: '分享文件夹',
-      itemName: folderPath.length > 0 ? folderPath : '知识库根目录',
-      description: '递归包含所选文件夹中的文件，并补齐笔记引用的库内图片。',
-      summary: '递归文件与图片',
-      notice: '',
-      available: true,
-      options: folderOptions
-    };
-    const vaultOption: ShareScopeOption = {
-      scope: 'vault',
-      path: '',
-      label: '知识库',
-      title: '分享知识库',
-      itemName: vault.id,
-      description: '排除隐藏项、回收站、缓存、草稿、凭据及内部状态。',
-      summary: focusReturnId.length > 0 && vaultNoteCount >= 0
-        ? vaultNoteCount.toString() + ' 篇笔记' : '当前库的可分享文件',
-      notice: '',
-      available: true,
-      options: vaultOptions
-    };
-    const scopeOptions: ShareScopeOption[] = focusReturnId.length > 0
-      ? [vaultOption] : [noteOption, folderOption, vaultOption];
-    for (let i: number = 0; i < scopeOptions.length; i++) {
-      if (vault.type === 'git' && focusReturnId.length === 0) {
-        try {
-          const linkResult = ShareLinkService.build(vault, scopeOptions[i].scope, scopeOptions[i].path);
-          scopeOptions[i].options.push({
-            value: 'link',
-            label: '远端网页链接',
-            detail: '来自已配置的 Git 远端和跟踪分支。',
-            icon: 'share'
-          });
-          scopeOptions[i].notice = linkResult.accessNotice;
-        } catch (error) {
-          scopeOptions[i].notice = '远端链接准备失败；原因未确定，仍可分享本地文件。';
-        }
-      }
-    }
+        .width('100%')
+        .height('100%')
+        .visibility(this.topView === 'note' ? Visibility.Visible : Visibility.Hidden)
 
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    let focusRestoreScheduled: boolean = false;
-    const restoreShareTriggerFocus = (): void => {
-      if (focusReturnId.length === 0 || focusRestoreScheduled) {
-        return;
+      if (this.topView !== 'note') {
+        Column() {
+          this.Appbar()
+          // 次级页面覆盖在工作区上方，工作区 Web 编辑器保持挂载。
+          Stack({ alignContent: Alignment.Bottom }) {
+            if (this.topView === 'vaults') {
+              this.ManagerView()
+            } else if (this.topView === 'history') {
+              ReleaseHistoryView()
+            } else if (this.topView === 'settings') {
+              this.SettingsPane()
+            } else if (this.topView === 'agent') {
+              this.AgentPane()
+            }
+            if (this.undoVisible) {
+              this.UndoBar()
+            }
+          }
+          .layoutWeight(1)
+          .width('100%')
+        }
+        .width('100%')
+        .height('100%')
+        .backgroundColor($r('app.color.bg_page'))
       }
-      focusRestoreScheduled = true;
-      setTimeout((): void => {
-        this.getUIContext().getFocusController().requestFocus(focusReturnId);
-      }, 0);
-    };
-    this.shareNoteCtl = new CustomDialogController({
-      builder: ShareNoteDialog({
-        scopeOptions: scopeOptions,
-        initialScope: scope,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        onConfirm: (targetScope: ShareLinkScope, targetPath: string, format: string, itemName: string): void => {
-          void this.prepareShare(targetScope, targetPath, format, itemName, vault as VaultEntry,
-            vaultNoteCount, focusReturnId);
-        },
-        onDismiss: restoreShareTriggerFocus
-      }),
-      autoCancel: true,
-      cancel: restoreShareTriggerFocus,
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      customStyle: true
-    });
-    this.shareNoteCtl.open();
+      if (this.quickSwitchOpen && this.topView === 'note') {
+        QuickSwitcher({
+          filePaths: this.quickSwitchFiles,
+          recentPaths: this.recentOpenPaths,
+          singleScreen: this.isSingleScreenLayout(),
+          windowWidthVp: this.windowWidthVp,
+          windowHeightVp: this.windowHeightVp,
+          vaultCount: this.vaults.length,
+          currentVaultId: this.currentVaultId,
+          searchContent: (query: string,
+            onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> => {
+            return FullTextSearchService.search(
+              VaultRegistry.get(), this.currentVaultId, query, onProgress);
+          },
+          searchAllVaults: (query: string, mode: string,
+            onVaultStart: (vaultName: string) => void): Promise<CrossVaultSearchOutcome> => {
+            return CrossVaultSearchService.run(VaultRegistry.get(), this.vaults,
+              this.currentVaultId, query, mode, onVaultStart);
+          },
+          cancelAllVaultSearch: (): void => {
+            CrossVaultSearchService.cancel();
+          },
+          onSelect: (vaultId: string, relPath: string): void => {
+            void this.selectQuickSwitchFile(vaultId, relPath);
+          },
+          onClose: (): void => {
+            this.quickSwitchOpen = false;
+          }
+        })
+          .width('100%')
+          .height('100%')
+      }
+      if (this.shareCaptureActive) {
+        this.ShareImageCaptureLayer()
+      }
+      // v1.41 启动页品牌遮罩：常驻挂载，ready 后组件内部 240ms 淡出并隐藏。
+      StartupMask({ ready: this.workspaceInitialRenderReady })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.bg_page'))
+    // 页面底色延伸到系统底部手势安全区；交互控件仍按原窗口安全区排版。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      this.recordFormatWindowArea(newArea);
+    })
   }
 
   private openShareImageSettings(vaultId: string, notePath: string, itemName: string): void {
@@ -9652,91 +9653,129 @@ struct Index {
     .height('100%')
   }
 
-  build() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Column() {
-        this.NoteWorkspaceShell()
-      }
-        .width('100%')
-        .height('100%')
-        .visibility(this.topView === 'note' ? Visibility.Visible : Visibility.Hidden)
-
-      if (this.topView !== 'note') {
-        Column() {
-          this.Appbar()
-          // 次级页面覆盖在工作区上方，工作区 Web 编辑器保持挂载。
-          Stack({ alignContent: Alignment.Bottom }) {
-            if (this.topView === 'vaults') {
-              this.ManagerView()
-            } else if (this.topView === 'history') {
-              ReleaseHistoryView()
-            } else if (this.topView === 'settings') {
-              this.SettingsPane()
-            } else if (this.topView === 'agent') {
-              this.AgentPane()
-            }
-            if (this.undoVisible) {
-              this.UndoBar()
-            }
-          }
-          .layoutWeight(1)
-          .width('100%')
-        }
-        .width('100%')
-        .height('100%')
-        .backgroundColor($r('app.color.bg_page'))
-      }
-      if (this.quickSwitchOpen && this.topView === 'note') {
-        QuickSwitcher({
-          filePaths: this.quickSwitchFiles,
-          recentPaths: this.recentOpenPaths,
-          singleScreen: this.isSingleScreenLayout(),
-          windowWidthVp: this.windowWidthVp,
-          windowHeightVp: this.windowHeightVp,
-          vaultCount: this.vaults.length,
-          currentVaultId: this.currentVaultId,
-          searchContent: (query: string,
-            onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> => {
-            return FullTextSearchService.search(
-              VaultRegistry.get(), this.currentVaultId, query, onProgress);
-          },
-          searchAllVaults: (query: string, mode: string,
-            onVaultStart: (vaultName: string) => void): Promise<CrossVaultSearchOutcome> => {
-            return CrossVaultSearchService.run(VaultRegistry.get(), this.vaults,
-              this.currentVaultId, query, mode, onVaultStart);
-          },
-          cancelAllVaultSearch: (): void => {
-            CrossVaultSearchService.cancel();
-          },
-          onSelect: (vaultId: string, relPath: string): void => {
-            void this.selectQuickSwitchFile(vaultId, relPath);
-          },
-          onClose: (): void => {
-            this.quickSwitchOpen = false;
-          }
-        })
-          .width('100%')
-          .height('100%')
-      }
-      if (this.shareCaptureActive) {
-        this.ShareImageCaptureLayer()
-      }
-      if (!this.workspaceInitialRenderReady) {
-        Column() {}
-          .width('100%')
-          .height('100%')
-          .backgroundColor($r('app.color.bg_page'))
-          .onClick((): void => {})
+  private openShareDialog(scope: ShareLinkScope, path: string, targetVaultId: string = this.currentVaultId,
+    vaultNoteCount: number = -1, focusReturnId: string = ''): void {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const entries: VaultEntry[] = registry.list();
+    let vault: VaultEntry | null = null;
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].id === targetVaultId) {
+        vault = entries[i];
+        break;
       }
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor($r('app.color.bg_page'))
-    // 页面底色延伸到系统底部手势安全区；交互控件仍按原窗口安全区排版。
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-    .onAreaChange((oldArea: Area, newArea: Area) => {
-      this.recordFormatWindowArea(newArea);
-    })
+    if (vault === null) {
+      promptAction.showToast({ message: '这个知识库已不存在' });
+      return;
+    }
+    const notePath: string = vault.id === this.currentVaultId ? this.activeFilePath() : '';
+    const noteReady: boolean = notePath.length > 0 && this.editorBridgeForPath(notePath).ready;
+    if (scope === 'note' && !noteReady) {
+      promptAction.showToast({ message: '编辑器尚未就绪，暂时无法分享' });
+      return;
+    }
+    const folderPath: string = this.sharePathForScope('folder', scope, path, notePath);
+    const noteName: string = notePath.substring(notePath.lastIndexOf('/') + 1);
+    const noteOptions: ShareFormatOption[] = [
+      { value: 'image', label: '长图', detail: '整篇笔记合成一张带水印的图片。', icon: 'image' },
+      { value: 'file', label: 'Markdown / ZIP', detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc' },
+      { value: 'text', label: '文本', detail: '预览并编辑本次分享文本，不写回笔记。', icon: 'message' }
+    ];
+    const folderOptions: ShareFormatOption[] = [
+      { value: 'zip', label: 'ZIP 文件', detail: '保留目录结构，并补齐引用的本地图片。', icon: 'archive' }
+    ];
+    const vaultOptions: ShareFormatOption[] = [
+      { value: 'zip', label: 'ZIP 文件', detail: '打包当前知识库中的可分享文件。', icon: 'archive' }
+    ];
+    const noteOption: ShareScopeOption = {
+      scope: 'note',
+      path: notePath,
+      label: '笔记',
+      title: '分享笔记',
+      itemName: noteName,
+      description: '当前笔记及其引用的库内图片，不包含链接到的其他笔记。',
+      summary: '当前编辑内容',
+      notice: '',
+      available: noteReady,
+      options: noteOptions
+    };
+    const folderOption: ShareScopeOption = {
+      scope: 'folder',
+      path: folderPath,
+      label: '文件夹',
+      title: '分享文件夹',
+      itemName: folderPath.length > 0 ? folderPath : '知识库根目录',
+      description: '递归包含所选文件夹中的文件，并补齐笔记引用的库内图片。',
+      summary: '递归文件与图片',
+      notice: '',
+      available: true,
+      options: folderOptions
+    };
+    const vaultOption: ShareScopeOption = {
+      scope: 'vault',
+      path: '',
+      label: '知识库',
+      title: '分享知识库',
+      itemName: vault.id,
+      description: '排除隐藏项、回收站、缓存、草稿、凭据及内部状态。',
+      summary: focusReturnId.length > 0 && vaultNoteCount >= 0
+        ? vaultNoteCount.toString() + ' 篇笔记' : '当前库的可分享文件',
+      notice: '',
+      available: true,
+      options: vaultOptions
+    };
+    const folderScopeDistinct: boolean = folderPath.length > 0;
+    const scopeOptions: ShareScopeOption[] = focusReturnId.length > 0
+      ? [vaultOption]
+      : folderScopeDistinct ? [noteOption, folderOption, vaultOption] : [noteOption, vaultOption];
+    for (let i: number = 0; i < scopeOptions.length; i++) {
+      if (vault.type === 'git' && focusReturnId.length === 0) {
+        try {
+          const linkResult = ShareLinkService.build(vault, scopeOptions[i].scope, scopeOptions[i].path);
+          scopeOptions[i].options.push({
+            value: 'link',
+            label: '远端网页链接',
+            detail: '来自已配置的 Git 远端和跟踪分支。',
+            icon: 'share'
+          });
+          scopeOptions[i].notice = linkResult.accessNotice;
+        } catch (error) {
+          scopeOptions[i].notice = '远端链接准备失败；原因未确定，仍可分享本地文件。';
+        }
+      }
+    }
+
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    let focusRestoreScheduled: boolean = false;
+    const restoreShareTriggerFocus = (): void => {
+      if (focusReturnId.length === 0 || focusRestoreScheduled) {
+        return;
+      }
+      focusRestoreScheduled = true;
+      setTimeout((): void => {
+        this.getUIContext().getFocusController().requestFocus(focusReturnId);
+      }, 0);
+    };
+    this.shareNoteCtl = new CustomDialogController({
+      builder: ShareNoteDialog({
+        scopeOptions: scopeOptions,
+        initialScope: scope,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        onConfirm: (targetScope: ShareLinkScope, targetPath: string, format: string, itemName: string): void => {
+          void this.prepareShare(targetScope, targetPath, format, itemName, vault as VaultEntry,
+            vaultNoteCount, focusReturnId);
+        },
+        onDismiss: restoreShareTriggerFocus
+      }),
+      autoCancel: true,
+      cancel: restoreShareTriggerFocus,
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      customStyle: true
+    });
+    this.shareNoteCtl.open();
   }
 
   /**

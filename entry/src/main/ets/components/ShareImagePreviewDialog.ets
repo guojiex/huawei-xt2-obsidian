@@ -1,6 +1,7 @@
-import { Icon } from '../common/Icons';
+import { UIUtils } from '@kit.ArkUI';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { shareFailureMessage } from '../model/UserErrorMessages';
+import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 export interface ShareImagePreviewImage {
   uri: string;
@@ -73,44 +74,9 @@ export struct ShareImagePreviewDialog {
     }
   }
 
-  build() {
+  @Builder
+  DialogContent() {
     Column({ space: Space.s3 }) {
-      Row({ space: Space.s3 }) {
-        Row() {
-          Icon('image', Space.s5, $r('app.color.brand'))
-        }
-        .width(Space.s10)
-        .height(Space.s10)
-        .justifyContent(FlexAlign.Center)
-        .borderRadius(Radius.control)
-        .backgroundColor($r('app.color.brand_bg'))
-        Column({ space: Space.s1 }) {
-          Text('长图分享')
-            .fontSize(FontSize.s3)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.itemName)
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        Text('×')
-          .fontSize(FontSize.s1)
-          .fontColor($r('app.color.text_secondary'))
-          .width(Size.touch)
-          .height(Size.touch)
-          .textAlign(TextAlign.Center)
-          .accessibilityText('关闭长图预览')
-          .focusable(true)
-          .onClick(() => { this.back(); })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
       Row({ space: Space.s3 }) {
         Column({ space: Space.s1 }) {
           Text('图片宽度 · 跟随当前栏' +
@@ -132,95 +98,127 @@ export struct ShareImagePreviewDialog {
           .onClick(() => { this.changeSettings(); })
       }
       .width('100%')
-      Text('1 张长图 · ' + this.image.width.toString() + ' × ' + this.image.height.toString() + ' px · ' +
-        (this.image.theme === 'dark' ? '深色' : '浅色'))
-        .visibility(this.image.uri.length > 0 ? Visibility.Visible : Visibility.None)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-      if (this.image.scaled) {
-        Text('为满足图片预算，长图已整体缩小至 ' + this.image.width.toString() + ' px 宽')
-          .visibility(this.image.uri.length > 0 ? Visibility.Visible : Visibility.None)
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-      }
+
       if (this.image.uri.length > 0) {
-        Scroll() {
-          Column() {
-            Image(this.image.uri)
-              .width('100%')
-              .aspectRatio(this.image.aspectRatio)
-              .objectFit(ImageFit.Contain)
-              .borderRadius(Radius.control)
-              .backgroundColor($r('app.color.bg_secondary'))
+        Column({ space: Space.s1 }) {
+          Row({ space: Space.s3 }) {
+            Text('1 张长图')
+              .fontSize(FontSize.caption)
+              .fontWeight(600)
+              .fontColor($r('app.color.text_primary'))
+            Text(this.image.width.toString() + ' × ' + this.image.height.toString() + ' px')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+            Text(this.image.theme === 'dark' ? '深色' : '浅色')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
           }
-          .width('100%')
-          .padding({ right: Space.s1 })
+
+          if (this.image.scaled) {
+            Text('为满足图片预算，长图已整体缩小至 ' + this.image.width.toString() + ' px 宽')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+          }
         }
         .width('100%')
-        .constraintSize({ maxHeight: this.windowHeightVp > 0
-          ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 7 - Space.s4))
-          : Size.menuMaxH })
+
+        Scroll() {
+          Image(this.image.uri)
+            .width('100%')
+            .aspectRatio(this.image.aspectRatio)
+            .objectFit(ImageFit.Contain)
+            .borderRadius(Radius.control)
+            .backgroundColor($r('app.color.bg_card'))
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: this.stageMaxHeight() })
+        .padding(Space.s4)
+        .borderRadius(Radius.menu)
+        .backgroundColor($r('app.color.bg_secondary'))
         .scrollBar(BarState.Off)
+        .align(Alignment.Center)
       } else {
         Text('长图预览将在生成后显示。')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
       }
+
       if (this.errorMessage.length > 0) {
         Text(this.errorMessage)
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.danger'))
           .width('100%')
-      }
-      if (this.errorMessage.length > 0) {
         Button('改用 Markdown / ZIP')
           .height(Size.buttonH)
           .fontSize(FontSize.body2)
           .onClick(() => { this.back(); })
       }
-      Row({ space: Space.s2 }) {
-        Button('返回')
-          .layoutWeight(1)
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          .onClick(() => { this.back(); })
-        Button(this.image.uri.length > 0
-          ? (this.sharing ? '正在打开…' : '分享图片')
-          : (this.retrying ? '正在生成…' : '重试生成'))
-          .layoutWeight(1)
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          // v1.32 32.12：主按钮禁用态中性化——--line 底、--muted 字、不透明
-          .fontColor(this.sharing || this.retrying
-            ? $r('app.color.text_tertiary') : $r('app.color.on_brand'))
-          .backgroundColor(this.sharing || this.retrying
-            ? $r('app.color.line') : $r('app.color.brand'))
-          .enabled(!this.sharing && !this.retrying)
-          .onClick(() => {
-            if (this.image.uri.length > 0) {
-              void this.share();
-            } else {
-              void this.retry();
-            }
-          })
-      }
-      .width('100%')
     }
-    .width(this.windowWidthVp > 0
-      ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
-      : Size.shareW)
-    .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 2))
-      : Size.menuMaxH })
-    .padding(Space.s5)
-    .borderRadius(this.singleScreen
-      ? { topLeft: Radius.dialog, topRight: Radius.dialog, bottomLeft: 0, bottomRight: 0 }
-      : Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s3 }) {
+      UtilityDialogAction('返回', 'secondary', this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => true), (): void => {
+          this.back();
+        }, true)
+      UtilityDialogAction(
+        this.image.uri.length > 0
+          ? (this.sharing ? '正在打开…' : '分享图片')
+          : (this.retrying ? '正在生成…' : '重试生成'),
+        'primary', this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => !this.sharing && !this.retrying),
+        (): void => {
+          if (this.image.uri.length > 0) {
+            void this.share();
+          } else {
+            void this.retry();
+          }
+        }, true)
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '长图分享',
+      subtitle: this.itemName,
+      headerIcon: 'image',
+      closeLabel: '关闭长图预览',
+      singleScreen: this.singleScreen,
+      scrollContent: false,
+      preferredWidthVp: Size.shareW,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => {
+        this.back();
+      },
+      content: (): void => {
+        this.DialogContent();
+      },
+      footer: (): void => {
+        this.DialogFooter();
+      }
+    })
+  }
+
+  private dialogMaxHeight(): number {
+    if (this.windowHeightVp <= 0) {
+      return Size.menuMaxH;
+    }
+    if (this.singleScreen) {
+      return this.windowHeightVp * 0.86;
+    }
+    return Math.max(0, this.windowHeightVp - Space.s8 * 2);
+  }
+
+  private stageMaxHeight(): number {
+    return Math.max(0, this.dialogMaxHeight() - Space.s16 * 7);
   }
 }

@@ -114,3 +114,12 @@ test('native share selector exposes three ranges, keyboard switching, and action
   assert.match(dialogSource, /headerIcon: 'share'/);
   assert.match(dialogSource, /closeLabel: '关闭分享'/);
 });
+
+test('folder range is deduplicated against the vault range when the note sits at the vault root', () => {
+  assert.match(indexSource, /folderScopeDistinct: boolean = folderPath\.length > 0/);
+  assert.match(indexSource,
+    /: folderScopeDistinct \? \[noteOption, folderOption, vaultOption\] : \[noteOption, vaultOption\]/);
+  const app = createHarness();
+  assert.equal(app.sharePathForScope('folder', 'note', '根笔记.md', '根笔记.md'), '');
+  assert.equal(app.sharePathForScope('folder', 'note', '10_写作/草稿.md', '10_写作/草稿.md'), '10_写作');
+});

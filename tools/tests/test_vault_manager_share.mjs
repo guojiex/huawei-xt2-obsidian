@@ -73,7 +73,8 @@ test('manager share stays on the selected vault, exposes ZIP only, and preserves
   assert.match(openFromManager, /countScope\(registry, vaultId, ''\)/);
   assert.match(openFromManager, /openShareDialog\('vault', '', vaultId, noteCount, focusId\)/);
   assert.match(openDialog, /entries\[i\]\.id === targetVaultId/);
-  assert.match(openDialog, /focusReturnId\.length > 0\s*\? \[vaultOption\] : \[noteOption, folderOption, vaultOption\]/);
+  assert.match(openDialog, /folderScopeDistinct: boolean = folderPath\.length > 0/);
+  assert.match(openDialog, /focusReturnId\.length > 0\s*\? \[vaultOption\]\s*: folderScopeDistinct \? \[noteOption, folderOption, vaultOption\] : \[noteOption, vaultOption\]/);
   assert.match(openDialog, /vault\.type === 'git' && focusReturnId\.length === 0/);
   assert.match(prepareShare, /prepareZip\(registry, vault\.id,\s*path, snapshot\)/);
   assert.match(prepareShare, /vault\.id === this\.currentVaultId && activeBridge\.ready/);
@@ -84,7 +85,7 @@ test('manager share stays on the selected vault, exposes ZIP only, and preserves
 test('normal note share retains the vault range and Git remote-link path', () => {
   const openDialog = sourceMethod(indexSource, '  private openShareDialog(',
     '\n  private openShareImageSettings(');
-  assert.match(openDialog, /focusReturnId\.length > 0\s*\? \[vaultOption\] : \[noteOption, folderOption, vaultOption\]/);
+  assert.match(openDialog, /folderScopeDistinct \? \[noteOption, folderOption, vaultOption\] : \[noteOption, vaultOption\]/);
   assert.match(openDialog, /if \(vault\.type === 'git' && focusReturnId\.length === 0\)/);
   assert.match(sidebarSource, /onManageVaults: \(\) => void/);
   assert.ok(!sidebarSource.includes('onShareVault'));

@@ -253,7 +253,7 @@ export struct ShareNoteDialog {
       }
       .width('100%')
       .constraintSize({ maxHeight: this.windowHeightVp > 0
-        ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 4))
+        ? Math.max(0, this.windowHeightVp - Space.s8 * 4)
         : Size.menuMaxH })
       .scrollBar(BarState.Off)
   }

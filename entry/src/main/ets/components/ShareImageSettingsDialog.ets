@@ -1,4 +1,6 @@
+import { UIUtils } from '@kit.ArkUI';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 @CustomDialog
 export struct ShareImageSettingsDialog {
@@ -46,79 +48,91 @@ export struct ShareImageSettingsDialog {
       .backgroundColor(this.theme === theme ? $r('app.color.bg_card') : Color.Transparent)
   }
 
-  build() {
-    Column({ space: Space.s4 }) {
+  @Builder
+  DialogContent() {
+    Column({ space: Space.s3 }) {
       Column({ space: Space.s1 }) {
-        Text('长图设置')
-          .fontSize(FontSize.s3)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-        Text('图片外观')
+        Text('图片宽度')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.text_primary'))
+        Row() {
+          Text('跟随当前栏')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+          Blank()
+          Text('排版宽度沿用当前笔记栏，随窗口形态和分栏宽度变化。')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        }
+        .width('100%')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
       Column({ space: Space.s1 }) {
-        Row() {
-          Text('图片宽度')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-          Blank()
-          Text('跟随当前栏')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
+        Text('图片外观')
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+        Row({ space: Space.s1 }) {
+          this.ThemeOption('light', '浅色')
+          this.ThemeOption('dark', '深色')
         }
         .width('100%')
-        Text('排版宽度沿用当前笔记栏，随窗口形态和分栏宽度变化。')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
+        .padding(Space.s1)
+        .borderRadius(Radius.full)
+        .backgroundColor($r('app.color.bg_secondary'))
       }
       .width('100%')
-
-      Row({ space: Space.s1 }) {
-        this.ThemeOption('light', '浅色')
-        this.ThemeOption('dark', '深色')
-      }
-      .width('100%')
-      .padding(Space.s1)
-      .borderRadius(Radius.full)
-      .backgroundColor($r('app.color.bg_secondary'))
+      .alignItems(HorizontalAlign.Start)
 
       Text('只影响本次生成的长图，不改变应用主题。')
         .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_secondary'))
         .width('100%')
-
-      Row({ space: Space.s2 }) {
-        Button('取消')
-          .layoutWeight(1)
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          .onClick(() => { this.cancel(); })
-        Button('生成预览')
-          .layoutWeight(1)
-          .height(Size.touch)
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.on_brand'))
-          .backgroundColor($r('app.color.brand'))
-          .onClick(() => { this.confirm(); })
-      }
-      .width('100%')
     }
-    .width(this.windowWidthVp > 0
-      ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
-      : Size.shareW)
-    .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 2))
-      : Size.menuMaxH })
-    .padding(Space.s5)
-    .borderRadius(this.singleScreen
-      ? { topLeft: Radius.dialog, topRight: Radius.dialog, bottomLeft: 0, bottomRight: 0 }
-      : Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s3 }) {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => true), (): void => {
+          this.cancel();
+        }, true)
+      UtilityDialogAction('生成预览', 'primary', this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => true), (): void => {
+          this.confirm();
+        }, true)
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '长图设置',
+      subtitle: '只影响本次生成的长图',
+      headerIcon: 'image',
+      closeLabel: '关闭长图设置',
+      singleScreen: this.singleScreen,
+      scrollContent: false,
+      preferredWidthVp: Size.shareW,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => {
+        this.cancel();
+      },
+      content: (): void => {
+        this.DialogContent();
+      },
+      footer: (): void => {
+        this.DialogFooter();
+      }
+    })
   }
 }
