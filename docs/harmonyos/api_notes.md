@@ -2096,3 +2096,26 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - **启动页图片分辨率建议不超过 256×256**（`@performance/start-window-icon-check`）：启动页图片资源的解码包含在应用进程创建里，图片越大冷启动时延越长。增强启动页同样建议 jpg / png、控制分辨率。
 - 本工程现状 `startIcon.png` 为 152×152，达标；重设计不得引入超限的大图启动素材。
 
+## AC 组：RDB 全文索引（2026-11-07 官方文档与 SDK 声明核对）
+
+来源：华为开发者文档[如何通过关系型数据库实现全文检索](https://developer.huawei.com/consumer/cn/doc/harmonyos-faqs/faqs-local-database-management-64/)（页面更新于 2026-10-27，本次直接读取正文）；[OpenHarmony 官方 Tokenizer 文档](https://github.com/openharmony/docs/blob/master/zh-cn/application-dev/reference/apis-arkdata/arkts-apis-data-relationalStore-e.md)；本机 API26 SDK `openharmony/js/api/@ohos.data.relationalStore.d.ts`。工程兼容 API24；下列起始版本来自声明核对，不是 API24 / XT2 运行证据。未发起官方 Agent 问答。
+
+### AC1 ✅ 原生 RDB 提供持久化及 FTS 建表 / 查询方案
+
+- `relationalStore` 属于 `@kit.ArkData`；`getRdbStore` 的 Context 接入、`StoreConfig` 由系统管理数据库位置。正文索引可使用 SQL `CREATE VIRTUAL TABLE ... USING fts5(...)` 与参数绑定的 `MATCH`，不是让系统自动扫描 Markdown。
+- 华为官方示例分别展示 `fts4(... tokenize=icu zh_CN)` 和 `fts5(... tokenize=customtokenizer)`。默认 FTS 内容表的示例显式插入正文；不等于使用 RDB 就必须把数据库当笔记唯一真源。
+- Markdown 文件更新、改名、删除或其他应用修改后的索引同步属于应用逻辑，不能从 RDB 存在推导出自动文件索引能力。
+
+### AC2 ✅ 中文分词与支持性检测声明均不高于 API24；⚠️ 设备支持待验
+
+- `StoreConfig.tokenizer`、`Tokenizer.ICU_TOKENIZER` 自 API17；`Tokenizer.CUSTOM_TOKENIZER` 与 `isTokenizerSupported(tokenizer)` 自 API18。后者名称指平台自研分词器，不等同于要求应用编写 Native 插件。
+- 平台自研分词器支持中文简繁体、英文和阿拉伯数字；官方提供 `customtokenizer cut_mode short_words` 的 FTS5 短词模式示例。
+- 华为 FAQ 明确：FTS5 不支持 ICU；使用 ICU 中文分词需 FTS3/FTS4。FAQ 亦明确现有 ICU 和自研分词均按词条处理，**不支持中文单字检索**；不可因短词模式而承诺任意单字 / 子串命中。
+- 文档与 SDK 声明证明可按此设计；XT2 的 `isTokenizerSupported` 返回值、实际中文命中、短词效果和资源占用未测。实现须检测支持性，不能编造成功或无条件选择已知不支持的分词器。
+
+### AC3 ✅ 数据库事务与内置加密有 API≤24 声明；⚠️ 跨存储一致性仍由应用处理
+
+- SDK 的 `StoreConfig.encrypt` 自 API9；`RdbStore.createTransaction` 自 API14。采用内置加密不等于可忽略数据库正文的分享 / 日志 / 删除边界；配置及密钥生命周期实际行为待实施验证。
+- RDB 事务只协调数据库中的元信息、FTS 和待处理任务；不包含 `VaultAccess` / `AtomicFile` 的文件提交。没有依据把“保存 Markdown + 更新 RDB”描述为跨存储原子事务。
+- 数据库损坏处理、升级、回收磁盘页、残留数据清除、API24 大正文容量和完整性能尚未在本项目实测；不能据数据库删行声称安全擦除，也不能把官方演示的同步查询直接当适合 UI 主线程的大库实现。
+
