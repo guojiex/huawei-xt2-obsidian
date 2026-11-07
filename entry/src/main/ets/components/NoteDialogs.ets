@@ -4,6 +4,7 @@
  * 与 VaultDialogs 的分工：那边管库的新建/改名/删除，这边管库里笔记文件的操作。
  * v0.2 §3.5 已交付 token，故本文件的样式**直接走 token**，不带 v0.1 那套硬编码色值。
  */
+import { UIUtils } from '@kit.ArkUI';
 import { NoteService } from '../model/NoteService';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, Shadow, FontSize, Size } from '../common/Tokens';
@@ -287,10 +288,10 @@ export struct CreateNoteDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('创建', 'primary', this.singleScreen, this.normalized().length > 0, (): void => {
+      UtilityDialogAction('创建', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.normalized().length > 0), (): void => {
         this.confirm();
       })
     }
@@ -362,10 +363,10 @@ export struct DeletePathDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('确认删除', 'danger', this.singleScreen, true, (): void => {
+      UtilityDialogAction('确认删除', 'danger', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.confirm();
       })
     }
@@ -453,10 +454,10 @@ export struct RenamePathDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('保存', 'primary', this.singleScreen, this.canConfirm(), (): void => {
+      UtilityDialogAction('保存', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.canConfirm()), (): void => {
         if (!this.canConfirm()) {
           return;
         }
@@ -598,10 +599,10 @@ export struct MovePathDialog {
   @Builder
   DialogFooter() {
       Row({ space: Space.s2 }) {
-        UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+        UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.controller?.close();
         })
-        UtilityDialogAction('移动到这里', 'primary', this.singleScreen, true, (): void => {
+        UtilityDialogAction('移动到这里', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.controller?.close();
           this.onConfirm(this.selectedDir);
         })

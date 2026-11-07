@@ -1988,3 +1988,9 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - 区分：`builder: this.MoreMenu()`（带括号的**调用求值**）不受影响；只有**不带括号的引用**才丢 this。
 - 防回归：`tools/tests/test_utility_dialog_shell.mjs` 扫 5 个消费文件，断言箭头包裹且无引用式传参。
 
+### Z2 ✅ 全局 @Builder 多参按值传参不触发动态渲染——UIUtils.makeBinding 按回调传递修复（2026-11-07，EM-B2 实测）
+
+- 官方 arkts-builder 文档「限制」第 3 条：@Builder 传入**两个及以上参数**且未按回调传递时，**不会触发动态渲染 UI**；按引用传递只在「单参数且直接传对象字面量」时生效。全局 @Builder（非组件方法）无 this 上下文，按值实参在首次渲染固化。
+- 实测（x86_64 API26 模拟器，v1.32 构建）：Z1 修复把弹窗 content/footer lambda 化后，`UtilityDialogAction`（全局 @Builder、6 参按值）的 `enabled` 不再随弹窗状态刷新——新建笔记输入合法名（「笔记名为空」hint 消失 = onChange 已提交、rawName 非空）后「创建」按钮仍禁用灰、点击无效（EM-B2）。同弹窗内 if 分支与属性表达式（hint、描述文字）照常刷新，仅嵌套全局 @Builder 调用的按值实参陈旧。Z1 之前引用式传参时整个 footer 随弹窗重建，掩盖了本条。
+- **修复（官方「按回调传递参数」解法，API 20 起）**：参数类型 `Binding<boolean>`（`import { Binding, UIUtils } from '@kit.ArkUI'`），调用点 `UIUtils.makeBinding<boolean>(() => …)`，builder 体内读 `.value`；绑定自带状态跟踪，不依赖外层 @BuilderParam 的重渲染路径。附带写回调的 `MutableBinding` 可把 builder 内修改传回调用组件（本例只读未用）。
+- 防回归：`test_utility_dialog_shell.mjs` 断言 4 个消费文件全部 22 处调用的 enabled 均为 makeBinding 包裹且导入 UIUtils。

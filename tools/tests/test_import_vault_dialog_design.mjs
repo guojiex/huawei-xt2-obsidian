@@ -145,7 +145,7 @@ test('Git source collects provider credentials in the dialog and documents safe 
   assert.match(dialogSource, /accessibilityText\(this\.showGitToken \? '隐藏访问令牌' : '显示访问令牌'\)/);
   assert.match(dialogSource, /GitHub 使用 Bearer；Gitee 使用用户名和令牌/);
   assert.match(dialogSource, /成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换/);
-  assert.match(dialogSource, /UtilityDialogAction\(this\.working \? '处理中…' : '导入 Git 仓库', 'primary',\s*this\.singleScreen, this\.gitRemote\.trim\(\)\.length > 0 && !this\.working/);
+  assert.match(dialogSource, /UtilityDialogAction\(this\.working \? '处理中…' : '导入 Git 仓库', 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.gitRemote\.trim\(\)\.length > 0 && !this\.working\)/);
   assert.match(dialogSource, /username: username,\s*token: this\.gitToken/);
   assert.match(syncSource, /TextInput\(\{ placeholder: '私有库填 Access Token/);
   assert.match(indexSource, /onContinueGit: \(draft: GitImportDraft\): void => \{\s*void this\.openGitSyncPage\(draft\);/);
@@ -214,7 +214,7 @@ test('picked directory lives in dialog @State, not in a @Prop the parent cannot 
   assert.match(dialogSource, /@State directoryState: string = 'unselected'/);
   assert.match(dialogSource, /@State directoryStatus: string = ''/);
   assert.match(dialogSource, /@State working: boolean = false/);
-  assert.match(dialogSource, /UtilityDialogAction\(this\.associating \? '正在关联…' : '关联此目录', 'primary',\s*this\.singleScreen, this\.hasPicked\(\) && !this\.working/);
+  assert.match(dialogSource, /UtilityDialogAction\(this\.associating \? '正在关联…' : '关联此目录', 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.hasPicked\(\) && !this\.working\)/);
   assert.match(indexSource, /onChooseDirectory: \(\): Promise<string \| null> => this\.chooseExternalDirectory\(\)/);
   assert.match(indexSource, /onAssociateDirectory: \(\): Promise<boolean> => this\.associateExternalDirectory\(\)/);
   assert.match(indexSource, /onBusyChange: \(busy: boolean\): void => \{ this\.importVaultDialogBusy = busy; \}/);
@@ -224,7 +224,7 @@ test('picked directory lives in dialog @State, not in a @Prop the parent cannot 
   assert.match(indexSource, /vault-manager-import-button/);
   assert.match(vaultManagerSource, /\.focusable\(true\)\s*\.id\('vault-manager-import-button'\)/);
   assert.doesNotMatch(indexSource, /importHasDirectorySelection|importDirectoryName/);
-  assert.match(utilityShellSource, /\.onClick\(onClick\)\s*\.focusable\(keyboardFocusable && enabled\)/);
+  assert.match(utilityShellSource, /\.onClick\(onClick\)\s*\.focusable\(keyboardFocusable && enabled\.value\)/);
 });
 
 test('directory pick updates the dialog state and releases the busy guard', async () => {
@@ -312,7 +312,7 @@ test('narrow and short windows keep the dialog within bounds and scroll the cont
   assert.match(dialogSource, /\.constraintSize\(\{ maxHeight: Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 6\) \}\)/);
   assert.match(dialogSource, /UtilityDialogShell\(\{[\s\S]*?scrollContent: false,[\s\S]*?content: \(\): void => \{ this\.DialogContent\(\); \},[\s\S]*?footer: \(\): void => \{ this\.DialogFooter\(\); \}/);
   assert.match(dialogSource, /\.focusable\(!this\.working\)[\s\S]*?\.id\('import-directory-card'\)/);
-  assert.match(dialogSource, /UtilityDialogAction\('取消', 'secondary', this\.singleScreen, !this\.working/);
+  assert.match(dialogSource, /UtilityDialogAction\('取消', 'secondary', this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => !this\.working\)/);
   assert.match(indexSource, /singleScreen: importSheet,[\s\S]*?windowWidthVp: this\.windowWidthVp,\s*windowHeightVp: this\.windowHeightVp/);
   assert.match(indexSource, /alignment: importSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
   assert.match(indexSource, /requestFocus\(focusReturnId\)/);
@@ -328,7 +328,7 @@ test('ZIP source adds a third tab with card, name field and import facts', () =>
   assert.match(dialogSource, /\.maxLength\(40\)/);
   assert.match(dialogSource, /this\.DirectoryFact\('plus', '只新建、不覆盖', '总是新建一个知识库，已有库和其中的文件保持不变'\)/);
   assert.match(dialogSource, /this\.DirectoryFact\('archive', '只导入笔记与图片', '其他文件、隐藏项、\.git 与回收站会跳过，完成后告知数量'\)/);
-  assert.match(dialogSource, /UtilityDialogAction\(this\.importingZip \? '正在导入…' : '导入为新知识库', 'primary',\s*this\.singleScreen, this\.zipState === 'selected' && this\.zipVaultName\.trim\(\)\.length > 0 && !this\.working/);
+  assert.match(dialogSource, /UtilityDialogAction\(this\.importingZip \? '正在导入…' : '导入为新知识库', 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.zipState === 'selected' && this\.zipVaultName\.trim\(\)\.length > 0 && !this\.working\)/);
 });
 
 test('ZIP card reflects the three states with safe failure copy', () => {

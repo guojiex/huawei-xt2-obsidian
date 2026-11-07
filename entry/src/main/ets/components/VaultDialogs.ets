@@ -10,6 +10,7 @@
  * 视觉全部走 token（v0.2 §3.5）：数值用 common/Tokens.ets，颜色用
  * $r('app.color.*')（base|dark 两套资源，深色模式自动切换）。
  */
+import { UIUtils } from '@kit.ArkUI';
 import { sanitizeVaultName } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
@@ -85,10 +86,10 @@ export struct CreateVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('创建', 'primary', this.singleScreen, this.sanitized().length > 0, (): void => {
+      UtilityDialogAction('创建', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.sanitized().length > 0), (): void => {
         this.confirm();
       })
     }
@@ -178,10 +179,10 @@ export struct RenameVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('保存', 'primary', this.singleScreen, this.sanitized().length > 0, (): void => {
+      UtilityDialogAction('保存', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.sanitized().length > 0), (): void => {
         this.confirm();
       })
     }
@@ -249,11 +250,11 @@ export struct DeleteVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, true, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
       UtilityDialogAction(this.isExternal ? '解除关联' : '确认删除', 'danger',
-        this.singleScreen, true, (): void => {
+        this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.confirm();
         })
     }

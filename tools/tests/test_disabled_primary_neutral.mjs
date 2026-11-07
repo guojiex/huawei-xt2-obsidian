@@ -19,13 +19,16 @@ const actionStart = shell.indexOf('export function UtilityDialogAction(');
 const action = shell.slice(actionStart);
 
 test('shared dialog action neutralizes disabled primary and danger (32.12)', () => {
+  // 2026-11-07 EM-B2 修复：enabled 为 Binding<boolean>（UIUtils.makeBinding 按回调传递），
+  // 读取处一律 .value —— 官方 arkts-builder 限制 3：多参全局 @Builder 按值不触发动态渲染。
   // 主 / 危险禁用：--muted 字（text_tertiary）
-  assert.match(action, /\.fontColor\(!enabled && tone !== 'secondary'\s*\n\s*\? \$r\('app\.color\.text_tertiary'\)/);
+  assert.match(action, /\.fontColor\(!enabled\.value && tone !== 'secondary'\s*\n\s*\? \$r\('app\.color\.text_tertiary'\)/);
   // 主 / 危险禁用：--line 底
-  assert.match(action, /\.backgroundColor\(!enabled && tone !== 'secondary'\s*\n\s*\? \$r\('app\.color\.line'\)/);
+  assert.match(action, /\.backgroundColor\(!enabled\.value && tone !== 'secondary'\s*\n\s*\? \$r\('app\.color\.line'\)/);
   // 不透明：主 / 危险禁用 opacity 1；次要禁用沿用 45%
-  assert.match(action, /\.opacity\(!enabled && tone === 'secondary' \? 0\.45 : 1\)/);
+  assert.match(action, /\.opacity\(!enabled\.value && tone === 'secondary' \? 0\.45 : 1\)/);
   assert.ok(!action.includes('.opacity(enabled ? 1 : 0.45)'), '32.1 的 45% 写法已替换');
+  assert.match(action, /enabled: Binding<boolean>/);
   // 可用态样式不变：secondary=bg_secondary/text_primary，danger=danger，primary=brand/on_brand
   assert.match(action, /tone === 'secondary' \? \$r\('app\.color\.text_primary'\) : \$r\('app\.color\.on_brand'\)/);
   assert.match(action, /tone === 'danger' \? \$r\('app\.color\.danger'\) : \$r\('app\.color\.brand'\)/);

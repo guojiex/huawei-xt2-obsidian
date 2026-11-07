@@ -1,4 +1,5 @@
 /** ImportVaultDialog.ets —— v1.5 统一知识库导入入口（原型 v2 importVaultDialog）。 */
+import { UIUtils } from '@kit.ArkUI';
 import { GitImportDraft } from '../model/GitImportDraftStore';
 import { Icon } from '../common/Icons';
 import { ZipChooseOutcome, ZipImportOutcome } from '../model/ZipImportService';
@@ -739,23 +740,23 @@ export struct ImportVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, !this.working, (): void => {
+      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.working), (): void => {
         this.close();
       }, true)
       if (this.source === 'local') {
         UtilityDialogAction(this.associating ? '正在关联…' : '关联此目录', 'primary',
-          this.singleScreen, this.hasPicked() && !this.working, (): void => {
+          this.singleScreen, UIUtils.makeBinding<boolean>(() => this.hasPicked() && !this.working), (): void => {
             void this.associateDirectory();
           }, true)
       } else if (this.source === 'zip') {
         UtilityDialogAction(this.importingZip ? '正在导入…' : '导入为新知识库', 'primary',
-          this.singleScreen, this.zipState === 'selected' && this.zipVaultName.trim().length > 0 && !this.working,
+          this.singleScreen, UIUtils.makeBinding<boolean>(() => this.zipState === 'selected' && this.zipVaultName.trim().length > 0 && !this.working),
           (): void => {
             void this.importZip();
           }, true)
       } else {
         UtilityDialogAction(this.working ? '处理中…' : '导入 Git 仓库', 'primary',
-          this.singleScreen, this.gitRemote.trim().length > 0 && !this.working, (): void => {
+          this.singleScreen, UIUtils.makeBinding<boolean>(() => this.gitRemote.trim().length > 0 && !this.working), (): void => {
             this.continueGit();
           }, true)
       }

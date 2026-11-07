@@ -1,4 +1,4 @@
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, UIUtils } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitBranchNameValidation, validateGitBranchName } from '../git/GitBranchName';
@@ -897,19 +897,19 @@ export struct GitSyncDialog {
   private DialogFooter() {
     Row({ space: Space.s2 }) {
       UtilityDialogAction(this.busy ? '取消' : '关闭', 'secondary',
-        this.singleScreen, !this.busy, (): void => { this.dismiss(); })
+        this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => { this.dismiss(); })
       if (this.result === 'success') {
-        UtilityDialogAction('完成', 'primary', this.singleScreen, true, (): void => {
+        UtilityDialogAction('完成', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.dismiss();
         })
       } else if (this.result !== 'none') {
-        UtilityDialogAction('重试', 'primary', this.singleScreen, !this.busy, (): void => {
+        UtilityDialogAction('重试', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => {
           this.dismissResult();
           void this.runPrimaryAction();
         })
       } else {
         UtilityDialogAction(this.primaryActionLabel(),
-          'primary', this.singleScreen, this.primaryActionEnabled(),
+          'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.primaryActionEnabled()),
           (): void => { void this.runPrimaryAction(); })
       }
     }
