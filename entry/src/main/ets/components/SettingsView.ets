@@ -1318,7 +1318,7 @@ export struct SettingsView {
                   this.resetConfirmOpen = false;
                   this.onExportCurrentVault('settings-export-vault-row');
                 })
-              Span('作为备份。')
+              Span('作为备份，之后可在『导入库 → ZIP 文件』恢复。')
             }
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))

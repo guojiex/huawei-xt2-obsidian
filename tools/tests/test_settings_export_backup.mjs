@@ -74,13 +74,14 @@ test('reset confirm suggests exporting first via inline link (37.4)', () => {
   const confirm = dataTab.slice(confirmStart, detailStart);
   assert.match(confirm, /Span\('建议先'\)/);
   assert.match(confirm, /Span\('导出当前知识库'\)[\s\S]*?fontColor\(\$r\('app\.color\.brand'\)\)/);
-  assert.match(confirm, /Span\('作为备份。'\)/);
+  assert.match(confirm, /Span\('作为备份，之后可在『导入库 → ZIP 文件』恢复。'\)/);
   // 空库不触发（原型 resetExportFirst 同款守卫）；点按收起确认区再打开分享
   assert.match(confirm, /if \(this\.exportBackupDisabled\(\)\) \{\s*\n\s*return;\s*\n\s*\}/);
   assert.match(confirm, /this\.resetConfirmOpen = false;/);
   assert.match(confirm, /this\.onExportCurrentVault\('settings-export-vault-row'\);/);
-  // 原型文案与行为一致：建议先导出当前知识库作为备份
-  assert.ok(prototype.includes('建议先') && prototype.includes('导出当前知识库</button>作为备份。'));
+  // 原型文案与行为一致：建议先导出当前知识库作为备份（v1.36 36.8 补恢复入口句）
+  assert.ok(prototype.includes('建议先') &&
+    prototype.includes('导出当前知识库</button>作为备份，之后可在『导入库 → ZIP 文件』恢复。'));
   // 不改变重置步骤：确认标题、说明与两个按钮保持
   assert.ok(detailStart > 0, 'reset detail copy unchanged');
   assert.match(dataTab, /'重置并恢复样例'/);

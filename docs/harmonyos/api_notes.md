@@ -1927,3 +1927,41 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - **两个坑**：① 未用 `$$` 双向绑定时，**拖拽关闭不会改变 `isShow` 的值**（必须 `$$`）；② 宿主节点未挂载时设 `isShow=true` **不会显示**，建议在 `onAppear` 之后再弹。
 - **本项目判断**：块属性面板用 `bindSheet` 单档 `SheetSize.MEDIUM`（约半屏）+ `dragBar: true` + `showClose: true` + `title: { title: <块类型名> }`；**不用多档 `detents`** —— 它是设置面板，不需要在半屏 / 全屏之间拖拽切换，多档反而会让内容高度不确定。
 - **状态**：⚠️ `preferType` 的 API 24 声明范围已由本机 API 26 SDK 版本注解核实，官方 FAQ 仅作类型用法旁证；**没有 API 24 / XT2 运行时证据**。v1.18 的 18.5 锚点 / 浮条框架、18.6 `bindSheet` 面板入口及 18.7 块级源码抽屉已有源码和自动测试；签名调试 arm64-v8a HAP 构建通过。原型 `docs/prototype/v2/index.html` 已按该形态给出 HTML 示意（顶部拖拽条、右上关闭图标、遮罩、分组列表行），**原型不能代替原生外观与设备验收**。
+
+## Y 组：ZIP 导入解压（2026-11-06，v1.36 前置核实，本机 SDK 声明核对）
+
+> 核对对象：`openharmony/ets/api/@ohos.zlib.d.ts`（`@kit.BasicServicesKit`）、`@ohos.file.picker.d.ts`、`@ohos.file.fs.d.ts`、`@ohos.file.statvfs.d.ts`（`@kit.CoreFileKit`）。核对存档：[qa/2026-11-06_ZIP导入解压能力_API24.md](qa/2026-11-06_ZIP导入解压能力_API24.md)。
+
+### Y1 ✅ 逐条目 ZIP 解压方案成立（自绘解析 + `Zip.inflateInit2` Raw Deflate）
+
+- `zlib.createZipSync(): Zip`、`Zip.inflateInit2(strm, windowBits)`、`Zip.inflate(strm, flush)`、`inflateEnd(strm)`、`ZStream` 均 **since 12** ≤ API 24；`windowBits ∈ [-15,-1]` 即 **Raw Deflate**（ZIP 条目 method 8 载荷格式），`CompressFlushMode.FINISH` / `ReturnStatus.STREAM_END` since 12。
+- 自绘链路：`fs` 读字节 → 解析 EOCD + Central Directory（条目名 / 大小 / method / flag / external attributes）→ **解压前**校验全部条目（`..` 越级、绝对路径、反斜杠、盘符、加密位、symlink 模式位、ZIP64、条目数与总大小上限）→ 逐条目 raw inflate → `fs` 写临时库目录。36.5 的「解压前检测」由我方 central directory 校验满足，**不依赖系统运行时拒绝**。
+- 整包兜底（非本版路线）：`zlib.decompressFile` since 9，条目名含 `../` 时抛 `900003`（API 13+），`getOriginalSize` since 12。
+- `Options.pathSeparatorStrategy`（since 21）、`keepTopLevelFolder`（since 26）均 **> API 24，禁止引用**。
+
+### Y2 ✅ 文件选择器可限定 `.zip`
+
+- `DocumentSelectOptions.fileSuffixFilters?: Array<string>` **since 10**，格式 `'描述|.zip'`；配 `maxSelectNumber: 1`（since 10）。授权范围与时长沿用 [T 组](#t-组外部目录选择与持久授权2026-10-31v15-前置核实)与 Q 组 picker 临时 URI 结论，导入侧走「复制已授权 fd 到沙箱」链路，零新增权限。
+
+### Y3 ✅ 取消与空间不足形态已定
+
+- 取消：`decompressFile` 无取消参数；自绘逐条目方案在**条目间检查取消标志**即可中断，无需额外 API。
+- 空间不足：`fs` 写类 API 抛 **`13900025 No space left on device`**；预检用 `statfs.getFreeSizeSync(path)` **since 10**（导出命名空间为 `statfs`，来自 `@ohos.file.statvfs`）。
+- 顺序读：`fs.read` `ReadOptions { offset, length }` **since 11**；⚠️ offset 注释为「current filePointer **plus** offset」而非绝对位置，实现期以实测为准。
+
+### Y4 ⚠️ 未核实边界（实现期单测 + 设备验收补齐）
+
+- `Zip.inflateInit2` Raw Deflate 在 API 24 运行时的 `ZStream` 字段更新语义与错误码 `17800004/17800005` 触发形态——声明齐全但未实测；声明可编译 ≠ 解压已验收。
+- API 24 / XT2 的真实 Picker `.zip` 过滤视觉与取消行为未验收。
+- **实现期补充（2026-11-07，v1.36 落码，声明核对）**：随机读改用 `RandomAccessFile`（`fileIo.createRandomAccessFileSync` / `setFilePointer` / `read(buffer): Promise<number>` / readonly `filePointer`，均 `@ohos.file.fs` **since 10**），**绕开 Y3 ⚠️ 的 `fs.read` ReadOptions.offset 存疑语义**——实现不依赖该存疑行为。`ZStream` 字段按声明使用（nextIn/availableIn/totalIn/nextOut/availableOut/totalOut/dataType/adler，全可选）。设备链路封装于 `entry/src/main/ets/model/ZipImportDevice.ets`；解析 / 校验 / 解压编排在 `ZipImportService.ets`（零 `@kit`，Node 侧真实 zlib deflateRaw 交叉验证，`tools/tests/test_zip_import.mjs` 25/25），签名 HAP 构建通过。⚠️ 项不变：`17800004/17800005` 触发形态与 Picker 过滤视觉仍待 API 24 / XT2 真机验收（`docs/releases/v1.36/需求文档.md` §6.2）。
+
+## Z 组：@BuilderParam 引用传参丢失 this（2026-11-06，v1.32 弹窗闪退实测）
+
+### Z1 ✅ 成员 @Builder 以 `this.xxx` 引用传给子组件 @BuilderParam 时，this 指向子组件实例
+
+- 官方 FAQ `faqs-arkui-229`（「使用BuilderParam在父组件调用this的方法报错：Error message: undefined is not callable」，devecocli docs 可查）：引用式传参后 builder 体内的 `this` 是**接收方子组件**，不是定义方；事件回调与重渲染同样命中。
+- 实测（x86_64 模拟器，v1.32 构建）：新建笔记弹窗重渲染 `this.selectedDir.length` 抛 `Cannot read property length of undefined`（NoteDialogs.ets:239）；删除笔记点「确认删除」`this.confirm()` 抛 `confirm is not callable, confirm is undefined`（NoteDialogs.ets:369）。`this` 实为 UtilityDialogShell 实例。
+- **修复（官方解法）**：传递处箭头包裹——`content: (): void => { this.DialogContent(); }`；箭头词法绑定把 this 固定回弹窗实例。**禁止** `content: this.DialogContent` 引用式写法。
+- 区分：`builder: this.MoreMenu()`（带括号的**调用求值**）不受影响；只有**不带括号的引用**才丢 this。
+- 防回归：`tools/tests/test_utility_dialog_shell.mjs` 扫 5 个消费文件，断言箭头包裹且无引用式传参。
+

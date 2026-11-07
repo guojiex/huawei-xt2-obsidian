@@ -16,6 +16,7 @@ export class VaultPathResolver {
   private static readonly TRASH_SEG: string = 'trash';
   private static readonly DRAFTS_SEG: string = 'drafts';
   private static readonly SHARE_SEG: string = 'share';
+  private static readonly ZIP_IMPORT_SEG: string = 'zip-import';
 
   private context: common.UIAbilityContext;
 
@@ -83,6 +84,16 @@ export class VaultPathResolver {
   /** 分享临时产物路径也统一走本解析器，禁止调用方自行拼 cacheDir。 */
   resolveShare(relativePath: string): string {
     return this.joinChecked(this.shareRoot(), relativePath);
+  }
+
+  /** v1.36 ZIP 导入暂存根目录（cacheDir 下，App 私有；系统可按缓存生命周期回收）。 */
+  zipImportStagingRoot(): string {
+    return this.context.cacheDir + '/' + VaultPathResolver.ZIP_IMPORT_SEG;
+  }
+
+  /** 暂存 ZIP 文件路径；文件名由调用方唯一生成，仍过安全段校验。 */
+  resolveZipImportStaging(fileName: string): string {
+    return this.zipImportStagingRoot() + '/' + this.requireSafeSegment(fileName);
   }
 
   /** 非目录草稿根的保留位置；仅用于启动自愈，避免覆盖未知残留内容。 */

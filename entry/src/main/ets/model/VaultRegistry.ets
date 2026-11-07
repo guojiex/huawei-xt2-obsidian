@@ -335,6 +335,33 @@ export class VaultRegistry {
   }
 
   /**
+   * 登记从 ZIP 备份导入完成的本地库（v1.36 36.6）。
+   * 前置：内容已解压到以 importingId 命名的临时库目录并 rename 到 id 位置（调用方保证，
+   * 沿用 beginGitImport / cleanupGitImport / finishGitImport 的标记机制，此处校验存在性）；
+   * 与 registerGit 同构，仅少 git 相关字段；失败时注册表未动（禁半状态）。
+   */
+  registerImportedLocal(id: string): VaultEntry {
+    const dirPath: string = this.resolver.vaultDir(id);
+    if (this.findEntry(id) !== null) {
+      throw new Error('库已登记，拒绝重复登记: ' + id);
+    }
+    if (!fileIo.accessSync(dirPath)) {
+      throw new Error('库目录不存在，拒绝登记: ' + id);
+    }
+    const entry: VaultEntry = { id: id, vaultKey: this.newVaultKey(), type: 'local', createdAt: Date.now() };
+    this.state.vaults.push(entry);
+    try {
+      this.persist(true);
+    } catch (error) {
+      const err = error as BusinessError;
+      this.state.vaults.pop();
+      this.persist();
+      throw new Error(err.message);
+    }
+    return entry;
+  }
+
+  /**
    * 登记用户授权的既有 Markdown 目录（v1.5 15.2）。
    * 这里只保存 URI 元数据；目录读写仍必须经 accessFor()，注册本身不复制或改写用户文件。
    * 调用方须先通过 ExternalVaultAuthorizationService 完成持久授权，并在本方法失败时撤销该授权。

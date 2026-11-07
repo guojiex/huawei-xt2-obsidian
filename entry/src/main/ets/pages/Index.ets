@@ -21,7 +21,7 @@ import { ColorMetrics, LengthMetrics, promptAction, router } from '@kit.ArkUI';
 import { BusinessError, deviceInfo, pasteboard } from '@kit.BasicServicesKit';
 import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
-import { SAMPLE_VAULT_ID, VaultEntry } from '../model/Vault';
+import { SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { VaultDirChild } from '../model/VaultAccess';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
@@ -98,9 +98,18 @@ import {
 } from '../model/ExternalVaultAuthorization';
 import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
 import { GitImportDraft, GitImportDraftStore } from '../model/GitImportDraftStore';
+import { VaultPathResolver } from '../model/VaultPathResolver';
+import {
+  ZipChooseOutcome, ZipImportError, ZipImportErrorKind, ZipImportOutcome, ZipImportResult,
+  ZipImportService, ZipParsed, ZipPickResult
+} from '../model/ZipImportService';
+import {
+  copyPickerZipToStaging, DeviceZipPicker, freeBytesUnder, removeStagingFile,
+  StagingZipReader, TempVaultZipWriter, ZlibRawInflate
+} from '../model/ZipImportDevice';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
-import { fileUri } from '@kit.CoreFileKit';
+import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
@@ -109,6 +118,8 @@ const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
 /** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
 const GIT_ENTRY_UI_ENABLED: boolean = true;
+/** v1.36：导入临时库 id 后缀（与 VaultRegistry.GIT_IMPORTING_SUFFIX 同值，复用导入标记机制）。 */
+const ZIP_IMPORTING_SUFFIX: string = '__importing';
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -540,6 +551,9 @@ struct Index {
   private gitSyncCtl: CustomDialogController | null = null;
   private gitSyncBusy: boolean = false;
   private pendingExternalDirectory: ExternalDirectorySelection | null = null;
+  /** v1.36 ZIP 导入：弹窗侧暂存的解析结果与暂存文件路径（关闭弹窗时清理，36.6）。 */
+  private pendingZipParse: ZipParsed | null = null;
+  private pendingZipStagingPath: string = '';
   private renameDialogCtl: CustomDialogController | null = null;
   private deleteDialogCtl: CustomDialogController | null = null;
   private createNoteCtl: CustomDialogController | null = null;
@@ -605,6 +619,7 @@ struct Index {
     // retain the initial content in memory until their first page is ready.
     void this.initializeWorkspaceSession();
     this.startExternalVaultPolling();
+    this.cleanupZipImportStaging();
   }
 
   private async loadAgentKitSlot(): Promise<void> {
@@ -2381,6 +2396,7 @@ struct Index {
     const clearImportDraft = (): void => {
       GitImportDraftStore.clear();
       this.pendingExternalDirectory = null;
+      this.cleanupZipImportState();
       restoreImportFocus();
     };
     this.importVaultCtl = new CustomDialogController({
@@ -2390,6 +2406,9 @@ struct Index {
         windowHeightVp: this.windowHeightVp,
         onChooseDirectory: (): Promise<string | null> => this.chooseExternalDirectory(),
         onAssociateDirectory: (): Promise<boolean> => this.associateExternalDirectory(),
+        onChooseZip: (): Promise<ZipChooseOutcome> => this.chooseZipBackup(),
+        onImportZip: (name: string, onProgress: (done: number, total: number) => void): Promise<ZipImportOutcome> =>
+          this.importZipBackup(name, onProgress),
         onBusyChange: (busy: boolean): void => { this.importVaultDialogBusy = busy; },
         onContinueGit: (draft: GitImportDraft): void => {
           void this.openGitSyncPage(draft);
@@ -2473,6 +2492,173 @@ struct Index {
     }
     this.restoreImportTriggerFocus();
     return true;
+  }
+
+  /** 36.6：启动时清理上次进程退出可能残留的 ZIP 暂存目录（cacheDir 下，App 私有）。 */
+  private cleanupZipImportStaging(): void {
+    try {
+      const resolver: VaultPathResolver =
+        new VaultPathResolver(VaultRegistry.get().abilityContext());
+      this.removePathTreeForImport(resolver.zipImportStagingRoot());
+    } catch (_error) {
+      // 残留只占 cacheDir 空间；下次启动重试，不阻塞启动
+    }
+  }
+
+  private removePathTreeForImport(path: string): void {
+    if (!fileIo.accessSync(path)) {
+      return;
+    }
+    if (!fileIo.statSync(path).isDirectory()) {
+      fileIo.unlinkSync(path);
+      return;
+    }
+    const names: string[] = fileIo.listFileSync(path);
+    for (let index: number = 0; index < names.length; index++) {
+      this.removePathTreeForImport(path + '/' + names[index]);
+    }
+    fileIo.rmdirSync(path);
+  }
+
+  /** 换 ZIP / 关闭弹窗时清理暂存文件与解析结果（36.6）；失败静默，重选会重建。 */
+  private cleanupZipImportState(): void {
+    if (this.pendingZipStagingPath.length > 0) {
+      removeStagingFile(this.pendingZipStagingPath);
+    }
+    this.pendingZipStagingPath = '';
+    this.pendingZipParse = null;
+  }
+
+  /** 36.1/36.2：选 ZIP → 暂存复制 → 解析预览；取消 / 失败 / 成功三态回填弹窗。 */
+  private async chooseZipBackup(): Promise<ZipChooseOutcome> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const resolver: VaultPathResolver = new VaultPathResolver(registry.abilityContext());
+    const picker: DeviceZipPicker = new DeviceZipPicker(registry.abilityContext());
+    let picked: ZipPickResult | null = null;
+    try {
+      picked = await picker.pick();
+    } catch (_error) {
+      // 选择器异常按取消处理（36.1：取消回到原状态）
+      picked = null;
+    }
+    if (picked === null) {
+      const cancelled: ZipChooseOutcome = {
+        status: 'cancelled', kind: 'corrupt', fileName: '', summary: '', defaultVaultName: ''
+      };
+      return cancelled;
+    }
+    this.cleanupZipImportState();
+    const fileName: string = picked.fileName.length > 0 ? picked.fileName : '备份.zip';
+    const stagingRoot: string = resolver.zipImportStagingRoot();
+    const stagingPath: string = resolver.resolveZipImportStaging('import-' + Date.now().toString() + '.zip');
+    try {
+      if (!fileIo.accessSync(stagingRoot)) {
+        fileIo.mkdirSync(stagingRoot, true);
+      }
+      await copyPickerZipToStaging(picked.uri, stagingPath);
+      const reader: StagingZipReader = new StagingZipReader(stagingPath);
+      let parsed: ZipParsed;
+      try {
+        parsed = await ZipImportService.parse(reader, ZipImportService.DEFAULT_LIMITS);
+      } finally {
+        reader.close();
+      }
+      const fileStem: string = fileName.toLowerCase().endsWith('.zip') ? fileName.slice(0, fileName.length - 4) : fileName;
+      const baseName: string = parsed.topFolder.length > 0 ? parsed.topFolder : fileStem;
+      const summary: string = parsed.noteCount.toString() + ' 篇笔记 · ' + parsed.imageCount.toString() +
+        ' 张图片 · 跳过 ' + parsed.skippedCount.toString() + ' 个其他文件';
+      const selected: ZipChooseOutcome = {
+        status: 'selected', kind: 'corrupt', fileName: fileName, summary: summary,
+        defaultVaultName: registry.uniqueVaultId(sanitizeVaultName(baseName), '')
+      };
+      this.pendingZipParse = parsed;
+      this.pendingZipStagingPath = stagingPath;
+      return selected;
+    } catch (error) {
+      removeStagingFile(stagingPath);
+      this.pendingZipParse = null;
+      this.pendingZipStagingPath = '';
+      const kind: ZipImportErrorKind = error instanceof ZipImportError ? error.kind : 'io';
+      const failed: ZipChooseOutcome = {
+        status: 'failed', kind: kind, fileName: fileName, summary: '', defaultVaultName: ''
+      };
+      return failed;
+    }
+  }
+
+  /** 36.3–36.7：确认导入 —— 空间预检 → 隔离解压 → 原子登记 → 切库提示；失败清理不留半成品。 */
+  private async importZipBackup(name: string,
+    onProgress: (done: number, total: number) => void): Promise<ZipImportOutcome> {
+    const parsed: ZipParsed | null = this.pendingZipParse;
+    const stagingPath: string = this.pendingZipStagingPath;
+    if (parsed === null || stagingPath.length === 0) {
+      const stale: ZipImportOutcome = { status: 'failed', kind: 'io', result: null };
+      return stale;
+    }
+    const registry: VaultRegistry = VaultRegistry.get();
+    const resolver: VaultPathResolver = new VaultPathResolver(registry.abilityContext());
+    const finalId: string = registry.uniqueVaultId(sanitizeVaultName(name), '');
+    const tempId: string = registry.uniqueVaultId(finalId + ZIP_IMPORTING_SUFFIX, '');
+    const tempDir: string = registry.vaultDirOf(tempId);
+    const finalDir: string = registry.vaultDirOf(finalId);
+    let marked: boolean = false;
+    let tempDirCreated: boolean = false;
+    try {
+      registry.beginGitImport(finalId, tempId);
+      marked = true;
+      // 空间预检（36.7 不报告虚假成功）：解压总量超过剩余空间按 no_space 失败。
+      if (freeBytesUnder(resolver.vaultsRoot()) < parsed.totalUncompressed) {
+        throw new ZipImportError('no_space', '设备存储空间不足');
+      }
+      fileIo.mkdirSync(tempDir, true);
+      tempDirCreated = true;
+      const reader: StagingZipReader = new StagingZipReader(stagingPath);
+      try {
+        const written: number = await ZipImportService.extract(reader,
+          new TempVaultZipWriter(tempDir), new ZlibRawInflate(), parsed,
+          { onProgress: onProgress });
+        if (written !== parsed.entries.length) {
+          throw new ZipImportError('corrupt', 'ZIP 数据损坏');
+        }
+      } finally {
+        reader.close();
+      }
+      if (fileIo.accessSync(finalDir)) {
+        throw new ZipImportError('io', '目标库目录已存在，拒绝覆盖');
+      }
+      // 发布仅 rename 本次新目录，不覆盖既有文件（36.3 只新建、不覆盖）。
+      fileIo.renameSync(tempDir, finalDir);
+      tempDirCreated = false;
+      const entry: VaultEntry = registry.registerImportedLocal(finalId);
+      registry.finishGitImport(finalId, tempId);
+      marked = false;
+      const result: ZipImportResult = {
+        vaultId: entry.id,
+        vaultName: entry.id,
+        noteCount: parsed.noteCount,
+        imageCount: parsed.imageCount,
+        skippedCount: parsed.skippedCount
+      };
+      this.cleanupZipImportState();
+      promptAction.showToast({ message: '已导入 ' + parsed.noteCount.toString() + ' 篇笔记' });
+      void this.switchVault(entry.id);
+      const ok: ZipImportOutcome = { status: 'ok', kind: 'corrupt', result: result };
+      return ok;
+    } catch (error) {
+      if (tempDirCreated) {
+        this.removePathTreeForImport(tempDir);
+      }
+      if (marked) {
+        try {
+          registry.cleanupGitImport(finalId, tempId);
+        } catch (_cleanupError) {
+          // 标记清理失败留给启动恢复（recoverGitImportResidues）
+        }
+      }
+      const kind: ZipImportErrorKind = error instanceof ZipImportError ? error.kind : 'io';
+      const failed: ZipImportOutcome = { status: 'failed', kind: kind, result: null };
+      return failed;
+    }
   }
 
   private async openAgent(): Promise<void> {

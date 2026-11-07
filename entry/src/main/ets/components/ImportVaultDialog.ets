@@ -1,6 +1,7 @@
 /** ImportVaultDialog.ets —— v1.5 统一知识库导入入口（原型 v2 importVaultDialog）。 */
 import { GitImportDraft } from '../model/GitImportDraftStore';
 import { Icon } from '../common/Icons';
+import { ZipChooseOutcome, ZipImportOutcome } from '../model/ZipImportService';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
@@ -27,10 +28,30 @@ export struct ImportVaultDialog {
   @State gitToken: string = '';
   @State showGitToken: boolean = false;
   @State gitAuthHint: string = '';
+  @State zipState: string = 'unselected';
+  @State zipFileName: string = '';
+  @State zipSummary: string = '';
+  @State zipVaultName: string = '';
+  @State zipFailureText: string = '';
+  @State zipProgressText: string = '';
+  @State importingZip: boolean = false;
   /** 返回选中目录的展示名；取消或失败返回 null（失败原因由父侧提示）。 */
   onChooseDirectory: () => Promise<string | null> = async (): Promise<string | null> => null;
   /** 返回是否关联成功；失败时父侧提示，弹窗保持打开供重试。 */
   onAssociateDirectory: () => Promise<boolean> = async (): Promise<boolean> => false;
+  /** 选择并解析 ZIP 的编排结果（36.1/36.2）：cancelled / failed / selected。 */
+  onChooseZip: () => Promise<ZipChooseOutcome> = async (): Promise<ZipChooseOutcome> => {
+    const cancelled: ZipChooseOutcome = {
+      status: 'cancelled', kind: 'corrupt', fileName: '', summary: '', defaultVaultName: ''
+    };
+    return cancelled;
+  };
+  /** 确认导入的编排结果（36.6/36.7）：ok 时父侧已登记切库并提示。 */
+  onImportZip: (name: string, onProgress: (done: number, total: number) => void) => Promise<ZipImportOutcome> =
+    async (_name: string, _onProgress: (done: number, total: number) => void): Promise<ZipImportOutcome> => {
+      const cancelled: ZipImportOutcome = { status: 'cancelled', kind: 'corrupt', result: null };
+      return cancelled;
+    };
   onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
   onContinueGit: (draft: GitImportDraft) => void = (_draft: GitImportDraft) => {};
   onCancel: () => void = () => {};
@@ -195,6 +216,126 @@ export struct ImportVaultDialog {
     this.onContinueGit(draft);
   }
 
+  private zipCardTitle(): string {
+    if (this.zipState === 'selected') {
+      return this.zipFileName;
+    }
+    if (this.zipState === 'failed') {
+      return this.zipFileName.length > 0 ? this.zipFileName : '无法读取这个 ZIP';
+    }
+    return '选择 ZIP 文件';
+  }
+
+  private zipCardDescription(): string {
+    if (this.zipState === 'selected') {
+      return this.zipSummary;
+    }
+    if (this.zipState === 'failed') {
+      return this.zipFailureText;
+    }
+    return '在系统选择器中选一个 .zip 备份';
+  }
+
+  private zipCardActionLabel(): string {
+    if (this.zipState === 'selected') {
+      return '更换';
+    }
+    return this.zipState === 'failed' ? '重试' : '选择';
+  }
+
+  private zipCardAccessibilityText(): string {
+    return this.zipCardTitle() + '，' + this.zipCardDescription();
+  }
+
+  /** 36.7 失败文案映射：只暴露分类结论，不携带底层错误与 ZIP 内文件名。 */
+  private zipFailureMessage(kind: string): string {
+    if (kind === 'not_vault') {
+      return 'ZIP 里没有 Markdown 笔记，不是知识库备份；没有新建知识库。';
+    }
+    if (kind === 'over_limit') {
+      return 'ZIP 内容超出导入上限；没有新建知识库。';
+    }
+    if (kind === 'no_space') {
+      return '存储空间不足；没有新建知识库，可清理空间后重试。';
+    }
+    if (kind === 'encrypted') {
+      return '暂不支持加密 ZIP；没有新建知识库。';
+    }
+    if (kind === 'unsafe') {
+      return 'ZIP 内包含不安全的条目，已拒绝导入；没有新建知识库。';
+    }
+    if (kind === 'io') {
+      return '读取 ZIP 失败；没有新建知识库，可重试。';
+    }
+    return '文件损坏，无法读取这个 ZIP；没有新建知识库。';
+  }
+
+  private async chooseZip(): Promise<void> {
+    if (this.working || this.source !== 'zip') {
+      return;
+    }
+    this.setWorking(true);
+    this.zipProgressText = '正在读取 ZIP…';
+    try {
+      const outcome: ZipChooseOutcome = await this.onChooseZip();
+      if (outcome.status === 'cancelled') {
+        // 取消选择回到原状态（36.1）：已有选择保持不变。
+        this.zipProgressText = '';
+      } else if (outcome.status === 'selected') {
+        this.zipState = 'selected';
+        this.zipFileName = outcome.fileName;
+        this.zipSummary = outcome.summary;
+        this.zipVaultName = outcome.defaultVaultName;
+        this.zipFailureText = '';
+        this.zipProgressText = '';
+      } else {
+        this.zipState = 'failed';
+        this.zipFileName = outcome.fileName;
+        this.zipFailureText = this.zipFailureMessage(outcome.kind);
+        this.zipProgressText = '';
+      }
+    } catch (_error) {
+      this.zipState = 'failed';
+      this.zipFailureText = this.zipFailureMessage('io');
+      this.zipProgressText = '';
+    } finally {
+      this.setWorking(false);
+    }
+  }
+
+  private async importZip(): Promise<void> {
+    if (this.zipState !== 'selected' || this.working || this.zipVaultName.trim().length === 0) {
+      return;
+    }
+    this.setWorking(true);
+    this.importingZip = true;
+    this.zipProgressText = '准备导入…';
+    try {
+      const outcome: ZipImportOutcome = await this.onImportZip(this.zipVaultName.trim(),
+        (done: number, total: number): void => {
+          this.zipProgressText = '已处理 ' + done + '/' + total + ' 项';
+        });
+      if (outcome.status === 'ok') {
+        // 父侧已完成登记、切库与「已导入 N 篇笔记」提示（36.7）。
+        this.zipProgressText = '';
+        this.controller?.close();
+      } else if (outcome.status === 'failed') {
+        this.zipState = 'failed';
+        this.zipFailureText = this.zipFailureMessage(outcome.kind);
+        this.zipProgressText = '';
+      } else {
+        this.zipProgressText = '';
+      }
+    } catch (_error) {
+      this.zipState = 'failed';
+      this.zipFailureText = this.zipFailureMessage('io');
+      this.zipProgressText = '';
+    } finally {
+      this.importingZip = false;
+      this.setWorking(false);
+    }
+  }
+
   @Builder
   SourceTab(label: string, value: string) {
     Text(label)
@@ -216,6 +357,7 @@ export struct ImportVaultDialog {
       Row({ space: Space.s1 }) {
         this.SourceTab('本地目录', 'local')
         this.SourceTab('Git 仓库', 'git')
+        this.SourceTab('ZIP 文件', 'zip')
       }
       .width('100%')
       .padding(Space.s1)
@@ -319,7 +461,7 @@ export struct ImportVaultDialog {
             }
             this.DirectoryFact('link', '直接使用原目录', '不复制文件，笔记改动直接写回该目录')
             this.DirectoryFact('check', '移除只解除关联', '原目录和其中的文件都会保留')
-          } else {
+          } else if (this.source === 'git') {
             Text('连接远端 Git 仓库')
               .fontSize(FontSize.body2)
               .fontWeight(FontWeight.Medium)
@@ -442,6 +584,123 @@ export struct ImportVaultDialog {
               .padding(Space.s3)
               .borderRadius(Radius.control)
               .backgroundColor($r('app.color.bg_secondary'))
+          } else {
+            Text('从 ZIP 备份新建知识库')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+            Row({ space: Space.s3 }) {
+              Stack({ alignContent: Alignment.Center }) {
+                Icon('archive', Space.s6, this.zipState === 'failed'
+                  ? $r('app.color.danger') : $r('app.color.brand'))
+                if (this.zipState === 'selected') {
+                  Row() {
+                    Icon('check', Space.s3, $r('app.color.on_brand'))
+                  }
+                  .width(Space.s5)
+                  .height(Space.s5)
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(VerticalAlign.Center)
+                  .borderRadius(Radius.full)
+                  .backgroundColor($r('app.color.brand'))
+                  .align(Alignment.BottomEnd)
+                } else if (this.zipState === 'failed') {
+                  Text('!')
+                    .fontSize(FontSize.caption)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor($r('app.color.on_brand'))
+                    .width(Space.s5)
+                    .height(Space.s5)
+                    .textAlign(TextAlign.Center)
+                    .borderRadius(Radius.full)
+                    .backgroundColor($r('app.color.danger'))
+                    .align(Alignment.BottomEnd)
+                }
+              }
+              .width(Space.s12)
+              .height(Space.s12)
+              .borderRadius(Radius.control)
+              .backgroundColor(this.zipState === 'selected'
+                ? $r('app.color.brand') : this.zipState === 'failed'
+                  ? $r('app.color.danger_bg') : $r('app.color.bg_card'))
+              Column({ space: Space.s1 }) {
+                Text(this.zipCardTitle())
+                  .fontSize(FontSize.body2)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(this.zipState === 'failed'
+                    ? $r('app.color.danger') : $r('app.color.text_primary'))
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(this.zipCardDescription())
+                  .fontSize(FontSize.caption)
+                  .fontColor(this.zipState === 'failed'
+                    ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+              .layoutWeight(1)
+              Text(this.zipCardActionLabel())
+                .fontSize(FontSize.caption)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.zipState === 'failed'
+                  ? $r('app.color.danger') : $r('app.color.brand'))
+                .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s1 })
+                .borderRadius(Radius.full)
+                .backgroundColor(this.zipState === 'failed'
+                  ? $r('app.color.danger_bg') : $r('app.color.brand_bg'))
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            .padding(Space.s4)
+            .borderRadius(Radius.menu)
+            .border({ width: 1, color: this.zipState === 'failed'
+              ? $r('app.color.danger') : $r('app.color.brand'),
+              style: this.zipState === 'unselected' ? BorderStyle.Dashed : BorderStyle.Solid })
+            .backgroundColor(this.zipState === 'failed'
+              ? $r('app.color.danger_bg') : this.zipState === 'selected'
+                ? $r('app.color.brand_bg') : $r('app.color.bg_card'))
+            .focusable(!this.working)
+            .id('import-zip-card')
+            .accessibilityText(this.zipCardAccessibilityText())
+            .accessibilityTextHint(this.zipState === 'selected'
+              ? '更换 ZIP 文件'
+              : this.zipState === 'failed' ? '重新选择 ZIP 文件' : '打开系统文件选择器')
+            .onAppear((): void => {
+              setTimeout((): void => {
+                this.getUIContext().getFocusController().requestFocus('import-zip-card');
+              }, 0);
+            })
+            .onClick(() => { void this.chooseZip(); })
+            if (this.zipProgressText.length > 0) {
+              Text(this.zipProgressText)
+                .fontSize(FontSize.caption)
+                .fontColor(this.zipState === 'failed'
+                  ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                .width('100%')
+                .accessibilityText(this.zipProgressText)
+            }
+            if (this.zipState === 'selected') {
+              Column({ space: Space.s1 }) {
+                Text('新知识库名称')
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                TextInput({ placeholder: '新知识库名称', text: this.zipVaultName })
+                  .height(Size.buttonH)
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                  .placeholderColor($r('app.color.text_tertiary'))
+                  .maxLength(40)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .backgroundColor($r('app.color.bg_secondary'))
+                  .borderRadius(Radius.control)
+                  .onChange((value: string) => { this.zipVaultName = value; })
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Start)
+            }
+            this.DirectoryFact('plus', '只新建、不覆盖', '总是新建一个知识库，已有库和其中的文件保持不变')
+            this.DirectoryFact('archive', '只导入笔记与图片', '其他文件、隐藏项、.git 与回收站会跳过，完成后告知数量')
           }
         }
         .width('100%')
@@ -488,6 +747,12 @@ export struct ImportVaultDialog {
           this.singleScreen, this.hasPicked() && !this.working, (): void => {
             void this.associateDirectory();
           }, true)
+      } else if (this.source === 'zip') {
+        UtilityDialogAction(this.importingZip ? '正在导入…' : '导入为新知识库', 'primary',
+          this.singleScreen, this.zipState === 'selected' && this.zipVaultName.trim().length > 0 && !this.working,
+          (): void => {
+            void this.importZip();
+          }, true)
       } else {
         UtilityDialogAction(this.working ? '处理中…' : '导入 Git 仓库', 'primary',
           this.singleScreen, this.gitRemote.trim().length > 0 && !this.working, (): void => {
@@ -502,7 +767,9 @@ export struct ImportVaultDialog {
   build() {
     UtilityDialogShell({
       title: '导入库',
-      subtitle: '关联已有的 Markdown 笔记目录',
+      subtitle: this.source === 'zip' ? '从 ZIP 备份新建一个知识库'
+        : this.source === 'git' ? '克隆远端 Git 仓库为独立笔记库'
+        : '关联已有的 Markdown 笔记目录',
       headerIcon: 'folder',
       closeLabel: '关闭导入库',
       singleScreen: this.singleScreen,

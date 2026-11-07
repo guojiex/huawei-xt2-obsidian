@@ -79,6 +79,15 @@ test('decision prototypes handle TSV, cross-vault search and ZIP import states',
  f.get('importFailDemo').onclick();assert.equal(f.run('importZipState'),'error');assert(f.get('confirmImportVault').disabled);
  f.get('chooseImportZip').onclick();assert.equal(f.run('importZipState'),'selected');assert.equal(f.get('confirmImportVault').disabled,false);
 });
+test('importSource=zip restores the import dialog on the ZIP tab and syncs back to the URL',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&importSource=zip');
+ const extension=html.match(/\/\/ v1\.14 14\.4:[\s\S]*?(?=\/\/ v1\.32 32\.1:)/)[0];f.run(extension);
+ assert(f.get('importVaultDialog').open);assert.equal(f.run('importVaultSource'),'zip');
+ assert(!f.get('importZipPanel').classList.contains('hidden'));assert(f.get('importLocalPanel').classList.contains('hidden'));assert(f.get('importGitPanel').classList.contains('hidden'));
+ assert.match(f.get('importVaultLead').textContent,/从 ZIP 备份新建一个知识库/);
+ assert.match(f.href(),/importSource=zip/);
+ f.get('importVaultDialog').close();f.run("syncUrl('replace')");assert.doesNotMatch(f.href(),/importSource=/);
+});
 test('release notes hide versions newer than the installed version',()=>{
  const f=fixture();assert.equal(f.run("versionNotAfter('1.0.0','0.2.0')"),false);assert.equal(f.run("versionNotAfter('0.2.0','0.2.0')"),true);
  assert.match(f.run("renderReleaseEntries([{version:'1.0.0',title:'future',date:'',changes:[]}])"),/当前版本的更新说明将在发布后显示/);
