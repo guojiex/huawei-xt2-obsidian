@@ -53,9 +53,29 @@ export interface UndoSnap {
   wasRight: boolean;
 }
 
+/** readBackWithRetry 的读回校验结果 */
+interface TrashReadBackResult {
+  /** 读到与期望一致的内容 */
+  matched: boolean;
+  /** 最后一次尝试是读取抛错（而非内容不一致） */
+  readFailed: boolean;
+  /** 最后一次读取错误码；未抛错时 -1 */
+  code: number;
+  /** 最后一次读取错误消息；未抛错时空串 */
+  message: string;
+  /** 最后一次读到的内容；抛错时空串 */
+  content: string;
+}
+
 export class TrashService {
   private static mutationChain: Promise<void> = Promise.resolve();
   private static legacyMigrationCompleted: Set<string> = new Set<string>();
+  /**
+   * 读回退避重试间隔（ms）。x86_64 模拟器（API26）2026-11-07 实测：AtomicFile
+   * end+finishWrite 完成后，落盘数据 ≤800ms 内到达，但立即读回仍可能**间歇性**
+   * 拿到过期内容或瞬时读取错误。累计约 1.6s 仍读不一致才判定失败（副本/原件保留）。
+   */
+  private static readonly READ_BACK_RETRY_DELAYS_MS: number[] = [20, 50, 100, 200, 400, 800];
 
   /**
    * 把文件移入回收站（1.7 主路径：左滑滑到底 / 删除确认框的「确认删除」）。
@@ -99,23 +119,20 @@ export class TrashService {
     TrashService.ensureTrashParents(registry, vaultId, target);
     const dst: string = registry.absoluteInTrash(vaultId, target);
     await TrashService.writePrivateAtomic(dst, content);
-    let privateCopy: string;
-    try {
-      privateCopy = fileIo.readTextSync(dst);
-    } catch (error) {
-      const err = error as BusinessError;
+    const readBack: TrashReadBackResult = await TrashService.readBackWithRetry(
+      (): string => fileIo.readTextSync(dst), content);
+    if (!readBack.matched) {
       TrashService.removePrivateCopy(dst);
-      throw new Error('回收站副本读取失败(code=' + (typeof err.code === 'number' ? err.code : -1) +
-        ')，原笔记未删除：' + (err.message ?? '') + '；副本路径 ' + dst);
-    }
-    if (privateCopy !== content) {
-      TrashService.removePrivateCopy(dst);
-      const index: number = TrashService.firstMismatchIndex(content, privateCopy);
-      const detail: string = TrashService.describeTextMismatch(content, privateCopy);
+      if (readBack.readFailed) {
+        throw new Error('回收站副本读取失败(code=' + readBack.code + ')，原笔记未删除：' +
+          readBack.message + '；副本路径 ' + dst);
+      }
+      const index: number = TrashService.firstMismatchIndex(content, readBack.content);
+      const detail: string = TrashService.describeTextMismatch(content, readBack.content);
       hilog.warn(TRASH_DOMAIN, TRASH_TAG,
         '副本校验失败 %{public}s；副本 %{public}s；期望窗口 %{public}s 读回窗口 %{public}s',
         detail, dst, TrashService.escapeAround(content, index, 16),
-        TrashService.escapeAround(privateCopy, index, 16));
+        TrashService.escapeAround(readBack.content, index, 16));
       throw new Error('回收站副本校验失败，原笔记未删除：' + detail + '；副本路径 ' + dst);
     }
     const currentSource: string = access.readText(relPath);
@@ -211,19 +228,16 @@ export class TrashService {
           TrashService.ensureTrashParents(registry, vaultId, destination);
           const destinationAbs: string = registry.absoluteInTrash(vaultId, destination);
           await TrashService.writePrivateAtomic(destinationAbs, content);
-          let migratedCopy: string;
-          try {
-            migratedCopy = fileIo.readTextSync(destinationAbs);
-          } catch (error) {
-            const err = error as BusinessError;
+          const migratedBack: TrashReadBackResult = await TrashService.readBackWithRetry(
+            (): string => fileIo.readTextSync(destinationAbs), content);
+          if (!migratedBack.matched) {
             TrashService.removePrivateCopy(destinationAbs);
-            throw new Error('旧回收站副本读取失败(code=' + (typeof err.code === 'number' ? err.code : -1) +
-              ')，原目录已保留：' + (err.message ?? ''));
-          }
-          if (migratedCopy !== content) {
-            TrashService.removePrivateCopy(destinationAbs);
+            if (migratedBack.readFailed) {
+              throw new Error('旧回收站副本读取失败(code=' + migratedBack.code +
+                ')，原目录已保留：' + migratedBack.message);
+            }
             throw new Error('旧回收站副本校验失败，原目录已保留：' +
-              TrashService.describeTextMismatch(content, migratedCopy));
+              TrashService.describeTextMismatch(content, migratedBack.content));
           }
         }
       };
@@ -304,17 +318,16 @@ export class TrashService {
         throw new Error('原位置已有同名文件，请先处理重名');
       }
       await access.writeAtomic(trashRel, content);
-      let restored: string;
-      try {
-        restored = access.readText(trashRel);
-      } catch (error) {
-        const err = error as BusinessError;
-        throw new Error('恢复副本读取失败(code=' + (typeof err.code === 'number' ? err.code : -1) +
-          ')，回收站原件仍保留：' + (err.message ?? ''));
-      }
-      if (restored !== content) {
-        throw new Error('恢复副本校验失败，回收站原件仍保留：' +
-          TrashService.describeTextMismatch(content, restored));
+      const readBack: TrashReadBackResult = await TrashService.readBackWithRetry(
+        (): string => access.readText(trashRel), content);
+      if (!readBack.matched) {
+        if (readBack.readFailed) {
+          throw new Error('恢复副本读取失败(code=' + readBack.code + ')，回收站原件仍保留：' +
+            readBack.message);
+        }
+        const detail: string = TrashService.describeTextMismatch(content, readBack.content);
+        hilog.warn(TRASH_DOMAIN, TRASH_TAG, '恢复读回校验失败 %{public}s；回收站原件保留', detail);
+        throw new Error('恢复副本校验失败，回收站原件仍保留：' + detail);
       }
       fileIo.unlinkSync(registry.absoluteInTrash(vaultId, trashRel));
       FullTextSearchService.noteRestored(registry, vaultId, trashRel);
@@ -472,6 +485,41 @@ export class TrashService {
         fail(new Error(err.message));
       }
     });
+  }
+
+  /**
+   * 带退避重试的读回校验（2026-11-07 撤销失败引入）。
+   * x86_64 模拟器（API26）实测：AtomicFile end+finishWrite 全部完成后立即读回，
+   * 仍可能**间歇性**读到过期内容或瞬时读取错误（数据确实在盘上，≤800ms 后读一致；
+   * 12:53 撤销失败即此形态：恢复目标最终完整落盘，读回却判不一致）。
+   * 首读一致零延迟返回；否则按 READ_BACK_RETRY_DELAYS_MS 退避重读，
+   * 全部失败才交给调用方按既有格式报错 —— 私有副本 / 回收站原件保持不动。
+   */
+  private static async readBackWithRetry(read: () => string,
+    expected: string): Promise<TrashReadBackResult> {
+    const delays: number[] = TrashService.READ_BACK_RETRY_DELAYS_MS;
+    let attempt: number = 0;
+    let last: TrashReadBackResult = { matched: false, readFailed: false, code: -1, message: '', content: '' };
+    while (true) {
+      try {
+        const content: string = read();
+        if (content === expected) {
+          return { matched: true, readFailed: false, code: -1, message: '', content: content };
+        }
+        last = { matched: false, readFailed: false, code: -1, message: '', content: content };
+      } catch (error) {
+        const err = error as BusinessError;
+        last = { matched: false, readFailed: true,
+          code: typeof err.code === 'number' ? err.code : -1, message: err.message ?? '', content: '' };
+      }
+      if (attempt >= delays.length) {
+        return last;
+      }
+      await new Promise<void>((resolve: (value: void) => void): void => {
+        setTimeout(resolve, delays[attempt]);
+      });
+      attempt++;
+    }
   }
 
   /** 递归收集回收站文件；relDir 为镜像的库内相对目录（'' = 回收站根） */

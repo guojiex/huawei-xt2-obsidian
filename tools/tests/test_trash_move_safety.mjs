@@ -35,13 +35,19 @@ const escapeAround = extractMethod(
   'private static escapeAround(text: string, index: number, radius: number): string {',
   '\n  private static enqueue<'
 );
+const readBackWithRetry = extractMethod(
+  'private static async readBackWithRetry(read: () => string,',
+  '\n  private static walk(registry: VaultRegistry, vaultId: string, relDir: string, out: TrashItem[]): void {'
+);
 const code = transformSync(`class TrashService {
   static mutationChain = Promise.resolve();
+  static READ_BACK_RETRY_DELAYS_MS = [1];
   ${moveToTrash}
   ${moveText}
   ${firstMismatchIndex}
   ${describeTextMismatch}
   ${escapeAround}
+  ${readBackWithRetry}
   static enqueue(action) { const job = this.mutationChain.then(action); this.mutationChain = job.then(() => {}, () => {}); return job; }
   static existsInTrash(_registry, _vaultId, relPath) { return this.privateFiles.has(relPath); }
   static ensureTrashParents() {}
@@ -59,6 +65,7 @@ function createHarness(options = {}) {
   let sourceReads = 0;
   const context = vm.createContext({
     module: { exports: {} },
+    setTimeout,
     fileIo: {
       accessSync(path) { calls.push(`private-root-exists:${path}`); return false; },
       mkdirSync(path, recursive) {
@@ -71,6 +78,9 @@ function createHarness(options = {}) {
           const readError = new Error('No such file or directory');
           readError.code = 13900002;
           throw readError;
+        }
+        if (options.privateReadSequence && options.privateReadSequence.length > 0) {
+          return options.privateReadSequence.shift();
         }
         return options.privateRead ?? privateFiles.get(path.substring('/private/local/'.length));
       }
@@ -160,4 +170,17 @@ test('a formal source change before removal discards only the redundant private 
   assert.equal(calls.includes('remove-private-copy'), true);
   assert.equal(getFormal(), 'changed');
   assert.equal(privateFiles.size, 0);
+});
+
+test('a stale private read-back is retried until it matches so deletion still completes', async () => {
+  const { TrashService, registry, calls, getFormal } = createHarness({
+    privateReadSequence: ['stale-once']
+  });
+  await TrashService.moveToTrash(registry, 'local', 'notes.md');
+
+  assert.equal(calls.filter((call) => call === 'verify-private-copy').length, 2,
+    'a mismatched first read must be retried instead of failing the delete');
+  assert.equal(calls.some((call) => call.startsWith('remove-source:')), true);
+  assert.equal(getFormal(), '');
+  assert.equal(calls.includes('search-removed'), true);
 });

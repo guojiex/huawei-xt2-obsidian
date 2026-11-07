@@ -7900,9 +7900,11 @@ struct Index {
         }
       }
     } catch (error) {
+      const err = error as BusinessError;
+      const code: number = typeof err.code === 'number' ? err.code : -1;
+      const reason: string = err.message ?? '原因未确定';
       this.showUndo(this.recordFailureFeedback('file', 'restore_trash', 'unknown',
-        'status_unknown', 'check_status',
-        '回收站恢复未完成；原位置和回收站状态未确认，请检查后再重试。'), null);
+        'status_unknown', 'check_status', reason, code, reason), null);
     }
   }
 
@@ -7956,7 +7958,7 @@ struct Index {
     }
   }
 
-  /** 回收站视图「恢复」（1.8）：与撤销共用 TrashService.restore；重名 toast 原因 */
+  /** 回收站视图「恢复」（1.8）：与撤销共用 TrashService.restore；失败 toast 真实原因 */
   private async doRestoreFromTrash(relPath: string): Promise<void> {
     if (this.currentVaultId.length === 0) {
       return;
@@ -7966,8 +7968,11 @@ struct Index {
       this.refreshFileTree();
       this.trashSeq++;
     } catch (error) {
+      const err = error as BusinessError;
+      const code: number = typeof err.code === 'number' ? err.code : -1;
+      const reason: string = err.message ?? '原因未确定';
       this.showFailureFeedback('file', 'restore_trash', 'unknown', 'status_unknown', 'check_status',
-        '恢复状态未确认；请检查原位置和回收站后再重试。');
+        reason, code, reason);
     }
   }
 

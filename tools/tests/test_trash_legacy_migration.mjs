@@ -31,13 +31,19 @@ const describeTextMismatch = extractMethod(
   'private static describeTextMismatch(expected: string, actual: string): string {',
   '\n  /** 差异位置附近的内容窗口'
 );
+const readBackWithRetry = extractMethod(
+  'private static async readBackWithRetry(read: () => string,',
+  '\n  private static walk(registry: VaultRegistry, vaultId: string, relDir: string, out: TrashItem[]): void {'
+);
 const code = transformSync(`class TrashService {
   static mutationChain = Promise.resolve();
   static legacyMigrationCompleted = new Set();
+  static READ_BACK_RETRY_DELAYS_MS = [1];
   ${migrate}
   ${findDestination}
   ${firstMismatchIndex}
   ${describeTextMismatch}
+  ${readBackWithRetry}
   static enqueue(action) { const job = this.mutationChain.then(action); this.mutationChain = job.then(() => {}, () => {}); return job; }
   static existsInTrash(registry, vaultId, relPath) { return fileIo.accessSync(registry.absoluteInTrash(vaultId, relPath)); }
   static ensureTrashParents() {}
@@ -57,6 +63,7 @@ function createHarness({ sourceTree = {}, privateTree = {}, corruptCopy = false 
     privateFiles,
     corruptCopy,
     calls,
+    setTimeout,
     fileIo: {
       accessSync(path) { return privateFiles.has(path); },
       mkdirSync(path, recursive) {

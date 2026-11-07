@@ -24,6 +24,7 @@ const code = transformSync(classSource, { loader: 'ts', format: 'cjs' }).code;
 function createHarness(options = {}) {
   const calls = [];
   const shownUndos = [];
+  const feedbackCalls = [];
   const context = vm.createContext({
     module: { exports: {} },
     VaultRegistry: { get: () => ({}) },
@@ -61,7 +62,10 @@ function createHarness(options = {}) {
     async readRightAndPush(path) { calls.push(`clear-right:${path}`); },
     refreshFileTree() { calls.push('refresh-tree'); },
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
-    recordFailureFeedback() { return '安全失败反馈'; },
+    recordFailureFeedback(operation, phase, category, outcome, nextStep, detail, code, message) {
+      feedbackCalls.push({ operation, phase, category, outcome, nextStep, detail, code, message });
+      return options.echoFeedbackDetail ? detail : '安全失败反馈';
+    },
     showUndo(message, snapshot) {
       calls.push('show-undo');
       shownUndos.push({ message, snapshot });
@@ -71,7 +75,7 @@ function createHarness(options = {}) {
     loadFile(path) { calls.push(`load-left:${path}`); },
     loadRightFile(path) { calls.push(`load-right:${path}`); }
   });
-  return { app, calls, shownUndos };
+  return { app, calls, shownUndos, feedbackCalls };
 }
 
 test('permanent deletion clears the left editor after deleting its selected subtree', async () => {
@@ -141,5 +145,32 @@ test('a restore conflict keeps the file untouched and replaces undo with a no-ac
   assert.deepEqual(calls, ['hide-undo', 'restore:local:folder/removed.md', 'show-undo']);
   assert.deepEqual(shownUndos, [{ message: '安全失败反馈', snapshot: null }]);
   assert.equal(app.undoSnap, null);
+  assert.equal(app.trashSeq, 0);
+});
+
+test('a restore failure surfaces the real reason in the notice and the diagnostic record', async () => {
+  const { app, calls, shownUndos, feedbackCalls } = createHarness({
+    restoreFails: true,
+    echoFeedbackDetail: true
+  });
+  app.undoSnap = { vaultId: 'local', relPath: 'folder/removed.md', wasCurrent: true, wasRight: false };
+
+  await app.undoTrashRestore();
+
+  assert.deepEqual(calls, ['hide-undo', 'restore:local:folder/removed.md', 'show-undo']);
+  assert.deepEqual(shownUndos, [{ message: 'controlled restore conflict', snapshot: null }]);
+  assert.deepEqual(feedbackCalls.map((recorded) => ({
+    operation: recorded.operation,
+    phase: recorded.phase,
+    detail: recorded.detail,
+    code: recorded.code,
+    message: recorded.message
+  })), [{
+    operation: 'file',
+    phase: 'restore_trash',
+    detail: 'controlled restore conflict',
+    code: -1,
+    message: 'controlled restore conflict'
+  }]);
   assert.equal(app.trashSeq, 0);
 });

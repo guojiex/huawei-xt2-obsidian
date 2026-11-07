@@ -560,6 +560,18 @@ AgentOperationStorage / NoteDraftService / NoteShareService / GitFsBackend /
 ExternalDirProbeDevice）统一 `write` → `end`；仍保留 3s 超时、空内容直接 finishWrite、
 全程禁 `close()`。API 24 / XT2 真机的 end 语义待回归验证。
 
+**2026-11-07 撤销失败二段：end+finishWrite 全部完成后读回仍可能间歇性旧读（⚠️ 重试缓解）**：
+`end` 修复落地后同一 x86_64 模拟器删除立即成功，但随后一次「撤销（回收站恢复）」在恢复目标的
+读回校验处失败（12:53:15；该文件事后在设备上完整存在、回收站副本保留、无 unlink 与成功日志）。
+当时诊断记录只落了泛型（Index 的 catch 吞掉真实 code/message），无法区分「内容不一致」与
+「瞬时读取错误」两种形态。结论按 ⚠️ 记：`readText`/`readTextSync` 无应用层缓存
+（VaultAccess 每次直读），end+finishWrite 完成后**立即读回仍可能间歇性拿到过期内容或瞬时
+错误**，非确定性（探针单次采样曾显示立即读正常）。缓解（已落地）：TrashService 三处读回校验
+（删除副本 / 旧回收站迁移 / 恢复读回）统一改为退避重试 `readBackWithRetry`（20/50/100/200/
+400/800ms；首读一致零延迟；累计约 1.6s 仍不一致按原格式报错，私有副本 / 回收站原件保留）；
+Index 的撤销与回收站恢复 catch 改为透出真实 code+message 进诊断记录与用户提示。
+API 24 / XT2 真机是否存在同类竞态待回归。
+
 ### C2 目录删除与 `rmdirSync` ⚠️（SDK 声明核实，未作设备故障实验）
 
 - 本机 HarmonyOS SDK 的 `ets/api/@ohos.file.fs.d.ts` 声明 `rmdirSync(path: string)`（since 9，低于 API 24），无递归参数；API 文本明确说明同步删除目录及其子目录和文件，异常列表包含 13900032 “Directory not empty”。
