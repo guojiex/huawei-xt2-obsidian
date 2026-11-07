@@ -41,6 +41,10 @@ test('split drag shows no visual readout or feedback bubble (2026-11-07 user dec
 
 test('zero-width handles clip their grip so a collapsed sidebar hides the nav handle (2026-11-07)', () => {
   assert.match(splitHandle, /\.clip\(true\)/);
+  // 外部 .width(0) 只作用于包装节点，内部根 Stack 固定 16vp 会溢出绘制，
+  // clip 裁不到——显隐必须走 visibility（递归隐藏子树，2026-11-07 双屏实测）。
+  assert.match(index, /\.visibility\(this\.noteNavigationProgress\(\) > 0 \? Visibility\.Visible : Visibility\.Hidden\)/);
+  assert.match(index, /\.visibility\(this\.contentHandleVisible\(\) \? Visibility\.Visible : Visibility\.Hidden\)/);
   assert.match(index, /\.width\(Space\.s4 \* this\.noteNavigationProgress\(\)\)/);
 });
 

@@ -9541,6 +9541,7 @@ struct Index {
               right: -Space.s2 * this.noteNavigationProgress() })
             .zIndex(4)
             .enabled(this.focused ? this.focusNavigationOpen : !this.sidebarCollapsed)
+            .visibility(this.noteNavigationProgress() > 0 ? Visibility.Visible : Visibility.Hidden)
             .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           Column() {
