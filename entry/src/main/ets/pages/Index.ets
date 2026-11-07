@@ -9132,9 +9132,10 @@ struct Index {
           this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
       }
     }
-    // v2 32.3 外形：min-width s16×3.5（224）内容自适应，不定宽
-    // （原型 .pane-more:not(.mobile-top-more) .pane-more-menu）
-    .constraintSize({ minWidth: Space.s16 * 3.5 })
+    // v2 32.3 外形：定宽 s16×3.5（224，border-box）。原型为 min-width，但四项均为短文案，
+    // 浏览器实际渲染恒 224。原生不可用 constraintSize minWidth：弹层内子项 width('100%')
+    // 会按约束最大宽（≈窗口宽）解析把菜单撑到整屏（faqs-arkui-95）。
+    .width(Space.s16 * 3.5)
     .padding(Space.s1)
     .borderRadius(Radius.menu)
     .backgroundColor($r('app.color.bg_card'))
@@ -9901,8 +9902,9 @@ struct Index {
       this.MobileMoreMenuExperienceGroup()
       this.MobileMoreMenuAppGroup()
     }
-    // 31.6 外形：min-width s16×4.25（272），上下内边距 s1，--r 圆角 + --float-shadow
-    .constraintSize({ minWidth: Space.s16 * 4.25 })
+    // 31.6 外形：定宽 s16×4.25（272，border-box），上下内边距 s1，--r 圆角 + --float-shadow。
+    // 不用 constraintSize minWidth，原因见 PaneMoreMenu 注释（faqs-arkui-95）。
+    .width(Space.s16 * 4.25)
     .padding({ top: Space.s1, bottom: Space.s1 })
     .borderRadius(Radius.menu)
     .backgroundColor($r('app.color.bg_card'))

@@ -102,7 +102,8 @@ test('menu shell matches the v2 mobile-top-more spec (31.6)', () => {
   const shellStart = menu.indexOf('  MoreMenu() {');
   const shellEnd = menu.indexOf('\n  @Builder\n  MobileMoreMenuNoteGroup(', shellStart);
   const shell = menu.slice(shellStart, shellEnd);
-  assert.match(shell, /constraintSize\(\{ minWidth: Space\.s16 \* 4\.25 \}\)/);
+  assert.match(shell, /\.width\(Space\.s16 \* 4\.25\)/);
+  assert.doesNotMatch(shell, /\.constraintSize\(/);
   assert.match(shell, /\.padding\(\{ top: Space\.s1, bottom: Space\.s1 \}\)/);
   assert.match(shell, /Radius\.menu/);
   assert.match(shell, /Shadow\.floatBlur/);

@@ -31,8 +31,11 @@ test('pane menu rows use v2 touch, body, nav-hover, and small-radius tokens', ()
   assert.match(prototype, /\.pane-more:not\(\.mobile-top-more\) \.pane-more-menu button:hover\{background:var\(--nav\)\}/);
 });
 
-test('menu width follows the v2 min-width rule instead of a fixed width', () => {
-  assert.match(menu, /\.constraintSize\(\{ minWidth: Space\.s16 \* 3\.5 \}\)/);
+test('menu width is fixed 224 per v2 rendering, not constraintSize min-width', () => {
+  // constraintSize minWidth + width('100%') 子项在弹层内会按约束最大宽解析，
+  // 把菜单撑到约整屏宽（faqs-arkui-95），必须用显式定宽。
+  assert.match(menu, /\.width\(Space\.s16 \* 3\.5\)/);
+  assert.doesNotMatch(menu, /\.constraintSize\(/);
   assert.doesNotMatch(menu, /\.width\(Size\.sidebarW\)/);
   assert.match(prototype,
     /\.pane-more:not\(\.mobile-top-more\) \.pane-more-menu\{min-width:calc\(var\(--s16\) \* 3\.5\);padding:var\(--s1\);border-radius:var\(--r\)\}/);
