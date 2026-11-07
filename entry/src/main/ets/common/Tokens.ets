@@ -101,7 +101,6 @@ export class Size {
   static readonly splitTouchHitW: number = 36;
   static readonly splitMouseHitW: number = 24;
   static readonly splitRailW: number = 2;
-  static readonly splitTipH: number = FontSize.caption * 4 + Space.s3 * 2;
   /**
    * 左滑三档（1.6）：操作条完全滑出后**再滑这么多**进入删除区（原型 DEL_EXTRA = 36）。
    * 配合 ListItem.swipeAction 的 actionAreaDistance；越过即触发 onAction（文件 → 移入回收站）。

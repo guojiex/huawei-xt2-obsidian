@@ -29,13 +29,19 @@ test('expanded touch and mouse regions do not change note or Agent layout widths
   for (const call of agentCalls) assert.doesNotMatch(call, /enhanced:\s*true/);
 });
 
-test('split feedback is shown during drag and retained briefly afterward', () => {
-  assert.match(splitHandle, /this\.dragging \|\| this\.feedbackVisible/);
-  assert.match(splitHandle, /this\.showFeedback\('/);
-  assert.match(splitHandle, /setTimeout\([\s\S]*?1100/);
+test('split drag shows no visual readout or feedback bubble (2026-11-07 user decision)', () => {
+  assert.doesNotMatch(splitHandle, /feedbackVisible/);
+  assert.doesNotMatch(splitHandle, /showFeedback/);
+  assert.doesNotMatch(splitHandle, /栏宽已保存|调整中|已取消调整/);
+  assert.doesNotMatch(tokens, /splitTipH/);
   assert.match(splitHandle, /readoutPrimary/);
   assert.match(splitHandle, /readoutWidths/);
   assert.match(splitHandle, /readoutStatus/);
+});
+
+test('zero-width handles clip their grip so a collapsed sidebar hides the nav handle (2026-11-07)', () => {
+  assert.match(splitHandle, /\.clip\(true\)/);
+  assert.match(index, /\.width\(Space\.s4 \* this\.noteNavigationProgress\(\)\)/);
 });
 
 test('split readout reports ratios, pane widths, and boundary causes', () => {

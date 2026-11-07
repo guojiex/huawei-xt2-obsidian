@@ -1,4 +1,4 @@
-import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { Radius, Size, Space } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 const SPLIT_KEY_STEP: number = 16;
@@ -23,23 +23,6 @@ export struct SplitHandle {
   @State dragging: boolean = false;
   @State hovered: boolean = false;
   @State focused: boolean = false;
-  @State feedbackVisible: boolean = false;
-  @State feedbackMessage: string = '';
-
-  private feedbackTimer: number = -1;
-
-  private showFeedback(message: string): void {
-    if (this.feedbackTimer >= 0) {
-      clearTimeout(this.feedbackTimer);
-    }
-    this.feedbackVisible = true;
-    this.feedbackMessage = message;
-    this.feedbackTimer = setTimeout((): void => {
-      this.feedbackVisible = false;
-      this.feedbackMessage = '';
-      this.feedbackTimer = -1;
-    }, 1100);
-  }
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
@@ -81,34 +64,10 @@ export struct SplitHandle {
         }
         .alignItems(HorizontalAlign.Center)
       }
-      if (this.enhanced && (this.dragging || this.feedbackVisible)) {
-        Column({ space: Space.s1 }) {
-          Text(this.readoutPrimary)
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.bg_card'))
-          Text(this.readoutWidths)
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.bg_card'))
-          Text(this.feedbackMessage.length > 0
-            ? this.feedbackMessage
-            : (this.readoutStatus.length > 0 ? this.readoutStatus : (this.dragging ? '调整中' : '栏宽已保存')))
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.bg_card'))
-        }
-        .width(Size.paneMinW)
-        .height(Size.splitTipH)
-        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-        .borderRadius(Radius.control)
-        .backgroundColor($r('app.color.text_primary'))
-        .shadow({ radius: Space.s2, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: Space.s1 })
-        .align(Alignment.Center)
-        .offset({ x: 0, y: -(Size.splitGripH / 2 + Space.s3 + Size.splitTipH / 2) })
-        .zIndex(4)
-        .hitTestBehavior(HitTestMode.None)
-      }
     }
     .width(Space.s4)
     .height('100%')
+    .clip(true)
     .zIndex(this.enhanced ? 4 : 0)
     .responseRegion(this.enhanced
       ? { x: -(Size.splitTouchHitW - Space.s4) / 2, y: 0, width: Size.splitTouchHitW, height: '100%' }
@@ -138,11 +97,6 @@ export struct SplitHandle {
         .onActionStart((): void => {
           this.dragging = true;
           this.lastTapAt = -1;
-          this.feedbackMessage = '';
-          if (this.feedbackTimer >= 0) {
-            clearTimeout(this.feedbackTimer);
-            this.feedbackTimer = -1;
-          }
           this.dragStarted();
         })
         .onActionUpdate((event: GestureEvent): void => {
@@ -158,7 +112,6 @@ export struct SplitHandle {
           }
           this.dragging = false;
           this.dragEnded();
-          this.showFeedback('栏宽已保存');
         })
         .onActionCancel((): void => {
           if (!this.dragging) {
@@ -167,7 +120,6 @@ export struct SplitHandle {
           this.dragging = false;
           if (this.enhanced) {
             this.dragCancelled();
-            this.showFeedback('已取消调整');
           } else {
             this.dragEnded();
           }
@@ -180,7 +132,6 @@ export struct SplitHandle {
       if (event.keyCode === KeyCode.KEYCODE_ESCAPE && this.dragging) {
         this.dragging = false;
         this.dragCancelled();
-        this.showFeedback('已取消调整');
         return true;
       }
       if (event.keyCode === KeyCode.KEYCODE_DPAD_LEFT ||
@@ -191,22 +142,18 @@ export struct SplitHandle {
         }
         const step: number = shiftPressed ? SPLIT_KEY_SHIFT_STEP : SPLIT_KEY_STEP;
         this.keyboardAdjusted(event.keyCode === KeyCode.KEYCODE_DPAD_LEFT ? -step : step);
-        this.showFeedback('栏宽已调整');
         return true;
       }
       if (event.keyCode === KeyCode.KEYCODE_MOVE_HOME) {
         this.keyboardToLimit(false);
-        this.showFeedback('已调整至最小宽度');
         return true;
       }
       if (event.keyCode === KeyCode.KEYCODE_MOVE_END) {
         this.keyboardToLimit(true);
-        this.showFeedback('已调整至最大宽度');
         return true;
       }
       if (event.keyCode === KeyCode.KEYCODE_ENTER) {
         this.resetRequested();
-        this.showFeedback('已恢复默认比例');
         return true;
       }
       return false;
@@ -216,7 +163,6 @@ export struct SplitHandle {
       if (this.lastTapAt >= 0 && now - this.lastTapAt <= 320) {
         this.lastTapAt = -1;
         this.resetRequested();
-        this.showFeedback('已恢复默认比例');
       } else {
         this.lastTapAt = now;
       }
