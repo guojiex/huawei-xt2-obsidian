@@ -1994,3 +1994,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - 实测（x86_64 API26 模拟器，v1.32 构建）：Z1 修复把弹窗 content/footer lambda 化后，`UtilityDialogAction`（全局 @Builder、6 参按值）的 `enabled` 不再随弹窗状态刷新——新建笔记输入合法名（「笔记名为空」hint 消失 = onChange 已提交、rawName 非空）后「创建」按钮仍禁用灰、点击无效（EM-B2）。同弹窗内 if 分支与属性表达式（hint、描述文字）照常刷新，仅嵌套全局 @Builder 调用的按值实参陈旧。Z1 之前引用式传参时整个 footer 随弹窗重建，掩盖了本条。
 - **修复（官方「按回调传递参数」解法，API 20 起）**：参数类型 `Binding<boolean>`（`import { Binding, UIUtils } from '@kit.ArkUI'`），调用点 `UIUtils.makeBinding<boolean>(() => …)`，builder 体内读 `.value`；绑定自带状态跟踪，不依赖外层 @BuilderParam 的重渲染路径。附带写回调的 `MutableBinding` 可把 builder 内修改传回调用组件（本例只读未用）。
 - 防回归：`test_utility_dialog_shell.mjs` 断言 4 个消费文件全部 22 处调用的 enabled 均为 makeBinding 包裹且导入 UIUtils。
+
+### Z3 ⚠️ x86 系模拟器 IME×Web 不可输入与 API 版本无关——API26 x86_64 复现（2026-11-07，EM-C0 实测）
+- 实测（Windows 本机 API26 x86_64 模拟器，v1.32 构建）：Web 编辑面（mdpreview 可编辑预览）单击 / 双击均无光标、不唤起 IME；`devecocli ui text` 与 `uitest uiInput inputText` 注入均未上屏（字数恒 0 字）；同轮新建弹窗原生 TextInput 注入两次全部正常上屏。与 L-8 的 API24 x86 表现一致。
+- 对照：API26 arm64 模拟器拼音输入历史证据可用（B6）→ L-8 类限制按 CPU 架构（x86）成立，与 API 版本无关。x86 宿主上 EM-C0 探针预期「不可输入」，C 组输入类用例按 docs/testing 规则记环境阻塞。
