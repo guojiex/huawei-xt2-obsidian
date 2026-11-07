@@ -23,11 +23,21 @@ const findDestination = extractMethod(
   'private static findLegacyTrashDestination(registry: VaultRegistry, vaultId: string,',
   '\n  /**\n   * 列出回收站全部文件'
 );
+const firstMismatchIndex = extractMethod(
+  'private static firstMismatchIndex(expected: string, actual: string): number {',
+  '\n  /** 校验失败的具体差异描述'
+);
+const describeTextMismatch = extractMethod(
+  'private static describeTextMismatch(expected: string, actual: string): string {',
+  '\n  /** 差异位置附近的内容窗口'
+);
 const code = transformSync(`class TrashService {
   static mutationChain = Promise.resolve();
   static legacyMigrationCompleted = new Set();
   ${migrate}
   ${findDestination}
+  ${firstMismatchIndex}
+  ${describeTextMismatch}
   static enqueue(action) { const job = this.mutationChain.then(action); this.mutationChain = job.then(() => {}, () => {}); return job; }
   static existsInTrash(registry, vaultId, relPath) { return fileIo.accessSync(registry.absoluteInTrash(vaultId, relPath)); }
   static ensureTrashParents() {}

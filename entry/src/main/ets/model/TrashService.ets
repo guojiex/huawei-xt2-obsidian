@@ -99,13 +99,30 @@ export class TrashService {
     TrashService.ensureTrashParents(registry, vaultId, target);
     const dst: string = registry.absoluteInTrash(vaultId, target);
     await TrashService.writePrivateAtomic(dst, content);
-    if (fileIo.readTextSync(dst) !== content) {
+    let privateCopy: string;
+    try {
+      privateCopy = fileIo.readTextSync(dst);
+    } catch (error) {
+      const err = error as BusinessError;
       TrashService.removePrivateCopy(dst);
-      throw new Error('回收站副本校验失败，原笔记未删除');
+      throw new Error('回收站副本读取失败(code=' + (typeof err.code === 'number' ? err.code : -1) +
+        ')，原笔记未删除：' + (err.message ?? '') + '；副本路径 ' + dst);
     }
-    if (access.readText(relPath) !== content) {
+    if (privateCopy !== content) {
       TrashService.removePrivateCopy(dst);
-      throw new Error('笔记在删除过程中已变化，已保留原文件');
+      const index: number = TrashService.firstMismatchIndex(content, privateCopy);
+      const detail: string = TrashService.describeTextMismatch(content, privateCopy);
+      hilog.warn(TRASH_DOMAIN, TRASH_TAG,
+        '副本校验失败 %{public}s；副本 %{public}s；期望窗口 %{public}s 读回窗口 %{public}s',
+        detail, dst, TrashService.escapeAround(content, index, 16),
+        TrashService.escapeAround(privateCopy, index, 16));
+      throw new Error('回收站副本校验失败，原笔记未删除：' + detail + '；副本路径 ' + dst);
+    }
+    const currentSource: string = access.readText(relPath);
+    if (currentSource !== content) {
+      TrashService.removePrivateCopy(dst);
+      throw new Error('笔记在删除过程中已变化，已保留原文件：删除前 ' + content.length +
+        ' 字符，当前 ' + currentSource.length + ' 字符');
     }
     try {
       access.remove(relPath);
@@ -194,9 +211,19 @@ export class TrashService {
           TrashService.ensureTrashParents(registry, vaultId, destination);
           const destinationAbs: string = registry.absoluteInTrash(vaultId, destination);
           await TrashService.writePrivateAtomic(destinationAbs, content);
-          if (fileIo.readTextSync(destinationAbs) !== content) {
+          let migratedCopy: string;
+          try {
+            migratedCopy = fileIo.readTextSync(destinationAbs);
+          } catch (error) {
+            const err = error as BusinessError;
             TrashService.removePrivateCopy(destinationAbs);
-            throw new Error('旧回收站副本校验失败，原目录已保留');
+            throw new Error('旧回收站副本读取失败(code=' + (typeof err.code === 'number' ? err.code : -1) +
+              ')，原目录已保留：' + (err.message ?? ''));
+          }
+          if (migratedCopy !== content) {
+            TrashService.removePrivateCopy(destinationAbs);
+            throw new Error('旧回收站副本校验失败，原目录已保留：' +
+              TrashService.describeTextMismatch(content, migratedCopy));
           }
         }
       };
@@ -281,10 +308,13 @@ export class TrashService {
       try {
         restored = access.readText(trashRel);
       } catch (error) {
-        throw new Error('恢复副本校验失败，回收站原件仍保留');
+        const err = error as BusinessError;
+        throw new Error('恢复副本读取失败(code=' + (typeof err.code === 'number' ? err.code : -1) +
+          ')，回收站原件仍保留：' + (err.message ?? ''));
       }
       if (restored !== content) {
-        throw new Error('恢复副本校验失败，回收站原件仍保留');
+        throw new Error('恢复副本校验失败，回收站原件仍保留：' +
+          TrashService.describeTextMismatch(content, restored));
       }
       fileIo.unlinkSync(registry.absoluteInTrash(vaultId, trashRel));
       FullTextSearchService.noteRestored(registry, vaultId, trashRel);
@@ -334,6 +364,42 @@ export class TrashService {
     } catch (error) {
       // Best effort: a verified recovery copy is safer to retain than to lose.
     }
+  }
+
+  /** 两段文本首个不同字符的位置；一方是另一方前缀时返回较短一方的长度。 */
+  private static firstMismatchIndex(expected: string, actual: string): number {
+    const limit: number = Math.min(expected.length, actual.length);
+    let index: number = 0;
+    while (index < limit && expected.charCodeAt(index) === actual.charCodeAt(index)) {
+      index++;
+    }
+    return index;
+  }
+
+  /** 校验失败的具体差异描述：长度、首个差异位置与两侧码点。 */
+  private static describeTextMismatch(expected: string, actual: string): string {
+    const index: number = TrashService.firstMismatchIndex(expected, actual);
+    if (index === expected.length && index === actual.length) {
+      return '内容一致';
+    }
+    if (index === expected.length || index === actual.length) {
+      return '期望 ' + expected.length + ' 字符，读回 ' + actual.length + ' 字符（一方是另一方的前缀）';
+    }
+    return '期望 ' + expected.length + ' 字符，读回 ' + actual.length + ' 字符，首个差异在第 ' + index +
+      ' 位（期望 U+' + expected.charCodeAt(index).toString(16) +
+      '，读回 U+' + actual.charCodeAt(index).toString(16) + '）';
+  }
+
+  /** 差异位置附近的内容窗口；不可打印字符转成 \\uXXXX，便于日志定位真实差异。 */
+  private static escapeAround(text: string, index: number, radius: number): string {
+    const start: number = Math.max(0, index - radius);
+    const end: number = Math.min(text.length, index + radius + 1);
+    let out: string = '';
+    for (let i: number = start; i < end; i++) {
+      const code: number = text.charCodeAt(i);
+      out += code >= 0x20 && code <= 0x7e ? text.charAt(i) : '\\u' + code.toString(16);
+    }
+    return out;
   }
 
   private static enqueue<T>(action: () => Promise<T>): Promise<T> {

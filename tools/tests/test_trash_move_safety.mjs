@@ -23,10 +23,25 @@ const moveText = extractMethod(
   'private static async moveTextToPrivateTrash(registry: VaultRegistry, vaultId: string,',
   '\n  /**\n   * Import legacy in-vault `.trash` notes'
 );
+const firstMismatchIndex = extractMethod(
+  'private static firstMismatchIndex(expected: string, actual: string): number {',
+  '\n  /** 校验失败的具体差异描述'
+);
+const describeTextMismatch = extractMethod(
+  'private static describeTextMismatch(expected: string, actual: string): string {',
+  '\n  /** 差异位置附近的内容窗口'
+);
+const escapeAround = extractMethod(
+  'private static escapeAround(text: string, index: number, radius: number): string {',
+  '\n  private static enqueue<'
+);
 const code = transformSync(`class TrashService {
   static mutationChain = Promise.resolve();
   ${moveToTrash}
   ${moveText}
+  ${firstMismatchIndex}
+  ${describeTextMismatch}
+  ${escapeAround}
   static enqueue(action) { const job = this.mutationChain.then(action); this.mutationChain = job.then(() => {}, () => {}); return job; }
   static existsInTrash(_registry, _vaultId, relPath) { return this.privateFiles.has(relPath); }
   static ensureTrashParents() {}
@@ -52,12 +67,20 @@ function createHarness(options = {}) {
       },
       readTextSync(path) {
         calls.push('verify-private-copy');
+        if (options.privateReadThrows) {
+          const readError = new Error('No such file or directory');
+          readError.code = 13900002;
+          throw readError;
+        }
         return options.privateRead ?? privateFiles.get(path.substring('/private/local/'.length));
       }
     },
     FullTextSearchService: { noteRemoved() { calls.push('search-removed'); } },
     WikiLinkService: { pathRemoved() { calls.push('wiki-removed'); } },
-    hilog: { info() { calls.push('log-trashed'); } },
+    hilog: {
+      info() { calls.push('log-trashed'); },
+      warn() { calls.push('log-verify-mismatch'); }
+    },
     TRASH_DOMAIN: 0,
     TRASH_TAG: 'TrashService'
   });
@@ -109,9 +132,20 @@ test('moveToTrash verifies a private copy and unchanged formal source before rem
   assert.equal(calls.includes('search-removed'), true);
 });
 
-test('a mismatched private copy prevents removal of the formal note', async () => {
+test('a mismatched private copy reports the exact mismatch and prevents removal of the formal note', async () => {
   const { TrashService, registry, calls, getFormal } = createHarness({ privateRead: 'corrupt' });
-  await assert.rejects(() => TrashService.moveToTrash(registry, 'local', 'notes.md'), /副本校验失败/);
+  await assert.rejects(() => TrashService.moveToTrash(registry, 'local', 'notes.md'),
+    /副本校验失败.*期望 6 字符，读回 7 字符，首个差异在第 0 位（期望 U\+62，读回 U\+63）；副本路径 \/private\/local\/notes\.md/);
+
+  assert.equal(calls.includes('log-verify-mismatch'), true);
+  assert.equal(calls.some((call) => call.startsWith('remove-source:')), false);
+  assert.equal(getFormal(), 'before');
+});
+
+test('an unreadable private copy reports the read error code and keeps the formal note', async () => {
+  const { TrashService, registry, calls, getFormal } = createHarness({ privateReadThrows: true });
+  await assert.rejects(() => TrashService.moveToTrash(registry, 'local', 'notes.md'),
+    /副本读取失败\(code=13900002\)，原笔记未删除：No such file or directory；副本路径 \/private\/local\/notes\.md/);
 
   assert.equal(calls.some((call) => call.startsWith('remove-source:')), false);
   assert.equal(getFormal(), 'before');
@@ -119,7 +153,8 @@ test('a mismatched private copy prevents removal of the formal note', async () =
 
 test('a formal source change before removal discards only the redundant private copy', async () => {
   const { TrashService, registry, calls, privateFiles, getFormal } = createHarness({ sourceChanges: true });
-  await assert.rejects(() => TrashService.moveToTrash(registry, 'local', 'notes.md'), /已保留原文件/);
+  await assert.rejects(() => TrashService.moveToTrash(registry, 'local', 'notes.md'),
+    /已保留原文件：删除前 6 字符，当前 7 字符/);
 
   assert.equal(calls.some((call) => call.startsWith('remove-source:')), false);
   assert.equal(calls.includes('remove-private-copy'), true);
