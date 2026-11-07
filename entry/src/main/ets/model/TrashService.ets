@@ -457,7 +457,10 @@ export class TrashService {
         timerId = setTimeout((): void => {
           fail(new Error('回收站写入回调 3s 未触发'));
         }, 3000);
-        stream.write(content, 'utf-8', (error?: BusinessError): void => {
+        // 用 end 而非 write：API26 x86_64 模拟器实测（2026-11-07 探针矩阵）write 的回调
+        // 先于数据落盘触发（finishWrite 后文件仍 0 字节，数据 ≤800ms 后才到），
+        // end 的回调在数据真正写入后才触发；finishWrite 在 end 回调里安全。
+        stream.end(content, 'utf-8', (error?: BusinessError): void => {
           if (error !== undefined && error !== null) {
             fail(new Error(error.message));
           } else {

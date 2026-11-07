@@ -24,7 +24,7 @@ function loadDraftService(files = new Map(), directories = new Set()) {
       AtomicFile: class {
         constructor(path) { this.path = path; }
         startWrite() {
-          return { write: (content, encoding, callback) => { files.set(this.path, content); callback(); } };
+          return { end: (content, encoding, callback) => { files.set(this.path, content); callback(); } };
         }
         finishWrite() {}
         failWrite() { files.delete(this.path); }

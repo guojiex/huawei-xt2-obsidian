@@ -163,12 +163,13 @@ export class NoteService {
   /**
    * 保存笔记全文（M2 自动保存 / 2.3）。
    * 用**官方 `AtomicFile`**（api_notes C1 ✅，API 24 可用）做原子写，**严格照官方示例流**：
-   * `startWrite()` → `stream.write(content, 'utf-8', 回调)` → 回调里 `finishWrite()` 落盘。
+   * `startWrite()` → `stream.end(content, 'utf-8', 回调)` → 回调里 `finishWrite()` 落盘。
    * ⚠️ **绝不能在 finishWrite 前调 `stream.close()`**（2026-10-18 真机 cppcrash SIGSEGV 实证：
    * close+finishWrite 双重释放 native 侧引用，崩溃栈 napi_delete_reference ← free，见
-   * api_notes C1）。`write` 只把数据写进缓冲区，**回调触发才是落盘完成点**，finishWrite
-   * 必须等它；官方示例正是把 finishWrite 放在 write 回调里。
-   * - 空内容**不调 write**（Writable.write 禁空串会抛 401）：startWrite 已建空 tmp，
+   * api_notes C1）。**统一用 `end` 而非 `write` 收尾**（2026-11-07 API26 x86_64 模拟器探针
+   * 实测：write 的回调先于数据落盘触发，finishWrite 后文件仍 0 字节；end 的回调才是数据
+   * 写完点），finishWrite 必须等它；官方示例正是把 finishWrite 放在回调里。
+   * - 空内容**不调 end**（Writable.end 禁空串会抛 401）：startWrite 已建空 tmp，
    *   直接 finishWrite 即把文件截断为 0 字节；
    * - 3s 超时兜底：write 回调不触发时 failWrite 回滚并拒绝，不让 flushSave 永久挂起；
    * - 失败 `failWrite()` 回滚不留 .tmp 残留；崩溃/中断时原文件完好。

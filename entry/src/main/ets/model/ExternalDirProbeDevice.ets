@@ -133,7 +133,7 @@ export class DeviceProbeFs implements ProbeFsLike {
       }
       try {
         // 第二个参数是 encoding 字符串（SDK 重载如此），不是 WriteOptions 对象
-        stream.write(content, 'utf-8', (error?: BusinessError): void => {
+        stream.end(content, 'utf-8', (error?: BusinessError): void => {
           if (error !== undefined && error !== null) {
             fail('write', error as Object);
             return;

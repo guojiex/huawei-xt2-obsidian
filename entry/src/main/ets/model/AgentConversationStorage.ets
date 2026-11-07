@@ -226,7 +226,7 @@ export class AgentConversationStorage {
         if (content.length === 0) {
           finish();
         } else {
-          stream.write(content, 'utf-8', (err?: BusinessError): void => {
+          stream.end(content, 'utf-8', (err?: BusinessError): void => {
             if (err !== undefined && err !== null) {
               fail(err.message);
               return;

@@ -205,7 +205,7 @@ export class GitFsBackend {
         commit();
       } else {
         try {
-          stream.write(content, 'utf-8', (error?: BusinessError): void => {
+          stream.end(content, 'utf-8', (error?: BusinessError): void => {
             if (error !== undefined && error !== null) {
               fail('write', error);
               return;

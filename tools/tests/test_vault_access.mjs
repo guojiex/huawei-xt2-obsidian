@@ -182,7 +182,7 @@ function fakeFs(tree) {
         record,
         startWrite() {
           return {
-            write(content, encoding, callback) {
+            end(content, encoding, callback) {
               record.wrote += content;
               record.encoding = encoding;
               if (this.callbackError) throw new Error('unused');
@@ -382,7 +382,7 @@ test('writeAtomic finishes the AtomicFile and resolves', async () => {
   assert.equal(fs.latestAtomicRecord.finish, 1);
 });
 
-test('writeAtomic commits an empty file without calling WriteStream.write', async () => {
+test('writeAtomic commits an empty file without calling WriteStream.end', async () => {
   const { vault, fs } = createAccess({ [ROOT + '/a.md']: 'old' });
   await vault.writeAtomic('a.md', '');
   assert.equal(fs.latestAtomicRecord.finish, 1);
@@ -402,7 +402,7 @@ test('writeAtomic rolls back with failWrite when the stream reports an error', a
     return {
       startWrite() {
         return {
-          write(content, encoding, callback) {
+          end(content, encoding, callback) {
             callback(new Error('disk full'));
           },
           close(callback) { callback(); }

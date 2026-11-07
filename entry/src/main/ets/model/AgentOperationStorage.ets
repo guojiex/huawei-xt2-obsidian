@@ -377,7 +377,7 @@ export class AgentOperationStorage {
         if (content.length === 0) {
           finish();
         } else {
-          stream.write(content, 'utf-8', (err?: BusinessError): void => {
+          stream.end(content, 'utf-8', (err?: BusinessError): void => {
             if (err !== undefined && err !== null) {
               hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
                 'AtomicFile write 回调失败 kind=%{public}s', recordKind);

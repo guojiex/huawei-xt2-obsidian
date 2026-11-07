@@ -382,7 +382,7 @@ export class NoteDraftService {
         timerId = setTimeout((): void => {
           fail('草稿写入回调超时');
         }, 3000);
-        stream.write(content, 'utf-8', (err?: BusinessError): void => {
+        stream.end(content, 'utf-8', (err?: BusinessError): void => {
           if (err !== undefined && err !== null) {
             fail(err.message);
             return;

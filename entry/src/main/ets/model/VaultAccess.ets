@@ -251,9 +251,11 @@ export interface SandboxFileHandle {
   fd: number;
 }
 
-/** AtomicFile / WriteStream 的形状：落盘由回调式 write + finishWrite 收尾。 */
+/** AtomicFile / WriteStream 的形状：落盘由回调式 end（flush 收尾）+ finishWrite 收尾。
+ * 2026-11-07 API26 x86_64 模拟器探针实测：write 的回调先于落盘触发（end 回调才是写完点），
+ * 故统一走 end。 */
 export interface SandboxWriteStreamLike {
-  write(content: string, encoding: string, callback: (err?: Error) => void): void;
+  end(content: string, encoding: string, callback: (err?: Error) => void): void;
 }
 
 export interface SandboxAtomicFileLike {
@@ -559,7 +561,7 @@ export class SandboxVaultAccess implements VaultAccess {
         timerId = setTimeout((): void => {
           fail(new Error('write 回调 3s 未触发'));
         }, 3000);
-        stream.write(content, 'utf-8', (writeError?: Error): void => {
+        stream.end(content, 'utf-8', (writeError?: Error): void => {
           if (writeError !== undefined && writeError !== null) {
             fail(writeError);
           } else {

@@ -664,7 +664,7 @@ export class NoteShareService {
         if (content.length === 0) {
           commit();
         } else {
-          stream.write(content, 'utf-8', (err?: BusinessError): void => {
+          stream.end(content, 'utf-8', (err?: BusinessError): void => {
             if (err !== undefined && err !== null) {
               fail(err.message);
               return;

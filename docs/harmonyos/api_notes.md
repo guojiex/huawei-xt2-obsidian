@@ -546,6 +546,20 @@ try {
 触发条件，也不证明错误来自临时文件或某一内部操作。API 26 模拟器根因仍未知；不外推至 API 24
 运行时或 XT2。
 
+**2026-11-07 x86_64 模拟器 write 回调早于落盘（🔴 探针矩阵实测，全工程改用 `end` 收尾）**：
+Windows x86_64 Huawei_TripleFold 模拟器（API 26）上，`WriteStream.write(content, 'utf-8', cb)`
+的回调在数据落盘**之前**触发：回调后立即读文件 size=0 / 内容为空，数据约 ≤800ms 后才真正
+出现（late 读 size/内容全恢复）。此前 arm64 镜像（10-18 / 10-22）「回调触发 = 落盘完成」的
+实测在该镜像**不成立**——同一行为按镜像分叉。后果：finishWrite 在 write 回调里执行时，改名
+落位的 tmp 是空文件；「写后立即读回校验」的场景（回收站删除）当场失败，无人立即读回的场景
+（样例导入）表现为「成功」但崩溃窗口内丢数据。探针 7 组实验：write 各变体（utf-8/utf8、
+长短内容、中英路径）全部复现「回调早、数据晚」；**`stream.end(content, 'utf-8', cb)` 回调内
+立即读 size/内容全对**（end 回调才是数据写完点，finishWrite 安全）；`writeSync` 对照正常。
+修复：8 处 AtomicFile 调用点（TrashService / VaultAccess / AgentConversationStorage /
+AgentOperationStorage / NoteDraftService / NoteShareService / GitFsBackend /
+ExternalDirProbeDevice）统一 `write` → `end`；仍保留 3s 超时、空内容直接 finishWrite、
+全程禁 `close()`。API 24 / XT2 真机的 end 语义待回归验证。
+
 ### C2 目录删除与 `rmdirSync` ⚠️（SDK 声明核实，未作设备故障实验）
 
 - 本机 HarmonyOS SDK 的 `ets/api/@ohos.file.fs.d.ts` 声明 `rmdirSync(path: string)`（since 9，低于 API 24），无递归参数；API 文本明确说明同步删除目录及其子目录和文件，异常列表包含 13900032 “Directory not empty”。
@@ -1469,7 +1483,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 | **桥接代理注册时机** | ✅ `onControllerAttached`（页面加载前，单次加载即注入）；❌ `onPageEnd` 注册要 `refresh()` 且页面加载两遍（**L-4 实测**） | 已落地（EditorWebView） |
 | **控件 inset 的写法** | ✅ 外包层 `padding` 做 inset；❌ 控件自身 `width('100%')` + 水平 `margin`（占宽 = 父宽 + 2×margin，溢出）（**L-5 实测**） | 已落地（VaultSidebar 库切换卡片） |
 | **registerJavaScriptProxy 签名** | ✅ 位置参数版 `(obj, name, methodList, asyncMethodList?, permission?)`；options 对象版是 deprecated `WebController` 的，编译直接错 | 已是现状 |
-| **AtomicFile 用法** | ✅ **回调式 write + 回调内 `finishWrite()`，全程禁 `close()`**（close+finish = double free → SIGSEGV，C1 实测）；空内容直接 finishWrite；写路径必须超时+串行化 | 已落地（NoteService.saveNote） |
+| **AtomicFile 用法** | ✅ **回调式 `end` + 回调内 `finishWrite()`，全程禁 `close()`**（close+finish = double free → SIGSEGV，C1 实测；x86_64 模拟器 write 回调早于落盘，2026-11-07 改 end，C1 探针矩阵）；空内容直接 finishWrite；写路径必须超时+串行化 | 已落地（全工程 8 处调用点） |
 | **CodeMirror state 重建剥 listener** | ✅ updateListener 进 `extensionsFor()` 内部 + ArkTS 侧 ready 去重（双 ready 重建会永久丢 change 事件，**L-6 实测**） | 已落地（mdeditor） |
 | **@Builder 传参刷新** | ✅ 需随状态刷新的参数用 `$$: 命名 interface` 按引用传；按值传参是调用时快照（**L-7 实测**） | 已落地（PaneHead） |
 | **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ 文本注入 / ArkWeb 渲染在模拟器全不可用（**L-8**）；编辑器/输入法验证一律真机 | 已定案 |
