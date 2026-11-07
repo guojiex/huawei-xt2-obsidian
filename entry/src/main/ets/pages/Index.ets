@@ -9520,6 +9520,7 @@ struct Index {
             .width(Space.s4 * this.noteNavigationProgress())
             .margin({ left: -Space.s2 * this.noteNavigationProgress(),
               right: -Space.s2 * this.noteNavigationProgress() })
+            .zIndex(4)
             .enabled(this.focused ? this.focusNavigationOpen : !this.sidebarCollapsed)
             .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
@@ -9576,6 +9577,7 @@ struct Index {
       })
         .width(this.contentHandleVisible() ? Space.s4 : 0)
         .margin(this.contentHandleVisible() ? { left: -Space.s2, right: -Space.s2 } : { left: 0, right: 0 })
+        .zIndex(4)
         .enabled(this.contentHandleVisible())
         .visibility(this.contentHandleVisible() ? Visibility.Visible : Visibility.Hidden)
 
