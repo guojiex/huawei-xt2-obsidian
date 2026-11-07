@@ -2056,3 +2056,29 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - 判别法（不要误判为应用白屏 bug）：像素统计截图（整屏 std=0 = 均匀色）+ `uitest dumpLayout` UI 树完整 + `hidumper -s RenderService -a 'screen'` 与 WindowManagerService 几何对不上 → 模拟器合成层问题。
 - 恢复：`hdc shell reboot` 重启模拟器即恢复。**注意重启会把系统字号设置复位为标准**（字号实测时需重拖滑条）。
 - 另：`aa start` 设置需用全名 `-a com.huawei.hmos.settings.MainAbility -b com.huawei.hmos.settings`，短名 `MainAbility` 报 10104001 ability 不存在。
+
+## AB 组：应用启动页（startWindow 简易 / 增强，2026-11-07 官方文档核对）
+
+> 背景：启动页重设计（v2 原型先行，见 [启动页设计](../prototype/v2/启动页设计.md)）。来源：官方文档「配置应用启动页」（本机 `devecocli docs`）+ Code Linter 规则；**未做真机 / 模拟器实测**，实测后更新状态标记。设计稿当前按「维持简易启动页」绘制，增强启动页为可选升级路线。
+
+### AB1 启动页分简易与增强两类 ✅ 文档明确 / ⚠️ 未实测
+
+- **简易启动页**：`module.json5` abilities 的 `startWindowIcon` + `startWindowBackground`（模板默认，即本工程现状）。图标**按实际大小居中显示，不随窗口尺寸缩放**；背景**不建议透明色**。全屏素材、需要随窗口缩放的元素不建议走简易启动页。
+- **增强启动页**：同标签 `startWindow` 字段指向二级 JSON（推荐 `resources/base/profile/start_window.json`，配置 `"startWindow": "$profile:start_window"`），**API 19 起**，本工程 API 24 可用。配置 `startWindow` 后 `startWindowIcon` / `startWindowBackground` **失效**。
+- FAQ 佐证：启动页图标显示异常、平板显示不全、周边白边等 FAQ 均指向「图标按实际大小显示、无自适应缩放」这一行为（faqs-ability-159 / faqs-arkui-501 / faqs-ability-119）。
+
+### AB2 增强启动页字段 ✅ 文档明确 / ⚠️ 未实测（均 API 19 起，另注除外）
+
+- `startWindowAppIcon`：上部图标，系统侧缩放至完全显示（保持宽高比）；展示区域尺寸由系统按窗口选取：**128vp / 192vp / 256vp 见方**。与插画同时配置时**只显示图标**。
+- `startWindowIllustration`：上部插画；超出展示区等比缩小，未超出保持原尺寸。
+- `startWindowBrandingImage`：底部品牌图；超出展示区等比缩小；**窗口高度不足 300vp 时隐藏**。
+- `startWindowBackgroundColor`：增强背景色，填充整窗、显示层级最低、不建议透明；**如未配置则增强启动页配置整体不生效，回退简易启动页**。
+- `startWindowBackgroundImage` / `startWindowBackgroundImageFit`：背景图与填充方式（`Contain` / `Cover` / `Auto` / `Fill` / `ScaleDown` / `None`，默认 `Cover`）。
+- `startWindowType`（API 20 起）：`REQUIRED_SHOW` / `REQUIRED_HIDE` / `OPTIONAL_SHOW`，仅 PC/2in1 或平板的自由多窗模式下使用，默认 `REQUIRED_SHOW`。
+- `startWindowColorModeType`（API 20 起）：`FOLLOW_SYSTEM` / `FOLLOW_APPLICATION`，默认跟随系统深浅色。
+
+### AB3 启动页图片的性能约束 ✅ Code Linter 规则明确
+
+- **启动页图片分辨率建议不超过 256×256**（`@performance/start-window-icon-check`）：启动页图片资源的解码包含在应用进程创建里，图片越大冷启动时延越长。增强启动页同样建议 jpg / png、控制分辨率。
+- 本工程现状 `startIcon.png` 为 152×152，达标；重设计不得引入超限的大图启动素材。
+
