@@ -2,6 +2,7 @@
 
 > 本目录维护**模拟器回归测试用例**：在 API26 模拟器上对曜石笔记做版本回归时「测什么、怎么测、什么不算数」。
 > 用例见 [模拟器回归用例.md](模拟器回归用例.md)。本 README 只定环境、边界与记录规则，不复制用例。
+> 自动化子集见 [UI自动化测试.md](UI自动化测试.md)（hypium 套件 + `tools/uitest.ps1`，只覆盖 x86 可达冒烟，不替代本目录人工回归）。
 > 执行入口 Skill：[.agents/skills/xt2-emulator-regression/SKILL.md](../../.agents/skills/xt2-emulator-regression/SKILL.md)（不支持自动发现的模型按该文件执行）。
 
 ## 定位与边界

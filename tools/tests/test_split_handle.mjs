@@ -46,6 +46,9 @@ test('zero-width handles clip their grip so a collapsed sidebar hides the nav ha
   assert.match(index, /\.visibility\(this\.noteNavigationProgress\(\) > 0 \? Visibility\.Visible : Visibility\.Hidden\)/);
   assert.match(index, /\.visibility\(this\.contentHandleVisible\(\) \? Visibility\.Visible : Visibility\.Hidden\)/);
   assert.match(index, /\.width\(Space\.s4 \* this\.noteNavigationProgress\(\)\)/);
+  // 仪器化 UI 回归（UiLaunch.split_handle_hidden_when_sidebar_collapsed）按 id 定位
+  assert.match(index, /\.id\('nav-split-handle'\)/);
+  assert.match(index, /\.id\('content-split-handle'\)/);
 });
 
 test('split readout reports ratios, pane widths, and boundary causes', () => {

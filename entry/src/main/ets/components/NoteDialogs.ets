@@ -266,6 +266,7 @@ export struct CreateNoteDialog {
         .padding({ left: Space.s3, right: Space.s3 })
         .backgroundColor($r('app.color.bg_secondary'))
         .borderRadius(Radius.control)
+        .id('note-create-input')
         .margin({ top: Space.s2 })
         .onChange((value: string) => {
           this.rawName = value;

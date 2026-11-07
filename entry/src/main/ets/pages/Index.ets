@@ -9540,6 +9540,7 @@ struct Index {
             .zIndex(4)
             .enabled(this.focused ? this.focusNavigationOpen : !this.sidebarCollapsed)
             .visibility(this.noteNavigationProgress() > 0 ? Visibility.Visible : Visibility.Hidden)
+            .id('nav-split-handle')
             .animation({ duration: this.workspaceTransitionDuration(), curve: Motion.navCurve })
 
           Column() {
@@ -9598,6 +9599,7 @@ struct Index {
         .zIndex(4)
         .enabled(this.contentHandleVisible())
         .visibility(this.contentHandleVisible() ? Visibility.Visible : Visibility.Hidden)
+        .id('content-split-handle')
 
       Column() {
         this.RightWorkspacePane()

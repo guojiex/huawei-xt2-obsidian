@@ -543,6 +543,7 @@ export struct VaultSidebar {
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
           .borderRadius(Radius.icon)
+          .id('vault-sidebar-search')
           .onClick((): void => { this.onOpenSearch(); })
           .accessibilityText('搜索笔记')
           Row() {
@@ -553,6 +554,7 @@ export struct VaultSidebar {
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
           .borderRadius(Radius.icon)
+          .id('vault-sidebar-new-note')
           .onClick(() => {
             this.onCreateNote();
           })
