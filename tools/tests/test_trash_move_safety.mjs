@@ -46,7 +46,10 @@ function createHarness(options = {}) {
     module: { exports: {} },
     fileIo: {
       accessSync(path) { calls.push(`private-root-exists:${path}`); return false; },
-      mkdirSync(path) { calls.push(`mkdir-private-root:${path}`); },
+      mkdirSync(path, recursive) {
+        calls.push(`mkdir-private-root:${path}`);
+        if (recursive === true) { calls.push('mkdir-private-root-recursive'); }
+      },
       readTextSync(path) {
         calls.push('verify-private-copy');
         return options.privateRead ?? privateFiles.get(path.substring('/private/local/'.length));
@@ -83,6 +86,17 @@ function createHarness(options = {}) {
   };
   return { TrashService, registry, access, calls, privateFiles, getFormal: () => formal };
 }
+
+test('moveToTrash creates the trash root with a recursive mkdir so a missing parent cannot break deletion', async () => {
+  const { TrashService, registry, calls } = createHarness();
+  await TrashService.moveToTrash(registry, 'local', 'notes.md');
+
+  const mkdirIndex = calls.findIndex((call) => call.startsWith('mkdir-private-root:'));
+  assert.ok(mkdirIndex >= 0, 'trash root mkdir was not called');
+  assert.equal(calls.includes('mkdir-private-root-recursive'), true,
+    'trash root must be created with mkdirSync(path, true); a single-level mkdir throws ENOENT ' +
+    'when filesDir/trash does not exist yet (2026-11-07 regression: every delete failed)');
+});
 
 test('moveToTrash verifies a private copy and unchanged formal source before removing it', async () => {
   const { TrashService, registry, calls, getFormal } = createHarness();

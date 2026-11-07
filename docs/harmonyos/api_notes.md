@@ -631,6 +631,15 @@ let secret = asset.querySync(query)[0].get(asset.Tag.SECRET) as Uint8Array;
 
 来源：[2026-11-02 六组问答归档](qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md) §一。
 
+### C7 `mkdirSync` 单级 vs 递归 ✅（2026-11-07 模拟器实测，回收站删除全败根因）
+
+本机 SDK `@ohos.file.fs.d.ts` 声明核对 + API26 模拟器实测：
+
+- `mkdirSync(path)`（since 9）**只创建一级目录**，父目录缺失时抛 ENOENT（`code: 13900002`），不会自动补建。
+- `mkdirSync(path, true)`（`recursion` 参数，**since 11**，API 24 可用 ✅）逐级补建缺失的父目录。
+- **实测教训**：v1.5 把回收站搬到 `filesDir/trash/<vaultKey>` 后，`TrashService` 仍用单级 `mkdirSync` 建回收站根，而 `filesDir/trash` 父目录无人创建 → 全新安装上**第一次删除笔记必然 ENOENT**，且被上层吞成「原因未确定」。回归被 Node mock 测试掩盖（mock 的 `mkdirSync` 忽略参数、总是成功）。修复：`mkdirSync(trashRoot, true)`（TrashService 两处），测试补递归断言。
+- 通用规则：**凡可能一次创建多级的目录（目标目录的父目录不保证存在），必须传 `recursion: true`**；父目录由上游确保存在时单级即可。
+
 ---
 
 ## D 组：HAR 打包与 ohpm 发布

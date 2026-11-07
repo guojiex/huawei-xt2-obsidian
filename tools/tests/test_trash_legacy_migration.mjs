@@ -49,7 +49,10 @@ function createHarness({ sourceTree = {}, privateTree = {}, corruptCopy = false 
     calls,
     fileIo: {
       accessSync(path) { return privateFiles.has(path); },
-      mkdirSync(path) { privateFiles.set(path, null); },
+      mkdirSync(path, recursive) {
+        privateFiles.set(path, null);
+        if (recursive === true) { calls.push(['mkdir-recursive', path]); }
+      },
       readTextSync(path) {
         if (!privateFiles.has(path) || privateFiles.get(path) === null || privateFiles.get(path)?.symbolicLink) {
           throw new Error('not a file');
@@ -116,6 +119,8 @@ test('copies and verifies legacy notes, including hidden descendants, while reta
   assert.equal(harness.privateFiles.has('/private/vault/foreign.bin'), false);
   assert.deepEqual(Array.from(harness.sourceFiles.entries()), before);
   assert.equal(harness.calls.filter(([kind]) => kind === 'write').length, 2);
+  assert.equal(harness.calls.filter(([kind]) => kind === 'mkdir-recursive').length >= 1, true,
+    'legacy trash root must be created with mkdirSync(path, true) so a missing filesDir/trash parent cannot fail migration');
 });
 
 test('preserves a different private item by choosing a numbered path and is idempotent', async () => {

@@ -7742,10 +7742,13 @@ struct Index {
     }
   }
 
-  /** 注册表操作失败：展示固定阶段与状态说明，不读取异常原文。 */
-  private toastRegistryError(prefix: string, _error: Object,
+  /** 注册表操作失败：用户提示用固定阶段与状态说明；异常原文只进私有日志，不上面向用户的提示。 */
+  private toastRegistryError(prefix: string, error: Object,
     operation: RecentErrorOperation = 'file', phase: RecentErrorPhase = 'delete'): void {
-    hilog.warn(DOMAIN, TAG, '%{public}s', prefix);
+    // 码值进公开日志；异常原文只走 %{private}s（发布日志自动打码），避免下次故障无据可查。
+    const err = error as BusinessError;
+    hilog.warn(DOMAIN, TAG, '%{public}s code=%{public}d message=%{private}s', prefix,
+      typeof err?.code === 'number' ? err.code : -1, err?.message ?? '');
     let nextStep: RecentErrorNextStep = 'check_status';
     let detail: string = '操作结果未确认；请先检查当前知识库和文件列表，再决定是否重试。';
     switch (prefix) {

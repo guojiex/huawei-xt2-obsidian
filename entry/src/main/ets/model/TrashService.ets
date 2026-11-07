@@ -89,10 +89,12 @@ export class TrashService {
         target = stem + '-' + n + ext;
       }
     }
-    // 回收站根必须先建：顶层文件没有父段可补建（ensureTrashParents 循环不跑）。
+    // 回收站根必须先建：顶层文件没有父段可补建（ensureTrashParents 循环不跑）；
+    // recursion=true 同时补建缺失的 filesDir/trash 父目录（mkdirSync 单级版会 ENOENT，
+    // 2026-11-07 模拟器实测删除全败的根因）。
     const trashRoot: string = registry.trashDirOf(vaultId);
     if (!fileIo.accessSync(trashRoot)) {
-      fileIo.mkdirSync(trashRoot);
+      fileIo.mkdirSync(trashRoot, true);
     }
     TrashService.ensureTrashParents(registry, vaultId, target);
     const dst: string = registry.absoluteInTrash(vaultId, target);
@@ -187,7 +189,7 @@ export class TrashService {
           }
           const trashRoot: string = registry.trashDirOf(vaultId);
           if (!fileIo.accessSync(trashRoot)) {
-            fileIo.mkdirSync(trashRoot);
+            fileIo.mkdirSync(trashRoot, true);
           }
           TrashService.ensureTrashParents(registry, vaultId, destination);
           const destinationAbs: string = registry.absoluteInTrash(vaultId, destination);
