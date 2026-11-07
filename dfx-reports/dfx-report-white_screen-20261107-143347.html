@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DFX 故障分析报告 - 非崩溃型白屏（WhiteScreen）</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+       color: #1f2328; background: #f6f8fa; margin: 0; padding: 24px; line-height: 1.65; }
+.layout { max-width: 1232px; margin: 0 auto; display: flex; gap: 32px; align-items: flex-start; }
+.page { flex: 1 1 auto; min-width: 0; max-width: 960px; background: #fff; border: 1px solid #d0d7de;
+        border-radius: 10px; padding: 32px 40px; box-shadow: 0 1px 3px rgba(31,35,40,.08); }
+h1 { font-size: 22px; border-bottom: 1px solid #d8dee4; padding-bottom: 10px; margin-top: 0; }
+h2 { font-size: 18px; border-bottom: 1px solid #eaeef2; padding-bottom: 6px; margin-top: 28px; }
+h3 { font-size: 16px; margin-top: 22px; }
+h4, h5, h6 { font-size: 14px; margin-top: 18px; }
+h1, h2, h3, h4, h5, h6 { scroll-margin-top: 16px; }
+.meta { color: #57606a; font-size: 13px; margin-bottom: 20px; }
+.meta .badge { display: inline-block; background: #ddf4ff; color: #0969da; border: 1px solid #54aeff;
+               border-radius: 999px; padding: 1px 10px; margin-right: 10px; font-weight: 600; }
+.table-wrap { overflow-x: auto; margin: 12px 0; }
+table { border-collapse: collapse; width: 100%; margin: 0; font-size: 14px; }
+th, td { border: 1px solid #d8dee4; padding: 6px 12px; text-align: left; vertical-align: top; }
+th { background: #f6f8fa; }
+code { font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Consolas, monospace;
+       background: #eff1f3; border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+pre { background: #f6f8fa; border: 1px solid #d8dee4; border-radius: 8px; padding: 14px 16px;
+      overflow: auto; line-height: 1.5; max-height: 70vh; }
+pre code { background: none; padding: 0; font-size: 13px; white-space: pre; }
+.tok-kw { color: #cf222e; font-weight: 600; }
+.tok-str { color: #0a3069; }
+.tok-com { color: #6e7781; font-style: italic; }
+.tok-num { color: #0550ae; }
+.diff-ins { color: #116329; background: #dafbe1; display: block; }
+.diff-del { color: #82071e; background: #ffebe9; display: block; }
+.diff-hunk { color: #0550ae; background: #ddf4ff; display: block; }
+.diff-file { color: #57606a; background: #eff1f3; display: block; }
+.diff-txt { display: block; }
+hr { border: none; border-top: 1px solid #d8dee4; margin: 20px 0; }
+blockquote { border-left: 3px solid #54aeff; background: #f6f8fa; color: #57606a;
+             margin: 12px 0; padding: 8px 16px; border-radius: 0 6px 6px 0; }
+blockquote p { margin: 4px 0; }
+.footer { color: #6e7781; font-size: 12px; margin-top: 32px; border-top: 1px solid #eaeef2; padding-top: 12px; }
+.toc { flex: 0 0 240px; position: sticky; top: 24px; max-height: calc(100vh - 48px);
+       overflow-y: auto; font-size: 13px; line-height: 1.5; padding: 6px 0 6px 14px;
+       border-left: 2px solid #eaeef2; }
+.toc:empty { display: none; }
+.toc .toc-title { font-weight: 600; color: #1f2328; margin-bottom: 6px; font-size: 12px;
+                  letter-spacing: .5px; }
+.toc a { display: block; color: #57606a; text-decoration: none; padding: 3px 6px; border-radius: 6px; }
+.toc a:hover { color: #0969da; background: #f6f8fa; }
+.toc a.active { color: #0969da; background: #ddf4ff; font-weight: 600; }
+.toc a.toc-1 { font-weight: 600; }
+.toc a.toc-2 { padding-left: 16px; }
+@media (max-width: 1200px) { .toc { display: none; } }
+@media print {
+  body { background: #fff; padding: 0; }
+  .layout { display: block; max-width: none; }
+  .page { border: none; box-shadow: none; max-width: none; }
+  .toc { display: none; }
+  pre { max-height: none; }
+  .table-wrap { overflow: visible; }
+  th, td { overflow-wrap: anywhere; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<div class="page">
+<h1>DFX 故障分析报告 - 非崩溃型白屏（WhiteScreen）</h1>
+<div class="meta"><span class="badge">非崩溃型白屏（WhiteScreen）</span>生成时间：2026-11-07 14:33:47</div>
+<p>﻿﻿# 非崩溃型白屏分析报告</p>
+<h2 id="s-1">症状与检视路径</h2>
+<ul><li><strong>白屏发生时机</strong>：用户在双笔记对照布局使用期间（约 14:02-14:04 首次察觉并报告）；此前 13:46-13:47 侧栏安装了新构建 <code>a5f999ca-dirty</code>（含 <code>846c4b0</code> 回收站重试 + <code>36feeb3</code> 分栏把手 zIndex 修复）并重启应用（pid 21578，13:47）。疑似自该时点起 Web 内容区即未再上屏。</li><li><strong>进程存活状态</strong>：存活。跨 3 个应用进程（9627、17833、重启后新进程），当日 faultlogger 无新 JSCrash/CppCrash/AppFreeze。</li><li><strong>所走检视路径</strong>：症状入口（非崩溃型白屏，进程存活）→ 白屏存活判定 → source-first + 设备侧取证。未走崩溃采集链路。</li><li><strong>检视步骤</strong>：UI 树 vs 屏幕像素对比 → 布局对照实验（双栏/单栏/会话清空，冷启动 ×3）→ 像素采样定量（内容区纯黑 0,0,0 vs 正常页面 253±、基线截图 253.3/255）→ chromium 产帧日志核查 → 模拟器整机重启鉴别实验。</li></ul>
+<h2 id="s-2">根因分析</h2>
+<p><strong>未命中源码高信号模式 1-5</strong>（<code>loadContent</code>/<code>hideNavBar</code>/<code>navDestination</code>/路由名均正常）；根因在环境层。证据链：</p>
+<ol><li><strong>内容区纯黑 (0,0,0)</strong>，而 UI 树中 Web DOM 完整（公式与流程图标题、MathML 公式、Mermaid 全部在树）→ 不是内容缺失；应用为浅色主题，纯黑即零填充缓冲。</li><li><strong>Web 桥接存活</strong>（<code>postMessage</code>、<code>ExecuteJavaScript</code>、<code>NoteService 读取笔记成功</code>）→ 不是 JS/桥接死。</li><li><strong>chromium 渲染管线在产帧</strong>（<code>eglSwapBuffers</code> 17-19ms、<code>resize_output_surface 1024x1753</code>）→ 不是渲染进程死；帧被产出但未进入窗口合成。</li><li><strong>原生 ArkUI 全部正常</strong>（标题栏、标签栏、欢迎面板「把空间，留给思考。」、新建笔记按钮、最近打开列表、字数统计）→ 不是窗口/路由/页面结构问题。</li><li><strong>应用级强杀 + 冷启动 ×3（跨 3 个进程）均不恢复</strong> → 不是应用进程内状态。</li><li><strong>模拟器整机重启后，同一构建（未重装）立即恢复正常渲染</strong>：左栏笔记「公式与流程图.md」内容完整可见（标题、段落、行内/块级公式 E=mc²、Mermaid 代码块），右栏欢迎面板正常 → <strong>系统级 Web surface 合成状态损坏</strong>。</li></ol>
+<p><strong>结论</strong>：x86 模拟器系统层（render service / ArkWeb surface 合成链路）状态损坏，Web 组件的合成输出未上屏，内容区显示零填充黑缓冲；chromium 侧持续产帧。与 App 构建 <code>a5f999ca-dirty</code> 无关——同一构建整机重启后渲染正常。</p>
+<p><strong>关联影响</strong>：用户此前报告的三个问题（简单模式不能编辑笔记 / 关闭笔记后无法打开笔记 / 弹窗「放弃并重新载入」点击无反应）测试期恰在黑屏窗口内（13:47 起）。「不能编辑」「打不开」的症状可能部分或全部由黑屏引起，需在恢复正常渲染后复测再定级。弹窗静默路径（<code>reloadStaleVaultNote</code> Index.ets:2056 守卫不满足时无日志 return；<code>showEditorMismatchRecovery</code> 触发链路亦无日志）是独立的真实源码问题，与黑屏无关。</p>
+<h2 id="s-3">修复建议</h2>
+<ul><li><strong>环境处置</strong>：同症状（内容区纯黑 0,0,0 + DOM 活 + 原生正常 + 冷启动不恢复）直接整机重启模拟器，勿反复重装应用或回滚构建。</li><li><strong>工程记录</strong>：将该鉴别流程沉淀入 <code>xt2-emulator-regression</code> skill（黑屏鉴别：像素采样 + DOM 存活对照 + 冷启动×3 不恢复 → 重启模拟器；进程重启不等于系统层复位）。</li><li><strong>源码遗留</strong>（独立问题，非白屏根因）：<code>reloadStaleVaultNote</code> 静默守卫、mismatch 弹窗触发与动作路径补 <code>hilog</code> 错误日志（用户已明确要求）。</li></ul>
+<h2 id="s-4">验证状态</h2>
+<ul><li><strong>根因匹配</strong>：环境级根因，无源码不变式违反（模式 1-5 均未命中）。</li><li><strong>构建验证</strong>：不适用（无代码改动；构建 <code>a5f999ca-dirty</code> 重启前后未变）。</li><li><strong>运行时验证</strong>：<strong>通过</strong> —— 模拟器整机重启后同一构建冷启动，截图经视觉核验：左栏笔记「公式与流程图.md」内容完整可见（标题、段落、行内/块级公式 E=mc²、Mermaid 代码块），右栏欢迎面板与「最近打开」列表均正常渲染。</li></ul>
+<div class="footer">本报告由 DevEco Code DFX 故障分析生成 · 代码块含语法高亮，修复建议含源码差异对比</div>
+</div>
+<nav class="toc" id="dfx-toc"><div class="toc-title">目录</div>
+<a href="#s-1" class="toc-1">症状与检视路径</a>
+<a href="#s-2" class="toc-1">根因分析</a>
+<a href="#s-3" class="toc-1">修复建议</a>
+<a href="#s-4" class="toc-1">验证状态</a></nav>
+</div>
+<script>
+(function () {
+  var nav = document.getElementById("dfx-toc");
+  var links = nav ? Array.prototype.slice.call(nav.querySelectorAll("a[href^='#']")) : [];
+  if (!links.length) return;
+  var targets = [];
+  links.forEach(function (a) {
+    var el = document.getElementById(a.getAttribute("href").slice(1));
+    if (el) targets.push(el);
+  });
+  function update() {
+    var pos = window.scrollY + 96;
+    var idx = 0;
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].offsetTop <= pos) idx = i;
+    }
+    links.forEach(function (a, i) { a.classList.toggle("active", i === idx); });
+  }
+  window.addEventListener("scroll", update, { passive: true });
+  update();
+})();
+</script>
+</body>
+</html>
