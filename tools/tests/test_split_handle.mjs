@@ -97,3 +97,18 @@ test('split handles support keyboard adjustment, limits, reset, and current acce
   assert.match(index, /setSplitKeyboardLimit\('nav', maximum\)/);
   assert.match(index, /setSplitKeyboardLimit\('content', maximum\)/);
 });
+
+test('v1.38 38.3: only one split handle drags at a time and the idle rail dims', () => {
+  assert.match(splitHandle, /dragAllowed: \(\) => boolean = \(\) => true;/);
+  assert.match(splitHandle, /@Prop railDimmed: boolean = false;/);
+  assert.match(splitHandle, /if \(!this\.dragAllowed\(\)\) \{\s*\n\s*return;\s*\n\s*\}/);
+  assert.match(splitHandle, /\.onActionUpdate\(\(event: GestureEvent\): void => \{\s*\n\s*if \(!this\.dragging\) \{\s*\n\s*return;\s*\n\s*\}/);
+  assert.match(splitHandle, /\.opacity\(this\.railDimmed && !this\.dragging \? 0\.15 : 1\)/);
+  assert.equal((index.match(/dragAllowed: \(\): boolean => !this\.splitDragging,/g) ?? []).length, 2);
+  assert.equal((index.match(/railDimmed: this\.splitDragging,/g) ?? []).length, 2);
+});
+
+test('v1.38 38.1/38.3: content handle hides on single-screen layouts and when the area right of nav cannot fit two panes', () => {
+  assert.match(index, /private contentHandleVisible\(\): boolean \{\s*\n\s*return \(this\.breakpoint === Breakpoint\.LG \|\| this\.breakpoint === Breakpoint\.MD\) &&\s*\n\s*!this\.focused && this\.referenceVisible && !this\.isSingleScreenLayout\(\) &&\s*\n\s*this\.noteContentWidth\(\) >= Size\.paneMinW \* 2;/);
+  assert.match(tokens, /paneMinW: number = 240/);
+});

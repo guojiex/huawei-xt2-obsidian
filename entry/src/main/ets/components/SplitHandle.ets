@@ -20,6 +20,10 @@ export struct SplitHandle {
   @Prop readoutStatus: string = '';
   /** 胶囊相对容器垂直中心的偏移（vp）：导航把手用它把胶囊对齐到正文区中心（Appbar/Statusbar 不在其容器内） */
   @Prop gripCenterOffsetY: number = 0;
+  /** v1.38 38.3 单拖门控：返回 false 时本次手势不进入拖动（另一条分隔条拖动中）。 */
+  dragAllowed: () => boolean = () => true;
+  /** v1.38 38.3 轨线弱化：另一条分隔条拖动中时，本条静止轨线降到 0.15 透明度。 */
+  @Prop railDimmed: boolean = false;
 
   @State lastTapAt: number = -1;
   @State dragging: boolean = false;
@@ -32,6 +36,7 @@ export struct SplitHandle {
         .width(this.enhanced ? Size.splitRailW : 1)
         .height('100%')
         .backgroundColor($r('app.color.line'))
+        .opacity(this.railDimmed && !this.dragging ? 0.15 : 1)
       if (this.enhanced && (this.hovered || this.focused || this.dragging)) {
         Row()
           .width(Size.splitRailW)
@@ -99,11 +104,17 @@ export struct SplitHandle {
     .gesture(
       PanGesture({ fingers: 1, direction: PanDirection.Horizontal })
         .onActionStart((): void => {
+          if (!this.dragAllowed()) {
+            return;
+          }
           this.dragging = true;
           this.lastTapAt = -1;
           this.dragStarted();
         })
         .onActionUpdate((event: GestureEvent): void => {
+          if (!this.dragging) {
+            return;
+          }
           let altPressed: boolean = false;
           if (event.getModifierKeyState !== undefined) {
             altPressed = event.getModifierKeyState(['Alt']);

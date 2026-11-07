@@ -66,7 +66,23 @@ function fixture() {
   };
   const widths = { nav: 1 / 3, content: 0.5 };
   let splitDrag = null;
-  const context = vm.createContext({
+  let context;
+  const splitRangeMock = (kind, metrics) => {
+    const base = kind === 'nav' ? metrics.w : metrics.available;
+    return {
+      min: metrics.min,
+      max: base - (kind === 'nav' && metrics.referenceVisible ? 2 : 1) * metrics.min
+    };
+  };
+  const metrics = () => {
+    const w = 1200, min = 240, side = sideVisible, referenceVisible = true;
+    const navRange = splitRangeMock('nav', { w, min, side, referenceVisible, available: w });
+    const sideSize = side
+      ? Math.max(navRange.min, Math.min(navRange.max, context.widths.nav * w))
+      : 0;
+    return { w, min, side, referenceVisible, sideSize, available: w - sideSize };
+  };
+  context = vm.createContext({
     document,
     window: { addEventListener() {} },
     navigator: {},
@@ -80,32 +96,14 @@ function fixture() {
     widths,
     get splitDrag() { return splitDrag; },
     set splitDrag(value) { splitDrag = value; },
-    splitMetrics: () => ({ w: 1200, min: 240, side: sideVisible, referenceVisible: true }),
-    splitRange: (kind, metrics) => ({
-      min: metrics.min,
-      max: metrics.w - (kind === 'nav' && metrics.referenceVisible ? 2 : 1) * metrics.min
-    }),
-    splitActive: (kind) => kind === 'nav' ? sideVisible : !sideVisible,
+    splitMetrics: metrics,
+    splitRange: splitRangeMock,
+    splitActive: (kind) => {
+      const m = metrics();
+      return (kind === 'nav' ? m.side : m.referenceVisible) && splitRangeMock(kind, m).max >= m.min;
+    },
     clampWidth: (value, range) => Math.max(range.min, Math.min(range.max, value)),
-    resizeSplit(kind, pixels) {
-      const metrics = { w: 1200, min: 240, side: sideVisible, referenceVisible: true };
-      const range = { min: 240, max: 1200 - (kind === 'nav' && sideVisible ? 480 : 240) };
-      widths[kind] = Math.max(range.min, Math.min(range.max, pixels)) / metrics.w;
-    },
     applySplits() {},
-    endSplit() {
-      if (!splitDrag) return;
-      splitDrag.handle.classList.remove('dragging');
-      nodes.get('window').classList.remove('splitting');
-      splitDrag.handle.releasePointerCapture(splitDrag.pointer);
-      splitDrag = null;
-      saved++;
-    },
-    resetSplits() {
-      splitDrag = null;
-      widths.nav = 1 / 3;
-      widths.content = 0.5;
-    },
     saveWidths() { saved++; }
   });
   vm.runInContext(`${code}\npaintSplit('nav');`, context);
@@ -133,7 +131,8 @@ function fixture() {
     paint(kind) { vm.runInContext(`paintSplit('${kind}');`, context); },
     setSideVisible(value) { sideVisible = value; },
     setNow(value) { now = value; },
-    saved: () => saved
+    saved: () => saved,
+    activeDrag: () => splitDrag ? splitDrag.kind : null
   };
 }
 
@@ -206,4 +205,54 @@ test('the content separator reports and adjusts its own two-pane ratio', () => {
   f.fire('keydown', { target: handle, key: 'ArrowRight' });
   assert.equal(f.widths.content, 616 / 1200);
   assert.match(handle.attrs['aria-valuetext'], /左栏 51% · 右栏 49%/);
+});
+
+test('v1.38: split ranges are based on the window for nav and the area right of nav for content', () => {
+  assert.match(script, /function splitBase\(kind,m\)\{return kind==='nav'\?m\.w:m\.available;\}/);
+  assert.match(script, /function splitDefaultPixels\(kind,m\)\{return splitBase\(kind,m\)\*\(kind==='nav'\?1\/3:\.5\);\}/);
+  assert.match(script, /const sideSize=side\?clampWidth\(widths\.nav\*w,splitRange\('nav',\{w,min,side,referenceVisible\}\)\):0/);
+  assert.match(script, /sideSize,available:w-sideSize/);
+  assert.match(script, /kind==='nav'\?m\.side:m\.referenceVisible\)&&splitRange\(kind,m\)\.max>=m\.min/);
+  assert.doesNotMatch(script, /m\.referenceVisible&&!m\.side/);
+  assert.match(script, /clampWidth\(widths\.content\*m\.available,splitRange\('content',m\)\)/);
+  assert.doesNotMatch(script, /m\.side\?available\/2:/);
+  assert.match(script, /widths\[kind\]\*splitBase\(kind,m\),range\)/);
+  assert.match(script, /widths\[kind\]\*splitBase\(kind,m\),splitRange\(kind,m\)\)/);
+});
+
+test('v1.38: the three-column content separator reports and drags against the area right of nav', () => {
+  const f = fixture();
+  f.paint('content');
+  const handle = f.nodes.get('contentSplitter');
+  assert.equal(handle.attrs['aria-valuetext'], '左栏 50% · 右栏 50%，默认比例');
+  assert.match(handle.tipParts['.split-tip'].innerHTML, /400 \/ 400 px/);
+  f.widths.nav = 0.4;
+  f.paint('content');
+  assert.match(handle.tipParts['.split-tip'].innerHTML, /360 \/ 360 px/);
+  f.fire('keydown', { target: handle, key: 'ArrowRight' });
+  assert.equal(f.widths.content, 376 / 720);
+  assert.match(handle.attrs['aria-valuetext'], /左栏 52% · 右栏 48%/);
+});
+
+test('v1.38: the three-column content separator clamps at pane minimum and maximum', () => {
+  const f = fixture();
+  const handle = f.nodes.get('contentSplitter');
+  f.fire('keydown', { target: handle, key: 'End' });
+  assert.equal(f.widths.content, 560 / 800);
+  assert.match(handle.attrs['aria-valuetext'], /已到最大宽度/);
+  f.fire('keydown', { target: handle, key: 'Home' });
+  assert.equal(f.widths.content, 240 / 800);
+  assert.match(handle.attrs['aria-valuetext'], /已到最小宽度（每栏至少 240 px）/);
+});
+
+test('v1.38: only one split handle can enter a drag at a time', () => {
+  const f = fixture();
+  const content = f.nodes.get('contentSplitter');
+  f.fire('pointerdown', { clientX: 100 });
+  assert.equal(f.activeDrag(), 'nav');
+  f.fire('pointerdown', { target: content, clientX: 500 });
+  assert.equal(f.activeDrag(), 'nav');
+  assert.equal(content.classList.contains('dragging'), false);
+  f.fire('pointerup', { clientX: 110 });
+  assert.equal(f.activeDrag(), null);
 });

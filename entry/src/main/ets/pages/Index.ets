@@ -1431,10 +1431,13 @@ struct Index {
   /**
    * 正文分隔条是否可用：双屏（md）与三屏（lg）都能拖动左右栏比例。
    * md 以前只有硬编码 50%，既不能拖，设置页的「恢复等分栏宽」也就无从恢复。
+   * v1.38：单屏布局（小屏 / 单屏横屏）不显示；目录右侧可用区域不足两栏最小宽
+   * （2 × paneMinW = 480vp）时隐藏（38.1 / 38.3）。
    */
   private contentHandleVisible(): boolean {
     return (this.breakpoint === Breakpoint.LG || this.breakpoint === Breakpoint.MD) &&
-      !this.focused && this.referenceVisible;
+      !this.focused && this.referenceVisible && !this.isSingleScreenLayout() &&
+      this.noteContentWidth() >= Size.paneMinW * 2;
   }
 
   private splitHandlePrimary(kind: string): string {
@@ -9526,6 +9529,8 @@ struct Index {
             readoutPrimary: this.splitHandlePrimary('nav'),
             readoutWidths: this.splitHandleWidths('nav'),
             readoutStatus: this.splitHandleStatus('nav'),
+            dragAllowed: (): boolean => !this.splitDragging,
+            railDimmed: this.splitDragging,
             keyboardAdjusted: (deltaVp: number): void => {
               this.adjustSplitByKeyboard('nav', deltaVp);
             },
@@ -9586,6 +9591,8 @@ struct Index {
         readoutPrimary: this.splitHandlePrimary('content'),
         readoutWidths: this.splitHandleWidths('content'),
         readoutStatus: this.splitHandleStatus('content'),
+        dragAllowed: (): boolean => !this.splitDragging,
+        railDimmed: this.splitDragging,
         keyboardAdjusted: (deltaVp: number): void => {
           this.adjustSplitByKeyboard('content', deltaVp);
         },
