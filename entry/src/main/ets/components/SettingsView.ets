@@ -767,7 +767,9 @@ export struct SettingsView {
             .onChange((show: boolean): void => { this.onShowLineNumbersChange(show); })
         }
         .width('100%')
-        .height(Size.touch)
+        // v2 .hs-row：min-height 56 + 上下 s2 内边距，标题/说明行整体不矮于设计稿
+        .constraintSize({ minHeight: Size.hsRowMinH })
+        .padding({ top: Space.s2, bottom: Space.s2 })
       }
       .width('100%')
       .padding(Space.s5)
@@ -786,7 +788,7 @@ export struct SettingsView {
         Text('恢复等分栏宽')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
-          .height(Size.touch)
+          .constraintSize({ minHeight: Size.hsRowMinH })
           .focusable(true)
           .onClick(() => { this.onResetSplit(); })
       }
@@ -815,7 +817,9 @@ export struct SettingsView {
             .fontColor($r('app.color.text_tertiary'))
         }
         .width('100%')
-        .height(Size.touch)
+        // v2 .hs-row（summary 展开行）：min-height 56 + 上下 s2，标题/说明撑开时整行随之变高
+        .constraintSize({ minHeight: Size.hsRowMinH })
+        .padding({ top: Space.s2, bottom: Space.s2 })
         .focusable(true)
         .onClick((): void => { this.diagnosticsExpanded = !this.diagnosticsExpanded; })
         if (this.diagnosticsExpanded) {
@@ -1294,7 +1298,8 @@ export struct SettingsView {
             .textAlign(TextAlign.Start)
         }
         .width('100%')
-        .height(Size.touch)
+        // v2 .hs-row.hs-danger：min-height 56（原型同款行框，不再压成 48 固定高）
+        .constraintSize({ minHeight: Size.hsRowMinH })
         .focusable(true)
         .enabled(!this.resetting)
         .opacity(this.resetting ? 0.4 : 1)
@@ -1457,7 +1462,8 @@ export struct SettingsView {
           .height('100%')
         }
         .width('100%')
-        .height(Size.touch)
+        // v2 .hs-row（a.hs-row.hs-button）：行框 56，行内 Row 撑满整行
+        .height(Size.hsRowMinH)
         .padding({ left: 0, right: 0 })
         .backgroundColor(Color.Transparent)
         .accessibilityText('查看隐私政策')
@@ -1503,6 +1509,9 @@ export struct SettingsView {
         }
         .width('100%')
         .alignItems(VerticalAlign.Center)
+        // v2 .hs-row.update-check-row：min-height 56 + 上下 s2，状态说明换行时整行随之变高
+        .constraintSize({ minHeight: Size.hsRowMinH })
+        .padding({ top: Space.s2, bottom: Space.s2 })
 
         if (this.appUpdatePhase === 'available') {
           Text('继续操作将由系统升级弹框接管；弹框由系统显示。')
@@ -1535,7 +1544,7 @@ export struct SettingsView {
         Text('查看完整版本记录 ›')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
-          .height(Size.touch)
+          .constraintSize({ minHeight: Size.hsRowMinH })
           .width('100%')
           .onClick(() => { this.onOpenHistory(); })
       }
@@ -1627,7 +1636,7 @@ export struct SettingsView {
         Text('预览反馈内容')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
-          .height(Size.touch)
+          .constraintSize({ minHeight: Size.hsRowMinH })
           .textAlign(TextAlign.Start)
           .onClick((): void => { this.previewFeedback(); })
         if (this.feedbackPreview.length > 0) {
@@ -1650,7 +1659,7 @@ export struct SettingsView {
         Text('发送反馈邮件 ›')
           .fontSize(FontSize.body2)
           .fontColor($r('app.color.brand'))
-          .height(Size.touch)
+          .constraintSize({ minHeight: Size.hsRowMinH })
           .textAlign(TextAlign.Start)
           .onClick((): void => { void this.openFeedbackEmail(); })
         Text('将在邮件应用中创建邮件，由你编辑并确认发送。若未打开，可使用上方邮箱地址手动发送。')

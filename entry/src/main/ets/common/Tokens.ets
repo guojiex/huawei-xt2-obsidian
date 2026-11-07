@@ -102,6 +102,11 @@ export class Size {
   static readonly splitMouseHitW: number = 24;
   static readonly splitRailW: number = 2;
   /**
+   * 设置行（v2 .hs-row）整行最小高度：min-height: calc(var(--s12) + var(--s2)) = 56，
+   * 行内上下边距用 Space.s2（对应原型 padding: var(--s2) var(--s4) 的纵向半边）。
+   */
+  static readonly hsRowMinH: number = Space.s12 + Space.s2;
+  /**
    * 左滑三档（1.6）：操作条完全滑出后**再滑这么多**进入删除区（原型 DEL_EXTRA = 36）。
    * 配合 ListItem.swipeAction 的 actionAreaDistance；越过即触发 onAction（文件 → 移入回收站）。
    */

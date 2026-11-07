@@ -161,3 +161,27 @@ test('reset pane widths action uses the v2 brand-blue token', () => {
   assert.match(action[1], /\.fontColor\(\$r\('app\.color\.brand'\)\)/)
   assert.match(prototypeHtml, /#resetPaneWidths \.hs-title\{color:var\(--blue\)\}/)
 })
+
+test('settings hs-row box keeps the v2 min-height (56) instead of fixed 48', () => {
+  // 设计真源：.hs-row 是 min-height（不是固定高），行内上下留 --s2 —— 行随标题/说明内容撑开
+  assert.match(prototypeHtml,
+    /\.hs-row\{[^}]*min-height:calc\(var\(--s12\) \+ var\(--s2\)\);padding:var\(--s2\) var\(--s4\)/)
+  const tokens = fs.readFileSync(path.join(root, 'entry/src/main/ets/common/Tokens.ets'), 'utf8')
+  assert.match(tokens, /static readonly hsRowMinH: number = Space\.s12 \+ Space\.s2/)
+  const settingsView = readSourceFile(path.join(root, 'entry/src/main/ets/components/SettingsView.ets'))
+  // 原生设置页各 hs-row 行改为 56 最小高度；原型同款行不再压成 48 固定高
+  const uses = settingsView.match(/Size\.hsRowMinH/g) ?? []
+  assert.ok(uses.length >= 9,
+    `expected >= 9 hs-row min-height uses in SettingsView, got ${uses.length}`)
+  for (const [anchorRegex, window] of [
+    [/Text\('显示行号'\)/, 800],
+    [/Text\(this\.resetting \? '正在重置…' : '重置所有数据…'\)/, 400],
+    [/Text\('检查更新'\)/, 1300],
+    [/Text\('预览反馈内容'\)/, 300]
+  ]) {
+    const head = settingsView.match(anchorRegex)
+    assert.ok(head, `Missing settings row anchor: ${anchorRegex}`)
+    const block = settingsView.slice(head.index, head.index + window)
+    assert.match(block, /Size\.hsRowMinH/, `row at ${anchorRegex} must use the 56 min-height`)
+  }
+})
