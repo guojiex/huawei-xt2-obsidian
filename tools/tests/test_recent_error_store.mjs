@@ -118,7 +118,101 @@ test('rejects unsupported snapshots and enum values', () => {
   }]), '');
 });
 
-test('keeps sensitive error details out of persisted, displayed, copied, and logged diagnostics', () => {
+test('records the real error code and message in local diagnostics', () => {
+  const values = new Map();
+  const store = makeStore(values);
+  assert.equal(store.recordFailure(
+    'file', 'delete', 'unknown', 'status_unknown', 'check_status', 13900002, 'No such file or directory'
+  ), true);
+
+  const records = store.load();
+  assert.equal(records.length, 1);
+  assert.equal(records[0].code, 13900002);
+  assert.equal(records[0].message, 'No such file or directory');
+  const pageText = formatRecentError(records[0]);
+  const clipboardText = formatRecentErrorsForCopy(records);
+  const persistedText = values.get('latest');
+  for (const text of [pageText, clipboardText]) {
+    assert.match(text, /错误码：13900002/);
+    assert.match(text, /原因：No such file or directory/);
+  }
+  assert.match(persistedText, /13900002/);
+  assert.match(persistedText, /No such file or directory/);
+});
+
+test('loads legacy snapshots without code or message and truncates overlong messages', () => {
+  const values = new Map();
+  values.set('latest', JSON.stringify({
+    schemaVersion: 1,
+    records: [{
+      timestamp: 1,
+      operation: 'settings',
+      phase: 'build_commit_copy',
+      category: 'clipboard_failure',
+      outcome: 'not_completed',
+      nextStep: 'retry'
+    }]
+  }));
+  const store = makeStore(values);
+  const records = store.load();
+  assert.equal(records.length, 1);
+  assert.equal(records[0].code, -1);
+  assert.equal(records[0].message, '');
+  assert.doesNotMatch(formatRecentError(records[0]), /错误码|原因/);
+
+  const longMessage = 'x'.repeat(RecentErrorStore.MAX_MESSAGE_LENGTH + 50);
+  assert.equal(store.recordFailure(
+    'file', 'delete', 'unknown', 'status_unknown', 'check_status', 13900002, longMessage
+  ), true);
+  const loaded = store.load();
+  assert.equal(loaded[0].message.length, RecentErrorStore.MAX_MESSAGE_LENGTH);
+  assert.ok(values.get('latest').length <= RecentErrorStore.MAX_SERIALIZED_LENGTH);
+});
+
+test('rejects records with a non-numeric code or non-string message', () => {
+  const base = {
+    timestamp: 1,
+    operation: 'settings',
+    phase: 'build_commit_copy',
+    category: 'clipboard_failure',
+    outcome: 'not_completed',
+    nextStep: 'retry'
+  };
+  assert.equal(parseRecentErrorSnapshot(JSON.stringify({
+    schemaVersion: 1,
+    records: [Object.assign({}, base, { code: '13900002' })]
+  })), null);
+  assert.equal(parseRecentErrorSnapshot(JSON.stringify({
+    schemaVersion: 1,
+    records: [Object.assign({}, base, { message: 42 })]
+  })), null);
+  assert.equal(parseRecentErrorSnapshot(JSON.stringify({
+    schemaVersion: 1,
+    records: [Object.assign({}, base, { code: 13900002, message: 'No such file or directory' })]
+  })).records[0].code, 13900002);
+});
+
+test('keeps persisting records by dropping the oldest messages when the serialized cap is hit', () => {
+  const values = new Map();
+  const store = makeStore(values);
+  const filler = 'm'.repeat(RecentErrorStore.MAX_MESSAGE_LENGTH);
+  for (let i = 0; i < RecentErrorStore.LIMIT; i++) {
+    assert.equal(store.recordFailure(
+      'file', 'delete', 'unknown', 'status_unknown', 'check_status', 13900002, filler
+    ), true);
+  }
+  assert.equal(store.recordFailure(
+    'file', 'move', 'unknown', 'status_unknown', 'check_status', 13900002, 'newest failure'
+  ), true);
+
+  const records = store.load();
+  assert.equal(records.length, RecentErrorStore.LIMIT);
+  assert.equal(records[0].phase, 'move');
+  assert.equal(records[0].message, 'newest failure');
+  assert.ok(values.get('latest').length <= RecentErrorStore.MAX_SERIALIZED_LENGTH);
+});
+
+test('drops unknown extra fields and rejects non-allowlisted diagnostics values', () => {
   const secrets = [
     'note-title: Private Title',
     'file-name: secret.md',
@@ -132,9 +226,8 @@ test('keeps sensitive error details out of persisted, displayed, copied, and log
     'exception: request failed with private response'
   ];
   const rejectedValues = new Map();
-  const injectedException = new Error(secrets.join('\n'));
   assert.equal(makeStore(rejectedValues).recordFailure(
-    'settings', 'build_commit_copy', injectedException.message, 'not_completed', 'retry'
+    'settings', 'build_commit_copy', injectedExceptionValue(secrets), 'not_completed', 'retry'
   ), false);
   assert.equal(rejectedValues.has('latest'), false);
 
@@ -164,15 +257,9 @@ test('keeps sensitive error details out of persisted, displayed, copied, and log
   assert.equal(records.length, 1);
   const pageText = formatRecentError(records[0]);
   const clipboardText = formatRecentErrorsForCopy(records);
-  assert.equal(store.recordFailure(
-    'settings', 'recent_errors_copy', 'clipboard_failure', 'not_completed', 'retry'
-  ), true);
-  const persistedText = values.get('latest');
-
   for (const secret of secrets) {
     assert.ok(!pageText.includes(secret));
     assert.ok(!clipboardText.includes(secret));
-    assert.ok(!persistedText.includes(secret));
   }
   assert.match(pageText, /设置/);
   assert.match(clipboardText, /复制构建提交号/);
@@ -191,6 +278,10 @@ test('keeps sensitive error details out of persisted, displayed, copied, and log
   assert.doesNotMatch(storeSource, /hilog\.|console\.(?:log|error)|error\.(?:message|stack)/);
   assert.doesNotMatch(diagnosticsHandlers, /hilog\.|console\.(?:log|error)|error\.(?:message|stack)|String\(error\)/);
 });
+
+function injectedExceptionValue(secrets) {
+  return secrets.join('\n');
+}
 
 test('settings displays and copies the same formatted recent records', () => {
   assert.match(settingsSource, /Text\(formatRecentError\(record\)\)/);

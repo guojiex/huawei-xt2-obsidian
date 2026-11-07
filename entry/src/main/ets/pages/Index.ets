@@ -1727,22 +1727,23 @@ struct Index {
 
   private recordFailureFeedback(operation: RecentErrorOperation, phase: RecentErrorPhase,
     category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep,
-    detail: string): string {
-    this.recordBackgroundFailure(operation, phase, category, outcome, nextStep);
+    detail: string, code?: number, message?: string): string {
+    this.recordBackgroundFailure(operation, phase, category, outcome, nextStep, code, message);
     return formatRecentErrorFeedback(operation, phase, category, outcome, nextStep) + detail;
   }
 
   private recordBackgroundFailure(operation: RecentErrorOperation, phase: RecentErrorPhase,
-    category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep): void {
+    category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep,
+    code?: number, message?: string): void {
     this.ensureRecentErrorStore();
-    (this.recentErrorStore as RecentErrorStore).recordFailure(operation, phase, category, outcome, nextStep);
+    (this.recentErrorStore as RecentErrorStore).recordFailure(operation, phase, category, outcome, nextStep, code, message);
   }
 
   private showFailureFeedback(operation: RecentErrorOperation, phase: RecentErrorPhase,
     category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep,
-    detail: string): void {
+    detail: string, code?: number, message?: string): void {
     promptAction.showToast({
-      message: this.recordFailureFeedback(operation, phase, category, outcome, nextStep, detail)
+      message: this.recordFailureFeedback(operation, phase, category, outcome, nextStep, detail, code, message)
     });
   }
 
@@ -7742,13 +7743,13 @@ struct Index {
     }
   }
 
-  /** 注册表操作失败：用户提示用固定阶段与状态说明；异常原文只进私有日志，不上面向用户的提示。 */
+  /** 注册表操作失败：真实错误码与异常原文进日志和诊断记录；用户提示保持固定阶段与状态说明。 */
   private toastRegistryError(prefix: string, error: Object,
     operation: RecentErrorOperation = 'file', phase: RecentErrorPhase = 'delete'): void {
-    // 码值进公开日志；异常原文只走 %{private}s（发布日志自动打码），避免下次故障无据可查。
     const err = error as BusinessError;
-    hilog.warn(DOMAIN, TAG, '%{public}s code=%{public}d message=%{private}s', prefix,
-      typeof err?.code === 'number' ? err.code : -1, err?.message ?? '');
+    const code: number = typeof err?.code === 'number' ? err.code : -1;
+    const message: string = err?.message ?? '';
+    hilog.warn(DOMAIN, TAG, '%{public}s code=%{public}d message=%{public}s', prefix, code, message);
     let nextStep: RecentErrorNextStep = 'check_status';
     let detail: string = '操作结果未确认；请先检查当前知识库和文件列表，再决定是否重试。';
     switch (prefix) {
@@ -7804,7 +7805,7 @@ struct Index {
           : '文件操作结果未确认；请刷新文件列表和回收站，确认目标位置后再决定是否重试。';
         break;
     }
-    this.showFailureFeedback(operation, phase, 'unknown', 'status_unknown', nextStep, detail);
+    this.showFailureFeedback(operation, phase, 'unknown', 'status_unknown', nextStep, detail, code, message);
   }
 
   // ===== 1.7 回收站：删除入站 + 5 秒撤销条 =====

@@ -74,7 +74,7 @@ test('known missing-image errors do not expose their path', () => {
   assert.ok(!message.includes('/private/vault/assets/secret.png'));
 });
 
-test('registry failures identify the operation and report its completion state and next step', () => {
+test('registry failures identify the operation and pass the real error code and message into diagnostics', () => {
   const Harness = feedbackModule.exports;
   const app = new Harness();
   const calls = [];
@@ -84,8 +84,11 @@ test('registry failures identify the operation and report its completion state a
   app.toastRegistryError('删除失败', new Error('/private/vault'), 'vault', 'delete');
   app.toastRegistryError('新建笔记失败', new Error('/private/vault/new.md'), 'file', 'create');
   app.toastRegistryError('移动失败', new Error('/private/vault/path'), 'file', 'move');
+  const enoent = new Error('No such file or directory');
+  enoent.code = 13900002;
+  app.toastRegistryError('删除失败', enoent, 'file', 'delete');
 
-  assert.deepEqual(calls.map((args) => args.slice(0, 5)), [
+  assert.deepEqual(calls.slice(0, 4).map((args) => args.slice(0, 5)), [
     ['note', 'save', 'unknown', 'status_unknown', 'retry'],
     ['vault', 'delete', 'unknown', 'status_unknown', 'check_status'],
     ['file', 'create', 'unknown', 'status_unknown', 'check_status'],
@@ -95,7 +98,15 @@ test('registry failures identify the operation and report its completion state a
   assert.match(calls[1][5], /知识库删除结果未确认/);
   assert.match(calls[2][5], /笔记创建结果未确认/);
   assert.match(calls[3][5], /原位置和目标位置/);
-  assert.ok(!calls.flat().some((value) => typeof value === 'string' && value.includes('/private/')));
+
+  assert.deepEqual(calls.slice(0, 4).map((args) => [args[6], args[7]]), [
+    [-1, '/private/vault/note.md'],
+    [-1, '/private/vault'],
+    [-1, '/private/vault/new.md'],
+    [-1, '/private/vault/path']
+  ]);
+  assert.equal(calls[4][6], 13900002);
+  assert.equal(calls[4][7], 'No such file or directory');
 });
 
 test('critical failure surfaces do not display raw system exception text', () => {
@@ -109,7 +120,7 @@ test('critical failure surfaces do not display raw system exception text', () =>
   assert.doesNotMatch(sourceFiles.agent, /this\.statusText\s*=\s*err\.message/);
   assert.doesNotMatch(sourceFiles.editor, /getErrorInfo\(\)|error\.message/);
   assert.doesNotMatch(sourceFiles.preview, /getErrorInfo\(\)|err\.message/);
-  assert.match(sourceFiles.index, /recordFailure\(operation, phase, category, outcome, nextStep\)/);
+  assert.match(sourceFiles.index, /recordFailure\(operation, phase, category, outcome, nextStep, code, message\)/);
   assert.match(sourceFiles.index, /private toastRegistryError\([\s\S]*RecentErrorOperation[\s\S]*RecentErrorPhase/);
   assert.equal(
     (sourceFiles.index.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length,

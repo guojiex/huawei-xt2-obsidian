@@ -28,6 +28,8 @@ export interface RecentErrorRecord {
   category: RecentErrorCategory;
   outcome: RecentErrorOutcome;
   nextStep: RecentErrorNextStep;
+  code: number;
+  message: string;
 }
 
 export interface RecentErrorSnapshot {
@@ -58,6 +60,8 @@ const NEXT_STEP_VALUES: string[] = [
 export class RecentErrorStore {
   static readonly LIMIT: number = 20;
   static readonly MAX_SERIALIZED_LENGTH: number = 8192;
+  static readonly MAX_MESSAGE_LENGTH: number = 300;
+  static readonly UNKNOWN_CODE: number = -1;
   private static readonly PREF_NAME: string = 'recent_error_diagnostics';
   private static readonly PREF_KEY: string = 'latest';
   private store: preferences.Preferences | null = null;
@@ -97,7 +101,7 @@ export class RecentErrorStore {
   }
 
   recordFailure(operation: RecentErrorOperation, phase: RecentErrorPhase, category: RecentErrorCategory,
-    outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep): boolean {
+    outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep, code?: number, message?: string): boolean {
     const current: RecentErrorRecord[] | null = this.load();
     if (current === null) {
       return false;
@@ -108,12 +112,36 @@ export class RecentErrorStore {
       phase: phase,
       category: category,
       outcome: outcome,
-      nextStep: nextStep
+      nextStep: nextStep,
+      code: typeof code === 'number' && Number.isFinite(code) ? code : RecentErrorStore.UNKNOWN_CODE,
+      message: boundedErrorMessage(typeof message === 'string' ? message : '')
     }];
     for (let i: number = 0; i < current.length && next.length < RecentErrorStore.LIMIT; i++) {
       next.push(current[i]);
     }
-    return this.persist(next);
+    if (this.persist(next)) {
+      return true;
+    }
+    // 序列化超上限：从最旧记录开始丢弃异常原文重试，诊断记录本身保留。
+    for (let i: number = next.length - 1; i >= 1; i--) {
+      if (next[i].message.length === 0) {
+        continue;
+      }
+      next[i] = {
+        timestamp: next[i].timestamp,
+        operation: next[i].operation,
+        phase: next[i].phase,
+        category: next[i].category,
+        outcome: next[i].outcome,
+        nextStep: next[i].nextStep,
+        code: next[i].code,
+        message: ''
+      };
+      if (this.persist(next)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private persist(records: RecentErrorRecord[]): boolean {
@@ -185,9 +213,16 @@ export function formatRecentError(record: RecentErrorRecord): string {
     return '诊断记录无效';
   }
   const date: string = new Date(safeRecord.timestamp).toLocaleString();
-  return date + ' · 操作：' + operationLabel(safeRecord.operation) + ' / ' + phaseLabel(safeRecord.phase) +
-    ' · 分类：' + categoryLabel(safeRecord.category) + '\n结果：' + outcomeLabel(safeRecord.outcome) +
-    ' · 下一步：' + nextStepLabel(safeRecord.nextStep);
+  let text: string = date + ' · 操作：' + operationLabel(safeRecord.operation) + ' / ' + phaseLabel(safeRecord.phase) +
+    ' · 分类：' + categoryLabel(safeRecord.category);
+  if (safeRecord.code !== RecentErrorStore.UNKNOWN_CODE) {
+    text += ' · 错误码：' + safeRecord.code;
+  }
+  text += '\n结果：' + outcomeLabel(safeRecord.outcome) + ' · 下一步：' + nextStepLabel(safeRecord.nextStep);
+  if (safeRecord.message.length > 0) {
+    text += '\n原因：' + safeRecord.message;
+  }
+  return text;
 }
 
 export function formatRecentErrorsForCopy(records: RecentErrorRecord[]): string {
@@ -215,14 +250,29 @@ function parseRecentErrorRecord(value: Object): RecentErrorRecord | null {
     !isAllowed(record['outcome'], OUTCOME_VALUES) || !isAllowed(record['nextStep'], NEXT_STEP_VALUES)) {
     return null;
   }
+  // 旧快照缺 code/message：按未知值兼容读取；类型不对则整条拒绝。
+  if (record['code'] !== undefined &&
+    (typeof record['code'] !== 'number' || !Number.isFinite(record['code'] as number))) {
+    return null;
+  }
+  if (record['message'] !== undefined && typeof record['message'] !== 'string') {
+    return null;
+  }
   return {
     timestamp: record['timestamp'] as number,
     operation: record['operation'] as RecentErrorOperation,
     phase: record['phase'] as RecentErrorPhase,
     category: record['category'] as RecentErrorCategory,
     outcome: record['outcome'] as RecentErrorOutcome,
-    nextStep: record['nextStep'] as RecentErrorNextStep
+    nextStep: record['nextStep'] as RecentErrorNextStep,
+    code: record['code'] === undefined ? RecentErrorStore.UNKNOWN_CODE : record['code'] as number,
+    message: record['message'] === undefined ? '' : boundedErrorMessage(record['message'] as string)
   };
+}
+
+function boundedErrorMessage(message: string): string {
+  return message.length <= RecentErrorStore.MAX_MESSAGE_LENGTH ? message :
+    message.substring(0, RecentErrorStore.MAX_MESSAGE_LENGTH);
 }
 
 function isAllowed(value: Object, allowed: string[]): boolean {
