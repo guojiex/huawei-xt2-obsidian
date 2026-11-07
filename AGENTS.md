@@ -14,6 +14,10 @@
 [`xt2-release-delivery`](.agents/skills/xt2-release-delivery/SKILL.md)。
 不支持自动发现 Skill 的模型也按该文件执行。它约束任务收敛、验证和提交节奏，不替代下方硬约束或版本需求文档。
 
+执行模拟器回归（`docs/testing/` 用例）前，读取仓库 Skill：
+[`xt2-emulator-regression`](.agents/skills/xt2-emulator-regression/SKILL.md)。
+它区分 Windows x86_64 与 Mac arm64 宿主环境，约束环境前置检查、EM-C0 探针与证据记录；不替代 API24 / XT2 真机验收。
+
 ## 开工前读什么
 
 | 顺序 | 文件 | 看什么 |
