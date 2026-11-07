@@ -1997,4 +1997,4 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 ### Z3 ⚠️ x86 系模拟器 IME×Web 不可输入与 API 版本无关——API26 x86_64 复现（2026-11-07，EM-C0 实测）
 - 实测（Windows 本机 API26 x86_64 模拟器，v1.32 构建）：Web 编辑面（mdpreview 可编辑预览）单击 / 双击均无光标、不唤起 IME；`devecocli ui text` 与 `uitest uiInput inputText` 注入均未上屏（字数恒 0 字）；同轮新建弹窗原生 TextInput 注入两次全部正常上屏。与 L-8 的 API24 x86 表现一致。
-- 对照：API26 arm64 模拟器拼音输入历史证据可用（B6）→ L-8 类限制按 CPU 架构（x86）成立，与 API 版本无关。x86 宿主上 EM-C0 探针预期「不可输入」，C 组输入类用例按 docs/testing 规则记环境阻塞。
+- 对照：API26 arm64 模拟器拼音输入历史证据可用（B6）→ L-8 类限制按 CPU 架构（x86）成立，与 API 版本无关。x86 宿主上 EM-C0 探针预期「不可输入」，C 组输入类用例按 docs/testing 规则记环境阻塞。
