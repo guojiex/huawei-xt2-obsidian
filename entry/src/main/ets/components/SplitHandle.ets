@@ -18,6 +18,8 @@ export struct SplitHandle {
   @Prop readoutPrimary: string = '';
   @Prop readoutWidths: string = '';
   @Prop readoutStatus: string = '';
+  /** 胶囊相对容器垂直中心的偏移（vp）：导航把手用它把胶囊对齐到正文区中心（Appbar/Statusbar 不在其容器内） */
+  @Prop gripCenterOffsetY: number = 0;
 
   @State lastTapAt: number = -1;
   @State dragging: boolean = false;
@@ -44,6 +46,7 @@ export struct SplitHandle {
         .border({ width: 1, color: this.dragging || this.hovered || this.focused
           ? $r('app.color.brand') : $r('app.color.line_strong') })
         .backgroundColor(this.dragging ? $r('app.color.brand') : $r('app.color.bg_card'))
+        .offset({ y: this.gripCenterOffsetY })
       if (this.enhanced) {
         Column({ space: Space.s1 }) {
           Row()
@@ -63,6 +66,7 @@ export struct SplitHandle {
             .backgroundColor(this.dragging ? $r('app.color.on_brand') : $r('app.color.text_secondary'))
         }
         .alignItems(HorizontalAlign.Center)
+        .offset({ y: this.gripCenterOffsetY })
       }
     }
     .width(Space.s4)

@@ -1335,6 +1335,11 @@ struct Index {
     return this.breakpoint === Breakpoint.MD ? Space.s3 : Space.s5;
   }
 
+  private appbarHeightVp(): number {
+    return this.breakpoint === Breakpoint.SM || (this.windowHeightVp > 0 && this.windowHeightVp < 480)
+      ? Size.appbarH : Size.appbarWideH;
+  }
+
   private isSingleScreenLayout(): boolean {
     return this.breakpoint === Breakpoint.SM || this.isSingleLandscape();
   }
@@ -9517,6 +9522,7 @@ struct Index {
 
           SplitHandle({
             enhanced: true,
+            gripCenterOffsetY: (this.appbarHeightVp() - Size.statusbarH) / 2,
             readoutPrimary: this.splitHandlePrimary('nav'),
             readoutWidths: this.splitHandleWidths('nav'),
             readoutStatus: this.splitHandleStatus('nav'),
@@ -9869,8 +9875,7 @@ struct Index {
       }
     }
     .width('100%')
-    .height(this.breakpoint === Breakpoint.SM || (this.windowHeightVp > 0 && this.windowHeightVp < 480)
-      ? Size.appbarH : Size.appbarWideH)
+    .height(this.appbarHeightVp())
     .padding({ left: this.workspaceGutter(), right: this.workspaceGutter() })
     .alignItems(VerticalAlign.Center)
     .border({ width: { bottom: 1 }, color: $r('app.color.line') })
