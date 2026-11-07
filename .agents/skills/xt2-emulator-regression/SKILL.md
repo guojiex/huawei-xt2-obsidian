@@ -35,9 +35,20 @@ description: 在 API26 模拟器上执行曜石笔记回归（docs/testing 用�
 
 ## 探针与执行
 
-- 每轮先跑 **EM-C0**（IME 可用性探针）：不可输入时，C 组依赖文本输入的用例整组记「环境阻塞」，其余组照常执行。
+- 每轮先跑 **EM-C0**（IME 可用性探针）：不可输入时，C 组依赖文本输入的用例整组记「环境阻塞」，其余组照常执行。**x86 宿主预期直接命中「不可输入」**——API24 x86 与 API26 x86_64 均实测失败、arm64 API26 历史证据可用，该限制按 CPU 架构成立、与 API 版本无关（api_notes Z3，对照 B6 / L-8）；同轮原生 TextInput 注入正常可作对照取证，不因此怀疑构建。
 - 逐条按用例步骤与预期执行；视觉 / 交互结论须截图或 HDC 控件树佐证，纯白截图不得凭视觉模型「看出」内容（`api_notes` L-8）。
 - 不制造崩溃、强杀或写入中断；触控手势类用例只走按钮路径；Git 用例只做本地 commit，不碰真实远端。
+
+## 设备操控与取证工具链
+
+- 文本注入：`devecocli ui text` 必须先点击聚焦目标输入框（不聚焦注入无效），不支持 `-d` 参数；`uitest uiInput inputText` 同理，且两者在 x86 模拟器对 Web 面均无效（api_notes L-8 / Z3）。原生 TextInput 是模拟器上唯一可靠注入对象。
+- 截图：devecocli 无 screenshot 命令，用 `hdc shell "snapshot_display -f /data/local/tmp/x.jpeg"` + `hdc file recv`。
+- 控件树：`uitest dumpLayout -p <path>` + `hdc file recv` 后解析 JSON；无障碍字段是 `attributes.text` / `attributes.description`（没有 `contentDescription`）。**Web 组件内部 DOM 不入树**——Web 面的内容结论必须截图佐证，不能靠 dump。
+- 进程基线：开轮先记 `hdc shell pidof com.jxg.huaweiobsidian`，关键节点复核；**pid 变化 = 存在并行安装 / 重装**，此前运行时证据作废，须重建基线（重装、重新打开夹具）再继续，不混用两代证据。
+- 磁盘取证：应用沙箱文件权限 600，`hdc shell cat` 报 Permission denied 属正常——存在性用 `ls` / `find` 验证；回收站在**应用级** `files/trash/vault-<id>-<n>/`，不在库目录内；删除生效判据 = 库根目标消失 + trash 内出现 + 撤销条 / 回收站计数 UI 变化。
+- 面位认知：从文件树 / 最近打开进入的笔记落在 **mdpreview 预览面**（横跨中右栏），mdeditor 编辑面不随打开挂载；探针或 C 组用例需要「编辑面」时，先从 dump 的 Web `resource` 字段确认是 `mdeditor/index.html` 还是 `mdpreview/index.html`，别把预览面当编辑面。
+- 左滑 SwipeBar 注入（`uitest uiInput swipe x1 y x2 y 时长`）本机两例一次成功，比用例注记「不可靠」表现好；仍不作通过 / 失败的唯一依据（用例注记优先），失败时改走按钮路径复验。
+- PowerShell 脚本化取证陷阱：`@()` 捕获 git / hdc 原生输出会**按控制台宽度折长行**（保字节用 `cmd /c "... > file"` 或直接 `file recv`）；`Select-Object -First N` 静默截断会误判「节点缺失」；双引号串内反引号是转义符（锚点 / 正则用单引号）；函数返回单元素数组会解包成标量。
 
 ## 记录与退出
 
