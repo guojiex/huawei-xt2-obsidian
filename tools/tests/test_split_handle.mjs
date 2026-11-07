@@ -56,8 +56,11 @@ test('split readout reports ratios, pane widths, and boundary causes', () => {
   assert.match(index, /private splitHandleWidths\(kind: string\)/);
   assert.match(index, /private splitHandleStatus\(kind: string\)/);
   assert.match(index, /默认比例/);
-  assert.match(index, /每个内容栏至少/);
-  assert.match(index, /每栏至少/);
+  // v1.39 39.5：读屏边界文案按栏说明（目录 / 正文 / 参考 / 正文与参考），数值随字号缩放。
+  assert.match(index, /目录至少 /);
+  assert.match(index, /正文至少 /);
+  assert.match(index, /参考至少 /);
+  assert.match(index, /\(panes > 1 \? '正文与参考' : '正文'\) \+ '至少 '/);
   assert.match(index, /MIN_NAV_RATIO/);
   assert.match(index, /MAX_NAV_RATIO/);
 });
@@ -109,6 +112,8 @@ test('v1.38 38.3: only one split handle drags at a time and the idle rail dims',
 });
 
 test('v1.38 38.1/38.3: content handle hides on single-screen layouts and when the area right of nav cannot fit two panes', () => {
-  assert.match(index, /private contentHandleVisible\(\): boolean \{\s*\n\s*return \(this\.breakpoint === Breakpoint\.LG \|\| this\.breakpoint === Breakpoint\.MD\) &&\s*\n\s*!this\.focused && this\.referenceVisible && !this\.isSingleScreenLayout\(\) &&\s*\n\s*this\.noteContentWidth\(\) >= Size\.paneMinW \* 2;/);
+  // v1.39 39.2：两栏下限随系统字号按 k=clamp(值,1,1.45) 放大（contentMinVp）。
+  assert.match(index, /private contentHandleVisible\(\): boolean \{\s*\n\s*return \(this\.breakpoint === Breakpoint\.LG \|\| this\.breakpoint === Breakpoint\.MD\) &&\s*\n\s*!this\.focused && this\.referenceVisible && !this\.isSingleScreenLayout\(\) &&\s*\n\s*this\.noteContentWidth\(\) >= contentMinVp\(this\.fontSizeScale\) \* 2;/);
   assert.match(tokens, /paneMinW: number = 240/);
+  assert.match(tokens, /paneMinNavW: number = 200/);
 });

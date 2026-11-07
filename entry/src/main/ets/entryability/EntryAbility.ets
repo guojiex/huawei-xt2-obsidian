@@ -52,7 +52,9 @@ export default class EntryAbility extends UIAbility {
       this.publishAppTheme(colorMode);
     },
     onFontSizeScaleUpdated: (fontSizeScale: number): void => {
-      // v1.10 系统字号校准日志：只采集，不做形态映射、不参与布局计算（AA2）。
+      // v1.10 校准日志（AA2）+ v1.39 39.2/39.7：发布到 AppStorage，
+      // Index 的分栏下限按 k=clamp(值,1,1.45) 实时重算，只钳制布局不改写保存比例（39.3）。
+      AppStorage.setOrCreate('fontSizeScale', fontSizeScale);
       hilog.info(DOMAIN, TAG, '系统字号缩放变化 fontSizeScale=%{public}s', fontSizeScale.toString());
     }
   };
@@ -122,6 +124,8 @@ export default class EntryAbility extends UIAbility {
     // v1.10 系统字号：启动时打一次当前缩放系数，供模拟器/真机核对 followSystem 生效（AA1/AA2）。
     const startFontSizeScale: number = this.context.config?.fontSizeScale ?? 1;
     hilog.info(DOMAIN, TAG, '启动系统字号缩放 fontSizeScale=%{public}s', startFontSizeScale.toString());
+    // v1.39 39.7：loadContent 前发布初始字号，页面首帧就能拿到正确下限（AA2）。
+    AppStorage.setOrCreate('fontSizeScale', startFontSizeScale);
 
     try {
       this.mainWindow = windowStage.getMainWindowSync();

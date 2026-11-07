@@ -73,8 +73,8 @@ import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from
 import { WorkspaceSession, WorkspaceSessionStore, restoreWorkspacePane, workspaceSessionPaths } from '../model/WorkspaceSessionStore';
 import {
   DEFAULT_CONTENT_RATIO, DEFAULT_NAV_RATIO, MAX_NAV_RATIO, MIN_NAV_RATIO, MdPaneWidths,
-  clampContentRatio, clampNavigationWidth, mdPaneWidths,
-  isSingleLandscapeWindow, navigationWidth
+  clampContentRatio, clampNavigationWidth, contentMinVp, mdPaneWidths,
+  isSingleLandscapeWindow, navMinVp, navigationWidth
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
 import { ShareNoteDialog, ShareFormatOption, ShareScopeOption } from '../components/ShareNoteDialog';
@@ -195,6 +195,11 @@ struct Index {
    * 存 px 而不是 vp：官方提醒 px2vp 应在 UI 上下文换算，故在页面侧 statusRightText() 里转。
    */
   @StorageProp('creasePx') creasePx: string = '-';
+  /**
+   * 系统字号缩放系数（EntryAbility 启动与 onFontSizeScaleUpdated 回调发布，api_notes AA1/AA2）。
+   * v1.39 39.2/39.7：分栏下限按 k=clamp(值,1,1.45) 放大；只钳制布局，不改写已保存比例（39.3）。
+   */
+  @StorageProp('fontSizeScale') fontSizeScale: number = 1;
   /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
   @State vaults: VaultEntry[] = [];
   @State vaultManagerShareSummaries: VaultManagerShareSummary[] = [];
@@ -1348,7 +1353,8 @@ struct Index {
     const contentPanes: number = this.breakpoint === Breakpoint.LG && !this.isSingleLandscape() ? 2 : 1;
     const ratio: number = this.navigationRatio < 0 && this.breakpoint === Breakpoint.MD
       ? 0.38 : this.navigationRatio;
-    return navigationWidth(this.windowWidthVp, ratio, contentPanes, 0);
+    return navigationWidth(this.windowWidthVp, ratio, contentPanes, 0,
+      this.fontSizeScale, this.contentRatio);
   }
 
   private drawerNavigationWidth(): number {
@@ -1356,7 +1362,7 @@ struct Index {
   }
 
   private agentNavigationWidth(): number {
-    return navigationWidth(this.windowWidthVp, this.navigationRatio, 1, 1);
+    return navigationWidth(this.windowWidthVp, this.navigationRatio, 1, 1, this.fontSizeScale);
   }
 
   private noteContentWidth(): number {
@@ -1373,7 +1379,7 @@ struct Index {
   }
 
   private noteContentRatio(): number {
-    return clampContentRatio(this.contentRatio, this.noteContentWidth());
+    return clampContentRatio(this.contentRatio, this.noteContentWidth(), this.fontSizeScale);
   }
 
   private settingsPaneWidthSummary(): string {
@@ -1415,7 +1421,7 @@ struct Index {
    */
   private mdPaneWidth(): MdPaneWidths {
     return mdPaneWidths(this.windowWidthVp, this.noteNavigationWidth(),
-      this.sidebarProgress, this.contentRatio);
+      this.sidebarProgress, this.contentRatio, this.fontSizeScale);
   }
 
   private activeSharePaneWidthVp(): number {
@@ -1432,12 +1438,12 @@ struct Index {
    * 正文分隔条是否可用：双屏（md）与三屏（lg）都能拖动左右栏比例。
    * md 以前只有硬编码 50%，既不能拖，设置页的「恢复等分栏宽」也就无从恢复。
    * v1.38：单屏布局（小屏 / 单屏横屏）不显示；目录右侧可用区域不足两栏最小宽
-   * （2 × paneMinW = 480vp）时隐藏（38.1 / 38.3）。
+   * 时隐藏（38.1 / 38.3）。v1.39 39.2：最小宽随系统字号按 k=clamp(值,1,1.45) 放大。
    */
   private contentHandleVisible(): boolean {
     return (this.breakpoint === Breakpoint.LG || this.breakpoint === Breakpoint.MD) &&
       !this.focused && this.referenceVisible && !this.isSingleScreenLayout() &&
-      this.noteContentWidth() >= Size.paneMinW * 2;
+      this.noteContentWidth() >= contentMinVp(this.fontSizeScale) * 2;
   }
 
   private splitHandlePrimary(kind: string): string {
@@ -1471,39 +1477,50 @@ struct Index {
       const panes: number = multiPane ? 2 : 1;
       const splitters: number = multiPane ? 2 : 1;
       const navigation: number = this.noteNavigationWidth();
+      const navMin: number = navMinVp(this.fontSizeScale);
+      const contentMin: number = contentMinVp(this.fontSizeScale);
       const defaultRatio: number = this.breakpoint === Breakpoint.MD ? 0.38 : DEFAULT_NAV_RATIO;
-      const defaultWidth: number = navigationWidth(total, defaultRatio, panes, 0);
+      const defaultWidth: number = navigationWidth(total, defaultRatio, panes, 0,
+        this.fontSizeScale, this.contentRatio);
       if (Math.abs(navigation - defaultWidth) <= 1) {
         return '默认比例';
       }
-      const minimum: number = clampNavigationWidth(0, total, panes, splitters);
-      const maximum: number = clampNavigationWidth(total, total, panes, splitters);
+      const minimum: number = clampNavigationWidth(0, total, panes, splitters,
+        this.fontSizeScale, this.contentRatio);
+      const maximum: number = clampNavigationWidth(total, total, panes, splitters,
+        this.fontSizeScale, this.contentRatio);
       if (navigation <= minimum + 1) {
-        return total * MIN_NAV_RATIO < Size.paneMinW
-          ? '最小宽度 · 目录至少 ' + Size.paneMinW + 'vp'
+        return total * MIN_NAV_RATIO < navMin
+          ? '最小宽度 · 目录至少 ' + navMin + 'vp'
           : '最小比例 ' + Math.round(MIN_NAV_RATIO * 100) + '%';
       }
       if (navigation >= maximum - 1) {
-        const contentLimit: number = total - panes * Size.paneMinW - splitters * Space.s4;
+        // v1.39 39.5：三栏时右侧按正文 / 参考比例收紧，边界文案按栏说明。
+        const reservedRight: number = panes > 1
+          ? Math.max(contentMin / Math.max(0.05, this.contentRatio),
+            contentMin / Math.max(0.05, 1 - this.contentRatio))
+          : contentMin;
+        const contentLimit: number = total - reservedRight - splitters * Space.s4;
         return contentLimit < total * MAX_NAV_RATIO
-          ? '最大宽度 · 每个内容栏至少 ' + Size.paneMinW + 'vp'
+          ? '最大宽度 · ' + (panes > 1 ? '正文与参考' : '正文') + '至少 ' + contentMin + 'vp'
           : '最大比例 ' + Math.round(MAX_NAV_RATIO * 100) + '%';
       }
       return '';
     }
     const total: number = this.noteContentWidth();
+    const contentMin: number = contentMinVp(this.fontSizeScale);
     const left: number = total * this.noteContentRatio();
-    if (total < Size.paneMinW * 2) {
-      return '窗口不足，无法两栏各 ' + Size.paneMinW + 'vp';
+    if (total < contentMin * 2) {
+      return '窗口不足，无法两栏各 ' + contentMin + 'vp';
     }
     if (Math.abs(left - total * DEFAULT_CONTENT_RATIO) <= 1) {
       return '默认比例';
     }
-    if (left <= Size.paneMinW + 1) {
-      return '最小宽度 · 每栏至少 ' + Size.paneMinW + 'vp';
+    if (left <= contentMin + 1) {
+      return '最小宽度 · 正文至少 ' + contentMin + 'vp';
     }
-    if (left >= total - Size.paneMinW - 1) {
-      return '最大宽度 · 每栏至少 ' + Size.paneMinW + 'vp';
+    if (left >= total - contentMin - 1) {
+      return '最大宽度 · 参考至少 ' + contentMin + 'vp';
     }
     return '';
   }
@@ -1553,16 +1570,20 @@ struct Index {
     let candidate: number = this.navigationDragStart + offsetX;
     if (!agent && !altPressed) {
       const defaultRatio: number = this.breakpoint === Breakpoint.MD ? 0.38 : DEFAULT_NAV_RATIO;
-      const defaultWidth: number = navigationWidth(this.windowWidthVp, defaultRatio, panes, 0);
-      const minimum: number = clampNavigationWidth(0, this.windowWidthVp, panes, splitters);
+      const defaultWidth: number = navigationWidth(this.windowWidthVp, defaultRatio, panes, 0,
+        this.fontSizeScale, this.contentRatio);
+      const minimum: number = clampNavigationWidth(0, this.windowWidthVp, panes, splitters,
+        this.fontSizeScale, this.contentRatio);
       const maximum: number = clampNavigationWidth(
-        this.windowWidthVp, this.windowWidthVp, panes, splitters);
+        this.windowWidthVp, this.windowWidthVp, panes, splitters,
+        this.fontSizeScale, this.contentRatio);
       if (defaultWidth >= minimum && defaultWidth <= maximum &&
         Math.abs(candidate - defaultWidth) <= 10) {
         candidate = defaultWidth;
       }
     }
-    const width: number = clampNavigationWidth(candidate, this.windowWidthVp, panes, splitters);
+    const width: number = clampNavigationWidth(candidate, this.windowWidthVp, panes, splitters,
+      this.fontSizeScale, this.contentRatio);
     this.navigationRatio = width / this.windowWidthVp;
   }
 
@@ -1578,10 +1599,11 @@ struct Index {
     if (width <= 0) {
       return;
     }
-    let candidate: number = clampContentRatio((this.contentDragStart + offsetX) / width, width);
+    let candidate: number = clampContentRatio((this.contentDragStart + offsetX) / width, width,
+      this.fontSizeScale);
     const defaultWidth: number = width * DEFAULT_CONTENT_RATIO;
     const candidateWidth: number = width * candidate;
-    if (!altPressed && width >= Size.paneMinW * 2 &&
+    if (!altPressed && width >= contentMinVp(this.fontSizeScale) * 2 &&
       Math.abs(candidateWidth - defaultWidth) <= 10) {
       candidate = DEFAULT_CONTENT_RATIO;
     }
@@ -1608,7 +1630,8 @@ struct Index {
       const panes: number = multiPane ? 2 : 1;
       const splitters: number = multiPane ? 2 : 1;
       const width: number = clampNavigationWidth(
-        this.noteNavigationWidth() + deltaVp, total, panes, splitters);
+        this.noteNavigationWidth() + deltaVp, total, panes, splitters,
+        this.fontSizeScale, this.contentRatio);
       this.navigationRatio = width / total;
     } else {
       const total: number = this.noteContentWidth();
@@ -1616,7 +1639,7 @@ struct Index {
         return;
       }
       const width: number = total * this.noteContentRatio();
-      this.contentRatio = clampContentRatio((width + deltaVp) / total, total);
+      this.contentRatio = clampContentRatio((width + deltaVp) / total, total, this.fontSizeScale);
     }
     this.endSplitDrag();
   }
@@ -1630,8 +1653,10 @@ struct Index {
       const multiPane: boolean = this.breakpoint === Breakpoint.LG;
       const panes: number = multiPane ? 2 : 1;
       const splitters: number = multiPane ? 2 : 1;
-      const minimum: number = clampNavigationWidth(0, total, panes, splitters);
-      const maximumWidth: number = clampNavigationWidth(total, total, panes, splitters);
+      const minimum: number = clampNavigationWidth(0, total, panes, splitters,
+        this.fontSizeScale, this.contentRatio);
+      const maximumWidth: number = clampNavigationWidth(total, total, panes, splitters,
+        this.fontSizeScale, this.contentRatio);
       this.navigationRatio = (maximum ? maximumWidth : minimum) / total;
     } else {
       const total: number = this.noteContentWidth();
@@ -1639,7 +1664,8 @@ struct Index {
         return;
       }
       this.contentRatio = maximum
-        ? clampContentRatio(1, total) : clampContentRatio(0, total);
+        ? clampContentRatio(1, total, this.fontSizeScale)
+        : clampContentRatio(0, total, this.fontSizeScale);
     }
     this.endSplitDrag();
   }

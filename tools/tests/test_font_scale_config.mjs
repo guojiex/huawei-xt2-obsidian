@@ -9,7 +9,9 @@
  *  - 应用级钳制上限 fontSizeMaxScale 取适老化指南建议值 "1.75"
  *    （schema 枚举见 SDK toolchains/modulecheck/configuration.json）。
  *  - EntryAbility 用 systemConfiguration.UpdatedCallback 的
- *    onFontSizeScaleUpdated（since 24）打校准日志，不做布局计算。
+ *    onFontSizeScaleUpdated（since 24）打校准日志；v1.39 39.2/39.7 起
+ *    同时发布 fontSizeScale 到 AppStorage，Index 的分栏下限按
+ *    k=clamp(值,1,1.45) 实时重算（只钳制布局，不改写已保存比例）。
  *
  * 删掉或改掉这些配置会让系统字号缩放整体失效（设置里拖滑条应用毫无反应），
  * 所以用源码断言钉住。
@@ -59,4 +61,23 @@ test('EntryAbility observes and logs font scale changes (AA2, since 24)', () => 
     'observer 实例应实现 onFontSizeScaleUpdated 回调');
   assert.ok(/启动系统字号缩放 fontSizeScale=/.test(source),
     'onWindowStageCreate 应打一次启动字号缩放日志（供模拟器/真机核对 followSystem 生效）');
+});
+
+test('v1.39 39.2/39.7: EntryAbility publishes fontSizeScale to AppStorage and Index consumes it', () => {
+  const ability = readFileSync(
+    resolve(repoRoot, 'entry/src/main/ets/entryability/EntryAbility.ets'), 'utf8');
+  // 回调（前台实时）与启动初始值（loadContent 前首帧正确）两条发布路径都要有。
+  assert.ok(/onFontSizeScaleUpdated[\s\S]*?AppStorage\.setOrCreate\('fontSizeScale', fontSizeScale\)/.test(ability),
+    'onFontSizeScaleUpdated 回调应发布 fontSizeScale 到 AppStorage（39.3 前台实时生效）');
+  assert.ok(/AppStorage\.setOrCreate\('fontSizeScale', startFontSizeScale\)/.test(ability),
+    'onWindowStageCreate 应在 loadContent 前发布启动字号，页面首帧拿到正确下限');
+
+  const index = readFileSync(
+    resolve(repoRoot, 'entry/src/main/ets/pages/Index.ets'), 'utf8');
+  assert.ok(/@StorageProp\('fontSizeScale'\) fontSizeScale: number = 1;/.test(index),
+    'Index 应以 @StorageProp 订阅 fontSizeScale（默认 1，EntryAbility 未发布时按标准字号）');
+  // 分栏调用点把字号传进 PaneLayout（16 处渲染 / 拖动 / 键盘路径）。
+  const passThrough = index.match(/this\.fontSizeScale/g) ?? [];
+  assert.ok(passThrough.length >= 15,
+    `expected >= 15 fontSizeScale pass-through uses in Index, got ${passThrough.length}`);
 });

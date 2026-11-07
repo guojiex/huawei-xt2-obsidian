@@ -27,7 +27,7 @@ function loadPaneLayout() {
   const sandbox = {
     module: { exports: {} },
     exports: {},
-    Size: { paneMinW: 240 },
+    Size: { paneMinW: 240, paneMinNavW: 200 },
     Space: { s4: 16 },
     Breakpoint: {
       SM: 'sm', MD: 'md', LG: 'lg',
@@ -80,6 +80,20 @@ test('极端比例被夹到最小栏宽，右栏不会被压没', () => {
   const widths = mdPaneWidths(WIDTH_VP, NAV_VP, 0, 0.98);
   assert.ok(widths.right >= 240 - 0.001);
   assert.ok(widths.left >= 240 - 0.001);
+});
+
+test('v1.39 39.2/39.7: 字号放大时 md 双栏按放大后的内容下限钳制（1.3 → 312）', () => {
+  // 720vp 内容区、ratio=0.98：1.0 字号时右栏夹到 240；1.3 字号时夹到 312。
+  const standard = mdPaneWidths(WIDTH_VP, NAV_VP, 0, 0.98, 1);
+  assert.ok(standard.right >= 240 - 0.001);
+  const scaled = mdPaneWidths(WIDTH_VP, NAV_VP, 0, 0.98, 1.3);
+  assert.ok(scaled.right >= 312 - 0.001, `right=${scaled.right}`);
+  assert.ok(scaled.right > standard.right);
+  // 1.75 封顶到 1.45 → 348；< 1 不缩小。
+  const capped = mdPaneWidths(WIDTH_VP, NAV_VP, 0, 0.98, 1.75);
+  assert.ok(capped.right >= 348 - 0.001, `right=${capped.right}`);
+  const shrunk = mdPaneWidths(WIDTH_VP, NAV_VP, 0, 0.98, 0.9);
+  assert.ok(Math.abs(shrunk.right - standard.right) < 0.001);
 });
 
 test('窗口宽未知时返回 0，不产生负宽', () => {

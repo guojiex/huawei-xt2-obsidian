@@ -19,7 +19,7 @@ const paneLayoutModule = { exports: {} };
 vm.runInContext(paneLayoutCode, vm.createContext({
   module: paneLayoutModule,
   exports: paneLayoutModule.exports,
-  Size: { paneMinW: 240 },
+  Size: { paneMinW: 240, paneMinNavW: 200 },
   Space: { s4: 16 },
   Breakpoint: { SM: 'sm', MD: 'md', LG: 'lg', MD_THRESHOLD_VP: 600, LG_THRESHOLD_VP: 840 }
 }));
