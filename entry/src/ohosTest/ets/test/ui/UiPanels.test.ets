@@ -6,7 +6,7 @@
 import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText,
-  clickById, clickByText, existsById, waitGoneById } from './UiTestHelpers';
+  clickById, clickByText, existsById, waitGoneById, clickUntilTextAppear } from './UiTestHelpers';
 
 /** 从次级视图返回笔记视图：onBackPress 已覆盖（Index 2.7c） */
 async function backToNoteView(driver: Driver): Promise<void> {
@@ -22,17 +22,21 @@ export default function uiPanelsTest() {
 
     it('settings_groups_visible_and_back', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
-      await clickById(driver, 'workspace-more-button');
+      // 首用例紧随冷启动：首击可能被吞（UiTestHelpers.clickUntilTextAppear 注释），套重试保护
+      await clickUntilTextAppear(driver, 'workspace-more-button', '设置与关于', 3, 15000);
       await clickByText(driver, '设置与关于');
+      // 双栏设置一次只渲染选中分类（SettingsView.CategoryContent），须逐类点击再断言 heading
       await waitById(driver, 'settings-heading-general');
+      await clickById(driver, 'settings-category-data');
       await waitById(driver, 'settings-heading-data');
+      await clickById(driver, 'settings-category-about');
       await waitById(driver, 'settings-heading-about');
       await backToNoteView(driver);
     });
 
     it('settings_editor_mode_toggle', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
-      await clickById(driver, 'workspace-more-button');
+      await clickUntilTextAppear(driver, 'workspace-more-button', '设置与关于', 3, 15000);
       await clickByText(driver, '设置与关于');
       await waitById(driver, 'settings-heading-general');
       await clickById(driver, 'settings-editor-mode-professional');

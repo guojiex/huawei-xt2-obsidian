@@ -1378,6 +1378,17 @@ this.PaneHead({ title: ... })   // @Builder PaneHead($$: PaneHeadParam)
 注入替代通道：**临时调试钩子**（隐形 `Text` + `LongPressGesture` → `editorBridge.setContent`）——
 `setContent` 派发的 doc 变更走真实 change→自动保存链，可验证保存链路；验收后移除。
 
+**2026-11-07 修正（UI 自动化首轮落地实测，x86_64 模拟器，17/17 回归）**：
+
+- **触摸点击与滑动注入实测可用**（`Driver.click` / `Driver.swipe` px 坐标、
+  `ListItem.swipeAction` 手势路径半滑/全滑均有效）——上表未列触摸注入，此前「手势注入不可靠」
+  的印象仅对**拖拽**成立（未验）。左滑删除等手势路径可自动化。
+- **冷启动首分钟 UiTest 点击间歇无效**：同坐标 `uinput` 注入正常、晚于约 1 分钟的点击正常，
+  判 UiTest 注入层问题；套「点击→短期等目标→未出现重试」模式可解。
+- 文本注入补充：IME×Web 不可用结论不变；**原生 TextInput 的 inputText 注入可用**（新建弹窗实测）。
+- `waitForComponent` 超时**返回 null 不抛错**（文档未记载，实测）；x86 整树一次匹配可花 ~12s。
+- 证据：`docs/testing/UI自动化测试.md`「实测结论与坑」、`.local/uitest/20261107_*`（gitignore）。
+
 ### L-9 `ListItem.swipeAction` 三档手势落地（2026-10-21，SDK 核实 + 构建通过）✅ 签名 / ⚠️ 运行时待验
 
 API 24 SDK 签名（`sdk/default/openharmony/ets/component/list_item.d.ts:563`）：
@@ -1402,7 +1413,10 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 | 滑到底 → 直接删除 + 5 秒撤销条 | `actionAreaDistance: Size.swipeDelExtra(36vp)`，松手越阈值触发 `onAction` → 移入回收站 + UndoBar（**只对文件行**） |
 | 文件夹没有第三档（回弹） | 目录行 `onAction` 空操作（不注册删除）；Spring 自动回弹 |
 
-- 状态：签名已在 SDK 核实、`arkts_check` + 签名 HAP 构建通过；**手势手感 / actionAreaDistance 阈值体感未实测**（模拟器手势注入不可靠，见 L-8），随真机验收。
+- 状态：签名已在 SDK 核实、`arkts_check` + 签名 HAP 构建通过；**运行时已在 x86_64 模拟器经手势注入
+  验证**（2026-11-07：半滑出 SwipeBar（重命名/移动/删除）、全滑触发 `onAction` → 回收站 + 撤销条，
+  UiNoteFlow 套件 8/8 与全量 17/17 回归，见 `docs/testing/UI自动化测试.md`）；
+  **手势手感 / actionAreaDistance 阈值体感**仍随真机验收。
 - 关联落码：`FileTreeView.ets`（SwipeBar + swipeAction）、`TrashService.ets`（`vaults/<库>/.trash/` 回收站 + 恢复拒绝覆盖）、`Index.ets`（UndoBar + doTrashFile）；详见 `docs/releases/v0.2/需求文档.md` §6。
 
 ### L-10 v0.4 快切遮罩外点击命中（2026-10-23，API SDK 声明 + API 26 模拟器）✅
@@ -1498,8 +1512,8 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 | **AtomicFile 用法** | ✅ **回调式 `end` + 回调内 `finishWrite()`，全程禁 `close()`**（close+finish = double free → SIGSEGV，C1 实测；x86_64 模拟器 write 回调早于落盘，2026-11-07 改 end，C1 探针矩阵）；空内容直接 finishWrite；写路径必须超时+串行化 | 已落地（全工程 8 处调用点） |
 | **CodeMirror state 重建剥 listener** | ✅ updateListener 进 `extensionsFor()` 内部 + ArkTS 侧 ready 去重（双 ready 重建会永久丢 change 事件，**L-6 实测**） | 已落地（mdeditor） |
 | **@Builder 传参刷新** | ✅ 需随状态刷新的参数用 `$$: 命名 interface` 按引用传；按值传参是调用时快照（**L-7 实测**） | 已落地（PaneHead） |
-| **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ 文本注入 / ArkWeb 渲染在模拟器全不可用（**L-8**）；编辑器/输入法验证一律真机 | 已定案 |
-| **列表项三档左滑** | ✅ `ListItem.swipeAction` + `SwipeActionItem.actionAreaDistance/onAction`（`edgeEffect: Spring`），签名 API 24 已核实（**L-9**）；文件夹不注册 onAction 即无第三档 | 已落地（FileTreeView，手感待真机） |
+| **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ ArkWeb 渲染在模拟器全不可用；文本注入仅 IME×Web 废（原生 TextInput 可用）；触摸点击/滑动注入实测可用、拖拽未验（**L-8** 2026-11-07 修正）；编辑器/输入法验证一律真机 | 已定案 |
+| **列表项三档左滑** | ✅ `ListItem.swipeAction` + `SwipeActionItem.actionAreaDistance/onAction`（`edgeEffect: Spring`），签名 API 24 已核实（**L-9**）；文件夹不注册 onAction 即无第三档；运行时已 x86 模拟器手势注入验证（2026-11-07） | 已落地（FileTreeView，手感待真机） |
 | **回收站位置** | ✅ `vaults/<库>/.trash/` 镜像原相对路径：FileTree 天然过滤点前缀、库 rename/delete 自动带着走、恢复目标=镜像路径无需元数据；**v0.3 Git 同步须给 `.trash` 配 .gitignore** | 已落地（TrashService） |
 
 

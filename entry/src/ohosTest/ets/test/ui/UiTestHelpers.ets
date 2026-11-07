@@ -60,6 +60,11 @@ export async function waitByIdSoft(driver: Driver, id: string, timeoutMs: number
   return comp !== null;
 }
 
+/** waitById 的组件版判空：超时返回 null（重试循环里拿到组件继续操作时用） */
+export async function tryWaitById(driver: Driver, id: string, timeoutMs: number): Promise<Component | null> {
+  return await driver.waitForComponent(ON.id(id), timeoutMs);
+}
+
 export async function waitByText(driver: Driver, txt: string, timeoutMs: number = WAIT_MS): Promise<Component> {
   const comp: Component | null = await driver.waitForComponent(ON.text(txt), timeoutMs);
   if (comp === null) {
@@ -153,12 +158,12 @@ export async function ensureSidebarVisible(driver: Driver): Promise<void> {
  * 点击后短期等待目标出现，未出现即视为本次点击无效，重试。
  */
 export async function clickUntilTextAppear(driver: Driver, clickId: string, expectText: string,
-  attempts: number = 3): Promise<void> {
+  attempts: number = 3, attemptWaitMs: number = 8000): Promise<void> {
   let lastError: Error | null = null;
   for (let i: number = 0; i < attempts; i++) {
     try {
       await clickById(driver, clickId);
-      await waitByText(driver, expectText, 8000);
+      await waitByText(driver, expectText, attemptWaitMs);
       return;
     } catch (error) {
       lastError = error as Error;
