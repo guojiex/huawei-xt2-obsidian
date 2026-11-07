@@ -9,6 +9,10 @@
     "versionName": "0.2.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",
-    "label": "$string:app_name"
+    "label": "$string:app_name",
+    // v1.10 系统字号：字体跟随系统缩放（fp 字号），应用级钳制上限 1.75
+    // （适老化指南建议值，schema 见 SDK toolchains/modulecheck/configuration.json）。
+    // 依据见 docs/harmonyos/api_notes.md AA1。
+    "configuration": "$profile:configuration"
   }
 }

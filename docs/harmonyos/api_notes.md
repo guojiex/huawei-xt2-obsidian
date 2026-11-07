@@ -1997,4 +1997,50 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 ### Z3 ⚠️ x86 系模拟器 IME×Web 不可输入与 API 版本无关——API26 x86_64 复现（2026-11-07，EM-C0 实测）
 - 实测（Windows 本机 API26 x86_64 模拟器，v1.32 构建）：Web 编辑面（mdpreview 可编辑预览）单击 / 双击均无光标、不唤起 IME；`devecocli ui text` 与 `uitest uiInput inputText` 注入均未上屏（字数恒 0 字）；同轮新建弹窗原生 TextInput 注入两次全部正常上屏。与 L-8 的 API24 x86 表现一致。
-- 对照：API26 arm64 模拟器拼音输入历史证据可用（B6）→ L-8 类限制按 CPU 架构（x86）成立，与 API 版本无关。x86 宿主上 EM-C0 探针预期「不可输入」，C 组输入类用例按 docs/testing 规则记环境阻塞。
+- 对照：API26 arm64 模拟器拼音输入历史证据可用（B6）→ L-8 类限制按 CPU 架构（x86）成立，与 API 版本无关。x86 宿主上 EM-C0 探针预期「不可输入」，C 组输入类用例按 docs/testing 规则记环境阻塞。
+
+## AA 组：系统字号缩放与模拟器形态切换（2026-11-07 官方问答 + 本机 SDK 核对）
+
+> 背景：v1.10 基础无障碍（系统字号适配 + 形态矩阵）。问答存档：[qa/2026-11-07_系统字号缩放与模拟器形态切换_API26.md](qa/2026-11-07_系统字号缩放与模拟器形态切换_API26.md)。
+
+### AA1 应用字体默认不跟随系统字号 —— 必须显式配置 followSystem ✅（2026-11-07 模拟器实测生效）
+
+- **应用字体大小默认不跟随系统变化**。需在 `AppScope/resources/base/profile/configuration.json` 写 `"fontSizeScale": "followSystem"`，并在 `AppScope/app.json5` 用 `"configuration": "$profile:configuration"` 引用，fp 字号才跟随系统字号缩放。
+- 配置后系统字号变化实时生效：前台 UIAbility 收到 `onConfigurationUpdate`（API 24 起另有 `onFontSizeScaleUpdated` 订阅），UI 自动重排，无需重启。
+- 若调用应用侧 `setFontSizeScale` 自定义字体，则不再跟随系统，也不再触发订阅。
+- 适老化适配指南建议：最大适配 1.75 倍（部分组件 2 倍），即 configuration 标签的 `fontSizeMaxScale` 建议配 1.75。
+- **实测（API 26 x86_64 模拟器）**：滑条 标准→特大 后应用进程实时收到 `onFontSizeScaleUpdated`（1 → 1.45），同页文字高度精确 ×1.45；拖回标准回调恢复 1，无需重启。证据记录见 [v1.10 需求文档 §4.3](../../releases/v1.10/需求文档.md)。
+
+### AA2 应用侧读取 / 订阅字号缩放系数的 API ✅
+
+- `Configuration.fontSizeScale`（`context.config`）：API 10 起。
+- `ApplicationContext.onSystemConfigurationUpdated`（回调含 `onFontSizeScaleUpdated`）/ `offSystemConfigurationUpdated`，`@ohos.app.ability.systemConfiguration`：API 24 起。
+- `UIContext.getMaxFontScale()`：API 13 起，返回受 `fontSizeMaxScale` 约束的最大字体倍率。
+
+### AA3 Text `maxFontScale` / `minFontScale` ⚠️ 版本记载有出入（不影响可用）
+
+- 官方回答称 API 18 起（Text/Button/Search）；**本机 SDK `ets/component/text.d.ts` 声明两者均 `@since 12`**。均 ≤ 工程兼容上限 24，可用；差异已记录，不视为冲突。
+- `maxFontScale` 范围 [1, +∞)（<1 按 1），限制系统缩放的放大上限；`minFontScale` 范围 [0,1]，限制缩小下限。
+- 只约束「系统字号缩放」维度，不改显式 `fontSize` 基准：实际渲染 = fontSize × 钳制后的系统缩放系数；不设置默认不钳制（前提是 AA1 的 followSystem 已配置）。
+
+### AA4 命令行修改系统字体大小：❓ 未记载（滑条档位已部分实测）
+
+- hdc 与模拟器命令行均无改系统字号的记载；`settings list system/global` 也无相关键（本机核实）。**系统字号放大验证只能手动 / UI 自动化操作设置滑条**。
+- **滑条档位实测（API 26 模拟器，部分）**：字体大小滑条共 5 档 —— 第 2 档「标准」= 1.0，第 5 档「特大」= 1.45（常规最大，页内提示更大字体走「关怀模式」）；第 1/3/4 档（小 / 大 / 更大?）未逐档实测。滑条 UI 值是档位索引（非倍率）。
+- **UI 自动化注意**：`uitest uiInput click` 点击滑条轨道可直接跳到最近档位（tap-to-jump）；但 `drag` 注入在恢复后的设置页可能不生效（拖完全程值不变），优先用 click 跳档。
+
+### AA5 字号缩放与显示大小是两个独立维度 ✅
+
+- 字体大小（fontSizeScale）作用于 fp 字号；显示大小影响 vp↔px 换算（density），`window.getWindowDensityInfo()`（API 15 起）的 `systemDensity` 范围 0.5–4.0。两个滑条独立取值；布局（vp）只受显示大小影响。
+
+### AA6 模拟器折叠形态切换命令 ✅（宿主侧 CLI）
+
+- `Emulator -instance {模拟器名称} -foldedState {open|half-open|close}`（模拟器命令行，非 hdc shell）。双折叠 / Pura X Max 支持 `open|half-open|close`。
+- **三折叠设备的取值未记载**（三折叠有 F/M/G 三形态，展开态对应 `FoldStatus.FOLD_STATUS_EXPANDED_WITH_SECOND_EXPANDED`）——形态矩阵自动化前先在本机三折叠模拟器实测 `open/half-open/close` 各对应什么形态再固化参数。
+
+### AA7 模拟器显示尺寸切换可致渲染状态损坏（窗口整屏均匀色）⚠️（2026-11-07 实测踩到）
+
+- 现象：模拟器显示尺寸切换（实测 3184×2232 → 2048×2232）后，WM 与 RenderService 状态不一致（RS 报物理屏 2232×3184 竖屏、SystemUI 窗口残留旧几何如 `y=-11362048`）。此后应用窗口**渲染整屏均匀色**（截图 stddev=0，只有状态栏/手势条可见），但 UI 树完整、应用进程持续绘制（chromium eglSwapBuffers 正常）、桌面等其他窗口渲染正常。
+- 判别法（不要误判为应用白屏 bug）：像素统计截图（整屏 std=0 = 均匀色）+ `uitest dumpLayout` UI 树完整 + `hidumper -s RenderService -a 'screen'` 与 WindowManagerService 几何对不上 → 模拟器合成层问题。
+- 恢复：`hdc shell reboot` 重启模拟器即恢复。**注意重启会把系统字号设置复位为标准**（字号实测时需重拖滑条）。
+- 另：`aa start` 设置需用全名 `-a com.huawei.hmos.settings.MainAbility -b com.huawei.hmos.settings`，短名 `MainAbility` 报 10104001 ability 不存在。

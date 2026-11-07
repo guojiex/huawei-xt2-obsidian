@@ -26,6 +26,11 @@ const FOLD_TAG = 'FoldCalibration';
 
 interface ColorModeObserver {
   onColorModeUpdated: (colorMode: ConfigurationConstant.ColorMode) => void;
+  /**
+   * systemConfiguration.UpdatedCallback 的字号成员（API 24，api_notes.md AA2）。
+   * v1.10 系统字号：fp 字号由系统按 followSystem 自动缩放（AA1），这里只打校准日志。
+   */
+  onFontSizeScaleUpdated?: (fontSizeScale: number) => void;
 }
 
 export default class EntryAbility extends UIAbility {
@@ -45,6 +50,10 @@ export default class EntryAbility extends UIAbility {
   private readonly colorModeObserver: ColorModeObserver = {
     onColorModeUpdated: (colorMode: ConfigurationConstant.ColorMode): void => {
       this.publishAppTheme(colorMode);
+    },
+    onFontSizeScaleUpdated: (fontSizeScale: number): void => {
+      // v1.10 系统字号校准日志：只采集，不做形态映射、不参与布局计算（AA2）。
+      hilog.info(DOMAIN, TAG, '系统字号缩放变化 fontSizeScale=%{public}s', fontSizeScale.toString());
     }
   };
   /** 上一次断点档位，用于判断档位切换才打校准日志（避免同档位重复刷屏）。 */
@@ -110,6 +119,9 @@ export default class EntryAbility extends UIAbility {
       hilog.error(DOMAIN, TAG, '系统主题监听注册失败 code=%{public}d', err.code);
     }
     this.publishAppTheme(this.context.config?.colorMode);
+    // v1.10 系统字号：启动时打一次当前缩放系数，供模拟器/真机核对 followSystem 生效（AA1/AA2）。
+    const startFontSizeScale: number = this.context.config?.fontSizeScale ?? 1;
+    hilog.info(DOMAIN, TAG, '启动系统字号缩放 fontSizeScale=%{public}s', startFontSizeScale.toString());
 
     try {
       this.mainWindow = windowStage.getMainWindowSync();
