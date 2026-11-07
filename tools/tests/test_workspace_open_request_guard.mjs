@@ -36,6 +36,9 @@ function createContext() {
   const context = vm.createContext({
     module,
     JSON,
+    DOMAIN: 0,
+    TAG: 'test',
+    hilog: { warn() {}, error() {} },
     NoteService: { tryReadNote: (_registry, vault, path) => `${vault}:${path}` },
     NoteDraftService: {
       async recover(_registry, _vaultId, _path, formalText) {

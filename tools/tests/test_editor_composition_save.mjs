@@ -60,7 +60,7 @@ function createHarness(options = {}) {
     WorkspaceEditGuard: { clear() {} },
     shouldShowSaveFeedback: () => false,
     promptAction: { showToast() {} },
-    hilog: { warn() {} }
+    hilog: { warn() {}, error() {} }
   });
   vm.runInContext(code, context);
   const app = new context.module.exports();

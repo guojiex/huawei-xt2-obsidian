@@ -2011,6 +2011,7 @@ struct Index {
 
   private showEditorMismatchRecovery(vaultId: string, path: string): void {
     if (this.editorMismatchDialogOpen) {
+      hilog.warn(DOMAIN, TAG, '编辑恢复弹窗已在展示，跳过重复触发');
       return;
     }
     this.editorMismatchDialogOpen = true;
@@ -2026,8 +2027,10 @@ struct Index {
       if (result.index === 1) {
         void this.reloadStaleVaultNote(vaultId, path);
       }
-    }).catch((): void => {
+    }).catch((error: BusinessError): void => {
       this.editorMismatchDialogOpen = false;
+      hilog.error(DOMAIN, TAG, '编辑恢复弹窗打开失败：%{public}s',
+        error.message ?? 'unknown');
       promptAction.showToast({ message: '无法打开恢复提示，请稍后重试' });
     });
   }
@@ -2055,10 +2058,15 @@ struct Index {
   private async reloadStaleVaultNote(vaultId: string, path: string): Promise<void> {
     if (vaultId !== this.currentVaultId || this.topView !== 'note' ||
       (this.currentFilePath !== path && this.rightFilePath !== path)) {
+      hilog.warn(DOMAIN, TAG,
+        '重新载入被跳过：vault不一致=%{public}s 视图=%{public}s 路径不匹配=%{public}s',
+        String(vaultId !== this.currentVaultId), this.topView,
+        String(this.currentFilePath !== path && this.rightFilePath !== path));
       return;
     }
     const externalText: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, path);
     if (externalText === null) {
+      hilog.warn(DOMAIN, TAG, '重新载入失败：目标笔记已不存在或无法读取');
       await this.clearMissingOpenVaultNote(vaultId, path,
         this.currentFilePath === path ? 'left' : 'right');
       promptAction.showToast({ message: '笔记已不存在或无法读取，请从文件树重新选择' });
@@ -6707,6 +6715,8 @@ struct Index {
       if (text.replace(/\r\n/g, '\n') === savedText.replace(/\r\n/g, '\n')) {
         return true;
       }
+      hilog.error(DOMAIN, TAG,
+        '右栏保存前校验失败：编辑器内容与最近保存版本不一致且无未保存标记，触发编辑恢复弹窗');
       this.showEditorMismatchRecovery(targetVaultId, targetPath);
       return false;
     }
@@ -6907,6 +6917,7 @@ struct Index {
       this.currentFilePath = relPath;
       if (rightIsActiveEditor && !await this.flushRightSave(prev, vaultId)) {
         if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+          hilog.warn(DOMAIN, TAG, '共享笔记右栏保存失败，回滚本次左栏打开操作');
           this.currentFilePath = prev;
           this.editorBridge.restoreDocumentTransition(documentTransition);
           this.scheduleSave();
@@ -6918,6 +6929,7 @@ struct Index {
       }
       if (!rightIsActiveEditor && !await this.flushSave(prev, vaultId)) {
         if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+          hilog.warn(DOMAIN, TAG, '旧笔记保存失败，回滚本次打开操作，新笔记未加载');
           this.currentFilePath = prev;
           this.editorBridge.restoreDocumentTransition(documentTransition);
           this.scheduleSave();
@@ -6930,6 +6942,7 @@ struct Index {
       if (!rightSharesPrevious && this.rightFilePath.length > 0 &&
         !await this.flushRightSave(this.rightFilePath, vaultId)) {
         if (this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
+          hilog.warn(DOMAIN, TAG, '右栏笔记保存失败，回滚本次左栏打开操作');
           this.currentFilePath = prev;
           this.editorBridge.restoreDocumentTransition(documentTransition);
           this.scheduleSave();
@@ -6943,6 +6956,7 @@ struct Index {
         if (!this.isCurrentLeftOpenTarget(relPath, vaultId, requestId)) {
           return;
         }
+        hilog.warn(DOMAIN, TAG, '目标笔记加载失败，回滚本次打开操作');
         this.currentFilePath = prev;
         this.editorBridge.restoreDocumentTransition(documentTransition);
         this.showFailureFeedback('note', 'read', 'unknown', 'not_completed', 'reopen_note',
@@ -7008,9 +7022,11 @@ struct Index {
     let text: string = '';
     try {
       text = await source.getContent();
-    } catch (_error) {
+    } catch (error) {
       // 拉不到内容：放弃这次保存（拿空串落盘会清空文件），但绝不让异常外泄挡住调用方
-      hilog.warn(DOMAIN, TAG, 'flushSave 拉取编辑器内容失败，跳过保存');
+      const fetchError = error as Error;
+      hilog.warn(DOMAIN, TAG, 'flushSave 拉取编辑器内容失败，跳过保存：%{public}s',
+        fetchError.message ?? 'unknown');
       this.showFailureFeedback('note', 'bridge', 'unknown', 'not_completed', 'retry',
         '未能读取编辑器内容；本次未写入文件，当前编辑仍保留。请稍后重试。');
       return false;
@@ -7034,6 +7050,9 @@ struct Index {
       if (text.replace(/\r\n/g, '\n') === expectedText.replace(/\r\n/g, '\n')) {
         return true;
       }
+      hilog.error(DOMAIN, TAG,
+        '保存前校验失败（pane=%{public}s）：编辑器内容与最近保存版本不一致且无未保存标记，触发编辑恢复弹窗',
+        sourceIsRight ? 'right' : 'left');
       this.showEditorMismatchRecovery(vaultId, path);
       return false;
     }

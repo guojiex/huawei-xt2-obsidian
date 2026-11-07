@@ -17,6 +17,8 @@ function fixture() {
   let resolveDialog;
   const dialogs = [], reloads = [];
   const context = vm.createContext({ module: { exports: {} }, $r: value => value,
+    DOMAIN: 0, TAG: 'test',
+    hilog: { warn() {}, error() {} },
     promptAction: { showToast() {} } });
   vm.runInContext(code, context);
   const app = new context.module.exports();
