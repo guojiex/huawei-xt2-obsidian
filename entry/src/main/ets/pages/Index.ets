@@ -8369,10 +8369,9 @@ struct Index {
         const markdown: string = await this.editorBridgeForPath(path).getContent();
         const prepared: PreparedNoteShare = await NoteShareService.prepareNote(registry, vault.id,
           path, markdown);
-        const summary: string = prepared.imageCount > 0
-          ? '1 篇笔记 · ' + prepared.imageCount.toString() + ' 张图片' : '1 篇笔记';
-        this.openShareFilePreview(prepared.filePath, prepared.fileName, prepared.format, prepared.entries, summary,
-          scope, path, registry, '', async (): Promise<void> => {}, vault.id, vaultNoteCount, focusReturnId);
+        this.openShareFilePreview(prepared.filePath, prepared.fileName, prepared.format, prepared.entries,
+          itemName, 1, prepared.imageCount, scope, path, registry, '', async (): Promise<void> => {},
+          vault.id, vaultNoteCount, focusReturnId);
         return;
       }
       let snapshot: ShareSnapshot | null = null;
@@ -8384,13 +8383,9 @@ struct Index {
       }
       const prepared: PreparedArchiveShare = await ShareArchiveService.prepareZip(registry, vault.id,
         path, snapshot);
-      let summary: string = prepared.noteCount.toString() + ' 篇笔记 · ' +
-        prepared.fileCount.toString() + ' 个文件';
-      if (prepared.imageCount > 0) {
-        summary += ' · ' + prepared.imageCount.toString() + ' 张图片';
-      }
-      this.openShareFilePreview(prepared.filePath, prepared.fileName, 'ZIP', prepared.entries, summary,
-        scope, path, registry, '', async (): Promise<void> => {}, vault.id, vaultNoteCount, focusReturnId);
+      this.openShareFilePreview(prepared.filePath, prepared.fileName, 'ZIP', prepared.entries,
+        itemName, prepared.noteCount, prepared.imageCount, scope, path, registry,
+        '', async (): Promise<void> => {}, vault.id, vaultNoteCount, focusReturnId);
     } catch (error) {
       if (this.shareCaptureCancelled) {
         return;
@@ -8405,7 +8400,7 @@ struct Index {
       }
       if (format !== 'link') {
         const detailFormat: string = format === 'file' ? 'Markdown / ZIP' : 'ZIP';
-        this.openShareFilePreview('', itemName, detailFormat, [], '文件准备失败', scope, path, registry,
+        this.openShareFilePreview('', itemName, detailFormat, [], itemName, 0, 0, scope, path, registry,
           shareFailureMessage(error, 'file_prepare'),
           (): Promise<void> => {
             return this.prepareShare(scope, path, format, itemName, vault, vaultNoteCount, focusReturnId);
@@ -8430,7 +8425,8 @@ struct Index {
   }
 
   private openShareFilePreview(filePath: string, fileName: string, format: string, entries: string[],
-    summary: string, scope: ShareLinkScope, path: string, registry: VaultRegistry, initialError: string = '',
+    itemName: string, noteCount: number, imageCount: number, scope: ShareLinkScope, path: string,
+    registry: VaultRegistry, initialError: string = '',
     onRetryPreparation: () => Promise<void> = async (): Promise<void> => {},
     targetVaultId: string = this.currentVaultId, vaultNoteCount: number = -1,
     focusReturnId: string = ''): void {
@@ -8441,7 +8437,9 @@ struct Index {
       builder: ShareFilePreviewDialog({
         fileName: fileName,
         format: format,
-        summary: summary,
+        itemName: itemName,
+        noteCount: noteCount,
+        imageCount: imageCount,
         entries: entries,
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,

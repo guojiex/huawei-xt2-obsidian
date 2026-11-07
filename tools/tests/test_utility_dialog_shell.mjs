@@ -68,12 +68,17 @@ test('utility actions share primary, secondary, danger, and disabled styling', (
 // 确认时崩（:369 this.confirm is not callable）。传递处必须用箭头函数包裹，
 // 让 this 词法绑定回弹窗实例。
 test('shell consumers wrap content and footer builders in arrows to preserve this', () => {
+  const shareFilePreviewSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareFilePreviewDialog.ets',
+    import.meta.url
+  ));
   const consumers = [
     { name: 'NoteDialogs', source: noteDialogSource, shells: 4, footers: 4 },
     { name: 'VaultDialogs', source: vaultDialogSource, shells: 3, footers: 3 },
     { name: 'QuickSwitcher', source: quickSwitcherSource, shells: 1, footers: 0 },
     { name: 'ImportVaultDialog', source: importDialogSource, shells: 1, footers: 1 },
-    { name: 'ShareNoteDialog', source: shareDialogSource, shells: 1, footers: 0 }
+    { name: 'ShareNoteDialog', source: shareDialogSource, shells: 1, footers: 0 },
+    { name: 'ShareFilePreviewDialog', source: shareFilePreviewSource, shells: 1, footers: 1 }
   ];
   for (const consumer of consumers) {
     const wrappedContent =
@@ -102,11 +107,16 @@ test('every utility action passes enabled as a makeBinding callback', () => {
     '../../entry/src/main/ets/components/GitSyncDialog.ets',
     import.meta.url
   ));
+  const shareFilePreviewSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareFilePreviewDialog.ets',
+    import.meta.url
+  ));
   const consumers = [
     { name: 'NoteDialogs', source: noteDialogSource },
     { name: 'VaultDialogs', source: vaultDialogSource },
     { name: 'GitSyncDialog', source: gitSyncSource },
-    { name: 'ImportVaultDialog', source: importDialogSource }
+    { name: 'ImportVaultDialog', source: importDialogSource },
+    { name: 'ShareFilePreviewDialog', source: shareFilePreviewSource }
   ];
   for (const consumer of consumers) {
     const calls = consumer.source.match(/UtilityDialogAction\(/g) ?? [];

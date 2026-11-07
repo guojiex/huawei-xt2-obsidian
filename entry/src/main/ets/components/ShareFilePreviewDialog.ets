@@ -1,14 +1,22 @@
+import { UIUtils } from '@kit.ArkUI';
 import { Icon } from '../common/Icons';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
-import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { shareFailureMessage } from '../model/UserErrorMessages';
+import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
+/**
+ * ShareFilePreviewDialog.ets —— 分享面板「文件详情」阶段（分享面板设计 §2：
+ * 标题「ZIP 分享 / Markdown 分享」，主体＝文件名 + 带图标清单 + 数量信息，
+ * 底部＝返回 · 分享文件）。外壳与导入库共用 UtilityDialogShell（§4）。
+ */
 @CustomDialog
 export struct ShareFilePreviewDialog {
   controller?: CustomDialogController;
   @Prop fileName: string = '';
   @Prop format: string = '';
-  @Prop summary: string = '';
+  @Prop itemName: string = '';
+  @Prop noteCount: number = 0;
+  @Prop imageCount: number = 0;
   @Prop entries: string[] = [];
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
@@ -26,6 +34,28 @@ export struct ShareFilePreviewDialog {
     this.errorMessage = this.initialError;
   }
 
+  // §2：文件详情标题按实际格式「ZIP 分享 / Markdown 分享」
+  private detailTitle(): string {
+    return this.format === 'ZIP' ? 'ZIP 分享' : 'Markdown 分享';
+  }
+
+  // 摘要行（标题下）：名称 · N 篇笔记 · M 张本地配图
+  private headerSummary(): string {
+    if (!this.canShare) {
+      return '文件准备失败';
+    }
+    let summary: string = this.itemName + ' · ' + this.noteCount.toString() + ' 篇笔记';
+    if (this.imageCount > 0) {
+      summary += ' · ' + this.imageCount.toString() + ' 张本地配图';
+    }
+    return summary;
+  }
+
+  // §2 数量信息首段：1 个 ZIP / 1 个 Markdown 文件
+  private metaLead(): string {
+    return this.format === 'ZIP' ? '1 个 ZIP' : '1 个 Markdown 文件';
+  }
+
   private entryIcon(path: string): string {
     const lower: string = path.toLowerCase();
     if (lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') ||
@@ -33,15 +63,6 @@ export struct ShareFilePreviewDialog {
       return 'image';
     }
     return 'doc';
-  }
-
-  private onDialogKey(event: KeyEvent): boolean {
-    if (event.type !== KeyType.Down || event.keyCode !== KeyCode.KEYCODE_ESCAPE) {
-      return false;
-    }
-    this.back();
-    event.stopPropagation();
-    return true;
   }
 
   private back(): void {
@@ -87,81 +108,66 @@ export struct ShareFilePreviewDialog {
         .fontSize(FontSize.body3)
         .fontColor($r('app.color.text_primary'))
         .layoutWeight(1)
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .constraintSize({ minHeight: Size.itemH })
-    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-    .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
+    .constraintSize({ minHeight: Space.s10 })
+    .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
   }
 
-  build() {
-    Column({ space: Space.s3 }) {
-      Row({ space: Space.s3 }) {
-        Row() {
-          Icon('doc', Space.s5, $r('app.color.brand'))
+  @Builder
+  DialogContent() {
+    Column({ space: Space.s4 }) {
+      // 预览台面（原型 #sharePreview）：--nav 底、--small-r 圆角、--s4 内边距
+      Column({ space: Space.s2 }) {
+        Text(this.fileName)
+          .fontSize(FontSize.body2)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+        if (this.entries.length > 0) {
+          // 文件清单（原型 .share-files）：--line 描边卡片、--r 圆角、--s2 内边距、
+          // 行高 --s10、图标 --muted，最高 --window-min 一半
+          Scroll() {
+            Column() {
+              ForEach(this.entries, (path: string) => {
+                this.FileRow(path)
+              }, (path: string) => path)
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }
+          .width('100%')
+          .constraintSize({ maxHeight: Size.menuMaxH * 0.5 })
+          .scrollBar(BarState.Off)
+          .padding(Space.s2)
+          .border({ width: 1, color: $r('app.color.line') })
+          .borderRadius(Radius.menu)
         }
-        .width(Space.s10)
-        .height(Space.s10)
-        .justifyContent(FlexAlign.Center)
-        .borderRadius(Radius.control)
-        .backgroundColor($r('app.color.brand_bg'))
-        Column({ space: Space.s1 }) {
-          Text('文件分享')
-            .fontSize(FontSize.s3)
-            .fontWeight(FontWeight.Bold)
+      }
+      .width('100%')
+      .padding(Space.s4)
+      .borderRadius(Radius.control)
+      .backgroundColor($r('app.color.bg_secondary'))
+      .alignItems(HorizontalAlign.Start)
+
+      // 数量信息（原型 #shareMeta）：首段 --ink/600，其余 --muted/--caption
+      if (this.canShare) {
+        Row({ space: Space.s3 }) {
+          Text(this.metaLead())
+            .fontSize(FontSize.caption)
+            .fontWeight(600)
             .fontColor($r('app.color.text_primary'))
-          Text(this.fileName)
+          Text(this.noteCount.toString() + ' 篇笔记')
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        Text('×')
-          .fontSize(FontSize.s1)
-          .fontColor($r('app.color.text_secondary'))
-          .width(Size.touch)
-          .height(Size.touch)
-          .textAlign(TextAlign.Center)
-          .accessibilityText('关闭文件预览')
-          .focusable(true)
-          .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
-          .onClick(() => { this.back(); })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      Text(this.format + ' · ' + this.summary)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-
-      Text('文件清单')
-        .fontSize(FontSize.body2)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-
-      Scroll() {
-        Column() {
-          ForEach(this.entries, (path: string) => {
-            this.FileRow(path)
-          }, (path: string) => path)
+          if (this.imageCount > 0) {
+            Text(this.imageCount.toString() + ' 张图片')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+          }
         }
         .width('100%')
-        .alignItems(HorizontalAlign.Start)
       }
-      .width('100%')
-      .constraintSize({ maxHeight: this.windowHeightVp > 0
-        ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 7 - Space.s4))
-        : Size.menuMaxH })
-      .scrollBar(BarState.Off)
-      .border({ width: 1, color: $r('app.color.line') })
-      .borderRadius(Radius.menu)
-      .backgroundColor($r('app.color.bg_secondary'))
 
       if (this.errorMessage.length > 0) {
         Text(this.errorMessage)
@@ -169,58 +175,43 @@ export struct ShareFilePreviewDialog {
           .fontColor($r('app.color.danger'))
           .width('100%')
       }
-
-      Row({ space: Space.s2 }) {
-        Text('返回')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .height(Size.buttonH)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.control)
-          .border({ width: 1, color: $r('app.color.line') })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .focusable(true)
-          .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
-          .onClick(() => { this.back(); })
-        Text(this.canShare
-          ? (this.sharing ? '正在打开…' : '分享文件')
-          : (this.preparing ? '正在重试…' : '重试生成'))
-          .fontSize(FontSize.body2)
-          .fontWeight(FontWeight.Medium)
-          // v1.32 32.12：主按钮禁用态中性化——--line 底、--muted 字、不透明
-          .fontColor(this.sharing || this.preparing
-            ? $r('app.color.text_tertiary') : $r('app.color.on_brand'))
-          .height(Size.buttonH)
-          .layoutWeight(1)
-          .textAlign(TextAlign.Center)
-          .borderRadius(Radius.control)
-          .backgroundColor(this.sharing || this.preparing
-            ? $r('app.color.line') : $r('app.color.brand'))
-          .focusable(true)
-          .enabled(!this.sharing && !this.preparing)
-          .onKeyEvent((event: KeyEvent): boolean => { return this.onDialogKey(event); })
-          .onClick(() => {
-            if (this.canShare) {
-              void this.share();
-            } else {
-              void this.retryPreparation();
-            }
-          })
-      }
-      .width('100%')
     }
-    .width(this.windowWidthVp > 0
-      ? Math.max(0, Math.min(Size.shareW, this.windowWidthVp - Space.s8))
-      : Size.shareW)
-    .constraintSize({ maxHeight: this.windowHeightVp > 0
-      ? Math.max(0, Math.min(Size.menuMaxH, this.windowHeightVp - Space.s8 * 2))
-      : Size.menuMaxH })
-    .padding(Space.s5)
-    .borderRadius(this.singleScreen
-      ? { topLeft: Radius.dialog, topRight: Radius.dialog, bottomLeft: 0, bottomRight: 0 }
-      : Radius.dialog)
-    .backgroundColor($r('app.color.bg_card'))
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s3 }) {
+      UtilityDialogAction('返回', 'secondary', this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => true), (): void => { this.back(); }, true)
+      if (this.canShare) {
+        UtilityDialogAction(this.sharing ? '正在打开…' : '分享文件', 'primary',
+          this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.sharing),
+          (): void => { void this.share(); }, true)
+      } else {
+        UtilityDialogAction(this.preparing ? '正在重试…' : '重试生成', 'primary',
+          this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.preparing),
+          (): void => { void this.retryPreparation(); }, true)
+      }
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: this.detailTitle(),
+      subtitle: this.headerSummary(),
+      headerIcon: 'doc',
+      closeLabel: '关闭文件预览',
+      singleScreen: this.singleScreen,
+      preferredWidthVp: Size.shareW,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.back(); },
+      content: (): void => { this.DialogContent(); },
+      footer: (): void => { this.DialogFooter(); }
+    })
   }
 }

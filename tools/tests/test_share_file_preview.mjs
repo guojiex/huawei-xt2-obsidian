@@ -110,11 +110,14 @@ test('file preview back returns to the original range and confirm shares the pre
   const { app, calls } = createIndexHarness();
   const registry = { id: 'registry' };
   app.openShareFilePreview('/share/notes.zip', 'notes.zip', 'ZIP', ['folder/note.md', 'assets/image.png'],
-    '1 篇笔记 · 2 个文件', 'folder', '10_写作', registry);
+    '10_写作', 3, 2, 'folder', '10_写作', registry);
 
   const preview = app.shareFilePreviewCtl.options.builder;
   assert.equal(preview.fileName, 'notes.zip');
   assert.equal(preview.format, 'ZIP');
+  assert.equal(preview.itemName, '10_写作');
+  assert.equal(preview.noteCount, 3);
+  assert.equal(preview.imageCount, 2);
   assert.deepEqual(JSON.parse(JSON.stringify(preview.entries)), ['folder/note.md', 'assets/image.png']);
   assert.equal(app.shareFilePreviewCtl.options.alignment, 'center');
   assert.equal(app.shareFilePreviewCtl.opened, true);
@@ -132,7 +135,7 @@ test('file preparation failure is shown in the detail and retries preparation in
   const { app } = createIndexHarness();
   const registry = { id: 'registry' };
   let retries = 0;
-  app.openShareFilePreview('', 'note.md', 'Markdown / ZIP', [], '文件准备失败', 'note', 'note.md', registry,
+  app.openShareFilePreview('', '笔记标题', 'Markdown / ZIP', [], '笔记标题', 0, 0, 'note', 'note.md', registry,
     '缺少本地图片', async () => { retries++; });
 
   const preview = app.shareFilePreviewCtl.options.builder;
@@ -151,8 +154,35 @@ test('file preparation failure is shown in the detail and retries preparation in
   assert.equal(dialog.preparing, false);
 });
 
-test('file detail uses its format icon block and the close action returns to format selection', () => {
-  assert.match(dialogSource, /Icon\('doc', Space\.s5/);
-  assert.match(dialogSource, /backgroundColor\(\$r\('app\.color\.brand_bg'\)\)/);
-  assert.match(dialogSource, /accessibilityText\('关闭文件预览'\)[\s\S]*?\.onClick\(\(\) => \{ this\.back\(\); \}\)/);
+// 分享面板设计 §2/§4：文件详情＝「ZIP 分享 / Markdown 分享」标题 + 文件名 +
+// 带图标清单 + 数量信息；外壳同导入库（UtilityDialogShell），底部＝返回 · 分享文件。
+test('file detail follows the share panel design: shell, stage, list card, meta, and actions', () => {
+  // 外壳与头部
+  assert.match(dialogSource, /UtilityDialogShell\(\{/);
+  assert.match(dialogSource, /title: this\.detailTitle\(\)/);
+  assert.match(dialogSource, /return this\.format === 'ZIP' \? 'ZIP 分享' : 'Markdown 分享';/);
+  assert.match(dialogSource, /headerIcon: 'doc'/);
+  assert.match(dialogSource, /closeLabel: '关闭文件预览'/);
+  assert.match(dialogSource, /preferredWidthVp: Size\.shareW/);
+  // 摘要行：名称 · N 篇笔记 · M 张本地配图
+  assert.match(dialogSource, /this\.itemName \+ ' · ' \+ this\.noteCount\.toString\(\) \+ ' 篇笔记'/);
+  assert.match(dialogSource, /this\.imageCount\.toString\(\) \+ ' 张本地配图'/);
+  // 预览台面（#sharePreview）：--nav 底、--small-r 圆角、--s4 内边距
+  assert.match(dialogSource, /\.padding\(Space\.s4\)/);
+  assert.match(dialogSource, /\.borderRadius\(Radius\.control\)/);
+  assert.match(dialogSource, /\.backgroundColor\(\$r\('app\.color\.bg_secondary'\)\)/);
+  // 文件清单（.share-files）：--line 描边卡片、--r 圆角、--s2 内边距、行高 --s10、最高 --window-min 一半
+  assert.match(dialogSource, /constraintSize\(\{ maxHeight: Size\.menuMaxH \* 0\.5 \}\)/);
+  assert.match(dialogSource, /\.padding\(Space\.s2\)/);
+  assert.match(dialogSource, /\.border\(\{ width: 1, color: \$r\('app\.color\.line'\) \}\)/);
+  assert.match(dialogSource, /\.borderRadius\(Radius\.menu\)/);
+  assert.match(dialogSource, /constraintSize\(\{ minHeight: Space\.s10 \}\)/);
+  // 数量信息（#shareMeta）：首段 1 个 ZIP / 1 个 Markdown 文件
+  assert.match(dialogSource, /return this\.format === 'ZIP' \? '1 个 ZIP' : '1 个 Markdown 文件';/);
+  assert.match(dialogSource, /this\.noteCount\.toString\(\) \+ ' 篇笔记'/);
+  assert.match(dialogSource, /this\.imageCount\.toString\(\) \+ ' 张图片'/);
+  // 底部操作：返回 · 分享文件（失败时重试生成），胶囊样式走 UtilityDialogAction
+  assert.match(dialogSource, /'返回', 'secondary', this\.singleScreen/);
+  assert.match(dialogSource, /this\.sharing \? '正在打开…' : '分享文件', 'primary'/);
+  assert.match(dialogSource, /this\.preparing \? '正在重试…' : '重试生成', 'primary'/);
 });

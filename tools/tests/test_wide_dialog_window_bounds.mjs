@@ -45,11 +45,14 @@ test('32.13 原生：UtilityDialogShell 宽屏限高 = 窗口高 - 上下各 s8�
 });
 
 test('32.13 原生：分享预览/设置弹窗外壳限高保证居中边距 ≥ s8', () => {
-  for (const src of [shareFile, shareImage, shareText, shareImageSettings]) {
+  // ShareFilePreviewDialog 已改用 UtilityDialogShell（分享面板设计 §4 外壳同导入库），
+  // 限高由 shell 统一保证；其余自绘外壳的分享预览/设置弹窗仍逐个锁定。
+  for (const src of [shareImage, shareText, shareImageSettings]) {
     assert.match(src, /Math\.max\(0, Math\.min\(Size\.menuMaxH, this\.windowHeightVp - Space\.s8 \* 2\)\)/,
       '外壳 maxHeight 应为 min(menuMaxH, windowH - s8*2)');
     assert.doesNotMatch(src, /windowHeightVp - Space\.s6\)/, 's6 限高居中后边距仅 12，应替换为 s8*2');
   }
+  assert.match(shareFile, /UtilityDialogShell\(\{/);
 });
 
 test('32.13 原生：分享面板标题不跳（恒高法沿用 v1.25），宽屏居中不锚顶', () => {
