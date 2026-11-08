@@ -54,7 +54,7 @@ test('quote library holds 12 static entries matching the prototype (41.2)', () =
   assert.equal((mask.match(/setInterval/g) ?? []).length, 0, 'no rotation interval');
 });
 
-test('entrance is staggered opacity/translate only and ready exits in one fade (41.3)', () => {
+test('entrance is staggered opacity/translate only; exit holds min dwell then one fade (41.3)', () => {
   // 分组错峰：七个入场时刻常量按序
   const delays = ['enterIconDelay', 'enterNameDelay', 'enterEyebrowDelay', 'enterRuleDelay',
     'enterQuoteDelay', 'enterSourceDelay', 'enterFootDelay'];
@@ -63,7 +63,9 @@ test('entrance is staggered opacity/translate only and ready exits in one fade (
     assert.match(mask, new RegExp(`Startup\\.${delay}`));
   }
   assert.match(tokens, /static readonly enterDur: number = 800;/);
-  // 就绪即中断：清空入场定时器 + 240ms 淡出 + 完成后隐藏
+  // 就绪后仍等最短驻留（入场播完）才淡出：minHold 常量 + 剩余时长调度 + 240ms 淡出 + 完成后隐藏
+  assert.match(tokens, /static readonly minHold: number = Startup\.enterFootDelay \+ Startup\.enterDur;/);
+  assert.match(mask, /Math\.max\(Startup\.minHold - elapsed, 0\)/);
   assert.match(mask, /@Prop @Watch\('onReadyChange'\) ready: boolean = false;/);
   assert.match(mask, /private onReadyChange\(\): void \{/);
   assert.match(mask, /this\.clearEnterTimers\(\);/);

@@ -3,7 +3,7 @@
  *
  * 设计真源：docs/prototype/v2/启动页设计.md（v2 原型 `.startup-*`）。
  * 冷启动期间盖住工作区，内容为品牌层（图标 + 品牌名 + 随机名言）；
- * `ready` 置位后 240ms 淡出并隐藏，不为动画延长启动。
+ * `ready` 置位后仍等最短驻留（入场编排播完）再 240ms 淡出并隐藏，动画不提前打断。
  * 装饰层：不参与读屏（整体 accessibilityLevel('no')），无埋点、无网络。
  */
 import { FontSize, Motion, Radius, Shadow, Space, Startup } from '../common/Tokens';
@@ -63,7 +63,7 @@ function splitQuoteLines(text: string): string[] {
 
 @Component
 export struct StartupMask {
-  /** 工作区恢复就绪（Index 的 workspaceInitialRenderReady）：true 即中断入场并淡出。 */
+  /** 工作区恢复就绪（Index 的 workspaceInitialRenderReady）：true 后等最短驻留（入场播完）再淡出。 */
   @Prop @Watch('onReadyChange') ready: boolean = false;
   @State private maskOpacity: number = 1;
   @State private maskGone: boolean = false;
@@ -84,8 +84,11 @@ export struct StartupMask {
   private footDate: string = '';
   private enterTimers: number[] = [];
   private exiting: boolean = false;
+  private startAt: number = 0;
+  private exitTimer: number = -1;
 
   aboutToAppear(): void {
+    this.startAt = Date.now();
     this.quoteLines = splitQuoteLines(this.quote.text);
     this.footDate = formatCnDate(new Date());
     this.scheduleEnter(Startup.enterIconDelay, (): void => {
@@ -113,6 +116,9 @@ export struct StartupMask {
 
   aboutToDisappear(): void {
     this.clearEnterTimers();
+    if (this.exitTimer >= 0) {
+      clearTimeout(this.exitTimer);
+    }
   }
 
   build() {
@@ -292,21 +298,33 @@ export struct StartupMask {
     });
   }
 
-  /** 就绪即中断入场，240ms 淡出后隐藏；不为动画延长启动。 */
+  /** 就绪后仍等最短驻留（Startup.minHold，入场编排播完）才淡出，避免动画被提前打断。 */
   private onReadyChange(): void {
-    if (this.ready && !this.exiting) {
-      this.exiting = true;
-      this.clearEnterTimers();
-      this.getUIContext().animateTo({
-        duration: Startup.exitDur,
-        curve: Motion.navCurve,
-        onFinish: (): void => {
-          this.maskGone = true;
-        }
-      }, (): void => {
-        this.maskOpacity = 0;
-        this.stageScale = Startup.exitScaleTo;
-      });
+    if (!this.ready || this.exiting) {
+      return;
     }
+    const elapsed: number = Date.now() - this.startAt;
+    const wait: number = Math.max(Startup.minHold - elapsed, 0);
+    this.exitTimer = setTimeout((): void => {
+      this.startExit();
+    }, wait);
+  }
+
+  private startExit(): void {
+    if (this.exiting) {
+      return;
+    }
+    this.exiting = true;
+    this.clearEnterTimers();
+    this.getUIContext().animateTo({
+      duration: Startup.exitDur,
+      curve: Motion.navCurve,
+      onFinish: (): void => {
+        this.maskGone = true;
+      }
+    }, (): void => {
+      this.maskOpacity = 0;
+      this.stageScale = Startup.exitScaleTo;
+    });
   }
 }

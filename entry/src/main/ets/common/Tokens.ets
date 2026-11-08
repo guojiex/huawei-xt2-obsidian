@@ -179,6 +179,8 @@ export class Startup {
   static readonly enterFootDelay: number = 2200;
   /** 入场单组时长（ms）：原型 `startup-in` 0.7–0.9s 的轻量档 */
   static readonly enterDur: number = 800;
+  /** 最短驻留（ms）：就绪也不提前淡出，等入场编排播完（末组 2200 + 时长 800）——2026-11-08 拍板：动画要看完整段 */
+  static readonly minHold: number = Startup.enterFootDelay + Startup.enterDur;
   /** 入场上浮行程（vp）：原型图标 14px / 文字 6–8px */
   static readonly iconEnterFromY: number = 14;
   static readonly nameEnterFromY: number = 8;
