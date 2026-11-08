@@ -26,22 +26,33 @@ export struct ShareImagePreviewDialog {
   @Prop initialWidthId: string = 'phone';
   @Prop initialTheme: string = 'light';
   @Prop initialError: string = '';
-  image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone' };
+  @Prop image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone' };
   onConfirm: () => Promise<void> = async (): Promise<void> => {};
-  onGenerate: (widthId: string, theme: string) => void = (_widthId: string, _theme: string): void => {};
+  onGenerate: (widthId: string, theme: string) => Promise<ShareImagePreviewImage> =
+    async (_widthId: string, _theme: string): Promise<ShareImagePreviewImage> => {
+      throw new Error('长图预览生成未连接');
+    };
   onCancel: () => void = () => {};
   @State sharing: boolean = false;
+  @State preparing: boolean = false;
+  @State previewImage: ShareImagePreviewImage = {
+    uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
+  };
   @State selectedWidthId: string = 'phone';
   @State selectedTheme: string = 'light';
   @State settingsChanged: boolean = false;
   @State errorMessage: string = '';
 
   aboutToAppear(): void {
+    this.previewImage = this.image;
     this.errorMessage = this.initialError;
     this.selectedWidthId = this.initialWidthId;
     this.selectedTheme = this.initialTheme === 'dark' ? 'dark' : 'light';
-    this.settingsChanged = this.image.uri.length > 0 &&
-      (this.selectedWidthId !== this.image.widthId || this.selectedTheme !== this.image.theme);
+    this.settingsChanged = this.previewImage.uri.length === 0 ||
+      this.selectedWidthId !== this.previewImage.widthId || this.selectedTheme !== this.previewImage.theme;
+    if (this.previewImage.uri.length === 0 && this.errorMessage.length === 0) {
+      void this.generatePreview();
+    }
   }
 
   private back(): void {
@@ -50,20 +61,31 @@ export struct ShareImagePreviewDialog {
   }
 
   private selectWidth(id: string): void {
+    if (this.preparing || this.selectedWidthId === id) {
+      return;
+    }
     this.selectedWidthId = id;
     this.refreshSettingsChanged();
+    this.regenerateAfterSettingChange();
   }
 
   private selectTheme(theme: string): void {
-    if (theme === 'light' || theme === 'dark') {
+    if (!this.preparing && (theme === 'light' || theme === 'dark') && this.selectedTheme !== theme) {
       this.selectedTheme = theme;
       this.refreshSettingsChanged();
+      this.regenerateAfterSettingChange();
     }
   }
 
   private refreshSettingsChanged(): void {
-    this.settingsChanged = this.image.uri.length === 0 ||
-      this.selectedWidthId !== this.image.widthId || this.selectedTheme !== this.image.theme;
+    this.settingsChanged = this.previewImage.uri.length === 0 ||
+      this.selectedWidthId !== this.previewImage.widthId || this.selectedTheme !== this.previewImage.theme;
+  }
+
+  private regenerateAfterSettingChange(): void {
+    if (this.previewImage.uri.length > 0 || this.errorMessage.length > 0) {
+      void this.generatePreview();
+    }
   }
 
   private widthSummary(): string {
@@ -74,18 +96,33 @@ export struct ShareImagePreviewDialog {
   }
 
   private canSharePreview(): boolean {
-    return this.image.uri.length > 0 && !this.settingsChanged;
+    return this.previewImage.uri.length > 0 && !this.settingsChanged && !this.preparing;
   }
 
-  private generatePreview(): void {
-    if (this.sharing) {
+  private async generatePreview(): Promise<void> {
+    if (this.sharing || this.preparing) {
       return;
     }
+    this.preparing = true;
     this.errorMessage = '';
     const widthId: string = this.selectedWidthId;
     const theme: string = this.selectedTheme;
-    this.controller?.close();
-    this.onGenerate(widthId, theme);
+    this.previewImage = {
+      uri: '', aspectRatio: 1, width: 0, height: 0, theme: theme, scaled: false, widthId: widthId
+    };
+    this.settingsChanged = true;
+    try {
+      this.previewImage = await this.onGenerate(widthId, theme);
+      this.settingsChanged = this.selectedWidthId !== this.previewImage.widthId ||
+        this.selectedTheme !== this.previewImage.theme;
+    } catch (error) {
+      const err = error as Error;
+      if (err.message !== '分享图片生成已取消') {
+        this.errorMessage = shareFailureMessage(error, 'image_prepare');
+      }
+    } finally {
+      this.preparing = false;
+    }
   }
 
   private async share(): Promise<void> {
@@ -112,6 +149,9 @@ export struct ShareImagePreviewDialog {
       .layoutWeight(1)
       .textAlign(TextAlign.Center)
       .accessibilityText(opt.label + (this.selectedWidthId === opt.id ? '，已选中' : ''))
+      .accessibilityTextHint(this.preparing ? '正在生成预览' : '切换后自动重新生成预览')
+      .enabled(!this.preparing)
+      .opacity(this.preparing ? 0.45 : 1)
       .onClick(() => { this.selectWidth(opt.id); })
       .borderRadius(Radius.full)
       .backgroundColor(this.selectedWidthId === opt.id ? $r('app.color.bg_card') : Color.Transparent)
@@ -126,6 +166,9 @@ export struct ShareImagePreviewDialog {
       .layoutWeight(1)
       .textAlign(TextAlign.Center)
       .accessibilityText(label + (this.selectedTheme === theme ? '，已选中' : ''))
+      .accessibilityTextHint(this.preparing ? '正在生成预览' : '切换后自动重新生成预览')
+      .enabled(!this.preparing)
+      .opacity(this.preparing ? 0.45 : 1)
       .onClick(() => { this.selectTheme(theme); })
       .borderRadius(Radius.full)
       .backgroundColor(this.selectedTheme === theme ? $r('app.color.bg_card') : Color.Transparent)
@@ -169,20 +212,23 @@ export struct ShareImagePreviewDialog {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      if (this.image.uri.length > 0) {
+      if (this.previewImage.uri.length > 0) {
         Column({ space: Space.s1 }) {
           Row({ space: Space.s3 }) {
             Text('1 张长图')
               .fontSize(FontSize.caption)
               .fontWeight(600)
               .fontColor($r('app.color.text_primary'))
-            Text(this.image.width.toString() + ' × ' + this.image.height.toString() + ' px')
+            Text(this.previewImage.width.toString() + ' × ' + this.previewImage.height.toString() + ' px')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+            Text(this.previewImage.theme === 'dark' ? '深色' : '浅色')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_secondary'))
           }
 
-          if (this.image.scaled) {
-            Text('为满足图片预算，长图已整体缩小至 ' + this.image.width.toString() + ' px 宽')
+          if (this.previewImage.scaled) {
+            Text('为满足图片预算，长图已整体缩小至 ' + this.previewImage.width.toString() + ' px 宽')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_tertiary'))
               .width('100%')
@@ -192,15 +238,22 @@ export struct ShareImagePreviewDialog {
       }
 
       Scroll() {
-        if (this.image.uri.length > 0) {
-          Image(this.image.uri)
+        if (this.preparing) {
+          Text('正在生成长图预览…')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
             .width('100%')
-            .aspectRatio(this.image.aspectRatio)
+            .textAlign(TextAlign.Center)
+            .padding({ top: Space.s6, bottom: Space.s6 })
+        } else if (this.previewImage.uri.length > 0) {
+          Image(this.previewImage.uri)
+            .width('100%')
+            .aspectRatio(this.previewImage.aspectRatio)
             .objectFit(ImageFit.Contain)
             .borderRadius(Radius.control)
             .backgroundColor($r('app.color.bg_card'))
         } else {
-          Text('选择图片宽度和外观后，生成长图预览。')
+          Text(this.errorMessage.length > 0 ? '预览生成失败，请重试。' : '正在准备长图预览…')
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))
             .width('100%')
@@ -217,8 +270,13 @@ export struct ShareImagePreviewDialog {
       .layoutWeight(1)
       .constraintSize({ minHeight: 0 })
 
-      if (this.settingsChanged && this.image.uri.length > 0) {
-        Text('设置已更改，重新生成后可预览')
+      if (this.preparing) {
+        Text('正在按所选宽度和外观排版')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+      } else if (this.settingsChanged && this.previewImage.uri.length > 0) {
+        Text('正在准备更新后的长图预览')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))
           .width('100%')
@@ -249,14 +307,14 @@ export struct ShareImagePreviewDialog {
         }, true)
       UtilityDialogAction(
         this.canSharePreview() ? (this.sharing ? '正在打开…' : '分享图片') :
-          (this.image.uri.length > 0 ? '重新生成预览' : '生成预览'),
+          (this.preparing ? '正在排版…' : this.errorMessage.length > 0 ? '重试生成' : '生成预览'),
         'primary', this.singleScreen,
-        UIUtils.makeBinding<boolean>(() => !this.sharing),
+        UIUtils.makeBinding<boolean>(() => !this.sharing && !this.preparing),
         (): void => {
           if (this.canSharePreview()) {
             void this.share();
           } else {
-            this.generatePreview();
+            void this.generatePreview();
           }
         }, true)
     }

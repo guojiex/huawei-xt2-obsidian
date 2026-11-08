@@ -8578,19 +8578,23 @@ struct Index {
   }
 
   private async prepareNoteImageShare(vaultId: string, notePath: string, itemName: string,
-    editor: EditorBridge): Promise<void> {
+    editor: EditorBridge): Promise<ShareImagePreviewImage> {
     const registry: VaultRegistry = VaultRegistry.get();
-    const markdown: string = await editor.getContent();
-    const bridge: PreviewBridge = new PreviewBridge();
-    bridge.setNoteDir(NoteShareService.parentOf(notePath));
-    bridge.setContent(markdown);
-    this.shareCaptureBridge = bridge;
     this.shareCaptureCancelled = false;
-    this.shareCaptureStatus = '正在渲染笔记…';
-    this.shareCaptureActive = true;
+    this.shareCaptureStatus = '正在读取笔记…';
     let sessionId: string = '';
     let longImage: image.PixelMap | null = null;
+    const bridge: PreviewBridge = new PreviewBridge();
+    this.shareCaptureBridge = bridge;
     try {
+      const markdown: string = await editor.getContent();
+      if (this.shareCaptureCancelled) {
+        throw new Error('分享图片生成已取消');
+      }
+      bridge.setNoteDir(NoteShareService.parentOf(notePath));
+      bridge.setContent(markdown);
+      this.shareCaptureStatus = '正在渲染笔记…';
+      this.shareCaptureActive = true;
       const ready: Promise<void> = this.waitForShareCaptureReady();
       await ready;
       await bridge.requestShareCaptureMetrics();
@@ -8665,6 +8669,9 @@ struct Index {
       const completedImage: image.PixelMap = longImage;
       longImage = null;
       await NoteImageShareService.writeJpeg(filePath, completedImage);
+      if (this.shareCaptureCancelled) {
+        throw new Error('分享图片生成已取消');
+      }
       this.shareCaptureActive = false;
       this.shareImagePreviewSessionId = sessionId;
       this.shareImagePreviewTitle = itemName;
@@ -8677,7 +8684,7 @@ struct Index {
         scaled: geometry.scale < 1,
         widthId: this.shareCaptureWidthId
       };
-      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath, vaultId, '', this.shareCapturePaneWidthVp);
+      return this.shareImagePreviewImage;
     } catch (error) {
       this.shareCaptureActive = false;
       bridge.cancelShareCaptureRequests('分享图片生成已结束');
@@ -8688,10 +8695,8 @@ struct Index {
           // The cache directory is private to this failed preparation and expires after 24 hours.
         }
       }
-      if (!this.shareCaptureCancelled) {
-        const err = error as Error;
-        throw new Error(err.message);
-      }
+      const err = error as Error;
+      throw new Error(err.message);
     } finally {
       if (longImage !== null) {
         await longImage.release();
@@ -8729,10 +8734,13 @@ struct Index {
           const title: string = this.shareImagePreviewTitle;
           return this.shareImage(image, title, VaultRegistry.get());
         },
-        onGenerate: (widthId: string, theme: string): void => {
+        onGenerate: async (widthId: string, theme: string): Promise<ShareImagePreviewImage> => {
           this.shareCaptureWidthId = widthId;
           this.shareCaptureTheme = theme;
           this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, resolvedPaneWidthVp);
+          this.cleanupShareImagePreview();
+          const preview: ShareImagePreviewImage = await this.prepareNoteImageShare(
+            vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
           this.ensureShareImagePreferenceStore();
           if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
             promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
@@ -8740,16 +8748,10 @@ struct Index {
           if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveWidth(widthId)) {
             promptAction.showToast({ message: '本次宽度已应用，但未能保存长图偏好' });
           }
-          this.cleanupShareImagePreview();
-          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath))
-            .catch((error: Error): void => {
-              this.openShareImagePreview(itemName, {
-                uri: '', aspectRatio: 1, width: 0, height: 0,
-                theme: this.shareCaptureTheme, scaled: false, widthId: this.shareCaptureWidthId
-              }, notePath, vaultId, shareFailureMessage(error, 'image_prepare'), resolvedPaneWidthVp);
-            });
+          return preview;
         },
         onCancel: (): void => {
+          this.cancelShareImageCapture();
           this.cleanupShareImagePreview();
           this.openShareDialog('note', notePath);
         }
