@@ -8,17 +8,9 @@ import { readSourceFile } from './lib/source.mjs';
 
 const index = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 
-test('pane more menu uses fixed width token (s16 × 3.5 = 224), not percentage or constraintSize maxWidth', () => {
-  // 找到 PaneMoreMenu builder
-  const paneMenuStart = index.indexOf('PaneMoreMenu(pane: string) {');
-  const paneMenuEnd = index.indexOf('}\n\n      @Builder', paneMenuStart);
-  assert.ok(paneMenuStart > 0, 'could not find PaneMoreMenu');
-  const paneMenu = index.substring(paneMenuStart, paneMenuEnd > 0 ? paneMenuEnd : paneMenuStart + 2000);
-  // 宽度必须是 s16*3.5 = 224 定值，不能是 constraintSize 或百分比
-  assert.match(paneMenu, /\.width\(Space\.s16\s*\*\s*3\.5\)|width.*224/);
-  // 去掉注释后再检查 constraintSize（注释提到 faqs-arkui-95 是为了记录不用的原因，不是代码使用）
-  const noComments = paneMenu.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.doesNotMatch(noComments, /constraintSize/, 'pane more menu must not use constraintSize in code');
+test('pane headers no longer render a second more menu', () => {
+  assert.doesNotMatch(index, /PaneMoreMenu\(pane: string\)/);
+  assert.doesNotMatch(index, /PaneMoreButton\(pane: string\)/);
 });
 
 test('single-screen more menu uses fixed width token (s16 × 4.25 = 272)', () => {

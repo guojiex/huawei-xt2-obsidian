@@ -33,6 +33,29 @@ const LOCAL_ABI_CANDIDATES: string[] = [
   './.local/local-abi.json',
   path.resolve(__dirname, '../.local/local-abi.json')
 ];
+const LOCAL_AGENT_UI_CANDIDATES: string[] = [
+  './.local/local-agent-ui.json',
+  path.resolve(__dirname, '../.local/local-agent-ui.json')
+];
+
+function loadShowXiaoyiDialogEntry(): boolean {
+  for (const file of LOCAL_AGENT_UI_CANDIDATES) {
+    if (!fs.existsSync(file)) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf-8')) as { showXiaoyiDialogEntry?: unknown };
+      if (typeof parsed.showXiaoyiDialogEntry === 'boolean') {
+        return parsed.showXiaoyiDialogEntry;
+      }
+      console.log(`[agent-ui] ${file} 缺少 boolean 字段 showXiaoyiDialogEntry —— 默认隐藏`);
+    } catch (error) {
+      console.log(`[agent-ui] 读取 ${file} 失败 —— 默认隐藏：${String(error)}`);
+    }
+    return false;
+  }
+  return false;
+}
 
 function loadLocalAbiFilters(): string[] {
   for (const file of LOCAL_ABI_CANDIDATES) {
@@ -56,6 +79,8 @@ function loadLocalAbiFilters(): string[] {
 }
 
 const localAbiFilters: string[] = loadLocalAbiFilters();
+const showXiaoyiDialogEntry: boolean = loadShowXiaoyiDialogEntry();
+console.log(`[agent-ui] 构建参数 showXiaoyiDialogEntry=${showXiaoyiDialogEntry.toString()}`);
 
 if (localAbiFilters.length > 0) {
   console.log(`[abi] 已从 .local/local-abi.json 注入 abiFilters=${localAbiFilters.join(',')}`);
@@ -123,7 +148,8 @@ buildOption['arkOptions'] = {
   buildProfileFields: {
     buildCommitId: buildCommit.commitId,
     buildCommitState: buildCommit.state,
-    buildCommitLabel: buildCommit.label
+    buildCommitLabel: buildCommit.label,
+    showXiaoyiDialogEntry: showXiaoyiDialogEntry ? 'true' : 'false'
   }
 };
 

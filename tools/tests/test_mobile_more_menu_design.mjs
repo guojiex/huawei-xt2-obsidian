@@ -31,7 +31,7 @@ test('menu renders three groups in order: note / experience / app', () => {
   // 切换仅两栏为不同笔记时
   assert.match(menu, /experienceMode === 'professional'[\s\S]*?currentFilePath !== this\.rightFilePath/);
   // 切换到笔记：标题去 .md（31.1 不显示带扩展名的文件名）
-  assert.match(menu, /切换到笔记：' \+ \(this\.activePane === 'left'[\s\S]*?paneNoteTitle\(this\.rightFilePath\)/);
+  assert.match(menu, /切换到笔记：' \+ \(this\.activeNotePane\(\) === 'left'[\s\S]*?paneNoteTitle\(this\.rightFilePath\)/);
 });
 
 test('icon rows use line icons, touch height, body font and ellipsis (31.2)', () => {
@@ -95,7 +95,7 @@ test('note actions dim to 40% and stay disabled when no note is open (31.5)', ()
   assert.match(menu, /\.opacity\(isEnabled \? 1 : 0\.4\)/);
   assert.match(menu, /\.enabled\(isEnabled\)/);
   assert.match(menu, /this\.activeFilePath\(\)\.length > 0, \(\): void => \{\s*this\.openShareNoteDialog\(\);/);
-  assert.match(menu, /this\.activeFilePath\(\)\.length > 0, \(\): void => \{\s*this\.toggleBacklinks\(this\.activePane\);/);
+  assert.match(menu, /this\.activeFilePath\(\)\.length > 0, \(\): void => \{\s*this\.toggleBacklinks\(this\.activeNotePane\(\)\);/);
 });
 
 test('menu shell matches the v2 mobile-top-more spec (31.6)', () => {
@@ -120,7 +120,7 @@ test('menu shell matches the v2 mobile-top-more spec (31.6)', () => {
 
 test('menu actions still trigger the original operations', () => {
   assert.match(index, /this\.openShareNoteDialog\(\);/);
-  assert.match(index, /this\.toggleBacklinks\(this\.activePane\);/);
+  assert.match(index, /this\.toggleBacklinks\(this\.activeNotePane\(\)\);/);
   assert.match(index, /this\.toggleActivePane\(\);/);
   assert.match(index, /void this\.openGitSyncPage\(\);/);
   assert.match(index, /this\.openSettings\('note', 'general'\);/);

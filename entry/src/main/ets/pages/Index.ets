@@ -107,7 +107,6 @@ import {
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
 import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from '../components/ShareNoteDialog';
-import { ShareImageSettingsDialog } from '../components/ShareImageSettingsDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
@@ -154,12 +153,15 @@ import { uniformTypeDescriptor } from '@kit.ArkData';
 import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
+import BuildProfile from 'BuildProfile';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
 /** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
 const GIT_ENTRY_UI_ENABLED: boolean = true;
+/** v1.45：由 .local/local-agent-ui.json 构建参数决定是否显示。 */
+const XIAOYI_DIALOG_ENTRY_ENABLED: boolean = BuildProfile.showXiaoyiDialogEntry === 'true';
 /** v1.36：导入临时库 id 后缀（与 VaultRegistry.GIT_IMPORTING_SUFFIX 同值，复用导入标记机制）。 */
 const ZIP_IMPORTING_SUFFIX: string = '__importing';
 
@@ -281,7 +283,6 @@ struct Index {
   @State focusMoreMenuOnAppear: boolean = false;
   /** v1.31 31.2：单屏更多菜单当前悬停项（hover 高亮 --nav 底） */
   @State mobileMoreHoveredAction: string = '';
-  @State paneMoreHoveredAction: string = '';
   @State formatMenuOpen: boolean = false;
   @State formatMenuPane: string = 'left';
   @State tableGridOpen: boolean = false;
@@ -484,8 +485,6 @@ struct Index {
   @State @Watch('onFormatContextChanged') focused: boolean = false;
   /** 专注模式下临时展开的文件导航（汉堡切换）；退出专注即重置，不进会话快照 */
   @State focusNavigationOpen: boolean = false;
-  @State paneMoreOpen: boolean = false;
-  @State paneMorePane: string = 'left';
   @State leftPaneWidthVp: number = 0;
   @State rightPaneWidthVp: number = 0;
   @State leftComposing: boolean = false;
@@ -610,7 +609,6 @@ struct Index {
   private renamePathCtl: CustomDialogController | null = null;
   private movePathCtl: CustomDialogController | null = null;
   private shareNoteCtl: CustomDialogController | null = null;
-  private shareImageSettingsCtl: CustomDialogController | null = null;
   private shareImagePreviewCtl: CustomDialogController | null = null;
   private shareFilePreviewCtl: CustomDialogController | null = null;
   private shareTextPreviewCtl: CustomDialogController | null = null;
@@ -626,6 +624,7 @@ struct Index {
   @State shareCaptureStatus: string = '正在准备分享图片…';
   @State shareCaptureTheme: string = 'light';
   @State shareCaptureWidthVp: number = 0;
+  private shareCapturePaneWidthVp: number = 0;
   @State shareCaptureWidthId: string = 'phone';
   @State shareImagePreviewImage: ShareImagePreviewImage = {
     uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
@@ -644,7 +643,9 @@ struct Index {
     this.rightPreviewBridge.onContentReplacing = (): void => {
       this.onPreviewContentReplacing('right');
     };
-    void this.loadAgentKitSlot();
+    if (XIAOYI_DIALOG_ENTRY_ENABLED) {
+      void this.loadAgentKitSlot();
+    }
     this.refreshFromRegistry();
     this.ensureEditorPreferenceStore();
     this.showLineNumbers = (this.editorPreferenceStore as EditorPreferenceStore).showLineNumbers();
@@ -2865,9 +2866,21 @@ struct Index {
     return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
   }
 
+  private activeNotePane(): string {
+    return this.experienceMode === 'simple' ? this.simpleWorkspacePane() : this.activePane;
+  }
+
   private activeFilePath(): string {
-    const pane: string = this.experienceMode === 'simple' ? this.simpleWorkspacePane() : this.activePane;
+    const pane: string = this.activeNotePane();
     return pane === 'right' ? this.rightFilePath : this.currentFilePath;
+  }
+
+  private activeNoteMenuScopeLabel(): string {
+    if (!this.isSingleScreenLayout() && this.isReferenceShown() &&
+      this.currentFilePath.length > 0 && this.rightFilePath.length > 0) {
+      return '当前笔记 · ' + (this.activeNotePane() === 'right' ? '右栏' : '左栏');
+    }
+    return '当前笔记';
   }
 
   private activeEditorBridge(): EditorBridge {
@@ -3137,7 +3150,6 @@ struct Index {
     }
     this.scheduleWorkspaceSessionSave();
     this.moreMenuOpen = false;
-    this.paneMoreOpen = false;
   }
 
   private previewActiveNoteInOtherPane(pane: string): void {
@@ -3882,7 +3894,6 @@ struct Index {
       return;
     }
     this.setActivePane(pane);
-    this.paneMoreOpen = false;
     this.blockToolbarOpen = false;
     this.formatMenuOpen = false;
     this.blockPanelPane = pane;
@@ -6295,10 +6306,6 @@ struct Index {
       if (this.blockToolbarPane === pane) {
         this.closeBlockToolbar(false);
       }
-      if (this.paneMorePane === pane) {
-        this.paneMoreOpen = false;
-        this.paneMoreHoveredAction = '';
-      }
       if (this.backlinksPane === pane) {
         this.backlinksExpanded = false;
         this.backlinksPane = '';
@@ -8353,53 +8360,13 @@ struct Index {
 
   private openShareImageSettings(vaultId: string, notePath: string, itemName: string): void {
     const paneWidthVp: number = this.activeSharePaneWidthVp();
+    this.shareCapturePaneWidthVp = paneWidthVp;
     this.shareCaptureWidthVp = this.shareLayoutWidthVp(this.shareCaptureWidthId, paneWidthVp);
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    this.shareImageSettingsCtl = new CustomDialogController({
-      builder: ShareImageSettingsDialog({
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        initialTheme: this.shareCaptureTheme,
-        initialWidthId: this.shareCaptureWidthId,
-        paneWidthVp: paneWidthVp,
-        onConfirm: (widthId: string, theme: string): void => {
-          this.shareCaptureWidthId = widthId;
-          this.shareCaptureTheme = theme;
-          this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, paneWidthVp);
-          this.ensureShareImagePreferenceStore();
-          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
-            promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
-          }
-          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveWidth(widthId)) {
-            promptAction.showToast({ message: '本次宽度已应用，但未能保存长图偏好' });
-          }
-          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath))
-            .catch((error: Error): void => {
-              this.openShareImagePreview(itemName, {
-                uri: '',
-                aspectRatio: 1,
-                width: 0,
-                height: 0,
-                theme: this.shareCaptureTheme,
-                scaled: false,
-                widthId: this.shareCaptureWidthId
-              }, notePath, vaultId, shareFailureMessage(error, 'image_prepare'));
-            });
-        },
-        onCancel: (): void => {
-          this.openShareDialog('note', notePath);
-        }
-      }),
-      autoCancel: true,
-      cancel: (): void => {
-        this.openShareDialog('note', notePath);
-      },
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      customStyle: true
-    });
-    this.shareImageSettingsCtl.open();
+    this.cleanupShareImagePreview();
+    this.openShareImagePreview(itemName, {
+      uri: '', aspectRatio: 1, width: 0, height: 0,
+      theme: this.shareCaptureTheme, scaled: false, widthId: this.shareCaptureWidthId
+    }, notePath, vaultId, '', paneWidthVp);
   }
 
   private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
@@ -8709,7 +8676,7 @@ struct Index {
         scaled: geometry.scale < 1,
         widthId: this.shareCaptureWidthId
       };
-      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath, vaultId);
+      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath, vaultId, '', this.shareCapturePaneWidthVp);
     } catch (error) {
       this.shareCaptureActive = false;
       bridge.cancelShareCaptureRequests('分享图片生成已结束');
@@ -8738,9 +8705,11 @@ struct Index {
   }
 
   private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,
-    vaultId: string, initialError: string = ''): void {
+    vaultId: string, initialError: string = '', paneWidthVp: number = 0): void {
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    const resolvedPaneWidthVp: number = paneWidthVp > 0 ? paneWidthVp : this.activeSharePaneWidthVp();
+    this.shareCapturePaneWidthVp = resolvedPaneWidthVp;
     this.shareImagePreviewCtl?.close();
     this.shareImagePreviewCtl = new CustomDialogController({
       builder: ShareImagePreviewDialog({
@@ -8750,22 +8719,38 @@ struct Index {
         windowHeightVp: this.windowHeightVp,
         singleScreen: shareSheet,
         widthVp: this.shareCaptureWidthVp,
+        paneWidthVp: resolvedPaneWidthVp,
+        initialWidthId: this.shareCaptureWidthId,
+        initialTheme: this.shareCaptureTheme,
         initialError: initialError,
         onConfirm: (): Promise<void> => {
           const image: ShareImagePreviewImage = this.shareImagePreviewImage;
           const title: string = this.shareImagePreviewTitle;
           return this.shareImage(image, title, VaultRegistry.get());
         },
-        onRetry: (): Promise<void> => {
-          return this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
+        onGenerate: (widthId: string, theme: string): void => {
+          this.shareCaptureWidthId = widthId;
+          this.shareCaptureTheme = theme;
+          this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, resolvedPaneWidthVp);
+          this.ensureShareImagePreferenceStore();
+          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
+            promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
+          }
+          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveWidth(widthId)) {
+            promptAction.showToast({ message: '本次宽度已应用，但未能保存长图偏好' });
+          }
+          this.cleanupShareImagePreview();
+          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath))
+            .catch((error: Error): void => {
+              this.openShareImagePreview(itemName, {
+                uri: '', aspectRatio: 1, width: 0, height: 0,
+                theme: this.shareCaptureTheme, scaled: false, widthId: this.shareCaptureWidthId
+              }, notePath, vaultId, shareFailureMessage(error, 'image_prepare'), resolvedPaneWidthVp);
+            });
         },
         onCancel: (): void => {
           this.cleanupShareImagePreview();
           this.openShareDialog('note', notePath);
-        },
-        onChangeSettings: (): void => {
-          this.cleanupShareImagePreview();
-          this.openShareImageSettings(vaultId, notePath, itemName);
         }
       }),
       alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
@@ -9157,107 +9142,7 @@ struct Index {
     })
   }
 
-  private activatePaneMoreAction(pane: string, action: string): void {
-    this.paneMoreOpen = false;
-    this.paneMoreHoveredAction = '';
-    if (action === 'follow') {
-      this.setPreviewFollowEnabled(!this.followPreviewEnabled);
-    } else if (action === 'preview') {
-      this.previewActiveNoteInOtherPane(pane);
-    } else if (action === 'block') {
-      this.openBlockPropertyPanel(pane);
-    } else {
-      this.toggleBacklinks(pane);
-    }
-  }
-
-  @Builder
-  PaneMoreMenuItem(pane: string, action: string, icon: string, label: string) {
-    Row({ space: Space.s3 }) {
-      Icon(icon, Space.s5, $r('app.color.text_secondary'))
-      Text(label)
-        .fontSize(FontSize.body1)
-        .fontColor($r('app.color.text_primary'))
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-    }
-    .width('100%')
-    .height(Size.touch)
-    .padding({ left: Space.s3, right: Space.s3 })
-    .borderRadius(Radius.control)
-    .backgroundColor(this.paneMoreHoveredAction === action
-      ? $r('app.color.bg_secondary') : Color.Transparent)
-    .focusable(true)
-    .onHover((isHover: boolean): void => {
-      this.paneMoreHoveredAction = isHover ? action : '';
-    })
-    .onClick((): void => { this.activatePaneMoreAction(pane, action); })
-    .accessibilityText(label)
-  }
-
-  @Builder
-  PaneMoreMenu(pane: string) {
-    Column() {
-      if (this.shouldShowPreviewFollowToggle(pane)) {
-        this.PaneMoreMenuItem(pane, 'follow', 'follow',
-          '跟随编辑：' + (this.followPreviewEnabled ? '开' : '关'))
-      }
-      if (this.paneFilePath(pane).length > 0) {
-        this.PaneMoreMenuItem(pane, 'preview', 'fileReference', '在另一栏预览')
-      }
-      if (this.hasBlockPropertyPanelForPane(pane)) {
-        this.PaneMoreMenuItem(pane, 'block', 'settings', '块操作')
-      }
-      if (this.paneFilePath(pane).length > 0) {
-        this.PaneMoreMenuItem(pane, 'backlinks', 'link',
-          this.backlinksExpanded && this.backlinksPane === pane ? '隐藏反链' : '查看反链')
-      }
-    }
-    // v2 32.3 外形：定宽 s16×3.5（224，border-box）。原型为 min-width，但四项均为短文案，
-    // 浏览器实际渲染恒 224。原生不可用 constraintSize minWidth：弹层内子项 width('100%')
-    // 会按约束最大宽（≈窗口宽）解析把菜单撑到整屏（faqs-arkui-95）。
-    .width(Space.s16 * 3.5)
-    .padding(Space.s1)
-    .borderRadius(Radius.menu)
-    .backgroundColor($r('app.color.bg_card'))
-    .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: Shadow.floatBlur, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 8 })
-  }
-
-  @Builder
-  PaneMoreButton(pane: string) {
-    Row() {
-      Icon('more', 20, $r('app.color.text_secondary'))
-    }
-    .width(Size.touch)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .borderRadius(Radius.icon)
-    .onClick((): void => {
-      this.paneMorePane = pane;
-      this.paneMoreOpen = !this.paneMoreOpen;
-    })
-    .accessibilityText('更多操作')
-    .accessibilityTextHint(this.paneMoreOpen && this.paneMorePane === pane
-      ? '收起操作菜单' : '展开操作菜单')
-    .bindPopup(this.paneMoreOpen && this.paneMorePane === pane, {
-      builder: this.PaneMoreMenu(pane),
-      placement: Placement.BottomRight,
-      enableArrow: false,
-      offset: { x: 0, y: Space.s1 },
-      mask: false,
-      autoCancel: true,
-      popupColor: Color.Transparent,
-      onWillDismiss: (action: DismissPopupAction): void => {
-        action.dismiss();
-        this.paneMoreOpen = false;
-        this.paneMoreHoveredAction = '';
-      }
-    })
-  }
-
-  /** 与 v2 一致：每栏显示模式切换和栏内更多操作。 */
+  /** 每栏只保留编辑 / 预览切换；笔记操作统一由顶栏更多菜单承载。 */
   @Builder
   PaneHead($$: PaneHeadParam) {
     Row({ space: Space.s1 }) {
@@ -9270,9 +9155,6 @@ struct Index {
       .backgroundColor($r('app.color.bg_card'))
       .border({ width: 1, color: $r('app.color.line') })
 
-      if (this.breakpoint !== Breakpoint.SM) {
-        this.PaneMoreButton($$.pane)
-      }
     }
     .width('100%')
     .height(Size.touch)
@@ -9948,7 +9830,7 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
-        if (this.agentKitSlotBuilder !== null) {
+        if (XIAOYI_DIALOG_ENTRY_ENABLED && this.agentKitSlotBuilder !== null) {
           Row() {
             this.agentKitSlotBuilder.builder(this.xiaoyiDialogClosed)
           }
@@ -10034,7 +9916,7 @@ struct Index {
       this.MobileMoreMenuAppGroup()
     }
     // 31.6 外形：定宽 s16×4.25（272，border-box），上下内边距 s1，--r 圆角 + --float-shadow。
-    // 不用 constraintSize minWidth，原因见 PaneMoreMenu 注释（faqs-arkui-95）。
+    // 不用 constraintSize minWidth，根因与规避方式见本菜单定宽约束说明（faqs-arkui-95）。
     .width(Space.s16 * 4.25)
     .padding({ top: Space.s1, bottom: Space.s1 })
     .borderRadius(Radius.menu)
@@ -10052,23 +9934,45 @@ struct Index {
     })
   }
 
-  /** v1.31 31.1：组一「当前笔记」——分享 → 反链 → 切换（切换仅两栏为不同笔记时）；组间 --line 细分隔线 */
+  /** 工作区更多菜单：笔记操作统一作用于当前激活栏，并在双栏时标明栏位。 */
   @Builder
   MobileMoreMenuNoteGroup() {
     Column() {
+      Text(this.activeNoteMenuScopeLabel())
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s1 })
+        .accessibilityText(this.activeNoteMenuScopeLabel())
       this.MobileMoreMenuItem('share', 'share', '分享笔记',
         this.activeFilePath().length > 0, (): void => {
           this.openShareNoteDialog();
         })
       this.MobileMoreMenuItem('backlinks', 'link',
-        this.backlinksExpanded && this.backlinksPane === this.activePane ? '隐藏反链' : '查看反链',
+        this.backlinksExpanded && this.backlinksPane === this.activeNotePane() ? '隐藏反链' : '查看反链',
         this.activeFilePath().length > 0, (): void => {
-          this.toggleBacklinks(this.activePane);
+          this.toggleBacklinks(this.activeNotePane());
         })
+      if (this.experienceMode === 'professional' && !this.isSingleScreenLayout() &&
+        this.activeFilePath().length > 0) {
+        this.MobileMoreMenuItem('preview', 'fileReference', '在另一栏预览', true, (): void => {
+          this.previewActiveNoteInOtherPane(this.activeNotePane());
+        })
+      }
+      if (this.shouldShowPreviewFollowToggle(this.activeNotePane())) {
+        this.MobileMoreMenuItem('follow', 'follow',
+          '跟随编辑：' + (this.followPreviewEnabled ? '开' : '关'), true, (): void => {
+            this.setPreviewFollowEnabled(!this.followPreviewEnabled);
+          })
+      }
+      if (this.hasBlockPropertyPanelForPane(this.activeNotePane())) {
+        this.MobileMoreMenuItem('block', 'settings', '块操作', true, (): void => {
+          this.openBlockPropertyPanel(this.activeNotePane());
+        })
+      }
       if (this.experienceMode === 'professional' && this.currentFilePath.length > 0 &&
         this.rightFilePath.length > 0 && this.currentFilePath !== this.rightFilePath) {
         this.MobileMoreMenuItem('switch', 'swap',
-          '切换到笔记：' + (this.activePane === 'left'
+          '切换到笔记：' + (this.activeNotePane() === 'left'
             ? this.paneNoteTitle(this.rightFilePath)
             : this.paneNoteTitle(this.currentFilePath)),
           true, (): void => {

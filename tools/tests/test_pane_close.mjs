@@ -64,7 +64,6 @@ function createHarness(options = {}) {
     tableGridOpen: false,
     blockPanelPane: '',
     blockToolbarPane: '',
-    paneMorePane: '',
     backlinksPane: '',
     recentOpenStore: store,
     editorBridge: bridge('left'),
