@@ -90,7 +90,7 @@ function Install-Hap([string]$hapPath) {
 
 # ---------------- 套件参数 ----------------
 # 支持整套件（UiLaunch）或单用例（UiLaunch#more_menu_opens_and_closes，调试定位用）
-$knownSuites = @('UiLaunch', 'UiNoteFlow', 'UiPanels')
+$knownSuites = @('UiLaunch', 'UiNoteFlow', 'UiPanels', 'UiQuickSwitch', 'UiTrash', 'UiSettingsExt')
 $suites = @()
 if ($Suite.Trim() -ne '') {
     foreach ($s in ($Suite -split ',')) {

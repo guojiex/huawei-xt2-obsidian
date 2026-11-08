@@ -20,7 +20,7 @@
 import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver, Component, Rect } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText, waitByTextContains,
-  clickById, clickByText, existsById, waitGoneById, waitGoneByText,
+  clickById, clickByText, existsById, existsByText, waitGoneById, waitGoneByText,
   uniqueUiName, ensureSidebarVisible, waitByIdSoft, tryWaitById,
   SNACK_MS } from './UiTestHelpers';
 
@@ -66,13 +66,38 @@ async function swipeTreeRow(driver: Driver, row: Component, distanceRatio: numbe
 /**
  * 树内找行：LazyForEach 折叠线以下的行不入控件树（185753 run 实测 ~9 行），
  * 直接等不到就以库首行为锚点把树向上滚，滚出后面的行再找。
+ *
+ * 增强锚点搜索：若 00_开始 锚点不在可见区，先尝试向下滚回顶部再查找。
  */
 async function findTreeRow(driver: Driver, rowId: string): Promise<Component> {
   let comp: Component | null = await tryWaitById(driver, rowId, 5000);
   if (comp !== null) {
     return comp;
   }
-  const anchor: Component = await waitById(driver, 'file-tree-row-' + VAULT_ID + ':00_开始');
+  // 锚点可能不在可见区——先尝试找到，找不到则向下滚回顶部
+  let anchor: Component | null = await tryWaitById(driver, 'file-tree-row-' + VAULT_ID + ':00_开始', 5000);
+  if (anchor === null) {
+    // 锚点不可见：用任意可见的 vault-sidebar 组件定位树区，向下滚回顶部
+    const newNoteBtn: Component | null = await tryWaitById(driver, 'vault-sidebar-new-note', 3000);
+    if (newNoteBtn !== null) {
+      const btnRect: Rect = await newNoteBtn.getBounds();
+      const sx: number = Math.round((btnRect.left + btnRect.right) / 2);
+      // 向下滑 3 次（从侧栏底部向上拖 = 内容向下滚 = 顶部行露出）
+      for (let j: number = 0; j < 3; j++) {
+        await driver.swipe(sx, btnRect.top + 300, sx, btnRect.top - 600, SWIPE_SPEED);
+        await driver.delayMs(500);
+      }
+    }
+    anchor = await tryWaitById(driver, 'file-tree-row-' + VAULT_ID + ':00_开始', 5000);
+  }
+  if (anchor === null) {
+    // 仍找不到锚点——可能树结构不同，直接再尝试目标行
+    comp = await tryWaitById(driver, rowId, 5000);
+    if (comp !== null) {
+      return comp;
+    }
+    throw new Error('树中未找到行: ' + rowId + '（锚点 00_开始 也不可见）');
+  }
   const rect: Rect = await anchor.getBounds();
   const x: number = Math.round((rect.left + rect.right) / 2);
   for (let i: number = 0; i < 4 && comp === null; i++) {
@@ -164,6 +189,7 @@ export default function uiNoteFlowTest() {
 
     it('trash_section_visible_after_delete', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
+      await ensureSidebarVisible(driver);
       const name: string = uniqueUiName('uitest弃');
       const rowId: string = noteRowId(name);
       await createNoteByName(driver, name);
@@ -171,7 +197,20 @@ export default function uiNoteFlowTest() {
       await swipeTreeRow(driver, row, 0.7);
       expect(await waitGoneById(driver, rowId)).assertTrue();
       await waitByTextContains(driver, '已移入回收站', SNACK_MS);
-      await waitByText(driver, '回收站');
+      // 回收站区块在侧栏底部——滚动到底部寻找
+      const trashVisible: boolean = await existsById(driver, 'trash-section-header');
+      if (!trashVisible) {
+        // 尝试向下滚动侧栏使回收站区块可见
+        const sidebar: Component | null = await tryWaitById(driver, 'vault-sidebar-list', 3000);
+        if (sidebar !== null) {
+          const rect: Rect = await sidebar.getBounds();
+          const x: number = Math.round((rect.left + rect.right) / 2);
+          await driver.swipe(x, rect.bottom - 100, x, rect.top + 100, SWIPE_SPEED);
+          await driver.delayMs(500);
+        }
+      }
+      // 回收站标签可见（标题或区块头部）
+      expect(await existsById(driver, 'trash-section-header') || await existsByText(driver, '回收站')).assertTrue();
     });
 
     it('close_note_shows_empty_state', 0, async (): Promise<void> => {

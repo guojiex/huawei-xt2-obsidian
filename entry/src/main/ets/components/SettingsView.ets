@@ -790,6 +790,7 @@ export struct SettingsView {
           .fontColor($r('app.color.brand'))
           .constraintSize({ minHeight: Size.hsRowMinH })
           .focusable(true)
+          .id('settings-reset-pane-widths')
           .onClick(() => { this.onResetSplit(); })
       }
       .width('100%')
@@ -821,6 +822,7 @@ export struct SettingsView {
         .constraintSize({ minHeight: Size.hsRowMinH })
         .padding({ top: Space.s2, bottom: Space.s2 })
         .focusable(true)
+        .id('settings-diagnostics-row')
         .onClick((): void => { this.diagnosticsExpanded = !this.diagnosticsExpanded; })
         if (this.diagnosticsExpanded) {
           this.InfoRow('当前形态', this.formLabel(), true)
@@ -1546,6 +1548,7 @@ export struct SettingsView {
           .fontColor($r('app.color.brand'))
           .constraintSize({ minHeight: Size.hsRowMinH })
           .width('100%')
+          .id('settings-changelog-row')
           .onClick(() => { this.onOpenHistory(); })
       }
       .width('100%')

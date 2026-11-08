@@ -40,7 +40,10 @@
 ## 套件与用例映射
 
 > 状态不在此登记；执行结果记入当轮输出的摘要与 `.local/uitest/` 证据，版本验收时引用。
-> 主工程为本测试补的 `.id()`：`vault-sidebar-search`、`vault-sidebar-new-note`、`note-create-input`。
+> 主工程为本测试补的 `.id()`：`vault-sidebar-search`、`vault-sidebar-new-note`、`note-create-input`、
+> `quick-switcher-scope-current`/`quick-switcher-scope-all`、`quick-switcher-search-input`、
+> `quick-switcher-skip-hint`、`trash-section-header`、`trash-restore-button`、
+> `settings-diagnostics-row`、`settings-changelog-row`、`settings-reset-pane-widths`。
 
 | 套件 | 用例 | 覆盖要点 | EM 对应 |
 | --- | --- | --- | --- |
@@ -61,6 +64,18 @@
 | UiPanels | `settings_editor_mode_toggle` | 设置内简单 / 专业模式切换与还原 | EM-C1 / EM-F1 |
 | UiPanels | `vault_manager_open_and_back` | 库下拉 → 管理库 → 返回 | EM-B1（可达部分） |
 | UiPanels | `git_entry_hidden_for_non_git_vault` | 非 Git 库（首装教程库）不显示同步入口 | EM-K1（反向断言） |
+| UiPanels | `share_panel_accessible_from_more_menu` | 更多菜单中分享入口可见 | EM-J2（可达部分） |
+| UiPanels | `import_dialog_accessible_from_vault_manager` | 库管理中导入按钮可达 | EM-M1（可达部分） |
+| UiQuickSwitch | `quick_switcher_opens_with_search_input` | 快切弹窗搜索输入框可见 | EM-E1 |
+| UiQuickSwitch | `scope_defaults_to_current_vault` | 范围分段「当前库」默认选中 | EM-E1 |
+| UiQuickSwitch | `scope_toggle_to_all_vaults` | 范围分段切换到「全部库」 | EM-E2（可达部分） |
+| UiQuickSwitch | `skip_hint_ui_skeleton_accessible` | 跳过提示 UI 骨架可达 | EM-E3（可达部分） |
+| UiTrash | `trash_section_visibility` | 回收站区块可见性（空/非空两种正确状态） | EM-B4 |
+| UiTrash | `trash_restore_button_accessible_when_items_exist` | 回收站有内容时恢复按钮可达 | EM-B4（按钮路径） |
+| UiTrash | `trash_section_label_correct` | 回收站标题文案正确 | EM-B4 |
+| UiSettingsExt | `diagnostics_info_row_visible_and_expandable` | 诊断信息行可见且可展开（含构建提交行） | EM-F2 |
+| UiSettingsExt | `changelog_section_visible` | 更新日志区可见且有内容或占位 | EM-F5 |
+| UiSettingsExt | `reset_pane_widths_row_visible` | 恢复等分栏宽行可见 | EM-F6 |
 
 ## 约定
 

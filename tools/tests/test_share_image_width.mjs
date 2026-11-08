@@ -52,9 +52,22 @@ test('share capture falls back to the layout width before pane measurement', () 
   assert.equal(app.activeSharePaneWidthVp(), 700);
 });
 
-test('capture Web width and image settings both use the follow-current-pane mode', () => {
-  assert.match(indexSource, /this\.shareCaptureWidthVp = this\.activeSharePaneWidthVp\(\)/);
+test('shareLayoutWidthVp maps phone/wide/pane to fixed or dynamic widths', () => {
+  const app = createHarness();
+  assert.equal(app.shareLayoutWidthVp('phone', 480), 360);
+  assert.equal(app.shareLayoutWidthVp('wide', 480), 720);
+  assert.equal(app.shareLayoutWidthVp('pane', 480), 480);
+  assert.equal(app.shareLayoutWidthVp('pane', 350), 350);
+});
+
+test('settings dialog provides width segment with phone/wide/pane and capture uses the selected width', () => {
+  assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(this\.shareCaptureWidthId, paneWidthVp\)/);
+  assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(widthId, paneWidthVp\)/);
   assert.match(indexSource, /\.width\(this\.shareCaptureWidthVp > 0 \? this\.shareCaptureWidthVp : '100%'\)/);
-  assert.match(settingsSource, /Text\('跟随当前栏'\)/);
-  assert.match(settingsSource, /排版宽度沿用当前笔记栏/);
+  assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.PHONE\)/);
+  assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.WIDE\)/);
+  assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.PANE\)/);
+  assert.match(settingsSource, /ShareImageWidthPresets\.hintWithPx/);
+  assert.match(indexSource, /initialWidthId: this\.shareCaptureWidthId/);
+  assert.match(settingsSource, /onConfirm: \(widthId: string, theme: string\)/);
 });

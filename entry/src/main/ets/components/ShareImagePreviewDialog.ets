@@ -1,6 +1,7 @@
 import { UIUtils } from '@kit.ArkUI';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { shareFailureMessage } from '../model/UserErrorMessages';
+import { ShareImageWidthPresets } from './ShareImageSettingsDialog';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 export interface ShareImagePreviewImage {
@@ -10,6 +11,7 @@ export interface ShareImagePreviewImage {
   height: number;
   theme: string;
   scaled: boolean;
+  widthId: string;
 }
 
 @CustomDialog
@@ -21,7 +23,7 @@ export struct ShareImagePreviewDialog {
   @Prop singleScreen: boolean = false;
   @Prop widthVp: number = 0;
   @Prop initialError: string = '';
-  image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false };
+  image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone' };
   onConfirm: () => Promise<void> = async (): Promise<void> => {};
   onRetry: () => Promise<void> = async (): Promise<void> => {};
   onCancel: () => void = () => {};
@@ -79,7 +81,7 @@ export struct ShareImagePreviewDialog {
     Column({ space: Space.s3 }) {
       Row({ space: Space.s3 }) {
         Column({ space: Space.s1 }) {
-          Text('图片宽度 · 跟随当前栏' +
+          Text('图片宽度 · ' + ShareImageWidthPresets.findById(this.image.widthId).label +
             (this.widthVp > 0 ? ' · ' + Math.round(this.widthVp).toString() + ' vp' : ''))
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_primary'))

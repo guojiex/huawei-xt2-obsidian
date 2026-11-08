@@ -5,6 +5,9 @@ import git2NativeTest from './Git2Native.test';
 import uiLaunchTest from './ui/UiLaunch.test';
 import uiNoteFlowTest from './ui/UiNoteFlow.test';
 import uiPanelsTest from './ui/UiPanels.test';
+import uiQuickSwitchTest from './ui/UiQuickSwitch.test';
+import uiTrashTest from './ui/UiTrash.test';
+import uiSettingsExtTest from './ui/UiSettingsExt.test';
 
 export default function testsuite() {
   abilityTest();
@@ -16,4 +19,7 @@ export default function testsuite() {
   uiLaunchTest();
   uiNoteFlowTest();
   uiPanelsTest();
+  uiQuickSwitchTest();
+  uiTrashTest();
+  uiSettingsExtTest();
 }

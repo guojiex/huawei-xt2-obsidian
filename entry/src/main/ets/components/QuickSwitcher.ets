@@ -277,6 +277,7 @@ export struct QuickSwitcher {
       })
       .borderRadius(Radius.full)
       .backgroundColor(this.searchScope === scope ? $r('app.color.bg_card') : Color.Transparent)
+      .id('quick-switcher-scope-' + scope)
   }
 
   @Builder
@@ -369,6 +370,7 @@ export struct QuickSwitcher {
             .border({ width: 1, color: $r('app.color.line') })
             .borderRadius(Radius.control)
             .backgroundColor($r('app.color.bg_secondary'))
+            .id('quick-switcher-search-input')
             .onChange((value: string) => {
               this.onQueryChanged(value);
             })
@@ -604,6 +606,7 @@ export struct QuickSwitcher {
                   .fontColor($r('app.color.brand'))
               }
               .width('100%')
+              .id('quick-switcher-skip-hint')
               .accessibilityText('已跳过 ' + this.skippedVaultNames.length.toString() +
                 ' 个暂不可读的库，' + (this.skippedExpanded ? '收起库名列表' : '展开库名列表'))
               .onClick(() => {

@@ -2,6 +2,50 @@ import { UIUtils } from '@kit.ArkUI';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
+export interface ShareImageWidthOption {
+  id: string;
+  label: string;
+  hint: string;
+  layoutVp: number;
+  pixelRatio: number;
+}
+
+export class ShareImageWidthPresets {
+  static readonly PHONE: ShareImageWidthOption = {
+    id: 'phone', label: '手机', hint: '适合在聊天中查看',
+    layoutVp: 360, pixelRatio: 3
+  };
+  static readonly WIDE: ShareImageWidthOption = {
+    id: 'wide', label: '宽版', hint: '表格与代码不易换行，适合电脑查看',
+    layoutVp: 720, pixelRatio: 2
+  };
+  static readonly PANE: ShareImageWidthOption = {
+    id: 'pane', label: '跟随当前栏', hint: '与当前栏看到的一致，单屏与双屏结果不同',
+    layoutVp: 0, pixelRatio: 3
+  };
+  static readonly ALL: ShareImageWidthOption[] = [
+    ShareImageWidthPresets.PHONE,
+    ShareImageWidthPresets.WIDE,
+    ShareImageWidthPresets.PANE
+  ];
+  static findById(id: string): ShareImageWidthOption {
+    for (const opt of ShareImageWidthPresets.ALL) {
+      if (opt.id === id) {
+        return opt;
+      }
+    }
+    return ShareImageWidthPresets.PHONE;
+  }
+  static outputPxWidth(option: ShareImageWidthOption, paneWidthVp: number): number {
+    const vp: number = option.layoutVp > 0 ? option.layoutVp : paneWidthVp;
+    return Math.round(vp * option.pixelRatio);
+  }
+  static hintWithPx(option: ShareImageWidthOption, paneWidthVp: number): string {
+    const px: number = ShareImageWidthPresets.outputPxWidth(option, paneWidthVp);
+    return option.hint + ' · ' + px.toLocaleString() + ' px 宽';
+  }
+}
+
 @CustomDialog
 export struct ShareImageSettingsDialog {
   controller?: CustomDialogController;
@@ -9,12 +53,16 @@ export struct ShareImageSettingsDialog {
   @Prop windowHeightVp: number = 0;
   @Prop singleScreen: boolean = false;
   @Prop initialTheme: string = 'light';
-  onConfirm: (theme: string) => void = (_theme: string) => {};
+  @Prop initialWidthId: string = 'phone';
+  @Prop paneWidthVp: number = 0;
+  onConfirm: (widthId: string, theme: string) => void = (_widthId: string, _theme: string) => {};
   onCancel: () => void = () => {};
   @State theme: string = 'light';
+  @State widthId: string = 'phone';
 
   aboutToAppear(): void {
     this.theme = this.initialTheme === 'dark' ? 'dark' : 'light';
+    this.widthId = this.initialWidthId;
   }
 
   private selectTheme(theme: string): void {
@@ -23,15 +71,39 @@ export struct ShareImageSettingsDialog {
     }
   }
 
+  private selectWidth(id: string): void {
+    this.widthId = id;
+  }
+
   private cancel(): void {
     this.controller?.close();
     this.onCancel();
   }
 
   private confirm(): void {
+    const widthId: string = this.widthId;
     const theme: string = this.theme;
     this.controller?.close();
-    this.onConfirm(theme);
+    this.onConfirm(widthId, theme);
+  }
+
+  private widthHintText(): string {
+    const option: ShareImageWidthOption = ShareImageWidthPresets.findById(this.widthId);
+    return ShareImageWidthPresets.hintWithPx(option, this.paneWidthVp);
+  }
+
+  @Builder
+  WidthOption(opt: ShareImageWidthOption) {
+    Text(opt.label)
+      .fontSize(FontSize.body2)
+      .fontColor(this.widthId === opt.id ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      .height(Size.buttonH)
+      .layoutWeight(1)
+      .textAlign(TextAlign.Center)
+      .accessibilityText(opt.label + (this.widthId === opt.id ? '，已选中' : ''))
+      .onClick(() => { this.selectWidth(opt.id); })
+      .borderRadius(Radius.full)
+      .backgroundColor(this.widthId === opt.id ? $r('app.color.bg_card') : Color.Transparent)
   }
 
   @Builder
@@ -52,22 +124,27 @@ export struct ShareImageSettingsDialog {
   DialogContent() {
     Column({ space: Space.s3 }) {
       Column({ space: Space.s1 }) {
-        Text('图片宽度')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
         Row() {
-          Text('跟随当前栏')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
+          Text('图片宽度')
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_primary'))
           Blank()
-          Text('排版宽度沿用当前笔记栏，随窗口形态和分栏宽度变化。')
+          Text(this.widthHintText())
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))
-            .maxLines(2)
+            .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
         }
         .width('100%')
+        Row({ space: Space.s1 }) {
+          this.WidthOption(ShareImageWidthPresets.PHONE)
+          this.WidthOption(ShareImageWidthPresets.WIDE)
+          this.WidthOption(ShareImageWidthPresets.PANE)
+        }
+        .width('100%')
+        .padding(Space.s1)
+        .borderRadius(Radius.full)
+        .backgroundColor($r('app.color.bg_secondary'))
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)

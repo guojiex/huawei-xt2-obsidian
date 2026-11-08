@@ -144,6 +144,7 @@ export struct TrashView {
       .height(Size.touch)
       .justifyContent(FlexAlign.Center)
       .focusable(true)
+      .id('trash-restore-button')
       .accessibilityText('恢复 ' + this.displayName(item) + ' 到 ' +
         this.vaultId + ' / ' + this.originFolder(item))
       .onClick((): void => { this.onRestore(item.relPath); })
@@ -174,6 +175,7 @@ export struct TrashView {
         .height(Size.touch)
         .padding({ left: Space.s3, right: Space.s3 })
         .focusable(true)
+        .id('trash-section-header')
         .onKeyEvent((event: KeyEvent): void => { this.onHeaderKey(event); })
         .onClick((): void => { this.toggleExpanded(); })
 

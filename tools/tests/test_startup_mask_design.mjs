@@ -68,7 +68,7 @@ test('entrance is staggered opacity/translate only and ready exits in one fade (
   assert.match(mask, /private onReadyChange\(\): void \{/);
   assert.match(mask, /this\.clearEnterTimers\(\);/);
   assert.match(mask, /duration: Startup\.exitDur,\s*\n\s*curve: Motion\.navCurve,/);
-  assert.match(mask, /onFinish: \(\): void => \{ this\.maskGone = true; \}/);
+  assert.match(mask, /onFinish: \(\): void => \{\s*this\.maskGone = true;\s*\}/);
   assert.match(tokens, /static readonly exitDur: number = Motion\.durNav;/);
   // 入场只动 opacity / translate / scale，不做逐字浮现（无 per-char 循环渲染）
   assert.equal((mask.match(/splitQuoteLines|ForEach\(this\.quoteLines/g) ?? []).length >= 2, true);
@@ -87,7 +87,7 @@ test('Index mounts the mask persistently and keeps the old plain cover removed (
 
 test('mask is a decorative layer: hidden from a11y, no tracking or network (41.5)', () => {
   assert.match(mask, /\.accessibilityLevel\('no'\)/);
-  assert.match(mask, /\.onClick\(\(\): void => \{\}\)/);
+  assert.match(mask, /\.onClick\(\(\): void => \{\s*\}\)/);
   for (const banned of ['hilog', 'http', 'fetch', 'hiAppEvent', '@kit.NetworkKit']) {
     assert.ok(!mask.includes(banned), `mask must not reference ${banned}`);
   }

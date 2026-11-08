@@ -626,8 +626,9 @@ struct Index {
   @State shareCaptureStatus: string = '正在准备分享图片…';
   @State shareCaptureTheme: string = 'light';
   @State shareCaptureWidthVp: number = 0;
+  @State shareCaptureWidthId: string = 'phone';
   @State shareImagePreviewImage: ShareImagePreviewImage = {
-    uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false
+    uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
   };
 
   aboutToAppear(): void {
@@ -650,6 +651,7 @@ struct Index {
     this.followPreviewEnabled = (this.editorPreferenceStore as EditorPreferenceStore).followPreview();
     this.ensureShareImagePreferenceStore();
     this.shareCaptureTheme = (this.shareImagePreferenceStore as ShareImagePreferenceStore).loadTheme();
+    this.shareCaptureWidthId = (this.shareImagePreferenceStore as ShareImagePreferenceStore).loadWidth();
     this.ensureEditorExperienceStore();
     this.experienceMode = (this.editorExperienceStore as EditorExperienceStore).load();
     this.synchronizePreviewFollowContext();
@@ -1474,6 +1476,16 @@ struct Index {
     }
     const layoutWidth: Length = this.notePaneWidth(pane);
     return typeof layoutWidth === 'number' && layoutWidth > 0 ? layoutWidth : this.noteContentWidth();
+  }
+
+  private shareLayoutWidthVp(widthId: string, paneWidthVp: number): number {
+    if (widthId === 'wide') {
+      return 720;
+    }
+    if (widthId === 'phone') {
+      return 360;
+    }
+    return paneWidthVp;
   }
 
   /**
@@ -8338,7 +8350,8 @@ struct Index {
   }
 
   private openShareImageSettings(vaultId: string, notePath: string, itemName: string): void {
-    this.shareCaptureWidthVp = this.activeSharePaneWidthVp();
+    const paneWidthVp: number = this.activeSharePaneWidthVp();
+    this.shareCaptureWidthVp = this.shareLayoutWidthVp(this.shareCaptureWidthId, paneWidthVp);
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
     this.shareImageSettingsCtl = new CustomDialogController({
@@ -8347,11 +8360,18 @@ struct Index {
         windowHeightVp: this.windowHeightVp,
         singleScreen: shareSheet,
         initialTheme: this.shareCaptureTheme,
-        onConfirm: (theme: string): void => {
+        initialWidthId: this.shareCaptureWidthId,
+        paneWidthVp: paneWidthVp,
+        onConfirm: (widthId: string, theme: string): void => {
+          this.shareCaptureWidthId = widthId;
           this.shareCaptureTheme = theme;
+          this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, paneWidthVp);
           this.ensureShareImagePreferenceStore();
           if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
             promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
+          }
+          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveWidth(widthId)) {
+            promptAction.showToast({ message: '本次宽度已应用，但未能保存长图偏好' });
           }
           void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath))
             .catch((error: Error): void => {
@@ -8361,7 +8381,8 @@ struct Index {
                 width: 0,
                 height: 0,
                 theme: this.shareCaptureTheme,
-                scaled: false
+                scaled: false,
+                widthId: this.shareCaptureWidthId
               }, notePath, vaultId, shareFailureMessage(error, 'image_prepare'));
             });
         },
@@ -8683,7 +8704,8 @@ struct Index {
         width: geometry.width,
         height: geometry.height,
         theme: this.shareCaptureTheme,
-        scaled: geometry.scale < 1
+        scaled: geometry.scale < 1,
+        widthId: this.shareCaptureWidthId
       };
       this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath, vaultId);
     } catch (error) {
@@ -8755,7 +8777,7 @@ struct Index {
     const sessionId: string = this.shareImagePreviewSessionId;
     this.shareImagePreviewSessionId = '';
     this.shareImagePreviewImage = {
-      uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false
+      uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
     };
     if (sessionId.length === 0) {
       return;

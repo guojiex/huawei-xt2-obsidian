@@ -108,3 +108,42 @@ test('Index restores the app-wide theme and passes it to the next settings dialo
     /this\.shareCaptureTheme = theme;\s*this\.ensureShareImagePreferenceStore\(\);\s*if \(!\(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.saveTheme\(theme\)\)/);
   assert.match(dialogSource, /this\.theme = this\.initialTheme === 'dark' \? 'dark' : 'light'/);
 });
+
+test('width preference defaults to phone and accepts only valid ids', () => {
+  assert.equal(createStore().store.loadWidth(), 'phone');
+  assert.equal(createStore({ persisted: 'wide' }).store.loadWidth(), 'wide');
+  assert.equal(createStore({ persisted: 'pane' }).store.loadWidth(), 'pane');
+  assert.equal(createStore({ persisted: 'phone' }).store.loadWidth(), 'phone');
+  assert.equal(createStore({ persisted: 'invalid' }).store.loadWidth(), 'phone');
+});
+
+test('saving the width flushes one app-wide key and survives a new store instance', () => {
+  const fixture = createStore();
+  assert.equal(fixture.store.saveWidth('wide'), true);
+  assert.equal(fixture.persisted, 'wide');
+  assert.deepEqual(fixture.calls.slice(-2), [['put', 'width', 'wide'], ['flush']]);
+
+  const reopened = createStore({ persisted: fixture.persisted });
+  assert.equal(reopened.store.loadWidth(), 'wide');
+});
+
+test('invalid or failed width saves do not claim persistence', () => {
+  const fixture = createStore();
+  assert.equal(fixture.store.saveWidth('unknown'), false);
+  assert.equal(fixture.store.saveWidth('wide'), true);
+  assert.equal(createStore({ initError: true }).store.saveWidth('wide'), false);
+  assert.equal(createStore({ writeError: true }).store.saveWidth('wide'), false);
+  assert.equal(createStore({ flushError: true }).store.saveWidth('wide'), false);
+});
+
+test('Index restores the app-wide width preference and passes it to the settings dialog', () => {
+  const indexSource = readSourceFile(
+    new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+  assert.match(indexSource,
+    /this\.shareCaptureWidthId = \(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.loadWidth\(\)/);
+  assert.match(indexSource, /initialWidthId: this\.shareCaptureWidthId/);
+  assert.match(indexSource,
+    /this\.shareCaptureWidthId = widthId;\s*this\.shareCaptureTheme = theme/);
+  assert.match(indexSource,
+    /!\(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.saveWidth\(widthId\)/);
+});

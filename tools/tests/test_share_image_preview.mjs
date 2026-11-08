@@ -52,7 +52,7 @@ test('long-image detail receives final PixelMap dimensions, selected appearance,
   assert.match(previewSource, /1 张长图 · '\s*\+\s*this\.image\.width\.toString\(\)\s*\+\s*' × '\s*\+\s*this\.image\.height\.toString\(\)\s*\+\s*' px · '/);
   assert.match(previewSource, /this\.image\.theme === 'dark' \? '深色' : '浅色'/);
   assert.match(previewSource, /为满足图片预算，长图已整体缩小至 '\s*\+\s*this\.image\.width\.toString\(\)\s*\+\s*' px 宽/);
-  assert.match(previewSource, /图片宽度 · 跟随当前栏/);
+  assert.match(previewSource, /图片宽度 · '\s*\+\s*ShareImageWidthPresets\.findById\(this\.image\.widthId\)\.label/);
   assert.match(previewSource, /图片外观 · '/);
   assert.match(previewSource, /改用 Markdown \/ ZIP/);
   assert.match(previewSource, /Icon\('image'/);
