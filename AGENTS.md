@@ -91,7 +91,7 @@ web/gitbridge/                Web 内 isomorphic-git 桥接层（独立 npm 包�
 docs/
   mvp_design.md               设计主文档（含进度与里程碑）
   requirements_backlog.md     需求池（所有想做的，未分配）
-  releases/                   ★ 版本档案：vX.Y/需求文档.md（**落码前必看**）
+  releases/                   ★ 版本档案：vX.Y/需求文档.md（**落码前必看**）；已实现旧版本的聚合索引见 releases/历史版本速查.md
   open_questions.md           已定决策总表 + 待决 + TODO 挂起
   harmonyos/                  ★ 鸿蒙知识库：api_notes.md（真源）/ qa/（问答存档）
   prototype/v2/index.html     当前单文件交互原型（浏览器直接打开）
