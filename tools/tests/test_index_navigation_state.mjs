@@ -87,7 +87,6 @@ function createHarness(overrides = {}) {
     activePane: 'left',
     referenceVisible: true,
     moreMenuOpen: true,
-    paneMoreOpen: true,
     agentHamburgerSeq: 0,
     activePaneChanges: [],
     singleLandscape: false,
@@ -218,7 +217,6 @@ test('leaving focus resets the in-focus navigation and restores the pre-focus la
   assert.equal(app.sidebarProgress, 1);
   assert.equal(app.activePane, 'right');
   assert.equal(app.moreMenuOpen, false);
-  assert.equal(app.paneMoreOpen, false);
 });
 
 test('back closes the in-focus navigation before leaving focus mode', () => {
