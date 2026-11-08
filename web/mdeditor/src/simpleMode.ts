@@ -1,8 +1,10 @@
-import { EditorState, Transaction } from '@codemirror/state'
+import { Annotation, EditorState, StateField, Transaction } from '@codemirror/state'
+import type { Extension } from '@codemirror/state'
 import { ensureSyntaxTree } from '@codemirror/language'
 // ⚠️ 必须带 `.ts` 后缀：`web/mdeditor/test/*.test.mjs` 有一部分直接用 Node 的类型剥离
 // 导入本文件，Node 的 ESM 解析不允许省略扩展名（ERR_MODULE_NOT_FOUND）。
 import { customBlockRanges } from './blockRegistry.ts'
+import { blockSourceEditRange, isBlockSourceEditTransaction } from './blockModel.ts'
 
 export interface SimpleRange {
   from: number
@@ -15,6 +17,44 @@ export interface SimpleRange {
 export interface SimpleModeRanges {
   protected: SimpleRange[]
   decorations: SimpleRange[]
+}
+
+// App 级整篇内容替换（切笔记 setContent / 预览提交 replaceContentFromPreview）的放行标记：
+// 简洁模式 changeFilter 否决一切触碰受保护区域的事务，整篇替换必然触碰，曾因此被静默丢弃
+// （changeFilter 只丢 changes 不报错），页面停留「旧内容 + 新 revision」撕裂态，切换笔记即弹
+// 编辑恢复弹窗（v1.x 快速切换误报根因）。程序化替换由 App 自己发起，标记后无条件放行。
+export const appContentReplace = Annotation.define<boolean>()
+
+/** 简洁模式受保护区域缓存字段：create/update 均从当前 state 全量收集，doc/选区变化才重算。 */
+export function createSimpleModeRangesField(): StateField<SimpleModeRanges> {
+  return StateField.define<SimpleModeRanges>({
+    create(state: EditorState): SimpleModeRanges {
+      return collectSimpleModeRanges(state)
+    },
+    update(value: SimpleModeRanges, transaction: Transaction): SimpleModeRanges {
+      return transaction.docChanged || transaction.selectionSet
+        ? collectSimpleModeRanges(transaction.state) : value
+    }
+  })
+}
+
+/**
+ * 简洁模式事务过滤器（changeFilter）。放行顺序：
+ * 1. appContentReplace 标记的 App 级整篇替换 —— 无条件放行（见 appContentReplace 定义处）；
+ * 2. blockSourceEditRange 标记的块源码编辑 —— 按 isBlockSourceEditTransaction 校验；
+ * 3. 其余事务 —— 不得触碰任何受保护区域（allowsSimpleModeTransaction）。
+ */
+export function simpleModeChangeFilter(protectedField: StateField<SimpleModeRanges>): Extension {
+  return EditorState.changeFilter.of((transaction: Transaction): boolean => {
+    if (transaction.annotation(appContentReplace)) {
+      return true
+    }
+    if (transaction.annotation(blockSourceEditRange)) {
+      return isBlockSourceEditTransaction(transaction)
+    }
+    const model: SimpleModeRanges = transaction.startState.field(protectedField)
+    return allowsSimpleModeTransaction(transaction.startState, transaction, model.protected)
+  })
 }
 
 /**

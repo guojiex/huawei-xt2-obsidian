@@ -27,7 +27,7 @@
 import { basicSetup } from 'codemirror'
 import { autocompletion } from '@codemirror/autocomplete'
 import { isolateHistory, undo } from '@codemirror/commands'
-import { Compartment, EditorState, Range, StateField } from '@codemirror/state'
+import { Compartment, EditorState, Range } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { Decoration, DecorationSet, EditorView, Extension, ViewPlugin, ViewUpdate, WidgetType } from '@codemirror/view'
@@ -35,16 +35,16 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { preservedScrollTop } from './scrollAnchor'
 import { clampWorkspaceScrollTop, editorWorkspaceScrollContainer } from './workspaceScroll'
 import {
-  allowsSimpleModeTransaction,
-  collectSimpleModeRanges,
+  appContentReplace,
+  createSimpleModeRangesField,
   resolveSimpleModeImagePath,
-  SimpleModeRanges,
-  SimpleRange
+  simpleModeChangeFilter,
+  SimpleModeRanges
 } from './simpleMode'
 import { hasCodeBlockSelection, normalizeEditorText, serializeEditorText, toggleCodeBlock } from './codeBlockFormat'
 import { toggleMarkdownFormat, toggleTaskStatus } from './markdownFormat'
 import { createChangeNotificationTimer } from './changeNotification'
-import { blockSourceEditRange, isBlockSourceEditTransaction, prepareBlockSourceEdit } from './blockModel'
+import { blockSourceEditRange, prepareBlockSourceEdit } from './blockModel'
 import { historySnapshotMatches } from './historyGuard'
 
 declare global {
@@ -358,15 +358,7 @@ class SimpleModeWidget extends WidgetType {
   }
 }
 
-const simpleModeRangesField = StateField.define<SimpleModeRanges>({
-  create(state: EditorState): SimpleModeRanges {
-    return collectSimpleModeRanges(state)
-  },
-  update(value: SimpleModeRanges, transaction): SimpleModeRanges {
-    return transaction.docChanged || transaction.selectionSet
-      ? collectSimpleModeRanges(transaction.state) : value
-  }
-})
+const simpleModeRangesField = createSimpleModeRangesField()
 
 function simpleModeDecorations(view: EditorView): DecorationSet {
   const model: SimpleModeRanges = view.state.field(simpleModeRangesField)
@@ -408,13 +400,7 @@ const simpleModePlugin = ViewPlugin.fromClass(class {
 function simpleModeExtensions(): Extension[] {
   return [
     simpleModeRangesField,
-    EditorState.changeFilter.of((transaction) => {
-      if (transaction.annotation(blockSourceEditRange)) {
-        return isBlockSourceEditTransaction(transaction)
-      }
-      const model = transaction.startState.field(simpleModeRangesField)
-      return allowsSimpleModeTransaction(transaction.startState, transaction, model.protected)
-    }),
+    simpleModeChangeFilter(simpleModeRangesField),
     simpleModePlugin,
     EditorView.domEventHandlers({
       click(event: MouseEvent, view: EditorView): boolean {
@@ -779,9 +765,16 @@ function applyMarkdownFormat(kind: string): void {
 
 const api: MdEditorApi = {
   setContent(b64: string, revision: number, vaultIdB64: string, noteDirB64: string): void {
+    // 解码/建视图先于任何状态写入：这些步骤抛错时页面不落任何新状态
+    const previousRevision = documentRevision
+    const previousLineEnding = documentLineEnding
+    const normalizedText = normalizeEditorText(b64decode(b64))
+    const text = normalizedText.text
+    const v = ensureView()
     documentRevision = Number.isInteger(revision) && revision >= 0 ? revision : 0
     simpleModeVaultId = b64decode(vaultIdB64)
     simpleModeNoteDir = b64decode(noteDirB64)
+    documentLineEnding = normalizedText.lineEnding
     workspaceScrollRestoreGeneration++
     if (sourceScrollReportFrame !== 0) {
       window.cancelAnimationFrame(sourceScrollReportFrame)
@@ -793,23 +786,29 @@ const api: MdEditorApi = {
       window.clearTimeout(userScrollIntentTimer)
       userScrollIntentTimer = undefined
     }
-    const normalizedText = normalizeEditorText(b64decode(b64))
-    documentLineEnding = normalizedText.lineEnding
-    const text = normalizedText.text
-    const v = ensureView()
     // A pending edit notification belongs to the document being replaced. Do not let it
     // mark the newly selected workspace target dirty after this programmatic replacement.
     changeNotification.cancel()
     // setDoc 会走 undo 栈：用 effects 直接替换，避免用户一次 ctrl+z 撤回到「设置前」
     applyingContent = true
+    let applied = false
     try {
       v.dispatch({
         changes: { from: 0, to: v.state.doc.length, insert: text },
-        // 设置内容不是用户编辑，不进 undo 历史
-        annotations: []
+        // appContentReplace：简洁模式 changeFilter 的放行标记（见其定义处说明）
+        annotations: [appContentReplace.of(true)]
       })
+      applied = v.state.doc.toString() === text
+    } catch {
+      applied = false
     } finally {
       applyingContent = false
+    }
+    if (!applied) {
+      // dispatch 被否决或未生效：回滚身份，绝不留下「旧内容 + 新 revision」的撕裂态
+      documentRevision = previousRevision
+      documentLineEnding = previousLineEnding
+      postToArkts({ type: 'event', name: 'setContentError', revision: revision })
     }
   },
 
@@ -823,7 +822,7 @@ const api: MdEditorApi = {
     try {
       v.dispatch({
         changes: { from: 0, to: v.state.doc.length, insert: normalizedText.text },
-        annotations: []
+        annotations: [appContentReplace.of(true)]
       })
     } finally {
       applyingContent = false
@@ -876,6 +875,7 @@ const api: MdEditorApi = {
   requestContent(reqId: number): void {
     const v = ensureView()
     const b64 = b64encode(serializeEditorText(v.state.doc.toString(), documentLineEnding))
+    // TODO(debug-mismatch): diag 携带最近一次 setContent 的结果诊断，定位后还原
     postToArkts({ type: 'event', name: 'content', id: reqId, b64: b64, revision: documentRevision })
   },
 

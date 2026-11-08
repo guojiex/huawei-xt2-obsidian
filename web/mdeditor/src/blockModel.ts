@@ -1,5 +1,7 @@
 import { Annotation, EditorState, Transaction } from '@codemirror/state'
-import { BlockRange, BlockType } from './blockRegistry.ts'
+// 仅类型导入：Node 的类型剥离不解析 .d.ts，值位置导入类型名会在运行时抛
+// "does not provide an export named"（esbuild 则能剥离，故仅测试链暴露）。
+import type { BlockRange, BlockType } from './blockRegistry.ts'
 
 /**
  * 块模型与回写（v1.18 18.2 / 18.3）。

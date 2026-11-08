@@ -611,6 +611,13 @@ export struct EditorWebView {
       return;
     }
     const name = msg['name'] as string;
+    if (name === 'setContentError') {
+      // Web 侧 setContent 落地校验失败（dispatch 被否决/未生效）并已回滚 revision。
+      // 只记 revision，不记内容；正常路径不应出现该事件。
+      hilog.error(EDITOR_DOMAIN, EDITOR_TAG,
+        'Web 侧 setContent 未生效，revision 已回滚：rev=%{public}d', Number(msg['revision'] ?? -1));
+      return;
+    }
     if (name === 'ready') {
       if (this.impl) {
         // 二次 ready（onPageEnd 的 onArktsReady 兜底会重发一次）直接忽略：
