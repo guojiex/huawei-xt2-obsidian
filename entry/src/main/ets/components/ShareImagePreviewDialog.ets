@@ -79,27 +79,26 @@ export struct ShareImagePreviewDialog {
   @Builder
   DialogContent() {
     Column({ space: Space.s3 }) {
-      Row({ space: Space.s3 }) {
-        Column({ space: Space.s1 }) {
-          Text('图片宽度 · ' + ShareImageWidthPresets.findById(this.image.widthId).label +
-            (this.widthVp > 0 ? ' · ' + Math.round(this.widthVp).toString() + ' vp' : ''))
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_primary'))
-          Text('图片外观 · ' + (this.image.theme === 'dark' ? '深色' : '浅色'))
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+      Row({ space: Space.s2 }) {
+        Text(ShareImageWidthPresets.findById(this.image.widthId).label +
+          (this.widthVp > 0 ? ' · ' + Math.round(this.widthVp).toString() + ' vp' : '') +
+          ' · ' + (this.image.theme === 'dark' ? '深色' : '浅色'))
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
         Text('更改')
-          .fontSize(FontSize.body2)
+          .fontSize(FontSize.caption)
           .fontColor($r('app.color.brand'))
-          .height(Size.buttonH)
+          .height(Space.s8)
+          .padding({ left: Space.s3, right: Space.s3 })
           .textAlign(TextAlign.Center)
-          .accessibilityText('更改长图设置')
+          .accessibilityText('更改长图宽度与外观设置')
           .onClick(() => { this.changeSettings(); })
       }
       .width('100%')
+      .alignItems(VerticalAlign.Center)
 
       if (this.image.uri.length > 0) {
         Column({ space: Space.s1 }) {
@@ -109,9 +108,6 @@ export struct ShareImagePreviewDialog {
               .fontWeight(600)
               .fontColor($r('app.color.text_primary'))
             Text(this.image.width.toString() + ' × ' + this.image.height.toString() + ' px')
-              .fontSize(FontSize.caption)
-              .fontColor($r('app.color.text_secondary'))
-            Text(this.image.theme === 'dark' ? '深色' : '浅色')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_secondary'))
           }
@@ -221,6 +217,8 @@ export struct ShareImagePreviewDialog {
   }
 
   private stageMaxHeight(): number {
-    return Math.max(0, this.dialogMaxHeight() - Space.s16 * 7);
+    // Reserve room for the compact settings row, output metadata, shell header and footer.
+    // The previous 7 × s16 deduction consumed 448vp and left the image preview unusually short.
+    return Math.max(0, this.dialogMaxHeight() - Space.s16 * 4);
   }
 }
