@@ -196,6 +196,8 @@ export struct StartupMask {
                 .fontFamily('serif')
                 .lineHeight(Startup.quoteSize * Startup.quoteLeading)
                 .letterSpacing(Startup.quoteSize * Startup.quoteTrackingRatio)
+                // 行尾中文标点右侧留白约半字，补偿其视觉中心。
+                .offset({ x: Startup.quoteSize * Startup.quotePunctuationOffsetRatio })
             })
           }
           .alignItems(HorizontalAlign.Center)
