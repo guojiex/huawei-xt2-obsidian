@@ -161,7 +161,8 @@ const EXTERNAL_VAULT_POLL_MS: number = 5000;
 /** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
 const GIT_ENTRY_UI_ENABLED: boolean = true;
 /** v1.45：由 .local/local-agent-ui.json 构建参数决定是否显示。 */
-const XIAOYI_DIALOG_ENTRY_ENABLED: boolean = BuildProfile.showXiaoyiDialogEntry === 'true';
+const XIAOYI_DIALOG_ENTRY_PROFILE_VALUE: string = BuildProfile.showXiaoyiDialogEntry;
+const XIAOYI_DIALOG_ENTRY_ENABLED: boolean = XIAOYI_DIALOG_ENTRY_PROFILE_VALUE === 'true';
 /** v1.36：导入临时库 id 后缀（与 VaultRegistry.GIT_IMPORTING_SUFFIX 同值，复用导入标记机制）。 */
 const ZIP_IMPORTING_SUFFIX: string = '__importing';
 
