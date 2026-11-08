@@ -157,8 +157,8 @@ export class Startup {
   static readonly quoteLeading: number = 1.9;
   /** 名言字距（em）：原型 `.1em` */
   static readonly quoteTrackingRatio: number = 0.1;
-  /** 行尾中文标点约半字留白，居中时向右补偿四分之一字。 */
-  static readonly quotePunctuationOffsetRatio: number = 0.25;
+  /** 行尾中文标点悬挂在正文之外，居中时向右补偿半字。 */
+  static readonly quotePunctuationOffsetRatio: number = 0.5;
   /** 名言最大宽：原型 `max-width: 32em`（按名言字号折算） */
   static readonly quoteMaxW: number = FontSize.s3 * 32;
   /** 出处字号：原型 `--small`（14） */
