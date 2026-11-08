@@ -1473,6 +1473,15 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - `ets/component/common.d.ts` 声明 `hitTestBehavior()` 自 API 9、`focusable()` 自 API 8、`accessibilityLevel()` 自 API 12 起，均低于工程 API 24 兼容上限；`accessibilityLevel('no')` 将该组件排除在无障碍服务识别之外。焦点 ID 与 `requestFocus()` 的版本见 L-13。
 - 这些声明支持采用非焦点、读屏隐藏的遮罩，并在导航打开时阻止命中穿透；它们不证明 API 24 / XT2 上 ArkWeb 的实际事件路由。设备触控、焦点和读屏表现仍待用户验收；系统减少动态效果偏好仍按 U1 保持未核实。
 
+### L-18 ✅ 无背景全屏容器自身默认可命中并阻塞下方兄弟——SM 抽屉整列触摸死区根因（2026-11-08 插桩实测）
+
+- 现象：v1.42 SM 分支（commit 1de59fea2 引入内层 `Stack` 包裹内容列 + 遮罩）后，抽屉打开时**整个导航列**（vault 切换器 / tab / 搜索 / 树行 / × 按钮，x < 抽屉宽全高）触摸无响应；a11y 树全部 enabled/visible/clickable 正常，scrim 像素与位置正常，无系统窗口遮挡——表象与「命中被吞」一致但吞者不可见。
+- 定位方法：给 SM 分支 6 层（工作区根 / SM Stack / nav Column / 内层 Stack / 内容列 / scrim）各挂 `.onTouch` hilog 探针（tag SMDBG），重建后点击树行 (443,987)：**WSROOT / SMSTK / INNER 三层收到事件，NAV 未收到**，且 INNER 的两个子节点（内容列、scrim，均已平移出该 x 区）也未收到——命中目标是 INNER 这个透明容器**自身**。
+- 结论：ArkUI 容器**无背景也在自身 bounds 内参与命中**（`HitTestMode.Default` 自身命中即阻塞下方兄弟）；后声明、未平移的全屏兄弟 Stack 会整块吞掉下层兄弟（这里是抽屉列）的触摸。遮挡与 a11y 无关，dumpLayout / hidumper / 像素比对均不可见——只能靠 onTouch 插桩分诊。
+- 修复：该全屏容器加一行 `.hitTestBehavior(HitTestMode.None)`——自身退出命中、不阻塞兄弟，子节点（内容列、scrim）照常参与；与 L-17 遮罩关闭态用 `None` 让触摸穿透同一语义，与本仓库既有运行行为互证。
+- 验证：修复后同探针点 (443,987) 树行 16→18（文件夹展开）；`UiSmDrawer` 套件 0/2（四轮 toggle 卡死）→ 2/2；`UiPanels` 基线 A/B 1 过 5 错 → 3 过 3 错（净改善，剩余 3 错与触摸无关，见 `.local/uitest/20261108_121654|122211`）。x86_64 模拟器实测；API 24 / XT2 待真机回归。
+
+
 ---
 
 ## 落地决策表

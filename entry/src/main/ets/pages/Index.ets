@@ -9557,6 +9557,7 @@ struct Index {
           }
           .width('100%')
           .height('100%')
+          .hitTestBehavior(HitTestMode.None)
         }
         .width('100%')
         .height('100%')
