@@ -40,6 +40,18 @@ const code = transformSync(`class IndexHarness {
   ensureEditorExperienceStore() {}
 }; module.exports = IndexHarness;`, { loader: 'ts', format: 'cjs' }).code;
 
+function makeSession(vaultId, path, baseline, revision) {
+  return {
+    vaultId,
+    path,
+    baseline,
+    revision,
+    isFor(otherVaultId, otherPath) {
+      return this.vaultId === otherVaultId && this.path === otherPath;
+    }
+  };
+}
+
 function createHarness() {
   const calls = [];
   const context = vm.createContext({
@@ -68,6 +80,8 @@ function createHarness() {
     currentVaultId: 'local',
     currentFilePath: 'left.md',
     rightFilePath: 'right.md',
+    leftSession: makeSession('local', 'left.md', 'left source', 1),
+    rightSession: makeSession('local', 'right.md', 'right source', 1),
     activePane: 'left',
     smMode: 'edit',
     rightEditing: false,
@@ -83,6 +97,7 @@ function createHarness() {
     editorBridge: {
       ready: true,
       getContent: async () => 'left source',
+      getContentSnapshot: async () => ({ text: 'left source', revision: 1 }),
       replaceContentFromPreview: async () => {},
       setEditable: async () => {},
       blur() {}
@@ -90,6 +105,7 @@ function createHarness() {
     rightEditorBridge: {
       ready: true,
       getContent: async () => 'right source',
+      getContentSnapshot: async () => ({ text: 'right source', revision: 1 }),
       replaceContentFromPreview: async () => {},
       setEditable: async () => {},
       blur() {}

@@ -42,6 +42,22 @@ class EditorNativeProxy {
   }
 }
 
+/**
+ * 编辑器内容快照：正文 + 该正文所属的文档代次（revision）。
+ * 二者由 Web 侧在同一线程同批次回包，原子绑定 —— 这是「内容↔文件身份」配对的
+ * 单一验证点：保存链必须确认快照 revision 与加载时记录的 revision 一致才允许落盘，
+ * 任何加载被取代/撕裂的时序都退化为「拒绝保存」，绝不产生「把 B 笔记正文写进 A 文件」。
+ */
+export class EditorSnapshot {
+  readonly text: string;
+  readonly revision: number;
+
+  constructor(text: string, revision: number) {
+    this.text = text;
+    this.revision = revision;
+  }
+}
+
 /** 桥接内部实现：页面就绪前收到的指令先进队列，ready 后按序补发 */
 class EditorImpl {
   private controller: webview.WebviewController;
@@ -49,7 +65,7 @@ class EditorImpl {
   private documentRevision: number = 0;
   private pending: string[] = [];
   /** getContent 往返：reqId → 回调（Web 侧以 content 事件回内容，不走 runJavaScript 返回值） */
-  private contentWaiters: Map<number, (b64: string) => void> = new Map();
+  private contentWaiters: Map<number, (b64: string, revision: number) => void> = new Map();
   private blockSourceWaiters: Map<number, (applied: boolean) => void> = new Map();
   private historyUndoWaiters: Map<number, (applied: boolean) => void> = new Map();
   private nextReqId: number = 1;
@@ -107,16 +123,18 @@ class EditorImpl {
   }
 
   /**
-   * 拉取编辑器全量内容。⚠️ 不从 runJavaScript 的返回值取数（2026-10-18 模拟器实测）：
-   * ArkWeb（Chromium）的字符串返回值带 JSON 编码痕迹，decodeSync 直接抛
-   * "The input string contains unsupported characters"。改走官方推荐往返
+   * 拉取编辑器全量内容 + 该内容所属的文档代次。⚠️ 不从 runJavaScript 的返回值取数
+   * （2026-10-18 模拟器实测）：ArkWeb（Chromium）的字符串返回值带 JSON 编码痕迹，
+   * decodeSync 直接抛 "The input string contains unsupported characters"。改走官方推荐往返
    * （FAQ faqs-arkweb-146）：runJavaScript 只触发 requestContent(reqId)（控制指令，
-   * 硬约束 7），Web 侧把内容经 __arkts.postMessage 的 content 事件送回。
+   * 硬约束 7），Web 侧把内容经 __arkts.postMessage 的 content 事件送回（b64 与 revision 同批）。
+   * 保存链一律用本接口并校验 revision；只读读者（预览/章节）可用 getContent() 便捷版。
    */
-  async getContent(): Promise<string> {
+  async getContentSnapshot(): Promise<EditorSnapshot> {
     const reqId = this.nextReqId;
     this.nextReqId += 1;
-    return new Promise<string>((resolve: (text: string) => void, reject: (e: Error) => void) => {
+    return new Promise<EditorSnapshot>((resolve: (snapshot: EditorSnapshot) => void,
+      reject: (e: Error) => void) => {
       let settled = false;
       const timerId = setTimeout((): void => {
         if (settled) {
@@ -126,14 +144,14 @@ class EditorImpl {
         this.contentWaiters.delete(reqId);
         reject(new Error('getContent 超时：Web 侧未回内容'));
       }, 3000);
-      this.contentWaiters.set(reqId, (b64: string): void => {
+      this.contentWaiters.set(reqId, (b64: string, revision: number): void => {
         if (settled) {
           return;
         }
         settled = true;
         clearTimeout(timerId);
         try {
-          resolve(BridgeCodec.decode(b64));
+          resolve(new EditorSnapshot(BridgeCodec.decode(b64), revision));
         } catch (error) {
           reject(error as Error);
         }
@@ -196,11 +214,11 @@ class EditorImpl {
   }
 
   /** Web 侧 content 回复的落点（EditorWebView.handleMessage 按 reqId 路由过来） */
-  handleContent(reqId: number, b64: string): void {
+  handleContent(reqId: number, b64: string, revision: number): void {
     const waiter = this.contentWaiters.get(reqId);
     if (waiter) {
       this.contentWaiters.delete(reqId);
-      waiter(b64);
+      waiter(b64, revision);
     }
   }
 
@@ -358,7 +376,12 @@ export class EditorBridge {
     }
   }
 
-  async setContent(text: string): Promise<void> {
+  /**
+   * 下发一份完整正文。返回本次下发使用的 documentRevision —— 调用方必须把它记进
+   * 对应的 EditorNoteSession（加载：创建会话；镜像同步：更新会话 revision），
+   * 完成内容与文件身份的配对。Web 侧把该 revision 与正文存在同一线程，保存时回响校验。
+   */
+  async setContent(text: string): Promise<number> {
     this.initialContent = text;
     this.hasInitialContent = true;
     this.documentRevision += 1;
@@ -369,6 +392,7 @@ export class EditorBridge {
         this.loadedDocumentRevision = revision;
       }
     }
+    return revision;
   }
 
   async replaceContentFromPreview(text: string): Promise<void> {
@@ -399,11 +423,23 @@ export class EditorBridge {
     this.impl?.setDocumentRevision(this.documentRevision);
   }
 
+  /** 只读便捷版：仅取正文，不带 revision。保存链禁用本接口，一律走 getContentSnapshot。 */
   async getContent(): Promise<string> {
     if (!this.impl) {
       return this.hasInitialContent ? this.initialContent : '';
     }
-    return await this.impl.getContent();
+    return (await this.impl.getContentSnapshot()).text;
+  }
+
+  /**
+   * 保存链专用：正文 + 文档代次一起取。调用方必须校验 snapshot.revision 与
+   * EditorNoteSession 记录的 revision 一致后才允许把正文写入 session.path。
+   */
+  async getContentSnapshot(): Promise<EditorSnapshot> {
+    if (!this.impl) {
+      return new EditorSnapshot(this.hasInitialContent ? this.initialContent : '', this.documentRevision);
+    }
+    return await this.impl.getContentSnapshot();
   }
 
   get currentDocumentRevision(): number {
@@ -602,8 +638,10 @@ export struct EditorWebView {
         this.onError('编辑器初始化失败；原因未确定');
       });
     } else if (name === 'content') {
-      // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContent Promise
-      this.impl?.handleContent(msg['id'] as number, msg['b64'] as string);
+      // requestContent 的回复：按 reqId 路由给 impl，解开对应的 getContentSnapshot Promise
+      const revision: number = msg['revision'] as number;
+      this.impl?.handleContent(msg['id'] as number, msg['b64'] as string,
+        typeof revision === 'number' && Number.isInteger(revision) ? revision : -1);
     } else if (name === 'blockSourceEdit') {
       this.impl?.handleBlockSourceEditResult(msg['id'] as number, msg['applied'] as boolean);
     } else if (name === 'historyUndoResult') {

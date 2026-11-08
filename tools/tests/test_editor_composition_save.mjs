@@ -28,16 +28,28 @@ const code = transformSync(`class IndexHarness {
   format: 'cjs'
 }).code;
 
+function makeSession(vaultId, path, baseline, revision) {
+  return {
+    vaultId,
+    path,
+    baseline,
+    revision,
+    isFor(otherVaultId, otherPath) {
+      return this.vaultId === otherVaultId && this.path === otherPath;
+    }
+  };
+}
+
 function createHarness(options = {}) {
   const calls = [];
   const draftCalls = [];
   const leftEditor = {
     ready: true,
-    async getContent() { calls.push('left-read'); return 'uncommitted candidate'; }
+    async getContentSnapshot() { calls.push('left-read'); return { text: 'uncommitted candidate', revision: 1 }; }
   };
   const rightEditor = {
     ready: true,
-    async getContent() { calls.push('right-read'); return 'uncommitted candidate'; }
+    async getContentSnapshot() { calls.push('right-read'); return { text: 'uncommitted candidate', revision: 1 }; }
   };
   const writes = [];
   const context = vm.createContext({
@@ -76,17 +88,11 @@ function createHarness(options = {}) {
     rightEditorBridge: rightEditor,
     leftComposing: false,
     rightComposing: false,
-    committedLeftPath: 'left.md',
-    committedRightPath: 'right.md',
-    committedLeftVaultId: 'local',
-    committedRightVaultId: 'local',
-    leftOpenRequestId: 0,
-    rightOpenRequestId: 0,
+    leftSession: makeSession('local', 'left.md', 'saved-left', 1),
+    rightSession: makeSession('local', 'right.md', 'saved-right', 1),
     saveTimer: -1,
     rightSaveTimer: -1,
     saveFeedbackRevision: 0,
-    lastSavedText: 'saved-left',
-    rightLastSavedText: 'saved-right',
     editorDirty: true,
     rightEditorDirty: true,
     topView: 'note',
@@ -109,7 +115,7 @@ test('left autosave does not read or write while its IME composition is active',
   assert.equal(await app.flushSave(), false);
   assert.deepEqual(app.calls, []);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.lastSavedText, 'saved-left');
+  assert.equal(app.leftSession.baseline, 'saved-left');
 });
 
 test('right autosave does not read or write while its IME composition is active', async () => {
@@ -119,7 +125,7 @@ test('right autosave does not read or write while its IME composition is active'
   assert.equal(await app.flushRightSave(), false);
   assert.deepEqual(app.calls, []);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.rightLastSavedText, 'saved-right');
+  assert.equal(app.rightSession.baseline, 'saved-right');
 });
 
 test('right pane saves a recovery draft before the vault write and clears it after success', async () => {
@@ -133,7 +139,7 @@ test('right pane saves a recovery draft before the vault write and clears it aft
   ]);
   assert.equal(app.draftCalls[0][3], 'saved-right');
   assert.equal(app.draftCalls[0][4], 'uncommitted candidate');
-  assert.equal(app.rightLastSavedText, 'uncommitted candidate');
+  assert.equal(app.rightSession.baseline, 'uncommitted candidate');
   assert.equal(app.rightEditorDirty, false);
 });
 
@@ -146,7 +152,7 @@ test('right pane keeps pending edits when the recovery draft cannot be persisted
     'failure-feedback:恢复草稿未能安全写入；正式笔记未保存，当前编辑仍保留。请稍后重试。'
   ]);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.rightLastSavedText, 'saved-right');
+  assert.equal(app.rightSession.baseline, 'saved-right');
   assert.equal(app.rightEditorDirty, true);
 });
 
@@ -159,7 +165,7 @@ test('right pane keeps its persisted recovery draft when the formal write fails'
 
   assert.equal(await app.flushRightSave(), false);
   assert.deepEqual(app.draftCalls.map((call) => call[0]), ['persist']);
-  assert.equal(app.rightLastSavedText, 'saved-right');
+  assert.equal(app.rightSession.baseline, 'saved-right');
   assert.equal(app.rightEditorDirty, true);
   assert.deepEqual(app.calls, ['right-read', 'save-error']);
 });
@@ -167,7 +173,7 @@ test('right pane keeps its persisted recovery draft when the formal write fails'
 test('a shared note is not saved from either pane while either pane composes', async () => {
   const app = createHarness();
   app.rightFilePath = app.currentFilePath;
-  app.committedRightPath = app.currentFilePath;
+  app.rightSession = makeSession('local', app.currentFilePath, 'saved-right', 1);
   app.leftComposing = true;
 
   assert.equal(await app.flushSave(app.currentFilePath, app.currentVaultId, app.rightEditorBridge), false);
@@ -177,48 +183,48 @@ test('a shared note is not saved from either pane while either pane composes', a
 
 test('left composition that begins during the editor read prevents the pending write', async () => {
   const app = createHarness();
-  app.editorBridge.getContent = async () => {
+  app.editorBridge.getContentSnapshot = async () => {
     app.leftComposing = true;
     app.calls.push('left-read');
-    return 'uncommitted candidate';
+    return { text: 'uncommitted candidate', revision: 1 };
   };
 
   assert.equal(await app.flushSave(), false);
   assert.deepEqual(app.calls, ['left-read']);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.lastSavedText, 'saved-left');
+  assert.equal(app.leftSession.baseline, 'saved-left');
 });
 
 test('right composition that begins during the editor read prevents the pending write', async () => {
   const app = createHarness();
-  app.rightEditorBridge.getContent = async () => {
+  app.rightEditorBridge.getContentSnapshot = async () => {
     app.rightComposing = true;
     app.calls.push('right-read');
-    return 'uncommitted candidate';
+    return { text: 'uncommitted candidate', revision: 1 };
   };
 
   assert.equal(await app.flushRightSave(), false);
   assert.deepEqual(app.calls, ['right-read']);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.rightLastSavedText, 'saved-right');
+  assert.equal(app.rightSession.baseline, 'saved-right');
 });
 
 test('unchanged mixed line endings do not block switching or rewrite the original note', async () => {
   const app = createHarness();
   app.editorDirty = false;
-  app.lastSavedText = 'first\r\nsecond\nthird';
-  app.editorBridge.getContent = async () => 'first\r\nsecond\r\nthird';
+  app.leftSession = makeSession('local', 'left.md', 'first\r\nsecond\nthird', 1);
+  app.editorBridge.getContentSnapshot = async () => ({ text: 'first\r\nsecond\r\nthird', revision: 1 });
   assert.equal(await app.flushSave(), true);
   assert.deepEqual(app.writes, []);
   assert.deepEqual(app.draftCalls, []);
-  assert.equal(app.lastSavedText, 'first\r\nsecond\nthird');
+  assert.equal(app.leftSession.baseline, 'first\r\nsecond\nthird');
 });
 
 test('unchanged mixed line endings do not block switching in the right pane', async () => {
   const app = createHarness();
   app.rightEditorDirty = false;
-  app.rightLastSavedText = 'first\r\nsecond\nthird';
-  app.rightEditorBridge.getContent = async () => 'first\r\nsecond\r\nthird';
+  app.rightSession = makeSession('local', 'right.md', 'first\r\nsecond\nthird', 1);
+  app.rightEditorBridge.getContentSnapshot = async () => ({ text: 'first\r\nsecond\r\nthird', revision: 1 });
   assert.equal(await app.flushRightSave(), true);
   assert.deepEqual(app.writes, []);
   assert.deepEqual(app.draftCalls, []);
@@ -227,11 +233,11 @@ test('unchanged mixed line endings do not block switching in the right pane', as
 test('composition that begins in either shared-note editor during the read blocks the save', async () => {
   const app = createHarness();
   app.rightFilePath = app.currentFilePath;
-  app.committedRightPath = app.currentFilePath;
-  app.rightEditorBridge.getContent = async () => {
+  app.rightSession = makeSession('local', app.currentFilePath, 'saved-right', 1);
+  app.rightEditorBridge.getContentSnapshot = async () => {
     app.leftComposing = true;
     app.calls.push('right-read');
-    return 'uncommitted candidate';
+    return { text: 'uncommitted candidate', revision: 1 };
   };
 
   assert.equal(await app.flushSave(app.currentFilePath, app.currentVaultId, app.rightEditorBridge), false);
@@ -239,7 +245,7 @@ test('composition that begins in either shared-note editor during the read block
   assert.deepEqual(app.writes, []);
 });
 
-test('a save cannot read an editor while the visible target has not finished loading', async () => {
+test('a save cannot reach the vault without an active session for the target note', async () => {
   const app = createHarness();
   app.currentFilePath = 'next.md';
 
@@ -255,7 +261,7 @@ test('an unmarked stale left editor value is rejected instead of overwriting the
   assert.equal(await app.flushSave(), false);
   assert.deepEqual(app.calls, ['left-read', 'mismatch:left.md']);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.lastSavedText, 'saved-left');
+  assert.equal(app.leftSession.baseline, 'saved-left');
 });
 
 test('an unmarked stale right editor value is rejected instead of overwriting the opened note', async () => {
@@ -265,28 +271,25 @@ test('an unmarked stale right editor value is rejected instead of overwriting th
   assert.equal(await app.flushRightSave(), false);
   assert.deepEqual(app.calls, ['right-read', 'mismatch:right.md']);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.rightLastSavedText, 'saved-right');
+  assert.equal(app.rightSession.baseline, 'saved-right');
 });
 
 test('a save read that becomes stale during a note switch cannot write or replace the new baseline', async () => {
   const app = createHarness();
-  let resolveContent;
-  app.editorBridge.getContent = () => new Promise((resolve) => { resolveContent = resolve; });
+  let resolveSnapshot;
+  app.editorBridge.getContentSnapshot = () => new Promise((resolve) => { resolveSnapshot = resolve; });
 
   const saving = app.flushSave();
   await Promise.resolve();
-  app.currentFilePath = 'next.md';
-  app.committedLeftPath = 'next.md';
-  app.leftOpenRequestId++;
-  app.lastSavedText = 'next baseline';
-  resolveContent('old pane candidate');
+  app.leftSession = makeSession('local', 'next.md', 'next baseline', 2);
+  resolveSnapshot({ text: 'old pane candidate', revision: 1 });
 
   assert.equal(await saving, false);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.lastSavedText, 'next baseline');
+  assert.equal(app.leftSession.baseline, 'next baseline');
 });
 
-test('a target change during draft persistence prevents the old save from reaching the vault', async () => {
+test('a session swap during draft persistence prevents the old save from reaching the vault', async () => {
   let finishDraft;
   const app = createHarness({
     draftPersist: () => new Promise((resolve) => { finishDraft = resolve; })
@@ -294,15 +297,12 @@ test('a target change during draft persistence prevents the old save from reachi
 
   const saving = app.flushSave();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  app.currentFilePath = 'next.md';
-  app.committedLeftPath = 'next.md';
-  app.leftOpenRequestId++;
-  app.lastSavedText = 'next baseline';
+  app.leftSession = makeSession('local', 'next.md', 'next baseline', 2);
   finishDraft(true);
 
   assert.equal(await saving, false);
   assert.deepEqual(app.writes, []);
-  assert.equal(app.lastSavedText, 'next baseline');
+  assert.equal(app.leftSession.baseline, 'next baseline');
 });
 
 test('a completed old-target write cannot replace shared editor state after a newer note opens', async () => {
@@ -310,7 +310,7 @@ test('a completed old-target write cannot replace shared editor state after a ne
   let finishWrite;
   let notifyWriteStarted;
   const writeStarted = new Promise((resolve) => { notifyWriteStarted = resolve; });
-  app.editorBridge.getContent = async () => 'old pane candidate';
+  app.editorBridge.getContentSnapshot = async () => ({ text: 'old pane candidate', revision: 1 });
   const context = app.context;
   context.NoteService.saveNote = (...args) => {
     app.writes.push(args);
@@ -320,13 +320,10 @@ test('a completed old-target write cannot replace shared editor state after a ne
 
   const saving = app.flushSave();
   await writeStarted;
-  app.currentFilePath = 'next.md';
-  app.committedLeftPath = 'next.md';
-  app.leftOpenRequestId++;
-  app.lastSavedText = 'next baseline';
+  app.leftSession = makeSession('local', 'next.md', 'next baseline', 2);
   finishWrite();
 
   assert.equal(await saving, true);
   assert.equal(app.writes[0][2], 'left.md');
-  assert.equal(app.lastSavedText, 'next baseline');
+  assert.equal(app.leftSession.baseline, 'next baseline');
 });

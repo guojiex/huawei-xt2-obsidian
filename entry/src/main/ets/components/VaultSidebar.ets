@@ -13,6 +13,7 @@
 import { VaultEntry } from '../model/Vault';
 import { FileTreeView } from './FileTreeView';
 import { Icon } from '../common/Icons';
+import { FocusRequest } from '../common/FocusRequest';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
@@ -186,7 +187,7 @@ export struct VaultSidebar {
   }
 
   private focusChapter(chapter: ChapterEntry): void {
-    this.getUIContext().getFocusController().requestFocus(this.chapterFocusId(chapter));
+    FocusRequest.safely(this.getUIContext(), this.chapterFocusId(chapter));
   }
 
   private parentChapter(chapter: ChapterEntry): ChapterEntry | null {

@@ -9,6 +9,7 @@ import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { Icon } from '../common/Icons';
+import { FocusRequest } from '../common/FocusRequest';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 type GitSyncResult = 'none' | 'success' | 'stale' | 'auth' | 'network' | 'local';
@@ -244,7 +245,7 @@ export struct GitSyncDialog {
 
   private focusBranchChange(): void {
     setTimeout((): void => {
-      this.getUIContext().getFocusController().requestFocus('git-sync-branch-change');
+      FocusRequest.safely(this.getUIContext(), 'git-sync-branch-change');
     }, 0);
   }
 

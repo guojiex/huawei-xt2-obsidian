@@ -14,6 +14,7 @@ import {
   ExternalVaultAuthorizationService, ExternalPermissionStatus
 } from '../model/ExternalVaultAuthorization';
 import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
+import { CrashGuard } from '../common/CrashGuard';
 
 const DOMAIN = 0x0000;
 const TAG = 'EntryAbility';
@@ -63,6 +64,9 @@ export default class EntryAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
+    // v1.46：全局 JS_CRASH 兜底（api_notes L-20；setDefaultErrorHandler 仅主线程，
+    // onCreate 即主线程）。调用侧 try-catch（FocusRequest.safely 等）仍是第一防线。
+    CrashGuard.install();
     this.debugLaunchWant = want;
   }
 

@@ -270,8 +270,9 @@ test('the app-bar share entry is hidden while the active pane is empty', () => {
 });
 
 // —— v1.28 崩溃回归（DFX JSCrash 2026-11-06）：点击「关闭笔记」闪退 ——
-// 空库时 EmptyPane 只渲染「新建笔记」，不渲染「重新打开」行；且 setTimeout(0)
-// 可能先于空栏挂载执行，requestFocus 抛 150003 必须被兜住。
+// 空库时 EmptyPane 只渲染「新建笔记」，不渲染「重新打开」行；v1.46 46.5 起
+// focusEmptyPane 改事件驱动（L-20：onAppear 置位后请求 + getAttachedFrameNodeById
+// 预查询），不再用 setTimeout(0) 时序猜测；requestFocus 抛 150003 仍必须被兜住。
 const focusStart = source.indexOf('  private focusEmptyPane(pane: string): void {');
 const focusEnd = source.indexOf('\n  private focusPaneBody(', focusStart);
 assert.ok(focusStart >= 0 && focusEnd > focusStart, 'could not find Index.focusEmptyPane');
@@ -284,16 +285,31 @@ const focusCode = transformSync(`class IndexHarness { ${focusMethod} }; module.e
 function createFocusHarness(options = {}) {
   const requested = [];
   const warns = [];
+  // null = 全部视为已挂载（走立即请求路径）；数组 = 仅这些 id 已挂载（其余走 onAppear 补齐）
+  const attachedIds = options.attachedIds ?? null;
   const context = vm.createContext({
     module: { exports: {} },
-    setTimeout: (fn) => fn(),
+    // 刻意不注入 setTimeout：事件驱动改造后 focusEmptyPane 不得再依赖定时器
     hilog: { warn: (...args) => warns.push(args[2]) },
     DOMAIN: 0,
-    TAG: 'Index'
+    TAG: 'Index',
+    // 2026-11-08 DFX 收口后 focusEmptyPane 走 FocusRequest.safely（真实实现见
+    // common/FocusRequest.ets，其行为由 test_focus_keyboard_regression.mjs 断言）；
+    // 此处注入等行为 mock：命中即请求、抛错即 warn，不向上抛。
+    FocusRequest: {
+      safely: (uiContext, focusId) => {
+        try {
+          uiContext.getFocusController().requestFocus(focusId);
+        } catch (error) {
+          warns.push('焦点请求未命中目标组件(150003 不在树上或不存在)，已忽略');
+        }
+      }
+    }
   });
   vm.runInContext(focusCode, context);
   const app = new context.module.exports();
   Object.assign(app, {
+    pendingEmptyPaneFocus: '',
     currentVaultNoteCount: options.noteCount ?? 0,
     leftLastClosedPath: options.leftLastClosedPath ?? '',
     rightLastClosedPath: options.rightLastClosedPath ?? '',
@@ -302,6 +318,9 @@ function createFocusHarness(options = {}) {
     },
     getUIContext() {
       return {
+        getAttachedFrameNodeById(id) {
+          return attachedIds === null || attachedIds.includes(id) ? {} : null;
+        },
         getFocusController() {
           return {
             requestFocus(id) {
@@ -335,6 +354,40 @@ test('focusEmptyPane aligns its target with the rendered empty pane branch', () 
   assert.deepEqual(noRecent.requested, ['pane-empty-new-right']);
 });
 
+test('a not-yet-attached target defers the focus request to its onAppear event', () => {
+  const deferred = createFocusHarness({ noteCount: 3, rightLastClosedPath: 'a.md', attachedIds: [] });
+
+  deferred.app.focusEmptyPane('right');
+  assert.deepEqual(deferred.requested, []);
+  assert.equal(deferred.app.pendingEmptyPaneFocus, 'right');
+
+  deferred.app.consumeEmptyPaneFocus('right', 'pane-empty-reopen-right');
+  assert.deepEqual(deferred.requested, ['pane-empty-reopen-right']);
+  assert.equal(deferred.app.pendingEmptyPaneFocus, '');
+});
+
+test('a sibling row appearing first does not steal the pending focus', () => {
+  const guarded = createFocusHarness({ noteCount: 3, rightLastClosedPath: 'a.md', attachedIds: [] });
+  guarded.app.focusEmptyPane('right');
+
+  // 目标为 reopen 行时，「新建笔记」行先挂树不得清位或抢焦点
+  guarded.app.consumeEmptyPaneFocus('right', 'pane-empty-new-right');
+  assert.deepEqual(guarded.requested, []);
+  assert.equal(guarded.app.pendingEmptyPaneFocus, 'right');
+
+  guarded.app.consumeEmptyPaneFocus('right', 'pane-empty-reopen-right');
+  assert.deepEqual(guarded.requested, ['pane-empty-reopen-right']);
+});
+
+test('onAppear without a pending focus request is a no-op', () => {
+  const quiet = createFocusHarness({ noteCount: 3, rightLastClosedPath: 'a.md' });
+
+  quiet.app.consumeEmptyPaneFocus('right', 'pane-empty-reopen-right');
+  quiet.app.consumeEmptyPaneFocus('right', 'pane-empty-new-right');
+  assert.deepEqual(quiet.requested, []);
+  assert.equal(quiet.app.pendingEmptyPaneFocus, '');
+});
+
 test('a requestFocus miss (150003) no longer crashes the close flow', () => {
   const thrown = createFocusHarness({
     noteCount: 3,
@@ -344,5 +397,36 @@ test('a requestFocus miss (150003) no longer crashes the close flow', () => {
 
   assert.doesNotThrow(() => thrown.app.focusEmptyPane('right'));
   assert.deepEqual(thrown.requested, []);
-  assert.ok(thrown.warns.includes('空栏焦点请求未命中目标组件'));
+  assert.ok(thrown.warns.some((message) => message.includes('焦点请求未命中目标组件')));
+
+  // 挂载事件补齐路径同样不得因 150003 崩溃
+  const deferredThrow = createFocusHarness({
+    noteCount: 3,
+    rightLastClosedPath: 'a.md',
+    attachedIds: [],
+    requestFocusThrows: true
+  });
+  assert.doesNotThrow(() => deferredThrow.app.focusEmptyPane('right'));
+  assert.doesNotThrow(() => deferredThrow.app.consumeEmptyPaneFocus('right', 'pane-empty-reopen-right'));
+});
+
+test('focusEmptyPane is event-driven and both empty-pane rows carry the onAppear hook', () => {
+  // 不再依赖 setTimeout 时序猜测（L-19 结论2 / L-20）
+  assert.doesNotMatch(focusMethod, /setTimeout/);
+  assert.match(focusMethod, /getAttachedFrameNodeById\(focusId\)/);
+  assert.match(source, /private pendingEmptyPaneFocus: string = '';/);
+
+  // reopen 行：id 之后挂 onAppear 消费待聚焦
+  const reopenStart = source.indexOf("              .id('pane-empty-reopen-' + pane)");
+  assert.ok(reopenStart >= 0, 'could not find the reopen row');
+  const reopenRow = source.slice(reopenStart, reopenStart + 400);
+  assert.match(reopenRow, /\.onAppear\(\(\): void => \{\s*this\.consumeEmptyPaneFocus\(pane, 'pane-empty-reopen-' \+ pane\);\s*\}\)/);
+
+  // EmptyPaneAction 构建器：带 focusId 的动作挂树时消费待聚焦，无 id 的动作不参与
+  const actionStart = source.indexOf('  EmptyPaneAction(pane: string, action: string');
+  const actionEnd = source.indexOf('\n  @Builder', actionStart);
+  assert.ok(actionStart >= 0 && actionEnd > actionStart, 'could not find EmptyPaneAction builder');
+  const actionBuilder = source.slice(actionStart, actionEnd);
+  assert.match(actionBuilder, /focusId\.length > 0/);
+  assert.match(actionBuilder, /this\.consumeEmptyPaneFocus\(pane, focusId\)/);
 });

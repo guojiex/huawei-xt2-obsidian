@@ -23,6 +23,7 @@ import { FileTree, ExpandStore, TreeNode } from '../model/FileTree';
 import { VaultAccess } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
+import { FocusRequest } from '../common/FocusRequest';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { unifiedDataChannel } from '@kit.ArkData';
@@ -245,7 +246,7 @@ export struct FileTreeView {
     this.pathMenuPath = '';
     this.pathMenuReturnFocusId = '';
     if (restoreFocus && focusId.length > 0) {
-      this.getUIContext().getFocusController().requestFocus(focusId);
+      FocusRequest.safely(this.getUIContext(), focusId);
     }
   }
 
@@ -491,7 +492,7 @@ export struct FileTreeView {
     .onClick((): void => { this.runPathMenuAction(n, action); })
     .onAppear((): void => {
       if (first) {
-        this.getUIContext().getFocusController().requestFocus(this.pathMenuFocusId(n, action));
+        FocusRequest.safely(this.getUIContext(), this.pathMenuFocusId(n, action));
       }
     })
   }

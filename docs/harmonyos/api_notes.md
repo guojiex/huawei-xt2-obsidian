@@ -1466,6 +1466,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 本机 SDK `ets/component/common.d.ts` 说明 `focusBox` 只影响焦点遍历时显示系统焦点框的组件；它不适用于本次触摸正文后出现的描边。此前在 `PreviewWebView` 设置零宽透明 `focusBox` 未消除该现象，现已移除。
 - 2026-11-04 API 26 `Huawei_TripleFold` 模拟器实测：冷启动首屏无框；点按正文后黑框沿滚动正文视口出现。HDC hilog 记录 `Web/secure_field RequestFocusImmediately`、ArkWeb `GestureTap` 与 `OnCursorUpdate`，但未提供 DOM 命中标签。`#content:focus:not(:focus-visible)` 未能消除黑框；改为 `#content:focus { outline: none; }` 后，同一位置点按不再出现黑框，点击及光标更新事件仍出现。仅为 API 26 模拟器证据，不外推 API 24 / XT2。
 - 2026-11-04 最终包复验：临时 DOM 诊断在普通段落点按时记录 `target=p`、`block=paragraph`、`active=body`、`outline=none`；移除诊断代码后重建并以匹配 `appSignType=none` 的 unsigned HAP 覆盖安装，重启后同类点按截图无黑框。安装失败与复验时间线见 [v1.18 §6](../releases/v1.18/需求文档.md#2026-11-04-184-最终-hap-普通段落点按复验)。仅为 API 26 模拟器结果。
+- 2026-11-08 简单模式段落宿主复现与修复：简单模式为纯文本段落宿主 `div` 加 `contenteditable="true"` 后，点按聚焦宿主（`document.activeElement` = 宿主）再次触发引擎黑框——**新聚焦目标，非 `#content` 回归**（11-04 时 `active=body`，宿主级 contenteditable 尚未引入）。像素实测框四边 ≈ a11y 树宿主节点 bounds `[1176,1247][3071,1333]`，近黑 RGB≈13；桌面 Chromium 同 CSS computed `outline: none` 无框（无头 Edge CDP 复现），确认为 ArkWeb 引擎行为。修复：`#content [contenteditable="true"]:focus { outline: none; }`（覆盖段落宿主 / 空占位 / callout 正文），API26 x86_64 模拟器点按复验光标 + 格式栏正常、像素扫描无框；见 [v1.46 46.4](../releases/v1.46/需求文档.md)。仍不外推 API 24 / XT2。
 
 ### L-17 v1.29 单屏导航遮罩的命中与无障碍属性（本机 SDK 声明）⚠️
 
@@ -1480,6 +1481,23 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 结论：ArkUI 容器**无背景也在自身 bounds 内参与命中**（`HitTestMode.Default` 自身命中即阻塞下方兄弟）；后声明、未平移的全屏兄弟 Stack 会整块吞掉下层兄弟（这里是抽屉列）的触摸。遮挡与 a11y 无关，dumpLayout / hidumper / 像素比对均不可见——只能靠 onTouch 插桩分诊。
 - 修复：该全屏容器加一行 `.hitTestBehavior(HitTestMode.None)`——自身退出命中、不阻塞兄弟，子节点（内容列、scrim）照常参与；与 L-17 遮罩关闭态用 `None` 让触摸穿透同一语义，与本仓库既有运行行为互证。
 - 验证：修复后同探针点 (443,987) 树行 16→18（文件夹展开）；`UiSmDrawer` 套件 0/2（四轮 toggle 卡死）→ 2/2；`UiPanels` 基线 A/B 1 过 5 错 → 3 过 3 错（净改善，剩余 3 错与触摸无关，见 `.local/uitest/20261108_121654|122211`）。x86_64 模拟器实测；API 24 / XT2 待真机回归。
+
+### L-19 ✅ `requestFocus` 目标不存在时**同步抛** `150003` BusinessError——未捕获即 JSCrash（2026-11-08 jscrash 实证）
+
+- 现象：v0.2.0(1000003) debug 包在 x86_64 `Huawei_TripleFold` 模拟器点「完成编辑」闪退；faultlogger 记 `js_crash`（PID 14490，fingerprint `3bc38c…`），栈顶 `Index.ets` `finishSimpleEditingFor` 内 `requestFocus('pane-title-' + pane)`，`Error code: 150003`，`The component doesn't exist, is currently invisible, or has been disabled.`（报告：`dfx-reports/dfx-report-js_crash-20261108-162044.html`）。
+- 结论1：`FocusController.requestFocus(id)` 在目标组件**不存在 / 不可见 / 已禁用**时抛同步 `BusinessError 150003`；调用方不捕获 → 应用 JSCrash。该行为**模拟器同样触发**——推翻 `docs/testing/bug回归清单.md` 旧备注「150003 为真机焦点错误码，模拟器不触发」（该备注已就地更正）。
+- 结论2：`setTimeout(0)` 延迟**不能**保证目标已挂载/可见（本次崩溃点即包了 `setTimeout(0)`），只是降低窗口；正确写法是**捕获并降级**，不把焦点请求当致命路径。
+- 收口：全仓 22 处调用点统一走 `common/FocusRequest.ets` 的 `FocusRequest.safely(uiContext, focusId)`——try-catch 吞 `150003`、`hilog.warn` 兜底（不记录 focusId：文件树焦点 id 含笔记路径，触隐私红线 AGENTS.md 硬约束 16）；两次 DFX JSCrash（2026-11-06 a849690、2026-11-08 本条）同构自证裸调写法是系统性缺陷。
+- 待官方确认（已列入提问清单）：是否存在不抛异常的安全请求焦点 API；`1500003` 错误码族完整触发条件；官方推荐封装；能否先查询目标 id 是否存在；应用侧能否全局兜底未捕获异常。**→ 已全部答毕（2026-11-08）**，见 [qa 归档](qa/2026-11-08_焦点requestFocus错误码与全局兜底答复_API24.md) 与 [L-20](#l-20-✅-requestfocus-错误码族--节点预查询--errormanager-全局兜底官方答复--本机-sdk-复核2026-11-08)。
+
+### L-20 ✅ requestFocus 错误码族 / 节点预查询 / errorManager 全局兜底（官方答复 + 本机 SDK 复核，2026-11-08）
+
+- 来源：[qa/2026-11-08_焦点requestFocus错误码与全局兜底答复_API24.md](qa/2026-11-08_焦点requestFocus错误码与全局兜底答复_API24.md)（官方文档型答复 + 本机 SDK 声明逐条复核，声明行号见归档；本条只留结论）。
+- **错误码族**：`FocusController.requestFocus(key)`（since 12）抛三个同步 `BusinessError` —— `150001` 组件本身不可获焦（`focusable` false 等）、`150002` 祖先不可获焦、`150003` 不在树上 / 不存在。ArkTS 侧**无**「目标不存在静默返回」的安全变体（官方明确未记载）；NDK 的 `OH_ArkUI_FocusRequest` 返回值式 C API 不适用 ArkTS。官方推荐 FocusController 而非旧式 `focusControl.requestFocus`。
+- **节点预查询**（`UIContext`，均 since 12）：`getAttachedFrameNodeById(id): FrameNode | null` 获取**已挂载**节点（推荐）；`getFrameNodeById(id)` 遍历查询性能较差。预查询可挡「未挂载」，但挡不住 150001/150002 与「查询后、请求前被销毁」窗口 —— **try-catch 仍不可省**。
+- **id 注册时序**：官方未记载；`setTimeout(0)` 不保证目标挂树（与 L-19 结论2 实测互证），事件驱动（目标 `onAppear` 置位后再请求）才是可靠模式。**已落地**：v1.46 46.5 —— `focusEmptyPane` 撤除定时器猜测，`getAttachedFrameNodeById` 预查询 + 目标行 `onAppear` 补齐。
+- **全局兜底**：`errorManager.setDefaultErrorHandler(handler)`（`@kit.AbilityKit` 导出，since 21，API 24 可用）—— JS_CRASH 时链式回调、**返回前序处理器**、**仅主线程**（子线程抛 16000205）；`ErrorHandler = (errObject: Error) => void`（since 21）；旧接口 `on('uncaughtException')`（API 9）不再主推。无前序处理器时官方示例用 `new process.ProcessManager().exit(0)` 同步退出（`process` 自 `@kit.ArkTS`）。定位是崩溃后的**兜底与观测，不替代调用侧 try-catch**。
+- 落地：v1.46 —— `FocusRequest.safely` 日志按 150001/150002/150003 区分错误码（仍不记录 focusId）；`EntryAbility` 主线程安装 setDefaultErrorHandler 兜底，崩溃兜底日志只进 hilog 本地诊断、**禁止进埋点 / 上报**（硬约束 16）。
 
 
 ---

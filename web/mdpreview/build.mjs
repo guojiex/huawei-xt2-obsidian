@@ -85,12 +85,18 @@ const html = `<!doctype html>
     word-break: break-word;
   }
   #content:focus { outline: none; }
+  /* ArkWeb 点按聚焦 contenteditable 宿主时引擎会画默认焦点框（黑边），
+     与 #content 同源（api_notes L-16），按 11-04 修法统一抑制 */
+  #content [contenteditable="true"]:focus { outline: none; }
   #content .preview-body { zoom: var(--preview-scale, 1); }
   #content .share-watermark {
     margin-top: var(--s8); padding-top: var(--s3); border-top: var(--stroke) solid var(--line);
     color: var(--muted); font-size: var(--caption); line-height: var(--leading); text-align: right;
   }
   .preview-source-block { display: contents; }
+  /* display:contents 的元素无法被聚焦（无盒模型可命中），可编辑宿主必须恢复盒子；
+     宿主无 padding/border，子元素 margin 穿透折叠，与 contents 布局一致 */
+  .preview-source-block[contenteditable="true"] { display: block; }
   #content [data-simple-mode-hint]::after {
     display: block; margin-top: var(--s1); color: var(--muted);
     font-size: var(--caption); line-height: var(--leading);

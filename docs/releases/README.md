@@ -215,7 +215,7 @@ docs/releases/vX.Y/需求文档.md（本版本承诺交付的）
 | v1.43 | 🟡 开发中；2026-11-08 立项 | 启动体验 | 启动页名言视觉居中 | [需求文档](v1.43/需求文档.md) |
 | v1.44 | 🟡 开发中；原型与原生入口调整完成，arm64-v8a 未签名 HAP 构建通过；自动测试、模拟器及 API24 / XT2 待验 | 工作区体验 | 顶栏更多菜单统一当前栏笔记操作 | [需求文档](v1.44/需求文档.md) |
 | v1.45 | 🟡 开发中；暂隐主页面小艺托管对话入口 | 首发准备 | App 首发上架前隐藏 Agent 对话入口，首发后再安排 Agent 后续工作 | [需求文档](v1.45/需求文档.md) |
-| v1.46 | 🟡 本地实现完成（2026-11-08）：`FocusRequest.safely` 错误码区分 + `EntryAbility` CrashGuard 全局兜底落地；定向回归 13/13、11/11、22/22，签名 arm64-v8a+x86_64 HAP 构建通过；全局兜底真实触发链路与 API24 / XT2 待验 | 稳定性加固 | `FocusRequest.safely` 日志区分焦点错误码；`EntryAbility` 安装 errorManager 全局 JS_CRASH 兜底 | [需求文档](v1.46/需求文档.md) |
+| v1.46 | 🟡 本地实现完成（2026-11-08）：`FocusRequest.safely` 错误码区分 + `EntryAbility` CrashGuard 全局兜底 + `focusEmptyPane` 事件驱动改造（撤除 setTimeout(0)）+ 简单模式宿主焦点框抑制落地；定向回归 13/13、15/15、22/22，签名 arm64-v8a+x86_64 HAP 构建通过；全局兜底真实触发链路与 API24 / XT2 待验 | 稳定性加固 | `FocusRequest.safely` 日志区分焦点错误码；`EntryAbility` 安装 errorManager 全局 JS_CRASH 兜底；空栏聚焦改预查询 + onAppear 事件驱动 | [需求文档](v1.46/需求文档.md) |
 
 > 后续需求仅从需求池分配，未列入版本的条目仍留在需求池；真机验收与后续实现并行，验收发现若影响设计或实现，及时更新对应版本需求文档。
 

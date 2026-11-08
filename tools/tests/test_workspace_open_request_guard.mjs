@@ -47,6 +47,15 @@ function createContext() {
     },
     VaultRegistry: { get: () => ({}) },
     WorkspaceEditGuard: { clear() {}, mark() {} },
+    EditorNoteSession: class {
+      constructor(vaultId, path, baseline, revision) {
+        this.vaultId = vaultId;
+        this.path = path;
+        this.baseline = baseline;
+        this.revision = revision;
+      }
+      isFor(vaultId, path) { return this.vaultId === vaultId && this.path === path; }
+    },
     promptAction: { showToast: ({ message }) => calls.push('toast:' + message) }
   });
   vm.runInContext(code, context);
@@ -145,7 +154,7 @@ test('a failed right-pane open rolls the editor notification revision back with 
   assert.equal(app.workspaceOpenRequests, 0);
 });
 
-test('a stale bridge setContent completion cannot publish preview or commit its old path', async () => {
+test('a stale bridge setContent completion cannot publish preview and is refused by save-time revision checks', async () => {
   const { app, context, calls } = createContext();
   let resolveSetContent;
   Object.assign(app, {
@@ -154,7 +163,7 @@ test('a stale bridge setContent completion cannot publish preview or commit its 
     rightFilePath: '',
     leftOpenRequestId: 4,
     rightOpenRequestId: 0,
-    committedLeftPath: 'previous.md',
+    leftSession: null,
     workspaceSessionRestoring: false,
     workspaceSessionSavingEnabled: true,
     topView: 'note',
@@ -186,11 +195,15 @@ test('a stale bridge setContent completion cannot publish preview or commit its 
   assert.deepEqual(calls, ['guard-clear', 'set:local:a.md']);
   app.currentFilePath = 'b.md';
   app.leftOpenRequestId = 5;
-  resolveSetContent();
+  resolveSetContent(9);
 
   assert.equal(await opening, false);
-  assert.equal(app.committedLeftPath, 'previous.md');
-  assert.deepEqual(calls, ['guard-clear', 'set:local:a.md']);
+  // 会话镜像编辑器现实：编辑器确实持有 a.md 的第 9 代内容，会话如实记录；
+  // 但它已不是当前目标（b.md），保存链的 isFor 校验会拒绝这次写入，预览也不再发布。
+  assert.equal(app.leftSession.path, 'a.md');
+  assert.equal(app.leftSession.revision, 9);
+  assert.ok(!calls.includes('preview-push'));
+  assert.ok(!app.leftSession.isFor('local', 'b.md'));
 });
 
 test('an implicit right-pane refresh cannot publish content after a newer right target opens', async () => {
@@ -202,7 +215,7 @@ test('an implicit right-pane refresh cannot publish content after a newer right 
     rightFilePath: 'right-a.md',
     leftOpenRequestId: 0,
     rightOpenRequestId: 4,
-    committedRightPath: 'right-before.md',
+    rightSession: null,
     workspaceSessionRestoring: false,
     workspaceSessionSavingEnabled: true,
     topView: 'note',
@@ -233,9 +246,12 @@ test('an implicit right-pane refresh cannot publish content after a newer right 
   assert.deepEqual(calls, ['guard-clear', 'set-right:local:right-a.md']);
   app.rightFilePath = 'right-b.md';
   app.rightOpenRequestId = 5;
-  resolveSetContent();
+  resolveSetContent(9);
 
   assert.equal(await opening, false);
-  assert.equal(app.committedRightPath, 'right-before.md');
-  assert.deepEqual(calls, ['guard-clear', 'set-right:local:right-a.md']);
+  // 同左栏：会话如实记录被取代的加载（right-a.md@9），保存链按 isFor 拒绝写入。
+  assert.equal(app.rightSession.path, 'right-a.md');
+  assert.equal(app.rightSession.revision, 9);
+  assert.ok(!calls.includes('right-preview-push'));
+  assert.ok(!app.rightSession.isFor('local', 'right-b.md'));
 });

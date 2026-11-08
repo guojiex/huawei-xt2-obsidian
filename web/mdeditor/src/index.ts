@@ -9,7 +9,12 @@
  *   Web → ArkTS：postMessage(JSON)
  *     - {type:'event', name:'ready'}                 页面就绪，可以收内容了
  *     - {type:'event', name:'change', len:N, revision:R} 内容变化（debounce 300ms，只报长度与文档代次）
- *     - {type:'event', name:'content', id:N, b64:S}   requestContent 的回复（全量内容）
+ *     - {type:'event', name:'content', id:N, b64:S, revision:R}
+ *                                                    requestContent 的回复（全量内容 + 该正文
+ *                                                    所属的 documentRevision）。revision 与 b64
+ *                                                    在 Web 侧同一线程同批次发出，原子绑定：
+ *                                                    ArkTS 保存前用它验证「取到的正文属于哪次
+ *                                                    加载」，杜绝跨笔记串写（2026-11-08 重构）。
  *
  * ⚠️ 为什么 change 只报长度不报内容：编辑中每次击键都过桥会把大文本反复序列化，
  * 内容统一由 ArkTS 在需要时（保存/切走）主动 getContent() 拉。硬约束 7 的同款思路。
@@ -866,11 +871,12 @@ const api: MdEditorApi = {
     return b64encode(serializeEditorText(v.state.doc.toString(), documentLineEnding))
   },
 
-  /** ArkTS 侧内容拉取入口：把全量内容 base64 后经 content 事件回传（不走 runJavaScript 返回值） */
+  /** ArkTS 侧内容拉取入口：把全量内容 base64 后经 content 事件回传（不走 runJavaScript 返回值）。
+   * revision 与内容同批回传：内容与文档身份的原子配对点，保存链据此验证归属。 */
   requestContent(reqId: number): void {
     const v = ensureView()
     const b64 = b64encode(serializeEditorText(v.state.doc.toString(), documentLineEnding))
-    postToArkts({ type: 'event', name: 'content', id: reqId, b64: b64 })
+    postToArkts({ type: 'event', name: 'content', id: reqId, b64: b64, revision: documentRevision })
   },
 
   insertText(b64: string): void {

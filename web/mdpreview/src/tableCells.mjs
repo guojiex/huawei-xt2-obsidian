@@ -238,13 +238,17 @@ function serializeCellNode(node) {
 
 /** Parse one complete GFM table and retain exact source offsets for each cell. */
 export function parseTableSource(source) {
-  const tokens = marked.lexer(source).filter((token) => token.type !== 'space' && token.type !== 'def')
+  // marked 的 table token raw 会吸收尾随换行（含块间空行分隔符），
+  // 调用方传入的块切片常带尾部 \n；空行会被 sourceLines 当成表格行导致解析失败，
+  // 这里统一剥掉尾随换行串再解析（只影响末尾，单元格偏移不受影响）。
+  const trimmed = source.replace(/(?:\r?\n)+$/, '')
+  const tokens = marked.lexer(trimmed).filter((token) => token.type !== 'space' && token.type !== 'def')
   if (tokens.length !== 1 || tokens[0].type !== 'table' ||
-    tokens[0].raw.replace(/\r\n/g, '\n') !== source.replace(/\r\n/g, '\n')) {
+    tokens[0].raw.replace(/\r\n/g, '\n') !== trimmed.replace(/\r\n/g, '\n')) {
     return null
   }
 
-  const lines = sourceLines(source)
+  const lines = sourceLines(trimmed)
   if (lines.length < 2) return null
   const parsedRows = lines.map((line) => splitTableRow(line.text, line.offset))
   if (parsedRows.some((row) => row === null) || !isDividerRow(parsedRows[1])) return null
@@ -258,7 +262,7 @@ export function parseTableSource(source) {
     return null
   }
 
-  const hasFence = /```|~~~/.test(source)
+  const hasFence = /```|~~~/.test(trimmed)
   return {
     header: header.map((cell) => ({ ...cell, editable: cell.editable && !hasFence })),
     rows: rows.map((row) => row.map((cell) => ({ ...cell, editable: cell.editable && !hasFence }))),

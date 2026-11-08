@@ -22,6 +22,7 @@ import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { FocusRequest } from '../common/FocusRequest';
 import { AppDataResetService } from '../model/AppDataResetService';
 import { ChangelogEntry, RECENT_CHANGELOG } from '../model/ChangelogData';
 import { releasedEntries } from '../model/ChangelogFilter';
@@ -136,17 +137,17 @@ export struct SettingsView {
   }
 
   private focusCategoryRow(category: string): void {
-    this.getUIContext().getFocusController().requestFocus('settings-category-' + category);
+    FocusRequest.safely(this.getUIContext(), 'settings-category-' + category);
   }
 
   private focusCategoryHeading(category: string): void {
     if (this.singleScreenLayout && !this.showCategoryList) {
-      this.getUIContext().getFocusController().requestFocus('settings-heading-' + category);
+      FocusRequest.safely(this.getUIContext(), 'settings-heading-' + category);
     }
   }
 
   private focusExperienceMode(mode: EditorExperienceMode): void {
-    this.getUIContext().getFocusController().requestFocus('settings-editor-mode-' + mode);
+    FocusRequest.safely(this.getUIContext(), 'settings-editor-mode-' + mode);
   }
 
   private onExperienceModeKey(mode: EditorExperienceMode, event: KeyEvent): boolean {

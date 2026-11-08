@@ -24,18 +24,30 @@ const code = transformSync(`class IndexHarness { ${resetSaveFeedbackMethod} ${dr
   format: 'cjs'
 }).code;
 
+function makeSession(vaultId, path, baseline, revision) {
+  return {
+    vaultId,
+    path,
+    baseline,
+    revision,
+    isFor(otherVaultId, otherPath) {
+      return this.vaultId === otherVaultId && this.path === otherPath;
+    }
+  };
+}
+
 function createHarness(options = {}) {
   const calls = [];
   const expectedVersions = [];
   let app;
   const editor = {
     ready: true,
-    async getContent() {
+    async getContentSnapshot() {
       calls.push('read');
       if (options.readFails) {
         throw new Error('controlled editor read failure');
       }
-      return options.content ?? 'new content';
+      return { text: options.content ?? 'new content', revision: 1 };
     }
   };
   const context = vm.createContext({
@@ -86,12 +98,9 @@ function createHarness(options = {}) {
     rightFilePath: '',
     saveTimer: -1,
     saveFeedbackRevision: 0,
-    lastSavedText: options.lastSavedText ?? 'old content',
+    leftSession: makeSession('local', 'note.md', options.lastSavedText ?? 'old content', 1),
+    rightSession: null,
     editorDirty: true,
-    committedLeftPath: 'note.md',
-    committedLeftVaultId: 'local',
-    committedRightPath: '',
-    committedRightVaultId: '',
     leftOpenRequestId: 0,
     rightOpenRequestId: 0,
     topView: 'note',
@@ -115,7 +124,7 @@ test('successful changed content shows feedback only after the note write resolv
   assert.equal(await app.flushSave(), true);
   assert.deepEqual(calls, ['read', 'draft-persist', 'write', 'draft-clear', 'save-success']);
   assert.deepEqual(expectedVersions, ['old content']);
-  assert.equal(app.lastSavedText, 'new content');
+  assert.equal(app.leftSession.baseline, 'new content');
 });
 
 test('a rejected note write returns failure and never shows success feedback', async () => {
@@ -123,7 +132,7 @@ test('a rejected note write returns failure and never shows success feedback', a
 
   assert.equal(await app.flushSave(), false);
   assert.deepEqual(calls, ['read', 'draft-persist', 'write', 'toast:保存失败']);
-  assert.equal(app.lastSavedText, 'old content');
+  assert.equal(app.leftSession.baseline, 'old content');
   assert.equal(app.editorDirty, true);
 });
 
@@ -146,7 +155,7 @@ test('a note that changes while the write is pending does not get success feedba
 
   assert.equal(await app.flushSave(), true);
   assert.deepEqual(calls, ['read', 'draft-persist', 'write', 'draft-clear']);
-  assert.equal(app.lastSavedText, 'old content');
+  assert.equal(app.leftSession.baseline, 'new content');
 });
 
 test('editing while the write is pending invalidates that save feedback', async () => {
@@ -156,7 +165,7 @@ test('editing while the write is pending invalidates that save feedback', async 
 
   assert.equal(await app.flushSave(), true);
   assert.deepEqual(calls, ['read', 'draft-persist', 'write', 'hide-success', 'draft-clear']);
-  assert.equal(app.lastSavedText, 'new content');
+  assert.equal(app.leftSession.baseline, 'new content');
 });
 
 test('a failed draft write blocks the formal write and preserves pending editor state', async () => {
@@ -167,7 +176,7 @@ test('a failed draft write blocks the formal write and preserves pending editor 
     'read', 'draft-persist',
     'toast:恢复草稿写入失败；正式笔记尚未保存，当前编辑仍保留。请稍后重试。'
   ]);
-  assert.equal(app.lastSavedText, 'old content');
+  assert.equal(app.leftSession.baseline, 'old content');
   assert.equal(app.editorDirty, true);
 });
 
@@ -179,7 +188,7 @@ test('a conflicting recovery draft is not replaced by an automatic save', async 
     'read', 'draft-persist',
     'toast:恢复草稿未能安全写入；正式笔记未保存，当前编辑仍保留。请稍后重试。'
   ]);
-  assert.equal(app.lastSavedText, 'old content');
+  assert.equal(app.leftSession.baseline, 'old content');
   assert.equal(app.editorDirty, true);
 });
 
@@ -191,6 +200,6 @@ test('draft cleanup failure does not report a failed formal save', async () => {
     'read', 'draft-persist', 'write', 'draft-clear', 'warn',
     'toast:笔记已保存；恢复草稿清理未完成，重开时可能再次提示恢复。', 'save-success'
   ]);
-  assert.equal(app.lastSavedText, 'new content');
+  assert.equal(app.leftSession.baseline, 'new content');
   assert.equal(app.editorDirty, false);
 });

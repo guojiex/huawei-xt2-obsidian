@@ -482,6 +482,17 @@ M-02 与 M-01 的边界：M-01 评估把外部目录直接作为知识库正式�
 
 详见 [v1.25 需求](releases/v1.25/需求文档.md) 与 [分享面板设计](prototype/v2/分享面板设计.md)。
 
+## T. 焦点与崩溃兜底加固（2026-11-08）
+
+背景：[api_notes L-19](harmonyos/api_notes.md) 两次 DFX JSCrash（2026-11-06 a849690、2026-11-08 完成编辑收焦）实证 `requestFocus` 裸调抛 150003 未捕获即闪退；2026-11-08 官方答复补齐错误码族与全局兜底能力（[qa 归档](harmonyos/qa/2026-11-08_焦点requestFocus错误码与全局兜底答复_API24.md)，结论见 [api_notes L-20](harmonyos/api_notes.md)）。
+
+| 编号 | 需求 | 分配 |
+| --- | --- | --- |
+| T-01 | `FocusRequest.safely` 的兜底日志按 `150001`（组件不可获焦）/ `150002`（祖先不可获焦）/ `150003`（不在树上 / 不存在）区分错误码，消除现有「未命中目标组件」对 150001/150002 的描述失真；日志仍不记录 focusId（隐私红线） | [v1.46](releases/v1.46/需求文档.md) |
+| T-02 | `EntryAbility` 主线程安装 `errorManager.setDefaultErrorHandler` 全局 JS_CRASH 兜底：hilog 记录未捕获异常后链式调用前序处理器（无前序则按官方示例同步退出）；兜底日志只进本地 hilog 诊断，禁止进埋点 / 上报 | [v1.46](releases/v1.46/需求文档.md) |
+| T-03 | 修复简单模式纯文本段落宿主的引擎焦点黑框（v1.18 18.4 遗留场景）：简单模式为段落宿主 `div` 加 `contenteditable` 后，点按聚焦宿主触发 ArkWeb 默认焦点框（桌面 Chromium 同 CSS 不复现，见 api_notes L-16）；按 11-04 同源修法在 build.mjs 补 `#content [contenteditable="true"]:focus { outline: none; }`，覆盖段落宿主、空占位与 callout 正文等全部可编辑宿主 | [v1.46](releases/v1.46/需求文档.md) |
+| T-04 | `focusEmptyPane` 撤除 `setTimeout(0)` 时序猜测（L-19 结论2 实证不可靠），按 L-20 官方推荐改事件驱动：`getAttachedFrameNodeById` 预查询已挂载则立即请求，否则记待聚焦栏位、由目标行（reopen 行 / 新建笔记动作）`onAppear` 挂树后补齐；`FocusRequest.safely` 兜底与「不记录 focusId」红线不变 | [v1.46](releases/v1.46/需求文档.md) |
+
 ## 待分配：安全与上架缺口（2026-11-02）
 
 以下是需求池登记，不代表已分配版本、已实现或已验收。

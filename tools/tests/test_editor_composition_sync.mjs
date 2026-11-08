@@ -30,17 +30,29 @@ const code = transformSync(`class IndexHarness {
   format: 'cjs'
 }).code;
 
+function makeSession(vaultId, path, baseline, revision) {
+  return {
+    vaultId,
+    path,
+    baseline,
+    revision,
+    isFor(otherVaultId, otherPath) {
+      return this.vaultId === otherVaultId && this.path === otherPath;
+    }
+  };
+}
+
 function createHarness() {
   const calls = [];
   const leftEditor = {
     ready: true,
-    async getContent() { calls.push('left-read'); return 'left text'; },
-    async setContent(text) { calls.push('left-set:' + text); }
+    async getContentSnapshot() { calls.push('left-read'); return { text: 'left text', revision: 1 }; },
+    async setContent(text) { calls.push('left-set:' + text); return 2; }
   };
   const rightEditor = {
     ready: true,
-    async getContent() { calls.push('right-read'); return 'right text'; },
-    async setContent(text) { calls.push('right-set:' + text); }
+    async getContentSnapshot() { calls.push('right-read'); return { text: 'right text', revision: 1 }; },
+    async setContent(text) { calls.push('right-set:' + text); return 2; }
   };
   const context = vm.createContext({
     module: { exports: {} },
@@ -66,9 +78,13 @@ function createHarness() {
     rightEditorBridge: rightEditor,
     leftComposing: false,
     rightComposing: false,
+    rightCodePreviewEditing: false,
+    rightCodeEditPending: false,
     rightEditorDirty: true,
     editorDirty: false,
     activePane: 'left',
+    leftSession: makeSession('local', 'shared.md', 'saved', 1),
+    rightSession: makeSession('local', 'shared.md', 'saved', 1),
     leftOpenRequestId: 1,
     rightOpenRequestId: 1
   });
@@ -136,7 +152,7 @@ test('committed right change synchronizes after composition ended', async () => 
 test('left-to-right mirror drops content when the left note changes during the bridge read', async () => {
   const { app, calls } = createHarness();
   const content = deferred();
-  app.editorBridge.getContent = () => {
+  app.editorBridge.getContentSnapshot = () => {
     calls.push('left-read');
     return content.promise;
   };
@@ -144,7 +160,7 @@ test('left-to-right mirror drops content when the left note changes during the b
   const syncing = app.syncLeftContentToRight();
   app.currentFilePath = 'next.md';
   app.leftOpenRequestId += 1;
-  content.resolve('stale left text');
+  content.resolve({ text: 'stale left text', revision: 1 });
   await syncing;
 
   assert.deepEqual(calls, ['left-read']);
@@ -154,7 +170,7 @@ test('left-to-right mirror drops content when the left note changes during the b
 test('right-to-left mirror drops content when the left note changes during the bridge read', async () => {
   const { app, calls } = createHarness();
   const content = deferred();
-  app.rightEditorBridge.getContent = () => {
+  app.rightEditorBridge.getContentSnapshot = () => {
     calls.push('right-read');
     return content.promise;
   };
@@ -162,7 +178,7 @@ test('right-to-left mirror drops content when the left note changes during the b
   const syncing = app.syncRightContentToLeft();
   app.currentFilePath = 'next.md';
   app.leftOpenRequestId += 1;
-  content.resolve('stale right text');
+  content.resolve({ text: 'stale right text', revision: 1 });
   await syncing;
 
   assert.deepEqual(calls, ['right-read']);
@@ -183,7 +199,7 @@ test('left-to-right mirror does not clear target state when its setContent compl
   assert.ok(calls.includes('right-set:left text'));
   app.rightFilePath = 'next.md';
   app.rightOpenRequestId += 1;
-  write.resolve();
+  write.resolve(2);
   await syncing;
 
   assert.ok(!calls.some((call) => call.startsWith('guard-clear:right:')));
@@ -203,10 +219,34 @@ test('right-to-left mirror does not mark a new left target dirty when its setCon
   assert.ok(calls.includes('left-set:right text'));
   app.currentFilePath = 'next.md';
   app.leftOpenRequestId += 1;
-  write.resolve();
+  write.resolve(2);
   await syncing;
 
   assert.ok(!calls.some((call) => call.startsWith('guard-mark:left:')));
   assert.equal(app.editorDirty, false);
   assert.equal(app.rightEditorDirty, true);
+});
+
+test('a mirror refuses to publish editor content whose revision does not match the source session', async () => {
+  const { app, calls } = createHarness();
+  app.rightEditorBridge.getContentSnapshot = async () => {
+    calls.push('right-read');
+    return { text: 'another notes body', revision: 7 };
+  };
+
+  await app.syncRightContentToLeft();
+
+  assert.deepEqual(calls, ['right-read']);
+  assert.equal(app.editorDirty, false);
+  assert.ok(!calls.some((call) => call.startsWith('left-set:')));
+});
+
+test('a successful right-to-left mirror records the mirrored revision in the left session', async () => {
+  const { app, calls } = createHarness();
+
+  await app.syncRightContentToLeft();
+
+  assert.ok(calls.includes('left-set:right text'));
+  assert.equal(app.leftSession.revision, 2);
+  assert.equal(app.editorDirty, true);
 });

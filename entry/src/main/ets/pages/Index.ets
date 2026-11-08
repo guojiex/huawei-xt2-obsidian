@@ -21,6 +21,7 @@ import { ColorMetrics, LengthMetrics, promptAction, router } from '@kit.ArkUI';
 import { BusinessError, deviceInfo, pasteboard } from '@kit.BasicServicesKit';
 import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
+import { FocusRequest } from '../common/FocusRequest';
 import { SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { VaultDirChild } from '../model/VaultAccess';
@@ -64,7 +65,8 @@ import {
 import { shareFailureMessage } from '../model/UserErrorMessages';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
-import { EditorBridge, EditorWebView } from '../components/EditorWebView';
+import { EditorBridge, EditorSnapshot, EditorWebView } from '../components/EditorWebView';
+import { EditorNoteSession } from '../model/EditorNoteSession';
 import {
   FormulaPreviewWeb,
   PreviewBlockAnchor,
@@ -439,11 +441,16 @@ struct Index {
   private rightCloseRequestId: number = 0;
   private leftOpenRequestId: number = 0;
   private rightOpenRequestId: number = 0;
+  /** 空栏待聚焦栏位（L-20：目标行 onAppear 挂树后再请求，取代 setTimeout(0) 时序猜测，v1.46 46.5）。 */
+  private pendingEmptyPaneFocus: string = '';
+  /**
+   * 「编辑器当前持有的文档」的配对账本（2026-11-08 跨笔记串写重构，见 EditorNoteSession）。
+   * 会话在 setContent 完成后立刻创建，保存链校验 revision 一致才允许落盘；
+   * 取代了旧的 committedXxxPath / committedXxxVaultId / lastSavedText / rightLastSavedText 六字段。
+   */
+  private leftSession: EditorNoteSession | null = null;
+  private rightSession: EditorNoteSession | null = null;
   private sharedEditabilityGeneration: number = 0;
-  private committedLeftPath: string = '';
-  private committedRightPath: string = '';
-  private committedLeftVaultId: string = '';
-  private committedRightVaultId: string = '';
   private pendingRestoredChapterOffset: number = -1;
   @State sidebarTab: string = 'files';
   private leftEditorScrollTop: number = 0;
@@ -509,7 +516,6 @@ struct Index {
   private rightEditorBridge: EditorBridge = new EditorBridge();
   private rightPreviewBridge: PreviewBridge = new PreviewBridge();
   private rightSaveTimer: number = -1;
-  private rightLastSavedText: string = '';
   private rightLastPreviewText: string = '';
   @State backlinkPaths: string[] = [];
   @State backlinksExpanded: boolean = false;
@@ -554,13 +560,12 @@ struct Index {
   /**
    * M2 自动保存（2.3）：编辑器 onChange → 防抖落盘。
    * - `saveTimer`：-1 表示无待触发计时器；切换/后台时清零并立刻 flush。
-   * - `lastSavedText`：当前文件「已落盘或已加载」的内容镜像，用于跳过无变化的冗余写，
-   *   也防止 Web 的 setContent 回灌 change 事件被误判成新编辑而重写一遍。
+   * - 「已落盘或已加载」的内容镜像在 EditorNoteSession.baseline 里（跳过无变化的冗余写，
+   *   也防止 Web 的 setContent 回灌 change 事件被误判成新编辑而重写一遍）。
    * ⚠️ 切文件 / 新建 / 删除当前文件前必须先 flush 旧文件 —— 否则防抖触发时编辑器已是
    * 新文件内容，却写进旧路径，造成数据损坏（实现见 loadFile / doCreateNote / doDeletePath）。
    */
   private saveTimer: number = -1;
-  private lastSavedText: string = '';
   @State editorDirty: boolean = false;
   @State imagePickerBusy: boolean = false;
   @State saveFeedbackMounted: boolean = false;
@@ -790,18 +795,31 @@ struct Index {
       return false;
     }
     const editor = this.editorBridgeForPane(pane);
+    // 预览回写必须对着「本会话记录的那次加载」：会话缺失/路径不符 → 拒绝，
+    // 防止预览内容被回写进另一篇笔记的编辑器正文（跨笔记串写防线，见 EditorNoteSession）。
+    const session: EditorNoteSession | null = pane === 'right' ? this.rightSession : this.leftSession;
+    if (session === null || !session.isFor(vaultId, notePath)) {
+      return false;
+    }
     // 编辑器当前内容只用于「内容没变就跳过回写」这一个优化：
     // 拿不到（页面不可见时 ArkWeb 可能不回内容）不该判成同步失败，直接按有差异走回写。
     let hasCurrent: boolean = false;
     let current: string = '';
+    let currentRevision: number = -1;
     try {
-      current = await editor.getContent();
+      const snapshot: EditorSnapshot = await editor.getContentSnapshot();
+      current = snapshot.text;
+      currentRevision = snapshot.revision;
       hasCurrent = true;
     } catch {
       hilog.warn(DOMAIN, TAG, '读取编辑器内容失败，按有差异处理预览回写');
     }
     if (this.experienceMode !== 'simple' ||
       !this.isCurrentSimplePreviewTarget(pane, notePath, vaultId, requestId)) {
+      return false;
+    }
+    if (hasCurrent && currentRevision !== session.revision) {
+      // 编辑器持有的正文不属于会话记录的加载代次（加载被取代/撕裂）——拒绝回写。
       return false;
     }
     if (hasCurrent && current === content) {
@@ -1130,10 +1148,8 @@ struct Index {
         this.pendingRestoredChapterOffset = session.selectedChapterOffset;
         this.currentFilePath = leftPath;
         this.rightFilePath = rightPath;
-        this.committedLeftPath = '';
-        this.committedRightPath = '';
-        this.committedLeftVaultId = '';
-        this.committedRightVaultId = '';
+        this.leftSession = null;
+        this.rightSession = null;
         this.leftEditorScrollTop = session.leftEditorScrollTop;
         this.leftPreviewScrollTop = session.leftPreviewScrollTop;
         this.rightEditorScrollTop = session.rightEditorScrollTop;
@@ -1170,10 +1186,8 @@ struct Index {
         this.rightPaneIntentionallyEmpty = false;
         this.sidebarTab = 'files';
         this.pendingRestoredChapterOffset = -1;
-        this.committedLeftPath = '';
-        this.committedRightPath = '';
-        this.committedLeftVaultId = '';
-        this.committedRightVaultId = '';
+        this.leftSession = null;
+        this.rightSession = null;
         await restoreWorkspacePane('', async (path: string): Promise<boolean> =>
           await this.readAndPush(path, false), async (): Promise<void> => {
             await this.readAndPush('', false);
@@ -1344,8 +1358,8 @@ struct Index {
     const session: WorkspaceSession = {
       schemaVersion: 1,
       vaultId: this.currentVaultId,
-      leftPath: this.committedLeftPath,
-      rightPath: this.committedRightPath,
+      leftPath: this.leftSession !== null ? this.leftSession.path : '',
+      rightPath: this.rightSession !== null ? this.rightSession.path : '',
       leftMode: this.smMode,
       rightEditing: this.rightEditing,
       activePane: this.activePane,
@@ -1799,7 +1813,7 @@ struct Index {
       this.setSidebarCollapsed(true);
     }
     setTimeout((): void => {
-      this.getUIContext().getFocusController().requestFocus('workspace-navigation-button');
+      FocusRequest.safely(this.getUIContext(), 'workspace-navigation-button');
     }, 0);
   }
 
@@ -2011,8 +2025,14 @@ struct Index {
       return;
     }
 
-    const baseline: string = shared ? this.lastSavedText
-      : pane === 'right' ? this.rightLastSavedText : this.lastSavedText;
+    const leftSessionForNote: EditorNoteSession | null = this.leftSession;
+    const rightSessionForNote: EditorNoteSession | null = this.rightSession;
+    const leftBaseline: string = leftSessionForNote !== null && leftSessionForNote.isFor(vaultId, path)
+      ? leftSessionForNote.baseline : '';
+    const rightBaseline: string = rightSessionForNote !== null && rightSessionForNote.isFor(vaultId, path)
+      ? rightSessionForNote.baseline : '';
+    const baseline: string = shared ? leftBaseline
+      : pane === 'right' ? rightBaseline : leftBaseline;
     const localDirty: boolean = shared
       ? this.editorDirty || this.rightEditorDirty || this.leftComposing || this.rightComposing ||
         editorText !== baseline
@@ -2442,7 +2462,7 @@ struct Index {
       }
       focusRestored = true;
       setTimeout((): void => {
-        this.getUIContext().getFocusController().requestFocus(focusReturnId);
+        FocusRequest.safely(this.getUIContext(), focusReturnId);
       }, 0);
     };
     const syncSheet: boolean = this.isSingleScreenLayout();
@@ -2488,7 +2508,7 @@ struct Index {
       }
       focusRestored = true;
       setTimeout((): void => {
-        this.getUIContext().getFocusController().requestFocus(focusReturnId);
+        FocusRequest.safely(this.getUIContext(), focusReturnId);
       }, 0);
     };
     this.restoreImportTriggerFocus = restoreImportFocus;
@@ -2793,7 +2813,8 @@ struct Index {
     // Agent 页打开期间 Web 编辑器已卸载；不能 flush 它持有的旧内容覆盖 Agent 写入。
     this.resetSaveFeedback();
     this.currentFilePath = path;
-    this.lastSavedText = text;
+    // 清掉旧会话：readAndPush 完成前任何保存都拒绝（无会话=无写入目标），防旧账本串写。
+    this.leftSession = null;
     WorkspaceEditGuard.clear('left', this.currentVaultId, path);
     this.editorDirty = false;
     this.topView = 'note';
@@ -3255,7 +3276,9 @@ struct Index {
     this.previewBridgeForPane(pane).finishSimpleEditing();
     this.clearSimpleFocusHideTimer(pane);
     this.applySimpleTextFocus(pane, false);
-    this.getUIContext().getFocusController().requestFocus('pane-title-' + pane);
+    // pane-title-* 仅在 PaneTitle 且该栏有文件路径时挂载，目标可缺失：必须走安全收焦
+    //（裸调 requestFocus 抛 150003 未捕获曾致闪退，DFX JSCrash 2026-11-08，同 2026-11-06 focusEmptyPane）。
+    FocusRequest.safely(this.getUIContext(), 'pane-title-' + pane);
   }
 
   private isImagePickerBusy(pane: string): boolean {
@@ -3316,7 +3339,7 @@ struct Index {
       if (current === null) {
         this.currentFilePath = '';
         await this.readAndPush('');
-      } else if (current !== this.lastSavedText) {
+      } else if (current !== this.sessionBaselineFor(vaultId, leftPath, 'left')) {
         await this.readAndPush(leftPath);
       }
     }
@@ -3326,7 +3349,7 @@ struct Index {
       if (current === null) {
         this.rightFilePath = '';
         await this.readRightAndPush('');
-      } else if (current !== this.rightLastSavedText) {
+      } else if (current !== this.sessionBaselineFor(vaultId, rightPath, 'right')) {
         await this.readRightAndPush(rightPath);
       }
     } else if (rightPath.length > 0 && rightPath !== leftPath &&
@@ -3335,7 +3358,7 @@ struct Index {
       if (current === null) {
         this.rightFilePath = '';
         await this.readRightAndPush('');
-      } else if (current !== this.rightLastSavedText) {
+      } else if (current !== this.sessionBaselineFor(vaultId, rightPath, 'right')) {
         await this.readRightAndPush(rightPath);
       }
     }
@@ -3705,8 +3728,7 @@ struct Index {
     }
     this.tableGridFocusedRows = nextRows;
     this.tableGridFocusedColumns = nextColumns;
-    this.getUIContext().getFocusController().requestFocus(
-      this.tableGridCellFocusId(pane, nextRows, nextColumns));
+    FocusRequest.safely(this.getUIContext(), this.tableGridCellFocusId(pane, nextRows, nextColumns));
     return true;
   }
 
@@ -6405,19 +6427,36 @@ struct Index {
   }
 
   private focusEmptyPane(pane: string): void {
+    // L-19 结论2 / L-20：零延迟定时器不保证目标挂树（2026-11-06 DFX JSCrash 实证），
+    // 事件驱动才是可靠模式——目标已挂载立即请求；否则记待聚焦栏位，
+    // 由目标行 onAppear 挂树后经 consumeEmptyPaneFocus 补齐（v1.46 46.5）。
+    const focusId: string = this.emptyPaneFocusId(pane);
+    try {
+      if (this.getUIContext().getAttachedFrameNodeById(focusId) !== null) {
+        FocusRequest.safely(this.getUIContext(), focusId);
+        return;
+      }
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, '空栏焦点预查询失败，转由挂载事件补齐');
+    }
+    this.pendingEmptyPaneFocus = pane;
+  }
+
+  private emptyPaneFocusId(pane: string): string {
     // 与 EmptyPane 渲染分支对齐：空库不渲染「重新打开」行，只能聚焦「新建笔记」
     //（DFX JSCrash 2026-11-06：空库 + 有最近关闭路径时曾指向必然不存在的
-    // pane-empty-reopen-*，requestFocus 抛 150003 未捕获导致闪退）。
-    const focusId: string = this.currentVaultNoteCount > 0 && this.paneLastClosedPath(pane).length > 0
+    // pane-empty-reopen-*，requestFocus 抛 150003 未捕获导致闪退；
+    // 2026-11-08 起全应用收口 FocusRequest.safely，见 common/FocusRequest.ets）。
+    return this.currentVaultNoteCount > 0 && this.paneLastClosedPath(pane).length > 0
       ? 'pane-empty-reopen-' + pane : 'pane-empty-new-' + pane;
-    setTimeout((): void => {
-      try {
-        this.getUIContext().getFocusController().requestFocus(focusId);
-      } catch (error) {
-        // setTimeout(0) 可能先于空栏重渲染挂载目标组件执行；焦点落空不致命，兜底避免闪退。
-        hilog.warn(DOMAIN, TAG, '空栏焦点请求未命中目标组件');
-      }
-    }, 0);
+  }
+
+  private consumeEmptyPaneFocus(pane: string, focusId: string): void {
+    if (this.pendingEmptyPaneFocus !== pane || this.emptyPaneFocusId(pane) !== focusId) {
+      return; // 无待聚焦，或同栏其他动作先挂树（目标为 reopen 时 new 行不抢焦点）
+    }
+    this.pendingEmptyPaneFocus = '';
+    FocusRequest.safely(this.getUIContext(), focusId);
   }
 
   private focusPaneBody(pane: string): void {
@@ -6427,7 +6466,7 @@ struct Index {
       (pane === 'right' ? this.rightEditorBridge : this.editorBridge).focus();
       return;
     }
-    this.getUIContext().getFocusController().requestFocus(
+    FocusRequest.safely(this.getUIContext(),
       pane === 'right' ? 'note-right-preview-web' : 'note-left-preview-web');
   }
 
@@ -6526,10 +6565,16 @@ struct Index {
       (path.length === 0 || path === this.rightFilePath);
   }
 
+  /** 取某栏会话的已落盘基线；会话缺失或不属于该笔记时返回 null（调用方按「状态未知」处理）。 */
+  private sessionBaselineFor(vaultId: string, path: string, pane: string): string | null {
+    const session: EditorNoteSession | null = pane === 'right' ? this.rightSession : this.leftSession;
+    return session !== null && session.isFor(vaultId, path) ? session.baseline : null;
+  }
+
   /**
    * 读取笔记全文并下发给 Web 编辑器（M0.5 spike 的加载路径）。
    * 读文件在 ArkTS 侧做（组件不碰 IO，硬约束 14）；读取失败返回 false，由切换方保留当前笔记并提示。
-   * ⚠️ **先更新 `lastSavedText` 再下发给编辑器**：若 Web 的 setContent 回灌一个 change
+   * ⚠️ **先记会话基线再下发给编辑器**：若 Web 的 setContent 回灌一个 change
    * 事件，guard 才能识别「内容没变」跳过冗余写（否则会被当成新编辑重写一遍）。
    */
   private async readAndPush(relPath: string, initializeRight: boolean = true, requestId: number = -1,
@@ -6573,23 +6618,29 @@ struct Index {
       return false;
     }
     WorkspaceEditGuard.clear('left', targetVaultId, relPath);
-    if (!this.workspaceSessionRestoring && this.committedLeftPath !== relPath) {
+    if (!this.workspaceSessionRestoring &&
+      !(this.leftSession !== null && this.leftSession.isFor(targetVaultId, relPath))) {
       this.leftEditorScrollTop = 0;
       this.leftPreviewScrollTop = 0;
     }
-    this.lastSavedText = text;
     this.clearStaleSaveNotice(targetVaultId, relPath);
     this.editorDirty = false;
     this.editorLen = displayText.length;
     this.editorBridge.setNoteContext(targetVaultId, relPath.indexOf('/') >= 0
       ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
-    await this.editorBridge.setContent(displayText);
+    const contentRevision: number = await this.editorBridge.setContent(displayText);
+    // 会话镜像编辑器现实：无条件创建（即使本次加载随后被取代）。撕裂窗口内的保存
+    // 由 revision 校验拒绝 —— 不一致只会导致少存一次，绝不会存错文件（见 EditorNoteSession）。
+    this.leftSession = new EditorNoteSession(targetVaultId, relPath, text, contentRevision);
     if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
     this.editorDirty = draftRecovered;
     if (relPath.length > 0 && relPath === this.rightFilePath) {
-      this.rightLastSavedText = text;
+      // 同一篇笔记双栏打开：左栏加载后右栏的磁盘基线同步更新（仅当右会话仍属于该笔记）。
+      if (this.rightSession !== null && this.rightSession.isFor(targetVaultId, relPath)) {
+        this.rightSession.baseline = text;
+      }
       this.rightEditorDirty = draftRecovered;
     }
     // M3 联动：文件加载后预览同步本页内容 + 告知笔记目录（相对图片引用的解析基准）
@@ -6625,8 +6676,6 @@ struct Index {
     if (!this.isCurrentLeftOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
-    this.committedLeftPath = relPath;
-    this.committedLeftVaultId = targetVaultId;
     this.applyRestoredChapterSelection();
     if (!this.workspaceSessionRestoring && relPath.length > 0 && this.topView === 'note') {
       this.workspaceSessionSavingEnabled = true;
@@ -6678,18 +6727,20 @@ struct Index {
     if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
-    if (!this.workspaceSessionRestoring && this.committedRightPath !== relPath) {
+    if (!this.workspaceSessionRestoring &&
+      !(this.rightSession !== null && this.rightSession.isFor(targetVaultId, relPath))) {
       this.rightEditorScrollTop = 0;
       this.rightPreviewScrollTop = 0;
     }
-    this.rightLastSavedText = text;
     this.clearStaleSaveNotice(targetVaultId, relPath);
     WorkspaceEditGuard.clear('right', targetVaultId, relPath);
     this.rightEditorDirty = false;
     this.rightEditorLen = displayText.length;
     this.rightEditorBridge.setNoteContext(targetVaultId, relPath.indexOf('/') >= 0
       ? relPath.substring(0, relPath.lastIndexOf('/')) : '');
-    await this.rightEditorBridge.setContent(displayText);
+    const contentRevision: number = await this.rightEditorBridge.setContent(displayText);
+    // 同 readAndPush：会话无条件镜像编辑器现实，保存链用 revision 校验兜底。
+    this.rightSession = new EditorNoteSession(targetVaultId, relPath, text, contentRevision);
     if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
@@ -6712,8 +6763,6 @@ struct Index {
     if (!this.isCurrentRightOpenTarget(relPath, targetVaultId, effectiveRequestId)) {
       return false;
     }
-    this.committedRightPath = relPath;
-    this.committedRightVaultId = targetVaultId;
     if (relPath.length > 0) {
       this.rightPaneIntentionallyEmpty = false;
     }
@@ -6783,19 +6832,22 @@ struct Index {
     if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
       return await this.flushSave(targetPath, targetVaultId, this.sharedNoteEditor(), showFeedback);
     }
-    if (targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId) {
+    // 会话即写入许可：右栏没有「本笔记」的活动会话 → 拒绝（编辑器内容身份未确认）。
+    const session: EditorNoteSession | null = this.rightSession;
+    if (session === null || !session.isFor(targetVaultId, targetPath)) {
       return false;
     }
-    const leftRequestId: number = this.leftOpenRequestId;
-    const rightRequestId: number = this.rightOpenRequestId;
-    const savedText: string = this.rightLastSavedText;
+    const savedText: string = session.baseline;
     if (this.rightComposing) {
       return false;
     }
     const feedbackRevision: number = this.saveFeedbackRevision;
     let text: string = '';
+    let textRevision: number = -1;
     try {
-      text = await this.rightEditorBridge.getContent();
+      const snapshot: EditorSnapshot = await this.rightEditorBridge.getContentSnapshot();
+      text = snapshot.text;
+      textRevision = snapshot.revision;
     } catch (error) {
       this.showFailureFeedback('note', 'bridge', 'unknown', 'not_completed', 'retry',
         '未能读取右栏编辑内容；本次未写入文件，当前编辑仍保留。请稍后重试。');
@@ -6805,8 +6857,9 @@ struct Index {
       targetPath === this.rightFilePath && this.leftComposing)) {
       return false;
     }
-    if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
-      targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId) {
+    // 内容身份校验（防串写核心）：编辑器回包的 revision 必须与创建会话那次 setContent
+    // 下发的 revision 一致，且回包期间会话未被换掉，才允许把正文写入 targetPath。
+    if (this.rightSession !== session || textRevision !== session.revision) {
       return false;
     }
     if (text !== savedText && !this.rightEditorDirty) {
@@ -6829,26 +6882,25 @@ struct Index {
       if (!await this.persistEditorDraftSnapshot(targetVaultId, targetPath, savedText, text)) {
         return false;
       }
-      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
-        targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId) {
+      if (this.rightSession !== session) {
         return false;
       }
       await NoteService.saveNote(VaultRegistry.get(), targetVaultId, targetPath, text, savedText);
       await this.clearEditorDraftAfterSave(targetVaultId, targetPath, text);
-      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
-        targetPath !== this.committedRightPath || targetVaultId !== this.committedRightVaultId ||
-        targetPath !== this.rightFilePath || targetVaultId !== this.currentVaultId) {
+      if (this.rightSession !== session) {
         WorkspaceEditGuard.clear('right', targetVaultId, targetPath);
         return true;
       }
       this.clearStaleSaveNotice(targetVaultId, targetPath);
       if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
-        this.rightLastSavedText = text;
+        session.baseline = text;
         WorkspaceEditGuard.clear('right', targetVaultId, targetPath);
         this.rightEditorDirty = false;
       }
       if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
-        this.lastSavedText = text;
+        if (this.leftSession !== null && this.leftSession.isFor(targetVaultId, targetPath)) {
+          this.leftSession.baseline = text;
+        }
         this.editorDirty = false;
         void this.refreshBacklinks();
       }
@@ -6919,16 +6971,27 @@ struct Index {
       this.currentFilePath === targetPath && this.rightFilePath === targetPath &&
       this.leftOpenRequestId === leftRequestId && this.rightOpenRequestId === rightRequestId;
     try {
-      const text: string = await this.editorBridge.getContent();
-      if (!isCurrentMirrorTarget()) {
+      // 镜像前置校验：源会话必须仍属于本笔记，读到的正文才可信为本笔记内容。
+      const sourceSession: EditorNoteSession | null = this.leftSession;
+      if (sourceSession === null || !sourceSession.isFor(vaultId, targetPath)) {
         return;
       }
+      const snapshot: EditorSnapshot = await this.editorBridge.getContentSnapshot();
+      if (snapshot.revision !== sourceSession.revision || this.leftSession !== sourceSession ||
+        !isCurrentMirrorTarget()) {
+        return;
+      }
+      const text: string = snapshot.text;
       this.pushRightPreview(text);
       this.updateChapterEntries(text, targetPath);
       if (this.rightEditorBridge.ready && !this.rightComposing) {
-        await this.rightEditorBridge.setContent(text);
+        const mirrorRevision: number = await this.rightEditorBridge.setContent(text);
         if (!isCurrentMirrorTarget()) {
           return;
+        }
+        // 会话镜像编辑器现实：右栏编辑器已持有新代次内容，右会话对象未换则记入新 revision。
+        if (this.rightSession !== null && this.rightSession.isFor(vaultId, targetPath)) {
+          this.rightSession.revision = mirrorRevision;
         }
         WorkspaceEditGuard.clear('right', vaultId, targetPath);
         this.rightEditorDirty = false;
@@ -6951,18 +7014,29 @@ struct Index {
       this.currentFilePath === targetPath && this.rightFilePath === targetPath &&
       this.leftOpenRequestId === leftRequestId && this.rightOpenRequestId === rightRequestId;
     try {
-      const text: string = await this.rightEditorBridge.getContent();
-      if (!isCurrentMirrorTarget()) {
+      // 镜像前置校验（2026-11-08 跨笔记串写主防线）：源会话必须仍属于本笔记，
+      // 且编辑器回包 revision 与会话记录一致 —— 否则源栏持有的是别的笔记的正文，拒绝镜像。
+      const sourceSession: EditorNoteSession | null = this.rightSession;
+      if (sourceSession === null || !sourceSession.isFor(vaultId, targetPath)) {
         return;
       }
+      const snapshot: EditorSnapshot = await this.rightEditorBridge.getContentSnapshot();
+      if (snapshot.revision !== sourceSession.revision || this.rightSession !== sourceSession ||
+        !isCurrentMirrorTarget()) {
+        return;
+      }
+      const text: string = snapshot.text;
       this.pushPreview(text);
       if (!this.rightCodePreviewEditing && !this.rightCodeEditPending) {
         this.pushRightPreview(text);
       }
       if (this.editorBridge.ready && !this.leftComposing) {
-        await this.editorBridge.setContent(text);
+        const mirrorRevision: number = await this.editorBridge.setContent(text);
         if (!isCurrentMirrorTarget()) {
           return;
+        }
+        if (this.leftSession !== null && this.leftSession.isFor(vaultId, targetPath)) {
+          this.leftSession.revision = mirrorRevision;
         }
         WorkspaceEditGuard.mark('left', vaultId, targetPath);
         this.editorDirty = true;
@@ -7100,14 +7174,12 @@ struct Index {
       return true;
     }
     const sourceIsRight: boolean = source === this.rightEditorBridge;
-    const committedPath: string = sourceIsRight ? this.committedRightPath : this.committedLeftPath;
-    const committedVaultId: string = sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId;
-    if (path !== committedPath || vaultId !== committedVaultId) {
+    // 会话即写入许可：源栏没有「本笔记」的活动会话 → 拒绝（编辑器内容身份未确认）。
+    const session: EditorNoteSession | null = sourceIsRight ? this.rightSession : this.leftSession;
+    if (session === null || !session.isFor(vaultId, path)) {
       return false;
     }
-    const leftRequestId: number = this.leftOpenRequestId;
-    const rightRequestId: number = this.rightOpenRequestId;
-    const expectedText: string = this.lastSavedText;
+    const expectedText: string = session.baseline;
     const sharedNoteCompositionActive: boolean = path === this.currentFilePath &&
       path === this.rightFilePath && (this.leftComposing || this.rightComposing);
     const sourceCompositionActive: boolean = source === this.rightEditorBridge
@@ -7118,8 +7190,11 @@ struct Index {
       return false;
     }
     let text: string = '';
+    let textRevision: number = -1;
     try {
-      text = await source.getContent();
+      const snapshot: EditorSnapshot = await source.getContentSnapshot();
+      text = snapshot.text;
+      textRevision = snapshot.revision;
     } catch (error) {
       // 拉不到内容：放弃这次保存（拿空串落盘会清空文件），但绝不让异常外泄挡住调用方
       const fetchError = error as Error;
@@ -7136,9 +7211,10 @@ struct Index {
     if (sharedNoteCompositionStarted || sourceCompositionStarted) {
       return false;
     }
-    if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
-      path !== (sourceIsRight ? this.committedRightPath : this.committedLeftPath) ||
-      vaultId !== (sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId)) {
+    // 内容身份校验（防串写核心，见 EditorNoteSession）：编辑器回包的 revision 必须与
+    // 创建会话那次 setContent 下发的 revision 一致，且回包期间会话未被换掉。
+    if ((sourceIsRight ? this.rightSession : this.leftSession) !== session ||
+      textRevision !== session.revision) {
       return false;
     }
     const sourceDirty: boolean = sourceIsRight ? this.rightEditorDirty : this.editorDirty;
@@ -7169,33 +7245,38 @@ struct Index {
       if (!await this.persistEditorDraftSnapshot(vaultId, path, expectedText, text)) {
         return false;
       }
-      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
-        path !== (sourceIsRight ? this.committedRightPath : this.committedLeftPath) ||
-        vaultId !== (sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId)) {
+      if ((sourceIsRight ? this.rightSession : this.leftSession) !== session) {
         return false;
       }
       await NoteService.saveNote(VaultRegistry.get(), vaultId, path, text, expectedText);
       await this.clearEditorDraftAfterSave(vaultId, path, text);
-      if (leftRequestId !== this.leftOpenRequestId || rightRequestId !== this.rightOpenRequestId ||
-        path !== (sourceIsRight ? this.committedRightPath : this.committedLeftPath) ||
-        vaultId !== (sourceIsRight ? this.committedRightVaultId : this.committedLeftVaultId) ||
-        path !== this.currentFilePath || vaultId !== this.currentVaultId) {
+      if ((sourceIsRight ? this.rightSession : this.leftSession) !== session) {
         WorkspaceEditGuard.clear('left', vaultId, path);
         return true;
       }
       this.clearStaleSaveNotice(vaultId, path);
-      this.lastSavedText = text;
+      // 保存成功：源会话基线推进到新落盘内容（会话对象未变，直接改 baseline）。
+      session.baseline = text;
       WorkspaceEditGuard.clear('left', vaultId, path);
       if (path === this.currentFilePath && vaultId === this.currentVaultId) {
         this.editorDirty = false;
         if (path === this.rightFilePath) {
-          this.rightLastSavedText = text;
+          const sharedRightSession: EditorNoteSession | null = this.rightSession;
+          if (sharedRightSession !== null && sharedRightSession.isFor(vaultId, path)) {
+            sharedRightSession.baseline = text;
+          }
           WorkspaceEditGuard.clear('right', vaultId, path);
           this.rightEditorDirty = false;
           const mirror: EditorBridge = source === this.rightEditorBridge
             ? this.editorBridge : this.rightEditorBridge;
           if (mirror.ready && !this.leftComposing && !this.rightComposing) {
-            await mirror.setContent(text);
+            const mirrorRevision: number = await mirror.setContent(text);
+            // 镜像编辑器已持有新代次内容；其会话对象未换且仍属于本笔记则记入新 revision。
+            const mirrorSession: EditorNoteSession | null = mirror === this.editorBridge
+              ? this.leftSession : this.rightSession;
+            if (mirrorSession !== null && mirrorSession.isFor(vaultId, path)) {
+              mirrorSession.revision = mirrorRevision;
+            }
           }
           this.pushPreview(text);
           this.pushRightPreview(text);
@@ -7365,12 +7446,12 @@ struct Index {
   }
 
   /**
-   * 从编辑器拉当前内容 → 推给预览。编辑器未就绪时退回 `lastSavedText`
+   * 从编辑器拉当前内容 → 推给预览。编辑器未就绪时退回左栏会话基线
    * （已加载内容的镜像），保证预览永远有东西可渲染而不是空白。
    */
   private async updatePreviewFromEditor(force: boolean = false): Promise<void> {
     if (!this.editorBridge.ready) {
-      this.pushPreview(this.lastSavedText, force);
+      this.pushPreview(this.leftSession !== null ? this.leftSession.baseline : '', force);
       return;
     }
     let text: string = '';
@@ -7656,10 +7737,8 @@ struct Index {
           this.currentFilePath = '';
           this.rightFilePath = '';
           this.rightPaneIntentionallyEmpty = false;
-          this.committedLeftPath = '';
-          this.committedRightPath = '';
-          this.committedLeftVaultId = '';
-          this.committedRightVaultId = '';
+          this.leftSession = null;
+          this.rightSession = null;
           this.editorDirty = false;
           this.rightEditorDirty = false;
           this.workspaceSessionSavingEnabled = false;
@@ -9232,6 +9311,11 @@ struct Index {
     .margin({ left: Space.s1, right: Space.s1, bottom: Space.s2 })
     .focusable(true)
     .id(focusId)
+    .onAppear((): void => {
+      if (focusId.length > 0) {
+        this.consumeEmptyPaneFocus(pane, focusId);
+      }
+    })
     .onClick((): void => {
       this.setActivePane(pane, true);
       if (action === 'new') {
@@ -9325,6 +9409,9 @@ struct Index {
               .backgroundColor($r('app.color.bg_tertiary'))
               .focusable(true)
               .id('pane-empty-reopen-' + pane)
+              .onAppear((): void => {
+                this.consumeEmptyPaneFocus(pane, 'pane-empty-reopen-' + pane);
+              })
               .onClick((): void => { this.onSelectFile(this.paneLastClosedPath(pane), pane, true); })
               .accessibilityText('重新打开「' + this.noteTitleForPath(this.paneLastClosedPath(pane)) + '」')
             }
@@ -9664,7 +9751,7 @@ struct Index {
       }
       focusRestoreScheduled = true;
       setTimeout((): void => {
-        this.getUIContext().getFocusController().requestFocus(focusReturnId);
+        FocusRequest.safely(this.getUIContext(), focusReturnId);
       }, 0);
     };
     this.shareNoteCtl = new CustomDialogController({
@@ -9889,7 +9976,7 @@ struct Index {
     .accessibilityTextHint(this.moreMenuOpen ? '收起菜单' : '展开菜单')
     .onAppear((): void => {
       if (this.focusMoreMenuOnAppear) {
-        this.getUIContext().getFocusController().requestFocus('workspace-more-button');
+        FocusRequest.safely(this.getUIContext(), 'workspace-more-button');
         this.focusMoreMenuOnAppear = false;
       }
     })
@@ -9905,7 +9992,7 @@ struct Index {
         action.dismiss();
         this.moreMenuOpen = false;
         // v1.31 31.6：点外部关闭后把焦点还给「…」
-        this.getUIContext().getFocusController().requestFocus('workspace-more-button');
+        FocusRequest.safely(this.getUIContext(), 'workspace-more-button');
       }
     })
   }
@@ -9930,7 +10017,7 @@ struct Index {
     .onKeyEvent((event: KeyEvent): boolean => {
       if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
         this.moreMenuOpen = false;
-        this.getUIContext().getFocusController().requestFocus('workspace-more-button');
+        FocusRequest.safely(this.getUIContext(), 'workspace-more-button');
         return true;
       }
       return false;
@@ -10279,7 +10366,7 @@ struct Index {
     .enabled(this.isPaneEditable(pane))
     .onAppear((): void => {
       if (selected && this.tableGridOpen && this.tableGridPane === pane) {
-        this.getUIContext().getFocusController().requestFocus(this.tableGridCellFocusId(pane, rows, columns));
+        FocusRequest.safely(this.getUIContext(), this.tableGridCellFocusId(pane, rows, columns));
       }
     })
     .onKeyEvent((event: KeyEvent): boolean => {

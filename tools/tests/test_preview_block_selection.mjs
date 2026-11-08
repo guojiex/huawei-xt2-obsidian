@@ -48,6 +48,11 @@ test('focused preview scroll area suppresses its default outline, not block outl
   assert.doesNotMatch(previewComponentSource, /\.focusBox\(/)
 })
 
+test('focused simple-mode editable hosts suppress engine focus outlines', () => {
+  assert.match(buildSource, /#content \[contenteditable="true"\]:focus\s*\{\s*outline:\s*none;\s*\}/)
+  assert.ok(generatedPreview.includes('#content [contenteditable="true"]:focus { outline: none; }'))
+})
+
 test('locked block taps route links and images without synthesizing a block selection', () => {
   const clickStart = previewSource.indexOf("contentElement.addEventListener('click', (event: MouseEvent): void => {")
   const clickEnd = previewSource.indexOf('\n\nasync function renderMermaidBlocks', clickStart)

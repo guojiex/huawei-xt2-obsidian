@@ -2,6 +2,7 @@
 import { UIUtils } from '@kit.ArkUI';
 import { GitImportDraft } from '../model/GitImportDraftStore';
 import { Icon } from '../common/Icons';
+import { FocusRequest } from '../common/FocusRequest';
 import { ZipChooseOutcome, ZipImportOutcome } from '../model/ZipImportService';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
@@ -448,7 +449,7 @@ export struct ImportVaultDialog {
               : this.directoryState === 'failed' ? '重新选择目录' : '打开系统目录选择器')
             .onAppear((): void => {
               setTimeout((): void => {
-                this.getUIContext().getFocusController().requestFocus('import-directory-card');
+                FocusRequest.safely(this.getUIContext(), 'import-directory-card');
               }, 0);
             })
             .onClick(() => { void this.pickDirectory(); })
@@ -669,7 +670,7 @@ export struct ImportVaultDialog {
               : this.zipState === 'failed' ? '重新选择 ZIP 文件' : '打开系统文件选择器')
             .onAppear((): void => {
               setTimeout((): void => {
-                this.getUIContext().getFocusController().requestFocus('import-zip-card');
+                FocusRequest.safely(this.getUIContext(), 'import-zip-card');
               }, 0);
             })
             .onClick(() => { void this.chooseZip(); })

@@ -41,6 +41,15 @@ function createHarness(options = {}) {
     },
     VaultRegistry: { get: () => ({}) },
     WorkspaceEditGuard: { clear() {} },
+    EditorNoteSession: class {
+      constructor(vaultId, path, baseline, revision) {
+        this.vaultId = vaultId;
+        this.path = path;
+        this.baseline = baseline;
+        this.revision = revision;
+      }
+      isFor(vaultId, path) { return this.vaultId === vaultId && this.path === path; }
+    },
     promptAction: { showToast(value) { calls.push(`toast:${value.message}`); } }
   });
   vm.runInContext(code, context);
@@ -53,10 +62,8 @@ function createHarness(options = {}) {
     currentVaultId: 'vault-key',
     leftOpenRequestId: 4,
     rightOpenRequestId: 7,
-    committedLeftPath: 'old.md',
-    committedRightPath: 'right-old.md',
-    committedLeftVaultId: 'vault-key',
-    committedRightVaultId: 'vault-key',
+    leftSession: null,
+    rightSession: null,
     workspaceSessionRestoring: false,
     workspaceSessionSavingEnabled: false,
     activePane: 'left',
@@ -68,12 +75,12 @@ function createHarness(options = {}) {
     lastDraftRecoveryNoticeKey: '',
     editorBridge: {
       setNoteContext() {},
-      async setContent(value) { calls.push('left-set'); leftContent.push(value); },
+      async setContent(value) { calls.push('left-set'); leftContent.push(value); return 1; },
       restoreScrollTop() {}
     },
     rightEditorBridge: {
       setNoteContext() {},
-      async setContent(value) { calls.push('right-set'); rightContent.push(value); },
+      async setContent(value) { calls.push('right-set'); rightContent.push(value); return 1; },
       restoreScrollTop() {}
     },
     previewBridge: { resetDocument() {}, setNoteDir() {}, restoreScrollTop() {} },
@@ -100,7 +107,7 @@ test('left pane restores a matching private draft over the formal baseline and s
 
   assert.equal(await app.readAndPush('note.md', false, 4, 'vault-key', 7), true);
   assert.deepEqual(leftContent, ['recovered edit']);
-  assert.equal(app.lastSavedText, 'formal note');
+  assert.equal(app.leftSession.baseline, 'formal note');
   assert.equal(app.editorDirty, true);
   assert.ok(calls.includes('left-preview:recovered edit'));
   assert.ok(calls.includes('schedule-left-save'));
@@ -115,7 +122,7 @@ test('right pane restores a matching private draft and keeps the formal baseline
 
   assert.equal(await app.readRightAndPush('right.md', 7, 'vault-key'), true);
   assert.deepEqual(rightContent, ['right recovered edit']);
-  assert.equal(app.rightLastSavedText, 'formal note');
+  assert.equal(app.rightSession.baseline, 'formal note');
   assert.equal(app.rightEditorDirty, true);
   assert.ok(calls.includes('right-preview:right recovered edit'));
   assert.ok(calls.includes('schedule-right-save'));
@@ -128,7 +135,7 @@ test('a conflicting draft leaves the formal note visible and reports that the dr
 
   assert.equal(await app.readAndPush('note.md', false, 4, 'vault-key', 7), true);
   assert.deepEqual(leftContent, ['formal note']);
-  assert.equal(app.lastSavedText, 'formal note');
+  assert.equal(app.leftSession.baseline, 'formal note');
   assert.equal(app.editorDirty, false);
   assert.ok(calls.includes('toast:恢复草稿无法安全应用，已保留草稿'));
 });

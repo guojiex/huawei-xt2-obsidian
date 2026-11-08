@@ -27,6 +27,18 @@ const code = transformSync(`class IndexHarness {
   format: 'cjs'
 }).code;
 
+function makeSession(vaultId, path, baseline, revision) {
+  return {
+    vaultId,
+    path,
+    baseline,
+    revision,
+    isFor(otherVaultId, otherPath) {
+      return this.vaultId === otherVaultId && this.path === otherPath;
+    }
+  };
+}
+
 function createHarness(overrides = {}) {
   const timer = { nextId: 1, pending: null };
   const saved = [];
@@ -57,8 +69,8 @@ function createHarness(overrides = {}) {
     currentVaultId: 'local',
     currentFilePath: 'left.md',
     rightFilePath: 'right.md',
-    committedLeftPath: 'left.md',
-    committedRightPath: 'right.md',
+    leftSession: makeSession('local', 'left.md', 'left source', 1),
+    rightSession: makeSession('local', 'right.md', 'right source', 1),
     smMode: 'edit',
     rightEditing: false,
     activePane: 'left',
@@ -71,6 +83,8 @@ function createHarness(overrides = {}) {
     chapterEntries: [],
     selectedChapterIndex: -1,
     failures,
+    rightPaneIntentionallyEmpty: false,
+    workspaceSessionSaveFailureRecorded: false,
     leftEditorScrollTop: 0,
     leftPreviewScrollTop: 0,
     rightEditorScrollTop: 0,
@@ -105,7 +119,7 @@ test('an in-flight note open cannot replace the saved session before it commits'
   assert.equal(timer.pending, null);
   assert.equal(saved.length, 0);
 
-  app.currentFilePath = 'left.md';
+  app.leftSession = makeSession('local', 'left.md', 'committed source', 1);
   app.workspaceOpenRequests = 0;
   app.scheduleWorkspaceSessionSave();
   assert.equal(timer.pending.delay, 450);
@@ -118,7 +132,7 @@ test('an in-flight note open cannot replace the saved session before it commits'
 test('a committed note path is saved after the debounce settles', () => {
   const { app, saved, timer } = createHarness({
     currentFilePath: 'new.md',
-    committedLeftPath: 'new.md'
+    leftSession: makeSession('local', 'new.md', 'new source', 1)
   });
 
   app.scheduleWorkspaceSessionSave();
@@ -150,8 +164,8 @@ test('a library switch can persist an empty workspace snapshot from a secondary 
     currentVaultId: 'personal',
     currentFilePath: '',
     rightFilePath: '',
-    committedLeftPath: '',
-    committedRightPath: ''
+    leftSession: null,
+    rightSession: null
   });
 
   assert.equal(app.saveWorkspaceSessionNow(true), true);

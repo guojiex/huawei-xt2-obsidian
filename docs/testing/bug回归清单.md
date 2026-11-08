@@ -16,10 +16,10 @@
 | 状态 | 计数 |
 | --- | --- |
 | 已有防线 | 122 |
-| 已补防线 | 0 |
+| 已补防线 | 1 |
 | 不可自动化 | 1 |
 | 根因已消除 | 20 |
-| **合计** | 143 |
+| **合计** | 144 |
 
 > **注**：
 > - T004–T009 新增的 6 个 Node 防回归测试文件是对「已有防线」条目的**加固**（源码级断言防模式退化），
@@ -109,6 +109,8 @@
 | 来源 | bug 摘要 | 根因类别 | 涉及版本 | 防线 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | a849690 | 修复关闭笔记空栏 requestFocus 150003 闪退 | 焦点与键盘 | v1.28 | test_pane_close.mjs | 已有防线 |
+| 本轮 2026-11-08 DFX | 修复完成编辑 requestFocus 150003 闪退，全仓 22 处收口 FocusRequest.safely（api_notes L-19） | 焦点与键盘 | v0.2.0 | test_focus_keyboard_regression.mjs（收口模式 + 全仓裸调扫描）；EM-C11 人工 | 已补防线 |
+| 本轮 2026-11-08 v1.46 | 兜底日志按官方错误码族区分 150001/150002/150003（api_notes L-20）；EntryAbility 安装 errorManager.setDefaultErrorHandler 全局 JS_CRASH 兜底；focusEmptyPane 撤除 setTimeout(0) 时序猜测改事件驱动（预查询 + onAppear，L-20 官方推荐）；修复 DFX 收口后 test_pane_close 两条陈旧防线（VM 缺 FocusRequest 注入） | 焦点与键盘 / 崩溃兜底 | v1.46 | test_focus_keyboard_regression.mjs（错误码分支 + focusId 不进日志 + CrashGuard 结构 + 安装点）；test_pane_close.mjs 15/15（目标对齐 + 事件驱动 + 150003 双路径不崩溃）；EM-C11 人工 | 已补防线 |
 | 3e50b6e | 修复系统返回先收起导航 | 焦点与键盘 | — | test_settings_single_screen_back.mjs | 已有防线 |
 | 01d95b7 | 将缩放控件移至独立底栏 | 焦点与键盘 | — | test_preview_zoom.mjs | 已有防线 |
 | ad1f3d3 | 专注下点汉堡只推入/收回文件导航，不再退出专注 | 焦点与键盘 | — | test_focus_mode_entry.mjs | 已有防线 |
@@ -120,6 +122,7 @@
 | 26fac79 | 修复触摸预览正文焦点黑框 | 焦点与键盘 | — | test_preview_block_selection.mjs | 已有防线 |
 | a1cb1b7 | 修复预览整栏焦点框 | 焦点与键盘 | — | test_preview_block_selection.mjs | 已有防线 |
 | ee0f091 | 修复 v1.18 18.4 整栏焦点黑框 | 焦点与键盘 | v1.18 | test_preview_block_selection.mjs | 已有防线 |
+| 本轮 2026-11-08 v1.46 46.4 | 修复简单模式段落宿主引擎焦点黑框（新聚焦目标回流，非 #content 回归；api_notes L-16） | 焦点与键盘 | v1.46 | test_preview_block_selection.mjs（可编辑宿主 outline 抑制断言）；EM 模拟器点按纯文本段落像素扫描无框 | 已补防线 |
 | 5a0be23 | 简化单屏设置逐级返回（原型） | 焦点与键盘 | — | 根因已消除：原型已入库 | 根因已消除 |
 
 ## 日志与隐私
@@ -226,7 +229,7 @@
 | --- | --- | --- | --- | --- |
 | 87c54e6 | 双屏态栏边界未对齐折痕 | x86 模拟器无折痕，折痕几何为真机硬件特征 | EM-A3 真机验收 | — |
 | d145e0f | WebView 重挂时的控制器崩溃 | 控制器崩溃需真机环境复现，模拟器不触发 | EM-C9 真机验收 | — |
-| a849690 | requestFocus 150003 闪退 | 150003 为真机焦点错误码，模拟器不触发 | EM-L1 真机验收 | 已有防线 |
+| a849690 | requestFocus 150003 闪退 | ~~150003 为真机焦点错误码，模拟器不触发~~ 已被 2026-11-08 模拟器 jscrash 实证推翻（见 api_notes L-19），模拟器同样触发；真机焦点表现仍待验收 | EM-L1 真机验收 | 已有防线 |
 | 295bd23 | 双屏收起目录后左缘残留分栏把手 | 部分需双屏形态（UI 防线已覆盖宽屏可达部分） | EM-A3 真机验收 | 已有防线 |
 | 1f5b74a | 快切卡片外点击关闭 | 弹层点击外部需模拟器触控验证，自动化无法模拟点击弹层外部 | EM-E1 人工 | — |
 | eba2b3d | 快切弹层布局 | 弹层布局需目视验证，像素级断言不可靠 | EM-E1 人工 | — |
