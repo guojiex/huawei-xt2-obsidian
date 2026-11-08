@@ -153,14 +153,15 @@ import { uniformTypeDescriptor } from '@kit.ArkData';
 import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
+import BuildProfile from 'BuildProfile';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
 /** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
 const GIT_ENTRY_UI_ENABLED: boolean = true;
-/** v1.45：App 首发上架前暂时隐藏主页面的小艺托管对话入口。 */
-const XIAOYI_DIALOG_ENTRY_ENABLED: boolean = false;
+/** v1.45：由 .local/local-agent-ui.json 构建参数决定是否显示。 */
+const XIAOYI_DIALOG_ENTRY_ENABLED: boolean = BuildProfile.showXiaoyiDialogEntry === 'true';
 /** v1.36：导入临时库 id 后缀（与 VaultRegistry.GIT_IMPORTING_SUFFIX 同值，复用导入标记机制）。 */
 const ZIP_IMPORTING_SUFFIX: string = '__importing';
 
