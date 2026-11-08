@@ -10,6 +10,7 @@ export struct UtilityDialogShell {
   closeLabel: string = '关闭弹窗';
   singleScreen: boolean = false;
   scrollContent: boolean = true;
+  fillContentHeight: boolean = false;
   preferredWidthVp: number = Size.utilityDialogW;
   windowWidthVp: number = 0;
   windowHeightVp: number = 0;
@@ -102,7 +103,13 @@ export struct UtilityDialogShell {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      if (this.scrollContent) {
+      if (this.fillContentHeight) {
+        Column() {
+          this.content()
+        }
+        .width('100%')
+        .layoutWeight(1)
+      } else if (this.scrollContent) {
         Scroll() {
           this.content()
         }
@@ -116,7 +123,10 @@ export struct UtilityDialogShell {
       this.footer()
     }
     .width(this.dialogWidth())
-    .constraintSize({ maxHeight: this.dialogMaxHeight() })
+    .constraintSize({
+      minHeight: this.fillContentHeight ? this.dialogMaxHeight() : 0,
+      maxHeight: this.dialogMaxHeight()
+    })
     .padding({
       left: Space.s5,
       right: Space.s5,

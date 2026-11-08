@@ -209,12 +209,13 @@ export struct ShareImagePreviewDialog {
         }
       }
       .width('100%')
-      .constraintSize({ maxHeight: this.stageMaxHeight() })
       .padding(Space.s3)
       .borderRadius(Radius.menu)
       .backgroundColor($r('app.color.bg_secondary'))
       .scrollBar(BarState.Off)
       .align(Alignment.Center)
+      .layoutWeight(1)
+      .constraintSize({ minHeight: 0 })
 
       if (this.settingsChanged && this.image.uri.length > 0) {
         Text('设置已更改，重新生成后可预览')
@@ -235,6 +236,7 @@ export struct ShareImagePreviewDialog {
       }
     }
     .width('100%')
+    .height('100%')
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -270,6 +272,7 @@ export struct ShareImagePreviewDialog {
       closeLabel: '关闭长图预览',
       singleScreen: this.singleScreen,
       scrollContent: false,
+      fillContentHeight: true,
       preferredWidthVp: Size.shareW,
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
@@ -295,8 +298,4 @@ export struct ShareImagePreviewDialog {
     return Math.max(0, this.windowHeightVp - Space.s8 * 2);
   }
 
-  private stageMaxHeight(): number {
-    // Reserve room for settings, metadata, shell header and footer while keeping preview dominant.
-    return Math.max(0, this.dialogMaxHeight() - Space.s16 * 5);
-  }
 }
