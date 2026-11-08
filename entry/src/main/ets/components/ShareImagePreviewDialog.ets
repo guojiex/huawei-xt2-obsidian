@@ -1,7 +1,7 @@
 import { UIUtils } from '@kit.ArkUI';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { shareFailureMessage } from '../model/UserErrorMessages';
-import { ShareImageWidthPresets } from './ShareImageSettingsDialog';
+import { ShareImageWidthOption, ShareImageWidthPresets } from './ShareImageSettingsDialog';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 export interface ShareImagePreviewImage {
@@ -22,18 +22,26 @@ export struct ShareImagePreviewDialog {
   @Prop windowHeightVp: number = 0;
   @Prop singleScreen: boolean = false;
   @Prop widthVp: number = 0;
+  @Prop paneWidthVp: number = 0;
+  @Prop initialWidthId: string = 'phone';
+  @Prop initialTheme: string = 'light';
   @Prop initialError: string = '';
   image: ShareImagePreviewImage = { uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone' };
   onConfirm: () => Promise<void> = async (): Promise<void> => {};
-  onRetry: () => Promise<void> = async (): Promise<void> => {};
+  onGenerate: (widthId: string, theme: string) => void = (_widthId: string, _theme: string): void => {};
   onCancel: () => void = () => {};
-  onChangeSettings: () => void = () => {};
   @State sharing: boolean = false;
-  @State retrying: boolean = false;
+  @State selectedWidthId: string = 'phone';
+  @State selectedTheme: string = 'light';
+  @State settingsChanged: boolean = false;
   @State errorMessage: string = '';
 
   aboutToAppear(): void {
     this.errorMessage = this.initialError;
+    this.selectedWidthId = this.initialWidthId;
+    this.selectedTheme = this.initialTheme === 'dark' ? 'dark' : 'light';
+    this.settingsChanged = this.image.uri.length > 0 &&
+      (this.selectedWidthId !== this.image.widthId || this.selectedTheme !== this.image.theme);
   }
 
   private back(): void {
@@ -41,24 +49,43 @@ export struct ShareImagePreviewDialog {
     this.onCancel();
   }
 
-  private changeSettings(): void {
-    this.controller?.close();
-    this.onChangeSettings();
+  private selectWidth(id: string): void {
+    this.selectedWidthId = id;
+    this.refreshSettingsChanged();
   }
 
-  private async retry(): Promise<void> {
-    if (this.retrying) {
+  private selectTheme(theme: string): void {
+    if (theme === 'light' || theme === 'dark') {
+      this.selectedTheme = theme;
+      this.refreshSettingsChanged();
+    }
+  }
+
+  private refreshSettingsChanged(): void {
+    this.settingsChanged = this.image.uri.length === 0 ||
+      this.selectedWidthId !== this.image.widthId || this.selectedTheme !== this.image.theme;
+  }
+
+  private widthSummary(): string {
+    const option: ShareImageWidthOption = ShareImageWidthPresets.findById(this.selectedWidthId);
+    const widthVp: number = option.layoutVp > 0 ? option.layoutVp :
+      (this.paneWidthVp > 0 ? this.paneWidthVp : this.widthVp);
+    return option.label + (widthVp > 0 ? ' · ' + Math.round(widthVp).toString() + ' vp' : '');
+  }
+
+  private canSharePreview(): boolean {
+    return this.image.uri.length > 0 && !this.settingsChanged;
+  }
+
+  private generatePreview(): void {
+    if (this.sharing) {
       return;
     }
-    this.retrying = true;
     this.errorMessage = '';
-    try {
-      await this.onRetry();
-    } catch (error) {
-      this.errorMessage = shareFailureMessage(error, 'image_prepare');
-    } finally {
-      this.retrying = false;
-    }
+    const widthId: string = this.selectedWidthId;
+    const theme: string = this.selectedTheme;
+    this.controller?.close();
+    this.onGenerate(widthId, theme);
   }
 
   private async share(): Promise<void> {
@@ -77,25 +104,67 @@ export struct ShareImagePreviewDialog {
   }
 
   @Builder
+  WidthOption(opt: ShareImageWidthOption) {
+    Text(opt.label)
+      .fontSize(FontSize.caption)
+      .fontColor(this.selectedWidthId === opt.id ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      .height(Space.s8)
+      .layoutWeight(1)
+      .textAlign(TextAlign.Center)
+      .accessibilityText(opt.label + (this.selectedWidthId === opt.id ? '，已选中' : ''))
+      .onClick(() => { this.selectWidth(opt.id); })
+      .borderRadius(Radius.full)
+      .backgroundColor(this.selectedWidthId === opt.id ? $r('app.color.bg_card') : Color.Transparent)
+  }
+
+  @Builder
+  ThemeOption(theme: string, label: string) {
+    Text(label)
+      .fontSize(FontSize.caption)
+      .fontColor(this.selectedTheme === theme ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      .height(Space.s8)
+      .layoutWeight(1)
+      .textAlign(TextAlign.Center)
+      .accessibilityText(label + (this.selectedTheme === theme ? '，已选中' : ''))
+      .onClick(() => { this.selectTheme(theme); })
+      .borderRadius(Radius.full)
+      .backgroundColor(this.selectedTheme === theme ? $r('app.color.bg_card') : Color.Transparent)
+  }
+
+  @Builder
   DialogContent() {
-    Column({ space: Space.s3 }) {
+    Column({ space: Space.s2 }) {
       Row({ space: Space.s2 }) {
-        Text(ShareImageWidthPresets.findById(this.image.widthId).label +
-          (this.widthVp > 0 ? ' · ' + Math.round(this.widthVp).toString() + ' vp' : '') +
-          ' · ' + (this.image.theme === 'dark' ? '深色' : '浅色'))
+        Text('宽度')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_secondary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text('更改')
+          .width(Space.s10)
+        Row({ space: Space.s1 }) {
+          this.WidthOption(ShareImageWidthPresets.PHONE)
+          this.WidthOption(ShareImageWidthPresets.WIDE)
+          this.WidthOption(ShareImageWidthPresets.PANE)
+        }
+        .layoutWeight(1)
+        .padding(Space.s1)
+        .borderRadius(Radius.full)
+        .backgroundColor($r('app.color.bg_secondary'))
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row({ space: Space.s2 }) {
+        Text('外观')
           .fontSize(FontSize.caption)
-          .fontColor($r('app.color.brand'))
-          .height(Space.s8)
-          .padding({ left: Space.s3, right: Space.s3 })
-          .textAlign(TextAlign.Center)
-          .accessibilityText('更改长图宽度与外观设置')
-          .onClick(() => { this.changeSettings(); })
+          .fontColor($r('app.color.text_secondary'))
+          .width(Space.s10)
+        Row({ space: Space.s1 }) {
+          this.ThemeOption('light', '浅色')
+          this.ThemeOption('dark', '深色')
+        }
+        .layoutWeight(1)
+        .padding(Space.s1)
+        .borderRadius(Radius.full)
+        .backgroundColor($r('app.color.bg_secondary'))
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
@@ -120,26 +189,37 @@ export struct ShareImagePreviewDialog {
           }
         }
         .width('100%')
+      }
 
-        Scroll() {
+      Scroll() {
+        if (this.image.uri.length > 0) {
           Image(this.image.uri)
             .width('100%')
             .aspectRatio(this.image.aspectRatio)
             .objectFit(ImageFit.Contain)
             .borderRadius(Radius.control)
             .backgroundColor($r('app.color.bg_card'))
+        } else {
+          Text('选择图片宽度和外观后，生成长图预览。')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .padding({ top: Space.s6, bottom: Space.s6 })
         }
-        .width('100%')
-        .constraintSize({ maxHeight: this.stageMaxHeight() })
-        .padding(Space.s4)
-        .borderRadius(Radius.menu)
-        .backgroundColor($r('app.color.bg_secondary'))
-        .scrollBar(BarState.Off)
-        .align(Alignment.Center)
-      } else {
-        Text('长图预览将在生成后显示。')
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: this.stageMaxHeight() })
+      .padding(Space.s3)
+      .borderRadius(Radius.menu)
+      .backgroundColor($r('app.color.bg_secondary'))
+      .scrollBar(BarState.Off)
+      .align(Alignment.Center)
+
+      if (this.settingsChanged && this.image.uri.length > 0) {
+        Text('设置已更改，重新生成后可预览')
           .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
+          .fontColor($r('app.color.text_tertiary'))
           .width('100%')
       }
 
@@ -166,16 +246,15 @@ export struct ShareImagePreviewDialog {
           this.back();
         }, true)
       UtilityDialogAction(
-        this.image.uri.length > 0
-          ? (this.sharing ? '正在打开…' : '分享图片')
-          : (this.retrying ? '正在生成…' : '重试生成'),
+        this.canSharePreview() ? (this.sharing ? '正在打开…' : '分享图片') :
+          (this.image.uri.length > 0 ? '重新生成预览' : '生成预览'),
         'primary', this.singleScreen,
-        UIUtils.makeBinding<boolean>(() => !this.sharing && !this.retrying),
+        UIUtils.makeBinding<boolean>(() => !this.sharing),
         (): void => {
-          if (this.image.uri.length > 0) {
+          if (this.canSharePreview()) {
             void this.share();
           } else {
-            void this.retry();
+            this.generatePreview();
           }
         }, true)
     }
@@ -217,8 +296,7 @@ export struct ShareImagePreviewDialog {
   }
 
   private stageMaxHeight(): number {
-    // Reserve room for the compact settings row, output metadata, shell header and footer.
-    // The previous 7 × s16 deduction consumed 448vp and left the image preview unusually short.
-    return Math.max(0, this.dialogMaxHeight() - Space.s16 * 4);
+    // Reserve room for settings, metadata, shell header and footer while keeping preview dominant.
+    return Math.max(0, this.dialogMaxHeight() - Space.s16 * 5);
   }
 }

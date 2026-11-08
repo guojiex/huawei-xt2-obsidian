@@ -107,7 +107,6 @@ import {
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
 import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from '../components/ShareNoteDialog';
-import { ShareImageSettingsDialog } from '../components/ShareImageSettingsDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
@@ -610,7 +609,6 @@ struct Index {
   private renamePathCtl: CustomDialogController | null = null;
   private movePathCtl: CustomDialogController | null = null;
   private shareNoteCtl: CustomDialogController | null = null;
-  private shareImageSettingsCtl: CustomDialogController | null = null;
   private shareImagePreviewCtl: CustomDialogController | null = null;
   private shareFilePreviewCtl: CustomDialogController | null = null;
   private shareTextPreviewCtl: CustomDialogController | null = null;
@@ -626,6 +624,7 @@ struct Index {
   @State shareCaptureStatus: string = '正在准备分享图片…';
   @State shareCaptureTheme: string = 'light';
   @State shareCaptureWidthVp: number = 0;
+  private shareCapturePaneWidthVp: number = 0;
   @State shareCaptureWidthId: string = 'phone';
   @State shareImagePreviewImage: ShareImagePreviewImage = {
     uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
@@ -8353,53 +8352,13 @@ struct Index {
 
   private openShareImageSettings(vaultId: string, notePath: string, itemName: string): void {
     const paneWidthVp: number = this.activeSharePaneWidthVp();
+    this.shareCapturePaneWidthVp = paneWidthVp;
     this.shareCaptureWidthVp = this.shareLayoutWidthVp(this.shareCaptureWidthId, paneWidthVp);
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    this.shareImageSettingsCtl = new CustomDialogController({
-      builder: ShareImageSettingsDialog({
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        initialTheme: this.shareCaptureTheme,
-        initialWidthId: this.shareCaptureWidthId,
-        paneWidthVp: paneWidthVp,
-        onConfirm: (widthId: string, theme: string): void => {
-          this.shareCaptureWidthId = widthId;
-          this.shareCaptureTheme = theme;
-          this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, paneWidthVp);
-          this.ensureShareImagePreferenceStore();
-          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
-            promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
-          }
-          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveWidth(widthId)) {
-            promptAction.showToast({ message: '本次宽度已应用，但未能保存长图偏好' });
-          }
-          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath))
-            .catch((error: Error): void => {
-              this.openShareImagePreview(itemName, {
-                uri: '',
-                aspectRatio: 1,
-                width: 0,
-                height: 0,
-                theme: this.shareCaptureTheme,
-                scaled: false,
-                widthId: this.shareCaptureWidthId
-              }, notePath, vaultId, shareFailureMessage(error, 'image_prepare'));
-            });
-        },
-        onCancel: (): void => {
-          this.openShareDialog('note', notePath);
-        }
-      }),
-      autoCancel: true,
-      cancel: (): void => {
-        this.openShareDialog('note', notePath);
-      },
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      customStyle: true
-    });
-    this.shareImageSettingsCtl.open();
+    this.cleanupShareImagePreview();
+    this.openShareImagePreview(itemName, {
+      uri: '', aspectRatio: 1, width: 0, height: 0,
+      theme: this.shareCaptureTheme, scaled: false, widthId: this.shareCaptureWidthId
+    }, notePath, vaultId, '', paneWidthVp);
   }
 
   private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
@@ -8709,7 +8668,7 @@ struct Index {
         scaled: geometry.scale < 1,
         widthId: this.shareCaptureWidthId
       };
-      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath, vaultId);
+      this.openShareImagePreview(itemName, this.shareImagePreviewImage, notePath, vaultId, '', this.shareCapturePaneWidthVp);
     } catch (error) {
       this.shareCaptureActive = false;
       bridge.cancelShareCaptureRequests('分享图片生成已结束');
@@ -8738,9 +8697,11 @@ struct Index {
   }
 
   private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,
-    vaultId: string, initialError: string = ''): void {
+    vaultId: string, initialError: string = '', paneWidthVp: number = 0): void {
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    const resolvedPaneWidthVp: number = paneWidthVp > 0 ? paneWidthVp : this.activeSharePaneWidthVp();
+    this.shareCapturePaneWidthVp = resolvedPaneWidthVp;
     this.shareImagePreviewCtl?.close();
     this.shareImagePreviewCtl = new CustomDialogController({
       builder: ShareImagePreviewDialog({
@@ -8750,22 +8711,38 @@ struct Index {
         windowHeightVp: this.windowHeightVp,
         singleScreen: shareSheet,
         widthVp: this.shareCaptureWidthVp,
+        paneWidthVp: resolvedPaneWidthVp,
+        initialWidthId: this.shareCaptureWidthId,
+        initialTheme: this.shareCaptureTheme,
         initialError: initialError,
         onConfirm: (): Promise<void> => {
           const image: ShareImagePreviewImage = this.shareImagePreviewImage;
           const title: string = this.shareImagePreviewTitle;
           return this.shareImage(image, title, VaultRegistry.get());
         },
-        onRetry: (): Promise<void> => {
-          return this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
+        onGenerate: (widthId: string, theme: string): void => {
+          this.shareCaptureWidthId = widthId;
+          this.shareCaptureTheme = theme;
+          this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, resolvedPaneWidthVp);
+          this.ensureShareImagePreferenceStore();
+          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
+            promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
+          }
+          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveWidth(widthId)) {
+            promptAction.showToast({ message: '本次宽度已应用，但未能保存长图偏好' });
+          }
+          this.cleanupShareImagePreview();
+          void this.prepareNoteImageShare(vaultId, notePath, itemName, this.editorBridgeForPath(notePath))
+            .catch((error: Error): void => {
+              this.openShareImagePreview(itemName, {
+                uri: '', aspectRatio: 1, width: 0, height: 0,
+                theme: this.shareCaptureTheme, scaled: false, widthId: this.shareCaptureWidthId
+              }, notePath, vaultId, shareFailureMessage(error, 'image_prepare'), resolvedPaneWidthVp);
+            });
         },
         onCancel: (): void => {
           this.cleanupShareImagePreview();
           this.openShareDialog('note', notePath);
-        },
-        onChangeSettings: (): void => {
-          this.cleanupShareImagePreview();
-          this.openShareImageSettings(vaultId, notePath, itemName);
         }
       }),
       alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
