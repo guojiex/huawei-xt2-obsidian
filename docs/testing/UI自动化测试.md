@@ -70,6 +70,8 @@
 | UiQuickSwitch | `scope_defaults_to_current_vault` | 范围分段「当前库」默认选中 | EM-E1 |
 | UiQuickSwitch | `scope_toggle_to_all_vaults` | 范围分段切换到「全部库」 | EM-E2（可达部分） |
 | UiQuickSwitch | `skip_hint_ui_skeleton_accessible` | 跳过提示 UI 骨架可达 | EM-E3（可达部分） |
+| UiSmDrawer | `folder_toggle_responds_in_navigation` | 文件列表目录行点按有翻转响应，导航异常时汉堡 toggle 自愈后重试（2026-11-08 抽屉失步回归防线） | —（回归新增） |
+| UiSmDrawer | `create_note_keeps_navigation_usable` | 抽屉头「+」新建笔记后导航仍可复用（doCreateNote 收抽屉走 setDrawerOpen 的链路） | EM-B2 增补 |
 | UiTrash | `trash_section_visibility` | 回收站区块可见性（空/非空两种正确状态） | EM-B4 |
 | UiTrash | `trash_restore_button_accessible_when_items_exist` | 回收站有内容时恢复按钮可达 | EM-B4（按钮路径） |
 | UiTrash | `trash_section_label_correct` | 回收站标题文案正确 | EM-B4 |

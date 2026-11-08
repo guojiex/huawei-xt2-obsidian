@@ -9,10 +9,10 @@
  */
 
 import { describe, beforeAll, it, expect } from '@ohos/hypium';
-import { Driver } from '@ohos.UiTest';
+import { Driver, Component, Rect } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText, clickById,
   clickByText, existsById, existsByText, waitGoneByText,
-  clickUntilTextAppear, waitByIdSoft, WAIT_MS } from './UiTestHelpers';
+  clickUntilTextAppear, waitByIdSoft, tryWaitById, WAIT_MS } from './UiTestHelpers';
 
 /** 打开设置页：更多菜单 → 设置与关于 */
 async function openSettings(driver: Driver): Promise<void> {
@@ -78,8 +78,19 @@ export default function uiSettingsExtTest() {
       const drv: Driver = await getDriver();
       try {
         await openSettings(drv);
-        // 恢复等分栏宽行（在 general 分类中）
-        const resetRow: boolean = await waitByIdSoft(drv, 'settings-reset-pane-widths', 5000);
+        // 恢复等分栏宽行（在 general 分类中，可能在可见区下方需滚动）
+        let resetRow: boolean = await waitByIdSoft(drv, 'settings-reset-pane-widths', 5000);
+        if (!resetRow) {
+          // 尝试滚动设置页面：从中间区域向下拖（内容上移）
+          const heading: Component | null = await tryWaitById(drv, 'settings-heading-general', 3000);
+          if (heading !== null) {
+            const rect: Rect = await heading.getBounds();
+            const x: number = Math.round((rect.left + rect.right) / 2);
+            await drv.swipe(x, rect.top + 200, x, rect.top - 400);
+            await drv.delayMs(500);
+          }
+          resetRow = await waitByIdSoft(drv, 'settings-reset-pane-widths', 5000);
+        }
         expect(resetRow).assertTrue();
         // 文案正确
         expect(await existsByText(drv, '恢复等分栏宽')).assertTrue();

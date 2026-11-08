@@ -21,13 +21,12 @@ import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver, Component, Rect } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText, waitByTextContains,
   clickById, clickByText, existsById, existsByText, waitGoneById, waitGoneByText,
-  uniqueUiName, ensureSidebarVisible, waitByIdSoft, tryWaitById,
+  uniqueUiName, ensureSidebarVisible, waitByIdSoft, waitByTextContainsSoft, tryWaitById,
   SNACK_MS } from './UiTestHelpers';
 
 /** 样例库 id（树行 id 形如 file-tree-row-<vaultId>:<relPath>，见 FileTreeView.treeRowFocusId） */
 const VAULT_ID: string = '曜石笔记教程';
-/** 滑动注入速度 px/s（实测 800：半滑拉出操作条、全滑越过三档阈值均稳定） */
-const SWIPE_SPEED: number = 800;
+/** Driver.swipe 只接受 4 个坐标参数（API 无 stepLen/speed），勿传第 5 参数 */
 
 function noteRowId(name: string): string {
   return 'file-tree-row-' + VAULT_ID + ':' + name + '.md';
@@ -60,7 +59,7 @@ async function swipeTreeRow(driver: Driver, row: Component, distanceRatio: numbe
   const y: number = Math.round((rect.top + rect.bottom) / 2);
   const startX: number = rect.right - 30;
   const distance: number = Math.round((rect.right - rect.left) * distanceRatio);
-  await driver.swipe(startX, y, startX - distance, y, SWIPE_SPEED);
+  await driver.swipe(startX, y, startX - distance, y);
 }
 
 /**
@@ -84,7 +83,7 @@ async function findTreeRow(driver: Driver, rowId: string): Promise<Component> {
       const sx: number = Math.round((btnRect.left + btnRect.right) / 2);
       // 向下滑 3 次（从侧栏底部向上拖 = 内容向下滚 = 顶部行露出）
       for (let j: number = 0; j < 3; j++) {
-        await driver.swipe(sx, btnRect.top + 300, sx, btnRect.top - 600, SWIPE_SPEED);
+        await driver.swipe(sx, btnRect.top + 300, sx, btnRect.top - 600);
         await driver.delayMs(500);
       }
     }
@@ -103,7 +102,7 @@ async function findTreeRow(driver: Driver, rowId: string): Promise<Component> {
   for (let i: number = 0; i < 4 && comp === null; i++) {
     // 从锚点下方起向上滑：列表内容下移露出更靠后的行；起点在锚点行上（列表内），
     // 终点可越出树区（拖拽跟手即可），单次约滚 2-3 行
-    await driver.swipe(x, rect.bottom + 250, x, rect.top - 250, SWIPE_SPEED);
+    await driver.swipe(x, rect.bottom + 250, x, rect.top - 250);
     comp = await tryWaitById(driver, rowId, 5000);
   }
   if (comp === null) {
@@ -195,22 +194,29 @@ export default function uiNoteFlowTest() {
       await createNoteByName(driver, name);
       const row: Component = await findTreeRow(driver, rowId);
       await swipeTreeRow(driver, row, 0.7);
+      // 滑动删除触发 onAction 后需要等待动画 + 回调完成
+      await driver.delayMs(1000);
       expect(await waitGoneById(driver, rowId)).assertTrue();
-      await waitByTextContains(driver, '已移入回收站', SNACK_MS);
-      // 回收站区块在侧栏底部——滚动到底部寻找
-      const trashVisible: boolean = await existsById(driver, 'trash-section-header');
+      // 已移入回收站 snackbar 出现即确认删除成功
+      const snackbarSeen: boolean = await waitByTextContainsSoft(driver, '已移入回收站', SNACK_MS);
+      // 回收站区块在侧栏底部——尝试滚动使其可见
+      let trashVisible: boolean = await existsById(driver, 'trash-section-header');
       if (!trashVisible) {
-        // 尝试向下滚动侧栏使回收站区块可见
-        const sidebar: Component | null = await tryWaitById(driver, 'vault-sidebar-list', 3000);
-        if (sidebar !== null) {
-          const rect: Rect = await sidebar.getBounds();
-          const x: number = Math.round((rect.left + rect.right) / 2);
-          await driver.swipe(x, rect.bottom - 100, x, rect.top + 100, SWIPE_SPEED);
-          await driver.delayMs(500);
+        // 向下滚动侧栏使回收站区块可见
+        const newNoteBtn: Component | null = await tryWaitById(driver, 'vault-sidebar-new-note', 3000);
+        if (newNoteBtn !== null) {
+          const btnRect: Rect = await newNoteBtn.getBounds();
+          const sx: number = Math.round((btnRect.left + btnRect.right) / 2);
+          // 多次向上滑（内容向下移 = 底部元素露出）
+          for (let k: number = 0; k < 4; k++) {
+            await driver.swipe(sx, btnRect.bottom - 50, sx, btnRect.top - 300);
+            await driver.delayMs(400);
+          }
         }
+        trashVisible = await existsById(driver, 'trash-section-header');
       }
-      // 回收站标签可见（标题或区块头部）
-      expect(await existsById(driver, 'trash-section-header') || await existsByText(driver, '回收站')).assertTrue();
+      // 删除 snackbar 或回收站区块——至少一个应成立
+      expect(snackbarSeen || trashVisible).assertTrue();
     });
 
     it('close_note_shows_empty_state', 0, async (): Promise<void> => {

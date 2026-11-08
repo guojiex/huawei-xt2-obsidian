@@ -982,6 +982,8 @@ export struct PreviewWebView {
     (_anchor: PreviewBlockAnchor | null) => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
   componentId: string = 'note-preview-web';
+  /** v1.25：隐藏 Web 原生滚动条（长图分段截图时滚动条不进入合成结果；常规预览保持默认）。 */
+  hideScrollBar: boolean = false;
   /** 父级通过这个句柄下发渲染内容 / 笔记目录 / 主题 */
   bridge: PreviewBridge = new PreviewBridge();
 
@@ -1205,6 +1207,8 @@ export struct PreviewWebView {
         .width('100%')
         .height('100%')
         .backgroundColor($r('app.color.bg_card'))
+        .verticalScrollBarAccess(!this.hideScrollBar)
+        .horizontalScrollBarAccess(!this.hideScrollBar)
         .id(this.componentId)
 
       if (!this.pageReady) {

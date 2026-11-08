@@ -1544,4 +1544,4 @@ static napi_value register_module(napi_env env, napi_value exports) {
   return exports;
 }
 
-NAPI_MODULE(libgit2_napi, register_module)
+NAPI_MODULE(git2_napi, register_module)

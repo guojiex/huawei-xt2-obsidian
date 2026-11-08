@@ -6,6 +6,7 @@ import uiLaunchTest from './ui/UiLaunch.test';
 import uiNoteFlowTest from './ui/UiNoteFlow.test';
 import uiPanelsTest from './ui/UiPanels.test';
 import uiQuickSwitchTest from './ui/UiQuickSwitch.test';
+import uiSmDrawerTest from './ui/UiSmDrawer.test';
 import uiTrashTest from './ui/UiTrash.test';
 import uiSettingsExtTest from './ui/UiSettingsExt.test';
 
@@ -20,6 +21,7 @@ export default function testsuite() {
   uiNoteFlowTest();
   uiPanelsTest();
   uiQuickSwitchTest();
+  uiSmDrawerTest();
   uiTrashTest();
   uiSettingsExtTest();
 }

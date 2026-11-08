@@ -90,7 +90,7 @@ function Install-Hap([string]$hapPath) {
 
 # ---------------- 套件参数 ----------------
 # 支持整套件（UiLaunch）或单用例（UiLaunch#more_menu_opens_and_closes，调试定位用）
-$knownSuites = @('UiLaunch', 'UiNoteFlow', 'UiPanels', 'UiQuickSwitch', 'UiTrash', 'UiSettingsExt')
+$knownSuites = @('UiLaunch', 'UiNoteFlow', 'UiPanels', 'UiQuickSwitch', 'UiSmDrawer', 'UiTrash', 'UiSettingsExt')
 $suites = @()
 if ($Suite.Trim() -ne '') {
     foreach ($s in ($Suite -split ',')) {
@@ -99,7 +99,7 @@ if ($Suite.Trim() -ne '') {
         $suiteName = ($t -split '#')[0]
         $hit = $knownSuites | Where-Object { $_ -eq $suiteName } | Select-Object -First 1
         if (-not $hit) {
-            Write-Line "未知套件：$t（可选：UiLaunch / UiNoteFlow / UiPanels）" 'Red'
+            Write-Line "未知套件：$t（可选：$($knownSuites -join ' / ')）" 'Red'
             exit 2
         }
         $suites += $t
@@ -223,10 +223,10 @@ Write-Line '停止残留进程（保证冷启动语义）…' 'Gray'
 (& $Hdc -t $Target shell "aa force-stop $Bundle" 2>&1) | Out-Null
 Start-Sleep -Seconds 2
 
-# UiNoteFlow 的 uitest* 残留清理（宿主侧，必须在应用停止后做，否则应用内存态文件树仍含旧行）：
+# UiNoteFlow / UiSmDrawer 的 uitest* 残留清理（宿主侧，必须在应用停止后做，否则应用内存态文件树仍含旧行）：
 #  - 测试进程够不到 entry 模块沙箱（getAppContext().filesDir 是 bundle 级目录，vault 在 haps/entry/files）；
 #  - 残留不清会把新建行挤到文件树 LazyForEach 折叠线以下，控件树里查无（2026-11-07 183046 run 实测）。
-if ($suites | Where-Object { $_ -like 'UiNoteFlow*' }) {
+if ($suites | Where-Object { $_ -like 'UiNoteFlow*' -or $_ -like 'UiSmDrawer*' }) {
     Write-Line '清理样例库 uitest* 残留…' 'Gray'
     $vaultDir = "/data/app/el2/100/base/$Bundle/haps/entry/files/vaults/曜石笔记教程"
     (& $Hdc -t $Target shell "rm -rf '$vaultDir/'uitest*" 2>&1) | Out-Null

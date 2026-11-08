@@ -82,6 +82,13 @@ export async function waitByTextContains(driver: Driver, txt: string,
   return comp;
 }
 
+/** waitByTextContains 的不抛错版（超时返回 false） */
+export async function waitByTextContainsSoft(driver: Driver, txt: string,
+  timeoutMs: number = WAIT_MS): Promise<boolean> {
+  const comp: Component | null = await driver.waitForComponent(ON.text(txt, MatchPattern.CONTAINS), timeoutMs);
+  return comp !== null;
+}
+
 export async function clickById(driver: Driver, id: string, timeoutMs: number = WAIT_MS): Promise<void> {
   const comp: Component = await waitById(driver, id, timeoutMs);
   await comp.click();

@@ -80,12 +80,14 @@ export default function uiPanelsTest() {
       const noteNowVisible: boolean = await existsByText(driver, '快速上手');
       if (noteNowVisible) {
         await clickByText(driver, '快速上手');
-        await driver.delayMs(1500);
+        // 等笔记在编辑器中加载（pane-title-left 出现表示笔记已打开）
+        await waitByIdSoft(driver, 'pane-title-left', 5000);
+        await driver.delayMs(1000);
       }
-      // 打开更多菜单
-      await clickUntilTextAppear(driver, 'workspace-more-button', '分享');
+      // 打开更多菜单——菜单项为「分享笔记」而非「分享」
+      await clickUntilTextAppear(driver, 'workspace-more-button', '分享笔记');
       // 分享菜单项可见
-      expect(await existsByText(driver, '分享')).assertTrue();
+      expect(await existsByText(driver, '分享笔记')).assertTrue();
       // 关闭更多菜单
       await driver.pressBack();
     });

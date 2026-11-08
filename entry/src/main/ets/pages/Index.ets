@@ -2829,7 +2829,9 @@ struct Index {
       this.quickSwitchOpen = false;
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
-      this.drawerOpen = false;
+      // 直接写 drawerOpen 会让 drawerProgress 悬停在 1：抽屉视觉开着但
+      // .enabled(drawerOpen) 已禁用 → 文件列表点任何东西都无反应。必须走同步器。
+      this.setDrawerOpen(false);
       this.smMode = 'edit';
       await this.readAndPush('');
       await this.readRightAndPush('');
@@ -7330,7 +7332,7 @@ struct Index {
       this.revealPath = createdPath;
       this.refreshFileTree();
       if (this.breakpoint === Breakpoint.SM) {
-        this.drawerOpen = false;
+        this.setDrawerOpen(false);
         this.smMode = 'edit';
       }
       if (pane === 'right') {
@@ -7773,7 +7775,7 @@ struct Index {
       this.revealPath = actual;
       this.refreshFileTree();
       if (this.breakpoint === Breakpoint.SM) {
-        this.drawerOpen = false;
+        this.setDrawerOpen(false);
         this.smMode = 'edit';
       }
     } catch (error) {
@@ -7800,7 +7802,7 @@ struct Index {
       this.revealPath = actual;
       this.refreshFileTree();
       if (this.breakpoint === Breakpoint.SM) {
-        this.drawerOpen = false;
+        this.setDrawerOpen(false);
       }
     } catch (error) {
       this.toastRegistryError('新建文件夹失败', error, 'file', 'create');
@@ -9847,6 +9849,7 @@ struct Index {
       PreviewWebView({
         bridge: this.shareCaptureBridge,
         componentId: this.shareCaptureComponentId,
+        hideScrollBar: true,
         themeOverride: this.shareCaptureTheme,
         onReadAsset: (relPath: string): string => {
           return this.readVaultAsset(relPath);

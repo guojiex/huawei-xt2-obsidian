@@ -191,11 +191,11 @@
 
 **Purpose**: 构建、部署与 UI 终验
 
-- [ ] T027 签名 HAP 构建 + ohosTest HAP 构建——`.\tools\build.ps1` 主 HAP +
+- [X] T027 签名 HAP 构建 + ohosTest HAP 构建——`.\tools\build.ps1` 主 HAP +
   `hvigorw assembleHap --mode module -p module=entry@ohosTest` 测试 HAP，修复编译错误直至成功
-- [ ] T028 部署到 x86_64 模拟器——确认 x86_64 ABI 覆盖（`.\tools\abi.ps1 -Status`）、模拟器在线、双 HAP 安装成功；如需启动模拟器由
+- [X] T028 部署到 x86_64 模拟器——确认 x86_64 ABI 覆盖（`.\tools\abi.ps1 -Status`）、模拟器在线、双 HAP 安装成功；如需启动模拟器由
   `uitest.ps1` 自动处理
-- [ ] T029 统一全量 UI 终验——执行 `.\tools\uitest.ps1`（含全部新旧套件），解析结果，区分「用例通过/失败」与「环境阻塞」，证据落
+- [X] T029 统一全量 UI 终验——执行 `.\tools\uitest.ps1`（含全部新旧套件），解析结果，区分「用例通过/失败」与「环境阻塞」，证据落
   `.local/uitest/<时间戳>/`
 
 ---
