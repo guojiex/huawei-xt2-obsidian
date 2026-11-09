@@ -19,6 +19,46 @@ const module = { exports: {} };
 vm.runInContext(code, vm.createContext({ module, exports: module.exports, JSON, Number }));
 const { parseWorkspaceSession, workspaceSessionPaths, restoreWorkspacePane } = module.exports;
 
+// v1.47 47.4：每库会话键。切片覆盖整个类，用内存 Preferences 模拟鸿蒙 preferences。
+const classStart = source.indexOf('export class WorkspaceSessionStore');
+assert.ok(classStart >= 0, 'could not find WorkspaceSessionStore class');
+const classCode = transformSync(source.slice(classStart).replace(/^export /gm, ''), {
+  loader: 'ts',
+  format: 'cjs'
+}).code + '\nmodule.exports = WorkspaceSessionStore;';
+const classModule = { exports: {} };
+
+function createMemoryPreferences() {
+  const values = new Map();
+  return {
+    getSync: (key, defaultValue) => (values.has(key) ? values.get(key) : defaultValue),
+    putSync: (key, value) => values.set(key, value),
+    deleteSync: (key) => values.delete(key),
+    flushSync: () => true,
+    snapshot: () => new Map(values)
+  };
+}
+
+function createStoreHarness(initial = {}) {
+  const preferencesMock = createMemoryPreferences();
+  for (const [key, value] of Object.entries(initial)) {
+    preferencesMock.putSync(key, value);
+  }
+  const context = vm.createContext({
+    module: classModule,
+    exports: classModule.exports,
+    JSON,
+    Number,
+    console: { warn() {} },
+    preferences: { getPreferencesSync: () => preferencesMock }
+  });
+  // 先跑纯模型切片：类里的 parseWorkspaceSession 依赖它在同上下文声明
+  vm.runInContext(code, context);
+  vm.runInContext(classCode, context);
+  const StoreClass = classModule.exports;
+  return { store: new StoreClass({}), preferencesMock };
+}
+
 function session(overrides = {}) {
   return {
     schemaVersion: 1,
@@ -147,4 +187,73 @@ test('native initialization uses separate left and right restore guards', () => 
     indexSource.indexOf('\n  private applyRestoredChapterSelection(): void {'));
   assert.match(scrollMethod, /try\s*\{[\s\S]*this\.previewBridge\.restoreScrollTop[\s\S]*catch/);
   assert.match(scrollMethod, /try\s*\{[\s\S]*this\.rightPreviewBridge\.restoreScrollTop[\s\S]*catch/);
+});
+
+// ===== v1.47 47.4：每库会话键（vault_<id>）与 latest 冷启动键的读写、迁移与清理 =====
+
+test('save writes both the latest key and the per-vault key, and loadFor returns the vault session', () => {
+  const { store, preferencesMock } = createStoreHarness();
+  const a = session();
+  const b = session({ vaultId: 'other', leftPath: '30_项目/c.md' });
+  assert.equal(store.save(a), true);
+  assert.equal(store.save(b), true);
+
+  assert.equal(preferencesMock.getSync('vault_local', ''), JSON.stringify(a));
+  assert.equal(preferencesMock.getSync('vault_other', ''), JSON.stringify(b));
+  // latest 始终指向最后一次保存的会话（冷启动用）
+  assert.equal(preferencesMock.getSync('latest', ''), JSON.stringify(b));
+
+  assert.equal(store.loadFor('local').leftPath, '10_写作/a.md');
+  assert.equal(store.loadFor('other').leftPath, '30_项目/c.md');
+  assert.equal(store.loadFor('missing'), null);
+});
+
+test('load seeds the per-vault key from latest so the first switch after upgrade keeps the session', () => {
+  const a = session();
+  const { store, preferencesMock } = createStoreHarness({ latest: JSON.stringify(a) });
+  assert.equal(preferencesMock.getSync('vault_local', ''), '');
+  assert.equal(store.load().leftPath, '10_写作/a.md');
+  // 冷启动 load 时补种每库键：此后切库再回来不丢
+  assert.equal(preferencesMock.getSync('vault_local', ''), JSON.stringify(a));
+});
+
+test('loadFor falls back to latest only when its vaultId matches the request', () => {
+  const a = session();
+  const { store } = createStoreHarness({ latest: JSON.stringify(a) });
+  assert.equal(store.loadFor('local').vaultId, 'local');
+  assert.equal(store.loadFor('other'), null);
+});
+
+test('retargetVault migrates the per-vault key, rewrites its vaultId, and fixes latest when it points at the old id', () => {
+  const a = session();
+  const { store, preferencesMock } = createStoreHarness({
+    latest: JSON.stringify(a),
+    vault_local: JSON.stringify(a)
+  });
+  store.retargetVault('local', 'renamed');
+
+  assert.equal(preferencesMock.getSync('vault_local', ''), '');
+  const migrated = parseWorkspaceSession(preferencesMock.getSync('vault_renamed', ''));
+  assert.equal(migrated.vaultId, 'renamed');
+  assert.equal(migrated.leftPath, '10_写作/a.md');
+  const latest = parseWorkspaceSession(preferencesMock.getSync('latest', ''));
+  assert.equal(latest.vaultId, 'renamed');
+});
+
+test('retargetVault leaves the latest key alone when it belongs to another vault', () => {
+  const a = session();
+  const b = session({ vaultId: 'other', leftPath: '30_项目/c.md' });
+  const { store, preferencesMock } = createStoreHarness({ latest: JSON.stringify(b) });
+  preferencesMock.putSync('vault_local', JSON.stringify(a));
+  store.retargetVault('local', 'renamed');
+  assert.equal(parseWorkspaceSession(preferencesMock.getSync('latest', '')).vaultId, 'other');
+  assert.equal(parseWorkspaceSession(preferencesMock.getSync('vault_renamed', '')).vaultId, 'renamed');
+});
+
+test('removeFor deletes only the per-vault key of the deleted vault', () => {
+  const a = session();
+  const { store, preferencesMock } = createStoreHarness({ latest: JSON.stringify(a) });
+  store.removeFor('local');
+  assert.equal(preferencesMock.getSync('vault_local', ''), '');
+  assert.equal(preferencesMock.getSync('latest', ''), JSON.stringify(a));
 });

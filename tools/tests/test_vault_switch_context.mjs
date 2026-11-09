@@ -51,6 +51,16 @@ function createHarness(options = {}) {
     quickSwitchFiles: ['recent.md'],
     recentOpenPaths: ['recent.md'],
     drawerOpen: options.drawerOpen ?? false,
+    // 36d9bdf 起 adoptExternalVaultSwitch 经 setDrawerOpen 同步 drawerProgress，不再直写 drawerOpen
+    setDrawerOpen(open) { this.drawerOpen = open; },
+    // v1.47 47.4 switchVault 先取目标库工作区会话：无历史会话走原「清空双栏」路径，
+    // 有会话则经共用 applyWorkspaceSession 恢复目标库左右栏笔记与布局状态
+    ensureWorkspaceSessionStore() {},
+    workspaceSessionStore: { loadFor() { return options.session ?? null; } },
+    applyWorkspaceSession(session) { calls.push(`apply-session:${session.vaultId}`); return true; },
+    // 47.4 回滚路径经同步器恢复侧栏/抽屉并重放滚动位置
+    setSidebarCollapsed(collapsed) { this.sidebarCollapsed = collapsed; },
+    restoreWorkspaceScrollPositions() {},
     smMode: 'preview',
     async flushWorkspaceSaves() {
       calls.push('flush');
@@ -237,4 +247,34 @@ test('external vault changes clear both persistent editor buffers', async () => 
   assert.equal(state.currentId, 'external');
   assert.equal(app.currentFilePath, '');
   assert.equal(app.rightFilePath, '');
+});
+
+test('switching to a vault with a stored session restores its workspace instead of clearing', async () => {
+  const { app, calls, state } = createHarness({
+    topView: 'vaults',
+    session: { vaultId: 'temporary', leftPath: 'left.md', rightPath: 'right.md' }
+  });
+  await app.switchVault('temporary');
+
+  assert.deepEqual(calls, [
+    'stop-session', 'set-current:temporary', 'refresh', 'apply-session:temporary', 'save-session:true'
+  ]);
+  assert.equal(state.currentId, 'temporary');
+  // 恢复路径不得先清空再载入：无 clear-left / clear-right 调用
+  assert.ok(!calls.some(call => call.startsWith('clear-left:') || call.startsWith('clear-right:')));
+  assert.equal(app.workspaceSessionSavingEnabled, true);
+});
+
+test('external vault changes with a stored session restore it as well', async () => {
+  const { app, calls, state } = createHarness({
+    registryCurrentId: 'external',
+    session: { vaultId: 'external', leftPath: 'left.md', rightPath: '' }
+  });
+  await app.adoptExternalVaultSwitch();
+
+  assert.deepEqual(calls, [
+    'flush', 'stop-session', 'refresh', 'apply-session:external', 'save-session:true'
+  ]);
+  assert.equal(state.currentId, 'external');
+  assert.ok(!calls.some(call => call.startsWith('clear-left:') || call.startsWith('clear-right:')));
 });

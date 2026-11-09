@@ -1140,55 +1140,9 @@ struct Index {
           this.refreshFromRegistry();
         }
 
-        const validPaths: string[] = FileTree.allNotesOf(registry.accessFor(session.vaultId));
-        const desiredPaths = workspaceSessionPaths(session, this.isSingleScreenLayout(), validPaths);
-        const leftPath: string = desiredPaths.leftPath;
-        const rightPath: string = desiredPaths.rightPath;
-
-        this.referenceVisible = session.referenceVisible;
-        this.focused = session.focused;
-        this.setSidebarCollapsed(session.sidebarCollapsed);
-        this.setDrawerOpen(this.breakpoint === Breakpoint.SM && session.drawerOpen);
-        this.smMode = session.leftMode;
-        this.rightEditing = session.rightEditing;
-        this.activePane = session.activePane;
-        this.rightPaneIntentionallyEmpty = session.rightPaneIntentionallyEmpty;
-        this.sidebarTab = session.sidebarTab;
-        this.selectedChapterIndex = -1;
-        this.chapterPath = '';
-        this.pendingRestoredChapterOffset = session.selectedChapterOffset;
-        this.currentFilePath = leftPath;
-        this.rightFilePath = rightPath;
-        this.leftSession = null;
-        this.rightSession = null;
-        this.leftEditorScrollTop = session.leftEditorScrollTop;
-        this.leftPreviewScrollTop = session.leftPreviewScrollTop;
-        this.rightEditorScrollTop = session.rightEditorScrollTop;
-        this.rightPreviewScrollTop = session.rightPreviewScrollTop;
-        if (this.isSingleScreenLayout()) {
-          if (session.activePane === 'right') {
-            this.leftEditorScrollTop = 0;
-            this.leftPreviewScrollTop = 0;
-          } else {
-            this.rightEditorScrollTop = 0;
-            this.rightPreviewScrollTop = 0;
-          }
-        }
-
-        leftOpened = await restoreWorkspacePane(leftPath,
-          async (path: string): Promise<boolean> => await this.readAndPush(path, false),
-          async (): Promise<void> => {
-            this.currentFilePath = '';
-            await this.readAndPush('', false);
-          });
-        rightOpened = await restoreWorkspacePane(rightPath,
-          async (path: string): Promise<boolean> => await this.readRightAndPush(path),
-          async (): Promise<void> => {
-            this.rightFilePath = '';
-            await this.readRightAndPush('');
-          });
-        this.restoreWorkspaceScrollPositions();
-        this.applyRestoredChapterSelection();
+        const opened: boolean = await this.applyWorkspaceSession(session);
+        leftOpened = opened;
+        rightOpened = opened;
       } catch (error) {
         leftOpened = false;
         rightOpened = false;
@@ -1223,6 +1177,65 @@ struct Index {
       this.navigationAnimationsEnabled = true;
       this.workspaceInitialRenderReady = true;
     }
+  }
+
+  /**
+   * 会话恢复主体（冷启动与切库共用，v1.47 47.4 抽取）：按快照还原工作区状态与
+   * 左右栏笔记，含单屏可见栏过滤、滚动位置与章节选择。调用方需置
+   * workspaceSessionRestoring = true 包裹，结束后自行恢复保存开关。
+   */
+  private async applyWorkspaceSession(session: WorkspaceSession): Promise<boolean> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const validPaths: string[] = FileTree.allNotesOf(registry.accessFor(session.vaultId));
+    const desiredPaths = workspaceSessionPaths(session, this.isSingleScreenLayout(), validPaths);
+    const leftPath: string = desiredPaths.leftPath;
+    const rightPath: string = desiredPaths.rightPath;
+
+    this.referenceVisible = session.referenceVisible;
+    this.focused = session.focused;
+    this.setSidebarCollapsed(session.sidebarCollapsed);
+    this.setDrawerOpen(this.breakpoint === Breakpoint.SM && session.drawerOpen);
+    this.smMode = session.leftMode;
+    this.rightEditing = session.rightEditing;
+    this.activePane = session.activePane;
+    this.rightPaneIntentionallyEmpty = session.rightPaneIntentionallyEmpty;
+    this.sidebarTab = session.sidebarTab;
+    this.selectedChapterIndex = -1;
+    this.chapterPath = '';
+    this.pendingRestoredChapterOffset = session.selectedChapterOffset;
+    this.currentFilePath = leftPath;
+    this.rightFilePath = rightPath;
+    this.leftSession = null;
+    this.rightSession = null;
+    this.leftEditorScrollTop = session.leftEditorScrollTop;
+    this.leftPreviewScrollTop = session.leftPreviewScrollTop;
+    this.rightEditorScrollTop = session.rightEditorScrollTop;
+    this.rightPreviewScrollTop = session.rightPreviewScrollTop;
+    if (this.isSingleScreenLayout()) {
+      if (session.activePane === 'right') {
+        this.leftEditorScrollTop = 0;
+        this.leftPreviewScrollTop = 0;
+      } else {
+        this.rightEditorScrollTop = 0;
+        this.rightPreviewScrollTop = 0;
+      }
+    }
+
+    const leftOpened: boolean = await restoreWorkspacePane(leftPath,
+      async (path: string): Promise<boolean> => await this.readAndPush(path, false),
+      async (): Promise<void> => {
+        this.currentFilePath = '';
+        await this.readAndPush('', false);
+      });
+    const rightOpened: boolean = await restoreWorkspacePane(rightPath,
+      async (path: string): Promise<boolean> => await this.readRightAndPush(path),
+      async (): Promise<void> => {
+        this.rightFilePath = '';
+        await this.readRightAndPush('');
+      });
+    this.restoreWorkspaceScrollPositions();
+    this.applyRestoredChapterSelection();
+    return leftOpened || rightOpened;
   }
 
   private async waitForInitialWorkspaceSurfaces(): Promise<void> {
@@ -2854,12 +2867,17 @@ struct Index {
     this.refreshGitAheadCommitCount();
   }
 
-  /** 外部入口切换了当前库：落盘旧库编辑后按 switchVault 的重置序列对齐本页状态。 */
+  /** 外部入口切换了当前库：落盘旧库编辑后按 switchVault 的恢复序列对齐本页状态。 */
   private async adoptExternalVaultSwitch(): Promise<void> {
     try {
       if (!await this.flushWorkspaceSaves()) {
         return;
       }
+      this.ensureWorkspaceSessionStore();
+      // v1.47 47.4：与 switchVault 一致，切库后恢复目标库自己的工作区会话。
+      // 注意此刻本页 currentVaultId 还是旧库，目标库以注册表为准。
+      const targetSession: WorkspaceSession | null =
+        (this.workspaceSessionStore as WorkspaceSessionStore).loadFor(VaultRegistry.get().currentId());
       this.leftOpenRequestId++;
       this.rightOpenRequestId++;
       this.stopWorkspaceSessionSaving();
@@ -2874,8 +2892,17 @@ struct Index {
       // .enabled(drawerOpen) 已禁用 → 文件列表点任何东西都无反应。必须走同步器。
       this.setDrawerOpen(false);
       this.smMode = 'edit';
-      await this.readAndPush('');
-      await this.readRightAndPush('');
+      if (targetSession === null) {
+        await this.readAndPush('');
+        await this.readRightAndPush('');
+      } else {
+        this.workspaceSessionRestoring = true;
+        try {
+          await this.applyWorkspaceSession(targetSession);
+        } finally {
+          this.workspaceSessionRestoring = false;
+        }
+      }
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
     } catch (error) {
@@ -7681,6 +7708,18 @@ struct Index {
     const previousFilePath: string = this.currentFilePath;
     const previousRightFilePath: string = this.rightFilePath;
     const previousRightEmpty: boolean = this.rightPaneIntentionallyEmpty;
+    const previousSmMode: string = this.smMode;
+    const previousRightEditing: boolean = this.rightEditing;
+    const previousActivePane: string = this.activePane;
+    const previousReferenceVisible: boolean = this.referenceVisible;
+    const previousFocused: boolean = this.focused;
+    const previousSidebarTab: string = this.sidebarTab;
+    const previousSidebarCollapsed: boolean = this.sidebarCollapsed;
+    const previousDrawerOpen: boolean = this.drawerOpen;
+    const previousLeftEditorScrollTop: number = this.leftEditorScrollTop;
+    const previousLeftPreviewScrollTop: number = this.leftPreviewScrollTop;
+    const previousRightEditorScrollTop: number = this.rightEditorScrollTop;
+    const previousRightPreviewScrollTop: number = this.rightPreviewScrollTop;
     const sessionSavingWasEnabled: boolean = this.workspaceSessionSavingEnabled;
     if (this.vaultSwitchInProgress || id === previousVaultId) {
       return;
@@ -7692,6 +7731,10 @@ struct Index {
       if (editorMounted && !await this.flushWorkspaceSaves()) {
         return;
       }
+      this.ensureWorkspaceSessionStore();
+      // v1.47 47.4：切库前先取目标库自己的工作区会话，切过去后按它恢复。
+      const targetSession: WorkspaceSession | null =
+        (this.workspaceSessionStore as WorkspaceSessionStore).loadFor(id);
       this.leftOpenRequestId++;
       this.rightOpenRequestId++;
       this.stopWorkspaceSessionSaving();
@@ -7704,8 +7747,18 @@ struct Index {
       this.quickSwitchFiles = [];
       this.recentOpenPaths = [];
       this.smMode = 'edit';
-      if (!await this.readAndPush('') || !await this.readRightAndPush('')) {
-        throw new Error('工作区清理未完成');
+      if (targetSession === null) {
+        if (!await this.readAndPush('') || !await this.readRightAndPush('')) {
+          throw new Error('工作区清理未完成');
+        }
+      } else {
+        // 目标库有上次的工作区：恢复左右栏笔记、单屏编辑/预览、激活栏等状态。
+        this.workspaceSessionRestoring = true;
+        try {
+          await this.applyWorkspaceSession(targetSession);
+        } finally {
+          this.workspaceSessionRestoring = false;
+        }
       }
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
@@ -7722,12 +7775,32 @@ struct Index {
           this.currentFilePath = previousFilePath;
           this.rightFilePath = previousRightFilePath;
           this.rightPaneIntentionallyEmpty = previousRightEmpty;
+          this.smMode = previousSmMode;
+          this.rightEditing = previousRightEditing;
+          this.activePane = previousActivePane;
+          this.referenceVisible = previousReferenceVisible;
+          this.focused = previousFocused;
+          this.sidebarTab = previousSidebarTab;
+          this.setSidebarCollapsed(previousSidebarCollapsed);
+          this.setDrawerOpen(previousDrawerOpen);
+          this.leftEditorScrollTop = previousLeftEditorScrollTop;
+          this.leftPreviewScrollTop = previousLeftPreviewScrollTop;
+          this.rightEditorScrollTop = previousRightEditorScrollTop;
+          this.rightPreviewScrollTop = previousRightPreviewScrollTop;
           const leftRequestId: number = ++this.leftOpenRequestId;
           const rightRequestId: number = ++this.rightOpenRequestId;
-          const leftRestored: boolean = await this.readAndPush(previousFilePath, false,
-            leftRequestId, previousVaultId, rightRequestId);
-          const rightRestored: boolean = await this.readRightAndPush(previousRightFilePath,
-            rightRequestId, previousVaultId);
+          this.workspaceSessionRestoring = true;
+          let leftRestored: boolean = false;
+          let rightRestored: boolean = false;
+          try {
+            leftRestored = await this.readAndPush(previousFilePath, false,
+              leftRequestId, previousVaultId, rightRequestId);
+            rightRestored = await this.readRightAndPush(previousRightFilePath,
+              rightRequestId, previousVaultId);
+          } finally {
+            this.workspaceSessionRestoring = false;
+          }
+          this.restoreWorkspaceScrollPositions();
           if (!leftRestored || !rightRestored) {
             throw new Error('原工作区恢复失败');
           }
@@ -7794,6 +7867,15 @@ struct Index {
       if (this.currentVaultId === renamed.id && id !== renamed.id) {
         this.scheduleWorkspaceSessionSave();
       }
+      // v1.47 47.4：库改名换 id 时迁移每库工作区会话（含 latest 指向修正）。
+      if (id !== renamed.id) {
+        try {
+          this.ensureWorkspaceSessionStore();
+          (this.workspaceSessionStore as WorkspaceSessionStore).retargetVault(id, renamed.id);
+        } catch (sessionError) {
+          hilog.warn(DOMAIN, TAG, '工作区会话随库改名迁移失败');
+        }
+      }
     } catch (error) {
       this.toastRegistryError('改名失败', error, 'vault', 'rename');
     }
@@ -7821,6 +7903,13 @@ struct Index {
           }
           AgentRuntime.forgetVault(id, reg);
           reg.remove(id);
+          // v1.47 47.4：删库时清理其每库工作区会话，避免 Preferences 键泄漏。
+          try {
+            this.ensureWorkspaceSessionStore();
+            (this.workspaceSessionStore as WorkspaceSessionStore).removeFor(id);
+          } catch (sessionError) {
+            hilog.warn(DOMAIN, TAG, '删除库的工作区会话清理失败');
+          }
           // v1.40：此时注册表已无该库，必须直接给稳定 vaultKey（40.9）。
           FullTextSearchService.discardVaultKey(vaultKey);
           // 移除 Git 库：令牌随库清理（只删本地副本与凭据，远端仓库不受影响）

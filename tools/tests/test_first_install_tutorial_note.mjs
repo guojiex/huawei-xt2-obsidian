@@ -141,6 +141,9 @@ test('switching libraries persists the new empty workspace even when the switch 
   index.workspaceSessionSavingEnabled = false;
   index.flushWorkspaceSaves = async () => true;
   index.refreshSharedEditability = async () => {};
+  // v1.47 47.4（进行中）switchVault 先取目标库工作区会话：无历史会话时走原「清空双栏」路径
+  index.ensureWorkspaceSessionStore = () => {};
+  index.workspaceSessionStore = { loadFor: () => null };
   index.stopWorkspaceSessionSaving = () => { index.workspaceSessionSavingEnabled = false; };
   index.refreshFromRegistry = () => { index.currentVaultId = currentVaultId; };
   index.readAndPush = async () => true;

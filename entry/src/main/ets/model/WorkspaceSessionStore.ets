@@ -1,6 +1,8 @@
 /**
  * WorkspaceSessionStore.ets —— 保存可安全重建的笔记工作区 UI 状态（v0.9 9.12）。
  * 不保存笔记正文、临时搜索词、草稿或弹层状态。
+ * v1.47 47.4：会话按库隔离（`vault_<id>` 每库键 + `latest` 冷启动键），
+ * 切换知识库时各库恢复自己上次的工作区，互不覆盖。
  */
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
@@ -123,6 +125,11 @@ export class WorkspaceSessionStore {
   private static readonly PREF_KEY: string = 'latest';
   private store: preferences.Preferences | null = null;
 
+  /** v1.47 47.4：每库会话键 —— 切库时各库独立恢复上次工作区。 */
+  private static vaultKey(vaultId: string): string {
+    return 'vault_' + vaultId;
+  }
+
   constructor(context: common.UIAbilityContext) {
     try {
       this.store = preferences.getPreferencesSync(context, { name: WorkspaceSessionStore.PREF_NAME });
@@ -137,7 +144,36 @@ export class WorkspaceSessionStore {
       return null;
     }
     try {
-      return parseWorkspaceSession(this.store.getSync(WorkspaceSessionStore.PREF_KEY, '') as string);
+      const session: WorkspaceSession | null =
+        parseWorkspaceSession(this.store.getSync(WorkspaceSessionStore.PREF_KEY, '') as string);
+      if (session !== null) {
+        // 老版本升级迁移：latest 里的会话补写到每库键，避免首次切库即被覆盖丢失。
+        const key: string = WorkspaceSessionStore.vaultKey(session.vaultId);
+        if ((this.store.getSync(key, '') as string).length === 0) {
+          this.store.putSync(key, JSON.stringify(session));
+          this.store.flushSync();
+        }
+      }
+      return session;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /** 目标库的会话：优先每库键；升级前只存过 latest 时按 vaultId 匹配回退。 */
+  loadFor(vaultId: string): WorkspaceSession | null {
+    if (this.store === null || vaultId.length === 0) {
+      return null;
+    }
+    try {
+      const perVault: WorkspaceSession | null =
+        parseWorkspaceSession(this.store.getSync(WorkspaceSessionStore.vaultKey(vaultId), '') as string);
+      if (perVault !== null) {
+        return perVault;
+      }
+      const latest: WorkspaceSession | null =
+        parseWorkspaceSession(this.store.getSync(WorkspaceSessionStore.PREF_KEY, '') as string);
+      return latest !== null && latest.vaultId === vaultId ? latest : null;
     } catch (error) {
       return null;
     }
@@ -148,13 +184,53 @@ export class WorkspaceSessionStore {
       return false;
     }
     try {
-      this.store.putSync(WorkspaceSessionStore.PREF_KEY, JSON.stringify(session));
+      const raw: string = JSON.stringify(session);
+      this.store.putSync(WorkspaceSessionStore.PREF_KEY, raw);
+      this.store.putSync(WorkspaceSessionStore.vaultKey(session.vaultId), raw);
       this.store.flushSync();
       return true;
     } catch (error) {
       const err = error as BusinessError;
       console.warn('保存工作区会话失败 code=' + err.code);
       return false;
+    }
+  }
+
+  /** 库改名（id 变化）后迁移每库会话；latest 仍指向旧 id 时一并改写，防冷启动误判库不存在。 */
+  retargetVault(oldId: string, newId: string): void {
+    if (this.store === null || oldId.length === 0 || newId.length === 0 || oldId === newId) {
+      return;
+    }
+    try {
+      const session: WorkspaceSession | null =
+        parseWorkspaceSession(this.store.getSync(WorkspaceSessionStore.vaultKey(oldId), '') as string);
+      if (session !== null) {
+        session.vaultId = newId;
+        this.store.putSync(WorkspaceSessionStore.vaultKey(newId), JSON.stringify(session));
+        this.store.deleteSync(WorkspaceSessionStore.vaultKey(oldId));
+      }
+      const latest: WorkspaceSession | null =
+        parseWorkspaceSession(this.store.getSync(WorkspaceSessionStore.PREF_KEY, '') as string);
+      if (latest !== null && latest.vaultId === oldId) {
+        latest.vaultId = newId;
+        this.store.putSync(WorkspaceSessionStore.PREF_KEY, JSON.stringify(latest));
+      }
+      this.store.flushSync();
+    } catch (error) {
+      // 会话迁移失败不影响改名主流程，下次保存会写新键。
+    }
+  }
+
+  /** 删库时清理其每库会话，避免 Preferences 键泄漏。 */
+  removeFor(vaultId: string): void {
+    if (this.store === null || vaultId.length === 0) {
+      return;
+    }
+    try {
+      this.store.deleteSync(WorkspaceSessionStore.vaultKey(vaultId));
+      this.store.flushSync();
+    } catch (error) {
+      // 清理失败只留下孤儿键，无功能影响。
     }
   }
 }
