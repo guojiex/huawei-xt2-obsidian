@@ -18,6 +18,7 @@ import { DEFAULT_VAULT_ID, SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from
 import { VaultPathResolver } from './VaultPathResolver';
 import { VaultAccess } from './VaultAccess';
 import { createExternalVaultAccess, createSandboxVaultAccess } from './VaultAccessDevice';
+import { SearchVaultRegistry } from './SearchStore';
 
 const REG_DOMAIN: number = 0x0001;
 const REG_TAG: string = 'VaultRegistry';
@@ -52,7 +53,7 @@ interface VaultEntryRaw {
   grantedAt?: Object;
 }
 
-export class VaultRegistry {
+export class VaultRegistry implements SearchVaultRegistry {
   private static instance: VaultRegistry | null = null;
   private static readonly GIT_IMPORTING_SUFFIX: string = '__importing';
 

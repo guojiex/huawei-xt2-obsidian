@@ -872,3 +872,71 @@ test('snapshot honours the depth guard so a runaway tree cannot stall the UI', (
   assert.equal(deepest <= access.VAULT_SCAN_MAX_DEPTH, true,
     '深度上限是 UI 线程的保护阀，不能被顺手改大');
 });
+
+// ---- v1.40 snapshotReport：快照完整性标记（40.8）----
+//
+// truncated / failed 时调用方（索引对账）不得把「没列出来」当「已删除」；
+// 沙箱侧列举永不置 failed（既有语义），外部侧授权失效必须显式 failed。
+
+test('sandbox snapshotReport mirrors snapshot and reports a complete scan', () => {
+  const { vault } = createAccess({
+    [ROOT + '/a.md']: 'a', [ROOT + '/sub']: null, [ROOT + '/sub/b.md']: 'b'
+  });
+  const report = vault.snapshotReport();
+  assert.deepEqual(plain(report.entries.map((c) => [c.name, c.isDir])),
+    plain(vault.snapshot().map((c) => [c.name, c.isDir])));
+  assert.equal(report.truncated, false);
+  assert.equal(report.failed, false);
+});
+
+test('sandbox snapshotReport flags node-cap truncation and keeps exactly the cap', () => {
+  const tree = { [ROOT]: null };
+  for (let i = 0; i < access.VAULT_SCAN_MAX_NODES + 5; i++) {
+    tree[`${ROOT}/f${i}.md`] = 'x';
+  }
+  const { vault } = createAccess(tree);
+  const report = vault.snapshotReport();
+  assert.equal(report.entries.length, access.VAULT_SCAN_MAX_NODES);
+  assert.equal(report.truncated, true);
+  assert.equal(report.failed, false);
+});
+
+test('sandbox snapshotReport flags depth-cap truncation', () => {
+  const deep = { [ROOT]: null };
+  let deepPath = ROOT;
+  for (let i = 0; i < access.VAULT_SCAN_MAX_DEPTH + 2; i++) {
+    deepPath = deepPath + '/d' + i;
+    deep[deepPath] = null;
+  }
+  deep[deepPath + '/leaf.md'] = 'x';
+  const { vault } = createAccess(deep);
+  assert.equal(vault.snapshotReport().truncated, true);
+});
+
+test('external snapshotReport marks authorization failure instead of an empty library', () => {
+  fdMap.set(60, { rel: '' });
+  const native = fakeNative({ 'a.md': 'a' });
+  const fdSource = {
+    openRootFd() { throw new Error('gone'); },
+    closeFd() {}
+  };
+  const vault = new access.ExternalVaultAccess(native, fdSource);
+  const report = vault.snapshotReport();
+  assert.equal(report.failed, true);
+  assert.deepEqual(plain(report.entries), []);
+  assert.equal(report.truncated, false);
+  assert.throws(() => vault.snapshot(), '既有语义保留：snapshot() 对失败仍抛错');
+});
+
+test('external snapshotReport flags node-cap truncation', () => {
+  fdMap.set(60, { rel: '' });
+  const tree = {};
+  for (let i = 0; i < access.VAULT_SCAN_MAX_NODES + 5; i++) {
+    tree[`f${i}.md`] = 'x';
+  }
+  const { vault } = createExternalAccess(tree);
+  const report = vault.snapshotReport();
+  assert.equal(report.entries.length, access.VAULT_SCAN_MAX_NODES);
+  assert.equal(report.truncated, true);
+  assert.equal(report.failed, false);
+});

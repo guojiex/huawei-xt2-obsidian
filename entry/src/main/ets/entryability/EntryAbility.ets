@@ -15,6 +15,8 @@ import {
 } from '../model/ExternalVaultAuthorization';
 import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
 import { CrashGuard } from '../common/CrashGuard';
+import { FullTextSearchService } from '../model/FullTextSearchService';
+import { createSearchStore } from '../model/SearchStoreDevice';
 
 const DOMAIN = 0x0000;
 const TAG = 'EntryAbility';
@@ -105,6 +107,9 @@ export default class EntryAbility extends UIAbility {
     AgentMemoryStore.initialize(registry);
     AgentRuntime.initialize(registry);
     NoteDraftService.cleanupOrphans(registry);
+    // v1.40：注入持久搜索索引的设备侧存储与注册表（40.1），并清理已删库的孤儿索引（40.9）。
+    FullTextSearchService.configure(createSearchStore(this.context), registry);
+    void FullTextSearchService.cleanupOrphans();
 
     // ===== 断点系统（T007）=====
     // 断点只由窗口宽度（vp）计算：window.on('windowSizeChange') + px2vp() 是官方推荐的

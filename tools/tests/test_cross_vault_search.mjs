@@ -34,7 +34,8 @@ function createServiceHarness({
   filesByVault = {},
   contentsByVault = {},
   failVaults = [],
-  fullTextResults = [],
+  fullTextResultsByVault = {},
+  failFtsVaults = [],
   onAllNotesOf = null
 } = {}) {
   const calls = [];
@@ -66,29 +67,14 @@ function createServiceHarness({
         return filesByVault[access.id] || [];
       }
     },
-    SearchIndex: class {
-      constructor() {
-        calls.push('index:new');
-        this.entries = new Map();
-      }
-      addOrReplace(path, content) {
-        this.entries.set(path, content);
-      }
-      search(query) {
-        calls.push(`index:search:${query}`);
-        const results = [];
-        for (const [path, content] of this.entries) {
-          if (content.toLowerCase().includes(query.toLowerCase())) {
-            results.push({ path, excerpt: content.slice(0, 20) });
-          }
-        }
-        return results;
-      }
-    },
+    // v1.40：正文搜索逐库走持久索引（FullTextSearchService.search），内存 SearchIndex 已删除。
     FullTextSearchService: {
       async search(registryArg, vaultId, query) {
         calls.push(`fts:${vaultId}:${query}`);
-        return fullTextResults;
+        if (failFtsVaults.includes(vaultId)) {
+          throw new Error('index unavailable');
+        }
+        return fullTextResultsByVault[vaultId] || [];
       }
     }
   });
@@ -158,20 +144,33 @@ test('v1.35 empty query returns an empty outcome without touching any vault', as
   assert.deepEqual(calls, []);
 });
 
-test('v1.35 35.2 content search keeps the current vault on FullTextSearchService and temporary indexes for the rest', async () => {
+test('v1.40 40.2 content search queries the persistent index for every vault via FullTextSearchService', async () => {
   const { service, registry, vaultsArg, calls } = createServiceHarness({
     vaults: ['alpha', 'work'],
     currentVaultId: 'work',
-    filesByVault: { alpha: ['Alpha/Note.md'] },
-    contentsByVault: { alpha: { 'Alpha/Note.md': 'needle in alpha content' } },
-    fullTextResults: [{ path: 'Work/Note.md', excerpt: 'needle in work' }]
+    fullTextResultsByVault: {
+      work: [{ path: 'Work/Note.md', excerpt: 'needle in work' }],
+      alpha: [{ path: 'Alpha/Note.md', excerpt: 'needle in alpha' }]
+    }
   });
   const outcome = await service.run(registry, vaultsArg, 'work', 'needle', 'content', () => {});
   assert.ok(calls.includes('fts:work:needle'));
-  assert.ok(!calls.includes('fts:alpha:needle'));
-  assert.ok(calls.includes('index:new'));
+  assert.ok(calls.includes('fts:alpha:needle'));
   assert.deepEqual(plain(outcome.groups.map((group) => group.vaultId)), ['work', 'alpha']);
-  assert.equal(outcome.groups[1].hits[0].excerpt, 'needle in alpha cont');
+  assert.equal(outcome.groups[0].hits[0].excerpt, 'needle in work');
+  assert.equal(outcome.groups[1].hits[0].excerpt, 'needle in alpha');
+});
+
+test('v1.40 40.2 an index-unavailable vault is skipped by name instead of failing the whole content search', async () => {
+  const { service, registry, vaultsArg } = createServiceHarness({
+    vaults: ['broken', 'work'],
+    currentVaultId: 'work',
+    failFtsVaults: ['broken'],
+    fullTextResultsByVault: { work: [{ path: 'Work/Note.md', excerpt: 'needle in work' }] }
+  });
+  const outcome = await service.run(registry, vaultsArg, 'work', 'needle', 'content', () => {});
+  assert.deepEqual(plain(outcome.skippedVaultNames), ['broken']);
+  assert.deepEqual(plain(outcome.groups.map((group) => group.vaultId)), ['work']);
 });
 
 test('v1.35 name search matches file names and paths case-insensitively', async () => {

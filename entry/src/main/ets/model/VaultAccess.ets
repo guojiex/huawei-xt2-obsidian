@@ -33,6 +33,22 @@ export interface VaultDirChild {
   isDir: boolean;
 }
 
+/**
+ * 全树快照 + 完整性标记（v1.40 · 40.8）：
+ * - truncated：列举被深度 / 节点上限截断，未出现的路径**不许**当作已删除；
+ * - failed：本次列举失败（如外部授权失效），entries 为空，同样不可下任何「消失」结论。
+ */
+export interface VaultSnapshotReport {
+  entries: VaultDirChild[];
+  truncated: boolean;
+  failed: boolean;
+}
+
+/** collectTree 传递截断标记的可变持有者（沙箱实现内部用）。 */
+interface VaultTruncationHolder {
+  truncated: boolean;
+}
+
 /** 文件元信息。mtime 单位是**秒**（fileIo.Stat 与 POSIX st_mtime 都是秒）。 */
 export interface VaultFileStat {
   size: number;
@@ -162,6 +178,9 @@ export interface VaultAccess {
 
   /** 一次遍历的全树快照（受 VAULT_SCAN_MAX_DEPTH / MAX_NODES 保护）。 */
   snapshot(): VaultDirChild[];
+
+  /** 带完整性标记的全树快照（40.8）：truncated / failed 时不得据 entries 下「文件消失」结论。 */
+  snapshotReport(): VaultSnapshotReport;
 
   /** List all non-hidden content in one directory, including attachments and other files. */
   /** List all non-hidden content; includeHidden is reserved for controlled migrations. */
@@ -369,10 +388,19 @@ export class SandboxVaultAccess implements VaultAccess {
   }
 
   snapshot(): VaultDirChild[] {
+    return this.snapshotReport().entries;
+  }
+
+  /**
+   * 沙箱侧列举永不置 failed：rawChildNames 列不到时当空目录（既有语义，不把 UI 拖崩）；
+   * 但深度 / 节点上限照常置 truncated（40.8）。
+   */
+  snapshotReport(): VaultSnapshotReport {
     const counted: CountHolder = { value: 0 };
+    const holder: VaultTruncationHolder = { truncated: false };
     const out: VaultDirChild[] = [];
-    this.collectTree('', 0, out, counted);
-    return sortVaultTree(out);
+    this.collectTree('', 0, out, counted, holder);
+    return { entries: sortVaultTree(out), truncated: holder.truncated, failed: false };
   }
 
   allDirs(): string[] {
@@ -633,22 +661,29 @@ export class SandboxVaultAccess implements VaultAccess {
     }
   }
 
-  /** 全树收集（隐藏项与非笔记文件由 listDir 已滤掉）。可由 snapshot 排序后派生 allDirs/allNotes。 */
-  private collectTree(relDir: string, depth: number, out: VaultDirChild[], counted: CountHolder): void {
-    if (depth >= VAULT_SCAN_MAX_DEPTH || counted.value >= VAULT_SCAN_MAX_NODES) {
+  /** 全树收集（隐藏项与非笔记文件由 listDir 已滤掉）。可由 snapshotReport 派生 allDirs/allNotes。 */
+  private collectTree(relDir: string, depth: number, out: VaultDirChild[], counted: CountHolder,
+    holder: VaultTruncationHolder): void {
+    if (counted.value >= VAULT_SCAN_MAX_NODES) {
+      holder.truncated = true;
+      return;
+    }
+    if (depth >= VAULT_SCAN_MAX_DEPTH) {
+      holder.truncated = true;
       return;
     }
     const children: VaultDirChild[] = this.listDir(relDir);
     for (let i = 0; i < children.length; i++) {
       const child: VaultDirChild = children[i];
       if (counted.value >= VAULT_SCAN_MAX_NODES) {
+        holder.truncated = true;
         return;
       }
       const rel: string = joinVaultPath(relDir, child.name);
       counted.value++;
       out.push({ name: rel, isDir: child.isDir });
       if (child.isDir) {
-        this.collectTree(rel, depth + 1, out, counted);
+        this.collectTree(rel, depth + 1, out, counted, holder);
       }
     }
   }
@@ -1054,7 +1089,30 @@ export class ExternalVaultAccess implements VaultAccess {
    * 只扫一次是刻意的：每下拉刷新都走一遍 Native 递归对大库是实打实的开销。
    */
   snapshot(): VaultDirChild[] {
-    const collected: VaultDirChild[] = this.withRoot<VaultDirChild[]>((fd: number): VaultDirChild[] => {
+    // Native 的递归顺序与沙箱 walk 不同；统一过一遍规范化排序，两边才是同一棵树。
+    return sortVaultTree(this.collectSnapshot());
+  }
+
+  /**
+   * 带完整性标记的全树快照（40.8）：授权失效 / 目录被移走等列举失败置 failed，
+   * 节点上限截断置 truncated；两种情况都禁止调用方把未出现路径当作已删除。
+   */
+  snapshotReport(): VaultSnapshotReport {
+    let collected: VaultDirChild[] = [];
+    try {
+      collected = this.collectSnapshot();
+    } catch (error) {
+      return { entries: [], truncated: false, failed: true };
+    }
+    return {
+      entries: sortVaultTree(collected),
+      truncated: collected.length >= VAULT_SCAN_MAX_NODES,
+      failed: false
+    };
+  }
+
+  private collectSnapshot(): VaultDirChild[] {
+    return this.withRoot<VaultDirChild[]>((fd: number): VaultDirChild[] => {
       const raw: ExternalStringResult = this.nativeImpl.listDirRecursiveByFd(fd);
       if (!raw.ok) {
         throwExternalFailure(raw, '扫描库');
@@ -1068,9 +1126,6 @@ export class ExternalVaultAccess implements VaultAccess {
       }
       return out;
     });
-    // Native 的递归顺序是「先目录后文件」的逐层顺序，与沙箱 walk 的
-    // 「先子树后本层文件」不同；统一过一遍规范化排序，两边才是同一棵树。
-    return sortVaultTree(collected);
   }
 
   /** 快照保留：所有目录 + 所有笔记文件；隐藏层整条排除（子串 '…/.' 判别）。 */

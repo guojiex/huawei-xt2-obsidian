@@ -121,7 +121,7 @@ import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
 import { PreparedArchiveShare, ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
 import { ShareLinkScope, ShareLinkService } from '../model/ShareLinkService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
-import { FullTextSearchResult } from '../model/SearchIndex';
+import { SearchOutcome } from '../model/SearchStore';
 import { CrossVaultSearchOutcome, CrossVaultSearchService } from '../model/CrossVaultSearchService';
 import {
   ExternalDirectoryGrant,
@@ -7819,7 +7819,8 @@ struct Index {
           }
           AgentRuntime.forgetVault(id, reg);
           reg.remove(id);
-          FullTextSearchService.discardVault(id);
+          // v1.40：此时注册表已无该库，必须直接给稳定 vaultKey（40.9）。
+          FullTextSearchService.discardVaultKey(vaultKey);
           // 移除 Git 库：令牌随库清理（只删本地副本与凭据，远端仓库不受影响）
           if (target !== undefined && target.type === 'git') {
             GitCredentialStore.removeToken(id);
@@ -8409,8 +8410,8 @@ struct Index {
           vaultCount: this.vaults.length,
           currentVaultId: this.currentVaultId,
           searchContent: (query: string,
-            onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> => {
-            return FullTextSearchService.search(
+            onProgress: (completed: number, total: number) => void): Promise<SearchOutcome> => {
+            return FullTextSearchService.searchDetailed(
               VaultRegistry.get(), this.currentVaultId, query, onProgress);
           },
           searchAllVaults: (query: string, mode: string,

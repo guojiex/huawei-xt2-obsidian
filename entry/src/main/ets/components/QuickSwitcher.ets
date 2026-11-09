@@ -1,6 +1,6 @@
 /** v0.4 当前库文件名搜索与最近打开面板；v1.35 增加「当前库 / 全部库」范围与跨库结果分组。 */
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
-import { FullTextSearchResult } from '../model/SearchIndex';
+import { FullTextSearchResult, SearchOutcome } from '../model/SearchStore';
 import { CrossVaultSearchOutcome, CrossVaultSearchGroup, CrossVaultHit } from '../model/CrossVaultSearchService';
 import { UtilityDialogShell } from './UtilityDialogShell';
 
@@ -14,10 +14,13 @@ export struct QuickSwitcher {
   /** 已登记库数量：仅多于一个库时显示范围分段与范围说明（35.1）。 */
   @Prop vaultCount: number = 1;
   @Prop currentVaultId: string = '';
+  /** v1.40：当前库正文搜索返回 SearchOutcome（结果 + 索引状态，40.8）。 */
   searchContent: (query: string, onProgress: (completed: number, total: number) => void) =>
-    Promise<FullTextSearchResult[]> = (query: string,
-      onProgress: (completed: number, total: number) => void): Promise<FullTextSearchResult[]> =>
-    Promise.resolve([]);
+    Promise<SearchOutcome> = (query: string,
+      onProgress: (completed: number, total: number) => void): Promise<SearchOutcome> => {
+      const outcome: SearchOutcome = { results: [], indexState: 'ready', indexComplete: false, reconciledAt: 0 };
+      return Promise.resolve(outcome);
+    };
   /** 「全部库」逐库搜索（35.2）；mode 与 searchMode 同域：'name' 文件名与路径，'content' 正文。 */
   searchAllVaults: (query: string, mode: string, onVaultStart: (vaultName: string) => void) =>
     Promise<CrossVaultSearchOutcome> = (query: string, mode: string,
@@ -187,7 +190,7 @@ export struct QuickSwitcher {
 
   private async runFullTextSearch(query: string, requestId: number): Promise<void> {
     try {
-      const results: FullTextSearchResult[] = await this.searchContent(query,
+      const outcome: SearchOutcome = await this.searchContent(query,
         (completed: number, total: number): void => {
           if (requestId !== this.searchRequestId) {
             return;
@@ -196,11 +199,19 @@ export struct QuickSwitcher {
             ? '正在建立索引 ' + completed.toString() + ' / ' + total.toString()
             : '正在搜索…';
         });
-      if (requestId === this.searchRequestId) {
-        this.fullTextResults = results;
+      if (requestId !== this.searchRequestId) {
+        return;
+      }
+      if (outcome.indexState === 'error') {
+        // 40.4/40.7：索引不可用报错，不把失败伪装成零结果。
         this.fullTextSearching = false;
         this.fullTextProgress = '';
+        this.fullTextError = '正文搜索失败；原因未确定。请检查当前知识库后重试。';
+        return;
       }
+      this.fullTextResults = outcome.results;
+      this.fullTextSearching = false;
+      this.fullTextProgress = '';
     } catch (_error) {
       if (requestId === this.searchRequestId) {
         this.fullTextSearching = false;

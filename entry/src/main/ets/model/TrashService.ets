@@ -330,7 +330,7 @@ export class TrashService {
         throw new Error('恢复副本校验失败，回收站原件仍保留：' + detail);
       }
       fileIo.unlinkSync(registry.absoluteInTrash(vaultId, trashRel));
-      FullTextSearchService.noteRestored(registry, vaultId, trashRel);
+      FullTextSearchService.noteRestored(vaultId, trashRel);
       WikiLinkService.pathAdded(vaultId);
       hilog.info(TRASH_DOMAIN, TRASH_TAG, '回收站项目已恢复');
       return trashRel;

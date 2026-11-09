@@ -74,12 +74,45 @@ test('ignores stale search progress and results after the query has changed', as
   const pending = app.runFullTextSearch('old query', 3);
   app.searchRequestId = 5;
   reportProgress(1, 10);
-  finishSearch([{ path: 'old.md', excerpt: 'stale result' }]);
+  finishSearch({ results: [{ path: 'old.md', excerpt: 'stale result' }], indexState: 'ready' });
   await pending;
 
   assert.deepEqual(Array.from(app.fullTextResults, (item) => item.path), ['new.md']);
   assert.equal(app.fullTextSearching, true);
   assert.equal(app.fullTextProgress, '正在搜索…');
+});
+
+test('v1.40 40.8 reports an explicit error instead of zero results when the index is unavailable', async () => {
+  const app = createHarness();
+  app.searchRequestId = 7;
+  app.fullTextResults = [];
+  app.fullTextSearching = true;
+  app.fullTextError = '';
+  app.searchContent = async () => ({ results: [], indexState: 'error' });
+
+  await app.runFullTextSearch('任何词', 7);
+  assert.deepEqual(Array.from(app.fullTextResults), []);
+  assert.equal(app.fullTextSearching, false);
+  assert.equal(app.fullTextError, '正文搜索失败；原因未确定。请检查当前知识库后重试。');
+});
+
+test('v1.40 ready outcomes land as results and clear the searching state', async () => {
+  const app = createHarness();
+  app.searchRequestId = 2;
+  app.fullTextResults = [];
+  app.fullTextSearching = true;
+  app.fullTextProgress = '正在建立索引 1 / 2';
+  app.searchContent = async () => ({
+    results: [{ path: '命中.md', excerpt: '片段' }],
+    indexState: 'ready',
+    indexComplete: true,
+    reconciledAt: 123
+  });
+
+  await app.runFullTextSearch('命中', 2);
+  assert.deepEqual(Array.from(app.fullTextResults, (item) => item.path), ['命中.md']);
+  assert.equal(app.fullTextSearching, false);
+  assert.equal(app.fullTextProgress, '');
 });
 
 test('does not replace current search state with an old request failure', async () => {
