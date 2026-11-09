@@ -10409,7 +10409,8 @@ struct Index {
     .onClick((): void => { this.toggleTableGrid(pane); })
     .bindPopup(this.tableGridOpen && this.tableGridPane === pane, {
       builder: this.TableGridPicker(pane),
-      placement: Placement.Top,
+      // v1.46 46.9：格式栏停靠栏顶后，表格网格向下弹（原 Placement.Top 会顶出栏外）
+      placement: Placement.Bottom,
       enableArrow: false,
       mask: false,
       autoCancel: true,
@@ -11733,10 +11734,12 @@ struct Index {
 
   /**
    * v1.32 32.2：专业模式格式栏停靠 —— 与 v1.30 简单模式停靠栏同形（v2 规则
-   * `.window:not(.simple-mode) …>.edit-tools`）：该栏底部整行、顶部细线、bg_card 底、
-   * 无阴影圆角；宽屏按钮靠左（左内边距 s5）、单屏居中（s3）；无「完成编辑」按钮——
+   * `.window:not(.simple-mode) …>.edit-tools`）：该栏顶部整行（内容区上方）、底部细线、
+   * bg_card 底、无阴影圆角；宽屏按钮靠左（左内边距 s5）、单屏居中（s3）；无「完成编辑」按钮——
    * 专业模式走 PaneHead 编辑/预览切换。内容区经 layoutWeight 收缩，源码末行不被遮挡。
    * 仅编辑状态显示，预览时隐藏（沿用既有规则）。
+   * v1.46 46.9：停靠位从栏底移到栏顶 —— OFFSET_WITH_CARET 只保证光标可见，
+   * 栏底停靠被软键盘盖住（XT2 真机实测），栏顶不依赖窗口底部避让空间。
    */
   @Builder
   ProfFormatDock(pane: string) {
@@ -11763,7 +11766,7 @@ struct Index {
       bottom: Space.s1
     })
     .alignItems(VerticalAlign.Center)
-    .border({ width: { top: 1 }, color: $r('app.color.line') })
+    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
@@ -11789,9 +11792,10 @@ struct Index {
   }
 
   /**
-   * v1.30 30.2/30.3：简单模式停靠格式栏 —— 该栏底部整行：通栏宽、顶部分隔线、
-   * bg_card 底、无阴影圆角；宽屏按钮靠左、完成编辑靠右；单屏按钮居中、完成编辑在末尾；
-   * 按钮超出横向滑动。内容区经 layoutWeight 自动收缩，末行不被遮挡。
+   * v1.30 30.2/30.3：简单模式停靠格式栏 —— 该栏顶部整行（内容区上方）：通栏宽、
+   * 底部分隔线、bg_card 底、无阴影圆角；宽屏按钮靠左、完成编辑靠右；单屏按钮居中、
+   * 完成编辑在末尾；按钮超出横向滑动。内容区经 layoutWeight 自动收缩，末行不被遮挡。
+   * v1.46 46.9：停靠位从栏底移到栏顶 —— OFFSET_WITH_CARET 下栏底停靠被软键盘盖住。
    */
   @Builder
   SimpleFormatDock(pane: string) {
@@ -11825,7 +11829,7 @@ struct Index {
       right: this.isSingleScreenLayout() ? 0 : Space.s3
     })
     .alignItems(VerticalAlign.Center)
-    .border({ width: { top: 1 }, color: $r('app.color.line') })
+    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
@@ -11844,6 +11848,16 @@ struct Index {
       if (this.rightFilePath.length > 0 && !this.rightEditing &&
         this.backlinksExpanded && this.backlinksPane === 'right') {
         this.BacklinkPanel()
+      }
+      // v1.46 46.9：格式栏停靠内容区顶部 —— OFFSET_WITH_CARET 只保证光标可见，栏底停靠会被键盘盖住
+      if (this.experienceMode === 'simple' && this.rightFilePath.length > 0 &&
+        this.simpleFormatBarVisible('right')) {
+        this.SimpleFormatDock('right')
+      }
+      // v1.32 32.2：专业模式停靠格式栏 —— 仅源码编辑时出现，预览时隐藏
+      if (this.experienceMode === 'professional' && this.rightEditing &&
+        this.rightFilePath.length > 0) {
+        this.ProfFormatDock('right')
       }
       Stack({ alignContent: Alignment.Bottom }) {
         Stack() {
@@ -11968,16 +11982,6 @@ struct Index {
       }
       .layoutWeight(1)
       .width('100%')
-      // v1.30 30.2：简单模式停靠格式栏 —— 在内容 Stack 之下整行停靠，不再浮动盖正文
-      if (this.experienceMode === 'simple' && this.rightFilePath.length > 0 &&
-        this.simpleFormatBarVisible('right')) {
-        this.SimpleFormatDock('right')
-      }
-      // v1.32 32.2：专业模式停靠格式栏 —— 仅源码编辑时出现，预览时隐藏
-      if (this.experienceMode === 'professional' && this.rightEditing &&
-        this.rightFilePath.length > 0) {
-        this.ProfFormatDock('right')
-      }
     }
     .width('100%')
     .height('100%')
@@ -12001,6 +12005,11 @@ struct Index {
         this.PaneHead({ pane: 'left' })
       }
       this.PaneTitle({ pane: 'left' })
+      // v1.32 32.2 / v1.46 46.9：专业模式停靠格式栏 —— 仅源码编辑时出现，停靠内容区顶部
+      if (this.experienceMode === 'professional' && this.smMode === 'edit' &&
+        this.currentFilePath.length > 0) {
+        this.ProfFormatDock('left')
+      }
 
       Stack({ alignContent: Alignment.Bottom }) {
         Stack() {
@@ -12088,11 +12097,6 @@ struct Index {
       }
       .layoutWeight(1)
       .width('100%')
-      // v1.32 32.2：专业模式停靠格式栏 —— 仅源码编辑时出现，预览时隐藏
-      if (this.experienceMode === 'professional' && this.smMode === 'edit' &&
-        this.currentFilePath.length > 0) {
-        this.ProfFormatDock('left')
-      }
     }
     .width('100%')
     .height('100%')
@@ -12115,6 +12119,11 @@ struct Index {
       this.PaneTitle({ pane: 'left' })
       if (this.currentFilePath.length > 0 && this.backlinksExpanded && this.backlinksPane === 'left') {
         this.BacklinkPanel()
+      }
+      // v1.30 30.1/30.2 / v1.46 46.9：简单模式停靠格式栏 —— 仅编辑聚焦时出现，停靠内容区顶部
+      if (this.experienceMode === 'simple' && this.currentFilePath.length > 0 &&
+        this.simpleFormatBarVisible('left')) {
+        this.SimpleFormatDock('left')
       }
       Stack() {
         PreviewWebView({
@@ -12187,11 +12196,6 @@ struct Index {
       .onAreaChange((oldArea: Area, newArea: Area) => {
         this.recordBlockToolbarPaneArea('left', newArea);
       })
-      // v1.30 30.1/30.2：简单模式停靠格式栏 —— 仅编辑聚焦时出现，栏底整行停靠
-      if (this.experienceMode === 'simple' && this.currentFilePath.length > 0 &&
-        this.simpleFormatBarVisible('left')) {
-        this.SimpleFormatDock('left')
-      }
     }
     .width('100%')
     .height('100%')

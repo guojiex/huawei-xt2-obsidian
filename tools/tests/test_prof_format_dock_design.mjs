@@ -3,6 +3,8 @@ import test from 'node:test';
 import { readSourceFile } from './lib/source.mjs';
 
 // v1.32 32.2：专业模式格式栏停靠 —— 与 v1.30 简单模式一致；仅编辑状态显示，预览隐藏。
+// v1.46 46.9：停靠位从栏底移到栏顶 —— OFFSET_WITH_CARET 只保证光标可见，
+// 栏底停靠被软键盘盖住（XT2 真机实测）；分隔线随之从栏顶改到栏底。
 const index = readSourceFile(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const prototype = readSourceFile(
@@ -14,9 +16,9 @@ assert.ok(dockStart >= 0 && dockEnd > dockStart, 'could not find Index.ProfForma
 const dock = index.slice(dockStart, dockEnd);
 
 test('professional format bar docks as a full row like v1.30 simple mode', () => {
-  // 整行停靠：通栏宽 + 顶部细线 + bg_card 底；无阴影、无圆角（不再浮动盖源码）
+  // 整行停靠：通栏宽 + 底部细线（栏顶停靠后分隔线在栏底）+ bg_card 底；无阴影、无圆角
   assert.match(dock, /\.width\('100%'\)/);
-  assert.match(dock, /\.border\(\{ width: \{ top: 1 \}, color: \$r\('app\.color\.line'\) \}\)/);
+  assert.match(dock, /\.border\(\{ width: \{ bottom: 1 \}, color: \$r\('app\.color\.line'\) \}\)/);
   assert.match(dock, /\.backgroundColor\(\$r\('app\.color\.bg_card'\)\)/);
   assert.doesNotMatch(dock, /\.shadow\(/);
   assert.doesNotMatch(dock, /\.borderRadius\(/);
@@ -40,9 +42,16 @@ test('wide screen aligns left, single screen centers (prototype edit-tools rule)
     /window:not\(\.simple-mode\)[^{]*>\.edit-tools:not\(\.hidden\)\{[^}]*justify-content:flex-start/);
   assert.match(prototype,
     /window\.phone:not\(\.simple-mode\)[^{]*>\.edit-tools:not\(\.hidden\)\{[^}]*justify-content:center;padding-left:var\(--s3\)/);
-  // 顶部细线 + 无阴影 + paper 底
+  // v1.46 46.9：栏顶停靠 = position:static（正常流、内容上方）+ 底部细线 + 无阴影 + paper 底
   assert.match(prototype,
-    /window:not\(\.simple-mode\)[^{]*>\.edit-tools:not\(\.hidden\)\{[^}]*border-width:var\(--stroke\) 0 0[^}]*box-shadow:none[^}]*background:var\(--paper\)/);
+    /window:not\(\.simple-mode\)[^{]*>\.edit-tools:not\(\.hidden\)\{[^}]*position:static[^}]*border-width:0 0 var\(--stroke\)[^}]*box-shadow:none[^}]*background:var\(--paper\)/);
+  // 简单模式停靠同样上移：static + 底部细线
+  assert.match(prototype,
+    /window\.simple-mode :is\(\.writing,\.reference\)\.text-focus>\.edit-tools\{[^}]*position:static[^}]*border-width:0 0 var\(--stroke\)/);
+  // 栏底留白补偿规则一并移除（栏顶停靠不再遮内容）
+  assert.doesNotMatch(prototype, /text-focus \.scroll\{padding-bottom/);
+  assert.doesNotMatch(prototype, /:has\(\>\.edit-tools:not\(\.hidden\)\) \.source-editor\{padding-bottom/);
+  assert.doesNotMatch(prototype, /\.source-editor\{padding-bottom:calc\(var\(--touch\) \+ var\(--s8\)/);
 });
 
 test('dock only shows while source editing; floating toolbar is gone', () => {
@@ -58,12 +67,24 @@ test('dock only shows while source editing; floating toolbar is gone', () => {
   const editorPane = index.slice(editorPaneStart, editorPaneEnd);
   assert.match(editorPane,
     /if \(this\.experienceMode === 'professional' && this\.smMode === 'edit' &&[\s\S]*?this\.currentFilePath\.length > 0\) \{\s*\n\s*this\.ProfFormatDock\('left'\)/);
-  // 停靠栏在内容 Stack（layoutWeight 收缩）之后，源码末行不被遮挡
+  // v1.46 46.9：停靠栏在内容 Stack（layoutWeight 收缩）之前 —— 栏顶停靠，源码首行不被遮挡
   assert.match(editorPane,
-    /\.layoutWeight\(1\)[\s\S]*?this\.ProfFormatDock\('left'\)/);
+    /this\.ProfFormatDock\('left'\)[\s\S]*?\.layoutWeight\(1\)/);
   assert.match(rightPane,
-    /\.layoutWeight\(1\)[\s\S]*?this\.ProfFormatDock\('right'\)/);
+    /this\.ProfFormatDock\('right'\)[\s\S]*?\.layoutWeight\(1\)/);
   // v1.7 浮动格式条已删除（无引用、无 Blank 胶囊浮层）
   assert.doesNotMatch(index, /FormatToolbar/);
   assert.match(rightPane, /this\.SimpleFormatDock\('right'\)/);
+});
+
+test('simple-mode docks sit above the content stack too (v1.46 46.9)', () => {
+  // 左栏简单模式：停靠栏在内容 Stack 之前
+  const previewPaneStart = index.indexOf('  PreviewPane() {');
+  const previewPaneEnd = index.indexOf('\n  @Builder\n', previewPaneStart + 1);
+  const previewPane = index.slice(previewPaneStart, previewPaneEnd);
+  assert.match(previewPane,
+    /this\.SimpleFormatDock\('left'\)[\s\S]*?\.layoutWeight\(1\)/);
+  // 表格网格弹层随栏顶停靠改为向下弹
+  assert.match(index,
+    /builder: this\.TableGridPicker\(pane\),\s*\n\s*\/\/ v1\.46 46\.9[^\n]*\n\s*placement: Placement\.Bottom,/);
 });
