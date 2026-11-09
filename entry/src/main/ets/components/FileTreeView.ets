@@ -19,7 +19,7 @@
  * sdk/default/openharmony/ets/component/list_item.d.ts:563），故本文件从一开始就用 List/ListItem。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { FileTree, ExpandStore, TreeNode } from '../model/FileTree';
+import { FileTree, ExpandStore, PinStore, TreeNode } from '../model/FileTree';
 import { VaultAccess, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
@@ -126,20 +126,29 @@ export struct FileTreeView {
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
+  @State pinned: string[] = [];
   @State pathMenuPath: string = '';
   @State helpHintOpen: boolean = false;
   private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
+  private pinStore: PinStore | null = null;
   private treeSource: TreeRowDataSource = new TreeRowDataSource();
 
   aboutToAppear(): void {
     this.ensureStore();
+    this.ensurePinStore();
     this.reload();
   }
 
   private ensureStore(): void {
     if (this.store === null) {
       this.store = new ExpandStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private ensurePinStore(): void {
+    if (this.pinStore === null) {
+      this.pinStore = new PinStore(VaultRegistry.get().abilityContext());
     }
   }
 
@@ -194,12 +203,15 @@ export struct FileTreeView {
   /** 重扫：读出该库的展开状态 → scan → 刷新可见行 */
   private reload(): void {
     this.ensureStore();
+    this.ensurePinStore();
     if (this.vaultId.length === 0) {
       this.applyNodes([]);
       return;
     }
     const store: ExpandStore = this.store as ExpandStore;
     this.expanded = store.load(this.vaultId);
+    const pins: PinStore = this.pinStore as PinStore;
+    this.pinned = pins.load(this.vaultId);
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描开始');
     this.rescan();
   }
@@ -214,14 +226,14 @@ export struct FileTreeView {
     // VaultAccess 负责遍历（沙箱 fileIo / 外部 Native POSIX），这里只做剪枝与排版。
     const access: VaultAccess = VaultRegistry.get().accessFor(this.vaultId);
     let nodes: TreeNode[] = FileTree.scan(access, this.expanded);
-    if (this.sortMode === 'mtime') {
-      // v1.49：按修改时间重排可见行。stat 拿不到按最旧处理（FileTree.resort 内兜底），
-      // 只打可见节点，折叠子树不消耗。
-      nodes = FileTree.resort(nodes, 'mtime', (relPath: string): number => {
+    // v1.49 排序 / v1.50 置顶：mtime 按修改时间重排（stat 拿不到按最旧，
+    // FileTree.resort 内兜底，只打可见节点）；置顶是显式排序权重（同层最前），
+    // 与排序模式正交。name 模式且无置顶时 resort 走快路径原样返回。
+    nodes = FileTree.resort(nodes, this.sortMode === 'mtime' ? 'mtime' : 'name',
+      (relPath: string): number => {
         const meta: VaultFileStat | null = access.stat(relPath);
         return meta === null ? -1 : meta.mtimeSec;
-      });
-    }
+      }, this.pinned);
     this.applyNodes(nodes);
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成');
   }
@@ -298,7 +310,9 @@ export struct FileTreeView {
 
   private runPathMenuAction(node: TreeNode, action: string): void {
     this.closePathMenu(false);
-    if (action === 'share' && node.isDir) {
+    if (action === 'pin') {
+      this.togglePin(node);
+    } else if (action === 'share' && node.isDir) {
       this.onSharePath(node.relPath, true);
     } else if (action === 'rename') {
       this.onRenamePath(node.relPath, node.isDir);
@@ -351,6 +365,39 @@ export struct FileTreeView {
       out.push(i);
     }
     return out;
+  }
+
+  /** 该文件行是否置顶（v1.50 · 50.1：仅笔记文件行，目录恒 false） */
+  private isPinned(relPath: string): boolean {
+    return this.pinned.indexOf(relPath) >= 0;
+  }
+
+  /**
+   * 置顶 / 取消置顶（v1.50 · 50.2）：切换后立即落盘并重排。
+   * 改名 / 移动后旧置顶路径留存为陈旧条目（50.4：不自动清理，无副作用）。
+   */
+  private togglePin(node: TreeNode): void {
+    if (node.isDir) {
+      return;
+    }
+    const next: string[] = [];
+    let found: boolean = false;
+    for (let i = 0; i < this.pinned.length; i++) {
+      if (this.pinned[i] === node.relPath) {
+        found = true;
+      } else {
+        next.push(this.pinned[i]);
+      }
+    }
+    if (!found) {
+      next.push(node.relPath);
+    }
+    this.pinned = next;
+    this.ensurePinStore();
+    const pins: PinStore = this.pinStore as PinStore;
+    pins.save(this.vaultId, next);
+    hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：置顶切换');
+    this.rescan();
   }
 
   build() {
@@ -423,8 +470,9 @@ export struct FileTreeView {
   }
 
   /**
-   * 左滑操作条（1.6 三档）：笔记按 v2 原型显示「改名 / 移动 / 删除」文字按钮，
+   * 左滑操作条（1.6 三档）：笔记按 v2 原型显示「置顶 / 改名 / 移动 / 删除」文字按钮，
    * 普通操作为浅蓝底蓝字，删除为红底白字。目录保留原有分享入口。
+   * v1.50：文件行最前新增置顶切换（已置顶显示「已置顶」），点击切换并收回操作条。
    */
   @Builder
   SwipeBar(n: TreeNode) {
@@ -442,6 +490,21 @@ export struct FileTreeView {
         .backgroundColor($r('app.color.brand_bg'))
         .onClick(() => {
           this.onSharePath(n.relPath, true);
+        })
+      } else {
+        Row() {
+          Text(this.isPinned(n.relPath) ? '已置顶' : '置顶')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.brand'))
+        }
+        .width(Size.touch)
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor($r('app.color.brand_bg'))
+        .onClick(() => {
+          hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：置顶切换');
+          this.togglePin(n);
         })
       }
       Row() {
@@ -522,7 +585,9 @@ export struct FileTreeView {
         this.PathMenuItem(n, 'share', '分享', 'share', false, true)
         this.PathMenuItem(n, 'rename', '改名', 'rename', false, false)
       } else {
-        this.PathMenuItem(n, 'rename', '改名', 'rename', false, true)
+        this.PathMenuItem(n, 'pin', this.isPinned(n.relPath) ? '取消置顶' : '置顶',
+          'pin', false, true)
+        this.PathMenuItem(n, 'rename', '改名', 'rename', false, false)
       }
       this.PathMenuItem(n, 'move', '移动', 'move', false, false)
       this.PathMenuItem(n, 'delete', '删除', 'trash', true, false)
@@ -589,6 +654,10 @@ export struct FileTreeView {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
+            }
+            // v1.50 置顶标记：文件行名字尾部小图钉（不可点，状态由左滑 / 菜单切换）
+            if (!n.isDir && this.isPinned(n.relPath)) {
+              Icon('pin', 12, $r('app.color.text_tertiary'))
             }
             }
             .layoutWeight(1)
@@ -707,7 +776,10 @@ export struct FileTreeView {
         if (n.isDir) {
           return n.relPath + (this.isExpanded(n.relPath) ? '|e' : '|c');
         }
-        return n.relPath + (n.relPath === this.currentFilePath ? '|s' : '|u');
+        // v1.50：置顶态进键值——不进的话切换置顶后行顺序变了、行内 pin 标记不刷新
+        // （faqs-arkui-219 官方键值复用规则，与选中高亮同机理）。
+        return n.relPath + (this.isPinned(n.relPath) ? '|pin' : '') +
+          (n.relPath === this.currentFilePath ? '|s' : '|u');
       })
     }
     .layoutWeight(1)

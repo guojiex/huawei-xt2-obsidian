@@ -150,18 +150,28 @@ export class FileTree {
   }
 
   /**
-   * 按排序模式重排可见行（v1.49 · 49.1）。
+   * 按排序模式重排可见行（v1.49 · 49.1；v1.50 · 50.1 扩展置顶权重）。
    *
    * 约定：输入是 scan 产出的可见行（已按展开状态剪枝），输出保持
-   * 「父目录在子项之前」的扁平 DFS 结构；每层内部目录在前、文件在后，
-   * 同组按模式排序——name = 字典序升序（scan 已排好，原样返回），
-   * mtime = mtimeOf(relPath) 降序（新的在前），相同或拿不到按名称升序稳定。
-   * stat 失败（返回负值）按最旧处理，排序不崩。纯逻辑：mtimeOf 由调用方注入
-   * （沙箱 / 外部都从 VaultAccess.stat 拿），两类库共用，不按 rootKind 分叉。
+   * 「父目录在子项之前」的扁平 DFS 结构；每层内部**置顶笔记最前**（v1.50：
+   * 显式排序权重，仅文件行可置顶，高于目录），其余行目录在前、文件在后，
+   * 同组按模式排序——name = 字典序升序，mtime = mtimeOf(relPath) 降序
+   * （新的在前），相同或拿不到按名称升序稳定。stat 失败（返回负值）按最旧
+   * 处理，排序不崩。纯逻辑：mtimeOf 由调用方注入（沙箱 / 外部都从
+   * VaultAccess.stat 拿），两类库共用，不按 rootKind 分叉。
+   *
+   * 快路径：name 模式且可见行里没有置顶笔记时原样返回（scan 已排好）。
    */
   static resort(nodes: TreeNode[], mode: FileListSortMode,
-    mtimeOf: (relPath: string) => number): TreeNode[] {
-    if (mode !== 'mtime') {
+    mtimeOf: (relPath: string) => number, pinned: string[]): TreeNode[] {
+    let pinnedVisible: boolean = false;
+    for (let i = 0; i < nodes.length; i++) {
+      if (!nodes[i].isDir && pinned.indexOf(nodes[i].relPath) >= 0) {
+        pinnedVisible = true;
+        break;
+      }
+    }
+    if (mode !== 'mtime' && !pinnedVisible) {
       return nodes;
     }
     const byParent: Map<string, TreeNode[]> = new Map<string, TreeNode[]>();
@@ -181,7 +191,8 @@ export class FileTree {
     for (let p = 0; p < parents.length; p++) {
       const group: TreeNode[] | undefined = byParent.get(parents[p]);
       if (group !== undefined) {
-        group.sort((a: TreeNode, b: TreeNode): number => FileTree.compareByMode(a, b, mtimeOf));
+        group.sort((a: TreeNode, b: TreeNode): number =>
+          FileTree.compareSiblings(a, b, mode, mtimeOf, pinned));
       }
     }
     const out: TreeNode[] = [];
@@ -189,15 +200,27 @@ export class FileTree {
     return out;
   }
 
-  /** 同层比较：目录在前、文件在后；同组内 mtime 降序，平局按名称升序稳定。 */
-  private static compareByMode(a: TreeNode, b: TreeNode, mtimeOf: (relPath: string) => number): number {
+  /**
+   * 同层比较（v1.50）：置顶笔记最前（仅文件行，显式权重高于目录）→
+   * 目录在前、文件在后 → 同组按模式（name 字典序 / mtime 降序），
+   * 平局按名称升序稳定。
+   */
+  private static compareSiblings(a: TreeNode, b: TreeNode, mode: FileListSortMode,
+    mtimeOf: (relPath: string) => number, pinned: string[]): number {
+    const aPinned: boolean = !a.isDir && pinned.indexOf(a.relPath) >= 0;
+    const bPinned: boolean = !b.isDir && pinned.indexOf(b.relPath) >= 0;
+    if (aPinned !== bPinned) {
+      return aPinned ? -1 : 1;
+    }
     if (a.isDir !== b.isDir) {
       return a.isDir ? -1 : 1;
     }
-    const at: number = mtimeOf(a.relPath);
-    const bt: number = mtimeOf(b.relPath);
-    if (at !== bt) {
-      return at > bt ? -1 : 1;
+    if (mode === 'mtime') {
+      const at: number = mtimeOf(a.relPath);
+      const bt: number = mtimeOf(b.relPath);
+      if (at !== bt) {
+        return at > bt ? -1 : 1;
+      }
     }
     if (a.name < b.name) {
       return -1;
@@ -310,6 +333,55 @@ export class FileListSortStore {
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, '排序偏好写入失败 code=%{public}d', err.code);
+    }
+  }
+}
+
+/**
+ * PinStore —— 置顶状态持久化（v1.50 · 50.3）。
+ *
+ * 与 ExpandStore 同库不同键：置顶是库内容组织，**按库**分别记忆，
+ * 存 `file_tree_state` preferences 的 `pinned_<vaultId>` 键（JSON 字符串
+ * 数组）；坏值回退空数组。改名 / 移动后旧路径留存为陈旧条目，不再匹配
+ * 任何行、无副作用（50.4：不做自动清理）。
+ */
+export class PinStore {
+  private static readonly PREF_NAME: string = 'file_tree_state';
+  private store: preferences.Preferences | null = null;
+
+  constructor(context: common.UIAbilityContext) {
+    try {
+      this.store = preferences.getPreferencesSync(context, { name: PinStore.PREF_NAME });
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '置顶状态库打开失败 code=%{public}d', err.code);
+      this.store = null;
+    }
+  }
+
+  load(vaultId: string): string[] {
+    if (this.store === null || vaultId.length === 0) {
+      return [];
+    }
+    const raw: string = this.store.getSync('pinned_' + vaultId, '[]') as string;
+    try {
+      const parsed: string[] = JSON.parse(raw) as string[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  save(vaultId: string, pinned: string[]): void {
+    if (this.store === null || vaultId.length === 0) {
+      return;
+    }
+    try {
+      this.store.putSync('pinned_' + vaultId, JSON.stringify(pinned));
+      this.store.flush();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '置顶状态写入失败 code=%{public}d', err.code);
     }
   }
 }
