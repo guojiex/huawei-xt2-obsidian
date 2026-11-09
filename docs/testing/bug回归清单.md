@@ -123,6 +123,8 @@
 | a1cb1b7 | 修复预览整栏焦点框 | 焦点与键盘 | — | test_preview_block_selection.mjs | 已有防线 |
 | ee0f091 | 修复 v1.18 18.4 整栏焦点黑框 | 焦点与键盘 | v1.18 | test_preview_block_selection.mjs | 已有防线 |
 | 本轮 2026-11-08 v1.46 46.4 | 修复简单模式段落宿主引擎焦点黑框（新聚焦目标回流，非 #content 回归；api_notes L-16） | 焦点与键盘 | v1.46 | test_preview_block_selection.mjs（可编辑宿主 outline 抑制断言）；EM 模拟器点按纯文本段落像素扫描无框 | 已补防线 |
+| 本轮 2026-11-08 v1.46 46.6 | 修复 XT2 真机键盘双重避让：页面默认 OFFSET 整页上抬叠加格式栏 dock `margin(keyboardInset)` → dock 悬空键盘高度、聚焦末行被裁；显式 `setKeyboardAvoidMode(RESIZE)` 固定单一避让 + 删两 dock margin + Web 侧 resize 滚回光标行（api_notes L-21） | 焦点与键盘 | v1.46 | test_preview_block_selection.mjs（RESIZE 固定 + dock 无 margin + 产物滚动补齐断言）；XT2 真机验收（x86 模拟器 WM 收矮掩盖 OFFSET 路径，不可复现） | 已补防线 |
+| 本轮 2026-11-08 v1.46 46.8 | 键盘避让 pivot（46.6 同日后续）：RESIZE 把键盘起落变成全窗口 resize → `windowSizeChange` 重发布 → 三栏 + 两 Web 全页重排，中文输入法弹起「整页刷新弹一遍」；改 `OFFSET_WITH_CARET`（since 14）+ 官方答复证实 UIContext 非 RESIZE 时 Web 默认 `RESIZE_CONTENT` 避让生效、会与页面上抬叠加双重避让 → `EditorWebView` / `PreviewWebView` 显式 `.keyboardAvoidMode(WebKeyboardAvoidMode.RETURN_TO_UICONTEXT)`（since 22，api_notes L-21） | 焦点与键盘 | v1.46 | test_preview_block_selection.mjs（OFFSET_WITH_CARET + 两 Web RETURN_TO_UICONTEXT + dock 无 margin 断言）；XT2 真机验收（模拟器 WM 收矮不可复现 OFFSET_WITH_CARET 路径） | 已补防线 |
 | 5a0be23 | 简化单屏设置逐级返回（原型） | 焦点与键盘 | — | 根因已消除：原型已入库 | 根因已消除 |
 
 ## 日志与隐私
@@ -255,6 +257,8 @@
 | c475fd8 | 布局切换时阅读位置 | 需断点切换场景 | EM-A4 人工 | — |
 | 1e77031 | 外层滚动时预览锚点定位 | 锚点定位需目视验收 | EM-D1 人工 | — |
 | 3e50b6e | 系统返回先收起导航 | 需模拟器系统返回验证，UI 自动化无法模拟系统返回键 | EM-L2 人工 | 已有防线 |
+| 本轮 2026-11-08 v1.46 46.6 | 真机键盘双重避让（dock 悬空 + 末行被裁） | x86 模拟器 IME 走 WM 层窗口收矮（等价 RESIZE），OFFSET 缺陷不可复现 | XT2 真机验收 | test_preview_block_selection.mjs |
+| 本轮 2026-11-08 v1.46 46.8 | 键盘起落全页重排（46.6 RESIZE 副作用）与 OFFSET_WITH_CARET 上抬效果（无重排 / dock 贴键盘 / Web 内末行光标可见） | 模拟器 IME 等价 RESIZE，OFFSET_WITH_CARET 路径不可复现；Web 内 contenteditable 光标感知官方未记载 | XT2 真机验收 | test_preview_block_selection.mjs |
 
 ## 本轮新修复
 
@@ -262,3 +266,5 @@
 
 | 来源 | bug 摘要 | 根因类别 | 防线 | 状态 |
 | --- | --- | --- | --- | --- |
+| 本轮 2026-11-08 v1.46 46.7（U-01，用户报告） | 长图分享主按钮文案固化「正在排版…」——`UtilityDialogAction` 的 label 同为按值参数（EM-B2 只修了 enabled） | 状态管理 | test_utility_dialog_shell.mjs, test_share_image_preview.mjs | 已修复（XT2 真机待验收） |
+| 本轮 2026-11-08 v1.46 46.9（V-01，用户裁定） | 失败提示不携带底层错误（自设规则撤销）：Git 导入 / 同步与 ZIP 导入失败的用户可见文案补底层错误原文，令牌仍脱敏；另修 `test_import_vault_dialog_design.mjs` 一条 f140b44 起过期的 `requestFocus(focusReturnId)` 源级断言 | 观测性 / 测试防线 | test_sync_page_git_auth.mjs, test_import_vault_dialog_design.mjs, test_zip_import.mjs, test_error_feedback.mjs | 已修复（XT2 真机待验收） |

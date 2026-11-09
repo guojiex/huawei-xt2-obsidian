@@ -98,7 +98,9 @@ test('NoteWorkspaceShell keeps one workspace tree under every breakpoint', () =>
   assert.equal((workspace.match(/this\.NoteBody\(/g) ?? []).length, 1);
   assert.equal((workspace.match(/this\.Appbar\(/g) ?? []).length, 1);
   assert.equal((workspace.match(/this\.Statusbar\(/g) ?? []).length, 1);
-  assert.equal((workspace.match(/this\.SaveFeedback\(/g) ?? []).length, 1);
+  // v1.46：保存提示从工作区浮动层移进底部状态栏行（摆放防线见 test_save_feedback_display.mjs），
+  // 工作区不再叠 SaveFeedback 浮层（原位置盖在格式栏上方）。
+  assert.equal((workspace.match(/this\.SaveFeedback\(/g) ?? []).length, 0);
   assert.equal((shell.match(/this\.NoteWorkspaceContent\(/g) ?? []).length, 2);
   assert.match(shell, /if \(this\.isSingleScreenLayout\(\)\)[\s\S]*\} else \{/);
   assert.match(shell, /this\.NoteNavigation\(this\.breakpoint === Breakpoint\.SM\)/);

@@ -492,6 +492,23 @@ M-02 与 M-01 的边界：M-01 评估把外部目录直接作为知识库正式�
 | T-02 | `EntryAbility` 主线程安装 `errorManager.setDefaultErrorHandler` 全局 JS_CRASH 兜底：hilog 记录未捕获异常后链式调用前序处理器（无前序则按官方示例同步退出）；兜底日志只进本地 hilog 诊断，禁止进埋点 / 上报 | [v1.46](releases/v1.46/需求文档.md) |
 | T-03 | 修复简单模式纯文本段落宿主的引擎焦点黑框（v1.18 18.4 遗留场景）：简单模式为段落宿主 `div` 加 `contenteditable` 后，点按聚焦宿主触发 ArkWeb 默认焦点框（桌面 Chromium 同 CSS 不复现，见 api_notes L-16）；按 11-04 同源修法在 build.mjs 补 `#content [contenteditable="true"]:focus { outline: none; }`，覆盖段落宿主、空占位与 callout 正文等全部可编辑宿主 | [v1.46](releases/v1.46/需求文档.md) |
 | T-04 | `focusEmptyPane` 撤除 `setTimeout(0)` 时序猜测（L-19 结论2 实证不可靠），按 L-20 官方推荐改事件驱动：`getAttachedFrameNodeById` 预查询已挂载则立即请求，否则记待聚焦栏位、由目标行（reopen 行 / 新建笔记动作）`onAppear` 挂树后补齐；`FocusRequest.safely` 兜底与「不记录 focusId」红线不变 | [v1.46](releases/v1.46/需求文档.md) |
+| T-05 | 修复 XT2 真机键盘双重避让（v1.30 30.3 遗留，api_notes L-21）：页面默认 OFFSET 整页上抬叠加格式栏 dock `margin(keyboardInset)` 致 dock 悬空、聚焦末行被裁；`aboutToAppear` 显式 `setKeyboardAvoidMode(RESIZE)` 固定单一避让并删除两 dock margin，Web 侧 `resize` 把聚焦可编辑块光标行滚回 `#content` 可见区 | [v1.46](releases/v1.46/需求文档.md) |
+
+## U. 弹窗按钮状态刷新回归（2026-11-08，已分配 v1.46）
+
+背景：EM-B2（[v1.32 §6.4](releases/v1.32/需求文档.md)）只把 `UtilityDialogAction` 的 `enabled` 改成 `Binding<boolean>`；`label` 仍是按值 string，同受官方 arkts-builder 限制 3（全局 @Builder 多参按值传参不触发动态渲染，[api_notes Z2](harmonyos/api_notes.md)）——2026-11-08 用户报告长图分享主按钮一直显示「正在排版…」（首帧固化，生成完成后文案不刷新）。
+
+| 编号 | 需求 | 分配 |
+| --- | --- | --- |
+| U-01 | `UtilityDialogAction` 的 `label` 参数改 `Binding<string>`（读取处 `.value`），8 个消费文件全部调用点（含静态文案）统一 `UIUtils.makeBinding<string>` 包裹；防回归测试锁「每个调用的 label 都是 makeBinding 包裹」 | [v1.46](releases/v1.46/需求文档.md) |
+
+## V. 失败信息携带底层错误（2026-11-08，已分配 v1.46）
+
+背景：用户 2026-11-08 裁定——「失败提示不携带底层错误」是无出处的自设规则，排查失败时盲区过大，予以撤销：Git 导入与 ZIP 导入失败的用户可见日志 / 文案一律携带底层错误原文。令牌脱敏（EM-K3）与「文件名、路径、笔记内容不进 hilog / 埋点」红线（[v1.36 §5](releases/v1.36/需求文档.md)）不变——底层错误只进用户可见 UI 文案，不加 hilog。
+
+| 编号 | 需求 | 分配 |
+| --- | --- | --- |
+| V-01 | 同步页全链（`refreshSyncStatus` / `performGitAction` / `onCloneDone` / 三个元数据警告 catch）与 ZIP 导入链（`ZipChooseOutcome` / `ZipImportOutcome` 增加 `detail` 字段、`ImportVaultDialog.zipFailureMessage` 追加 `（detail）`、Index 编排 catch 填 `err.message`）失败文案携带底层错误；令牌经 `split(token).join('[令牌已隐藏]')` 脱敏后展示 | [v1.46](releases/v1.46/需求文档.md) |
 
 ## 待分配：安全与上架缺口（2026-11-02）
 

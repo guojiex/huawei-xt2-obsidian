@@ -17,7 +17,7 @@
  * 数值 `Space/Radius/FontSize/Size/Motion`（common/Tokens.ets）、图标 `Icon()`（common/Icons.ets）。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { ColorMetrics, LengthMetrics, promptAction, router } from '@kit.ArkUI';
+import { ColorMetrics, KeyboardAvoidMode, LengthMetrics, promptAction, router } from '@kit.ArkUI';
 import { BusinessError, deviceInfo, pasteboard } from '@kit.BasicServicesKit';
 import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
@@ -570,7 +570,6 @@ struct Index {
   @State imagePickerBusy: boolean = false;
   @State saveFeedbackMounted: boolean = false;
   @State saveFeedbackOpacity: number = 0;
-  @State saveFeedbackWorkspaceBottomVp: number = 0;
   private saveFeedbackTimer: number = -1;
   private saveFeedbackFadeTimer: number = -1;
   private saveFeedbackRevision: number = 0;
@@ -627,7 +626,6 @@ struct Index {
   private shareImagePreviewSessionId: string = '';
   private shareImagePreviewTitle: string = '';
   @State shareCaptureActive: boolean = false;
-  @State shareCaptureStatus: string = '正在准备分享图片…';
   @State shareCaptureTheme: string = 'light';
   @State shareCaptureWidthVp: number = 0;
   private shareCapturePaneWidthVp: number = 0;
@@ -637,6 +635,17 @@ struct Index {
   };
 
   aboutToAppear(): void {
+    // v1.46 46.6 修复真机双重避让时固定了 RESIZE，但 RESIZE 把键盘起落变成一次
+    // 全窗口 resize：三栏 + 两个 Web 每次全部重排（中文输入法弹起整页「刷新弹一遍」）。
+    // 改 OFFSET_WITH_CARET（since 14 ≤ 24）：窗口尺寸不动、无全页重排，页面上抬由
+    // 系统动画完成，且光标变化时系统持续把光标行调整到可见区（真机效果待验收）。
+    try {
+      this.getUIContext().setKeyboardAvoidMode(KeyboardAvoidMode.OFFSET_WITH_CARET);
+      hilog.info(DOMAIN, TAG, '键盘避让模式固定为 OFFSET_WITH_CARET');
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.warn(DOMAIN, TAG, '设置键盘避让模式失败，错误码 %{public}d %{public}s', err.code, err.message);
+    }
     this.previewBridge.onBlockAnchorChange = (anchor: PreviewBlockAnchor | null): void => {
       this.onBlockAnchorChange('left', anchor);
     };
@@ -2662,7 +2671,7 @@ struct Index {
     }
     if (picked === null) {
       const cancelled: ZipChooseOutcome = {
-        status: 'cancelled', kind: 'corrupt', fileName: '', summary: '', defaultVaultName: ''
+        status: 'cancelled', kind: 'corrupt', detail: '', fileName: '', summary: '', defaultVaultName: ''
       };
       return cancelled;
     }
@@ -2687,7 +2696,7 @@ struct Index {
       const summary: string = parsed.noteCount.toString() + ' 篇笔记 · ' + parsed.imageCount.toString() +
         ' 张图片 · 跳过 ' + parsed.skippedCount.toString() + ' 个其他文件';
       const selected: ZipChooseOutcome = {
-        status: 'selected', kind: 'corrupt', fileName: fileName, summary: summary,
+        status: 'selected', kind: 'corrupt', detail: '', fileName: fileName, summary: summary,
         defaultVaultName: registry.uniqueVaultId(sanitizeVaultName(baseName), '')
       };
       this.pendingZipParse = parsed;
@@ -2697,9 +2706,11 @@ struct Index {
       removeStagingFile(stagingPath);
       this.pendingZipParse = null;
       this.pendingZipStagingPath = '';
+      const err = error as BusinessError;
       const kind: ZipImportErrorKind = error instanceof ZipImportError ? error.kind : 'io';
       const failed: ZipChooseOutcome = {
-        status: 'failed', kind: kind, fileName: fileName, summary: '', defaultVaultName: ''
+        status: 'failed', kind: kind,
+        detail: err.message ?? String(error), fileName: fileName, summary: '', defaultVaultName: ''
       };
       return failed;
     }
@@ -2711,7 +2722,9 @@ struct Index {
     const parsed: ZipParsed | null = this.pendingZipParse;
     const stagingPath: string = this.pendingZipStagingPath;
     if (parsed === null || stagingPath.length === 0) {
-      const stale: ZipImportOutcome = { status: 'failed', kind: 'io', result: null };
+      const stale: ZipImportOutcome = {
+        status: 'failed', kind: 'io', detail: '暂存的解析结果已失效，请重新选择 ZIP 文件', result: null
+      };
       return stale;
     }
     const registry: VaultRegistry = VaultRegistry.get();
@@ -2761,7 +2774,7 @@ struct Index {
       this.cleanupZipImportState();
       promptAction.showToast({ message: '已导入 ' + parsed.noteCount.toString() + ' 篇笔记' });
       void this.switchVault(entry.id);
-      const ok: ZipImportOutcome = { status: 'ok', kind: 'corrupt', result: result };
+      const ok: ZipImportOutcome = { status: 'ok', kind: 'corrupt', detail: '', result: result };
       return ok;
     } catch (error) {
       if (tempDirCreated) {
@@ -2774,8 +2787,11 @@ struct Index {
           // 标记清理失败留给启动恢复（recoverGitImportResidues）
         }
       }
+      const err = error as BusinessError;
       const kind: ZipImportErrorKind = error instanceof ZipImportError ? error.kind : 'io';
-      const failed: ZipImportOutcome = { status: 'failed', kind: kind, result: null };
+      const failed: ZipImportOutcome = {
+        status: 'failed', kind: kind, detail: err.message ?? String(error), result: null
+      };
       return failed;
     }
   }
@@ -3394,18 +3410,6 @@ struct Index {
         this.saveFeedbackMounted = false;
       }, Motion.durBase);
     }, 3500);
-  }
-
-  private saveFeedbackBottomMargin(): number {
-    const windowBottom: number = this.formatWindowArea[1] + this.formatWindowArea[3];
-    const workspaceGap: number = Math.max(0, windowBottom - this.saveFeedbackWorkspaceBottomVp);
-    return Space.s3 + Math.max(0, this.keyboardInsetVp() - workspaceGap);
-  }
-
-  private recordSaveFeedbackWorkspaceArea(area: Area): void {
-    const y: number = typeof area.globalPosition.y === 'number' ? area.globalPosition.y : 0;
-    const height: number = typeof area.height === 'number' ? area.height : 0;
-    this.saveFeedbackWorkspaceBottomVp = y + height;
   }
 
   private onFormatKeyboardInsetChanged(): void {
@@ -8358,6 +8362,11 @@ struct Index {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
+      // 长图捕获层放最底层：被下方不透明工作区完全遮住，挂载/卸载不再闪到笔记页；
+      // 组件截图只截目标自身内容，遮住它的兄弟节点不会进入快照（见 api_notes.md）。
+      if (this.shareCaptureActive) {
+        this.ShareImageCaptureLayer()
+      }
       Column() {
         this.NoteWorkspaceShell()
       }
@@ -8421,9 +8430,6 @@ struct Index {
         })
           .width('100%')
           .height('100%')
-      }
-      if (this.shareCaptureActive) {
-        this.ShareImageCaptureLayer()
       }
       // v1.41 启动页品牌遮罩：常驻挂载，ready 后组件内部 240ms 淡出并隐藏。
       StartupMask({ ready: this.workspaceInitialRenderReady })
@@ -8660,7 +8666,6 @@ struct Index {
     editor: EditorBridge): Promise<ShareImagePreviewImage> {
     const registry: VaultRegistry = VaultRegistry.get();
     this.shareCaptureCancelled = false;
-    this.shareCaptureStatus = '正在读取笔记…';
     let sessionId: string = '';
     let longImage: image.PixelMap | null = null;
     const bridge: PreviewBridge = new PreviewBridge();
@@ -8672,7 +8677,6 @@ struct Index {
       }
       bridge.setNoteDir(NoteShareService.parentOf(notePath));
       bridge.setContent(markdown);
-      this.shareCaptureStatus = '正在渲染笔记…';
       this.shareCaptureActive = true;
       const ready: Promise<void> = this.waitForShareCaptureReady();
       await ready;
@@ -8692,7 +8696,6 @@ struct Index {
         if (this.shareCaptureCancelled) {
           throw new Error('分享图片生成已取消');
         }
-        this.shareCaptureStatus = '正在合成长图 ' + (i + 1).toString() + ' / ' + captureTops.length.toString();
         const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(captureTops[i]);
         if (Math.abs(positioned.scrollTop - captureTops[i]) > 1) {
           throw new Error('分享预览无法定位到第 ' + (i + 1).toString() + ' 个渲染分段');
@@ -9469,13 +9472,9 @@ struct Index {
       this.Appbar()
       Stack({ alignContent: Alignment.BottomStart }) {
         this.NoteBody()
-        this.SaveFeedback()
       }
       .layoutWeight(1)
       .width('100%')
-      .onAreaChange((oldArea: Area, newArea: Area): void => {
-        this.recordSaveFeedbackWorkspaceArea(newArea);
-      })
       this.Statusbar()
     }
     .layoutWeight(1)
@@ -9837,27 +9836,9 @@ struct Index {
       })
         .width(this.shareCaptureWidthVp > 0 ? this.shareCaptureWidthVp : '100%')
         .height('100%')
-      Row({ space: Space.s3 }) {
-        Text(this.shareCaptureStatus)
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text('取消')
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.brand'))
-          .onClick((): void => {
-            this.cancelShareImageCapture();
-          })
-      }
-      .width('100%')
-      .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
-      .backgroundColor($r('app.color.bg_card'))
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.bg_page'))
   }
 
   /**
@@ -11783,7 +11764,6 @@ struct Index {
     .alignItems(VerticalAlign.Center)
     .border({ width: { top: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
-    .margin({ bottom: this.keyboardInsetVp() })
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
         this.recordPaneWidth(pane, newArea.width);
@@ -11846,7 +11826,6 @@ struct Index {
     .alignItems(VerticalAlign.Center)
     .border({ width: { top: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
-    .margin({ bottom: this.keyboardInsetVp() })
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
         this.recordPaneWidth(pane, newArea.width);
@@ -12383,12 +12362,14 @@ struct Index {
   @Builder
   Statusbar() {
     Row() {
+      this.SaveFeedback()
       Blank()
       Text((this.activePane === 'right' ? this.rightEditorLen : Math.max(0, this.editorLen)).toString() + ' 字')
         .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_tertiary'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .flexShrink(0)
     }
     .width('100%')
     .height(Size.statusbarH)
@@ -12411,14 +12392,11 @@ struct Index {
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_tertiary'))
           .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .flexShrink(1)
       }
-      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-      .border({ width: 1, color: $r('app.color.line') })
-      .borderRadius(Radius.full)
-      .backgroundColor($r('app.color.bg_card'))
       .opacity(this.saveFeedbackOpacity)
       .animation({ duration: Motion.durBase, curve: Curve.EaseInOut })
-      .margin({ left: Space.s5, bottom: this.saveFeedbackBottomMargin() })
       .hitTestBehavior(HitTestMode.None)
     }
   }

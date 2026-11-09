@@ -86,10 +86,10 @@ export struct CreateVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('创建', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.sanitized().length > 0), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '创建'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.sanitized().length > 0), (): void => {
         this.confirm();
       })
     }
@@ -179,10 +179,10 @@ export struct RenameVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('保存', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.sanitized().length > 0), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '保存'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.sanitized().length > 0), (): void => {
         this.confirm();
       })
     }
@@ -250,10 +250,10 @@ export struct DeleteVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction(this.isExternal ? '解除关联' : '确认删除', 'danger',
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => this.isExternal ? '解除关联' : '确认删除'), 'danger',
         this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.confirm();
         })

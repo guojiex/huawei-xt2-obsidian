@@ -145,7 +145,7 @@ test('Git source collects provider credentials in the dialog and documents safe 
   assert.match(dialogSource, /accessibilityText\(this\.showGitToken \? '隐藏访问令牌' : '显示访问令牌'\)/);
   assert.match(dialogSource, /GitHub 使用 Bearer；Gitee 使用用户名和令牌/);
   assert.match(dialogSource, /成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换/);
-  assert.match(dialogSource, /UtilityDialogAction\(this\.working \? '处理中…' : '导入 Git 仓库', 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.gitRemote\.trim\(\)\.length > 0 && !this\.working\)/);
+  assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.working \? '处理中…' : '导入 Git 仓库'\), 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.gitRemote\.trim\(\)\.length > 0 && !this\.working\)/);
   assert.match(dialogSource, /username: username,\s*token: this\.gitToken/);
   assert.match(syncSource, /TextInput\(\{ placeholder: '私有库填 Access Token/);
   assert.match(indexSource, /onContinueGit: \(draft: GitImportDraft\): void => \{\s*void this\.openGitSyncPage\(draft\);/);
@@ -214,7 +214,7 @@ test('picked directory lives in dialog @State, not in a @Prop the parent cannot 
   assert.match(dialogSource, /@State directoryState: string = 'unselected'/);
   assert.match(dialogSource, /@State directoryStatus: string = ''/);
   assert.match(dialogSource, /@State working: boolean = false/);
-  assert.match(dialogSource, /UtilityDialogAction\(this\.associating \? '正在关联…' : '关联此目录', 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.hasPicked\(\) && !this\.working\)/);
+  assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.associating \? '正在关联…' : '关联此目录'\), 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.hasPicked\(\) && !this\.working\)/);
   assert.match(indexSource, /onChooseDirectory: \(\): Promise<string \| null> => this\.chooseExternalDirectory\(\)/);
   assert.match(indexSource, /onAssociateDirectory: \(\): Promise<boolean> => this\.associateExternalDirectory\(\)/);
   assert.match(indexSource, /onBusyChange: \(busy: boolean\): void => \{ this\.importVaultDialogBusy = busy; \}/);
@@ -312,10 +312,10 @@ test('narrow and short windows keep the dialog within bounds and scroll the cont
   assert.match(dialogSource, /\.constraintSize\(\{ maxHeight: Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 6\) \}\)/);
   assert.match(dialogSource, /UtilityDialogShell\(\{[\s\S]*?scrollContent: false,[\s\S]*?content: \(\): void => \{ this\.DialogContent\(\); \},[\s\S]*?footer: \(\): void => \{ this\.DialogFooter\(\); \}/);
   assert.match(dialogSource, /\.focusable\(!this\.working\)[\s\S]*?\.id\('import-directory-card'\)/);
-  assert.match(dialogSource, /UtilityDialogAction\('取消', 'secondary', this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => !this\.working\)/);
+  assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => '取消'\), 'secondary', this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => !this\.working\)/);
   assert.match(indexSource, /singleScreen: importSheet,[\s\S]*?windowWidthVp: this\.windowWidthVp,\s*windowHeightVp: this\.windowHeightVp/);
   assert.match(indexSource, /alignment: importSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
-  assert.match(indexSource, /requestFocus\(focusReturnId\)/);
+  assert.match(indexSource, /FocusRequest\.safely\(this\.getUIContext\(\), focusReturnId\)/);
 });
 
 test('ZIP source adds a third tab with card, name field and import facts', () => {
@@ -328,7 +328,7 @@ test('ZIP source adds a third tab with card, name field and import facts', () =>
   assert.match(dialogSource, /\.maxLength\(40\)/);
   assert.match(dialogSource, /this\.DirectoryFact\('plus', '只新建、不覆盖', '总是新建一个知识库，已有库和其中的文件保持不变'\)/);
   assert.match(dialogSource, /this\.DirectoryFact\('archive', '只导入笔记与图片', '其他文件、隐藏项、\.git 与回收站会跳过，完成后告知数量'\)/);
-  assert.match(dialogSource, /UtilityDialogAction\(this\.importingZip \? '正在导入…' : '导入为新知识库', 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.zipState === 'selected' && this\.zipVaultName\.trim\(\)\.length > 0 && !this\.working\)/);
+  assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.importingZip \? '正在导入…' : '导入为新知识库'\), 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.zipState === 'selected' && this\.zipVaultName\.trim\(\)\.length > 0 && !this\.working\)/);
 });
 
 test('ZIP card reflects the three states with safe failure copy', () => {
@@ -352,7 +352,7 @@ test('ZIP card reflects the three states with safe failure copy', () => {
   assert.equal(dialog.zipCardTitle(), '无法读取这个 ZIP');
 });
 
-test('zipFailureMessage maps every failure kind without leaking ZIP entries', () => {
+test('zipFailureMessage maps every failure kind and appends the underlying detail (46.9)', () => {
   const dialog = createHarness();
   assert.match(dialog.zipFailureMessage('not_vault'), /不是知识库备份/);
   assert.match(dialog.zipFailureMessage('over_limit'), /超出导入上限/);
@@ -361,6 +361,7 @@ test('zipFailureMessage maps every failure kind without leaking ZIP entries', ()
   assert.match(dialog.zipFailureMessage('unsafe'), /不安全的条目/);
   assert.match(dialog.zipFailureMessage('io'), /读取 ZIP 失败/);
   assert.match(dialog.zipFailureMessage('corrupt'), /文件损坏/);
+  assert.match(dialog.zipFailureMessage('io', 'boom 13900011'), /读取 ZIP 失败；没有新建知识库，可重试。（boom 13900011）/);
   for (const kind of ['not_vault', 'over_limit', 'no_space', 'encrypted', 'unsafe', 'io', 'corrupt']) {
     assert.equal(dialog.zipFailureMessage(kind).includes('没有新建知识库'), true, kind);
   }
@@ -390,22 +391,25 @@ test('chooseZip keeps the previous selection on cancel and previews the parsed Z
   assert.equal(dialog.zipState, 'selected', 'cancel after selection must preserve the previous ZIP');
   assert.equal(dialog.zipFileName, '笔记库.zip');
 
-  dialog.chooseOutcome = { status: 'failed', kind: 'not_vault', fileName: '照片.zip', summary: '', defaultVaultName: '' };
+  dialog.chooseOutcome = {
+    status: 'failed', kind: 'not_vault', detail: 'zip 里只有照片',
+    fileName: '照片.zip', summary: '', defaultVaultName: ''
+  };
   await dialog.chooseZip();
   assert.equal(dialog.zipState, 'failed');
   assert.equal(dialog.zipFileName, '照片.zip');
-  assert.match(dialog.zipFailureText, /不是知识库备份/);
+  assert.match(dialog.zipFailureText, /不是知识库备份；没有新建知识库。（zip 里只有照片）/);
   assert.deepEqual(plain(dialog.busyChanges), [true, false, true, false, true, false, true, false]);
 });
 
-test('chooseZip maps unexpected errors to the io failure copy', async () => {
+test('chooseZip maps unexpected errors to the io failure copy carrying the underlying detail', async () => {
   const dialog = createHarness();
   dialog.source = 'zip';
   dialog.onChooseZip = async () => { throw new Error('private zip detail'); };
   await dialog.chooseZip();
   assert.equal(dialog.zipState, 'failed');
   assert.match(dialog.zipFailureText, /读取 ZIP 失败/);
-  assert.equal(dialog.zipFailureText.includes('private zip detail'), false);
+  assert.equal(dialog.zipFailureText.includes('private zip detail'), true);
   assert.equal(dialog.working, false);
 });
 
@@ -429,15 +433,15 @@ test('importZip requires a selected ZIP and a non-blank name, closes on ok, stay
   assert.equal(dialog.zipProgressText, '');
 
   dialog.closed = 0;
-  dialog.importOutcome = { status: 'failed', kind: 'no_space', result: null };
+  dialog.importOutcome = { status: 'failed', kind: 'no_space', detail: '需要 2GB，剩余 100MB', result: null };
   await dialog.importZip();
   assert.equal(dialog.closed, 0, 'the dialog stays open for retry after an import failure');
   assert.equal(dialog.zipState, 'failed');
-  assert.match(dialog.zipFailureText, /存储空间不足/);
+  assert.match(dialog.zipFailureText, /存储空间不足；没有新建知识库，可清理空间后重试。（需要 2GB，剩余 100MB）/);
   assert.equal(dialog.importingZip, false);
 });
 
-test('importZip surfaces per-entry progress and maps unexpected errors to io copy', async () => {
+test('importZip surfaces per-entry progress and maps unexpected errors to io copy carrying the detail', async () => {
   const dialog = createHarness();
   dialog.source = 'zip';
   dialog.zipState = 'selected';
@@ -457,7 +461,7 @@ test('importZip surfaces per-entry progress and maps unexpected errors to io cop
   await dialog.importZip();
   assert.equal(dialog.zipState, 'failed');
   assert.match(dialog.zipFailureText, /读取 ZIP 失败/);
-  assert.equal(dialog.zipFailureText.includes('private import detail'), false);
+  assert.equal(dialog.zipFailureText.includes('private import detail'), true);
   assert.equal(dialog.importingZip, false);
 });
 

@@ -177,11 +177,11 @@ export struct ShareImageSettingsDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s3 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen,
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen,
         UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.cancel();
         }, true)
-      UtilityDialogAction('生成预览', 'primary', this.singleScreen,
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '生成预览'), 'primary', this.singleScreen,
         UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.confirm();
         }, true)

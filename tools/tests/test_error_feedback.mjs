@@ -113,7 +113,9 @@ test('critical failure surfaces do not display raw system exception text', () =>
   assert.doesNotMatch(sourceFiles.index, /showToast\(\{\s*message:\s*(?:err|error)\.message/);
   assert.doesNotMatch(sourceFiles.sync, /appendLog\(\s*(?:err|error)\.message/);
   assert.doesNotMatch(sourceFiles.sync, /appendLog\([^;\n]*\+\s*(?:err|error)\.message/);
-  assert.match(sourceFiles.sync, /appendLog\(label \+[\s\S]*?explainError\(err\.message/);
+  // 46.9（V-01，用户裁定）：同步操作失败文案先经 explainError 分类，再追加「底层错误：<detail>」；
+  // detail 由 syncFailureDetail 统一取 err.message 并做令牌脱敏（EM-K3），不直接散写 err.message。
+  assert.match(sourceFiles.sync, /appendLog\(label \+[\s\S]*?explainError\(detail\)[\s\S]*?'。底层错误：' \+ detail/);
   assert.doesNotMatch(sourceFiles.sync, /return message;/);
   assert.doesNotMatch(sourceFiles.settings, /this\.(?:resetError|agentMessage)\s*=\s*err\.message/);
   assert.doesNotMatch(sourceFiles.switcher, /fullTextError\s*=\s*\(error as Error\)\.message/);

@@ -8,11 +8,10 @@ const require = createRequire(new URL('../../web/mdpreview/package.json', import
 const { transformSync } = require('esbuild');
 const source = fs.readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
 const hideStart = source.indexOf('  private hideSaveFeedback(): void {');
-const marginStart = source.indexOf('  private saveFeedbackBottomMargin(): number {', hideStart);
-const areaStart = source.indexOf('\n  private recordSaveFeedbackWorkspaceArea', marginStart);
-assert.ok(hideStart >= 0 && marginStart > hideStart && areaStart > marginStart,
+const insetStart = source.indexOf('\n  private onFormatKeyboardInsetChanged', hideStart);
+assert.ok(hideStart >= 0 && insetStart > hideStart,
   'could not find save feedback display methods');
-const methods = `${source.slice(hideStart, marginStart).trim()} ${source.slice(marginStart, areaStart).trim()}`;
+const methods = source.slice(hideStart, insetStart).trim();
 const code = transformSync(`class SaveFeedbackHarness { ${methods} }; module.exports = SaveFeedbackHarness;`, {
   loader: 'ts',
   format: 'cjs'
@@ -25,7 +24,6 @@ function createHarness() {
   const context = vm.createContext({
     module: { exports: {} },
     Motion: { durBase: 180 },
-    Space: { s3: 12 },
     setTimeout(callback, delay) {
       const id = nextTimerId++;
       timers.set(id, { callback, delay });
@@ -42,10 +40,7 @@ function createHarness() {
     saveFeedbackMounted: false,
     saveFeedbackOpacity: 0,
     saveFeedbackTimer: -1,
-    saveFeedbackFadeTimer: -1,
-    formatWindowArea: [0, 100, 1200, 800],
-    saveFeedbackWorkspaceBottomVp: 900,
-    keyboardInsetVp: () => 0
+    saveFeedbackFadeTimer: -1
   });
   return { app, timers, cleared };
 }
@@ -96,15 +91,24 @@ test('replacing or hiding save feedback cancels its pending timer', () => {
   assert.equal(app.saveFeedbackOpacity, 0);
 });
 
-test('save feedback bottom margin clears the remaining keyboard inset after workspace resize', () => {
-  const { app } = createHarness();
+test('save hint is docked in the bottom status bar row, not floating above the format dock', () => {
+  const statusStart = source.indexOf('  Statusbar() {');
+  const statusEnd = source.indexOf('\n  @Builder', statusStart);
+  const workspaceStart = source.indexOf('  NoteWorkspaceContent() {');
+  const workspaceEnd = source.indexOf('\n  @Builder', workspaceStart + 10);
 
-  assert.equal(app.saveFeedbackBottomMargin(), 12);
+  assert.ok(statusStart >= 0 && statusEnd > statusStart, 'could not find Statusbar builder');
+  assert.ok(workspaceStart >= 0 && workspaceEnd > workspaceStart, 'could not find NoteWorkspaceContent builder');
 
-  app.keyboardInsetVp = () => 300;
-  app.saveFeedbackWorkspaceBottomVp = 700;
-  assert.equal(app.saveFeedbackBottomMargin(), 112);
+  const statusBarBlock = source.slice(statusStart, statusEnd);
+  const workspaceBlock = source.slice(workspaceStart, workspaceEnd);
+  const totalCalls = source.match(/this\.SaveFeedback\(/g) ?? [];
 
-  app.saveFeedbackWorkspaceBottomVp = 500;
-  assert.equal(app.saveFeedbackBottomMargin(), 12);
+  assert.equal(totalCalls.length, 1, 'SaveFeedback builder must be mounted exactly once');
+  assert.ok(statusBarBlock.includes('this.SaveFeedback()'),
+    'save hint must lead the bottom status bar row');
+  assert.equal(statusBarBlock.indexOf('this.SaveFeedback()') < statusBarBlock.indexOf('Blank()'), true,
+    'save hint sits on the left of the word count');
+  assert.equal(workspaceBlock.includes('this.SaveFeedback()'), false,
+    'save hint must not overlay the editor workspace above the format dock');
 });

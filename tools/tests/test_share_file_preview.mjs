@@ -181,8 +181,12 @@ test('file detail follows the share panel design: shell, stage, list card, meta,
   assert.match(dialogSource, /return this\.format === 'ZIP' \? '1 个 ZIP' : '1 个 Markdown 文件';/);
   assert.match(dialogSource, /this\.noteCount\.toString\(\) \+ ' 篇笔记'/);
   assert.match(dialogSource, /this\.imageCount\.toString\(\) \+ ' 张图片'/);
-  // 底部操作：返回 · 分享文件（失败时重试生成），胶囊样式走 UtilityDialogAction
-  assert.match(dialogSource, /'返回', 'secondary', this\.singleScreen/);
-  assert.match(dialogSource, /this\.sharing \? '正在打开…' : '分享文件', 'primary'/);
-  assert.match(dialogSource, /this\.preparing \? '正在重试…' : '重试生成', 'primary'/);
+  // 底部操作：返回 · 分享文件（失败时重试生成），胶囊样式走 UtilityDialogAction；
+  // 2026-11-08：label 一并改 makeBinding<string>（按值 string 会固化在首帧）
+  assert.match(dialogSource,
+    /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => '返回'\), 'secondary', this\.singleScreen/);
+  assert.match(dialogSource,
+    /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.sharing \? '正在打开…' : '分享文件'\), 'primary'/);
+  assert.match(dialogSource,
+    /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.preparing \? '正在重试…' : '重试生成'\), 'primary'/);
 });

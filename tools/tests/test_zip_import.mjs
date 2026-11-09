@@ -402,7 +402,7 @@ test('v1.36 36.6 Index 清理暂存残留：启动清根、弹窗关闭清状态
 test('v1.36 36.1/36.2 chooseZipBackup：取消保原状态、暂存复制、解析预览与默认库名（源断言）', () => {
   // 选择器异常按取消处理（36.1：取消回到原状态，不弹失败）
   assert.match(indexSource, /catch \(_error\) \{\r?\n\s*\/\/ 选择器异常按取消处理（36\.1：取消回到原状态）\r?\n\s*picked = null;\r?\n\s*\}/);
-  assert.match(indexSource, /status: 'cancelled', kind: 'corrupt', fileName: '', summary: '', defaultVaultName: ''/);
+  assert.match(indexSource, /status: 'cancelled', kind: 'corrupt', detail: '', fileName: '', summary: '', defaultVaultName: ''/);
   // 每次选择先清旧暂存与旧解析结果
   assert.match(indexSource, /this\.cleanupZipImportState\(\);\r?\n\s*const fileName: string = picked\.fileName\.length > 0 \? picked\.fileName : '备份\.zip';/);
   // staging 文件名带时间戳，避免重名覆盖
@@ -418,8 +418,8 @@ test('v1.36 36.1/36.2 chooseZipBackup：取消保原状态、暂存复制、解�
 });
 
 test('v1.36 36.3–36.7 importZipBackup：空间预检、隔离解压、原子登记与失败清理（源断言）', () => {
-  // 弹窗状态与暂存不一致（stale）按 io 失败，不落盘
-  assert.match(indexSource, /const stale: ZipImportOutcome = \{ status: 'failed', kind: 'io', result: null \};/);
+  // 弹窗状态与暂存不一致（stale）按 io 失败，不落盘；46.9 失败携带底层错误 detail
+  assert.match(indexSource, /const stale: ZipImportOutcome = \{\r?\n\s*status: 'failed', kind: 'io', detail: '暂存的解析结果已失效，请重新选择 ZIP 文件', result: null\r?\n\s*\};/);
   assert.match(indexSource, /const tempId: string = registry\.uniqueVaultId\(finalId \+ ZIP_IMPORTING_SUFFIX, ''\);/);
   assert.match(indexSource, /registry\.beginGitImport\(finalId, tempId\);/);
   // 36.7 空间预检：解压总量超过剩余空间按 no_space 失败，不报告虚假成功

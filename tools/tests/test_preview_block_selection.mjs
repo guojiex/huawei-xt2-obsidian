@@ -12,6 +12,9 @@ const previewSource = readSourceFile(new URL('web/mdpreview/src/index.ts', root)
 const previewComponentSource = readSourceFile(
   new URL('entry/src/main/ets/components/PreviewWebView.ets', root)
 )
+const editorComponentSource = readSourceFile(
+  new URL('entry/src/main/ets/components/EditorWebView.ets', root)
+)
 const indexSource = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', root))
 const buildSource = readSourceFile(new URL('web/mdpreview/build.mjs', root))
 const generatedPreview = readSourceFile(
@@ -51,6 +54,23 @@ test('focused preview scroll area suppresses its default outline, not block outl
 test('focused simple-mode editable hosts suppress engine focus outlines', () => {
   assert.match(buildSource, /#content \[contenteditable="true"\]:focus\s*\{\s*outline:\s*none;\s*\}/)
   assert.ok(generatedPreview.includes('#content [contenteditable="true"]:focus { outline: none; }'))
+})
+
+test('keyboard avoidance keeps the caret line of focused editables visible', () => {
+  assert.match(previewSource,
+    /function scrollFocusedEditableIntoView\(\): void \{[\s\S]*?contentElement\.scrollTop \+= rect\.bottom - \(view\.bottom - viewMargin\)/)
+  assert.match(previewSource,
+    /window\.addEventListener\('resize', \(\): void => \{[\s\S]*?scrollFocusedEditableIntoView\(\)\s*\}\)/)
+  assert.match(generatedPreview, /\.isContentEditable\?\w+:\w+\.closest\('\[contenteditable="true"\]'\)/)
+  assert.match(generatedPreview, /\.scrollTop\+=\w+\.bottom-\(\w+\.bottom-\w+\)/)
+  // v1.46 后续实验：RESIZE 每次键盘起落都全页重排（输入法弹起「整页刷新弹一遍」），
+  // 换 OFFSET_WITH_CARET 保窗口尺寸稳定；dock 仍不得叠加 keyboardInset margin。
+  // Web 侧必须 RETURN_TO_UICONTEXT：UIContext 非 RESIZE 时 WebAttribute.keyboardAvoidMode
+  // 生效，默认 RESIZE_CONTENT 会与页面上抬叠加成双重避让（api_notes L-21）。
+  assert.match(indexSource, /setKeyboardAvoidMode\(KeyboardAvoidMode\.OFFSET_WITH_CARET\)/)
+  assert.doesNotMatch(indexSource, /\.margin\(\{ bottom: this\.keyboardInsetVp\(\) \}\)/)
+  assert.match(editorComponentSource, /\.keyboardAvoidMode\(WebKeyboardAvoidMode\.RETURN_TO_UICONTEXT\)/)
+  assert.match(previewComponentSource, /\.keyboardAvoidMode\(WebKeyboardAvoidMode\.RETURN_TO_UICONTEXT\)/)
 })
 
 test('locked block taps route links and images without synthesizing a block selection', () => {

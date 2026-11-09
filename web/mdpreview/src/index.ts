@@ -2152,8 +2152,39 @@ contentElement.addEventListener('click', (event: MouseEvent): void => {
 contentElement.addEventListener('scroll', (): void => {
   if (activeToolbarBlock) publishLockedBlockAnchor(activeToolbarBlock)
 }, { passive: true })
+
+/** v1.46 46.5：RESIZE 避让下窗口收矮后，把聚焦可编辑块的光标行滚回 #content 可见区 */
+function scrollFocusedEditableIntoView(): void {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement) || active === document.body) return
+  const editable: HTMLElement | null = active.isContentEditable
+    ? active
+    : (active.closest('[contenteditable="true"]') as HTMLElement | null)
+  if (!editable || !contentElement.contains(editable)) return
+  const selection = window.getSelection()
+  let rect: DOMRect | null = null
+  if (selection && selection.rangeCount > 0 && selection.containsNode(editable, true)) {
+    const range = selection.getRangeAt(0)
+    const rects = range.getClientRects()
+    if (rects.length > 0) {
+      rect = rects[rects.length - 1]
+    } else {
+      const bounds = range.getBoundingClientRect()
+      if (bounds.height > 0 || bounds.width > 0) rect = bounds
+    }
+  }
+  if (!rect) rect = editable.getBoundingClientRect()
+  const view = contentElement.getBoundingClientRect()
+  const viewMargin = 8
+  if (rect.bottom > view.bottom - viewMargin) {
+    contentElement.scrollTop += rect.bottom - (view.bottom - viewMargin)
+  } else if (rect.top < view.top + viewMargin) {
+    contentElement.scrollTop -= (view.top + viewMargin) - rect.top
+  }
+}
 window.addEventListener('resize', (): void => {
   if (activeToolbarBlock) publishLockedBlockAnchor(activeToolbarBlock)
+  scrollFocusedEditableIntoView()
 })
 
 async function renderMermaidBlocks(root: HTMLElement, generation: number): Promise<void> {

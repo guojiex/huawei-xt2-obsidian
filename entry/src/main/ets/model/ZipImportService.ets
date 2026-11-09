@@ -13,7 +13,8 @@
  * - 写入只经注入的 writer 端口落到未登记的临时库目录，登记与清理由
  *   VaultRegistry / 调用方负责（36.6）；本类不做任何登记操作；
  * - 错误统一为 ZipImportError（kind 分类），失败文案映射放 ImportVaultDialog；
- * - 隐私红线（需求 §5）：错误消息不携带 ZIP 内文件名 / 路径 / 笔记内容。
+ * - 失败信息携带底层错误进用户可见文案（46.9）；文件名、路径与笔记内容
+ *   不进 hilog 日志或埋点（需求 §5 红线不变）。
  */
 
 /** 解析结果中的单条目。kind：'note' | 'image' | 'skip'（skip 不参与写入）。 */
@@ -92,6 +93,8 @@ export interface ZipImportResult {
 export interface ZipChooseOutcome {
   status: string;
   kind: ZipImportErrorKind;
+  /** 底层错误文本（46.9：随失败态展示给用户；成功 / 取消为空串）。 */
+  detail: string;
   fileName: string;
   summary: string;
   defaultVaultName: string;
@@ -104,6 +107,8 @@ export interface ZipChooseOutcome {
 export interface ZipImportOutcome {
   status: string;
   kind: ZipImportErrorKind;
+  /** 底层错误文本（46.9：随失败态展示给用户；成功 / 取消为空串）。 */
+  detail: string;
   result: ZipImportResult | null;
 }
 
@@ -111,7 +116,7 @@ export interface ZipImportOutcome {
 export type ZipImportErrorKind =
   'corrupt' | 'not_vault' | 'over_limit' | 'unsafe' | 'encrypted' | 'no_space' | 'io' | 'cancelled';
 
-/** 带分类的导入错误；message 不含用户文件名。 */
+/** 带分类的导入错误；message 为可直接展示的底层错误文本。 */
 export class ZipImportError extends Error {
   readonly kind: ZipImportErrorKind;
 

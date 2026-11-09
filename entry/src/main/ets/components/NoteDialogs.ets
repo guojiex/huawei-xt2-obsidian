@@ -289,10 +289,10 @@ export struct CreateNoteDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('创建', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.normalized().length > 0), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '创建'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.normalized().length > 0), (): void => {
         this.confirm();
       })
     }
@@ -364,10 +364,10 @@ export struct DeletePathDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('确认删除', 'danger', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '确认删除'), 'danger', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.confirm();
       })
     }
@@ -455,10 +455,10 @@ export struct RenamePathDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
       })
-      UtilityDialogAction('保存', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.canConfirm()), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '保存'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.canConfirm()), (): void => {
         if (!this.canConfirm()) {
           return;
         }
@@ -600,10 +600,10 @@ export struct MovePathDialog {
   @Builder
   DialogFooter() {
       Row({ space: Space.s2 }) {
-        UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.controller?.close();
         })
-        UtilityDialogAction('移动到这里', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => '移动到这里'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.controller?.close();
           this.onConfirm(this.selectedDir);
         })

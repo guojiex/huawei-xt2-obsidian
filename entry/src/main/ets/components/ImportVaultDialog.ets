@@ -1,5 +1,6 @@
 /** ImportVaultDialog.ets —— v1.5 统一知识库导入入口（原型 v2 importVaultDialog）。 */
 import { UIUtils } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { GitImportDraft } from '../model/GitImportDraftStore';
 import { Icon } from '../common/Icons';
 import { FocusRequest } from '../common/FocusRequest';
@@ -44,14 +45,14 @@ export struct ImportVaultDialog {
   /** 选择并解析 ZIP 的编排结果（36.1/36.2）：cancelled / failed / selected。 */
   onChooseZip: () => Promise<ZipChooseOutcome> = async (): Promise<ZipChooseOutcome> => {
     const cancelled: ZipChooseOutcome = {
-      status: 'cancelled', kind: 'corrupt', fileName: '', summary: '', defaultVaultName: ''
+      status: 'cancelled', kind: 'corrupt', detail: '', fileName: '', summary: '', defaultVaultName: ''
     };
     return cancelled;
   };
   /** 确认导入的编排结果（36.6/36.7）：ok 时父侧已登记切库并提示。 */
   onImportZip: (name: string, onProgress: (done: number, total: number) => void) => Promise<ZipImportOutcome> =
     async (_name: string, _onProgress: (done: number, total: number) => void): Promise<ZipImportOutcome> => {
-      const cancelled: ZipImportOutcome = { status: 'cancelled', kind: 'corrupt', result: null };
+      const cancelled: ZipImportOutcome = { status: 'cancelled', kind: 'corrupt', detail: '', result: null };
       return cancelled;
     };
   onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
@@ -249,27 +250,28 @@ export struct ImportVaultDialog {
     return this.zipCardTitle() + '，' + this.zipCardDescription();
   }
 
-  /** 36.7 失败文案映射：只暴露分类结论，不携带底层错误与 ZIP 内文件名。 */
-  private zipFailureMessage(kind: string): string {
+  /** 36.7 失败文案映射：分类结论 + 底层错误 detail（46.9 起携带）。 */
+  private zipFailureMessage(kind: string, detail: string = ''): string {
+    const suffix: string = detail.length > 0 ? '（' + detail + '）' : '';
     if (kind === 'not_vault') {
-      return 'ZIP 里没有 Markdown 笔记，不是知识库备份；没有新建知识库。';
+      return 'ZIP 里没有 Markdown 笔记，不是知识库备份；没有新建知识库。' + suffix;
     }
     if (kind === 'over_limit') {
-      return 'ZIP 内容超出导入上限；没有新建知识库。';
+      return 'ZIP 内容超出导入上限；没有新建知识库。' + suffix;
     }
     if (kind === 'no_space') {
-      return '存储空间不足；没有新建知识库，可清理空间后重试。';
+      return '存储空间不足；没有新建知识库，可清理空间后重试。' + suffix;
     }
     if (kind === 'encrypted') {
-      return '暂不支持加密 ZIP；没有新建知识库。';
+      return '暂不支持加密 ZIP；没有新建知识库。' + suffix;
     }
     if (kind === 'unsafe') {
-      return 'ZIP 内包含不安全的条目，已拒绝导入；没有新建知识库。';
+      return 'ZIP 内包含不安全的条目，已拒绝导入；没有新建知识库。' + suffix;
     }
     if (kind === 'io') {
-      return '读取 ZIP 失败；没有新建知识库，可重试。';
+      return '读取 ZIP 失败；没有新建知识库，可重试。' + suffix;
     }
-    return '文件损坏，无法读取这个 ZIP；没有新建知识库。';
+    return '文件损坏，无法读取这个 ZIP；没有新建知识库。' + suffix;
   }
 
   private async chooseZip(): Promise<void> {
@@ -293,12 +295,13 @@ export struct ImportVaultDialog {
       } else {
         this.zipState = 'failed';
         this.zipFileName = outcome.fileName;
-        this.zipFailureText = this.zipFailureMessage(outcome.kind);
+        this.zipFailureText = this.zipFailureMessage(outcome.kind, outcome.detail);
         this.zipProgressText = '';
       }
-    } catch (_error) {
+    } catch (error) {
+      const err = error as BusinessError;
       this.zipState = 'failed';
-      this.zipFailureText = this.zipFailureMessage('io');
+      this.zipFailureText = this.zipFailureMessage('io', err.message ?? String(error));
       this.zipProgressText = '';
     } finally {
       this.setWorking(false);
@@ -323,14 +326,15 @@ export struct ImportVaultDialog {
         this.controller?.close();
       } else if (outcome.status === 'failed') {
         this.zipState = 'failed';
-        this.zipFailureText = this.zipFailureMessage(outcome.kind);
+        this.zipFailureText = this.zipFailureMessage(outcome.kind, outcome.detail);
         this.zipProgressText = '';
       } else {
         this.zipProgressText = '';
       }
-    } catch (_error) {
+    } catch (error) {
+      const err = error as BusinessError;
       this.zipState = 'failed';
-      this.zipFailureText = this.zipFailureMessage('io');
+      this.zipFailureText = this.zipFailureMessage('io', err.message ?? String(error));
       this.zipProgressText = '';
     } finally {
       this.importingZip = false;
@@ -741,22 +745,22 @@ export struct ImportVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction('取消', 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.working), (): void => {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.working), (): void => {
         this.close();
       }, true)
       if (this.source === 'local') {
-        UtilityDialogAction(this.associating ? '正在关联…' : '关联此目录', 'primary',
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.associating ? '正在关联…' : '关联此目录'), 'primary',
           this.singleScreen, UIUtils.makeBinding<boolean>(() => this.hasPicked() && !this.working), (): void => {
             void this.associateDirectory();
           }, true)
       } else if (this.source === 'zip') {
-        UtilityDialogAction(this.importingZip ? '正在导入…' : '导入为新知识库', 'primary',
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.importingZip ? '正在导入…' : '导入为新知识库'), 'primary',
           this.singleScreen, UIUtils.makeBinding<boolean>(() => this.zipState === 'selected' && this.zipVaultName.trim().length > 0 && !this.working),
           (): void => {
             void this.importZip();
           }, true)
       } else {
-        UtilityDialogAction(this.working ? '处理中…' : '导入 Git 仓库', 'primary',
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.working ? '处理中…' : '导入 Git 仓库'), 'primary',
           this.singleScreen, UIUtils.makeBinding<boolean>(() => this.gitRemote.trim().length > 0 && !this.working), (): void => {
             this.continueGit();
           }, true)

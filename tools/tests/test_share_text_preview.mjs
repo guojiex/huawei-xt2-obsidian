@@ -27,10 +27,14 @@ function extract(startMarker, endMarker) {
   return dialogSource.slice(start, end);
 }
 
+// 2026-11-08 修复：25.19 分享面板重构在 retryPreparation 与 build() 之间插入了
+// @Builder DialogContent / DialogFooter（ArkUI DSL，esbuild 解析不了 `Column({ … }) {`），
+// 旧抽取区间 `retryPreparation → build()` 整文件炸在 transform。收窄到 `retryPreparation
+// → @Builder`，harness 只抽纯 TS 方法。
 const methods = transformSync(`
 class ShareTextPreviewHarness {
   ${extract('  private async confirm(): Promise<void> {', '\n  private async retryPreparation()')}
-  ${extract('  private async retryPreparation(): Promise<void> {', '\n  build()')}
+  ${extract('  private async retryPreparation(): Promise<void> {', '\n  @Builder')}
 }
 module.exports = ShareTextPreviewHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
@@ -76,14 +80,17 @@ test('text preparation failure can retry and replace the error detail', async ()
   assert.match(indexSource, /onConfirm: \(content: string\): Promise<void> => \{ return this\.shareTextContent/);
 });
 
-test('text detail uses the responsive share-sheet shell on single-screen layouts', () => {
-  assert.match(dialogSource, /Math\.min\(Size\.shareW, this\.windowWidthVp - Space\.s8\)/);
-  assert.match(dialogSource, /this\.singleScreen\s*\?\s*\{\s*topLeft: Radius\.dialog/);
-  assert.match(dialogSource, /this\.windowHeightVp - Space\.s8 \* 7/);
+test('text detail uses the shared utility shell on single-screen layouts', () => {
+  // 25.19 起文本预览走 UtilityDialogShell（外壳限高 / 限宽由 shell 统一处理）
+  assert.match(dialogSource, /UtilityDialogShell\(\{/);
+  assert.match(dialogSource, /preferredWidthVp: Size\.shareW/);
+  assert.match(dialogSource, /windowWidthVp: this\.windowWidthVp/);
+  assert.match(dialogSource, /windowHeightVp: this\.windowHeightVp/);
   assert.match(indexSource, /alignment: shareSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
 });
 
 test('text detail uses its format icon block and the close action returns to format selection', () => {
-  assert.match(dialogSource, /Icon\('message'/);
-  assert.match(dialogSource, /accessibilityText\('关闭文本预览'\)[\s\S]*?\.onClick\(\(\) => \{ this\.back\(\); \}\)/);
+  assert.match(dialogSource, /headerIcon: 'message'/);
+  assert.match(dialogSource, /closeLabel: '关闭文本预览'/);
+  assert.match(dialogSource, /title: '文本分享'/);
 });

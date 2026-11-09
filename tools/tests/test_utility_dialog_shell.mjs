@@ -107,8 +107,20 @@ test('every utility action passes enabled as a makeBinding callback', () => {
     '../../entry/src/main/ets/components/GitSyncDialog.ets',
     import.meta.url
   ));
+  const shareImagePreviewSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareImagePreviewDialog.ets',
+    import.meta.url
+  ));
+  const shareTextPreviewSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareTextPreviewDialog.ets',
+    import.meta.url
+  ));
   const shareFilePreviewSource = readSourceFile(new URL(
     '../../entry/src/main/ets/components/ShareFilePreviewDialog.ets',
+    import.meta.url
+  ));
+  const shareImageSettingsSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareImageSettingsDialog.ets',
     import.meta.url
   ));
   const consumers = [
@@ -116,7 +128,10 @@ test('every utility action passes enabled as a makeBinding callback', () => {
     { name: 'VaultDialogs', source: vaultDialogSource },
     { name: 'GitSyncDialog', source: gitSyncSource },
     { name: 'ImportVaultDialog', source: importDialogSource },
-    { name: 'ShareFilePreviewDialog', source: shareFilePreviewSource }
+    { name: 'ShareImagePreviewDialog', source: shareImagePreviewSource },
+    { name: 'ShareTextPreviewDialog', source: shareTextPreviewSource },
+    { name: 'ShareFilePreviewDialog', source: shareFilePreviewSource },
+    { name: 'ShareImageSettingsDialog', source: shareImageSettingsSource }
   ];
   for (const consumer of consumers) {
     const calls = consumer.source.match(/UtilityDialogAction\(/g) ?? [];
@@ -126,5 +141,55 @@ test('every utility action passes enabled as a makeBinding callback', () => {
       `${consumer.name}: every UtilityDialogAction enabled arg must be UIUtils.makeBinding (by-value boolean never refreshes)`);
     assert.match(consumer.source, /import \{ (?:\w+, )?UIUtils(?:, \w+)? \} from '@kit\.ArkUI';/,
       `${consumer.name}: must import UIUtils from @kit.ArkUI`);
+  }
+});
+
+// 2026-11-08 追加修复：label 与 enabled 同为按值参数，会同样固化在首帧值——
+// 长图分享主按钮一直显示「正在排版…」（首帧 preparing=true，生成完成后 label 永不
+// 刷新；enabled 的 Binding 会更新，按钮实际可点但文案不换）。修复：label 参数也改
+// Binding<string>，调用点全部 UIUtils.makeBinding 按回调传递。本测试锁住
+// 「每个调用的 label 都是 makeBinding<string> 包裹」，防止再往 footer 里塞按值
+// 动态字符串。
+test('every utility action passes label as a makeBinding<string> callback', () => {
+  assert.match(shellSource, /label: Binding<string>/);
+  assert.match(shellSource, /Text\(label\.value\)/);
+  const gitSyncSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/GitSyncDialog.ets',
+    import.meta.url
+  ));
+  const shareImagePreviewSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareImagePreviewDialog.ets',
+    import.meta.url
+  ));
+  const shareTextPreviewSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareTextPreviewDialog.ets',
+    import.meta.url
+  ));
+  const shareFilePreviewSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareFilePreviewDialog.ets',
+    import.meta.url
+  ));
+  const shareImageSettingsSource = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareImageSettingsDialog.ets',
+    import.meta.url
+  ));
+  const consumers = [
+    { name: 'NoteDialogs', source: noteDialogSource, calls: 8 },
+    { name: 'VaultDialogs', source: vaultDialogSource, calls: 6 },
+    { name: 'GitSyncDialog', source: gitSyncSource, calls: 4 },
+    { name: 'ImportVaultDialog', source: importDialogSource, calls: 4 },
+    { name: 'ShareImagePreviewDialog', source: shareImagePreviewSource, calls: 2 },
+    { name: 'ShareTextPreviewDialog', source: shareTextPreviewSource, calls: 2 },
+    { name: 'ShareFilePreviewDialog', source: shareFilePreviewSource, calls: 3 },
+    { name: 'ShareImageSettingsDialog', source: shareImageSettingsSource, calls: 2 }
+  ];
+  for (const consumer of consumers) {
+    const calls = consumer.source.match(/UtilityDialogAction\(/g) ?? [];
+    assert.equal(calls.length, consumer.calls,
+      `${consumer.name}: UtilityDialogAction call count drifted, update the expectation`);
+    const wrapped =
+      consumer.source.match(/UtilityDialogAction\(\s*UIUtils\.makeBinding<string>/gs) ?? [];
+    assert.equal(wrapped.length, calls.length,
+      `${consumer.name}: every UtilityDialogAction label arg must be UIUtils.makeBinding<string> (by-value string freezes at first frame)`);
   }
 });

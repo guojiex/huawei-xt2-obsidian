@@ -1499,6 +1499,21 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - **全局兜底**：`errorManager.setDefaultErrorHandler(handler)`（`@kit.AbilityKit` 导出，since 21，API 24 可用）—— JS_CRASH 时链式回调、**返回前序处理器**、**仅主线程**（子线程抛 16000205）；`ErrorHandler = (errObject: Error) => void`（since 21）；旧接口 `on('uncaughtException')`（API 9）不再主推。无前序处理器时官方示例用 `new process.ProcessManager().exit(0)` 同步退出（`process` 自 `@kit.ArkTS`）。定位是崩溃后的**兜底与观测，不替代调用侧 try-catch**。
 - 落地：v1.46 —— `FocusRequest.safely` 日志按 150001/150002/150003 区分错误码（仍不记录 focusId）；`EntryAbility` 主线程安装 setDefaultErrorHandler 兜底，崩溃兜底日志只进 hilog 本地诊断、**禁止进埋点 / 上报**（硬约束 16）。
 
+### L-21 ⚠️ 页面级键盘避让：默认 OFFSET 双重避让 → RESIZE 全页重排 → OFFSET_WITH_CARET + Web RETURN_TO_UICONTEXT（SDK 声明 + x86 模拟器对照 + 官方答复，2026-11-08）
+
+- SDK 声明（本机 API 26 `@ohos.arkui.UIContext.d.ts`：setKeyboardAvoidMode 约 4834 行、`KeyboardAvoidMode` const enum 约 5645 行）：`setKeyboardAvoidMode` / `getKeyboardAvoidMode` since 12；`KeyboardAvoidMode` since 11（OFFSET=0 / RESIZE=1 / OFFSET_WITH_CARET=2 / RESIZE_WITH_CARET=3 / NONE=4），`@kit.ArkUI` 导出 `KeyboardAvoidMode`。**页面默认避让模式为 OFFSET（页面上抬），不是 RESIZE**。
+- 现象（XT2 真机反馈，API 24）：键盘弹出后系统 OFFSET 把整页抬到键盘上方，应用侧格式栏 dock 又有 `margin(bottom: keyboardInsetVp())`（v1.30 30.3）→ **双重避让**：dock 悬空约一个键盘高度；Web 被挤矮后聚焦行无滚回机制，末行被裁剪。
+- 模拟器为何不复现：x86_64 模拟器 IME 走 **WM 层窗口收矮**（app 内容压到 y≤1318、inset≈0、margin≈0，等价 RESIZE），掩盖 OFFSET 缺陷——模拟器键盘证据不能外推真机。
+- 修复一（v1.46 46.6，已被修复二取代）：`aboutToAppear` 显式 `setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE)` 固定单一避让；**删除** dock 的 keyboardInset margin；Web 侧 `resize` 监听把聚焦可编辑块光标行滚回 `#content` 可见区（caret rect 优先、块 rect 兜底）。
+- **修复一的副作用（同日真机反馈）**：RESIZE 把每次键盘起落变成一次**全窗口 resize** —— `windowSizeChange`（EntryAbility 140 行）重发布 → `windowHeightVp` 变化 → 三栏 + 两个 Web 全页重排；中文输入法面板更高、带候选栏、高度分级到位，窗口 resize 两次，整页「刷新弹一遍」。
+- 修复二（v1.46 46.8，现行）：`setKeyboardAvoidMode(KeyboardAvoidMode.OFFSET_WITH_CARET)`（since 14 ≤ 24）——上抬家族、按需上抬（光标可见即可）、**光标位置变化会再次触发避让**（SDK 注释）；窗口不做压缩 → 预期无 `windowSizeChange` 全页重排（官方未对该回调行为做模式级承诺，真机日志验证）。
+- **Web 级避让与页面级的叠加关系（官方答复 + 本机 SDK 复核，[qa 归档](qa/2026-11-08_键盘避让OFFSET_WITH_CARET与ArkWeb叠加_API24.md)）**：`WebAttribute.keyboardAvoidMode(mode: WebKeyboardAvoidMode)`（since 12，默认 **RESIZE_CONTENT**，`component/web.d.ts` 约 7637 行）**仅在 UIContext=RESIZE 时失效**——UIContext 为 OFFSET 系（含 OFFSET_WITH_CARET）时 Web 自己的避让模式**生效**，默认 RESIZE_CONTENT（视口避让）会与页面级上抬**叠加成双重避让**。消解：`WebKeyboardAvoidMode.RETURN_TO_UICONTEXT`（**since 22** ≤ 24，`component/web.d.ts` 约 5345 行）——Web 不再处理避让、完全跟随 UIContext 模式。**已落地**：`EditorWebView` / `PreviewWebView` 两个 Web 显式设置（只读的 FormulaPreviewWeb / PrivacyPolicyView / git 桥不设）。
+- 页面级 OFFSET_WITH_CARET 能否感知 ArkWeb 内 contenteditable 光标 rect：**官方未记载**——真机若发现 Web 内光标跟踪不生效，回退评估 Web 默认 RESIZE_CONTENT 的取舍。
+- **弹窗自成一系**：`setKeyboardAvoidMode` 仅对页面生效，对 Dialog / Popup / Menu / BindSheet / BindContentCover / Toast / OverlayManager **不生效**；弹窗自行避让（与键盘 16vp 间距、极限高度后压缩外层容器；API 15 起 `CustomDialogControllerOptions.keyboardAvoidDistance` 可调）——格式弹窗等 Dialog 内消费点不受页面级模式切换影响。
+- RESIZE 下既有消费点自然退化：`keyboardInsetPx`（EntryAbility avoidAreaChange 发布）趋 0，`saveFeedbackBottomMargin` / 格式弹层 `keyboardSafeBottom` 由 `Math.max(0, …)` / `visibleBottom` 兜住，无需按避让模式分叉；OFFSET_WITH_CARET 下 avoidArea 报值官方未记载（既有事实仅：键盘弹出 >0、收起为 0），消费点防护同前。
+- x86_64 模拟器回归（v1.46 46.6，verify_ui）：RESIZE 路径格式栏贴键盘无空隙、末行滚回可见——但模拟器本身走 WM 收矮，**只证明 RESIZE 路径无回归，不证明 OFFSET 缺陷的修复效果**。
+- ⚠️ 待真机验收：API 24 / XT2 上 OFFSET_WITH_CARET 实际效果——键盘起落无全页重排、dock 贴键盘、Web 内末行光标可见、avoidArea 报值、上抬动画平滑度。
+
 
 ---
 

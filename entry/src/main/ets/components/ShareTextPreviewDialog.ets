@@ -111,14 +111,15 @@ export struct ShareTextPreviewDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s3 }) {
-      UtilityDialogAction('返回格式选择', 'secondary', this.singleScreen,
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '返回格式选择'), 'secondary', this.singleScreen,
         UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.back();
         }, true)
       UtilityDialogAction(
-        this.initialError.length > 0
-          ? (this.preparing ? '正在重试…' : '重试获取文本')
-          : (this.sharing ? '正在打开…' : '分享文本'),
+        UIUtils.makeBinding<string>(() =>
+          this.initialError.length > 0
+            ? (this.preparing ? '正在重试…' : '重试获取文本')
+            : (this.sharing ? '正在打开…' : '分享文本')),
         'primary', this.singleScreen,
         UIUtils.makeBinding<boolean>(() => !this.sharing && !this.preparing),
         (): void => {

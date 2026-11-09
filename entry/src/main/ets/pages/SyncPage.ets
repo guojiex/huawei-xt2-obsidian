@@ -292,8 +292,18 @@ struct SyncPage {
       this.syncStatusText = lines.join('\n');
     } catch (error) {
       const err = error as BusinessError;
-      this.syncStatusText = '无法读取 Git 状态；原因未确定。请稍后刷新，操作前先核对当前库。';
+      this.syncStatusText = '无法读取 Git 状态：' + (err.message ?? String(error)) +
+        '。请稍后刷新，操作前先核对当前库。';
     }
+  }
+
+  /** 46.9：同步操作链路的底层错误文本；令牌脱敏（EM-K3 红线不变）。 */
+  private syncFailureDetail(error: BusinessError): string {
+    let detail: string = error.message ?? String(error);
+    if (this.syncToken.length > 0) {
+      detail = detail.split(this.syncToken).join('[令牌已隐藏]');
+    }
+    return detail;
   }
 
   private async performGitAction(operation: 'stage' | 'commit' | 'fetch' | 'push'): Promise<void> {
@@ -345,14 +355,16 @@ struct SyncPage {
         try {
           const authUsername: string = this.isGitHubRemote(this.syncRemote) ? '' : this.syncUsername.trim();
           reg.updateGitAuthUsername(this.syncVaultId, authUsername);
-        } catch {
-          this.appendLog('远端操作已完成，但用户名设置未能保存');
+        } catch (error) {
+          const err = error as BusinessError;
+          this.appendLog('远端操作已完成，但用户名设置未能保存：' + this.syncFailureDetail(err));
         }
         if (this.syncToken.length > 0) {
           try {
             GitCredentialStore.saveToken(this.syncVaultId, this.syncToken);
-          } catch {
-            this.appendLog('令牌未能安全保存；下次同步时需要重新填写');
+          } catch (error) {
+            const err = error as BusinessError;
+            this.appendLog('令牌未能安全保存；下次同步时需要重新填写：' + this.syncFailureDetail(err));
           }
         }
       }
@@ -363,8 +375,9 @@ struct SyncPage {
       } else if (operation === 'push') {
         try {
           reg.recordGitSync(this.syncVaultId, Date.now());
-        } catch {
-          this.appendLog('推送成功，但上次同步时间未能保存');
+        } catch (error) {
+          const err = error as BusinessError;
+          this.appendLog('推送成功，但上次同步时间未能保存：' + this.syncFailureDetail(err));
         }
         this.appendLog('已推送到 xt2：' + result.substring(0, 10));
       } else {
@@ -375,10 +388,11 @@ struct SyncPage {
     } catch (error) {
       const err = error as BusinessError;
       this.progressText = '失败';
+      const detail: string = this.syncFailureDetail(err);
       const label: string = operation === 'stage' ? '暂存' : operation === 'commit' ? '本地提交' :
         operation === 'fetch' ? '获取远端状态' : '推送';
       this.appendLog(label + '失败；当前状态未确认。' +
-        this.explainError(err.message ?? String(error)) + '。请刷新 Git 状态后再决定是否重试。');
+        this.explainError(detail) + '。底层错误：' + detail + '。请刷新 Git 状态后再决定是否重试。');
     } finally {
       this.busy = false;
     }
@@ -390,7 +404,7 @@ struct SyncPage {
     if (!ok) {
       this.progressText = '失败';
       this.appendLog('Git 导入失败；当前库未登记，临时目录清理已尝试。' +
-        this.explainError(message) + '。');
+        this.explainError(message) + '。底层错误：' + message + '。');
       this.cleanupTempDir();
       return;
     }
@@ -422,8 +436,14 @@ struct SyncPage {
       promptAction.showToast({ message: '已导入 ' + entry.id });
       router.back();
     } catch (error) {
+      const err = error as BusinessError;
+      let detail: string = err.message ?? String(error);
+      if (this.token.length > 0) {
+        detail = detail.split(this.token).join('[令牌已隐藏]');
+      }
       this.progressText = '失败';
-      this.appendLog('Git 导入登记失败；当前库和导入目录状态未确认。原因未确定，请返回主页检查库列表。');
+      this.appendLog('Git 导入登记失败；当前库和导入目录状态未确认。底层错误：' + detail +
+        '。请返回主页检查库列表。');
       this.cleanupTempDir();
     }
   }

@@ -687,6 +687,10 @@ export struct EditorWebView {
   build() {
     Stack() {
       Web({ src: $rawfile('mdeditor/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+        // v1.46 46.8：页面级 OFFSET_WITH_CARET（Index aboutToAppear）下 WebAttribute.keyboardAvoidMode
+        // 生效（仅 UIContext=RESIZE 时失效），默认 RESIZE_CONTENT 会与页面上抬叠加成双重避让；
+        // RETURN_TO_UICONTEXT（since 22 ≤ 24）让 Web 不再自行避让、完全跟随 UIContext（api_notes L-21）。
+        .keyboardAvoidMode(WebKeyboardAvoidMode.RETURN_TO_UICONTEXT)
         .onControllerAttached(() => {
           // ⚠️ 注册时机（2026-10-18 SDK 实证 + 官方生命周期文档）：
           // onControllerAttached 是注入 JS 对象的建议时机 —— controller 绑定后、页面加载前，

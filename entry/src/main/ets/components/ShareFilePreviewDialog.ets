@@ -183,14 +183,14 @@ export struct ShareFilePreviewDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s3 }) {
-      UtilityDialogAction('返回', 'secondary', this.singleScreen,
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '返回'), 'secondary', this.singleScreen,
         UIUtils.makeBinding<boolean>(() => true), (): void => { this.back(); }, true)
       if (this.canShare) {
-        UtilityDialogAction(this.sharing ? '正在打开…' : '分享文件', 'primary',
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.sharing ? '正在打开…' : '分享文件'), 'primary',
           this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.sharing),
           (): void => { void this.share(); }, true)
       } else {
-        UtilityDialogAction(this.preparing ? '正在重试…' : '重试生成', 'primary',
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.preparing ? '正在重试…' : '重试生成'), 'primary',
           this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.preparing),
           (): void => { void this.retryPreparation(); }, true)
       }

@@ -48,22 +48,19 @@ test('agent send button goes gray while disabled (32.12)', () => {
 });
 
 test('share preview primary buttons go gray while busy (32.12)', () => {
-  // ShareFilePreviewDialog 的主按钮已改用 UtilityDialogAction（分享面板设计 §4 底部同导入库），
+  // 25.19 重构后三个分享预览的主按钮全部改用 UtilityDialogAction（图片 / 文本 / 文件），
   // 忙碌态中性化由 enabled Binding 统一处理（见 test_utility_dialog_shell.mjs）；
-  // 仍自绘主按钮的图片 / 文本分享预览保持逐个锁定。
-  const cases = [
-    [shareImage, /this\.sharing \|\| this\.retrying/, /!this\.sharing && !this\.retrying/],
-    [shareText, /this\.sharing \|\| this\.preparing/, /!this\.sharing && !this\.preparing/]
-  ];
-  for (const [source, busy, enabled] of cases) {
-    assert.match(source, new RegExp(
-      `\\.fontColor\\((${busy.source})\\s*\\n\\s*\\? \\$r\\('app\\.color\\.text_tertiary'\\) : \\$r\\('app\\.color\\.on_brand'\\)\\)`));
-    assert.match(source, new RegExp(
-      `\\.backgroundColor\\((${busy.source})\\s*\\n\\s*\\? \\$r\\('app\\.color\\.line'\\) : \\$r\\('app\\.color\\.brand'\\)\\)`));
-    assert.match(source, enabled);
-  }
+  // 此处锁定各弹窗的 enabled 回调确实覆盖忙碌位，防止回退成恒 true。
+  assert.equal((shareImage.match(/UtilityDialogAction\(/g) ?? []).length, 2);
+  assert.match(shareImage,
+    /UIUtils\.makeBinding<boolean>\(\(\) => !this\.sharing && !this\.preparing\)/);
+  assert.equal((shareText.match(/UtilityDialogAction\(/g) ?? []).length, 2);
+  assert.match(shareText,
+    /UIUtils\.makeBinding<boolean>\(\(\) => !this\.sharing && !this\.preparing\)/);
   // 文件分享详情的主按钮走 UtilityDialogAction（§4 底部同导入库），忙碌态由 enabled Binding 处理
   assert.equal((shareFile.match(/UtilityDialogAction\(/g) ?? []).length, 3);
+  assert.match(shareFile, /UIUtils\.makeBinding<boolean>\(\(\) => !this\.sharing\)/);
+  assert.match(shareFile, /UIUtils\.makeBinding<boolean>\(\(\) => !this\.preparing\)/);
 });
 
 test('menu items and settings rows keep their prototype disabled semantics (32.12)', () => {

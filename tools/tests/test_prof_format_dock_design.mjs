@@ -20,9 +20,10 @@ test('professional format bar docks as a full row like v1.30 simple mode', () =>
   assert.match(dock, /\.backgroundColor\(\$r\('app\.color\.bg_card'\)\)/);
   assert.doesNotMatch(dock, /\.shadow\(/);
   assert.doesNotMatch(dock, /\.borderRadius\(/);
-  // 高度 = touch + 上下 s1；键盘避让沿用 keyboardInsetVp
+  // 高度 = touch + 上下 s1；v1.46 46.6/46.8：dock 不再叠 keyboardInsetVp margin——
+  // 键盘避让收敛到 UIContext 级 OFFSET_WITH_CARET，dock 保留 margin 会双重上抬（XT2 真机实测）
   assert.match(dock, /\.height\(Size\.touch \+ Space\.s1 \* 2\)/);
-  assert.match(dock, /\.margin\(\{ bottom: this\.keyboardInsetVp\(\) \}\)/);
+  assert.doesNotMatch(dock, /keyboardInsetVp/);
   // 按钮集合与简单模式共用（Aa 面板 / 插入图片照常可用）
   assert.match(dock, /this\.FormatActionsRow\(pane, Space\.s1\)/);
   // 无「完成编辑」按钮 —— 专业模式走 PaneHead 编辑 / 预览切换

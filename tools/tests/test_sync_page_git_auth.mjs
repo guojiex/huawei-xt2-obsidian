@@ -32,6 +32,7 @@ module.exports = SyncPageGitAuthHarness;
 
 const actionCode = transformSync(`
 class SyncPageActionHarness {
+  ${method('  private syncFailureDetail(', '\n  private async performGitAction(')}
   ${method('  private async performGitAction(', '\n  /** clone 结果')}
   ${method('  private remoteHost(', '\n  private urlHasInlineCredentials(')}
   ${method('  private isGitHubRemote(', '\n  private urlHasInlineCredentials(')}
@@ -135,7 +136,7 @@ function actionHarness(metadataFailures = [], failFirstAction = true) {
     syncMode: true,
     syncVaultId: 'repo',
     syncRemote: 'https://github.com/team/repo.git',
-    syncToken: '',
+    syncToken: 'private-token',
     syncUsername: '',
     commitMessage: 'controlled test',
     authorName: 'Test',
@@ -148,7 +149,7 @@ function actionHarness(metadataFailures = [], failFirstAction = true) {
   return { page, calls, logs };
 }
 
-test('Git stage, commit, fetch, and push failures stay private and can be retried explicitly', async () => {
+test('Git action failures surface the underlying error with the token redacted and can be retried explicitly', async () => {
   const labels = new Map([
     ['stage', '暂存'],
     ['commit', '本地提交'],
@@ -168,8 +169,8 @@ test('Git stage, commit, fetch, and push failures stay private and can be retrie
     assert.equal(f.page.progressText, '失败');
     assert.match(f.logs[0], new RegExp(labels.get(operation) + '失败；当前状态未确认'));
     assert.match(f.logs[0], /原因未确定/);
+    assert.match(f.logs[0], /底层错误：path=\/private\/vault\/note\.md token=\[令牌已隐藏\]/);
     assert.match(f.logs[0], /刷新 Git 状态后再决定是否重试/);
-    assert.ok(!f.logs.join('\n').includes('/private/vault/note.md'));
     assert.ok(!f.logs.join('\n').includes('private-token'));
     assert.equal(f.calls.filter(call => call.startsWith('action:')).length, 1);
 
@@ -196,9 +197,25 @@ test('remote success remains success when sync metadata persistence fails', asyn
       `${operation} logs=${JSON.stringify(f.logs)} calls=${JSON.stringify(f.calls)}`);
     assert.ok(f.logs.some(line => line.includes(expectedWarning)));
     assert.ok(f.logs.some(line => line.includes(operation === 'push' ? '已推送到 xt2' : '已获取 xt2')));
-    assert.ok(!f.logs.join('\n').includes('metadata failure'));
+    assert.ok(f.logs.join('\n').includes('metadata failure'));
     assert.ok(!f.logs.join('\n').includes('synthetic-private-token'));
   }
+});
+
+test('failure copy carries the underlying error with token redaction (46.9)', () => {
+  // performGitAction catch：分类结论 + 底层错误 + 重试提示
+  assert.match(source, /'。底层错误：' \+ detail \+ '。请刷新 Git 状态后再决定是否重试。'/);
+  // onCloneDone 失败分支：explainError 之后追加底层错误原文
+  assert.match(source, /this\.explainError\(message\) \+ '。底层错误：' \+ message/);
+  // onCloneDone 登记失败分支：先按 this.token 脱敏再携带
+  assert.match(source, /detail\.split\(this\.token\)\.join\('\[令牌已隐藏\]'\)/);
+  assert.match(source, /'Git 导入登记失败；当前库和导入目录状态未确认。底层错误：' \+ detail/);
+  // refreshSyncStatus 失败分支携带底层错误
+  assert.match(source, /'无法读取 Git 状态：' \+ \(err\.message \?\? String\(error\)\)/);
+  // 三个元数据警告 catch 均携带底层错误
+  assert.match(source, /'远端操作已完成，但用户名设置未能保存：' \+ this\.syncFailureDetail\(err\)/);
+  assert.match(source, /'令牌未能安全保存；下次同步时需要重新填写：' \+ this\.syncFailureDetail\(err\)/);
+  assert.match(source, /'推送成功，但上次同步时间未能保存：' \+ this\.syncFailureDetail\(err\)/);
 });
 
 test('GitHub clone sends the token as bearer auth and omits username/password', async () => {

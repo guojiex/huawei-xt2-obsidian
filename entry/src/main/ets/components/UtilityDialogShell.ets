@@ -144,7 +144,9 @@ export struct UtilityDialogShell {
 
 @Builder
 export function UtilityDialogAction(
-  label: string,
+  // 2026-11-08 追加修复：label 同为按值参数会与 enabled 一样固化在首帧值
+  //（长图分享主按钮一直显示「正在排版…」，生成完成后不刷新），一并改 Binding<string>。
+  label: Binding<string>,
   tone: string,
   singleScreen: boolean,
   // 2026-11-07 EM-B2 回归修复：全局 @Builder 多参按值传参不触发动态渲染（官方 arkts-builder
@@ -154,7 +156,7 @@ export function UtilityDialogAction(
   onClick: () => void,
   keyboardFocusable: boolean = false
 ) {
-  Text(label)
+  Text(label.value)
     .fontSize(FontSize.body1)
     .fontWeight(FontWeight.Medium)
     // v1.32 32.12：主 / 危险操作禁用态中性化——--line 底、--muted 字、不透明

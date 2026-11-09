@@ -301,13 +301,14 @@ export struct ShareImagePreviewDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s3 }) {
-      UtilityDialogAction('返回', 'secondary', this.singleScreen,
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '返回'), 'secondary', this.singleScreen,
         UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.back();
         }, true)
       UtilityDialogAction(
-        this.canSharePreview() ? (this.sharing ? '正在打开…' : '分享图片') :
-          (this.preparing ? '正在排版…' : this.errorMessage.length > 0 ? '重试生成' : '生成预览'),
+        UIUtils.makeBinding<string>(() =>
+          this.canSharePreview() ? (this.sharing ? '正在打开…' : '分享图片') :
+            (this.preparing ? '正在排版…' : this.errorMessage.length > 0 ? '重试生成' : '生成预览')),
         'primary', this.singleScreen,
         UIUtils.makeBinding<boolean>(() => !this.sharing && !this.preparing),
         (): void => {

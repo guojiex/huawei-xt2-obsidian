@@ -897,19 +897,19 @@ export struct GitSyncDialog {
   @Builder
   private DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction(this.busy ? '取消' : '关闭', 'secondary',
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => this.busy ? '取消' : '关闭'), 'secondary',
         this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => { this.dismiss(); })
       if (this.result === 'success') {
-        UtilityDialogAction('完成', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => '完成'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.dismiss();
         })
       } else if (this.result !== 'none') {
-        UtilityDialogAction('重试', 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => {
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => '重试'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => {
           this.dismissResult();
           void this.runPrimaryAction();
         })
       } else {
-        UtilityDialogAction(this.primaryActionLabel(),
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.primaryActionLabel()),
           'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.primaryActionEnabled()),
           (): void => { void this.runPrimaryAction(); })
       }
