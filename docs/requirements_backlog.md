@@ -69,6 +69,7 @@
 | 卡片视图（整屏画廊式浏览） | 中高 | M | 文件列表 + 卡片渲染 | 2026-10-31 用户提出：应用内整屏卡片模式，笔记以卡片网格铺满屏幕浏览（2026-10-31 用户澄清为应用内视图，非桌面服务卡片）；与列表视图切换，卡片摘要与封面渲染待定义，未分配版本 |
 | **笔记 / 文件夹左滑手势**（三档：半开出操作 / 滑到底直删 / 文件夹禁删） | 中高 | S–M | 列表项侧滑能力（API 24 待核实） | 建议纳入（v0.2）：操作条用**图标**不挤文件名；**滑到底直接删 + 5 秒撤销条**，不再弹确认；**文件夹不给删除** |
 | 回收站（删除可恢复） | 中 | S | 沙箱 `trash/<vaultKey>` | v1.5 已落码；旧库内 `.trash` 的同步 / 分享边界见 [安全边界](engineering/库身份与安全边界.md#3-旧回收站与分享同步)。2026-11-03 用户反馈回收站列表笔记名被截断：名称改为最多两行、原位置只显示库内文件夹路径，作为小幅 UI 修正并入未发布的 v1.5（§3.2） |
+| 回收站条目永久删除 | 高 | S | 回收站 UI（TrashView）+ TrashService 清除 | 2026-11-09 用户提出：回收站内可单条永久删除（确认后真删，不进撤销）；不做清空全部 / 批量 / 自动过期；分配 [v1.47](releases/v1.47/需求文档.md) |
 | 跨库搜索（搜索全部知识库） | 中 | M | 各库独立索引、搜索与统一库访问层 | 2026-11-05 分配 [v1.35](releases/v1.35/需求文档.md)：搜索范围可选当前库 / 全部库，结果按库分组并可切库打开；首发后排期 |
 | 多 vault 切换 | 中 | M | 存储层抽象 | 后置 |
 
@@ -509,6 +510,14 @@ M-02 与 M-01 的边界：M-01 评估把外部目录直接作为知识库正式�
 | 编号 | 需求 | 分配 |
 | --- | --- | --- |
 | V-01 | 同步页全链（`refreshSyncStatus` / `performGitAction` / `onCloneDone` / 三个元数据警告 catch）与 ZIP 导入链（`ZipChooseOutcome` / `ZipImportOutcome` 增加 `detail` 字段、`ImportVaultDialog.zipFailureMessage` 追加 `（detail）`、Index 编排 catch 填 `err.message`）失败文案携带底层错误；令牌经 `split(token).join('[令牌已隐藏]')` 脱敏后展示 | [v1.46](releases/v1.46/需求文档.md) |
+
+## W. 图标全局 @Builder 按值实参冻结（2026-11-09）
+
+背景：`common/Icons.ets` 的 `Icon` 是全局 @Builder（多参按值传参），官方 arkts-builder 限制 3 与本仓实测（[api_notes Z2](harmonyos/api_notes.md)、L-7）一致：**按值实参首帧固化、不随状态刷新，编译零报错**。已四次同源踩坑——L-7 PaneHead 折叠箭头、Z2 `UtilityDialogAction.enabled`（EM-B2）、v1.46 46.7 `label`（U-01）、2026-11-09 回收站折叠箭头不切换（用户报告；TrashView:161 / VaultSidebar:461 / NoteDialogs:228、564 共 4 处当日已修，见 [v1.47 47.1](releases/v1.47/需求文档.md)）。全量盘点后存量 10 处同模式调用点为已知冻结缺陷，统一登记本节待版本分配；修复模式沿 if/else 分支（分支受状态观察），不改 `Binding`（Icon 全仓 100+ 调用点，过度）。防线测试 [`tools/tests/test_icon_builder_args.mjs`](../tools/tests/test_icon_builder_args.mjs)（质量保障资产，2026-11-09 落地）拦截新增：实参含 `this.` 未进豁免清单即测试失败，豁免条目过期同样失败。
+
+| 编号 | 需求 | 分配 |
+| --- | --- | --- |
+| W-01 | 修复防线测试豁免清单中 kind 为 frozen 的 10 处冻结缺陷：GitSyncDialog ProgressSteps 同步步骤图标（:677）、NoteDialogs 两个 DirItem 目录选中色（:128、:525）、Index 专注按钮图标名+色（:9094）/ 双栏按钮色（:9112）/ 图片格式按钮色（:10320）、SettingsView 体验模式行选中色（:185）、ImportVaultDialog 目录与 ZIP 失败色（:379、:601）、AgentWorkspace 会话选中色（:615）——实参含状态的表达式改 if/else 分支，修一处删一条豁免 | 未分配 |
 
 ## 待分配：安全与上架缺口（2026-11-02）
 

@@ -7,8 +7,8 @@ export type RecentErrorOperation =
 
 export type RecentErrorPhase =
   'restore' | 'read' | 'save' | 'switch' | 'bridge' | 'permission' | 'create' |
-  'rename' | 'delete' | 'move' | 'restore_trash' | 'search' | 'clone' | 'commit' |
-  'fetch' | 'push' | 'prepare' | 'handoff' | 'reset' | 'build_commit_copy' |
+  'rename' | 'delete' | 'move' | 'restore_trash' | 'purge_trash' | 'search' | 'clone' |
+  'commit' | 'fetch' | 'push' | 'prepare' | 'handoff' | 'reset' | 'build_commit_copy' |
   'recent_errors_copy';
 
 export type RecentErrorCategory =
@@ -43,8 +43,8 @@ const OPERATION_VALUES: string[] = [
 ];
 const PHASE_VALUES: string[] = [
   'restore', 'read', 'save', 'switch', 'bridge', 'permission', 'create', 'rename', 'delete',
-  'move', 'restore_trash', 'search', 'clone', 'commit', 'fetch', 'push', 'prepare', 'handoff',
-  'reset', 'build_commit_copy', 'recent_errors_copy'
+  'move', 'restore_trash', 'purge_trash', 'search', 'clone', 'commit', 'fetch', 'push', 'prepare',
+  'handoff', 'reset', 'build_commit_copy', 'recent_errors_copy'
 ];
 const CATEGORY_VALUES: string[] = [
   'storage_failure', 'bridge_timeout', 'permission_failure', 'network_failure', 'conflict',

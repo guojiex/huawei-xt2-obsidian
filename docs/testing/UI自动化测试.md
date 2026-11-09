@@ -42,7 +42,8 @@
 > 状态不在此登记；执行结果记入当轮输出的摘要与 `.local/uitest/` 证据，版本验收时引用。
 > 主工程为本测试补的 `.id()`：`vault-sidebar-search`、`vault-sidebar-new-note`、`note-create-input`、
 > `quick-switcher-scope-current`/`quick-switcher-scope-all`、`quick-switcher-search-input`、
-> `quick-switcher-skip-hint`、`trash-section-header`、`trash-restore-button`、
+> `quick-switcher-skip-hint`、`trash-section-header`、`trash-restore-button`、`trash-purge-button`、
+> `trash-row-<vaultId>:<relPath>`（回收站行，47.3）、
 > `settings-diagnostics-row`、`settings-changelog-row`、`settings-reset-pane-widths`。
 
 | 套件 | 用例 | 覆盖要点 | EM 对应 |
@@ -59,6 +60,7 @@
 | UiNoteFlow | `delete_note_confirm_and_undo` | 行菜单删除 → 确认 → 撤销条出现 → 撤销恢复 | EM-B3（按钮路径） |
 | UiNoteFlow | `delete_note_dialog_cancel_keeps` | 删除确认取消后文件保留 | EM-G1 |
 | UiNoteFlow | `trash_section_visible_after_delete` | 删除后侧栏回收站区块出现 | EM-B4（可达部分） |
+| UiNoteFlow | `trash_purge_confirm_and_cancel` | 回收站永久删除全链路：行内按钮 → 确认弹窗 → 取消保留 / 确认真删（行消失，无撤销条）；复用 UiNoteFlow 树操作 helpers，故不放 UiTrash | EM-B7 |
 | UiNoteFlow | `close_note_shows_empty_state` | 关闭当前笔记 → 空态（新建入口 id 就位） | EM-B5（可达部分） |
 | UiPanels | `settings_groups_visible_and_back` | 设置页分组标题就位 + 返回 | EM-F1（可达部分） |
 | UiPanels | `settings_editor_mode_toggle` | 设置内简单 / 专业模式切换与还原 | EM-C1 / EM-F1 |

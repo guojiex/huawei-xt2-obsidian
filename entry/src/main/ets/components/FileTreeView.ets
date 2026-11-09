@@ -120,6 +120,7 @@ export struct FileTreeView {
   onSwipeDelete: (relPath: string) => void = (relPath: string) => {};
   /** 从内嵌回收站恢复笔记，由父级复用现有 TrashService 处理。 */
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
+  onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
@@ -369,7 +370,8 @@ export struct FileTreeView {
         TrashView({
           vaultId: this.vaultId,
           refreshSeq: this.trashRefreshSeq,
-          onRestore: (relPath: string): void => { this.onRestoreTrash(relPath); }
+          onRestore: (relPath: string): void => { this.onRestoreTrash(relPath); },
+          onPurge: (relPath: string): void => { this.onPurgeTrash(relPath); }
         })
       }
     }

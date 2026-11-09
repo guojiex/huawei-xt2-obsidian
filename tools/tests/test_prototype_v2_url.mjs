@@ -27,14 +27,14 @@ function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience
  const rootStyle=new Set(['--ink','--paper','--line','--muted','--nav','--blue']);rootStyle.getPropertyValue=name=>name==='--ink'?'#202530':'';
  for(const id of ['navSplitter','contentSplitter'])get(id).querySelector=selector=>selector==='.split-tip'?get(id+'Tip'):null;
  for(const id of ['leftPane','referencePane'])get(id).querySelector=selector=>selector==='.pane-label'?get(id+'Label'):null;
- for(const id of ['switchPane','mobileBacklinks'])get(id).querySelector=selector=>selector==='.menu-label'?get(id+'Label'):null;
+ for(const id of ['switchPane','mobileBacklinks','mobileFollow'])get(id).querySelector=selector=>selector==='.menu-label'?get(id+'Label'):null;
  for(const id of ['leftEmpty','rightEmpty']){
   const box=get(id),prefix=id==='rightEmpty'?'rightEmpty':'empty';
   box.querySelector=selector=>selector==='.pane-empty-reopen'?null:selector==='.primary'?get(prefix+'NewNote'):null;
   box.querySelectorAll=selector=>selector==='[data-empty-act]'?['new','search'].map((act)=>{const n=get(prefix+(act==='new'?'NewNote':'Search'));n.dataset.emptyAct=act;return n;}):[];
  }
  let location=new URL(href),index=0;const history=[location.href];
- const win={innerWidth:1320,innerHeight:1000,get location(){return location},history:{pushState(_,__,href){location=new URL(href);history.splice(++index);history.push(location.href)},replaceState(_,__,href){location=new URL(href);history[index]=location.href}},addEventListener(k,fn){listen('window',k,fn)}};
+ const win={innerWidth:1320,innerHeight:1000,matchMedia:query=>({matches:false,media:query}),get location(){return location},history:{pushState(_,__,href){location=new URL(href);history.splice(++index);history.push(location.href)},replaceState(_,__,href){location=new URL(href);history[index]=location.href}},addEventListener(k,fn){listen('window',k,fn)}};
  const context=vm.createContext({URL,URLSearchParams,window:win,document:{getElementById:get,querySelector:selector=>selector==='#sharePreview .share-paper'?sharePaper:null,querySelectorAll(){return[]},styleSheets:[{cssRules:[{selectorText:':root',style:rootStyle}]}],body:{dataset:{}},addEventListener(k,fn){listen('document',k,fn)}},queueMicrotask:fn=>pending.push(fn),setTimeout:fn=>{pending.push(fn);return 1},clearTimeout(){},ResizeObserver:class{observe(){}},MutationObserver:class{observe(){} disconnect(){}},getComputedStyle:element=>({paddingLeft:element===shareStage?'16px':'0px',getPropertyValue:k=>k==='--pane-min'?'240px':k==='--format-width'?'360px':k==='--s2'?'8px':'16px'}),localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}});
  for(const id of ['updateCheckTemplate','updateCheckDemoTemplate']){
   const template=html.match(new RegExp(`<template id="${id}">([\\s\\S]*?)</template>`));
@@ -134,8 +134,8 @@ test('share format and page, format panel, and non-destructive file action can b
 });
 test('Git demo restores import, sync entry and remote share previews without network access',()=>{
  assert.match(html,/<label class="demo-toggle" title="仅展示 Git 库的同步入口、待推送角标和分享格式/);
- assert.match(html,/<div class="seg import-tabs" aria-label="导入来源">/);
- assert.doesNotMatch(html,/<div class="seg import-tabs hidden" aria-label="导入来源">/);
+ assert.match(html,/<div(?=[^>]*class="seg import-tabs")(?=[^>]*aria-label="导入来源")/);
+ assert.doesNotMatch(html,/class="[^"]*import-tabs[^"]*hidden"|class="[^"]*hidden[^"]*import-tabs"/);
  assert.match(html,/<button class="icon git-sync-entry hidden" id="gitSyncBtn"/);
  assert.match(html,/id="mobileGitSync" class="hidden git-sync-menu"/);
  assert.match(code,/gitShareDemo=new URLSearchParams\(window.location.search\)\.get\('gitShareDemo'\)==='1'/);
@@ -335,7 +335,7 @@ test('phone more menu groups actions and updates labels without replacing icons'
  const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];
  assert(menu.indexOf('aria-label="当前笔记"')<menu.indexOf('aria-label="快捷编辑模式"'));
  assert(menu.indexOf('aria-label="快捷编辑模式"')<menu.indexOf('aria-label="应用"'));
- assert.equal((menu.match(/class="menu-icon"/g)||[]).length,6);
+ assert.equal((menu.match(/class="menu-icon"/g)||[]).length,8);
  assert.match(menu,/class="git-sync-count"/);
  const f=fixture();f.run("setViewport('phone');backlinksPane=activePane;updatePaneChrome()");
  assert.equal(f.get('mobileBacklinksLabel').textContent,'隐藏反链');
@@ -450,8 +450,38 @@ test('trash restore uses an icon button with accessible note name and tooltip',(
 });
 
 test('trash shows original location and restores the same note there without overwriting conflicts',()=>{
- const f=fixture();const before=f.run("JSON.stringify(notes.find(n=>n.id==='reading_stream'))");f.run("deleteFile('reading_stream')");assert(f.get('trashList').innerHTML.includes('原位置：阅读笔记 / 10_写作'));f.run("restoreFile('reading_stream')");assert.equal(f.run("JSON.stringify(notes.find(n=>n.id==='reading_stream'))"),before);f.run("deleteFile('reading_stream');notes.push({...note('reading_stream'),id:'conflict',deleted:false});restoreFile('reading_stream')");assert(f.run("note('reading_stream').deleted"));assert.equal(f.run("notes.find(n=>n.id==='conflict').deleted"),false);
+  const f=fixture();const before=f.run("JSON.stringify(notes.find(n=>n.id==='reading_stream'))");f.run("deleteFile('reading_stream')");assert(f.get('trashList').innerHTML.includes('原位置：阅读笔记 / 10_写作'));f.run("restoreFile('reading_stream')");assert.equal(f.run("JSON.stringify(notes.find(n=>n.id==='reading_stream'))"),before);f.run("deleteFile('reading_stream');notes.push({...note('reading_stream'),id:'conflict',deleted:false});restoreFile('reading_stream')");assert(f.run("note('reading_stream').deleted"));assert.equal(f.run("notes.find(n=>n.id==='conflict').deleted"),false);
 });
+
+test('trash rows offer an accessible permanent delete that requires confirmation and purges without undo',()=>{
+  const f=fixture();f.get('trashDemo').checked=true;f.get('trashDemo').onchange();
+  for(const id of ['trashList','trashItems']){const button=f.get(id).innerHTML.match(/<button[^>]*data-purge="demo-trash"[\s\S]*?<\/button>/)[0];assert(button.includes('class="icon"'));assert(button.includes('title="永久删除（不可恢复）"'));assert(button.includes('aria-label="永久删除 2026 年第四季度产品规划会议纪要与后续行动项（草稿）"'));assert(button.includes('<svg'));}
+  f.run("askPurgeTrash('demo-trash')");
+  assert.equal(f.get('trashDeleteDialog').open,true);
+  assert(f.get('trashDeleteBody').textContent.includes('2026 年第四季度产品规划会议纪要与后续行动项（草稿）'));
+  assert(f.get('trashDeleteBody').textContent.includes('原位置：…/会议记录/2026 第四季度'));
+  assert(f.get('trashList').innerHTML.includes('data-restore')); // 未确认前列表不变
+  f.get('cancelTrashDelete').onclick();
+  assert.equal(f.get('trashDeleteDialog').open,false);assert.equal(f.run('trashDemo'),true);assert(f.get('trashList').innerHTML.includes('data-purge="demo-trash"'));
+  f.run("askPurgeTrash('demo-trash')");f.get('confirmTrashDelete').onclick();
+  assert.equal(f.get('trashDeleteDialog').open,false);assert.equal(f.run('trashDemo'),false);
+  assert(f.get('trashList').innerHTML.includes('回收站为空'));assert.equal(f.get('trashCount').textContent,'');
+  assert.equal(f.get('toastText').textContent,'已永久删除：2026 年第四季度产品规划会议纪要与后续行动项（草稿）');
+});
+
+test('permanent delete removes a real deleted note from the list and later restore is a no-op',()=>{
+  const f=fixture();f.run("deleteFile('reading_stream')");
+  assert(f.get('trashList').innerHTML.includes('data-purge="reading_stream"'));
+  f.run("askPurgeTrash('reading_stream')");f.get('confirmTrashDelete').onclick();
+  assert.equal(f.run("notes.some(n=>n.id==='reading_stream')"),false);
+  assert(f.get('trashList').innerHTML.includes('回收站为空'));
+  f.run("restoreFile('reading_stream')"); // 已清除：恢复为无操作，不复活条目
+  assert.equal(f.run("notes.some(n=>n.id==='reading_stream')"),false);
+  assert(f.get('trashList').innerHTML.includes('回收站为空'));
+  assert.match(code,/if\(\$\('shareDialog'\)\.open\|\|\$\('fileActionDialog'\)\.open\|\|\$\('trashDialog'\)\.open\|\|\$\('trashDeleteDialog'\)\.open\)return;/);
+  assert(code.includes("'trashDeleteDialog','vaultActionDialog'")); // sheetDialogIds 注册
+});
+
 
 test('same-note panes hide redundant other-pane preview but keep the backlinks menu',()=>{
  const f=fixture();f.run("setViewport('wide');openInPane('reading_stream','left');openInPane('reading_reading_journal','right')");for(const id of ['samePreview','rightSamePreview','leftMore','rightMore'])assert(!f.get(id).classList.contains('hidden'));f.get('leftMore').open=true;f.get('samePreview').onclick();assert.equal(f.run('current'),f.run('reference'));for(const id of ['samePreview','rightSamePreview'])assert(f.get(id).classList.contains('hidden'));for(const id of ['leftMore','rightMore'])assert(!f.get(id).classList.contains('hidden'));assert.equal(f.get('leftMore').open,false);assert.equal(f.get('leftBacklinks').textContent,'查看反链');f.run('setEditing(true,false);setRightEditing(true,false);previewSameNote()');assert(f.run('editing&&rightEditing'));f.run("openInPane('reading_reading_journal','right')");assert(!f.get('leftMore').classList.contains('hidden'));assert(!f.get('rightMore').classList.contains('hidden'));f.run("syncUrl()");const g=fixture(f.href());assert(!g.get('samePreview').classList.contains('hidden'));f.run("openInPane(current,'right');syncUrl()");const h=fixture(f.href());assert(h.get('samePreview').classList.contains('hidden'));assert(h.get('rightSamePreview').classList.contains('hidden'));assert(!h.get('leftMore').classList.contains('hidden'));assert(!h.get('rightMore').classList.contains('hidden'));
@@ -708,10 +738,10 @@ test('Git import credential demo switches provider hints and clears secrets on c
 });
 test('v1.24 import prototype retains directory IDs and covers card states with a discoverable retry',()=>{
  for(const id of ['importVaultDialog','importVaultTitle','importVaultLead','importLocalTab','importGitTab','importLocalPanel','importGitPanel','chooseImportDirectory','importDirectoryName','importDirectoryHint','importDirectoryAction','importDirectoryIcon','importVaultStatus','importFailDemo','cancelImportVault','confirmImportVault'])assert(markupIds.has(id),id);
- assert.match(html,/<dialog id="importVaultDialog"[^>]+aria-labelledby="importVaultTitle" aria-describedby="importVaultLead"/);
- assert.match(html,/<button id="chooseImportDirectory"[^>]+aria-describedby="importDirectoryHint"/);
- assert.match(html,/<span id="importDirectoryAction" class="directory-action" aria-hidden="true">/);
- assert.match(html,/<span id="importVaultStatus" role="status">/);
+ assert.match(html,/<dialog(?=[^>]*id="importVaultDialog")(?=[^>]*aria-labelledby="importVaultTitle")(?=[^>]*aria-describedby="importVaultLead")/);
+ assert.match(html,/<button(?=[^>]*id="chooseImportDirectory")(?=[^>]*aria-describedby="importDirectoryHint")/);
+ assert.match(html,/<span(?=[^>]*id="importDirectoryAction")(?=[^>]*class="directory-action")(?=[^>]*aria-hidden="true")/);
+ assert.match(html,/<span(?=[^>]*id="importVaultStatus")(?=[^>]*role="status")/);
  const f=fixture();f.get('importVaultMenu').onclick();
  const card=f.get('chooseImportDirectory');
  assert(f.get('importVaultDialog').open);assert.equal(card.focused,true);assert.equal(card.dataset.state,'empty');assert.equal(card.dataset.selected,'false');

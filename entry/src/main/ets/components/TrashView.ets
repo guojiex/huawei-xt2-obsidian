@@ -20,6 +20,8 @@ export struct TrashView {
   @Prop @Watch('onRefresh') refreshSeq: number = 0;
   /** 「恢复」回调（父级执行 TrashService.restore 并刷新树） */
   onRestore: (relPath: string) => void = (relPath: string) => {};
+  /** 「永久删除」回调（父级拉确认弹窗；确认后 TrashService.purge，不进撤销） */
+  onPurge: (relPath: string) => void = (relPath: string) => {};
 
   @State items: TrashItem[] = [];
   @State expandedVaultIds: string[] = [];
@@ -148,18 +150,33 @@ export struct TrashView {
       .accessibilityText('恢复 ' + this.displayName(item) + ' 到 ' +
         this.vaultId + ' / ' + this.originFolder(item))
       .onClick((): void => { this.onRestore(item.relPath); })
+      Row() {
+        Icon('trash', 20, $r('app.color.danger'))
+      }
+      .width(Size.touch)
+      .height(Size.touch)
+      .justifyContent(FlexAlign.Center)
+      .focusable(true)
+      .id('trash-purge-button')
+      .accessibilityText('永久删除 ' + this.displayName(item) + '，无法恢复')
+      .onClick((): void => { this.onPurge(item.relPath); })
     }
     .width('100%')
     .height(Size.touch)
     .padding({ left: Space.s2, right: Space.s2 })
+    .id('trash-row-' + this.vaultId + ':' + item.relPath)
   }
 
   build() {
     Column() {
       if (this.items.length > 0 || this.loadFailed || this.legacyMigrationFailed) {
         Row({ space: Space.s2 }) {
-          Icon(this.isExpanded() ? 'chevronDown' : 'chevronRight',
-            14, $r('app.color.text_tertiary'))
+          // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名必须走 if 分支，不能写成三元实参
+          if (this.isExpanded()) {
+            Icon('chevronDown', 14, $r('app.color.text_tertiary'))
+          } else {
+            Icon('chevronRight', 14, $r('app.color.text_tertiary'))
+          }
           Icon('trash', 18, $r('app.color.text_tertiary'))
           Text('回收站')
             .fontSize(FontSize.body2)

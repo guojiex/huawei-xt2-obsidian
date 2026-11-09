@@ -299,6 +299,27 @@ export class TrashService {
   }
 
   /**
+   * 永久删除回收站内单条笔记（47.3）。与 restore 对称的出口，语义完全不同：
+   * 直接 unlink 沙箱回收站内的文件，**不可恢复、不进撤销**——确认弹窗即唯一保护。
+   * 条目不存在 / unlink 失败都抛错（文案即 toast 内容），回收站其余内容保持原样。
+   * unlink 是单文件操作，天然原子，不存在半删状态。
+   */
+  static purge(registry: VaultRegistry, vaultId: string, trashRel: string): Promise<void> {
+    return TrashService.enqueue<void>(async (): Promise<void> => {
+      if (!TrashService.existsInTrash(registry, vaultId, trashRel)) {
+        throw new Error('回收站条目不存在，可能已被处理');
+      }
+      try {
+        fileIo.unlinkSync(registry.absoluteInTrash(vaultId, trashRel));
+      } catch (error) {
+        const err = error as BusinessError;
+        throw new Error('永久删除失败，条目已保留：' + (err.message ?? '原因未确定'));
+      }
+      hilog.info(TRASH_DOMAIN, TRASH_TAG, '回收站条目已永久删除');
+    });
+  }
+
+  /**
    * 恢复到原位置（1.8「恢复」按钮 / 1.7 撤销条共用）。
    * 原位置已有同名文件 → 抛错（文案即 toast 内容），**不自动改名也不覆盖**：
    * 原型语义（restoreTrashItem 的「原位置已有同名文件，请先处理重名」）。

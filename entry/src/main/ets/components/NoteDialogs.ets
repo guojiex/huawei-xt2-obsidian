@@ -225,7 +225,12 @@ export struct CreateNoteDialog {
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Icon(this.pickerOpen ? 'chevronUp' : 'chevronDown', 14, $r('app.color.text_tertiary'))
+        // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名必须走 if 分支，不能写成三元实参
+        if (this.pickerOpen) {
+          Icon('chevronUp', 14, $r('app.color.text_tertiary'))
+        } else {
+          Icon('chevronDown', 14, $r('app.color.text_tertiary'))
+        }
       }
       .width('100%')
       .height(Size.buttonH)
@@ -379,6 +384,84 @@ export struct DeletePathDialog {
     UtilityDialogShell({
       title: this.isDir ? '删除文件夹？' : '删除笔记？',
       closeLabel: this.isDir ? '关闭删除文件夹确认' : '关闭删除笔记确认',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: (): void => { this.DialogContent(); },
+      footer: (): void => { this.DialogFooter(); }
+    })
+  }
+}
+
+/**
+ * 回收站条目永久删除确认（47.3）。与 DeletePathDialog 的语义区别：
+ * 那边是「还在库里的内容怎么删」，这边是「已在回收站的副本彻底清除」——
+ * 确认后 TrashService.purge 直接 unlink 沙箱回收站文件，**不可恢复、不进撤销**，
+ * 确认弹窗即唯一保护（原型 trashDeleteDialog）。
+ */
+@CustomDialog
+export struct PurgeTrashDialog {
+  controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
+  /** 显示名（已去掉 .md / .markdown 后缀） */
+  noteName: string = '';
+  /** 原位置（库内文件夹路径；根目录显示「根目录」） */
+  origin: string = '';
+  onConfirm: () => void = () => {};
+
+  private confirm(): void {
+    this.controller?.close();
+    this.onConfirm();
+  }
+
+  @Builder
+  DialogContent() {
+    Column() {
+      Text('笔记将从回收站彻底清除，无法恢复，也不会进入撤销。')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .margin({ top: Space.s2, bottom: Space.s3 })
+      Text(this.noteName)
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_primary'))
+        .width('100%')
+        .padding({ left: Space.s2, right: Space.s2, top: 5, bottom: 5 })
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.icon)
+      Text('原位置：' + this.origin)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .padding({ left: Space.s2, right: Space.s2, top: 5, bottom: 5 })
+        .backgroundColor($r('app.color.bg_secondary'))
+        .borderRadius(Radius.icon)
+        .margin({ top: Space.s1, bottom: Space.s3 })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+        this.controller?.close();
+      })
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '永久删除'), 'danger', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+        this.confirm();
+      })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: '永久删除笔记？',
+      closeLabel: '关闭永久删除确认',
       singleScreen: this.singleScreen,
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
@@ -561,7 +644,12 @@ export struct MovePathDialog {
           .layoutWeight(1)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Icon(this.pickerOpen ? 'chevronUp' : 'chevronDown', 14, $r('app.color.text_tertiary'))
+        // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名必须走 if 分支，不能写成三元实参
+        if (this.pickerOpen) {
+          Icon('chevronUp', 14, $r('app.color.text_tertiary'))
+        } else {
+          Icon('chevronDown', 14, $r('app.color.text_tertiary'))
+        }
       }
       .width('100%')
       .height(Size.buttonH)

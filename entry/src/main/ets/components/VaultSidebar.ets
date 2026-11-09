@@ -99,6 +99,8 @@ export struct VaultSidebar {
   onSwipeDelete: (relPath: string) => void = (relPath: string) => {};
   /** 回收站恢复回调，执行与原撤销条一致的恢复服务。 */
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
+  /** 回收站永久删除回调（父级拉确认弹窗）。 */
+  onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
 
   private chapterKey(chapter: ChapterEntry): string {
     return this.currentVaultId + ':' + this.currentFilePath + ':' + chapter.offset.toString();
@@ -458,7 +460,12 @@ export struct VaultSidebar {
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1)
 
-          Icon(this.menuOpen ? 'chevronUp' : 'chevronDown', 16, $r('app.color.text_tertiary'))
+          // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名必须走 if 分支，不能写成三元实参
+          if (this.menuOpen) {
+            Icon('chevronUp', 16, $r('app.color.text_tertiary'))
+          } else {
+            Icon('chevronDown', 16, $r('app.color.text_tertiary'))
+          }
         }
         // 此时 100% = 外包层的 content 盒 → 刚好放下，不再溢出侧栏
         .width('100%')
@@ -647,7 +654,8 @@ export struct VaultSidebar {
           onDeletePath: (relPath: string, isDir: boolean): void => { this.onDeletePath(relPath, isDir); },
           onSharePath: (relPath: string, isDir: boolean): void => { this.onSharePath(relPath, isDir); },
           onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); },
-          onRestoreTrash: (relPath: string): void => { this.onRestoreTrash(relPath); }
+          onRestoreTrash: (relPath: string): void => { this.onRestoreTrash(relPath); },
+          onPurgeTrash: (relPath: string): void => { this.onPurgeTrash(relPath); }
         })
           .width('100%')
           .height('100%')

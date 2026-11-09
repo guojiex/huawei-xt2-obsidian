@@ -1,5 +1,5 @@
 /*
- * UiNoteFlow.test.ets —— 笔记流冒烟：新建 / 删除 / 撤销 / 回收站 / 关闭（EM-B2/B3/B4/B5、G1/G3 可达部分）。
+ * UiNoteFlow.test.ets —— 笔记流冒烟：新建 / 删除 / 撤销 / 回收站 / 永久删除 / 关闭（EM-B2/B3/B4/B5/B7、G1/G3 可达部分）。
  * 用例按注册顺序执行（创建类先行，删除类依赖树里有目标行）；映射见 docs/testing/UI自动化测试.md。
  *
  * ⚠️ inputText 对原生 TextInput 的注入即本套件的可用性探针（api_notes Z3）：
@@ -217,6 +217,56 @@ export default function uiNoteFlowTest() {
       }
       // 删除 snackbar 或回收站区块——至少一个应成立
       expect(snackbarSeen || trashVisible).assertTrue();
+    });
+
+    it('trash_purge_confirm_and_cancel', 0, async (): Promise<void> => {
+      const driver: Driver = await getDriver();
+      await ensureSidebarVisible(driver);
+      const name: string = uniqueUiName('uitest灭');
+      const rowId: string = noteRowId(name);
+      const trashRowId: string = 'trash-row-' + VAULT_ID + ':' + name + '.md';
+      await createNoteByName(driver, name);
+      const row: Component = await findTreeRow(driver, rowId);
+      await swipeTreeRow(driver, row, 0.7);
+      await driver.delayMs(1000);
+      expect(await waitGoneById(driver, rowId)).assertTrue();
+      // 回收站区块在侧栏底部——必要时滚动侧栏使其可见
+      let trashVisible: boolean = await existsById(driver, 'trash-section-header');
+      if (!trashVisible) {
+        const newNoteBtn: Component | null = await tryWaitById(driver, 'vault-sidebar-new-note', 3000);
+        if (newNoteBtn !== null) {
+          const btnRect: Rect = await newNoteBtn.getBounds();
+          const sx: number = Math.round((btnRect.left + btnRect.right) / 2);
+          for (let k: number = 0; k < 4; k++) {
+            await driver.swipe(sx, btnRect.bottom - 50, sx, btnRect.top - 300);
+            await driver.delayMs(400);
+          }
+        }
+      }
+      // 展开回收站（删除不自动展开）
+      await clickById(driver, 'trash-section-header');
+      await driver.delayMs(800);
+      // 最新删除的排最前（deletedAt 倒序），无需滚动回收站列表
+      const trashRow: Component = await waitById(driver, trashRowId);
+      const trashRect: Rect = await trashRow.getBounds();
+      const purgeX: number = trashRect.right - 32;
+      const purgeY: number = Math.round((trashRect.top + trashRect.bottom) / 2);
+      // 取消路径：确认弹窗出现后取消，条目保留
+      let dialogSeen: boolean = false;
+      for (let attempt: number = 0; attempt < 3 && !dialogSeen; attempt++) {
+        await driver.click(purgeX, purgeY);
+        dialogSeen = await waitByTextContainsSoft(driver, '永久删除笔记？', 5000);
+      }
+      expect(dialogSeen).assertTrue();
+      await clickByText(driver, '取消');
+      expect(await waitGoneByText(driver, '永久删除笔记？')).assertTrue();
+      expect(await existsById(driver, trashRowId)).assertTrue();
+      // 确认路径：真删，条目从回收站消失（不进撤销，无撤销条断言）
+      await driver.click(purgeX, purgeY);
+      await waitByText(driver, '永久删除笔记？');
+      await clickByText(driver, '永久删除');
+      expect(await waitGoneByText(driver, '永久删除笔记？')).assertTrue();
+      expect(await waitGoneById(driver, trashRowId)).assertTrue();
     });
 
     it('close_note_shows_empty_state', 0, async (): Promise<void> => {

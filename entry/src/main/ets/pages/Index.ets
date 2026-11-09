@@ -49,7 +49,7 @@ import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { ImportVaultDialog } from '../components/ImportVaultDialog';
 import { GitSyncDialog } from '../components/GitSyncDialog';
-import { CreateNoteDialog, DeletePathDialog, MovePathDialog, RenamePathDialog } from '../components/NoteDialogs';
+import { CreateNoteDialog, DeletePathDialog, MovePathDialog, PurgeTrashDialog, RenamePathDialog } from '../components/NoteDialogs';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
@@ -610,6 +610,8 @@ struct Index {
   private createNoteCtl: CustomDialogController | null = null;
   /** 删除确认（文件/目录）对话框 controller（2026-10-18 方案 A 配套） */
   private deletePathCtl: CustomDialogController | null = null;
+  /** 回收站永久删除确认 controller（47.3） */
+  private purgeTrashCtl: CustomDialogController | null = null;
   /** 重命名 / 移动对话框 controller（1.6 左滑操作条） */
   private renamePathCtl: CustomDialogController | null = null;
   private movePathCtl: CustomDialogController | null = null;
@@ -8177,6 +8179,54 @@ struct Index {
     }
   }
 
+  /** 回收站视图「永久删除」（47.3）：确认弹窗即唯一保护，确认后真删，不进撤销。 */
+  private openPurgeTrashDialog(relPath: string): void {
+    const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
+    const lower: string = name.toLowerCase();
+    let display: string = name;
+    if (lower.endsWith('.markdown')) {
+      display = name.substring(0, name.length - '.markdown'.length);
+    } else if (lower.endsWith('.md')) {
+      display = name.substring(0, name.length - '.md'.length);
+    }
+    const slash: number = relPath.lastIndexOf('/');
+    const origin: string = slash >= 0 ? relPath.substring(0, slash) : '根目录';
+    this.purgeTrashCtl = new CustomDialogController({
+      builder: PurgeTrashDialog({
+        noteName: display,
+        origin: origin,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onConfirm: (): void => {
+          void this.doPurgeFromTrash(relPath);
+        }
+      }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: true,
+      customStyle: true
+    });
+    this.purgeTrashCtl.open();
+  }
+
+  private async doPurgeFromTrash(relPath: string): Promise<void> {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    const display: string = relPath.substring(relPath.lastIndexOf('/') + 1);
+    try {
+      await TrashService.purge(VaultRegistry.get(), this.currentVaultId, relPath);
+      this.trashSeq++;
+      promptAction.showToast({ message: '已永久删除：' + display });
+    } catch (error) {
+      const err = error as BusinessError;
+      const code: number = typeof err.code === 'number' ? err.code : -1;
+      const reason: string = err.message ?? '原因未确定';
+      this.showFailureFeedback('file', 'purge_trash', 'unknown', 'status_unknown', 'check_status',
+        reason, code, reason);
+    }
+  }
+
   // ===== 1.6 左滑三档：重命名 / 移动 =====
 
   /**
@@ -10258,6 +10308,9 @@ struct Index {
       },
       onRestoreTrash: (relPath: string): void => {
         void this.doRestoreFromTrash(relPath);
+      },
+      onPurgeTrash: (relPath: string): void => {
+        this.openPurgeTrashDialog(relPath);
       },
       onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
       onSidebarTabChange: (tab: string): void => { this.setSidebarTab(tab); },

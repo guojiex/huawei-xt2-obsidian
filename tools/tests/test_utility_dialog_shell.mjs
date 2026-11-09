@@ -39,7 +39,7 @@ test('utility shell matches the wide dialog and single-screen sheet geometry', (
 });
 
 test('native note, vault, quick-switch, import, and share dialogs use the shared shell', () => {
-  assert.equal((noteDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 4);
+  assert.equal((noteDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 5);
   assert.equal((vaultDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 3);
   assert.equal((quickSwitcherSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 1);
   assert.equal((importDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 1);
@@ -73,7 +73,7 @@ test('shell consumers wrap content and footer builders in arrows to preserve thi
     import.meta.url
   ));
   const consumers = [
-    { name: 'NoteDialogs', source: noteDialogSource, shells: 4, footers: 4 },
+    { name: 'NoteDialogs', source: noteDialogSource, shells: 5, footers: 5 },
     { name: 'VaultDialogs', source: vaultDialogSource, shells: 3, footers: 3 },
     { name: 'QuickSwitcher', source: quickSwitcherSource, shells: 1, footers: 0 },
     { name: 'ImportVaultDialog', source: importDialogSource, shells: 1, footers: 1 },
@@ -174,7 +174,7 @@ test('every utility action passes label as a makeBinding<string> callback', () =
     import.meta.url
   ));
   const consumers = [
-    { name: 'NoteDialogs', source: noteDialogSource, calls: 8 },
+    { name: 'NoteDialogs', source: noteDialogSource, calls: 10 },
     { name: 'VaultDialogs', source: vaultDialogSource, calls: 6 },
     { name: 'GitSyncDialog', source: gitSyncSource, calls: 4 },
     { name: 'ImportVaultDialog', source: importDialogSource, calls: 4 },
