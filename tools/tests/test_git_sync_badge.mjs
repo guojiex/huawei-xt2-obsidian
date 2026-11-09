@@ -95,8 +95,10 @@ test('Git entry visibility does not gate remote-link sharing', () => {
   assert.match(source, /const GIT_ENTRY_UI_ENABLED: boolean = true/);
   assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);
   assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitSyncButton\(\)/);
-  const shareDialog = source.slice(source.indexOf('  private openShareNoteDialog(): void {'),
-    source.indexOf('  private async prepareShare(', source.indexOf('  private openShareNoteDialog(): void {')));
+  // openShareDialog（含分享范围与格式选项构建）已移到 prepareShare 之后、UndoBar 之前
+  const shareDialogStart = source.indexOf('  private openShareDialog(scope: ShareLinkScope');
+  const shareDialog = source.slice(shareDialogStart,
+    source.indexOf('\n  @Builder\n  UndoBar()', shareDialogStart));
   assert.match(shareDialog, /value: 'file', label: 'Markdown \/ ZIP'/);
   assert.match(shareDialog, /if \(vault\.type === 'git' && focusReturnId\.length === 0\) \{[\s\S]*?value: 'link'/);
   assert.doesNotMatch(shareDialog, /GIT_ENTRY_UI_ENABLED/);

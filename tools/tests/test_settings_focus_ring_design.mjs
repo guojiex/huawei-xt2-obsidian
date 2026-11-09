@@ -15,9 +15,9 @@ const prototype = readSourceFile(
 const FOCUS_BOX = /\.focusBox\(\{\s*\n\s*strokeWidth: LengthMetrics\.vp\(2\),\s*\n\s*strokeColor: ColorMetrics\.resourceColor\(\$r\('app\.color\.brand'\)\)\s*\n\s*\}\)/;
 
 test('all four settings headings carry the brand focus ring (32.8)', () => {
-  // Kit 导入（@kit.ArkUI 导出 LengthMetrics / ColorMetrics，API 12+）
+  // Kit 导入（@kit.ArkUI 导出 LengthMetrics / ColorMetrics，API 12+；Index 自 v1.46 起增加 KeyboardAvoidMode）
   assert.match(settings, /import \{ ColorMetrics, LengthMetrics, promptAction \} from '@kit\.ArkUI';/);
-  assert.match(index, /import \{ ColorMetrics, LengthMetrics, promptAction, router \} from '@kit\.ArkUI';/);
+  assert.match(index, /import \{ ColorMetrics, KeyboardAvoidMode, LengthMetrics, promptAction, router \} from '@kit\.ArkUI';/);
   // 四个标题：focusable → focusBox → id → 程序化聚焦入口保持
   for (const category of ['general', 'data', 'about', 'feedback']) {
     const idIdx = settings.indexOf(`.id('settings-heading-${category}')`);
@@ -28,8 +28,8 @@ test('all four settings headings carry the brand focus ring (32.8)', () => {
     assert.match(settings,
       new RegExp(`focusCategoryHeading\\('${category}'\\);`));
   }
-  // 读屏从标题开始：requestFocus 入口不变
-  assert.match(settings, /requestFocus\('settings-heading-' \+ category\)/);
+  // 读屏从标题开始：程序化聚焦入口保持（2026-11-08 DFX 收口后走 FocusRequest.safely）
+  assert.match(settings, /FocusRequest\.safely\(this\.getUIContext\(\), 'settings-heading-' \+ category\)/);
 });
 
 test('pane title rows follow the same focus ring rule (32.8)', () => {
@@ -40,8 +40,8 @@ test('pane title rows follow the same focus ring rule (32.8)', () => {
   assert.match(block, /v1\.30 30\.4：「完成编辑」后焦点移到该栏路径行/);
   assert.match(block, /\.focusable\(true\)/);
   assert.match(block, FOCUS_BOX, 'pane-title row has focusBox before id');
-  // 程序化聚焦调用保持
-  assert.match(index, /requestFocus\('pane-title-' \+ pane\)/);
+  // 程序化聚焦调用保持（2026-11-08 DFX 收口后走 FocusRequest.safely）
+  assert.match(index, /FocusRequest\.safely\(this\.getUIContext\(\), 'pane-title-' \+ pane\)/);
 });
 
 test('prototype focus-visible rule matches the mapped tokens (32.8)', () => {

@@ -9,7 +9,7 @@ const { transformSync } = require('esbuild');
 const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
 const dialogSource = readSourceFile(new URL('../../entry/src/main/ets/components/ShareNoteDialog.ets', import.meta.url));
 const pathStart = indexSource.indexOf('  private sharePathForScope(');
-const pathEnd = indexSource.indexOf('\n  private openShareDialog(', pathStart);
+const pathEnd = indexSource.indexOf('\n  build() {', pathStart);
 assert.ok(pathStart >= 0 && pathEnd > pathStart, 'could not find sharePathForScope');
 
 const harnessCode = transformSync(`

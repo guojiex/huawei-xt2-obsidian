@@ -104,8 +104,9 @@ test('Index restores the app-wide theme and passes it to the next settings dialo
   assert.match(indexSource,
     /this\.shareCaptureTheme = \(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.loadTheme\(\)/);
   assert.match(indexSource, /initialTheme: this\.shareCaptureTheme/);
+  // v1.42 起主题/宽度在统一预览弹窗的 onGenerate 回调里更新并落盘
   assert.match(indexSource,
-    /this\.shareCaptureTheme = theme;\s*this\.ensureShareImagePreferenceStore\(\);\s*if \(!\(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.saveTheme\(theme\)\)/);
+    /onGenerate: async \(widthId: string, theme: string\): Promise<ShareImagePreviewImage> => \{\s*this\.shareCaptureWidthId = widthId;\s*this\.shareCaptureTheme = theme;[\s\S]*?this\.ensureShareImagePreferenceStore\(\);\s*if \(!\(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.saveTheme\(theme\)\)/);
   assert.match(dialogSource, /this\.theme = this\.initialTheme === 'dark' \? 'dark' : 'light'/);
 });
 

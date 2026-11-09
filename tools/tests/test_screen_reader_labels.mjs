@@ -133,7 +133,7 @@ test('the icon-only controls this version labelled are still wired', () => {
     ['components/FileTreeView.ets', '下新建'],
     ['components/FileTreeView.ets', '在参考栏打开'],
     ['pages/Index.ets', 'Git 同步'],
-    ['pages/Index.ets', '更多操作'],
+    // v1.44 统一双栏更多菜单入口：每栏「更多操作」按钮已整体移除，统一入口是顶栏「更多菜单」
     ['pages/Index.ets', '更多菜单'],
     ['pages/Index.ets', '插入图片'],
     ['components/AgentWorkspace.ets', '归档对话']
@@ -151,7 +151,7 @@ test('state is announced, not just drawn: selected / expanded states reach the l
     ['components/NoteDialogs.ets', '，已选中'],
     ['components/VaultSidebar.ets', '，当前知识库'],
     ['pages/Index.ets', '收起菜单'],
-    ['pages/Index.ets', '展开操作菜单']
+    ['pages/Index.ets', '展开菜单']
   ];
   for (const [relativePath, needle] of cases) {
     const source = readFileSync(join(etsRoot, relativePath), 'utf8');
@@ -161,10 +161,11 @@ test('state is announced, not just drawn: selected / expanded states reach the l
 
 test('accessibility APIs used here are declared for the compiled SDK level', () => {
   // 只断言本机 SDK 里确有这些属性声明（版本由 api_notes L-15 记录：since 12 / 10，低于 API 24）
-  const common = readFileSync(
-    'C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/ets/component/common.d.ts',
-    'utf8'
-  );
+  // SDK 根随宿主平台解析：Windows 为 DevEco 安装目录，macOS 为 DevEco-Studio.app 内
+  const sdkCommon = process.platform === 'win32'
+    ? 'C:/Program Files/Huawei/DevEco Studio/sdk/default/openharmony/ets/component/common.d.ts'
+    : '/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/ets/component/common.d.ts';
+  const common = readFileSync(sdkCommon, 'utf8');
   for (const api of ['accessibilityText(', 'accessibilityTextHint(', 'accessibilityDescription(', 'accessibilityLevel(', 'accessibilityGroup(']) {
     assert.ok(common.includes(`    ${api}`), `SDK 应声明 ${api}`);
   }

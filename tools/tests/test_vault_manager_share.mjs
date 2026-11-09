@@ -57,14 +57,16 @@ test('manager share action is accessible and returns to its own trigger', () => 
   assert.match(shareRow, /this\.onShare\(v\.id, 'vault-manager-share-' \+ v\.id\)/);
   assert.match(indexSource, /shareSummaries: this\.vaultManagerShareSummaries/);
   assert.match(indexSource, /onShare: \(id: string, focusId: string\)[\s\S]{0,120}openShareVaultFromManager\(id, focusId\)/);
-  assert.match(indexSource, /requestFocus\(focusReturnId\)/);
+  // 2026-11-08 DFX 收口后焦点返回走 FocusRequest.safely
+  assert.match(indexSource, /FocusRequest\.safely\(this\.getUIContext\(\), focusReturnId\)/);
 });
 
 test('manager share stays on the selected vault, exposes ZIP only, and preserves detail back navigation', () => {
   const openFromManager = sourceMethod(indexSource, '  private openShareVaultFromManager(',
     '\n  private sharePathForScope(');
+  // openShareDialog 已移到各 @Builder 之前、紧邻 UndoBar
   const openDialog = sourceMethod(indexSource, '  private openShareDialog(',
-    '\n  private openShareImageSettings(');
+    '\n  @Builder\n  UndoBar()');
   const prepareShare = sourceMethod(indexSource, '  private async prepareShare(',
     '\n  private async shareFile(');
   const preview = sourceMethod(indexSource, '  private openShareFilePreview(',
@@ -83,8 +85,9 @@ test('manager share stays on the selected vault, exposes ZIP only, and preserves
 });
 
 test('normal note share retains the vault range and Git remote-link path', () => {
+  // openShareDialog 已移到各 @Builder 之前、紧邻 UndoBar
   const openDialog = sourceMethod(indexSource, '  private openShareDialog(',
-    '\n  private openShareImageSettings(');
+    '\n  @Builder\n  UndoBar()');
   assert.match(openDialog, /folderScopeDistinct \? \[noteOption, folderOption, vaultOption\] : \[noteOption, vaultOption\]/);
   assert.match(openDialog, /if \(vault\.type === 'git' && focusReturnId\.length === 0\)/);
   assert.match(sidebarSource, /onManageVaults: \(\) => void/);

@@ -116,7 +116,8 @@ test('the workspace loads mode independently of restored editor and preview flag
   assert.match(settingsSource, /onExperienceModeKey\(mode: EditorExperienceMode/);
   assert.match(indexSource, /@State focusMoreMenuOnAppear: boolean = false/);
   assert.match(indexSource, /\.id\('workspace-more-button'\)/);
-  assert.match(indexSource, /getFocusController\(\)\.requestFocus\('workspace-more-button'\)/);
+  // 2026-11-08 DFX 收口：裸 requestFocus 全部改走 FocusRequest.safely（common/FocusRequest.ets）
+  assert.match(indexSource, /FocusRequest\.safely\(this\.getUIContext\(\), 'workspace-more-button'\)/);
   assert.match(editorSource, /@Prop @Watch\('onExperienceChanged'\) experienceMode: string = 'simple'/);
   assert.match(editorSource, /window\.__mdeditor\.setExperience\('\$\{safeMode\}'\)/);
   assert.match(indexSource, /if \(this\.experienceMode === 'simple'\) \{[\s\S]*this\.LeftWorkspacePane\(false\)/);

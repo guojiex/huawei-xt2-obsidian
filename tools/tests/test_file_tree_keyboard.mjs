@@ -44,7 +44,18 @@ const DismissReason = { PRESS_BACK: 0, TOUCH_OUTSIDE: 1 };
 
 function createHarness(expanded = []) {
   const calls = [];
-  const context = vm.createContext({ module: { exports: {} }, KeyCode, KeyType, DismissReason });
+  const context = vm.createContext({
+    module: { exports: {} },
+    KeyCode,
+    KeyType,
+    DismissReason,
+    // 2026-11-08 DFX 收口后 closePathMenu 走 FocusRequest.safely（真实实现见
+    // common/FocusRequest.ets，行为由 test_focus_keyboard_regression.mjs 断言）；
+    // 此处注入等行为 mock：命中即请求。
+    FocusRequest: {
+      safely: (uiContext, focusId) => uiContext.getFocusController().requestFocus(focusId)
+    }
+  });
   vm.runInContext(code, context);
   const app = new context.module.exports();
   Object.assign(app, {

@@ -62,7 +62,7 @@ test('shareLayoutWidthVp maps phone/wide/pane to fixed or dynamic widths', () =>
 
 test('settings dialog provides width segment with phone/wide/pane and capture uses the selected width', () => {
   assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(this\.shareCaptureWidthId, paneWidthVp\)/);
-  assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(widthId, paneWidthVp\)/);
+  assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(widthId, resolvedPaneWidthVp\)/);
   assert.match(indexSource, /\.width\(this\.shareCaptureWidthVp > 0 \? this\.shareCaptureWidthVp : '100%'\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.PHONE\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.WIDE\)/);

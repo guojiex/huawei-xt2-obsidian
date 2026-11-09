@@ -61,7 +61,7 @@ const shellEnd = source.indexOf('\n  @Builder\n  NoteBody()', shellStart);
 assert.ok(shellStart >= 0 && shellEnd > shellStart, 'could not find active NoteWorkspaceShell builder');
 const shellSource = source.slice(shellStart, shellEnd);
 const bodyStart = source.indexOf('  NoteBody() {');
-const bodyEnd = source.indexOf('\n  build() {', bodyStart);
+const bodyEnd = source.indexOf('\n  @Builder', bodyStart);
 assert.ok(bodyStart >= 0 && bodyEnd > bodyStart, 'could not find active NoteBody builder');
 const bodySource = source.slice(bodyStart, bodyEnd);
 
@@ -71,7 +71,13 @@ function createHarness(overrides = {}) {
     module,
     exports: module.exports,
     Breakpoint,
-    setTimeout: (callback) => callback()
+    setTimeout: (callback) => callback(),
+    // 2026-11-08 DFX 收口后 closeSingleScreenNavigationFromScrim 走 FocusRequest.safely
+    // （真实实现见 common/FocusRequest.ets，行为由 test_focus_keyboard_regression.mjs 断言）；
+    // 此处注入等行为 mock：命中即请求。
+    FocusRequest: {
+      safely: (uiContext, focusId) => uiContext.getFocusController().requestFocus(focusId)
+    }
   }));
   const app = new module.exports();
   Object.assign(app, {

@@ -75,7 +75,8 @@ function createHarness(overrides = {}) {
 
 test('NoteBody uses the same pane layout in simple and professional modes', () => {
   const start = source.indexOf('  NoteBody() {');
-  const end = source.indexOf('\n  build() {', start);
+  // build() 已移到所有 @Builder 之前，NoteBody 以下一个 @Builder（UndoBar）为界
+  const end = source.indexOf('\n  @Builder', start);
   assert.ok(start >= 0 && end > start, 'could not find NoteBody builder');
   const body = source.slice(start, end);
 

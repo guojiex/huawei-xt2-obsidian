@@ -32,6 +32,7 @@ const methods = [
   extract('  private isCurrentRightOpenTarget(', '\n  /**\n   * 读取笔记全文'),
   extract('  private simplePreviewEditable(', '\n  @Builder\n  PaneModeButton('),
   extract('  private simpleWorkspacePane(): string {', '\n  @Builder\n  PaneModeButton('),
+  extract('  private activeNotePane(): string {', '\n  private activeFilePath(): string {'),
   extract('  private activeFilePath(): string {', '\n  private activeEditorBridge(): EditorBridge {')
 ];
 const code = transformSync(`class IndexHarness {

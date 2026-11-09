@@ -107,9 +107,9 @@ test('menu shell matches the v2 mobile-top-more spec (31.6)', () => {
   assert.match(shell, /\.padding\(\{ top: Space\.s1, bottom: Space\.s1 \}\)/);
   assert.match(shell, /Radius\.menu/);
   assert.match(shell, /Shadow\.floatBlur/);
-  // Escape 关闭并把焦点还给「…」
+  // Escape 关闭并把焦点还给「…」（2026-11-08 DFX 收口：裸 requestFocus 改走 FocusRequest.safely）
   assert.match(shell, /KEYCODE_ESCAPE/);
-  assert.match(shell, /requestFocus\('workspace-more-button'\)/);
+  assert.match(shell, /FocusRequest\.safely\(this\.getUIContext\(\), 'workspace-more-button'\)/);
   // 原型侧同名规则（min-width s16×4.25 / 上下 s1 / --r 圆角 / 组间线 / 禁用 40% / 徽标）
   assert.match(prototype, /\.mobile-top-more \.pane-more-menu\{min-width:calc\(var\(--s16\) \* 4\.25\);padding:var\(--s1\) 0;border-radius:var\(--r\)\}/);
   assert.match(prototype, /\.mobile-top-more \.menu-group\+\.menu-group\{border-top:var\(--stroke\) solid var\(--line\)\}/);

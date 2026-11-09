@@ -24,11 +24,13 @@ class ShareImageSettingsHarness {
   ${extract(settingsSource, '  private selectTheme(', '\n  @Builder')}
   constructor() {
     this.theme = 'light';
+    this.widthId = 'phone';
     this.closed = 0;
     this.confirmed = [];
     this.cancelled = 0;
     this.controller = { close: () => { this.closed++; } };
-    this.onConfirm = theme => this.confirmed.push(theme);
+    // v1.42 宽度预设分段后 confirm 同时回传 (widthId, theme)
+    this.onConfirm = (widthId, theme) => this.confirmed.push([widthId, theme]);
     this.onCancel = () => { this.cancelled++; };
   }
 }
@@ -63,7 +65,8 @@ test('share image appearance defaults to light and can be changed before capture
   dialog.confirm();
   assert.equal(dialog.theme, 'dark');
   assert.equal(dialog.confirmed.length, 1);
-  assert.equal(dialog.confirmed[0], 'dark');
+  assert.equal(dialog.confirmed[0][0], 'phone');
+  assert.equal(dialog.confirmed[0][1], 'dark');
   assert.equal(dialog.closed, 1);
 });
 
@@ -93,11 +96,13 @@ test('explicit share theme overrides system theme while ordinary previews still 
 
 test('image settings feed the selected theme into the hidden capture preview', () => {
   assert.match(indexSource, /if \(format === 'image' && scope === 'note'\) \{\s*this\.openShareImageSettings\(vault\.id, path, itemName\);/);
+  // v1.42 起长图设置并入统一预览弹窗：主题/宽度经 onGenerate 回调即时重新生成
   assert.match(indexSource,
-    /onConfirm: \(theme: string\): void => \{\s*this\.shareCaptureTheme = theme;\s*this\.ensureShareImagePreferenceStore\(\);\s*if \(!\(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.saveTheme\(theme\)\) \{\s*promptAction\.showToast/);
-  assert.match(indexSource, /void this\.prepareNoteImageShare\(vaultId, notePath, itemName/);
-  assert.match(indexSource, /cancel: \(\): void => \{\s*this\.openShareDialog\('note', notePath\);/);
-  assert.match(indexSource, /themeOverride: this\.shareCaptureTheme/);
+    /onGenerate: async \(widthId: string, theme: string\): Promise<ShareImagePreviewImage> => \{\s*this\.shareCaptureWidthId = widthId;\s*this\.shareCaptureTheme = theme;/);
+  assert.match(indexSource, /await this\.prepareNoteImageShare\(/);
+  assert.match(indexSource,
+    /onCancel: \(\): void => \{\s*this\.cancelShareImageCapture\(\);\s*this\.cleanupShareImagePreview\(\);\s*this\.openShareDialog\('note', notePath\);/);
+  assert.match(indexSource, /initialTheme: this\.shareCaptureTheme/);
   assert.match(settingsSource, /Text\('图片外观'\)/);
   assert.match(settingsSource, /Text\('浅色'\)|'浅色'/);
   assert.match(settingsSource, /Text\('深色'\)|'深色'/);
