@@ -125,8 +125,12 @@ export struct CreateNoteDialog {
   @Builder
   DirItem(rel: string, label: string) {
     Row({ space: Space.s2 }) {
-      Icon('folder', 14, this.selectedDir === rel
-        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      // L-7/Z2：全局 @Builder 按值实参不随状态刷新，选中色必须走 if 分支，不能写成三元实参
+      if (this.selectedDir === rel) {
+        Icon('folder', 14, $r('app.color.brand'))
+      } else {
+        Icon('folder', 14, $r('app.color.text_secondary'))
+      }
       Text(label)
         .fontSize(FontSize.body3)
         .fontColor(this.selectedDir === rel
@@ -600,8 +604,12 @@ export struct MovePathDialog {
   @Builder
   DirItem(rel: string, label: string) {
     Row({ space: Space.s2 }) {
-      Icon('folder', 14, this.selectedDir === rel
-        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      // L-7/Z2：全局 @Builder 按值实参不随状态刷新，选中色必须走 if 分支，不能写成三元实参
+      if (this.selectedDir === rel) {
+        Icon('folder', 14, $r('app.color.brand'))
+      } else {
+        Icon('folder', 14, $r('app.color.text_secondary'))
+      }
       Text(label)
         .fontSize(FontSize.body3)
         .fontColor(this.selectedDir === rel

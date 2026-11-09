@@ -376,8 +376,12 @@ export struct ImportVaultDialog {
           if (this.source === 'local') {
             Row({ space: Space.s3 }) {
               Stack({ alignContent: Alignment.Center }) {
-                Icon('folder', Space.s6, this.directoryState === 'failed'
-                  ? $r('app.color.danger') : $r('app.color.brand'))
+                // L-7/Z2：全局 @Builder 按值实参不随状态刷新，失败色必须走 if 分支，不能写成三元实参
+                if (this.directoryState === 'failed') {
+                  Icon('folder', Space.s6, $r('app.color.danger'))
+                } else {
+                  Icon('folder', Space.s6, $r('app.color.brand'))
+                }
                 if (this.directoryState === 'selected') {
                   Row() {
                     Icon('check', Space.s3, $r('app.color.on_brand'))
@@ -598,8 +602,12 @@ export struct ImportVaultDialog {
               .width('100%')
             Row({ space: Space.s3 }) {
               Stack({ alignContent: Alignment.Center }) {
-                Icon('archive', Space.s6, this.zipState === 'failed'
-                  ? $r('app.color.danger') : $r('app.color.brand'))
+                // L-7/Z2：全局 @Builder 按值实参不随状态刷新，失败色必须走 if 分支，不能写成三元实参
+                if (this.zipState === 'failed') {
+                  Icon('archive', Space.s6, $r('app.color.danger'))
+                } else {
+                  Icon('archive', Space.s6, $r('app.color.brand'))
+                }
                 if (this.zipState === 'selected') {
                   Row() {
                     Icon('check', Space.s3, $r('app.color.on_brand'))

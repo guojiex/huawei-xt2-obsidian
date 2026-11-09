@@ -182,8 +182,12 @@ export struct SettingsView {
   ExperienceModeRow(mode: EditorExperienceMode, title: string, description: string, icon: string) {
     Button({ type: ButtonType.Normal, stateEffect: false }) {
       Row({ space: Space.s3 }) {
-        Icon(icon, Space.s5, this.experienceMode === mode
-          ? $r('app.color.brand') : $r('app.color.text_secondary'))
+        // L-7/Z2：全局 @Builder 按值实参不随状态刷新，选中色必须走 if 分支，不能写成三元实参
+        if (this.experienceMode === mode) {
+          Icon(icon, Space.s5, $r('app.color.brand'))
+        } else {
+          Icon(icon, Space.s5, $r('app.color.text_secondary'))
+        }
         Column({ space: Space.s1 }) {
           Text(title)
             .fontSize(FontSize.body2)

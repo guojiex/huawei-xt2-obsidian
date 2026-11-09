@@ -15,7 +15,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve, dirname, relative } from 'node:path';
+import { join, resolve, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -140,62 +140,7 @@ const ALLOWED = [
     kind: 'safe',
     reason: 'headerIcon 为普通成员，每次弹窗打开新建 shell 实例时定值，生命周期内不变',
   },
-  // ---- frozen：W-01 待修批次（修复后删除条目）----
-  {
-    file: 'components/GitSyncDialog.ets',
-    needle: 'index <= this.completedStep',
-    kind: 'frozen',
-    reason: 'W-01：同步步骤图标固化于挂载帧（ProgressSteps 外层 if 挂载时求值，ForEach 键=label 不变）',
-  },
-  {
-    file: 'components/NoteDialogs.ets',
-    needle: 'this.selectedDir === rel',
-    kind: 'frozen',
-    expectHits: 2,
-    reason: 'W-01：CreateNoteDialog / MovePathDialog 两个 DirItem 的文件夹图标选中色固化（文字色正常刷新）',
-  },
-  {
-    file: 'pages/Index.ets',
-    needle: "this.focused ? 'exitFocus' : 'focus'",
-    kind: 'frozen',
-    reason: 'W-01：FocusModeButton 图标名 + 色固化于首帧',
-  },
-  {
-    file: 'pages/Index.ets',
-    needle: 'this.isReferenceShown()',
-    kind: 'frozen',
-    reason: 'W-01：ReferencePaneButton 图标色固化（背景色属性正常刷新）',
-  },
-  {
-    file: 'pages/Index.ets',
-    needle: 'this.isImagePickerBusy(pane)',
-    kind: 'frozen',
-    reason: 'W-01：ImageFormatAction 图标色固化（accessibilityText 属性正常刷新）',
-  },
-  {
-    file: 'components/SettingsView.ets',
-    needle: 'this.experienceMode === mode',
-    kind: 'frozen',
-    reason: 'W-01：体验模式行图标选中色固化（文字 / 字重属性正常刷新）',
-  },
-  {
-    file: 'components/ImportVaultDialog.ets',
-    needle: "this.directoryState === 'failed'",
-    kind: 'frozen',
-    reason: "W-01：目录导入 Stack 图标失败色固化（'selected' 的 check 分支正常刷新）",
-  },
-  {
-    file: 'components/ImportVaultDialog.ets',
-    needle: "this.zipState === 'failed'",
-    kind: 'frozen',
-    reason: "W-01：ZIP 导入 Stack 图标失败色固化（'selected' 的 check 分支正常刷新）",
-  },
-  {
-    file: 'components/AgentWorkspace.ets',
-    needle: 'session.id === this.sessionId',
-    kind: 'frozen',
-    reason: 'W-01：会话列表图标选中色固化（ForEach 键=id+title，不含 sessionId）',
-  },
+  // ---- frozen：已全部修复（v1.48 / W-01，2026-11-09），本区清空；新增缺陷直接报错 ----
 ];
 
 const files = walk(etsRoot);
@@ -203,7 +148,8 @@ const files = walk(etsRoot);
 test('Icon() call args must not reference component state (this.) without an allowlist entry', () => {
   const violations = [];
   for (const file of files) {
-    const rel = relative(etsRoot, file);
+    // 归一化路径分隔符：Windows 下 relative() 产出反斜杠，豁免清单统一用正斜杠
+    const rel = relative(etsRoot, file).split(sep).join('/');
     const source = readFileSync(file, 'utf8');
     for (const call of findIconCalls(source)) {
       if (!call.args.includes('this.')) continue;

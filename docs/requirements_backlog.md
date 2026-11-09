@@ -518,7 +518,7 @@ M-02 与 M-01 的边界：M-01 评估把外部目录直接作为知识库正式�
 
 | 编号 | 需求 | 分配 |
 | --- | --- | --- |
-| W-01 | 修复防线测试豁免清单中 kind 为 frozen 的 10 处冻结缺陷：GitSyncDialog ProgressSteps 同步步骤图标（:677）、NoteDialogs 两个 DirItem 目录选中色（:128、:525）、Index 专注按钮图标名+色（:9094）/ 双栏按钮色（:9112）/ 图片格式按钮色（:10320）、SettingsView 体验模式行选中色（:185）、ImportVaultDialog 目录与 ZIP 失败色（:379、:601）、AgentWorkspace 会话选中色（:615）——实参含状态的表达式改 if/else 分支，修一处删一条豁免 | 未分配 |
+| W-01 | 修复防线测试豁免清单中 kind 为 frozen 的 10 处冻结缺陷：GitSyncDialog ProgressSteps 同步步骤图标（:677）、NoteDialogs 两个 DirItem 目录选中色（:128、:525）、Index 专注按钮图标名+色（:9094）/ 双栏按钮色（:9112）/ 图片格式按钮色（:10320）、SettingsView 体验模式行选中色（:185）、ImportVaultDialog 目录与 ZIP 失败色（:379、:601）、AgentWorkspace 会话选中色（:615）——实参含状态的表达式改 if/else 分支，修一处删一条豁免 | [v1.48](releases/v1.48/需求文档.md)（2026-11-09 分配） |
 
 ## 待分配：安全与上架缺口（2026-11-02）
 

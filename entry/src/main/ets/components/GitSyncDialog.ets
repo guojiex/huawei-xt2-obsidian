@@ -674,9 +674,14 @@ export struct GitSyncDialog {
       ForEach(this.progressStepLabels(),
         (label: string, index: number): void => {
           Row({ space: Space.s3 }) {
-            Icon(index <= this.completedStep ? 'check' : index === this.currentStep ? 'sync' : 'doc',
-              Space.s4, index <= this.completedStep ? $r('app.color.success')
-                : index === this.currentStep ? $r('app.color.brand') : $r('app.color.text_tertiary'))
+            // L-7/Z2：全局 @Builder 按值实参不随状态刷新，步进图标必须走 if 分支，不能写成三元实参
+            if (index <= this.completedStep) {
+              Icon('check', Space.s4, $r('app.color.success'))
+            } else if (index === this.currentStep) {
+              Icon('sync', Space.s4, $r('app.color.brand'))
+            } else {
+              Icon('doc', Space.s4, $r('app.color.text_tertiary'))
+            }
             Text(label)
               .fontSize(FontSize.body3)
               .fontColor(index <= this.completedStep || index === this.currentStep

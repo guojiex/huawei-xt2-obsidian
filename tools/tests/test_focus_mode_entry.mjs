@@ -21,7 +21,9 @@ assert.ok(referenceButtonStart >= 0 && referenceButtonEnd > referenceButtonStart
 const referenceButton = indexSource.slice(referenceButtonStart, referenceButtonEnd);
 
 test('native focus entry switches its custom icon, accessible name, hint and selected token', () => {
-  assert.match(focusButton, /Icon\(this\.focused \? 'exitFocus' : 'focus'/);
+  // v1.48/W-01：图标名+色改 if/else 分支（全局 @Builder 按值实参首帧固化，L-7/Z2），断言同步新写法
+  assert.match(focusButton,
+    /if \(this\.focused\) \{\s*Icon\('exitFocus', Space\.s5, \$r\('app\.color\.brand'\)\)\s*\} else \{\s*Icon\('focus', Space\.s5, \$r\('app\.color\.text_secondary'\)\)/);
   assert.match(focusButton, /this\.focused \? '退出专注模式' : '进入专注模式'/);
   assert.match(focusButton, /this\.focused \? '恢复目录和参考栏' : '隐藏目录和参考栏，聚焦当前笔记'/);
   assert.match(focusButton, /this\.focused \? \$r\('app\.color\.brand_bg'\) : Color\.Transparent/);

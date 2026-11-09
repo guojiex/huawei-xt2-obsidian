@@ -612,8 +612,12 @@ export struct AgentWorkspace {
           ListItem() {
             Row() {
               Row() {
-                Icon('message', 18, session.id === this.sessionId ?
-                  $r('app.color.brand') : $r('app.color.text_tertiary'))
+                // L-7/Z2：全局 @Builder 按值实参不随状态刷新，选中色必须走 if 分支，不能写成三元实参
+                if (session.id === this.sessionId) {
+                  Icon('message', 18, $r('app.color.brand'))
+                } else {
+                  Icon('message', 18, $r('app.color.text_tertiary'))
+                }
                 Text(session.title)
                   .fontSize(FontSize.body3)
                   .fontColor($r('app.color.text_primary'))

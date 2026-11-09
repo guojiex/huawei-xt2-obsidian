@@ -9230,8 +9230,12 @@ struct Index {
   @Builder
   FocusModeButton() {
     Row() {
-      Icon(this.focused ? 'exitFocus' : 'focus', Space.s5,
-        this.focused ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名+色必须走 if 分支，不能写成三元实参
+      if (this.focused) {
+        Icon('exitFocus', Space.s5, $r('app.color.brand'))
+      } else {
+        Icon('focus', Space.s5, $r('app.color.text_secondary'))
+      }
     }
     .width(Size.touch)
     .height(Size.touch)
@@ -9248,8 +9252,12 @@ struct Index {
   @Builder
   ReferencePaneButton() {
     Row() {
-      Icon('columns', Space.s5, this.isReferenceShown()
-        ? $r('app.color.brand') : $r('app.color.text_secondary'))
+      // L-7/Z2：全局 @Builder 按值实参不随状态刷新，选中色必须走 if 分支，不能写成三元实参
+      if (this.isReferenceShown()) {
+        Icon('columns', Space.s5, $r('app.color.brand'))
+      } else {
+        Icon('columns', Space.s5, $r('app.color.text_secondary'))
+      }
     }
     .width(Size.touch)
     .height(Size.touch)
@@ -10459,8 +10467,12 @@ struct Index {
   @Builder
   ImageFormatAction(pane: string) {
     Row() {
-      Icon('image', Space.s5, this.isImagePickerBusy(pane)
-        ? $r('app.color.text_tertiary') : $r('app.color.text_primary'))
+      // L-7/Z2：全局 @Builder 按值实参不随状态刷新，忙碌色必须走 if 分支，不能写成三元实参
+      if (this.isImagePickerBusy(pane)) {
+        Icon('image', Space.s5, $r('app.color.text_tertiary'))
+      } else {
+        Icon('image', Space.s5, $r('app.color.text_primary'))
+      }
     }
     .width(Size.touch)
     .height(Size.touch)
