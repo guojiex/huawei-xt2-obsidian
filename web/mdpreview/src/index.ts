@@ -1865,12 +1865,16 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     return
   }
   if (empty && editable) {
+    // setContent 的空笔记分支先建了 .empty（placeholder=空笔记），可编辑态必须换成输入提示，
+    // 否则居中的只读空状态文案会变成打字位置（2026-11-09 新建笔记光标居中 bug）。
+    empty.dataset.placeholder = '在此输入正文'
     empty.setAttribute('contenteditable', 'true')
     empty.setAttribute('data-simple-editable', 'true')
     empty.dataset.sourceFrom = String(bodyOffset)
     empty.dataset.sourceTo = String(sourceText.length)
     empty.dataset.sourceType = 'paragraph'
   } else if (empty) {
+    empty.dataset.placeholder = '空笔记'
     empty.removeAttribute('contenteditable')
     empty.removeAttribute('data-simple-editable')
     delete empty.dataset.sourceFrom
