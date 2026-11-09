@@ -36,6 +36,9 @@ export interface TreeNode {
   depth: number;
 }
 
+/** 文件树排序模式（v1.49）：名称 = 现状默认；mtime = 按修改时间降序（新的在前）。 */
+export type FileListSortMode = 'name' | 'mtime';
+
 export class FileTree {
   static readonly MAX_DEPTH: number = 8;
   static readonly MAX_NODES: number = 1000;
@@ -145,6 +148,80 @@ export class FileTree {
     const i: number = relPath.lastIndexOf('/');
     return i > 0 ? relPath.substring(0, i) : '';
   }
+
+  /**
+   * 按排序模式重排可见行（v1.49 · 49.1）。
+   *
+   * 约定：输入是 scan 产出的可见行（已按展开状态剪枝），输出保持
+   * 「父目录在子项之前」的扁平 DFS 结构；每层内部目录在前、文件在后，
+   * 同组按模式排序——name = 字典序升序（scan 已排好，原样返回），
+   * mtime = mtimeOf(relPath) 降序（新的在前），相同或拿不到按名称升序稳定。
+   * stat 失败（返回负值）按最旧处理，排序不崩。纯逻辑：mtimeOf 由调用方注入
+   * （沙箱 / 外部都从 VaultAccess.stat 拿），两类库共用，不按 rootKind 分叉。
+   */
+  static resort(nodes: TreeNode[], mode: FileListSortMode,
+    mtimeOf: (relPath: string) => number): TreeNode[] {
+    if (mode !== 'mtime') {
+      return nodes;
+    }
+    const byParent: Map<string, TreeNode[]> = new Map<string, TreeNode[]>();
+    for (let i = 0; i < nodes.length; i++) {
+      const parent: string = FileTree.parentOf(nodes[i].relPath);
+      const group: TreeNode[] | undefined = byParent.get(parent);
+      if (group === undefined) {
+        byParent.set(parent, [nodes[i]]);
+      } else {
+        group.push(nodes[i]);
+      }
+    }
+    const parents: string[] = [];
+    byParent.forEach((_group: TreeNode[], key: string): void => {
+      parents.push(key);
+    });
+    for (let p = 0; p < parents.length; p++) {
+      const group: TreeNode[] | undefined = byParent.get(parents[p]);
+      if (group !== undefined) {
+        group.sort((a: TreeNode, b: TreeNode): number => FileTree.compareByMode(a, b, mtimeOf));
+      }
+    }
+    const out: TreeNode[] = [];
+    FileTree.emitChildren('', byParent, out);
+    return out;
+  }
+
+  /** 同层比较：目录在前、文件在后；同组内 mtime 降序，平局按名称升序稳定。 */
+  private static compareByMode(a: TreeNode, b: TreeNode, mtimeOf: (relPath: string) => number): number {
+    if (a.isDir !== b.isDir) {
+      return a.isDir ? -1 : 1;
+    }
+    const at: number = mtimeOf(a.relPath);
+    const bt: number = mtimeOf(b.relPath);
+    if (at !== bt) {
+      return at > bt ? -1 : 1;
+    }
+    if (a.name < b.name) {
+      return -1;
+    }
+    if (a.name > b.name) {
+      return 1;
+    }
+    return 0;
+  }
+
+  /** DFS 输出某父目录下的已排序子行；目录行后紧跟其子树（父先于子的不变式）。 */
+  private static emitChildren(parent: string, byParent: Map<string, TreeNode[]>, out: TreeNode[]): void {
+    const group: TreeNode[] | undefined = byParent.get(parent);
+    if (group === undefined) {
+      return;
+    }
+    for (let i = 0; i < group.length; i++) {
+      const node: TreeNode = group[i];
+      out.push(node);
+      if (node.isDir) {
+        FileTree.emitChildren(node.relPath, byParent, out);
+      }
+    }
+  }
 }
 
 /**
@@ -190,6 +267,49 @@ export class ExpandStore {
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, 'expand 状态写入失败 code=%{public}d', err.code);
+    }
+  }
+}
+
+/**
+ * FileListSortStore —— 文件树排序偏好持久化（v1.49 · 49.3）。
+ *
+ * 与 ExpandStore 不同：排序是 App 级单一偏好（不分库），存同一个
+ * preferences 文件的 `sort_mode` 键；默认 name，坏值回退 name。
+ */
+export class FileListSortStore {
+  private static readonly PREF_NAME: string = 'file_tree_state';
+  private static readonly KEY: string = 'sort_mode';
+  private store: preferences.Preferences | null = null;
+
+  constructor(context: common.UIAbilityContext) {
+    try {
+      this.store = preferences.getPreferencesSync(context, { name: FileListSortStore.PREF_NAME });
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '排序偏好库打开失败 code=%{public}d', err.code);
+      this.store = null;
+    }
+  }
+
+  load(): FileListSortMode {
+    if (this.store === null) {
+      return 'name';
+    }
+    const raw: string = this.store.getSync(FileListSortStore.KEY, 'name') as string;
+    return raw === 'mtime' ? 'mtime' : 'name';
+  }
+
+  save(mode: FileListSortMode): void {
+    if (this.store === null) {
+      return;
+    }
+    try {
+      this.store.putSync(FileListSortStore.KEY, mode);
+      this.store.flush();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '排序偏好写入失败 code=%{public}d', err.code);
     }
   }
 }

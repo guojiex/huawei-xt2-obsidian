@@ -20,7 +20,7 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { FileTree, ExpandStore, TreeNode } from '../model/FileTree';
-import { VaultAccess } from '../model/VaultAccess';
+import { VaultAccess, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
 import { FocusRequest } from '../common/FocusRequest';
@@ -81,6 +81,8 @@ export struct FileTreeView {
   @Prop currentFilePath: string = '';
   /** 重扫信号：父级 +1 → onRefresh → reload */
   @Prop @Watch('onRefresh') refreshSeq: number = 0;
+  /** 文件树排序模式（v1.49）：父级切换 → onSortChanged → rescan 重排。 */
+  @Prop @Watch('onSortChanged') sortMode: string = 'name';
   /** 回收站重扫信号，与文件树扫描状态分开。 */
   @Prop trashRefreshSeq: number = 0;
   /** 需要展开到可见的目标路径（父级新建笔记后置位） */
@@ -151,6 +153,11 @@ export struct FileTreeView {
     this.reload();
   }
 
+  /** 排序模式切换（v1.49）：同一份可见行按新模式重排，不重新读展开状态。 */
+  private onSortChanged(): void {
+    this.rescan();
+  }
+
   /**
    * 展开目标笔记的所有父目录并重扫（reveal）。
    * 例如 `工程/流式系统/笔记.md` → 祖先目录是 `工程`、`工程/流式系统`。
@@ -206,7 +213,16 @@ export struct FileTreeView {
     // v1.5：不再拿绝对路径自己递归 —— 外部授权库给不出绝对路径。
     // VaultAccess 负责遍历（沙箱 fileIo / 外部 Native POSIX），这里只做剪枝与排版。
     const access: VaultAccess = VaultRegistry.get().accessFor(this.vaultId);
-    this.applyNodes(FileTree.scan(access, this.expanded));
+    let nodes: TreeNode[] = FileTree.scan(access, this.expanded);
+    if (this.sortMode === 'mtime') {
+      // v1.49：按修改时间重排可见行。stat 拿不到按最旧处理（FileTree.resort 内兜底），
+      // 只打可见节点，折叠子树不消耗。
+      nodes = FileTree.resort(nodes, 'mtime', (relPath: string): number => {
+        const meta: VaultFileStat | null = access.stat(relPath);
+        return meta === null ? -1 : meta.mtimeSec;
+      });
+    }
+    this.applyNodes(nodes);
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成');
   }
 

@@ -11,6 +11,8 @@
  * 图标用统一描边 `Icon()`（见 common/Icons.ets 的 J-2 兜底说明）。
  */
 import { VaultEntry } from '../model/Vault';
+import { FileListSortMode, FileListSortStore } from '../model/FileTree';
+import { VaultRegistry } from '../model/VaultRegistry';
 import { FileTreeView } from './FileTreeView';
 import { Icon } from '../common/Icons';
 import { FocusRequest } from '../common/FocusRequest';
@@ -101,6 +103,31 @@ export struct VaultSidebar {
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
   /** 回收站永久删除回调（父级拉确认弹窗）。 */
   onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
+
+  /** 文件树排序模式（v1.49）：App 级偏好，本组件持有并下传 FileTreeView。 */
+  @State sortMode: FileListSortMode = 'name';
+  @State sortMenuOpen: boolean = false;
+  private sortStore: FileListSortStore | null = null;
+
+  aboutToAppear(): void {
+    if (this.sortStore === null) {
+      this.sortStore = new FileListSortStore(VaultRegistry.get().abilityContext());
+    }
+    this.sortMode = (this.sortStore as FileListSortStore).load();
+  }
+
+  private setSortMode(mode: FileListSortMode): void {
+    this.sortMenuOpen = false;
+    if (this.sortMode === mode) {
+      return;
+    }
+    this.sortMode = mode;
+    (this.sortStore as FileListSortStore).save(mode);
+  }
+
+  private sortModeLabel(): string {
+    return this.sortMode === 'mtime' ? '按修改时间排序' : '按名称排序';
+  }
 
   private chapterKey(chapter: ChapterEntry): string {
     return this.currentVaultId + ':' + this.currentFilePath + ':' + chapter.offset.toString();
@@ -381,6 +408,54 @@ export struct VaultSidebar {
     .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
   }
 
+  /**
+   * v1.49 排序菜单：两个选项，当前项尾部对勾（复用 VaultMenu 的选中视觉）。
+   */
+  @Builder
+  SortMenu() {
+    Column({ space: Space.s1 }) {
+      Row({ space: Space.s2 }) {
+        Text('按名称排序')
+          .fontSize(FontSize.body2)
+          .fontColor(this.sortMode === 'name' ? $r('app.color.brand') : $r('app.color.text_primary'))
+          .layoutWeight(1)
+        if (this.sortMode === 'name') {
+          Icon('check', 18, $r('app.color.brand'))
+        }
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding(Space.s2)
+      .borderRadius(Radius.control)
+      .backgroundColor(this.sortMode === 'name' ? $r('app.color.brand_bg') : Color.Transparent)
+      .onClick((): void => { this.setSortMode('name'); })
+      .accessibilityText('按名称排序' + (this.sortMode === 'name' ? '，当前' : ''))
+
+      Row({ space: Space.s2 }) {
+        Text('按修改时间排序')
+          .fontSize(FontSize.body2)
+          .fontColor(this.sortMode === 'mtime' ? $r('app.color.brand') : $r('app.color.text_primary'))
+          .layoutWeight(1)
+        if (this.sortMode === 'mtime') {
+          Icon('check', 18, $r('app.color.brand'))
+        }
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding(Space.s2)
+      .borderRadius(Radius.control)
+      .backgroundColor(this.sortMode === 'mtime' ? $r('app.color.brand_bg') : Color.Transparent)
+      .onClick((): void => { this.setSortMode('mtime'); })
+      .accessibilityText('按修改时间排序' + (this.sortMode === 'mtime' ? '，当前' : ''))
+    }
+    .width(Size.touch * 3)
+    .padding(Space.s2)
+    .borderRadius(Radius.menu)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+    .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
+  }
+
   private vaultTypeLabel(): string {
     for (let i: number = 0; i < this.vaults.length; i++) {
       if (this.vaults[i].id === this.currentVaultId) {
@@ -543,6 +618,31 @@ export struct VaultSidebar {
               autoCancel: false,
               popupColor: Color.Transparent
             })
+          // v1.49：排序切换入口（sort 图标 + 弹层菜单，与库切换菜单同款 bindPopup 模式）。
+          Row() {
+            Icon('sort', 18, $r('app.color.text_secondary'))
+          }
+          .height(Size.touch)
+          .width(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
+          .id('vault-sidebar-sort')
+          .onClick((): void => { this.sortMenuOpen = !this.sortMenuOpen; })
+          .accessibilityText('排序方式，当前' + this.sortModeLabel())
+          .bindPopup(this.sortMenuOpen, {
+            builder: this.SortMenu(),
+            placement: Placement.BottomLeft,
+            enableArrow: false,
+            offset: { x: 0, y: Space.s1 },
+            mask: false,
+            autoCancel: true,
+            popupColor: Color.Transparent,
+            onWillDismiss: (action: DismissPopupAction): void => {
+              action.dismiss();
+              this.sortMenuOpen = false;
+            }
+          })
           Row() {
             Icon('search', 18, $r('app.color.text_secondary'))
           }
@@ -639,6 +739,7 @@ export struct VaultSidebar {
           vaultId: this.currentVaultId,
           currentFilePath: this.currentFilePath,
           refreshSeq: this.refreshSeq,
+          sortMode: this.sortMode,
           trashRefreshSeq: this.trashRefreshSeq,
           revealPath: this.revealPath,
           referenceOnly: this.referenceOnly,

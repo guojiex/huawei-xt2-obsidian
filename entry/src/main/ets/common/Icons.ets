@@ -58,6 +58,8 @@ const P_SHARE: string = 'M14 4L22 12L14 20L14 15L11 15L8 16L5 18L2 21L3 15L5 12L
 const P_IMAGE: string = 'M3 4h18v16H3zM4 17l5-5 4 4 3-3 4 4';
 const P_TASK: string = 'M3 5h6v6H3zM4.5 8l1.5 1.5L10 5.5M13 8h8M13 16h8M3 16h6';
 const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
+// 排序（v1.49）：三条递减横线 + 右侧下箭头（纯直线命令，无弧线）
+const P_SORT: string = 'M4 6h11M4 12h8M4 18h5M18 4v13M14 13l4 4 4-4';
 const P_SWAP: string = 'M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4';
 const P_LINK: string = 'M10 14C11.55 15.55 14.05 15.55 15.6 14L18.7 10.9C20.25 9.35 20.25 6.85 18.7 5.3C17.15 3.75 14.65 3.75 13.1 5.3L12.1 6.3'
   + 'M14 10C12.45 8.45 9.95 8.45 8.4 10L5.3 13.1C3.75 14.65 3.75 17.15 5.3 18.7C6.85 20.25 9.35 20.25 10.9 18.7L11.9 17.7';
@@ -130,6 +132,8 @@ function pathOf(name: string): string {
     return P_TASK;
   } else if (name === 'more') {
     return P_MORE;
+  } else if (name === 'sort') {
+    return P_SORT;
   } else if (name === 'swap') {
     return P_SWAP;
   } else if (name === 'link') {
