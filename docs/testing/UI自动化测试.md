@@ -115,3 +115,29 @@ UiPanels 4/4。落地过程中确认的环境行为（细节见对应代码注�
 - **宿主侧清理的由来**：测试进程跨模块够不到 `haps/entry` 沙箱（`getAppContext().filesDir`
   是 bundle 级 `files/`）→ 测试内清残留是死路，改由 harness 在应用停止后清理。
 - aa test 无 teardown 强停；结束后应用退后台，看控件树前先 `aa start`。
+
+## 实测结论补遗（2026-11-09，x86_64 模拟器：最后两个从未绿用例转绿）
+
+`trash_purge_confirm_and_cancel`（UiNoteFlow，EM-B7）与 `reset_pane_widths_row_visible`
+（UiSettingsExt，EM-F6）当日连绿两轮（证据 `.local/uitest/20261109_234448`、`20261109_234600`；
+reset 首绿另有 `20261109_231431`）。两例根因均为**测试代码**问题，主工程零改动：
+
+- **trash_purge**：① 删除确认后的 UndoBar（5000ms 生命周期）是点击死区——条存活期内
+  点击注入落空（链路完整、出现 `CLK RACC, T: <type>` 签名却无 UI 反应），确认后显式
+  等条过期再继续；② 永久删除改**组件点击**（`trash-purge-button` 中心）：行右缘坐标点击
+  （x≥1009）整条高度被导航分栏把手 `responseRegion`（36vp 宽、`zIndex(4)`）吞掉——
+  把手宽触区是有意设计，不改产品代码；③ 展开子用例套「点击后验证未生效则重试」兜底。
+- **reset_pane_widths**：原滑动起点落在错误栏位 → 改**显示相对坐标**在右正文栏内滑动；
+  陷阱：IME 弹起时页面根高度收矮（实测 2232→1318），坐标须按 IME 状态下的实际布局算，
+  否则 swipe 越界静默失败。
+- 两例转绿后全套件再无从未绿用例；证据目录含 `aa_test_raw.txt` 与 `hilog_after.txt`。
+
+### Aa 选区抑制修复的模拟器旁证（同日，简单模式）
+
+Aa 格式面板打开时压制 Web 选区 UI 的修复（`suppressPaneSelectionUi` / `restoreSuppressedPaneSelectionUi`
+链路，需求条目 [46.11](../releases/v1.46/需求文档.md)）在 x86_64 模拟器手动验证通过：双击正文出现
+原生胶囊菜单（与栏顶格式坞重叠，即缺陷现场）→ 点 Aa 后胶囊菜单从控件树消失（`dumpLayout` 判定）
+且正文保留 → 点「完成」关闭后光标 + 圆形拖拽手柄在原位恢复（关闭前后同区域截图像素级一致，
+diff 0.008%）。注意 Aa 按钮本身是开关：面板开着再点 Aa 会触发 autoCancel 关闭 + onClick 重开的竞争，
+自动化断言应走「完成」按钮路径。同批 46.12（表格浮条 `visualBlockRect`）验证见
+`.local/uitest/20261110_visual_block_rect/`（双击结构可编辑表格单元格后浮条可见）。

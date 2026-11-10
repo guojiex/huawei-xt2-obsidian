@@ -12,6 +12,10 @@
  * - 关闭笔记按钮有 workspaceOpenRequests>0 的拒绝窗口（Index.ets:6141 只弹 toast），点击需短窗重试。
  * - 树行查找一律走 findTreeRow：LazyForEach 折叠线以下（~9 行）不入控件树，
  *   留/弃等后建条目排到第 10+ 行时必须先滚动树再找（185753 run 实测）。
+ * - 删除后 5s 内勿点 trash-section-header：UndoBar 底边与其中心 y 精确重合，
+ *   bar 存活期点击空命中（215112 run A/B 实测，详见 trash_purge 用例内注释）。
+ * - trash 行右缘 x≥1009 落进导航分隔条 responseRegion（splitTouchHitW=36vp 向左扩 ~29px），
+ *   坐标点击被其吞掉；清除按钮一律按组件点击（231431 run 实测复现，详见 trash_purge 注释）。
  * - uitest* 残留由 tools/uitest.ps1 在 aa test 前宿主侧清理（本进程够不到 entry 模块沙箱：
  *   getAppContext().filesDir 是 bundle 级目录，vault 在 haps/entry/files）。残留不清会把新建行
  *   挤到折叠线以下、控件树里查无（183046 run 实测，文件在盘上但行不可见）。
@@ -243,18 +247,39 @@ export default function uiNoteFlowTest() {
           }
         }
       }
-      // 展开回收站（删除不自动展开）
-      await clickById(driver, 'trash-section-header');
-      await driver.delayMs(800);
-      // 最新删除的排最前（deletedAt 倒序），无需滚动回收站列表
+      // 展开回收站（删除不自动展开）。
+      // ⚠️ x86 模拟器实测（2026-11-09，A/B 实验 .local/uitest/20261109_215112）：
+      // UndoBar（Motion.snack=5000ms）底边 y=2083 与 trash-section-header 中心 y=2083
+      // 精确重合——bar 存活期点击命中其边界空处（TTHNI 仅 page、onClick 不触发、无重渲染）。
+      // 先等 bar 过期再点，并用「点击→验证」重试兜底。
+      let expanded: boolean = false;
+      for (let attempt: number = 0; attempt < 3 && !expanded; attempt++) {
+        await driver.delayMs(attempt === 0 ? 5000 : 1500);
+        await clickById(driver, 'trash-section-header');
+        expanded = await waitByIdSoft(driver, trashRowId, 3000);
+      }
+      expect(expanded).assertTrue();
+      // 最新删除的排最前（TrashService.list 按 deletedAt 倒序），无需滚动回收站列表。
+      // ⚠️ 永久删除按钮必须按组件点击，不能按行右缘算坐标（trashRect.right-32≈x1029）：
+      // 导航分隔条 SplitHandle 的 responseRegion（splitTouchHitW=36vp，比视觉宽向左扩
+      // ~29px → x≥1009 全高区域）+ zIndex(4) 会把触点吞掉，确认弹窗永不出现
+      // （2026-11-09 实测复现：CLK 命中 Stack 而非 trash-purge-button）。
+      // 树上第一个 trash-purge-button 属于最新删除的行（ForEach 顺序 = items 顺序），
+      // 组件中心点击（≈x969）在分隔条响应区外，安全。
       const trashRow: Component = await waitById(driver, trashRowId);
       const trashRect: Rect = await trashRow.getBounds();
-      const purgeX: number = trashRect.right - 32;
-      const purgeY: number = Math.round((trashRect.top + trashRect.bottom) / 2);
+      const firstBtn: Component = await waitById(driver, 'trash-purge-button');
+      const firstBtnRect: Rect = await firstBtn.getBounds();
+      if (firstBtnRect.top < trashRect.top || firstBtnRect.bottom > trashRect.bottom) {
+        throw new Error('第一个 trash-purge-button 不在目标行内: btnTop=' + firstBtnRect.top.toString() +
+          ' btnBottom=' + firstBtnRect.bottom.toString() + ' rowTop=' + trashRect.top.toString() +
+          ' rowBottom=' + trashRect.bottom.toString());
+      }
       // 取消路径：确认弹窗出现后取消，条目保留
       let dialogSeen: boolean = false;
       for (let attempt: number = 0; attempt < 3 && !dialogSeen; attempt++) {
-        await driver.click(purgeX, purgeY);
+        const purgeBtn: Component = await waitById(driver, 'trash-purge-button');
+        await purgeBtn.click();
         dialogSeen = await waitByTextContainsSoft(driver, '永久删除笔记？', 5000);
       }
       expect(dialogSeen).assertTrue();
@@ -262,7 +287,8 @@ export default function uiNoteFlowTest() {
       expect(await waitGoneByText(driver, '永久删除笔记？')).assertTrue();
       expect(await existsById(driver, trashRowId)).assertTrue();
       // 确认路径：真删，条目从回收站消失（不进撤销，无撤销条断言）
-      await driver.click(purgeX, purgeY);
+      const purgeBtn2: Component = await waitById(driver, 'trash-purge-button');
+      await purgeBtn2.click();
       await waitByText(driver, '永久删除笔记？');
       await clickByText(driver, '永久删除');
       expect(await waitGoneByText(driver, '永久删除笔记？')).assertTrue();
