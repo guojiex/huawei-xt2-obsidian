@@ -26,6 +26,7 @@ import {
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
 import {
+  activeTableCellRect,
   codeBlockForSourceRange,
   inlineItemsForBlock,
   lockedBlockAnchor,
@@ -1685,8 +1686,18 @@ function publishLockedBlockAnchor(block: HTMLElement | null): string {
       block.dataset.tableActiveColumn = activeCell.dataset.tableColumn ?? '0'
     }
   }
-  const rect = visualBlockRect(block)
-  const anchor = rect ? lockedBlockAnchor(block, rect, window.innerWidth, window.innerHeight) : null
+  // v1.50 50.1：表格浮条锚定活动单元格——结构可编辑表格优先用活动 cell 的 rect，
+  // 浮条跟随被点 cell；cell 无效或完全滚出视口（lockedBlockAnchor 校验失败）时
+  // 回退整块矩形，行为不劣于 v1.46 46.12（整表居中）。非表格块不受影响。
+  const cellRect = activeTableCellRect(block)
+  const rect = cellRect ?? visualBlockRect(block)
+  let anchor = rect ? lockedBlockAnchor(block, rect, window.innerWidth, window.innerHeight) : null
+  if (anchor === null && cellRect !== null) {
+    const blockRect = visualBlockRect(block)
+    anchor = blockRect
+      ? lockedBlockAnchor(block, blockRect, window.innerWidth, window.innerHeight)
+      : null
+  }
   const payload = anchor ? JSON.stringify(anchor) : ''
   const arkts = window.__arkts
   if (arkts && typeof arkts.onLockedBlockSelection === 'function') {

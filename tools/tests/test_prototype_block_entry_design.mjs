@@ -65,6 +65,11 @@ for (const marker of [
   assert.ok(prototype.includes(marker), `split enhancement must retain ${marker}`);
 }
 
+// v1.50: the table bar follows the active cell (anchor center) and falls back to the whole block.
+assert.match(prototype, /blockTarget\.cell&&blockTarget\.cell\.isConnected\?blockTarget\.cell:null/);
+assert.match(prototype, /if\(!rect\|\|rect\.width<=0\|\|rect\.height<=0\|\|rect\.bottom<win\.top\+gap\|\|rect\.top>limit\)rect=block\.getBoundingClientRect\(\)/);
+assert.match(prototype, /rect\.left\+rect\.width\/2-width\/2/);
+
 const rootStart = prototype.indexOf(':root{');
 const rootEnd = prototype.indexOf('}', rootStart);
 const tokens = new Set(

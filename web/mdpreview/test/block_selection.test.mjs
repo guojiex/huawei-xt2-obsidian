@@ -1,12 +1,20 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import test from 'node:test'
+import vm from 'node:vm'
 import {
+  activeTableCellRect,
   codeBlockForSourceRange,
   inlineItemsForBlock,
   lockedBlockAnchor,
   selectedLockedBlocks,
   toolbarBlockForSelection
 } from '../src/blockSelection.mjs'
+
+const require = createRequire(new URL('../package.json', import.meta.url))
+const { transformSync } = require('esbuild')
+const previewSource = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8')
 
 function makeBlock(id, locked = true, sourceType = 'table') {
   return { id, dataset: { editLocked: String(locked), sourceType } }
@@ -288,4 +296,153 @@ test('locked block anchor rejects invalid metadata, geometry, and fully offscree
   assert.equal(lockedBlockAnchor(block, { ...rect, width: 0 }, 400, 600), null)
   assert.equal(lockedBlockAnchor(block, rect, 0, 600), null)
   assert.equal(lockedBlockAnchor(block, { ...rect, left: 500, right: 600 }, 400, 600), null)
+})
+
+function makeTableCellBlock(overrides = {}) {
+  const cellRect = overrides.cellRect ?? {
+    left: 40, top: 80, right: 90, bottom: 120, width: 50, height: 40
+  }
+  const cell = { getBoundingClientRect: () => cellRect }
+  const table = { rows: [{ cells: [{ getBoundingClientRect: () => cellRect }] }, { cells: [cell] }] }
+  return {
+    dataset: {
+      sourceType: 'table',
+      tableStructureEditable: 'true',
+      sourceFrom: '0',
+      sourceTo: '24',
+      tableActiveRow: '1',
+      tableActiveColumn: '0',
+      ...(overrides.dataset ?? {})
+    },
+    querySelector: (selector) => selector === 'table' ? table : null
+  }
+}
+
+test('v1.50 50.1 active table cell rect resolves from the annotated row and column', () => {
+  const rect = activeTableCellRect(makeTableCellBlock())
+  assert.deepEqual(
+    { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    { left: 40, top: 80, width: 50, height: 40 }
+  )
+})
+
+test('active table cell rect fails closed for non-table or non-editable blocks', () => {
+  assert.equal(activeTableCellRect(null), null)
+  assert.equal(activeTableCellRect(makeTableCellBlock({
+    dataset: { sourceType: 'code' }
+  })), null)
+  assert.equal(activeTableCellRect(makeTableCellBlock({
+    dataset: { tableStructureEditable: 'false' }
+  })), null)
+})
+
+test('active table cell rect fails closed for invalid indices, missing cells, and empty rects', () => {
+  assert.equal(activeTableCellRect(makeTableCellBlock({
+    dataset: { tableActiveRow: 'bad' }
+  })), null)
+  assert.equal(activeTableCellRect(makeTableCellBlock({
+    dataset: { tableActiveRow: '-1' }
+  })), null)
+  assert.equal(activeTableCellRect(makeTableCellBlock({
+    dataset: { tableActiveColumn: '9' }
+  })), null)
+  assert.equal(activeTableCellRect(makeTableCellBlock({
+    cellRect: { left: 40, top: 80, right: 90, bottom: 120, width: 0, height: 40 }
+  })), null)
+})
+
+function createPublishHarness() {
+  const start = previewSource.indexOf(
+    'function publishLockedBlockAnchor(block: HTMLElement | null): string {'
+  )
+  const end = previewSource.indexOf('\nfunction focusLockedBlock(', start)
+  assert.ok(start >= 0 && end > start)
+  const implementation = previewSource.slice(start, end)
+  const published = []
+  const module = { exports: {} }
+  const code = transformSync(`
+    const published = [];
+    let activeToolbarBlock = null;
+    let savedEditableSelection = null;
+    class HTMLElement {}
+    const window = {
+      innerWidth: 400,
+      innerHeight: 600,
+      getSelection: () => null,
+      __arkts: { onLockedBlockSelection(payload) { published.push(payload); } }
+    };
+    function sourceBlockForNode(node) { return node?.block ?? null; }
+    function visualBlockRect(block) { return block?.mockBlockRect ?? null; }
+    const { activeTableCellRect, lockedBlockAnchor } = __deps;
+    ${implementation}
+    module.exports = { publishLockedBlockAnchor, published };
+  `, { loader: 'ts', format: 'cjs' }).code
+  vm.runInNewContext(code, { module, __deps: { activeTableCellRect, lockedBlockAnchor } })
+  return module.exports
+}
+
+function parsePublishedPayload(payload) {
+  assert.equal(typeof payload, 'string')
+  const anchor = JSON.parse(payload)
+  assert.equal(anchor.type, 'table')
+  return anchor
+}
+
+test('v1.50 50.1 table toolbar anchor geometry follows the active cell', () => {
+  const harness = createPublishHarness()
+  const payload = harness.publishLockedBlockAnchor(makeTableCellBlock({
+    dataset: { tableActiveRow: '1', tableActiveColumn: '0' }
+  }))
+  const anchor = parsePublishedPayload(payload)
+  assert.equal(anchor.left, 40)
+  assert.equal(anchor.top, 80)
+  assert.equal(anchor.width, 50)
+  assert.equal(anchor.height, 40)
+  assert.deepEqual([...harness.published], [payload])
+})
+
+test('offscreen active cells fall back to the whole-block rect', () => {
+  const harness = createPublishHarness()
+  const block = makeTableCellBlock({
+    cellRect: { left: 40, top: 700, right: 90, bottom: 740, width: 50, height: 40 }
+  })
+  block.mockBlockRect = { left: 10, top: 20, right: 300, bottom: 400, width: 290, height: 380 }
+  const anchor = parsePublishedPayload(harness.publishLockedBlockAnchor(block))
+  assert.equal(anchor.left, 10)
+  assert.equal(anchor.top, 20)
+  assert.equal(anchor.width, 290)
+  assert.equal(anchor.height, 380)
+})
+
+test('tables without a resolvable active cell anchor to the whole block', () => {
+  const harness = createPublishHarness()
+  const block = makeTableCellBlock({
+    dataset: { tableActiveRow: '9', tableActiveColumn: '9' }
+  })
+  block.mockBlockRect = { left: 10, top: 20, right: 300, bottom: 400, width: 290, height: 380 }
+  const anchor = parsePublishedPayload(harness.publishLockedBlockAnchor(block))
+  assert.equal(anchor.left, 10)
+  assert.equal(anchor.top, 20)
+})
+
+test('non-table blocks keep the whole-block anchor without a cell lookup', () => {
+  const harness = createPublishHarness()
+  const block = {
+    dataset: { editLocked: 'true', sourceType: 'code', sourceFrom: '4', sourceTo: '40' },
+    mockBlockRect: { left: 12, top: 30, right: 360, bottom: 220, width: 348, height: 190 }
+  }
+  const payload = harness.publishLockedBlockAnchor(block)
+  const anchor = JSON.parse(payload)
+  assert.equal(anchor.type, 'code')
+  assert.equal(anchor.left, 12)
+  assert.equal(anchor.top, 30)
+})
+
+test('unresolvable geometry publishes an empty payload and keeps the toolbar closed', () => {
+  const harness = createPublishHarness()
+  const block = makeTableCellBlock()
+  block.querySelector = () => null
+  assert.equal(harness.publishLockedBlockAnchor(block), '')
+  assert.deepEqual([...harness.published], [''])
+  assert.equal(harness.publishLockedBlockAnchor(null), '')
 })

@@ -521,6 +521,14 @@ M-02 与 M-01 的边界：M-01 评估把外部目录直接作为知识库正式�
 | --- | --- | --- |
 | W-01 | 修复防线测试豁免清单中 kind 为 frozen 的 10 处冻结缺陷：GitSyncDialog ProgressSteps 同步步骤图标（:677）、NoteDialogs 两个 DirItem 目录选中色（:128、:525）、Index 专注按钮图标名+色（:9094）/ 双栏按钮色（:9112）/ 图片格式按钮色（:10320）、SettingsView 体验模式行选中色（:185）、ImportVaultDialog 目录与 ZIP 失败色（:379、:601）、AgentWorkspace 会话选中色（:615）——实参含状态的表达式改 if/else 分支，修一处删一条豁免 | [v1.48](releases/v1.48/需求文档.md)（2026-11-09 分配） |
 
+## X. 表格浮条锚定活动单元格（2026-11-10）
+
+背景：2026-11-10 用户反馈简单模式表格浮条（v1.14 14.2 / v1.46 46.12 打通弹出链）永远出现在**表格水平正中央**，不跟手也不跟被点单元格。根因：`publishLockedBlockAnchor` 上报的 anchor 几何取整块 `.preview-source-block` 的矩形（表格即整表），ArkTS 侧 `calculateAnchoredPopupLayout` 按 anchor 中心对齐弹条。调研结论（2026-11-10）：鸿蒙官方菜单/选择浮层（`bindSelectionMenu` / `bindContextMenu` / `bindPopup`）一律跟随触发点/选区，无「整块居中」推荐；笔记类产品中 Obsidian 用固定侧栏工具、Notion 行列柄贴着操作对象，无人在表格正中央放操作栏。
+
+| 编号 | 需求 | 分配 |
+| --- | --- | --- |
+| X-01 | 表格浮条 anchor 几何从整表块改为**活动单元格**（`tableActiveRow/Column` 对应 cell 的 rect）：点哪个 cell，浮条出现在该 cell 上/下缘（仍经既有 clamp 防越界）；cell 无效（结构不规范）或完全滚出视口时回退整表块矩形，行为不劣于现状。非表格块（代码 / callout / frontmatter）与属性面板锚定不变 | [v1.50](releases/v1.50/需求文档.md) |
+
 ## 待分配：安全与上架缺口（2026-11-02）
 
 以下是需求池登记，不代表已分配版本、已实现或已验收。

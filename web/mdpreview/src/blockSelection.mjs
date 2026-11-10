@@ -60,6 +60,30 @@ export function inlineItemsForBlock(block) {
   return items
 }
 
+export function activeTableCellRect(block) {
+  if (!block || block.dataset?.sourceType !== 'table' ||
+    block.dataset.tableStructureEditable !== 'true') {
+    return null
+  }
+  const row = Number(block.dataset.tableActiveRow)
+  const column = Number(block.dataset.tableActiveColumn)
+  if (!Number.isInteger(row) || !Number.isInteger(column) || row < 0 || column < 0) return null
+  if (typeof block.querySelector !== 'function') return null
+  const table = block.querySelector('table')
+  const cell = table?.rows?.[row]?.cells?.[column] ?? null
+  if (!cell || typeof cell.getBoundingClientRect !== 'function') return null
+  const rect = cell.getBoundingClientRect()
+  const left = Number(rect?.left)
+  const top = Number(rect?.top)
+  const width = Number(rect?.width)
+  const height = Number(rect?.height)
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) ||
+    !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null
+  }
+  return rect
+}
+
 export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
   const type = block?.dataset.sourceType ?? ''
   const tableReady = type === 'table' && block.dataset.tableStructureEditable === 'true'
