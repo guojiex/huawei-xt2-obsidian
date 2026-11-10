@@ -979,9 +979,11 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 AppScope/app.json5 → app.versionCode / app.versionName
 ```
 
-⚠️ **当前值仍是工程模板默认（`1.0.0` / `1000000`）**，未与版本规则对齐。
-按 `docs/releases/README.md` R1：版本目录 `v0.1` → `versionName = "0.1.0"`，`versionCode` 单调递增。
-**发布时必须同步**（R9 第 2 条），否则装到手机上的版本号与版本档案对不上。
+`versionName` 跟随**对外版本**（真源 `changelog.json` 的 `version` 字段，当前 `1.7.0`），
+**不与内部版本目录对应**（`docs/releases/vX.Y` 是迭代编号，2026-11-09 纠正，见 `docs/releases/README.md` R1）；
+`versionCode` 单调递增（当前 `1000004`）。
+**发布时必须同步核对**，否则关于页版本号与更新日志过滤（v1.32 32.9 按 `versionName` 过滤）会误判
+——`versionName` 滞后会让「更新日志」被过滤成空、只剩「当前版本的更新说明将在发布后显示。」空态（已实测踩到）。
 
 ### H2 运行时读取版本号 ✅ 已核实（实现见 `SettingsView.ets`）
 

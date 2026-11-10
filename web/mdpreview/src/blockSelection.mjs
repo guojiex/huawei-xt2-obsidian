@@ -63,7 +63,9 @@ export function inlineItemsForBlock(block) {
 export function lockedBlockAnchor(block, rect, viewportWidth, viewportHeight) {
   const type = block?.dataset.sourceType ?? ''
   const tableReady = type === 'table' && block.dataset.tableStructureEditable === 'true'
-  if (!block || (block.dataset.editLocked !== 'true' && !tableReady)) return null
+  if (!block || (block.dataset.editLocked !== 'true' && !tableReady)) {
+    return null
+  }
   const from = Number(block.dataset.sourceFrom)
   const to = Number(block.dataset.sourceTo)
   const left = Number(rect?.left)

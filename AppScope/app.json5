@@ -4,9 +4,10 @@
     "vendor": "jxg",
     // versionCode 必须**单调递增**：它是装机唯一判定依据，调小会导致
     // 「install version downgrade code:9568263」——已装旧包的设备/模拟器一律装不上。
-    // 语义版本放 versionName（0.2.0），这里只管递增：v0.1 是 1000000，v0.2 首包取 1000001。
-    "versionCode": 1000003,
-    "versionName": "0.2.0",
+    // versionName 跟随**对外版本**（真源 changelog.json 的 version 字段，2026-11-09 决定），
+    // 不与内部版本目录（docs/releases/vX.Y，迭代编号）对应；versionCode 只管递增。
+    "versionCode": 1000004,
+    "versionName": "1.7.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",
     "label": "$string:app_name",

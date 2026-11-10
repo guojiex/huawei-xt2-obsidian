@@ -139,7 +139,7 @@ export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewB
   }
   let source: Record<string, string | number | boolean | PreviewBlockInlineItem[] | string[]>;
   try {
-    source = JSON.parse(payload) as Record<string, string | number | PreviewBlockInlineItem[]>;
+    source = JSON.parse(payload) as Record<string, string | number | boolean | PreviewBlockInlineItem[] | string[]>;
   } catch {
     return null;
   }
@@ -464,6 +464,16 @@ class PreviewImpl {
     this.enqueue('window.__mdpreview.finishSimpleEditing()');
   }
 
+  /** Aa 面板避让系统选区 UI：清 DOM 选区（隐藏手柄/胶囊菜单），Web 侧保留编辑选区 */
+  suppressSelectionUI(): void {
+    this.enqueue('window.__mdpreview.suppressSelectionUI()');
+  }
+
+  /** 关闭 Aa 面板后重放编辑选区，恢复系统选区 UI */
+  restoreSelectionUI(): void {
+    this.enqueue('window.__mdpreview.restoreSelectionUI()');
+  }
+
   applyTableStructureOperation(type: string, side: string, row: number, column: number,
     from: number, to: number): void {
     if (!['insertRow', 'insertColumn', 'deleteRow', 'deleteColumn'].includes(type) ||
@@ -730,6 +740,16 @@ export class PreviewBridge {
   /** v1.30 30.4：完成编辑（简单模式停靠格式栏的「完成编辑」按钮） */
   finishSimpleEditing(): void {
     this.impl?.finishSimpleEditing();
+  }
+
+  /** Aa 面板避让系统选区 UI：清 DOM 选区（隐藏手柄/胶囊菜单），Web 侧保留编辑选区 */
+  suppressSelectionUI(): void {
+    this.impl?.suppressSelectionUI();
+  }
+
+  /** 关闭 Aa 面板后重放编辑选区，恢复系统选区 UI */
+  restoreSelectionUI(): void {
+    this.impl?.restoreSelectionUI();
   }
 
   applyTableStructureOperation(type: string, side: string, row: number, column: number,

@@ -16,19 +16,33 @@
 
 import { marked } from 'marked'
 import {
-  applyImageMarkdownAttributes, renderMermaidSvg, renderNoteTags, resolveVaultImagePath,
-  shareCaptureBottomPadding, splitFrontmatter
+  applyImageMarkdownAttributes,
+  renderMermaidSvg,
+  renderNoteTags,
+  resolveVaultImagePath,
+  shareCaptureBottomPadding,
+  splitFrontmatter
 } from './renderer.mjs'
 import { renderMarkdownWithSourceBlocks, sourceScrollTop } from './sourceMapping.mjs'
 import { normalizePreviewZoomPercent } from './previewZoom.mjs'
 import {
-  codeBlockForSourceRange, inlineItemsForBlock, lockedBlockAnchor, selectedLockedBlocks, toolbarBlockForSelection
+  codeBlockForSourceRange,
+  inlineItemsForBlock,
+  lockedBlockAnchor,
+  selectedLockedBlocks,
+  toolbarBlockForSelection
 } from './blockSelection.mjs'
 import { appendShareWatermark } from './shareWatermark.mjs'
 import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './codeBlock.mjs'
 import {
-  applyTableStructureOperation, createMarkdownTableSource, isPseudoTableSource, parseTableSource,
-  replaceTableCellSource, serializeTableCellContent, tableInsertionPatch, tableSourceFromTsv
+  applyTableStructureOperation,
+  createMarkdownTableSource,
+  isPseudoTableSource,
+  parseTableSource,
+  replaceTableCellSource,
+  serializeTableCellContent,
+  tableInsertionPatch,
+  tableSourceFromTsv
 } from './tableCells.mjs'
 import { serializeCalloutBody } from './calloutEdit.mjs'
 
@@ -68,6 +82,12 @@ interface MdPreviewApi {
   isLockedTapActivation(): boolean
   setEditable(editable: boolean): void
   finishSimpleEditing(): void
+
+  /** 弹出格式面板前隐藏系统选区 UI（手柄/胶囊菜单）：只清 DOM 选区，savedEditableSelection 原样保留 */
+  suppressSelectionUI(): void
+
+  /** 关闭格式面板后重放编辑选区（savedEditableSelection），恢复系统选区 UI */
+  restoreSelectionUI(): void
   applyFormat(kind: string): void
   editHistory(action: 'undo' | 'redo'): void
   insertText(b64: string): void
@@ -1606,6 +1626,46 @@ function setActiveLockedBlocks(root: HTMLElement, selected: HTMLElement[]): void
   }
 }
 
+/**
+ * 取块的视觉矩形。`.preview-source-block` 是 display:contents（v0.9 起保证块间排版
+ * 与无包裹层一致），自身无盒模型，getBoundingClientRect() 全 0 —— 直接用会让
+ * lockedBlockAnchor 的 rect 校验永远失败（表格浮条因此从未弹出，v1.14 EM-C4 未验出）。
+ * 此时退回取内容子元素盒子的并集；块有盒子（contenteditable 宿主等）时行为不变。
+ */
+function visualBlockRect(block: HTMLElement | null): DOMRect | null {
+  if (!block) {
+    return null
+  }
+  const rect = block.getBoundingClientRect()
+  if (rect.width > 0 || rect.height > 0) {
+    return rect
+  }
+  let left = Number.POSITIVE_INFINITY
+  let top = Number.POSITIVE_INFINITY
+  let right = Number.NEGATIVE_INFINITY
+  let bottom = Number.NEGATIVE_INFINITY
+  const children = block.children
+  for (let index = 0; index < children.length; index++) {
+    const childRect = (children[index] as Element).getBoundingClientRect()
+    if (childRect.width <= 0 && childRect.height <= 0) {
+      continue
+    }
+    left = Math.min(left, childRect.left)
+    top = Math.min(top, childRect.top)
+    right = Math.max(right, childRect.right)
+    bottom = Math.max(bottom, childRect.bottom)
+  }
+  if (left === Number.POSITIVE_INFINITY || right <= left || bottom <= top) {
+    return null
+  }
+  return DOMRect.fromRect({
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top
+  })
+}
+
 function publishLockedBlockAnchor(block: HTMLElement | null): string {
   activeToolbarBlock = block
   if (block?.dataset.sourceType === 'table') {
@@ -1625,7 +1685,7 @@ function publishLockedBlockAnchor(block: HTMLElement | null): string {
       block.dataset.tableActiveColumn = activeCell.dataset.tableColumn ?? '0'
     }
   }
-  const rect = block?.getBoundingClientRect()
+  const rect = visualBlockRect(block)
   const anchor = rect ? lockedBlockAnchor(block, rect, window.innerWidth, window.innerHeight) : null
   const payload = anchor ? JSON.stringify(anchor) : ''
   const arkts = window.__arkts
@@ -2322,6 +2382,38 @@ const api: MdPreviewApi = {
       active.blur()
     }
     notifySimpleTextFocus(false)
+  },
+
+  // Aa 面板避让系统选区 UI（faqs-arkui-669 思路）：开面板时只清 DOM 选区（隐藏手柄/胶囊菜单），
+  // 不 blur（失焦会收起停靠格式栏）；selectionchange 的 rangeCount===0 分支不会覆盖
+  // savedEditableSelection，关面板时重放它即可恢复高亮与手柄。合成中不清（会打断输入法）。
+  suppressSelectionUI(): void {
+    if (!editable || editableComposing) {
+      return
+    }
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0) {
+      return
+    }
+    if (!contentElement.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      return
+    }
+    selection.removeAllRanges()
+  },
+
+  restoreSelectionUI(): void {
+    if (!editable || editableComposing) {
+      return
+    }
+    if (!savedEditableSelection || !contentElement.contains(savedEditableSelection.commonAncestorContainer)) {
+      return
+    }
+    const selection = window.getSelection()
+    if (!selection) {
+      return
+    }
+    selection.removeAllRanges()
+    selection.addRange(savedEditableSelection)
   },
 
   applyFormat(kind: string): void {

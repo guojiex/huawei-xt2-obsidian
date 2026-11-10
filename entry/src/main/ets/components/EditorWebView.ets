@@ -252,6 +252,16 @@ class EditorImpl {
     this.enqueue(`window.__mdeditor.applyFormat('${kind}')`);
   }
 
+  /** Aa 面板避让系统选区 UI：清 DOM 选区（隐藏手柄/胶囊菜单），CodeMirror state 的选区原样保留 */
+  suppressSelectionUI(): void {
+    this.enqueue('window.__mdeditor.suppressSelectionUI()');
+  }
+
+  /** 关闭 Aa 面板后恢复选区 UI：编辑器仍持焦时 view.focus()，由 state 重写 DOM 选区 */
+  restoreSelectionUI(): void {
+    this.enqueue('window.__mdeditor.restoreSelectionUI()');
+  }
+
   scrollToOffset(offset: number): void {
     const safeOffset: number = Math.max(0, Math.floor(offset));
     this.enqueue(`window.__mdeditor.scrollToOffset(${safeOffset})`);
@@ -469,6 +479,16 @@ export class EditorBridge {
 
   applyFormat(kind: string): void {
     this.impl?.applyFormat(kind);
+  }
+
+  /** Aa 面板避让系统选区 UI：清 DOM 选区（隐藏手柄/胶囊菜单），CodeMirror state 的选区原样保留 */
+  suppressSelectionUI(): void {
+    this.impl?.suppressSelectionUI();
+  }
+
+  /** 关闭 Aa 面板后恢复选区 UI：编辑器仍持焦时 view.focus()，由 state 重写 DOM 选区 */
+  restoreSelectionUI(): void {
+    this.impl?.restoreSelectionUI();
   }
 
   scrollToOffset(offset: number): void {

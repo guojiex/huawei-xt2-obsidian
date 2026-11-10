@@ -77,6 +77,12 @@ interface MdEditorApi {
   requestContent(reqId: number): void
   insertText(b64: string): void
   applyFormat(kind: string): void
+
+  /** 弹出格式面板前隐藏系统选区 UI：只清 DOM 选区，CodeMirror 的 state.selection.main 原样保留 */
+  suppressSelectionUI(): void
+
+  /** 关闭格式面板后恢复选区 UI：仅当编辑器仍持有焦点时 view.focus()，由 state 重写 DOM 选区 */
+  restoreSelectionUI(): void
   scrollToOffset(offset: number): void
   focus(): void
   blur(): void
@@ -894,6 +900,35 @@ const api: MdEditorApi = {
 
   applyFormat(kind: string): void {
     applyMarkdownFormat(kind)
+  },
+
+  // Aa 面板避让系统选区 UI（faqs-arkui-669 思路）：清 DOM 选区即可隐藏手柄/胶囊菜单；
+  // CodeMirror 不把外部的 removeAllRanges 同步进 state（onSelectionChange 对不在
+  // contentDOM 内的选区早退），state.selection.main 原样保留。恢复走 view.focus()：
+  // docView.updateSelection() 会用 state 重写 DOM 选区，高亮与手柄随之回来。
+  // 不加 activeElement 判断会抢焦点/弹键盘；合成中不清（会打断输入法）。
+  suppressSelectionUI(): void {
+    if (!view || isComposing) {
+      return
+    }
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0) {
+      return
+    }
+    if (!view.contentDOM.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+      return
+    }
+    selection.removeAllRanges()
+  },
+
+  restoreSelectionUI(): void {
+    if (!view || isComposing) {
+      return
+    }
+    if (view.contentDOM.ownerDocument.activeElement !== view.contentDOM) {
+      return
+    }
+    view.focus()
   },
 
   scrollToOffset(offset: number): void {

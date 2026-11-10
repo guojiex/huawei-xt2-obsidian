@@ -49,7 +49,13 @@ import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { ImportVaultDialog } from '../components/ImportVaultDialog';
 import { GitSyncDialog } from '../components/GitSyncDialog';
-import { CreateNoteDialog, DeletePathDialog, MovePathDialog, PurgeTrashDialog, RenamePathDialog } from '../components/NoteDialogs';
+import {
+  CreateNoteDialog,
+  DeletePathDialog,
+  MovePathDialog,
+  PurgeTrashDialog,
+  RenamePathDialog
+} from '../components/NoteDialogs';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
@@ -298,6 +304,9 @@ struct Index {
   @State formatMenuWidth: number = Size.formatMenuW;
   @State formatMenuMaxHeight: number =
     Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2 + Size.touch + Space.s2;
+  /** Aa 面板打开时被压制的选区所在栏位与模式（pane 为空 = 未压制）；关面板按此还原选区 UI */
+  private formatSelectionSuppressedPane: string = '';
+  private formatSelectionSuppressedMode: string = '';
   private leftFormatPaneArea: number[] = [0, 0, 0, 0];
   private rightFormatPaneArea: number[] = [0, 0, 0, 0];
   private leftFormatAnchorArea: number[] = [0, 0, 0, 0];
@@ -3685,33 +3694,159 @@ struct Index {
     return [anchor.x - paneArea[0], anchor.y - paneArea[1], anchor.width, anchor.height];
   }
 
-  private closeFormatMenu(restoreEditor: boolean = false): void {
-    const pane: string = this.formatMenuPane;
-    this.formatMenuOpen = false;
-    if (restoreEditor) {
-      const bridge: EditorBridge = pane === 'right' ? this.rightEditorBridge : this.editorBridge;
-      bridge.focus();
+  @Builder
+  FormatCell(glyph: string, caption: string, kind: string) {
+    Column({ space: Space.s1 }) {
+      Text(glyph)
+        .fontSize(FontSize.s2)
+        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
+          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
+          ? $r('app.color.brand') : $r('app.color.text_primary'))
+        .maxLines(1)
+      Text(caption)
+        .fontSize(FontSize.caption)
+        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
+          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
+          ? $r('app.color.brand') : $r('app.color.text_primary'))
+        .maxLines(1)
     }
+    .width('100%')
+    .constraintSize({ minHeight: Size.touch })
+    .padding({ top: Space.s2, bottom: Space.s2 })
+    .justifyContent(FlexAlign.Center)
+    .borderRadius(Radius.icon)
+    .backgroundColor(kind === 'code' && (this.formatMenuPane === 'right'
+      ? this.rightCodeBlockActive : this.leftCodeBlockActive)
+      ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
+    .enabled(this.isPaneEditable(this.formatMenuPane))
+    .onClick((): void => {
+      this.closeFormatMenu();
+      this.applyEditorFormat(kind, this.formatMenuPane);
+    })
   }
 
-  private toggleFormatMenu(pane: string): void {
-    if (this.formatMenuOpen && this.formatMenuPane === pane) {
-      this.closeFormatMenu();
-      return;
+  @Builder
+  TableToolbarAction(text: string, label: string, type: string, side: string, enabled: boolean) {
+    Text(text)
+      .fontSize(FontSize.caption)
+      .fontColor($r('app.color.text_primary'))
+      .width(Size.touch)
+      .height(Size.touch)
+      .textAlign(TextAlign.Center)
+      .borderRadius(Radius.icon)
+      .enabled(enabled)
+      .onClick((): void => {
+        this.blockToolbarOpen = false;
+        if (type === 'more') {
+          this.openBlockPropertyPanel(this.blockToolbarPane);
+        } else {
+          this.applyTableStructureOperation(this.blockToolbarPane, type, side);
+        }
+      })
+      .accessibilityText(label)
+  }
+
+  @Builder
+  BlockToolbarContent() {
+    Row({ space: Space.s1 }) {
+      if (this.tableToolbarForPane(this.blockToolbarPane)) {
+        this.TableToolbarAction('下加行', '下方加行', 'insertRow', 'down', true)
+        this.TableToolbarAction('右加列', '右侧加列', 'insertColumn', 'right', true)
+        this.TableToolbarAction('删除', '删除当前行', 'deleteRow', 'down',
+          this.tableToolbarCanDeleteRow(this.blockToolbarPane))
+        this.TableToolbarAction('更多', '更多表格操作', 'more', '', true)
+      } else {
+        ForEach(this.blockToolbarActions.slice(0, 4), (action: BlockToolbarAction) => {
+          Row() {
+            Icon(action.icon, Space.s5, $r('app.color.text_primary'))
+          }
+          .width(Size.touch)
+          .height(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
+          .onClick((): void => {
+            this.blockToolbarOpen = false;
+            action.onActivate();
+          })
+          .accessibilityText(action.accessibilityText)
+        }, (action: BlockToolbarAction) => action.id)
+        if (this.blockToolbarActions.length > 0) {
+          Row() {
+            Icon('more', Space.s5, $r('app.color.text_primary'))
+          }
+          .width(Size.touch)
+          .height(Size.touch)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+          .borderRadius(Radius.icon)
+          .onClick((): void => {
+            this.openBlockPropertyPanel(this.blockToolbarPane);
+          })
+          .accessibilityText('更多')
+        }
+      }
     }
-    if (!this.isPaneEditable(pane)) {
-      return;
+    .width(this.blockToolbarWidth)
+    .constraintSize({ maxHeight: this.blockToolbarMaxHeight })
+    .padding({ left: Space.s2, right: Space.s2, top: Space.s2, bottom: Space.s2 })
+    .borderRadius(Radius.card)
+    .backgroundColor($r('app.color.bg_card'))
+    .border({ width: 1, color: $r('app.color.line') })
+    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
+    .onKeyEvent((event: KeyEvent): void => {
+      if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
+        this.closeBlockToolbar(true);
+      }
+    })
+  }
+
+  /** v1.30 30.2：格式按钮序列（Aa/B/I/任务/表格/图片）；专业浮条与简单模式停靠栏共用，按钮集合不变（30.7） */
+  @Builder
+  FormatActionsRow(pane: string, gap: number) {
+    Row({ space: gap }) {
+      Row() {
+        Text('Aa')
+          .fontSize(FontSize.s3)
+          .fontColor($r('app.color.text_primary'))
+      }
+      .width(Size.touch)
+      .height(Size.touch)
+      .justifyContent(FlexAlign.Center)
+      .borderRadius(Radius.full)
+      .enabled(this.isPaneEditable(pane))
+      .onClick((): void => {
+        this.toggleFormatMenu(pane);
+      })
+      .onAreaChange((oldArea: Area, newArea: Area) => {
+        this.recordFormatAnchorArea(pane, newArea);
+      })
+      .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
+      .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
+        builder: this.FormatMenu(),
+        placement: this.formatPopupPlacement,
+        enableArrow: false,
+        offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
+        mask: false,
+        autoCancel: true,
+        popupColor: Color.Transparent,
+        onWillDismiss: (action: DismissPopupAction): void => {
+          action.dismiss();
+          this.closeFormatMenu();
+        }
+      })
+      this.FormatAction('B', 'bold', pane)
+      if ((pane === 'right' ? this.rightPaneWidthVp : this.leftPaneWidthVp) >= 280) {
+        this.FormatAction('I', 'italic', pane)
+      }
+      this.FormatAction('☐', 'task', pane)
+      if (this.experienceMode === 'simple') {
+        this.TableInsertAction(pane)
+      }
+      if (this.paneFilePath(pane).length > 0) {
+        this.ImageFormatAction(pane)
+      }
     }
-    this.setActivePane(pane);
-    this.blockToolbarOpen = false;
-    this.formatMenuPane = pane;
-    this.formatMenuSourceVaultId = this.currentVaultId;
-    this.formatMenuSourcePath = this.paneFilePath(pane);
-    this.formatMenuWidth = Size.formatMenuW;
-    this.formatMenuMaxHeight =
-      Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2 + Size.touch + Space.s2;
-    this.formatMenuOpen = true;
-    this.updateFormatPopupLayout(pane);
   }
 
   private toggleTableGrid(pane: string): void {
@@ -3940,114 +4075,15 @@ struct Index {
     };
   }
 
-  private openBlockPropertyPanel(pane: string, tappedAnchor: PreviewBlockAnchor | null = null): void {
-    if (!this.hasBlockPropertyPanelForPane(pane, tappedAnchor)) {
-      return;
+  private closeFormatMenu(restoreEditor: boolean = false): void {
+    const pane: string = this.formatMenuPane;
+    if (this.formatMenuOpen) {
+      this.restoreSuppressedPaneSelectionUi();
     }
-    const anchor: PreviewBlockAnchor | null = tappedAnchor !== null
-      ? tappedAnchor : pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
-    if (anchor === null) {
-      return;
-    }
-    this.setActivePane(pane);
-    this.blockToolbarOpen = false;
     this.formatMenuOpen = false;
-    this.blockPanelPane = pane;
-    this.blockPanelAnchor = anchor;
-    this.blockPanelInlineItems = anchor.inlineItems;
-    this.blockPanelLinkReady = anchor.tapType !== 'link';
-    this.blockPanelLinkLabel = '';
-    this.blockPanelLinkDestination = '';
-    this.blockPanelLinkParts = null;
-    this.blockPanelLinkMessage = anchor.tapType === 'link' ? '正在读取链接…' : '';
-    this.blockPanelLinkRaw = '';
-    this.blockPanelWikiReady = false;
-    this.blockPanelWikiTarget = '';
-    this.blockPanelWikiAlias = '';
-    this.blockPanelWikiMessage = anchor.tapType === 'wikilink' ? '正在读取双链…' : '';
-    this.blockPanelWikiFiles = [];
-    this.blockPanelWikiResolutionStatus = '';
-    this.blockPanelWikiResolutionPath = '';
-    this.blockPanelWikiRaw = '';
-    this.blockPanelImageReady = false;
-    this.blockPanelImageAlt = '';
-    this.blockPanelImageDestination = '';
-    this.blockPanelImageWidth = '';
-    this.blockPanelImageMessage = anchor.tapType === 'image' ? '正在读取图片…' : '';
-    this.blockPanelImageRaw = '';
-    this.blockPanelImageParts = null;
-    this.blockPanelFormulaReady = false;
-    this.blockPanelFormulaValue = '';
-    this.blockPanelFormulaMessage = anchor.tapType === 'mathInline' || anchor.type === 'formula'
-      ? '正在读取公式…' : '';
-    this.blockPanelFormulaRaw = '';
-    this.blockPanelFormulaModel = null;
-    this.blockPanelCalloutReady = false;
-    this.blockPanelCalloutTitle = '';
-    this.blockPanelCalloutFold = '';
-    this.blockPanelCalloutMessage = anchor.type === 'callout' ? '正在读取提示块…' : '';
-    this.blockPanelCalloutSaving = false;
-    this.blockPanelCalloutRaw = '';
-    this.blockPanelCalloutModel = null;
-    this.blockPanelCalloutSaveTail = Promise.resolve();
-    this.blockPanelFrontmatterReady = false;
-    this.blockPanelFrontmatterEntries = [];
-    this.blockPanelFrontmatterMessage = anchor.type === 'frontmatter' ? '正在读取属性…' : '';
-    this.blockPanelFrontmatterNewKey = '';
-    this.blockPanelFrontmatterNewValue = '';
-    this.blockPanelFrontmatterDateKey = '';
-    this.blockPanelFrontmatterDateDraft = '';
-    this.blockPanelFrontmatterSaving = false;
-    this.blockPanelFrontmatterRaw = '';
-    this.blockPanelFrontmatterModel = null;
-    this.blockPanelFrontmatterSaveTail = Promise.resolve();
-    this.blockPanelFootnoteReady = false;
-    this.blockPanelFootnoteEditable = false;
-    this.blockPanelFootnoteHasDefinition = false;
-    this.blockPanelFootnoteBody = '';
-    this.blockPanelFootnoteMessage = anchor.tapType === 'footnoteRef' ||
-      anchor.type === 'footnoteDefinition' ? '正在读取脚注…' : '';
-    this.blockPanelFootnoteSaving = false;
-    this.blockPanelFootnoteJumpFrom = -1;
-    this.blockPanelFootnoteLabel = '';
-    this.blockPanelFootnoteSourceSnapshot = '';
-    this.blockPanelFootnoteDefinitionFrom = -1;
-    this.blockPanelFootnoteDefinitionTo = -1;
-    this.blockPanelFootnoteDefinitionRaw = '';
-    this.blockPanelFootnoteModel = null;
-    this.blockPanelBlockIdReady = false;
-    this.blockPanelBlockId = '';
-    this.blockPanelBlockIdMessage = '';
-    this.blockPanelLanguagePickerOpen = false;
-    this.blockPanelTitle = this.blockPanelTitleFor(anchor);
-    this.blockPanelSourceVaultId = this.currentVaultId;
-    this.blockPanelSourcePath = this.paneFilePath(pane);
-    this.blockPanelRestoreFocus = true;
-    this.blockPanelPendingAction = false;
-    this.blockSourceEditing = false;
-    this.blockSourceDraft = '';
-    this.blockSourceBlockType = '';
-    this.blockPanelWidth = Size.blockPanelW;
-    this.blockPanelMaxHeight = Size.menuMaxH;
-    this.leftBlockPanelOpen = pane === 'left';
-    this.rightBlockPanelOpen = pane === 'right';
-    this.updateBlockPropertyPanelLayout(pane);
-    if (anchor.tapType === 'link') {
-      void this.loadBlockPanelLink();
-    } else if (anchor.tapType === 'wikilink') {
-      void this.loadBlockPanelWikiLink();
-    } else if (anchor.tapType === 'image') {
-      void this.loadBlockPanelImage();
-    } else if (anchor.tapType === 'mathInline' || anchor.type === 'formula') {
-      void this.loadBlockPanelFormula();
-    } else if (anchor.type === 'callout') {
-      void this.loadBlockPanelCallout();
-    } else if (anchor.type === 'frontmatter') {
-      void this.loadBlockPanelFrontmatter();
-    } else if (anchor.tapType === 'footnoteRef' || anchor.type === 'footnoteDefinition') {
-      void this.loadBlockPanelFootnote();
-    } else if (anchor.type === 'paragraph' && anchor.tapType === '' && anchor.inlineIndex < 0) {
-      void this.loadBlockPanelBlockId();
+    if (restoreEditor) {
+      const bridge: EditorBridge = pane === 'right' ? this.rightEditorBridge : this.editorBridge;
+      bridge.focus();
     }
   }
 
@@ -10573,35 +10609,19 @@ struct Index {
     .accessibilityText('插入表格')
   }
 
-  @Builder
-  FormatCell(glyph: string, caption: string, kind: string) {
-    Column({ space: Space.s1 }) {
-      Text(glyph)
-        .fontSize(FontSize.s2)
-        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
-          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
-          ? $r('app.color.brand') : $r('app.color.text_primary'))
-        .maxLines(1)
-      Text(caption)
-        .fontSize(FontSize.caption)
-        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
-          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
-          ? $r('app.color.brand') : $r('app.color.text_primary'))
-        .maxLines(1)
+  /**
+   * Aa 面板避让系统选区 UI（faqs-arkui-669 思路）：开面板时清当前栏位 Web 的 DOM 选区，
+   * 隐藏与面板重叠的选区手柄/胶囊菜单；Web 侧保留编辑选区（简单模式 savedEditableSelection、
+   * 专业模式 CodeMirror state），关面板时还原。
+   */
+  private suppressPaneSelectionUi(pane: string): void {
+    if (this.experienceMode === 'simple') {
+      this.previewBridgeForPane(pane).suppressSelectionUI();
+    } else {
+      this.editorBridgeForPane(pane).suppressSelectionUI();
     }
-    .width('100%')
-    .constraintSize({ minHeight: Size.touch })
-    .padding({ top: Space.s2, bottom: Space.s2 })
-    .justifyContent(FlexAlign.Center)
-    .borderRadius(Radius.icon)
-    .backgroundColor(kind === 'code' && (this.formatMenuPane === 'right'
-      ? this.rightCodeBlockActive : this.leftCodeBlockActive)
-      ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
-    .enabled(this.isPaneEditable(this.formatMenuPane))
-    .onClick((): void => {
-      this.formatMenuOpen = false;
-      this.applyEditorFormat(kind, this.formatMenuPane);
-    })
+    this.formatSelectionSuppressedPane = pane;
+    this.formatSelectionSuppressedMode = this.experienceMode;
   }
 
   private applyFormatHistoryAction(action: PreviewEditHistoryAction): void {
@@ -10736,81 +10756,46 @@ struct Index {
     .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(this.formatMenuPane, event); })
   }
 
-  @Builder
-  TableToolbarAction(icon: string, label: string, type: string, side: string, enabled: boolean) {
-    Row() {
-      Icon(icon, Space.s5, $r('app.color.text_primary'))
+  /** 关闭 Aa 面板后按开面板时记录的栏位/模式还原选区 UI；未压制时是空操作 */
+  private restoreSuppressedPaneSelectionUi(): void {
+    const pane: string = this.formatSelectionSuppressedPane;
+    if (pane.length === 0) {
+      return;
     }
-    .width(Size.touch)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(Radius.icon)
-    .enabled(enabled)
-    .onClick((): void => {
-      this.blockToolbarOpen = false;
-      if (type === 'more') {
-        this.openBlockPropertyPanel(this.blockToolbarPane);
-      } else {
-        this.applyTableStructureOperation(this.blockToolbarPane, type, side);
-      }
-    })
-    .accessibilityText(label)
+    const mode: string = this.formatSelectionSuppressedMode;
+    this.formatSelectionSuppressedPane = '';
+    this.formatSelectionSuppressedMode = '';
+    if (mode === 'simple') {
+      this.previewBridgeForPane(pane).restoreSelectionUI();
+    } else {
+      this.editorBridgeForPane(pane).restoreSelectionUI();
+    }
   }
 
-  @Builder
-  BlockToolbarContent() {
-    Row({ space: Space.s1 }) {
-      if (this.tableToolbarForPane(this.blockToolbarPane)) {
-        this.TableToolbarAction('plus', '下方加行', 'insertRow', 'down', true)
-        this.TableToolbarAction('plus', '右侧加列', 'insertColumn', 'right', true)
-        this.TableToolbarAction('trash', '删除当前行', 'deleteRow', 'down',
-          this.tableToolbarCanDeleteRow(this.blockToolbarPane))
-        this.TableToolbarAction('more', '更多表格操作', 'more', '', true)
-      } else {
-        ForEach(this.blockToolbarActions.slice(0, 4), (action: BlockToolbarAction) => {
-          Row() {
-            Icon(action.icon, Space.s5, $r('app.color.text_primary'))
-          }
-          .width(Size.touch)
-          .height(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .onClick((): void => {
-            this.blockToolbarOpen = false;
-            action.onActivate();
-          })
-          .accessibilityText(action.accessibilityText)
-        }, (action: BlockToolbarAction) => action.id)
-        if (this.blockToolbarActions.length > 0) {
-          Row() {
-            Icon('more', Space.s5, $r('app.color.text_primary'))
-          }
-          .width(Size.touch)
-          .height(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .onClick((): void => {
-            this.openBlockPropertyPanel(this.blockToolbarPane);
-          })
-          .accessibilityText('更多')
-        }
-      }
+  private toggleFormatMenu(pane: string): void {
+    if (this.formatMenuOpen && this.formatMenuPane === pane) {
+      this.closeFormatMenu();
+      return;
     }
-    .width(this.blockToolbarWidth)
-    .constraintSize({ maxHeight: this.blockToolbarMaxHeight })
-    .padding({ left: Space.s2, right: Space.s2, top: Space.s2, bottom: Space.s2 })
-    .borderRadius(Radius.card)
-    .backgroundColor($r('app.color.bg_card'))
-    .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
-    .onKeyEvent((event: KeyEvent): void => {
-      if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
-        this.closeBlockToolbar(true);
-      }
-    })
+    if (this.formatMenuOpen) {
+      // 面板开着但切换了栏位：先按旧栏位还原选区 UI，再压制新栏位
+      this.restoreSuppressedPaneSelectionUi();
+      this.formatMenuOpen = false;
+    }
+    if (!this.isPaneEditable(pane)) {
+      return;
+    }
+    this.setActivePane(pane);
+    this.blockToolbarOpen = false;
+    this.formatMenuPane = pane;
+    this.formatMenuSourceVaultId = this.currentVaultId;
+    this.formatMenuSourcePath = this.paneFilePath(pane);
+    this.formatMenuWidth = Size.formatMenuW;
+    this.formatMenuMaxHeight =
+      Size.touch * 6 + Space.s2 * 6 + Size.touch + Space.s6 * 2 + Size.touch + Space.s2;
+    this.formatMenuOpen = true;
+    this.suppressPaneSelectionUi(pane);
+    this.updateFormatPopupLayout(pane);
   }
 
   @Builder
@@ -11838,51 +11823,114 @@ struct Index {
     }
   }
 
-  /** v1.30 30.2：格式按钮序列（Aa/B/I/任务/表格/图片）；专业浮条与简单模式停靠栏共用，按钮集合不变（30.7） */
-  @Builder
-  FormatActionsRow(pane: string, gap: number) {
-    Row({ space: gap }) {
-      Row() {
-        Text('Aa')
-          .fontSize(FontSize.s3)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .width(Size.touch)
-      .height(Size.touch)
-      .justifyContent(FlexAlign.Center)
-      .borderRadius(Radius.full)
-      .enabled(this.isPaneEditable(pane))
-      .onClick((): void => {
-        this.toggleFormatMenu(pane);
-      })
-      .onAreaChange((oldArea: Area, newArea: Area) => {
-        this.recordFormatAnchorArea(pane, newArea);
-      })
-      .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
-      .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
-        builder: this.FormatMenu(),
-        placement: this.formatPopupPlacement,
-        enableArrow: false,
-        offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
-        mask: false,
-        autoCancel: true,
-        popupColor: Color.Transparent,
-        onWillDismiss: (action: DismissPopupAction): void => {
-          action.dismiss();
-          this.formatMenuOpen = false;
-        }
-      })
-      this.FormatAction('B', 'bold', pane)
-      if ((pane === 'right' ? this.rightPaneWidthVp : this.leftPaneWidthVp) >= 280) {
-        this.FormatAction('I', 'italic', pane)
-      }
-      this.FormatAction('☐', 'task', pane)
-      if (this.experienceMode === 'simple') {
-        this.TableInsertAction(pane)
-      }
-      if (this.paneFilePath(pane).length > 0) {
-        this.ImageFormatAction(pane)
-      }
+  private openBlockPropertyPanel(pane: string, tappedAnchor: PreviewBlockAnchor | null = null): void {
+    if (!this.hasBlockPropertyPanelForPane(pane, tappedAnchor)) {
+      return;
+    }
+    const anchor: PreviewBlockAnchor | null = tappedAnchor !== null
+      ? tappedAnchor : pane === 'right' ? this.rightBlockAnchor : this.leftBlockAnchor;
+    if (anchor === null) {
+      return;
+    }
+    this.setActivePane(pane);
+    this.blockToolbarOpen = false;
+    this.closeFormatMenu();
+    this.blockPanelPane = pane;
+    this.blockPanelAnchor = anchor;
+    this.blockPanelInlineItems = anchor.inlineItems;
+    this.blockPanelLinkReady = anchor.tapType !== 'link';
+    this.blockPanelLinkLabel = '';
+    this.blockPanelLinkDestination = '';
+    this.blockPanelLinkParts = null;
+    this.blockPanelLinkMessage = anchor.tapType === 'link' ? '正在读取链接…' : '';
+    this.blockPanelLinkRaw = '';
+    this.blockPanelWikiReady = false;
+    this.blockPanelWikiTarget = '';
+    this.blockPanelWikiAlias = '';
+    this.blockPanelWikiMessage = anchor.tapType === 'wikilink' ? '正在读取双链…' : '';
+    this.blockPanelWikiFiles = [];
+    this.blockPanelWikiResolutionStatus = '';
+    this.blockPanelWikiResolutionPath = '';
+    this.blockPanelWikiRaw = '';
+    this.blockPanelImageReady = false;
+    this.blockPanelImageAlt = '';
+    this.blockPanelImageDestination = '';
+    this.blockPanelImageWidth = '';
+    this.blockPanelImageMessage = anchor.tapType === 'image' ? '正在读取图片…' : '';
+    this.blockPanelImageRaw = '';
+    this.blockPanelImageParts = null;
+    this.blockPanelFormulaReady = false;
+    this.blockPanelFormulaValue = '';
+    this.blockPanelFormulaMessage = anchor.tapType === 'mathInline' || anchor.type === 'formula'
+      ? '正在读取公式…' : '';
+    this.blockPanelFormulaRaw = '';
+    this.blockPanelFormulaModel = null;
+    this.blockPanelCalloutReady = false;
+    this.blockPanelCalloutTitle = '';
+    this.blockPanelCalloutFold = '';
+    this.blockPanelCalloutMessage = anchor.type === 'callout' ? '正在读取提示块…' : '';
+    this.blockPanelCalloutSaving = false;
+    this.blockPanelCalloutRaw = '';
+    this.blockPanelCalloutModel = null;
+    this.blockPanelCalloutSaveTail = Promise.resolve();
+    this.blockPanelFrontmatterReady = false;
+    this.blockPanelFrontmatterEntries = [];
+    this.blockPanelFrontmatterMessage = anchor.type === 'frontmatter' ? '正在读取属性…' : '';
+    this.blockPanelFrontmatterNewKey = '';
+    this.blockPanelFrontmatterNewValue = '';
+    this.blockPanelFrontmatterDateKey = '';
+    this.blockPanelFrontmatterDateDraft = '';
+    this.blockPanelFrontmatterSaving = false;
+    this.blockPanelFrontmatterRaw = '';
+    this.blockPanelFrontmatterModel = null;
+    this.blockPanelFrontmatterSaveTail = Promise.resolve();
+    this.blockPanelFootnoteReady = false;
+    this.blockPanelFootnoteEditable = false;
+    this.blockPanelFootnoteHasDefinition = false;
+    this.blockPanelFootnoteBody = '';
+    this.blockPanelFootnoteMessage = anchor.tapType === 'footnoteRef' ||
+      anchor.type === 'footnoteDefinition' ? '正在读取脚注…' : '';
+    this.blockPanelFootnoteSaving = false;
+    this.blockPanelFootnoteJumpFrom = -1;
+    this.blockPanelFootnoteLabel = '';
+    this.blockPanelFootnoteSourceSnapshot = '';
+    this.blockPanelFootnoteDefinitionFrom = -1;
+    this.blockPanelFootnoteDefinitionTo = -1;
+    this.blockPanelFootnoteDefinitionRaw = '';
+    this.blockPanelFootnoteModel = null;
+    this.blockPanelBlockIdReady = false;
+    this.blockPanelBlockId = '';
+    this.blockPanelBlockIdMessage = '';
+    this.blockPanelLanguagePickerOpen = false;
+    this.blockPanelTitle = this.blockPanelTitleFor(anchor);
+    this.blockPanelSourceVaultId = this.currentVaultId;
+    this.blockPanelSourcePath = this.paneFilePath(pane);
+    this.blockPanelRestoreFocus = true;
+    this.blockPanelPendingAction = false;
+    this.blockSourceEditing = false;
+    this.blockSourceDraft = '';
+    this.blockSourceBlockType = '';
+    this.blockPanelWidth = Size.blockPanelW;
+    this.blockPanelMaxHeight = Size.menuMaxH;
+    this.leftBlockPanelOpen = pane === 'left';
+    this.rightBlockPanelOpen = pane === 'right';
+    this.updateBlockPropertyPanelLayout(pane);
+    if (anchor.tapType === 'link') {
+      void this.loadBlockPanelLink();
+    } else if (anchor.tapType === 'wikilink') {
+      void this.loadBlockPanelWikiLink();
+    } else if (anchor.tapType === 'image') {
+      void this.loadBlockPanelImage();
+    } else if (anchor.tapType === 'mathInline' || anchor.type === 'formula') {
+      void this.loadBlockPanelFormula();
+    } else if (anchor.type === 'callout') {
+      void this.loadBlockPanelCallout();
+    } else if (anchor.type === 'frontmatter') {
+      void this.loadBlockPanelFrontmatter();
+    } else if (anchor.tapType === 'footnoteRef' || anchor.type === 'footnoteDefinition') {
+      void this.loadBlockPanelFootnote();
+    } else if (anchor.type === 'paragraph' && anchor.tapType === '' && anchor.inlineIndex < 0) {
+      void this.loadBlockPanelBlockId();
     }
   }
 
