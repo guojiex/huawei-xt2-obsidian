@@ -1669,6 +1669,14 @@ F4 仍为未充分核实的平台生命周期记录；不能据此声称支持�
 - 源码核对未发现本应用订阅 `screenshotAppEvent` 或实现应用级指关节识别；现有标题双击仅用于 Agent 会话重命名，与笔记截图无关。
 - XT2 上系统开关状态、当前系统版本的手势归属、应用前台 / ArkWeb 编辑时能否截图、单 / 双 / 三屏行为及触摸冲突仍未验。先复用系统既有截图；没有生产手势 API 依据时不新增应用级识别、截图入口或权限。API24 / XT2 验收由用户手动执行。
 
+**2026-11-10 官方追问坐实（[QA 归档](qa/2026-11-10_指关节双击截图追问_API24.md) + 本机 SDK 复核）**：
+
+- ✅ **API 24 无任何生产可用的指关节识别/监听接口**——本机 SDK 逐条核实：`@ohos.multimodalInput.touchEvent` 的 `SourceType` 仅 `TOUCH_SCREEN(0)/PEN(1)/TOUCH_PAD(2)`（@since 9）；`@ohos.multimodalInput.gestureEvent` 仅 `Pinch/Rotate/ThreeFingersSwipe/FourFingersSwipe/ThreeFingersTap` 五接口（@since 10/11）；官方答复确认指关节双击截屏为系统级手势，系统层识别与消费，不透传给应用，`TouchEvent.sourceType` 与 NDK `GetSourceType()/GetToolType()` 之外无扩展能力。
+- ✅ **API 26 智慧手势与指关节无关**——`SmartGestureController` / `UIContext.getSmartGestureController()` / `smartGestureShortcut` 均 `@since 26.0.0`（本机 `@ohos.arkui.UIContext.d.ts` 核实），语义为「敲一敲/划一划/翻腕」隔空手势，API 24 无降级途径，不混淆。
+- ⚠️ **系统行为结论（官方答复，待 XT2 实测）**：指关节截屏由系统统一识别，应用前台（含 ArkWeb 焦点编辑场景）默认生效，应用无需任何 `module.json5` 声明 / 权限 / 配置；**无公开 API 查询「指关节截屏」开关状态**，只能文字引导用户到 设置 → 辅助功能 → 快捷启动及手势 → 截屏；ArkWeb 等场景失效无官方应用侧修复方案，路径是排查系统开关 / 隐私模式，或向华为提单。
+- ⚠️ 答复建议的「应用侧兜底」`screenshot.capture()` 需新增 `CUSTOM_SCREEN_CAPTURE` 权限，与 AGENTS.md 硬约束 13（非 v1.5 功能不得新增权限）冲突，未经用户拍板不采纳；`screenshot.pick()` 免权限但为系统框选 UI，`componentSnapshot` 免权限但仅截组件——均不改变 v1.33「应用零代码」的结论。
+- **工程结论**：指关节双击截图完全视为系统行为，应用不做任何手势识别、不新增截图入口或权限；剩余工作仅 API24 / XT2 设备验收（系统开关状态、应用前台 / ArkWeb 焦点场景触发、折叠形态表现），归用户手动。
+
 ## P 组：系统主题变更通知（2026-10-27 本机 SDK 声明核对）
 
 ### P1 ✅ ApplicationContext 系统配置回调含颜色模式更新
