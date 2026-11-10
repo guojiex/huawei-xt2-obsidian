@@ -63,7 +63,9 @@ test('shareLayoutWidthVp maps phone/wide/pane to fixed or dynamic widths', () =>
 test('settings dialog provides width segment with phone/wide/pane and capture uses the selected width', () => {
   assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(this\.shareCaptureWidthId, paneWidthVp\)/);
   assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(widthId, resolvedPaneWidthVp\)/);
-  assert.match(indexSource, /\.width\(this\.shareCaptureWidthVp > 0 \? this\.shareCaptureWidthVp : '100%'\)/);
+  // v1.53 PDF 模式分支在前，长图宽度回退链保持不变
+  assert.match(indexSource, /\.width\(this\.shareCapturePdfMode \? this\.pdfPageWidthVp :/);
+  assert.match(indexSource, /this\.shareCaptureWidthVp > 0 \? this\.shareCaptureWidthVp : '100%'\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.PHONE\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.WIDE\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.PANE\)/);

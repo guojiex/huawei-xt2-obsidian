@@ -137,4 +137,26 @@ export class NoteImageShareService {
       }
     }
   }
+
+  /** v1.53 PDF 逐页写盘：与 writeJpeg 同参数，但不释放 pixelMap（调用方 finally 统一 release，逐页循环复用长图分段模式）。 */
+  static async writeJpegTo(filePath: string, pixelMap: image.PixelMap): Promise<void> {
+    let file: fileIo.File | null = null;
+    let packer: image.ImagePacker | null = null;
+    try {
+      file = fileIo.openSync(filePath,
+        fileIo.OpenMode.WRITE_ONLY | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+      packer = image.createImagePacker();
+      await packer.packToFile(pixelMap, file.fd, { format: 'image/jpeg', quality: 92 });
+    } finally {
+      try {
+        if (packer !== null) {
+          await packer.release();
+        }
+      } finally {
+        if (file !== null) {
+          fileIo.closeSync(file);
+        }
+      }
+    }
+  }
 }

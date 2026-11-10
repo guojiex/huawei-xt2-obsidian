@@ -122,6 +122,7 @@ import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
 import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
+import { NotePdfDocumentService } from '../model/NotePdfDocumentService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteImageService } from '../model/NoteImageService';
 import { NoteDraftRecovery, NoteDraftService } from '../model/NoteDraftService';
@@ -648,6 +649,11 @@ struct Index {
   @State shareCaptureWidthVp: number = 0;
   private shareCapturePaneWidthVp: number = 0;
   @State shareCaptureWidthId: string = 'phone';
+  /** v1.53 PDF 模式：捕获层按 A4 比例固定尺寸 + 浅色主题渲染（53.3）。 */
+  @State shareCapturePdfMode: boolean = false;
+  private readonly pdfPageWidthVp: number = 700;
+  private readonly pdfPageHeightVp: number = 700 * NotePdfDocumentService.A4_HEIGHT_PT /
+    NotePdfDocumentService.A4_WIDTH_PT;
   @State shareImagePreviewImage: ShareImagePreviewImage = {
     uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
   };
@@ -8702,6 +8708,10 @@ struct Index {
         this.openShareImageSettings(vault.id, path, itemName);
         return;
       }
+      if (format === 'pdf' && scope === 'note') {
+        await this.prepareNotePdfShare(vault.id, path, itemName);
+        return;
+      }
       if (format === 'text' && scope === 'note') {
         const markdown: string = await this.editorBridgeForPath(path).getContent();
         const preview: NoteTextSharePreview = NoteTextShareService.createPreview(path, markdown);
@@ -8741,6 +8751,16 @@ struct Index {
           });
         return;
       }
+      if (format === 'pdf' && scope === 'note') {
+        this.openShareFilePreview('', this.pdfFileNameOf(itemName), 'PDF', [],
+          itemName, 0, 0, scope, path, registry,
+          shareFailureMessage(error, 'file_prepare'),
+          (): Promise<void> => {
+            return this.prepareShare(scope, path, format, itemName, vault, vaultNoteCount, focusReturnId);
+          }, vault.id, vaultNoteCount, focusReturnId,
+          uniformTypeDescriptor.UniformDataType.PDF);
+        return;
+      }
       if (format !== 'link') {
         const detailFormat: string = format === 'file' ? 'Markdown / ZIP' : 'ZIP';
         this.openShareFilePreview('', itemName, detailFormat, [], itemName, 0, 0, scope, path, registry,
@@ -8772,7 +8792,7 @@ struct Index {
     registry: VaultRegistry, initialError: string = '',
     onRetryPreparation: () => Promise<void> = async (): Promise<void> => {},
     targetVaultId: string = this.currentVaultId, vaultNoteCount: number = -1,
-    focusReturnId: string = ''): void {
+    focusReturnId: string = '', utd: string = uniformTypeDescriptor.UniformDataType.FILE): void {
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
     this.shareFilePreviewCtl?.close();
@@ -8794,7 +8814,7 @@ struct Index {
         },
         onRetryPreparation: onRetryPreparation,
         onConfirm: (): Promise<void> => {
-          return this.shareFile(filePath, fileName, uniformTypeDescriptor.UniformDataType.FILE, registry);
+          return this.shareFile(filePath, fileName, utd, registry);
         }
       }),
       alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
@@ -8898,6 +8918,7 @@ struct Index {
     editor: EditorBridge): Promise<ShareImagePreviewImage> {
     const registry: VaultRegistry = VaultRegistry.get();
     this.shareCaptureCancelled = false;
+    this.shareCapturePdfMode = false;
     let sessionId: string = '';
     let longImage: image.PixelMap | null = null;
     const bridge: PreviewBridge = new PreviewBridge();
@@ -9022,6 +9043,118 @@ struct Index {
       this.shareCaptureReadyResolver = null;
       this.shareCaptureReadyRejecter = null;
     }
+  }
+
+  /**
+   * v1.53 导出 PDF（需求 53.3）：复用隐藏捕获层按 A4 比例逐页渲染截图，
+   * 逐页 JPEG 经 PDF Kit 合成 note.pdf 后走文件预览分享（utd 精确类型 com.adobe.pdf）。
+   * 失败清理会话目录不留半成品；取消语义与长图一致。
+   */
+  private async prepareNotePdfShare(vaultId: string, notePath: string,
+    itemName: string): Promise<void> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    if (!NotePdfDocumentService.isSupported()) {
+      throw new Error('此设备不支持 PDF 导出');
+    }
+    this.shareCaptureCancelled = false;
+    let sessionId: string = '';
+    const bridge: PreviewBridge = new PreviewBridge();
+    this.shareCaptureBridge = bridge;
+    try {
+      const markdown: string = await this.editorBridgeForPath(notePath).getContent();
+      if (this.shareCaptureCancelled) {
+        throw new Error('分享图片生成已取消');
+      }
+      bridge.setNoteDir(NoteShareService.parentOf(notePath));
+      bridge.setContent(markdown);
+      this.shareCapturePdfMode = true;
+      this.shareCaptureActive = true;
+      await this.waitForShareCaptureReady();
+      await bridge.requestShareCaptureMetrics();
+      await bridge.appendShareWatermark();
+      const prepared: PreviewCaptureResult = await bridge.preparePdfPages(this.pdfPageHeightVp);
+      const pageCount: number = prepared.pageCount ?? 0;
+      if (pageCount <= 0 || pageCount > NotePdfDocumentService.MAX_PAGES) {
+        throw new Error('笔记超过单文件 PDF 页数上限；请改用 Markdown / ZIP');
+      }
+      const tops: number[] = JSON.parse(prepared.pageTops ?? '[]') as number[];
+      if (tops.length !== pageCount) {
+        throw new Error('PDF 分页结果无效，请重试');
+      }
+      if (Math.abs(prepared.viewportHeight - this.pdfPageHeightVp) > 2) {
+        throw new Error('PDF 页面尺寸与渲染视口不符，请重试');
+      }
+      sessionId = NoteImageShareService.createSession(registry);
+      const pageJpegs: string[] = [];
+      let expectedWidth: number = 0;
+      let expectedHeight: number = 0;
+      for (let i: number = 0; i < tops.length; i++) {
+        if (this.shareCaptureCancelled) {
+          throw new Error('分享图片生成已取消');
+        }
+        const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(tops[i]);
+        if (Math.abs(positioned.scrollTop - tops[i]) > 1) {
+          throw new Error('PDF 预览无法定位到第 ' + (i + 1).toString() + ' 页');
+        }
+        const pageShot: image.PixelMap = await this.getUIContext().getComponentSnapshot()
+          .get(this.shareCaptureComponentId, { waitUntilRenderFinished: true });
+        try {
+          const imageInfo: image.ImageInfo = await pageShot.getImageInfo();
+          if (i === 0) {
+            expectedWidth = imageInfo.size.width;
+            expectedHeight = imageInfo.size.height;
+            if (Math.abs(expectedWidth / expectedHeight -
+              NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT) > 0.01) {
+              throw new Error('PDF 页面比例异常，请重试');
+            }
+          } else if (imageInfo.size.width !== expectedWidth || imageInfo.size.height !== expectedHeight) {
+            throw new Error('PDF 渲染期间页面尺寸变化，请重试');
+          }
+          const pagePath: string = registry.sharePath(sessionId + '/page-' + (i + 1).toString() + '.jpg');
+          await NoteImageShareService.writeJpegTo(pagePath, pageShot);
+          pageJpegs.push(pagePath);
+        } finally {
+          await pageShot.release();
+        }
+      }
+      if (this.shareCaptureCancelled) {
+        throw new Error('分享图片生成已取消');
+      }
+      const pdfPath: string = registry.sharePath(sessionId + '/note.pdf');
+      NotePdfDocumentService.exportFromPageImages(pageJpegs, pdfPath);
+      this.shareCaptureActive = false;
+      this.shareCapturePdfMode = false;
+      this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
+        itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
+        vaultId, -1, '', uniformTypeDescriptor.UniformDataType.PDF);
+    } catch (error) {
+      this.shareCaptureActive = false;
+      this.shareCapturePdfMode = false;
+      bridge.cancelShareCaptureRequests('PDF 导出已结束');
+      if (sessionId.length > 0) {
+        try {
+          NoteShareService.removeTree(registry, sessionId);
+        } catch (cleanupError) {
+          // 失败清理不掩盖原错误；会话目录有 24 小时过期机制兜底。
+        }
+      }
+      const err = error as Error;
+      throw new Error(err.message);
+    } finally {
+      if (this.shareCaptureReadyTimer >= 0) {
+        clearTimeout(this.shareCaptureReadyTimer);
+        this.shareCaptureReadyTimer = -1;
+      }
+      this.shareCaptureReadyResolver = null;
+      this.shareCaptureReadyRejecter = null;
+    }
+  }
+
+  /** v1.53 PDF 文件名：笔记名去 .md 后缀加 .pdf（无后缀直接加）。 */
+  private pdfFileNameOf(itemName: string): string {
+    const baseName: string = itemName.endsWith('.md')
+      ? itemName.substring(0, itemName.length - 3) : itemName;
+    return baseName + '.pdf';
   }
 
   private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,
@@ -9917,6 +10050,12 @@ struct Index {
       { value: 'file', label: 'Markdown / ZIP', detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc' },
       { value: 'text', label: '文本', detail: '预览并编辑本次分享文本，不写回笔记。', icon: 'message' }
     ];
+    if (NotePdfDocumentService.isSupported()) {
+      noteOptions.splice(1, 0, {
+        value: 'pdf', label: 'PDF 文档',
+        detail: 'A4 竖版逐页排版，适合打印与通用阅读。', icon: 'doc'
+      });
+    }
     const folderOptions: ShareFormatOption[] = [
       { value: 'zip', label: 'ZIP 文件', detail: '保留目录结构，并补齐引用的本地图片。', icon: 'archive' }
     ];
@@ -10062,7 +10201,7 @@ struct Index {
         bridge: this.shareCaptureBridge,
         componentId: this.shareCaptureComponentId,
         hideScrollBar: true,
-        themeOverride: this.shareCaptureTheme,
+        themeOverride: this.shareCapturePdfMode ? 'light' : this.shareCaptureTheme,
         onReadAsset: (relPath: string): string => {
           return this.readVaultAsset(relPath);
         },
@@ -10074,8 +10213,9 @@ struct Index {
           this.rejectShareCaptureReady(new Error('分享预览加载失败，请重试'));
         }
       })
-        .width(this.shareCaptureWidthVp > 0 ? this.shareCaptureWidthVp : '100%')
-        .height('100%')
+        .width(this.shareCapturePdfMode ? this.pdfPageWidthVp :
+          (this.shareCaptureWidthVp > 0 ? this.shareCaptureWidthVp : '100%'))
+        .height(this.shareCapturePdfMode ? this.pdfPageHeightVp : '100%')
     }
     .width('100%')
     .height('100%')

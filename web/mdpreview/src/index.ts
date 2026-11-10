@@ -34,6 +34,7 @@ import {
   toolbarBlockForSelection
 } from './blockSelection.mjs'
 import { appendShareWatermark } from './shareWatermark.mjs'
+import { computePdfPageTops, pdfBottomPadding } from './pdfPagination.mjs'
 import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './codeBlock.mjs'
 import {
   applyTableStructureOperation,
@@ -115,6 +116,7 @@ interface MdPreviewApi {
   appendShareWatermark(id: number): void
   prepareShareCapturePages(id: number, pageCount: number): void
   setShareCaptureScrollTop(id: number, top: number): void
+  preparePdfPages(id: number, pageHeightVp: number): void
 }
 
 // ---------- base64（浏览器侧，处理 UTF-8，与 mdeditor 同款） ----------
@@ -2816,7 +2818,70 @@ const api: MdPreviewApi = {
     } catch (error) {
       sendShareCaptureResult(id, String(error))
     }
+  },
+
+  async preparePdfPages(id: number, pageHeightVp: number): Promise<void> {
+    try {
+      await mermaidRender
+      const content = document.getElementById('content') as HTMLElement
+      await waitForLocalImages(content)
+      await nextRenderedFrame()
+      if (!Number.isFinite(pageHeightVp) || pageHeightVp <= 0) {
+        throw new Error('PDF 页高参数无效')
+      }
+      const body = content.querySelector('.preview-body') as HTMLElement | null
+      if (!body) {
+        throw new Error('分享预览内容不可用')
+      }
+      const metrics = shareCaptureMetrics()
+      if (metrics.viewportHeight <= 0) {
+        throw new Error('分享预览没有可用的页面尺寸')
+      }
+      const contentRect = content.getBoundingClientRect()
+      const bounds: Array<{ top: number; bottom: number }> = []
+      const children = body.children
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i] as HTMLElement
+        const childRect = child.getBoundingClientRect()
+        if (childRect.height <= 0) {
+          continue
+        }
+        const top = childRect.top - contentRect.top + content.scrollTop
+        bounds.push({ top: top, bottom: top + childRect.height })
+      }
+      const tops = computePdfPageTops(bounds, pageHeightVp)
+      const currentPadding = Number.parseFloat(getComputedStyle(content).paddingBottom) || 0
+      const padding = pdfBottomPadding(tops, pageHeightVp, metrics.scrollHeight, currentPadding)
+      content.style.paddingBottom = `${padding}px`
+      content.scrollTop = 0
+      await nextRenderedFrame()
+      const finalMetrics = shareCaptureMetrics()
+      if (finalMetrics.scrollHeight < tops[tops.length - 1] + pageHeightVp) {
+        throw new Error('PDF 分页高度不足，无法完整分页')
+      }
+      sendPdfPagesResult(id, tops)
+    } catch (error) {
+      sendPdfPagesResult(id, [], String(error))
+    }
   }
+}
+
+function sendPdfPagesResult(id: number, tops: number[], errorText: string = ''): void {
+  const arkts = window.__arkts
+  if (!arkts || typeof arkts.onShareCaptureResult !== 'function') {
+    return
+  }
+  const metrics = shareCaptureMetrics()
+  arkts.onShareCaptureResult(JSON.stringify({
+    id: id,
+    error: errorText,
+    scrollHeight: metrics.scrollHeight,
+    viewportHeight: metrics.viewportHeight,
+    viewportWidth: metrics.viewportWidth,
+    scrollTop: metrics.scrollTop,
+    pageCount: tops.length,
+    pageTops: JSON.stringify(tops)
+  }))
 }
 
 window.__mdpreview = api

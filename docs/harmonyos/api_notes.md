@@ -2178,3 +2178,31 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - RDB 事务只协调数据库中的元信息、FTS 和待处理任务；不包含 `VaultAccess` / `AtomicFile` 的文件提交。没有依据把“保存 Markdown + 更新 RDB”描述为跨存储原子事务。
 - 数据库损坏处理、升级、回收磁盘页、残留数据清除、API24 大正文容量和完整性能尚未在本项目实测；不能据数据库删行声称安全擦除，也不能把官方演示的同步查询直接当适合 UI 主线程的大库实现。
 
+## AD 组：PDF 导出（2026-11-10，v1.53 前置核实，本机 SDK 声明核对）
+
+来源：本机 API24 SDK `hms/ets/api/@hms.officeservice.pdfservice.d.ts`、`hms/ets/kits/@kit.PDFKit.d.ts`、`openharmony/ets/api/@ohos.print.d.ts`、`openharmony/ets/api/@ohos.data.uniformTypeDescriptor.d.ts`、`openharmony/toolchains/lib/PermissionDefinitions.json`。声明核对，非 API24 / XT2 运行证据。未发起官方 Agent 问答。
+
+### AD1 ✅ HMS PDF Kit 可从零构建 PDF（since 5.0.0(12) ≤ API24）
+
+- Kit 入口 `@kit.PDFKit`（导出 `pdfService` / `pdfViewManager` / `PdfView`），实现文件 `@hms.officeservice.pdfservice.d.ts`。
+- 构建链（全部 since 5.0.0(12)，syscap `SystemCapability.OfficeService.PDFService.Core`，@stagemodelonly，声明无 `@permission` 标注）：
+  `new pdfService.PdfDocument()` → `createDocument(width, height): boolean`（空白文档，单位 point，1 英寸 = 72 pt）→ `insertBlankPage(index, width, height): PdfPage` → `PdfPage.addImageObject(path, x, y, width, height): void`（图片文件路径，point 坐标）→ `saveDocument(path): boolean`（沙箱路径）→ `releaseDocument(): void`。
+- 另有 `addTextObject(text, x, y, style)`（单段文本 + `TextStyle`，适合页码 / 页眉，不适合富文本排版）、`insertPageFromDocument`（从他文档抄页）、`deletePage` / `movePage` / `getPage` / `getPageCount`。
+- 本版采用「图片→PDF」路线：逐页 JPEG 经 `addImageObject` 全幅贴页；文字为图片态（不可选中 / 复制）。
+
+### AD2 ✅ 打印框架路线否决：新增权限且出口不受控
+
+- `@ohos.print`（BasicServicesKit，since 10）的 `print(files: Array<string>, context): Promise<PrintTask>`（since 11）接受 `.pdf/.txt/.png/.jpg/.docx` 等沙箱文件（路径经 `fileUri.getUriFromPath` 转 URI），拉起**系统打印 UI**。
+- 需要 `ohos.permission.PRINT`（PermissionDefinitions.json：system_grant、availableLevel normal、since 10、provisionEnable false）。**非 v1.5 功能新增任何权限违反硬约束 13**，且「保存为 PDF」出口未记载、不保证产出 PDF 文件。否决，不采用。
+
+### AD3 ✅ 分享 utd：PDF 精确类型存在
+
+- `uniformTypeDescriptor.UniformDataType.PDF = 'com.adobe.pdf'`（@ohos.data.uniformTypeDescriptor.d.ts:731）。现有 `openShareFilePreview` 统一用 `UniformDataType.FILE` 分享（ZIP 亦然）；PDF 传精确 utd 利于接收方识别。
+
+### AD4 ⚠️ 未记载 / 待实测项（真机验收补齐）
+
+- `addImageObject` 支持的图片格式细节（本版用 JPEG，与长图链路一致）未在声明中列举，真机验证。
+- XT2 / API24 对 `SystemCapability.OfficeService.PDFService.Core` 的设备支持未核实；实现必须 `canIUse('SystemCapability.OfficeService.PDFService.Core')` 检测，不支持时优雅降级（分享面板不显示 PDF 选项）。
+- `createDocument` 后未 `insertBlankPage` 直接 `saveDocument` 的行为（空文档）未记载，不依赖。
+- PDF 文件体积（逐页 JPEG 贴图）真机实测后回填。
+
