@@ -44,6 +44,8 @@ import {
 } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerShareSummary, VaultManagerView } from '../components/VaultManagerView';
+import { VaultStatsModel, VaultStatsService, emptyStatsModel } from '../model/VaultStatsService';
+import { VaultStatsView } from '../components/VaultStatsView';
 import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
@@ -281,6 +283,11 @@ struct Index {
   @State @Watch('onFormatContextChanged') topView: string = 'note';
   @State agentKitSlotBuilder: WrappedBuilder<[() => void]> | null = null;
   @State vaultManagerReturnView: string = 'note';
+  /** v1.52 统计页：结果 / 扫描中 / 失败三态 + 返回视图（进页即重算，不落盘缓存）。 */
+  @State vaultStatsModel: VaultStatsModel = emptyStatsModel();
+  @State vaultStatsScanning: boolean = false;
+  @State vaultStatsFailed: boolean = false;
+  @State vaultStatsReturnView: string = 'note';
   @State settingsReturnView: string = 'note';
   @State settingsCategory: string = 'general';
   @State settingsDetail: boolean = false;
@@ -2419,6 +2426,8 @@ struct Index {
       this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     } else if (this.topView === 'vaults') {
       this.topView = this.vaultManagerReturnView;
+    } else if (this.topView === 'stats') {
+      this.topView = this.vaultStatsReturnView;
     } else {
       this.topView = 'note';
     }
@@ -2440,6 +2449,48 @@ struct Index {
     this.vaultManagerReturnView = fromView;
     this.topView = 'vaults';
     this.refreshFromRegistry();
+  }
+
+  /**
+   * 打开统计与成就页（v1.52）：进页即重算——先重置三态再切视图，
+   * 扫描异步回填；'note' 入口先落盘（与 openVaultManager 同款前置）。
+   */
+  private async openVaultStats(fromView: string): Promise<void> {
+    if (fromView === 'note' && !await this.flushWorkspaceSaves()) {
+      return;
+    }
+    this.vaultStatsReturnView = fromView;
+    this.vaultStatsModel = emptyStatsModel();
+    this.vaultStatsFailed = false;
+    this.vaultStatsScanning = true;
+    this.topView = 'stats';
+    void this.refreshVaultStats();
+  }
+
+  /**
+   * 扫描当前库并回填统计模型（52.1：分块读取不阻塞 UI）。
+   * 过期结果丢弃：扫描期间离开统计页或切库（防御），回填前校验。
+   */
+  private async refreshVaultStats(): Promise<void> {
+    const vaultId: string = this.currentVaultId;
+    try {
+      const access = VaultRegistry.get().accessFor(vaultId);
+      const outcome = await VaultStatsService.scanAccess(access, Date.now());
+      if (this.topView !== 'stats' || this.currentVaultId !== vaultId) {
+        return;
+      }
+      this.vaultStatsFailed = outcome.failed;
+      this.vaultStatsModel = outcome.model !== null ? outcome.model : emptyStatsModel();
+    } catch (_error) {
+      if (this.topView === 'stats' && this.currentVaultId === vaultId) {
+        this.vaultStatsFailed = true;
+        this.vaultStatsModel = emptyStatsModel();
+      }
+    } finally {
+      if (this.topView === 'stats' && this.currentVaultId === vaultId) {
+        this.vaultStatsScanning = false;
+      }
+    }
   }
 
   private currentVaultIsGit(): boolean {
@@ -6286,6 +6337,9 @@ struct Index {
     if (this.topView === 'agent') {
       return this.agentTitle;
     }
+    if (this.topView === 'stats') {
+      return '统计与成就';
+    }
     return '设置与关于';
   }
 
@@ -8563,6 +8617,8 @@ struct Index {
               this.SettingsPane()
             } else if (this.topView === 'agent') {
               this.AgentPane()
+            } else if (this.topView === 'stats') {
+              this.StatsView()
             }
             if (this.undoVisible) {
               this.UndoBar()
@@ -10403,6 +10459,10 @@ struct Index {
       onManageVaults: (): void => {
         this.closeNoteNavigation();
         void this.openVaultManager('note');
+      },
+      onOpenStats: (): void => {
+        this.closeNoteNavigation();
+        void this.openVaultStats('note');
       },
       onOpenSearch: (): void => {
         this.closeNoteNavigation();
@@ -12498,6 +12558,17 @@ struct Index {
     })
   }
 
+  /** 统计与成就视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级，v1.52） */
+  @Builder
+  StatsView() {
+    VaultStatsView({
+      vaultName: this.currentVaultName(),
+      model: this.vaultStatsModel,
+      scanFailed: this.vaultStatsFailed,
+      scanning: this.vaultStatsScanning
+    })
+  }
+
   /** 设置与关于视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级） */
   @Builder
   SettingsPane() {
@@ -12556,6 +12627,7 @@ struct Index {
       onOpenNote: (path: string): void => { this.openAgentNote(path); },
       onSwitchVault: (id: string): void => { this.doSwitchVault(id); },
       onManageVaults: (): void => { void this.openVaultManager('agent'); },
+      onOpenStats: (): void => { void this.openVaultStats('agent'); },
       onImportVault: (): void => { void this.openImportVaultDialog('vault-switcher-trigger'); },
       onNavigationDragStart: (): void => { this.startNavigationDrag(true); },
       onNavigationDrag: (offsetX: number): void => { this.updateNavigationDrag(offsetX, true); },

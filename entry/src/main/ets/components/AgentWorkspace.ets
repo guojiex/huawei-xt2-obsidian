@@ -34,6 +34,8 @@ export struct AgentWorkspace {
   onNotesChanged: () => void = () => {};
   onSwitchVault: (id: string) => void = (id: string) => {};
   onManageVaults: () => void = () => {};
+  /** 「统计与成就」透传（v1.52；Agent 侧栏库菜单同入口）。 */
+  onOpenStats: () => void = () => {};
   onImportVault: () => void = () => {};
   onNavigationDragStart: () => void = () => {};
   onNavigationDrag: (offsetX: number) => void = (offsetX: number) => {};
@@ -703,6 +705,7 @@ export struct AgentWorkspace {
         refreshSeq: this.refreshSeq,
         onSwitchVault: (id: string): void => { this.onSwitchVault(id); },
         onManageVaults: (): void => { this.onManageVaults(); },
+        onOpenStats: (): void => { this.onOpenStats(); },
         onImportVault: (): void => { this.onImportVault(); },
         onReferenceNote: (path: string, sourceVaultId: string): void => {
           this.addReference(path, sourceVaultId);

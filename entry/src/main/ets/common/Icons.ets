@@ -78,6 +78,10 @@ const P_PROFESSIONAL_MODE: string = 'M4 4h16v16H4zM8 9l3 3-3 3M13 15h3';
 const P_KEYBOARD_DONE: string = 'M5 4H19C20.1 4 21 4.9 21 6V13C21 14.1 20.1 15 19 15H5C3.9 15 3 14.1 3 13V6C3 4.9 3.9 4 5 4' +
   'M7 8h.01M11 8h.01M15 8h.01M7 11h10M9 19L12 21L15 19';
 
+/** 徽章（奖牌）：圆用四段三次贝塞尔近似 + 两条缎带直线（无弧线 flag，可整表缩放）。 */
+const P_MEDAL: string = 'M17 10C17 12.76 14.76 15 12 15C9.24 15 7 12.76 7 10C7 7.24 9.24 5 12 5C14.76 5 17 7.24 17 10' +
+  'M9.5 14.6L7.5 21L12 18.6L16.5 21L14.5 14.6';
+
 /** 名字 → 路径；未知名字返回空串（画不出东西，但不会崩） */
 function pathOf(name: string): string {
   if (name === 'menu') {
@@ -158,6 +162,8 @@ function pathOf(name: string): string {
     return P_PROFESSIONAL_MODE;
   } else if (name === 'keyboardDone') {
     return P_KEYBOARD_DONE;
+  } else if (name === 'medal') {
+    return P_MEDAL;
   }
   return '';
 }

@@ -69,6 +69,8 @@ export struct VaultSidebar {
   onSwitchVault: (id: string) => void = (id: string) => {};
   /** 「管理库」回调（父级切换到库管理视图） */
   onManageVaults: () => void = () => {};
+  /** 「统计与成就」回调（父级切换到统计页，v1.52；「管理库…」之后与导入库之前）。 */
+  onOpenStats: () => void = () => {};
   /** 打开当前库快切与全文搜索。 */
   onOpenSearch: () => void = () => {};
   /** 统一导入库入口：本地目录或 Git 仓库。 */
@@ -372,6 +374,21 @@ export struct VaultSidebar {
           .onClick(() => {
             this.menuOpen = false;
             this.onManageVaults();
+          })
+
+          Row() {
+            Text('统计与成就…')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(Size.touch)
+          .padding(Space.s2)
+          .borderRadius(Radius.control)
+          .onClick(() => {
+            this.menuOpen = false;
+            this.onOpenStats();
           })
 
           Row() {

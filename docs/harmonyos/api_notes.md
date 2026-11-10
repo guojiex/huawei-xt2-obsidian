@@ -2048,6 +2048,13 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - API 24 / XT2 的真实 Picker `.zip` 过滤视觉与取消行为未验收。
 - **实现期补充（2026-11-07，v1.36 落码，声明核对）**：随机读改用 `RandomAccessFile`（`fileIo.createRandomAccessFileSync` / `setFilePointer` / `read(buffer): Promise<number>` / readonly `filePointer`，均 `@ohos.file.fs` **since 10**），**绕开 Y3 ⚠️ 的 `fs.read` ReadOptions.offset 存疑语义**——实现不依赖该存疑行为。`ZStream` 字段按声明使用（nextIn/availableIn/totalIn/nextOut/availableOut/totalOut/dataType/adler，全可选）。设备链路封装于 `entry/src/main/ets/model/ZipImportDevice.ets`；解析 / 校验 / 解压编排在 `ZipImportService.ets`（零 `@kit`，Node 侧真实 zlib deflateRaw 交叉验证，`tools/tests/test_zip_import.mjs` 25/25），签名 HAP 构建通过。⚠️ 项不变：`17800004/17800005` 触发形态与 Picker 过滤视觉仍待 API 24 / XT2 真机验收（`docs/releases/v1.36/需求文档.md` §6.2）。
 
+### Y5 ✅ `fs.utimes(path, mtime)` 可在导入后回填文件修改时间（2026-11-10，本机 SDK 声明核对）
+
+- `@ohos.file.fs` 的 `utimes(path: string, mtime: number): void` **since 11** ≤ API 24（本机 SDK `ets/api/@ohos.file.fs.d.ts:3523` 核对）：改「最后修改时间」，`mtime` 为 Epoch **毫秒**；抛 `13900001/02/12/20/27/42`。
+- **限应用沙箱路径**（声明注释原文 "Application sandbox path"）——匹配 ZIP 导入产物（沙箱库）；外部授权目录（v1.5 `VaultAccess` 外部实现）不适用，不得对外部路径调用。
+- 用途（2026-11-10 拍板，需求池「ZIP 导入恢复文件 mtime」）：ZIP 导入时从 central directory 的 DOS date/time（Y1 解析器已逐条目读头部，字段就在其中）读出条目修改时间，解压写盘后 `fs.utimes` 回填——保住 v1.52 统计的写作历史（活跃日按 mtime 归日）与 v1.49 按 mtime 排序在导入库上的正确性。⚠️ DOS 时间 **2 秒精度**、**按本地时区存取**（无时区字段），跨时区迁移日粒度可能偏移一天——日级统计影响可忽略，实现期以单测锁语义。
+- 同步/备份边界：`utimes` 只救「经 App ZIP 导入」的链路；绕过 App 手动拷贝文件、Git checkout（mtime=检出时刻）不经回填不保写作历史——Git 导入的 per-file 最后提交时间回填（native `utimensat` + libgit2 log）为可选二期，未排期。
+
 ## Z 组：@BuilderParam 引用传参丢失 this（2026-11-06，v1.32 弹窗闪退实测）
 
 ### Z1 ✅ 成员 @Builder 以 `this.xxx` 引用传给子组件 @BuilderParam 时，this 指向子组件实例
