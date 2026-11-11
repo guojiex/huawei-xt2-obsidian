@@ -144,3 +144,21 @@ test('task status toggles checked state without changing source length or select
   assert.equal(state.doc.toString(), '- [ ] done')
   assert.equal(state.sliceDoc(state.selection.main.from, state.selection.main.to), 'done')
 })
+
+test('task status toggles when handed the full simple-mode marker span from the widget dataset', () => {
+  // 真实接线：简单模式 widget 的 dataset.simpleTaskFrom/To 存的是整个列表标记区间
+  // （`- [ ] `），不是精确的 `[ ]` 三字符 —— 2026-11-11 前该区间导致点击复选框无响应。
+  let state = createState('- [ ] done', 6, 10)
+  let change = toggleTaskStatus(state, 0, 6)
+  assert.ok(change)
+  state = state.update({ ...change, userEvent: 'input' }).state
+  assert.equal(state.doc.toString(), '- [x] done')
+
+  change = toggleTaskStatus(state, 0, 6)
+  assert.ok(change)
+  state = state.update({ ...change, userEvent: 'input' }).state
+  assert.equal(state.doc.toString(), '- [ ] done')
+
+  // 区间里没有复选框时必须拒绝，不得误改任意文本。
+  assert.equal(toggleTaskStatus(createState('- done', 0, 6), 0, 6), null)
+})

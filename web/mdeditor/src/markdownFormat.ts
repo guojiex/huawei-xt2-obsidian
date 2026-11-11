@@ -186,14 +186,18 @@ export function toggleTaskStatus(state: EditorState, from: number, to: number): 
   if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to <= from || to > state.doc.length) {
     return null
   }
+  // 区间可以是精确的 `[ ]`，也可以是简单模式 widget 传入的整个列表标记（`- [ ] `）：
+  // 在区间内定位复选框再翻转，两种调用方式都成立（精确匹配时 match.index === 0）。
   const marker = state.sliceDoc(from, to)
-  if (!/^\[[ xX]\]$/.test(marker)) {
+  const match = /\[[ xX]\]/.exec(marker)
+  if (!match) {
     return null
   }
-  const checked = /\[[xX]\]/.test(marker)
+  const checkboxFrom = from + match.index
+  const checked = /\[[xX]\]/.test(match[0])
   const selection = state.selection.main
   return {
-    changes: { from: from, to: to, insert: checked ? '[ ]' : '[x]' },
+    changes: { from: checkboxFrom, to: checkboxFrom + match[0].length, insert: checked ? '[ ]' : '[x]' },
     selection: { anchor: selection.anchor, head: selection.head }
   }
 }

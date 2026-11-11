@@ -19,6 +19,7 @@
     { "name": "bg_page", "value": "#10151D" },
     { "name": "bg_navigation", "value": "#171D25" },
     { "name": "bg_card", "value": "#1D232B" },
+    { "name": "bg_card_transparent", "value": "#001D232B" },
     { "name": "bg_secondary", "value": "#171D25" },
     { "name": "bg_tertiary", "value": "#26262A" },
     { "name": "bg_sunken", "value": "#0FFFFFFF" },

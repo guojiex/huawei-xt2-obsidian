@@ -123,3 +123,23 @@ test('folder range is deduplicated against the vault range when the note sits at
   assert.equal(app.sharePathForScope('folder', 'note', '根笔记.md', '根笔记.md'), '');
   assert.equal(app.sharePathForScope('folder', 'note', '10_写作/草稿.md', '10_写作/草稿.md'), '10_写作');
 });
+
+// 2026-11-11 Z5 防回归：Color.Transparent = rgba(0,0,0,0)（透明黑，官方 FAQ
+// faqs-arkui-1192 明载）。selectScope 的 animateTo 对 ARGB 四通道线性插值，
+// bg_card（浅色 #FFFFFF）→ 透明黑的中途帧 ≈ rgba(128,128,128,.5) 半透明灰黑，
+// 切范围时旧 tab「闪一下」。锁死：未选中底色必须是与 bg_card 同 RGB、只降 alpha
+// 的主题资源 bg_card_transparent（纯 alpha 渐变，两主题都干净）。
+test('scope tab background fades to themed transparent bg_card, never Color.Transparent', () => {
+  const baseColors = readSourceFile(new URL(
+    '../../entry/src/main/resources/base/element/color.json', import.meta.url));
+  const darkColors = readSourceFile(new URL(
+    '../../entry/src/main/resources/dark/element/color.json', import.meta.url));
+  assert.match(baseColors, /\{ "name": "bg_card", "value": "#FFFFFF" \}/);
+  assert.match(baseColors, /\{ "name": "bg_card_transparent", "value": "#00FFFFFF" \}/);
+  assert.match(darkColors, /\{ "name": "bg_card", "value": "#1D232B" \}/);
+  assert.match(darkColors, /\{ "name": "bg_card_transparent", "value": "#001D232B" \}/);
+  assert.match(dialogSource, /bg_card_transparent/);
+  // 只禁「使用形态」（注释里提及 Color.Transparent 不算）
+  assert.doesNotMatch(dialogSource, /: Color\.Transparent\)/,
+    'ShareNoteDialog must not animate bg_card toward transparent black (flash midframe)');
+});

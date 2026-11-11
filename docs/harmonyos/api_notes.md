@@ -2093,6 +2093,13 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - **终修复（第三版，机理与 content 一致）**：标题区改 `@BuilderParam headerTexts`——**@BuilderParam 片段在调用方视图执行、其状态依赖注册在调用方组件上、随调用方 @State 重跑**（与 content 同机制；DialogContent 里 `Text(this.currentOption().description)` 切范围即刷新即证）。需要动态标题的调用方（ShareNoteDialog）传自己的 @Builder（状态读取写在 @Builder 体内），静态调用方不传、走 shell 默认 `DefaultHeaderTexts` 渲染普通成员。title/subtitle 回落为普通 string 成员（静态调用方用），16 处 makeBinding 包裹全部拆除。
 - 防回归：`test_utility_dialog_shell.mjs` 断言 shell 有 headerTexts @BuilderParam（默认 DefaultHeaderTexts）且 build 里调用、title/subtitle 是普通 string、调用点 title/subtitle 不得 makeBinding 包裹、ShareNoteDialog 传 headerTexts 且 `Text(this.currentOption().title)` 读在 @Builder 体内；**不得退回 @Prop**（undefined 崩溃）、**不得回 Binding**（片段不重跑，冻结）；`UiShare#share_scope_segments_switch_formats` 端到端锁住「切范围后标题必刷新」。
 
+### Z5 ✅ `Color.Transparent` = rgba(0,0,0,0)（透明黑）——animateTo 向它插值必过灰黑中途帧（2026-11-11，用户报障「切范围旧按钮闪一下」）
+
+- **官方明载**（FAQ `faqs-arkui-1192`，devecocli docs 可查）：`Color.Transparent` 的值是 **`rgba(0,0,0,0)`**（透明黑）；`'#00FFFFFF'` 才是全透明白。该 FAQ 以 linearGradient 渐变到透明出现黑色记录了同一族问题，属性动画同样命中。
+- **报障与机理（2026-11-11，XT2 用户报障）**：分享面板切范围 tab 时「点新按钮，旧按钮闪一下」。`ShareNoteDialog.selectScope` 把 `selectedScope` 变更包进 `animateTo(200ms)`（v1.25 25.13 引入），显式动画对**本轮重渲染所有属性变化**做 ARGB 四通道线性插值——旧 tab `.backgroundColor` 从 `$r('app.color.bg_card')`（浅色 #FFFFFF）过渡到 `Color.Transparent`，中途帧 ≈ `rgba(128,128,128,.5)` 半透明灰黑：白底先变灰黑再消失 =「闪一下」；新 tab 反向插值同样路过灰黑帧。深色模式 bg_card（#1D232B）本身接近黑，插值无感——**闪帧主要是浅色模式现象**。
+- **修复**：未选中底色改用「与 bg_card 同 RGB、只降 alpha」的主题资源 `bg_card_transparent`（base `#00FFFFFF` / dark `#001D232B`），插值退化为纯 alpha 渐变，两主题都干净。其余 9 处 `bg_card : Color.Transparent` 三元（Index / NoteDialogs / QuickSwitcher / ImportVaultDialog / ShareImage* 等）**未包 animateTo**，瞬时切换无插值中途帧，不受影响、不强制迁移。
+- 防回归：`test_share_scope_dialog.mjs` 锁 ScopeTab 用 `bg_card_transparent`、全文件无 `Color.Transparent`，且 base/dark 资源 `#00FFFFFF` / `#001D232B` 就位。修复效果待 API24 / XT2 真机目视验收。
+
 ## AA 组：系统字号缩放与模拟器形态切换（2026-11-07 官方问答 + 本机 SDK 核对）
 
 > 背景：v1.10 基础无障碍（系统字号适配 + 形态矩阵）。问答存档：[qa/2026-11-07_系统字号缩放与模拟器形态切换_API26.md](qa/2026-11-07_系统字号缩放与模拟器形态切换_API26.md)。

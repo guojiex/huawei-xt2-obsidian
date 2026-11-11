@@ -1314,10 +1314,14 @@ function syncExperienceChoices(){
 }
 const simpleTextFocus={left:false,right:false};
 const simpleTableEditSessions=new WeakMap();
-function syncExperience(){
- const simple=experience==='simple';$('window').classList.toggle('simple-mode',simple);syncExperienceChoices();
+function syncSimpleToolsVisibility(){
+ const simple=experience==='simple';
  $('simpleTools').classList.toggle('hidden',!simple||activePane!=='left'||!current||!simpleTextFocus.left);$('leftPane').classList.toggle('text-focus',simple&&!!current&&simpleTextFocus.left);
  $('simpleToolsRight').classList.toggle('hidden',!simple||activePane!=='right'||!reference||!simpleTextFocus.right);$('referencePane').classList.toggle('text-focus',simple&&!!reference&&simpleTextFocus.right);
+}
+function syncExperience(){
+ const simple=experience==='simple';$('window').classList.toggle('simple-mode',simple);syncExperienceChoices();
+ syncSimpleToolsVisibility();
  if(!simple){closeBlockUi();for(const root of [$('article'),$('reference')]){for(const el of root.querySelectorAll('[contenteditable]')){el.removeAttribute('contenteditable');el.removeAttribute('role');el.removeAttribute('aria-label');el.removeAttribute('aria-multiline');}for(const el of root.querySelectorAll('.simple-protected'))el.classList.remove('simple-protected');}return;}
  $('article').classList.remove('hidden');prepareSimpleBlocks('left');prepareSimpleBlocks('right');bindBlockEntrances();closeBlockUi();
 }
@@ -2343,7 +2347,7 @@ $('navScrim').addEventListener('pointerdown',e=>{e.preventDefault();});$('navScr
 
 // v1.30: track editing focus per pane (text inside the rendered note, or the pane's own format bar / Aa panel).
 function paneHasTextFocus(pane){const a=document.activeElement,root=$(pane==='right'?'referencePane':'leftPane');if(!a||!root.contains(a))return false;if(a.closest('[contenteditable=true]'))return true;return !!a.closest('#'+(pane==='right'?'simpleToolsRight':'simpleTools'))||!!a.closest('.simple-format-menu');}
-function refreshSimpleTextFocus(){const next={left:paneHasTextFocus('left'),right:paneHasTextFocus('right')};if(next.left===simpleTextFocus.left&&next.right===simpleTextFocus.right)return;simpleTextFocus.left=next.left;simpleTextFocus.right=next.right;syncExperience();}
+function refreshSimpleTextFocus(){const next={left:paneHasTextFocus('left'),right:paneHasTextFocus('right')};if(next.left===simpleTextFocus.left&&next.right===simpleTextFocus.right)return;simpleTextFocus.left=next.left;simpleTextFocus.right=next.right;syncSimpleToolsVisibility();}
 document.addEventListener('focusin',()=>refreshSimpleTextFocus());document.addEventListener('focusout',()=>setTimeout(refreshSimpleTextFocus,0));
 for(const [id,pane] of [['simpleDone','left'],['simpleDoneRight','right']]){$(id).addEventListener('pointerdown',e=>e.preventDefault());$(id).onclick=()=>{const a=document.activeElement;if(a&&a.blur)a.blur();simpleTextFocus[pane]=false;syncExperience();$(pane==='right'?'referenceTitle':'leftTitle').focus({preventScroll:true});};}
 

@@ -181,8 +181,12 @@ export struct ShareNoteDialog {
       .onKeyEvent((event: KeyEvent): boolean => { return this.onScopeKey(option.scope, event); })
       .onClick(() => { this.selectScope(option.scope); })
       .borderRadius(Radius.full)
+      // 2026-11-11 Z5：未选中底色不得用 Color.Transparent（=rgba(0,0,0,0) 透明黑）——
+      // selectScope 的 animateTo 对 ARGB 四通道线性插值，白底→透明黑的中途帧是
+      // 半透明灰黑（≈rgba(128,128,128,.5)），旧 tab 呈现「闪一下」。改用与 bg_card
+      // 同 RGB、只降 alpha 的主题资源 bg_card_transparent，插值退化为纯 alpha 渐变。
       .backgroundColor(this.selectedScope === option.scope
-        ? $r('app.color.bg_card') : Color.Transparent)
+        ? $r('app.color.bg_card') : $r('app.color.bg_card_transparent'))
   }
 
   @Builder

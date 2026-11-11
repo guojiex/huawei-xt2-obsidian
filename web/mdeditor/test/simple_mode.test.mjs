@@ -12,6 +12,7 @@ const result = await build({
       import { markdown } from '@codemirror/lang-markdown'
       import { collectSimpleModeRanges, allowsSimpleModeTransaction, resolveSimpleModeImagePath,
         PROTECTED_HINT_TABLE, PROTECTED_HINT_DEFAULT } from '../src/simpleMode.ts'
+      import { toggleTaskStatus } from '../src/markdownFormat.ts'
       export const hints = { table: PROTECTED_HINT_TABLE, fallback: PROTECTED_HINT_DEFAULT }
       export function inspect(source) {
         const state = EditorState.create({ doc: source, extensions: [markdown()] })
@@ -21,6 +22,18 @@ const result = await build({
         const state = EditorState.create({ doc: source, extensions: [markdown()] })
         const transaction = state.update({ changes: { from, to, insert } })
         return allowsSimpleModeTransaction(state, transaction)
+      }
+      export function toggleTaskViaDecoration(source) {
+        const state = EditorState.create({ doc: source, extensions: [markdown()] })
+        const task = collectSimpleModeRanges(state).decorations.find((range) => range.kind === 'task')
+        if (!task) {
+          return { toggled: false, doc: source }
+        }
+        const change = toggleTaskStatus(state, task.from, task.to)
+        if (!change) {
+          return { toggled: false, doc: source }
+        }
+        return { toggled: true, doc: state.update({ ...change, userEvent: 'input' }).state.doc.toString() }
       }
       export function resolveImagePath(noteDir, source) {
         return resolveSimpleModeImagePath(noteDir, source)
@@ -127,6 +140,26 @@ test('task checkbox markers are not mistaken for reference links', () => {
   assert.deepEqual(result.protected, [])
   assert.deepEqual(result.decorations.filter((range) => range.kind === 'task').map((range) => range.value),
     ['☑', '☑', '☐'])
+})
+
+test('clicking a simple-mode task widget toggles the source checkbox (decoration range feeds toggleTaskStatus)', () => {
+  // 端到端契约防线：widget dataset 存的是 task 装饰的整个标记区间（`- [ ] `），
+  // toggleTaskStatus 必须能吃下这个区间并翻转源码复选框。2026-11-11 前两者
+  // 区间口径不一致，真机上点击复选框无任何响应，且旧单测（手动传精确区间）测不出。
+  let outcome = simpleMode.toggleTaskViaDecoration('- [ ] 买牛奶')
+  assert.equal(outcome.toggled, true)
+  assert.equal(outcome.doc, '- [x] 买牛奶')
+
+  outcome = simpleMode.toggleTaskViaDecoration('- [x] 买牛奶')
+  assert.equal(outcome.toggled, true)
+  assert.equal(outcome.doc, '- [ ] 买牛奶')
+
+  // 有序列表 + 缩进的标记区间同样可翻转；无复选框的普通列表不产生 task 装饰。
+  outcome = simpleMode.toggleTaskViaDecoration('  3. [X] 深层任务')
+  assert.equal(outcome.toggled, true)
+  assert.equal(outcome.doc, '  3. [ ] 深层任务')
+  outcome = simpleMode.toggleTaskViaDecoration('- 普通列表')
+  assert.equal(outcome.toggled, false)
 })
 
 test('BOM frontmatter and inline math retain exact normalized source offsets', () => {
