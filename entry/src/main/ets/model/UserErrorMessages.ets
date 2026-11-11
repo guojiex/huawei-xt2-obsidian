@@ -1,9 +1,7 @@
 export type ShareFailurePhase = 'image_prepare' | 'text_prepare' | 'file_prepare' | 'handoff';
 
-// 2026-11-11 用户拍板：数据是用户自己的，分享失败直接展示真实错误信息——
-// 白名单放行、前缀改写与「原因未确定」替换兜底全部移除，真实错误不再被吞掉
-// （同 34.5「自己的应用，别把用户当外人」裁定）。仅当异常没有可展示的
-// message 时，才回落到带恢复建议的阶段性说明。
+// 2026-11-11 用户拍板：数据是用户自己的，分享失败直出真实异常 message；
+// 仅异常无可展示 message 时才落带恢复建议的阶段性说明。
 export function shareFailureMessage(error: Object, phase: ShareFailurePhase): string {
   const message: string = error instanceof Error ? error.message : '';
   if (message.length > 0) {

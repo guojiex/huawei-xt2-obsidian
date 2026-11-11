@@ -52,8 +52,7 @@ vm.runInContext(feedbackCode, vm.createContext({
 }));
 
 test('share exceptions surface their real message instead of replacing it', () => {
-  // 2026-11-11 用户拍板：数据是用户自己的，分享失败直出真实错误，
-  // 白名单放行 / 前缀改写 / 「原因未确定」替换兜底全部移除。
+  // 2026-11-11 用户拍板：数据是用户自己的，分享失败直出真实错误。
   const secret = 'path=/private/vault/note.md token=secret-token response=private';
   const phases = ['image_prepare', 'text_prepare', 'file_prepare', 'handoff'];
   for (const phase of phases) {
@@ -63,7 +62,7 @@ test('share exceptions surface their real message instead of replacing it', () =
     new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。'),
     'text_prepare'
   ), /200 KB/);
-  // 白名单与前缀改写分支已删干净；Index 两处 link 失败分支透传真实 message
+  // 直出行为源级锁定；Index 两处 link 失败分支透传真实 message
   assert.doesNotMatch(userErrorSource, /SAFE_SHARE_MESSAGES|startsWith\(/);
   assert.match(sourceFiles.index, /linkFailureReason\.length > 0 \? linkFailureReason/);
   assert.match(sourceFiles.index, /'远端链接准备失败：' \+ linkNoticeReason/);
