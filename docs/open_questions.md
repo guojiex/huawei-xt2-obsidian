@@ -209,7 +209,7 @@ Q2 的早期后置决定保留在下文；内容导出已分配 [v0.8](releases/
 > **2026-11-09 用户决定**：`docs/releases/vX.Y` 目录名是**内部迭代编号**；`app.json5` 的 `versionName` **不与它对应**，跟随
 **对外版本**（真源 `changelog.json` 的 `version` 字段）。内部（v1.47）与对外（1.7.0）版本号是两套，混用会让关于页更新日志（v1.32
 > 32.9 按 `versionName` 过滤）误判成空。R1 与 [api_notes H1](harmonyos/api_notes.md#h1-版本号的单一真源是-appscopeappjson5-)
-> 已同步；`versionName` 已抬到 `1.7.0`（`versionCode` 1000004）。
+> 已同步；`versionName` 已抬到 `1.8.0`（`versionCode` 1000005，2026-11-10 随 changelog 1.8.0 条目同步）。
 
 2026-11-02 用户选择方案 B：版本号只作编号，优先级只看 [实施总清单](releases/实施总清单.md)。当时 R8 的 M 阶段拆分约束仍待决定；该约束已按上方 2026-11-05 决定取消。
 

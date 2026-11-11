@@ -8693,6 +8693,24 @@ struct Index {
     }, notePath, vaultId, '', paneWidthVp);
   }
 
+  /**
+   * 分享 / 导出取笔记正文（v1.53 53.6 修复）：编辑器桥就绪时走桥（含编辑器内未保存改动）；
+   * 未就绪（隐藏的源码编辑器 Web 未加载或加载失败——预览显示与简单模式编辑不受影响）时
+   * 直接读库文件兜底：编辑器未就绪就不存在「编辑器内未保存改动」，简单模式的预览编辑
+   * 直接落盘，磁盘文件即权威内容。不再因「编辑器尚未就绪」阻断分享。
+   */
+  private async noteMarkdownForShare(vaultId: string, path: string): Promise<string> {
+    const bridge: EditorBridge = this.editorBridgeForPath(path);
+    if (bridge.ready) {
+      return await bridge.getContent();
+    }
+    const text: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, path);
+    if (text === null) {
+      throw new Error('未能读取笔记内容，暂时无法分享');
+    }
+    return text;
+  }
+
   private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
     vault: VaultEntry, vaultNoteCount: number = -1, focusReturnId: string = ''): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
@@ -8713,13 +8731,13 @@ struct Index {
         return;
       }
       if (format === 'text' && scope === 'note') {
-        const markdown: string = await this.editorBridgeForPath(path).getContent();
+        const markdown: string = await this.noteMarkdownForShare(vault.id, path);
         const preview: NoteTextSharePreview = NoteTextShareService.createPreview(path, markdown);
         this.openShareTextPreview(preview, path);
         return;
       }
       if (scope === 'note') {
-        const markdown: string = await this.editorBridgeForPath(path).getContent();
+        const markdown: string = await this.noteMarkdownForShare(vault.id, path);
         const prepared: PreparedNoteShare = await NoteShareService.prepareNote(registry, vault.id,
           path, markdown);
         this.openShareFilePreview(prepared.filePath, prepared.fileName, prepared.format, prepared.entries,
@@ -8914,8 +8932,8 @@ struct Index {
     this.rejectShareCaptureReady(new Error('分享图片生成已取消'));
   }
 
-  private async prepareNoteImageShare(vaultId: string, notePath: string, itemName: string,
-    editor: EditorBridge): Promise<ShareImagePreviewImage> {
+  private async prepareNoteImageShare(vaultId: string, notePath: string,
+    itemName: string): Promise<ShareImagePreviewImage> {
     const registry: VaultRegistry = VaultRegistry.get();
     this.shareCaptureCancelled = false;
     this.shareCapturePdfMode = false;
@@ -8924,7 +8942,7 @@ struct Index {
     const bridge: PreviewBridge = new PreviewBridge();
     this.shareCaptureBridge = bridge;
     try {
-      const markdown: string = await editor.getContent();
+      const markdown: string = await this.noteMarkdownForShare(vaultId, notePath);
       if (this.shareCaptureCancelled) {
         throw new Error('分享图片生成已取消');
       }
@@ -9061,7 +9079,7 @@ struct Index {
     const bridge: PreviewBridge = new PreviewBridge();
     this.shareCaptureBridge = bridge;
     try {
-      const markdown: string = await this.editorBridgeForPath(notePath).getContent();
+      const markdown: string = await this.noteMarkdownForShare(vaultId, notePath);
       if (this.shareCaptureCancelled) {
         throw new Error('分享图片生成已取消');
       }
@@ -9187,7 +9205,7 @@ struct Index {
           this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, resolvedPaneWidthVp);
           this.cleanupShareImagePreview();
           const preview: ShareImagePreviewImage = await this.prepareNoteImageShare(
-            vaultId, notePath, itemName, this.editorBridgeForPath(notePath));
+            vaultId, notePath, itemName);
           this.ensureShareImagePreferenceStore();
           if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
             promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
@@ -10038,9 +10056,8 @@ struct Index {
       return;
     }
     const notePath: string = vault.id === this.currentVaultId ? this.activeFilePath() : '';
-    const noteReady: boolean = notePath.length > 0 && this.editorBridgeForPath(notePath).ready;
-    if (scope === 'note' && !noteReady) {
-      promptAction.showToast({ message: '编辑器尚未就绪，暂时无法分享' });
+    if (scope === 'note' && notePath.length === 0) {
+      promptAction.showToast({ message: '请先打开一篇笔记' });
       return;
     }
     const folderPath: string = this.sharePathForScope('folder', scope, path, notePath);
@@ -10071,7 +10088,7 @@ struct Index {
       description: '当前笔记及其引用的库内图片，不包含链接到的其他笔记。',
       summary: '当前编辑内容',
       notice: '',
-      available: noteReady,
+      available: notePath.length > 0,
       options: noteOptions
     };
     const folderOption: ShareScopeOption = {
