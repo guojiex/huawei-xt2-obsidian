@@ -179,3 +179,27 @@ export async function clickUntilTextAppear(driver: Driver, clickId: string, expe
   throw new Error('点击 ' + clickId + ' 后未出现 text=' + expectText +
     '（重试 ' + attempts.toString() + ' 次，x86 冷启动注入不稳？）: ' + (lastError?.message ?? ''));
 }
+
+/**
+ * clickByText 版的 clickUntilTextAppear：点击 text=clickText 直到 expectText 出现（最多 attempts 次）。
+ * 上一次点击实际已生效但等待超时的场景下，组件可能已消失——吞掉点击异常继续等待即可自愈。
+ */
+export async function clickByTextUntilTextAppear(driver: Driver, clickText: string, expectText: string,
+  attempts: number = 3, attemptWaitMs: number = 8000): Promise<void> {
+  let lastError: Error | null = null;
+  for (let i: number = 0; i < attempts; i++) {
+    try {
+      await clickByText(driver, clickText);
+    } catch (error) {
+      // 组件已不在（上一次点击实际已生效），吞掉后仅等待
+    }
+    try {
+      await waitByText(driver, expectText, attemptWaitMs);
+      return;
+    } catch (error) {
+      lastError = error as Error;
+    }
+  }
+  throw new Error('点击 text=' + clickText + ' 后未出现 text=' + expectText +
+    '（重试 ' + attempts.toString() + ' 次，x86 点击注入抖动？）: ' + (lastError?.message ?? ''));
+}

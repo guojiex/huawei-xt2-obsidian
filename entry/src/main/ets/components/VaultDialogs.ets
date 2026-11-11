@@ -70,6 +70,7 @@ export struct CreateVaultDialog {
         .padding({ left: Space.s3, right: Space.s3 })
         .backgroundColor($r('app.color.bg_secondary'))
         .borderRadius(Radius.control)
+        .id('vault-create-input')
         .onChange((value: string) => {
           this.rawName = value;
         })

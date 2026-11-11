@@ -4,6 +4,14 @@ import { Icon } from '../common/Icons';
 
 @Component
 export struct UtilityDialogShell {
+  // 2026-11-11 回归修复（Z4，三版终案）：title/subtitle 曾是未装饰普通成员——父组件（分享面板
+  // 切范围）状态变化时 shell 自身无观察状态、自身片段永不重渲染，标题冻结在首帧。改 @Prop 单向
+  // 同步实测崩：selectScope 的 animateTo 触发 shell rerender 时 @Prop 推送值为 undefined
+  //（shell `this.subtitle.length` 抛 TypeError，栈见 20261111_003710）。改 Binding<string>
+  // 仍冻结：`.value` 只在片段重跑时求值，shell 无观察状态片段不重跑（20261111_010143 实测）。
+  // 终案：标题区改 @BuilderParam headerTexts——@BuilderParam 片段在调用方视图执行、随调用方
+  // @State 重跑（与 content 同机制，DialogContent 的 description Text 切范围即刷新可证）；
+  // 静态调用方不传 headerTexts 则走 DefaultHeaderTexts 渲染下方普通成员，标题在弹窗存活期不变。
   title: string = '';
   subtitle: string = '';
   headerIcon: string = '';
@@ -17,12 +25,32 @@ export struct UtilityDialogShell {
   onClose: () => void = () => {};
   @BuilderParam content: () => void = this.EmptyContent;
   @BuilderParam footer: () => void = this.EmptyFooter;
+  // 2026-11-11 Z4：需要随调用方状态刷新标题的调用方（如 ShareNoteDialog 切分享范围）传
+  // 自己的 @Builder（状态读取写在 @Builder 体内，与 DialogContent 的 description 同模式）。
+  @BuilderParam headerTexts: () => void = this.DefaultHeaderTexts;
 
   @Builder
   private EmptyContent() {}
 
   @Builder
   private EmptyFooter() {}
+
+  @Builder
+  private DefaultHeaderTexts() {
+    Text(this.title)
+      .fontSize(FontSize.s3)
+      .fontWeight(600)
+      .fontColor($r('app.color.text_primary'))
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+    if (this.subtitle.length > 0) {
+      Text(this.subtitle)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+  }
 
   private dialogWidth(): number {
     if (this.singleScreen) {
@@ -70,19 +98,7 @@ export struct UtilityDialogShell {
           .backgroundColor($r('app.color.brand_bg'))
         }
         Column({ space: Space.s1 }) {
-          Text(this.title)
-            .fontSize(FontSize.s3)
-            .fontWeight(600)
-            .fontColor($r('app.color.text_primary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          if (this.subtitle.length > 0) {
-            Text(this.subtitle)
-              .fontSize(FontSize.caption)
-              .fontColor($r('app.color.text_secondary'))
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
+          this.headerTexts()
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -94,6 +110,7 @@ export struct UtilityDialogShell {
           .textAlign(TextAlign.Center)
           .borderRadius(Radius.full)
           .backgroundColor($r('app.color.bg_secondary'))
+          .id('utility-dialog-close')
           .accessibilityText(this.closeLabel)
           .focusable(true)
           .onClick(() => {

@@ -23,7 +23,7 @@
 
 ```powershell
 .\tools\uitest.ps1                  # 全量：构建双 HAP → 装机 → 跑全部 UI 套件 → 解析结果
-.\tools\uitest.ps1 -Suite UiLaunch  # 只跑指定套件（UiLaunch / UiNoteFlow / UiPanels，逗号分隔）
+.\tools\uitest.ps1 -Suite UiLaunch  # 只跑指定套件（映射表内套件名，逗号分隔）
 .\tools\uitest.ps1 -Fresh           # 先卸载应用清数据再装（清掉测试残留）
 ```
 
@@ -44,7 +44,9 @@
 > `quick-switcher-scope-current`/`quick-switcher-scope-all`、`quick-switcher-search-input`、
 > `quick-switcher-skip-hint`、`trash-section-header`、`trash-restore-button`、`trash-purge-button`、
 > `trash-row-<vaultId>:<relPath>`（回收站行，47.3）、
-> `settings-diagnostics-row`、`settings-changelog-row`、`settings-reset-pane-widths`。
+> `settings-diagnostics-row`、`settings-changelog-row`、`settings-reset-pane-widths`、
+> `utility-dialog-close`（弹窗外壳 × 关闭）、`vault-create-input`（新建库输入框）、
+> `vault-manager-delete-<vaultId>`（库管理删除/解除关联按钮）。
 
 | 套件 | 用例 | 覆盖要点 | EM 对应 |
 | --- | --- | --- | --- |
@@ -80,6 +82,17 @@
 | UiSettingsExt | `diagnostics_info_row_visible_and_expandable` | 诊断信息行可见且可展开（含构建提交行） | EM-F2 |
 | UiSettingsExt | `changelog_section_visible` | 更新日志区可见且有内容或占位 | EM-F5 |
 | UiSettingsExt | `reset_pane_widths_row_visible` | 恢复等分栏宽行可见 | EM-F6 |
+| UiShare | `share_panel_opens_from_more_menu` | 更多菜单「分享笔记」**点击穿透**：应用内分享面板真的打开（格式行/描述就位，标题与菜单项同名，判定用弹窗独有文本「长图」）；非 Git 库不显示「远端网页链接」行 | EM-J2 / EM-J4（反向） |
+| UiShare | `share_scope_segments_switch_formats` | 范围分段「笔记/文件夹/知识库」切换，各范围标题与格式列表正确 | EM-J2 25.12/25.13 |
+| UiShare | `share_note_text_preview_roundtrip` | 文本分享详情（可编辑说明 + 返回格式选择）可达并返回 | v0.9 9.14 |
+| UiShare | `share_text_system_handoff_cancel_keeps_dialog` | 分享文本调起系统分享：无交接失败文案；取消（pressBack）后应用内弹窗保留；系统面板标记（华为分享/复制/另存为/中转站）尽力探测不硬断言 | EM-J2（取消系统分享，可达部分） |
+| UiShare | `share_note_file_preview_roundtrip` | Markdown / ZIP 文件详情（标题按格式 / 分享文件 / 返回）可达并返回 | EM-J2 / v0.8 |
+| UiShare | `share_long_image_preview_roundtrip` | 长图详情（宽度/外观设置区 + 返回）可达并返回；不断言成图 | EM-J2 / v1.19 / v1.25 |
+| UiShare | `share_vault_zip_preview_roundtrip` | 知识库范围 ZIP 详情（1 个 ZIP / 分享文件）可达并返回 | EM-J2 / v0.8 |
+| UiShare | `share_vault_entry_from_manager` | 库管理「分享」→ 仅 ZIP 的「分享知识库」面板（无范围分段） | EM-J1 / v1.25 25.18 |
+| UiShare | `share_export_current_vault_from_settings` | 设置 → 数据 → 导出当前知识库复用同一分享面板，关闭后仍在设置数据页 | EM-J3 / v1.37 37.2 |
+| UiShare | `share_pdf_row_matches_capability` | 能力自适应：有「PDF 文档」行则点入断言详情弹窗；无则基础三行在（优雅降级）。x86 模拟器预期无 PDF 行（SystemCapability，AD 组） | v1.53 53.3（可达部分） |
+| UiShare | `share_empty_vault_entry_disabled` | 空库分享入口禁用（`uitest_share_empty_*` 新建空库探针 + isEnabled 断言 + 删除清理；doCreateVault 自动切库不影响探针） | EM-J1 空库 / EM-B6（可达部分） |
 
 ## 约定
 
@@ -131,6 +144,25 @@ reset 首绿另有 `20261109_231431`）。两例根因均为**测试代码**问�
   陷阱：IME 弹起时页面根高度收矮（实测 2232→1318），坐标须按 IME 状态下的实际布局算，
   否则 swipe 越界静默失败。
 - 两例转绿后全套件再无从未绿用例；证据目录含 `aa_test_raw.txt` 与 `hilog_after.txt`。
+
+## 实测结论补遗（2026-11-11，x86_64 模拟器：UiShare 首轮 8/11 → 3 败归因）
+
+首轮证据 `.local/uitest/20261111_000354`。3 败两条根因，一条主工程 bug、一条测试传染：
+
+- **产品 bug（已被用例抓住）**：分享面板切「知识库」范围后 `@BuilderParam` 内容刷新、
+  标题仍「分享笔记」——`UtilityDialogShell.title/subtitle` 是未装饰普通成员，父重渲染
+  不刷新（api_notes **Z4**）。修复改 `@Prop`；`test_utility_dialog_shell.mjs` 加防线。
+  手动取证方法：`uitest uiInput click` 逐步驱动 + `uitest dumpLayout` 控件树比对
+  （标题/副标题/内容行同帧 dump，内容变标题不变即实锤）。
+- **失败残留传染**：用例抛错不清理现场，残留弹窗遮罩吞掉下一用例首击
+  （`shareNoteCtl` `autoCancel: true`，遮罩一击顺带关面板但点击本身落空）——
+  `share_vault_entry_from_manager` 的 30s「管理库…」超时即此连锁。防线：用例开场
+  `closeLeftoverDialogs`（`utility-dialog-close` 链式关闭最多 3 层），直连侧栏 /
+  设置的用例必须带；经 `openTutorialNote` 的用例已内置。
+- **库状态污染**：空库探针用例建删库后当前库可能停在别的库（`doDeleteVault` 切库），
+  且 aa test 结束应用被杀、下轮冷启动按会话恢复到该库 → `openTutorialNote` 加固：
+  当前库找不到教程笔记时经库切换菜单切回「曜石笔记教程」再找（文件树异步加载用
+  轮询等待，不用单发 `existsByText`）。
 
 ### Aa 选区抑制修复的模拟器旁证（同日，简单模式）
 

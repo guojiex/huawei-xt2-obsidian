@@ -131,6 +131,7 @@ export struct VaultManagerView {
                       ? $r('app.color.text_primary') : $r('app.color.danger'))
                     .backgroundColor(v.rootKind === 'external'
                       ? $r('app.color.bg_secondary') : $r('app.color.danger_bg'))
+                    .id('vault-manager-delete-' + v.id)
                     .onClick(() => {
                       this.onDelete(v.id);
                     })

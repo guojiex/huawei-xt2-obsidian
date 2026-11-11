@@ -193,3 +193,62 @@ test('every utility action passes label as a makeBinding<string> callback', () =
       `${consumer.name}: every UtilityDialogAction label arg must be UIUtils.makeBinding<string> (by-value string freezes at first frame)`);
   }
 });
+
+// 2026-11-11 回归修复（Z4，三版终案）：shell 的 title/subtitle 曾是未装饰普通成员——
+// 父组件（分享面板切范围）状态变化时 shell 自身无观察状态、自身片段永不重跑，标题冻结首帧
+//（切「知识库」后内容已换、标题仍「分享笔记」）。改 @Prop 单向同步实测崩：selectScope 的
+// animateTo 触发 shell rerender 时 @Prop 推送值为 undefined（shell:83 this.subtitle.length
+// 抛 TypeError，证据 .local/uitest/20261111_003710）。改 Binding<string> 仍冻结：`.value`
+// 只在片段重跑时求值，shell 无观察状态片段不重跑（证据 .local/uitest/20261111_010143）。
+// 终案：标题区改 @BuilderParam headerTexts——@BuilderParam 片段在调用方视图执行、随调用方
+// @State 重跑（与 content 同机制，DialogContent 的 description Text 切范围即刷新可证）；
+// 需要动态标题的调用方（ShareNoteDialog）传自己的 @Builder，静态调用方走默认
+// DefaultHeaderTexts 渲染普通成员。本测试锁住：
+// ①shell 有 headerTexts @BuilderParam（默认 DefaultHeaderTexts）且 build 里调用；
+// ②title/subtitle 是普通 string 成员，不得回 @Prop（undefined 崩）或 Binding（冻结）；
+// ③所有调用点的 title/subtitle 不得 makeBinding 包裹（普通 string 直传）；
+// ④ShareNoteDialog 传 headerTexts 且状态读取写在 @Builder 体内。
+test('utility shell title stays reactive via the headerTexts builder param', () => {
+  assert.match(shellSource, /title: string = '';/);
+  assert.match(shellSource, /subtitle: string = '';/);
+  assert.match(shellSource, /@BuilderParam headerTexts: \(\) => void = this\.DefaultHeaderTexts;/);
+  assert.match(shellSource, /this\.headerTexts\(\)/);
+  assert.match(shellSource, /@Builder\s+private DefaultHeaderTexts\(\)/);
+  assert.doesNotMatch(shellSource, /@Prop (?:title|subtitle)/);
+  assert.doesNotMatch(shellSource, /title\?: Binding<string>;/);
+  assert.doesNotMatch(shellSource, /subtitle\?: Binding<string>;/);
+  // ShareNoteDialog：headerTexts 箭头包裹传 shell（this 词法绑定回弹窗实例，同 content/footer 锁）
+  assert.match(shareDialogSource, /headerTexts: \(\): void => \{ this\.HeaderTexts\(\); \}/);
+  assert.match(shareDialogSource, /@Builder\s+HeaderTexts\(\)/);
+  assert.match(shareDialogSource, /Text\(this\.currentOption\(\)\.title\)/);
+  assert.doesNotMatch(shareDialogSource, /UIUtils/);
+  const consumers = [
+    { name: 'NoteDialogs', source: noteDialogSource, shells: 5 },
+    { name: 'VaultDialogs', source: vaultDialogSource, shells: 3 },
+    { name: 'QuickSwitcher', source: quickSwitcherSource, shells: 1 },
+    { name: 'ImportVaultDialog', source: importDialogSource, shells: 1 },
+    { name: 'ShareNoteDialog', source: shareDialogSource, shells: 1 }
+  ];
+  for (const consumer of consumers) {
+    const shells = consumer.source.match(/UtilityDialogShell\(\{/g) ?? [];
+    assert.equal(shells.length, consumer.shells,
+      `${consumer.name}: UtilityDialogShell call count drifted, update the expectation`);
+    assert.doesNotMatch(consumer.source, /(?<![A-Za-z])(?:title|subtitle): UIUtils\.makeBinding/,
+      `${consumer.name}: title/subtitle must be plain strings (headerTexts builder handles reactivity)`);
+  }
+  const staticConsumers = [
+    'GitSyncDialog.ets',
+    'ShareFilePreviewDialog.ets',
+    'ShareImagePreviewDialog.ets',
+    'ShareImageSettingsDialog.ets',
+    'ShareTextPreviewDialog.ets'
+  ];
+  for (const file of staticConsumers) {
+    const source = readSourceFile(new URL(
+      `../../entry/src/main/ets/components/${file}`,
+      import.meta.url
+    ));
+    assert.doesNotMatch(source, /(?<![A-Za-z])(?:title|subtitle): UIUtils\.makeBinding/,
+      `${file}: title/subtitle must be plain strings (headerTexts builder handles reactivity)`);
+  }
+});

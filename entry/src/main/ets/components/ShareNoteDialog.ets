@@ -55,6 +55,30 @@ export struct ShareNoteDialog {
     return this.scopeOptions[0];
   }
 
+  private headerSubtitle(): string {
+    return this.currentOption().itemName + ' · ' + this.currentOption().summary;
+  }
+
+  // 2026-11-11 Z4：标题区走 shell 的 headerTexts @BuilderParam——状态读取（currentOption →
+  // selectedScope）写在 @Builder 体内，片段属于本组件视图、切范围时随 @State 重跑（与
+  // DialogContent 的 description Text 同模式），标题/副标题随分享范围切换刷新。
+  @Builder
+  HeaderTexts() {
+    Text(this.currentOption().title)
+      .fontSize(FontSize.s3)
+      .fontWeight(600)
+      .fontColor($r('app.color.text_primary'))
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+    if (this.headerSubtitle().length > 0) {
+      Text(this.headerSubtitle())
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+  }
+
   private selectScope(scope: ShareLinkScope): void {
     for (let i: number = 0; i < this.scopeOptions.length; i++) {
       if (this.scopeOptions[i].scope === scope && this.scopeOptions[i].available) {
@@ -260,8 +284,8 @@ export struct ShareNoteDialog {
 
   build() {
     UtilityDialogShell({
-      title: this.currentOption().title,
-      subtitle: this.currentOption().itemName + ' · ' + this.currentOption().summary,
+      // 2026-11-11 Z4：headerTexts 传本组件 @Builder，标题/副标题随 selectedScope 重跑刷新
+      headerTexts: (): void => { this.HeaderTexts(); },
       headerIcon: 'share',
       closeLabel: '关闭分享',
       singleScreen: this.singleScreen,

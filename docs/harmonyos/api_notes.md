@@ -979,9 +979,9 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 AppScope/app.json5 → app.versionCode / app.versionName
 ```
 
-`versionName` 跟随**对外版本**（真源 `changelog.json` 的 `version` 字段，当前 `1.7.0`），
+`versionName` 跟随**对外版本**（真源 `changelog.json` 的 `version` 字段，当前 `1.8.0`），
 **不与内部版本目录对应**（`docs/releases/vX.Y` 是迭代编号，2026-11-09 纠正，见 `docs/releases/README.md` R1）；
-`versionCode` 单调递增（当前 `1000004`）。
+`versionCode` 单调递增（当前 `1000005`）。
 **发布时必须同步核对**，否则关于页版本号与更新日志过滤（v1.32 32.9 按 `versionName` 过滤）会误判
 ——`versionName` 滞后会让「更新日志」被过滤成空、只剩「当前版本的更新说明将在发布后显示。」空态（已实测踩到）。
 
@@ -1556,6 +1556,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 | **AtomicFile 用法** | ✅ **回调式 `end` + 回调内 `finishWrite()`，全程禁 `close()`**（close+finish = double free → SIGSEGV，C1 实测；x86_64 模拟器 write 回调早于落盘，2026-11-07 改 end，C1 探针矩阵）；空内容直接 finishWrite；写路径必须超时+串行化 | 已落地（全工程 8 处调用点） |
 | **CodeMirror state 重建剥 listener** | ✅ updateListener 进 `extensionsFor()` 内部 + ArkTS 侧 ready 去重（双 ready 重建会永久丢 change 事件，**L-6 实测**） | 已落地（mdeditor） |
 | **@Builder 传参刷新** | ✅ 需随状态刷新的参数用 `$$: 命名 interface` 按引用传；按值传参是调用时快照（**L-7 实测**） | 已落地（PaneHead） |
+| **子组件普通成员冻结** | ✅ 子 @Component 未装饰普通成员只在首帧求值，父重渲染只重跑 @BuilderParam、不刷新它——随父刷新的 UI 改 `@BuilderParam` 交给调用方渲染（**Z4 实测三版**：普通成员冻结首帧；`@Prop` 方案 rerender 时值为 undefined 崩；`Binding<string>` 因宿主片段不重跑仍冻结；终案 headerTexts @BuilderParam） | 已落地（UtilityDialogShell headerTexts） |
 | **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ ArkWeb 渲染在模拟器全不可用；文本注入仅 IME×Web 废（原生 TextInput 可用）；触摸点击/滑动注入实测可用、拖拽未验（**L-8** 2026-11-07 修正）；编辑器/输入法验证一律真机 | 已定案 |
 | **列表项三档左滑** | ✅ `ListItem.swipeAction` + `SwipeActionItem.actionAreaDistance/onAction`（`edgeEffect: Spring`），签名 API 24 已核实（**L-9**）；文件夹不注册 onAction 即无第三档；运行时已 x86 模拟器手势注入验证（2026-11-07） | 已落地（FileTreeView，手感待真机） |
 | **回收站位置** | ✅ `vaults/<库>/.trash/` 镜像原相对路径：FileTree 天然过滤点前缀、库 rename/delete 自动带着走、恢复目标=镜像路径无需元数据；**v0.3 Git 同步须给 `.trash` 配 .gitignore** | 已落地（TrashService） |
@@ -2083,6 +2084,14 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 ### Z3 ⚠️ x86 系模拟器 IME×Web 不可输入与 API 版本无关——API26 x86_64 复现（2026-11-07，EM-C0 实测）
 - 实测（Windows 本机 API26 x86_64 模拟器，v1.32 构建）：Web 编辑面（mdpreview 可编辑预览）单击 / 双击均无光标、不唤起 IME；`devecocli ui text` 与 `uitest uiInput inputText` 注入均未上屏（字数恒 0 字）；同轮新建弹窗原生 TextInput 注入两次全部正常上屏。与 L-8 的 API24 x86 表现一致。
 - 对照：API26 arm64 模拟器拼音输入历史证据可用（B6）→ L-8 类限制按 CPU 架构（x86）成立，与 API 版本无关。x86 宿主上 EM-C0 探针预期「不可输入」，C 组输入类用例按 docs/testing 规则记环境阻塞。
+
+### Z4 ✅ 子组件未装饰普通成员在父重渲染时冻结首帧——随父刷新的 UI 用 @BuilderParam 交给调用方渲染（2026-11-11，EM-J2 实测；@Prop 崩、Binding 不刷新，三版终案）
+- 实测（Windows 本机 API26 x86_64 模拟器，`uitest dumpLayout` 控件树取证）：分享面板 `ShareNoteDialog` 点「知识库」范围 tab 后，`@BuilderParam content`（描述、格式行）**照常刷新**为知识库范围内容，但传给 `UtilityDialogShell` 的 `title`/`subtitle`（未装饰普通成员）**纹丝不动**——标题仍「分享笔记」、副标题仍「快速上手.md · 当前编辑内容」。shell 自身无任何被装饰状态、不重渲染，普通成员只在首帧求值一次。
+- 机理：与 L-7（@Builder 按值传参快照）、Z2（全局 @Builder 多参按值固化）同一族「按值固化」，但发生在**子 @Component 的普通成员**上——父组件重渲染只重跑 @BuilderParam 闭包（其状态依赖被追踪），不会重新求值子组件构造参数里的普通成员、也不会触发子组件重渲染。
+- **⚠️ @Prop 方案实测崩（第二轮）**：title/subtitle 先改 `@Prop` 单向同步——x86 模拟器跑 UiShare 用例 2 时 App died：`selectScope` 的 `animateTo` 触发 shell rerender，此刻 `@Prop` 值为 **undefined**（shell:83 `this.subtitle.length` 抛 `TypeError: Cannot read property length of undefined`；`Text(this.title)` 不抛错所以 title 是否同为 undefined 不可辨）。完整栈：selectScope → animateTo → shell rerender(147) → updateDirtyElements → shell:83。崩溃证明 @Prop 的响应式接线本身是通的（shell 确实因 selectedScope 变化而重渲染），坏的是**同步到子组件的值**在更新路径成了 undefined；该路径官方 @Prop 文档（arkts-prop）未记载。证据：`.local/uitest/20261111_003710/`。
+- **⚠️ Binding 方案实测不刷新（第三轮）**：改 Z2 同款 `Binding<string>` + `UIUtils.makeBinding`（16 处调用点全包）后手动复现：点「知识库」tab 内容切换但标题**仍冻结**「分享笔记」（证据 `.local/uitest/20261111_010143/`）。机理反推：`.value` 是惰性求值，**只有在所在片段重跑时才会重新执行 lambda**——Z2 场景（UtilityDialogAction）的宿主片段会随调用方状态重跑所以有效；而这里 shell 自身无观察状态、`build` 片段永不重跑，Binding 与普通成员同样冻结。**Z2 的 Binding 模式只适用于「宿主片段会重跑」的场景，救不了无状态组件自身的片段。**
+- **终修复（第三版，机理与 content 一致）**：标题区改 `@BuilderParam headerTexts`——**@BuilderParam 片段在调用方视图执行、其状态依赖注册在调用方组件上、随调用方 @State 重跑**（与 content 同机制；DialogContent 里 `Text(this.currentOption().description)` 切范围即刷新即证）。需要动态标题的调用方（ShareNoteDialog）传自己的 @Builder（状态读取写在 @Builder 体内），静态调用方不传、走 shell 默认 `DefaultHeaderTexts` 渲染普通成员。title/subtitle 回落为普通 string 成员（静态调用方用），16 处 makeBinding 包裹全部拆除。
+- 防回归：`test_utility_dialog_shell.mjs` 断言 shell 有 headerTexts @BuilderParam（默认 DefaultHeaderTexts）且 build 里调用、title/subtitle 是普通 string、调用点 title/subtitle 不得 makeBinding 包裹、ShareNoteDialog 传 headerTexts 且 `Text(this.currentOption().title)` 读在 @Builder 体内；**不得退回 @Prop**（undefined 崩溃）、**不得回 Binding**（片段不重跑，冻结）；`UiShare#share_scope_segments_switch_formats` 端到端锁住「切范围后标题必刷新」。
 
 ## AA 组：系统字号缩放与模拟器形态切换（2026-11-07 官方问答 + 本机 SDK 核对）
 
