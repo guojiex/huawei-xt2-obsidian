@@ -2215,3 +2215,23 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - `createDocument` 后未 `insertBlankPage` 直接 `saveDocument` 的行为（空文档）未记载，不依赖。
 - PDF 文件体积（逐页 JPEG 贴图）真机实测后回填。
 
+### AD5 ✅ createDocument 自带一张初始空白页；deletePage 只摘页树不做字节回收（2026-11-11 模拟器实测）
+
+来源：模拟器 127.0.0.1:5555（API26）真机行为取证，产物 PDF-1.7 结构逐对象解析；SDK 声明 `@hms.officeservice.pdfservice.d.ts`。非 API24 / XT2 证据，真机验收时顺带回归。
+
+- **`createDocument(width, height)` 会自带一张初始空白页**：实测 `createDocument` 后逐图
+  `insertBlankPage(i, w, h)` + `addImageObject`，1 张图产出 2 页 PDF——带图页（有
+  `/Resources`+`/Contents`）+ 初始空白页（`/Resources<<>>` 无内容流）悬在文档**末尾**。
+  即 `insertBlankPage(0)` 是在初始页**之前**插入。若逐页贴图前不做处理，**每本 PDF 都会
+  多一张空白尾页**。
+- **规避**：贴完图后按 `getPageCount() - 图片数` 的富余量删尾页：
+  `deletePage(pageJpegs.length, surplus)`（`deletePage(index: number, count: number): void`，
+  since 5.0.0(12)）。`surplus` 为 0 时跳过，兼容不建初始页的实现。落地：
+  `entry/src/main/ets/model/NotePdfDocumentService.ets` `exportFromPageImages`。
+- **`deletePage` 只把页从页树（`/Kids`）摘除，孤儿对象字节仍留在文件内**：实测删后产物
+  页树 `/Count 1`、`Kids[ 5 0 R ]` 仅一页（正确），但被删页的 `n 0 obj` 及其字典字节仍在
+  文件里，无人引用（PDF Kit `saveDocument` 不做垃圾回收）。读取器按页树渲染，无功能影响；
+  文件体积近似不变。
+- ⏭ 待真机回归：API24 / XT2 上 `createDocument` 是否同样自带初始页（用「分享 PDF → 产物
+  无空白尾页」验收即可，不必解析结构）。
+

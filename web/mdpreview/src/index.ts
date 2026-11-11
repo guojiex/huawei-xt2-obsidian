@@ -34,7 +34,7 @@ import {
   toolbarBlockForSelection
 } from './blockSelection.mjs'
 import { appendShareWatermark } from './shareWatermark.mjs'
-import { computePdfPageTops, pdfBottomPadding } from './pdfPagination.mjs'
+import { computePdfPageTops, mergeHeadingUnits, pdfBottomPadding } from './pdfPagination.mjs'
 import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './codeBlock.mjs'
 import {
   applyTableStructureOperation,
@@ -2838,7 +2838,7 @@ const api: MdPreviewApi = {
         throw new Error('分享预览没有可用的页面尺寸')
       }
       const contentRect = content.getBoundingClientRect()
-      const bounds: Array<{ top: number; bottom: number }> = []
+      const bounds: Array<{ top: number; bottom: number; heading: boolean }> = []
       const children = body.children
       for (let i = 0; i < children.length; i++) {
         const child = children[i] as HTMLElement
@@ -2847,9 +2847,11 @@ const api: MdPreviewApi = {
           continue
         }
         const top = childRect.top - contentRect.top + content.scrollTop
-        bounds.push({ top: top, bottom: top + childRect.height })
+        bounds.push({ top: top, bottom: top + childRect.height, heading: /^H[1-6]$/.test(child.tagName) })
       }
-      const tops = computePdfPageTops(bounds, pageHeightVp)
+      // 53.7：标题与下一块合并为一个分页单元，标题不孤悬页尾（与 v2 原型同一规则）。
+      const units = mergeHeadingUnits(bounds)
+      const tops = computePdfPageTops(units, pageHeightVp)
       const currentPadding = Number.parseFloat(getComputedStyle(content).paddingBottom) || 0
       const padding = pdfBottomPadding(tops, pageHeightVp, metrics.scrollHeight, currentPadding)
       content.style.paddingBottom = `${padding}px`

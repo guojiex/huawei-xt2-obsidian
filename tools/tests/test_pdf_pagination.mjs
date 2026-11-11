@@ -75,20 +75,20 @@ test('无效输入：页高非正数、bounds 非数组、无效块跳过', () =
   ], 990), [0]);
 });
 
-test('末页补白：内容不足一页时补齐整页高度', () => {
-  // tops=[0]，页高 990，内容只有 400 → 补 590
-  assert.equal(pdfBottomPadding([0], 990, 400, 0), 590);
-  // 内容恰好满页 → 不补
-  assert.equal(pdfBottomPadding([0], 990, 990, 0), 0);
-  // 内容超出末页需求 → 不补
-  assert.equal(pdfBottomPadding([0], 990, 1200, 0), 0);
+test('末页补白：内容不足一页时补齐整页高度（含 1px 舍入余量）', () => {
+  // tops=[0]，页高 990，内容只有 400 → 补 590 + 1 舍入余量
+  assert.equal(pdfBottomPadding([0], 990, 400, 0), 591);
+  // 内容恰好满页 → 只补舍入余量
+  assert.equal(pdfBottomPadding([0], 990, 990, 0), 1);
+  // 内容超出末页需求 → 只补舍入余量
+  assert.equal(pdfBottomPadding([0], 990, 1200, 0), 1);
 });
 
-test('末页补白：多页场景按末页顶计算（含现有 padding 叠加）', () => {
-  // 末页顶 800，页高 990 → 需要 1790；scrollHeight 1500（已含现有 padding 20）→ 补 270 + 20
-  assert.equal(pdfBottomPadding([0, 800], 990, 1500, 20), 310);
-  // scrollHeight 已覆盖 → 只保留现有 padding
-  assert.equal(pdfBottomPadding([0, 800], 990, 2000, 20), 20);
+test('末页补白：多页场景按末页顶计算（含现有 padding 叠加与舍入余量）', () => {
+  // 末页顶 800，页高 990 → 需要 1790；scrollHeight 1500（已含现有 padding 20）→ 补 270 + 20 + 1
+  assert.equal(pdfBottomPadding([0, 800], 990, 1500, 20), 311);
+  // scrollHeight 已覆盖 → 现有 padding + 舍入余量
+  assert.equal(pdfBottomPadding([0, 800], 990, 2000, 20), 21);
 });
 
 test('末页补白：无效输入抛错', () => {
@@ -97,15 +97,99 @@ test('末页补白：无效输入抛错', () => {
   assert.throws(() => pdfBottomPadding([0], 990, -1, 0), /内容高度无效/);
 });
 
+// ---------- 53.7 标题与下一块合并（对齐 v2 原型 previewPdfShare） ----------
+
+test('mergeHeadingUnits：标题吞并紧随其后的块为一个分页单元', () => {
+  const units = paginationModule.mergeHeadingUnits([
+    { top: 0, bottom: 100, heading: false },
+    { top: 100, bottom: 160, heading: true },
+    { top: 160, bottom: 500, heading: false }
+  ]);
+  assert.deepEqual(units, [
+    { top: 0, bottom: 100, heading: false },
+    { top: 100, bottom: 500, heading: true }
+  ]);
+});
+
+test('mergeHeadingUnits：连续标题链式合并（H1+H2+正文 → 一个单元）', () => {
+  const units = paginationModule.mergeHeadingUnits([
+    { top: 0, bottom: 40, heading: true },
+    { top: 40, bottom: 80, heading: true },
+    { top: 80, bottom: 400, heading: false }
+  ]);
+  assert.equal(units.length, 1);
+  assert.deepEqual(units[0], { top: 0, bottom: 400, heading: true });
+});
+
+test('mergeHeadingUnits：末尾标题无后继保持原样；标题与水印（末块）合并', () => {
+  // 标题是最后一个块：保持独立
+  assert.deepEqual(paginationModule.mergeHeadingUnits([
+    { top: 0, bottom: 100, heading: false },
+    { top: 100, bottom: 140, heading: true }
+  ]), [
+    { top: 0, bottom: 100, heading: false },
+    { top: 100, bottom: 140, heading: true }
+  ]);
+  // 标题后跟水印块：标题与水印合并（原型把 .share-watermark 作为末块参与）
+  assert.deepEqual(paginationModule.mergeHeadingUnits([
+    { top: 0, bottom: 800, heading: false },
+    { top: 800, bottom: 840, heading: true },
+    { top: 840, bottom: 870, heading: false }
+  ]), [
+    { top: 0, bottom: 800, heading: false },
+    { top: 800, bottom: 870, heading: true }
+  ]);
+});
+
+test('mergeHeadingUnits：纯正文恒等映射、不修改输入数组、无效块过滤', () => {
+  const input = [
+    { top: 0, bottom: 100, heading: false },
+    { top: 100, bottom: 300, heading: false }
+  ];
+  const snapshot = JSON.stringify(input);
+  assert.deepEqual(paginationModule.mergeHeadingUnits(input), input);
+  assert.equal(JSON.stringify(input), snapshot, '不得修改输入数组');
+  // 无效块（NaN / bottom <= top）跳过后再合并
+  assert.deepEqual(paginationModule.mergeHeadingUnits([
+    { top: NaN, bottom: 100, heading: true },
+    { top: 0, bottom: 0, heading: true },
+    { top: 50, bottom: 80, heading: true },
+    { top: 80, bottom: 200, heading: false }
+  ]), [
+    { top: 50, bottom: 200, heading: true }
+  ]);
+  assert.throws(() => paginationModule.mergeHeadingUnits(null), /分页输入无效/);
+});
+
+test('mergeHeadingUnits + computePdfPageTops：页尾孤标题随正文走（53.7 分页行为）', () => {
+  // 页高 500；正文块 0-460 后紧跟标题 460-500 与下一块 500-700：
+  // 合并后标题不孤悬页尾，与下一块一起从新页 460 开始。
+  const tops = computePdfPageTops(paginationModule.mergeHeadingUnits([
+    { top: 0, bottom: 460, heading: false },
+    { top: 460, bottom: 500, heading: true },
+    { top: 500, bottom: 700, heading: false }
+  ]), 500);
+  assert.deepEqual(tops, [0, 460]);
+});
+
 // ---------- 源级断言（v1.53 53.1–53.5 接线与红线） ----------
 
 test('源级：mdpreview index.ts 注册 preparePdfPages 并回传 pageCount / pageTops', () => {
   const indexTs = readRepoFile('web/mdpreview/src/index.ts');
   assert.match(indexTs, /preparePdfPages\(id: number, pageHeightVp: number\): void/);
   assert.match(indexTs, /async preparePdfPages\(id: number, pageHeightVp: number\)/);
-  assert.match(indexTs, /computePdfPageTops\(bounds, pageHeightVp\)/);
+  // 53.7：块收集带 heading 标记，先 mergeHeadingUnits 再 computePdfPageTops。
+  assert.match(indexTs, /bounds\.push\(\{ top: top, bottom: top \+ childRect\.height, heading: \/\^H\[1-6\]\$\/\.test\(child\.tagName\) \}\)/);
+  assert.match(indexTs, /mergeHeadingUnits\(bounds\)/);
+  assert.match(indexTs, /computePdfPageTops\(units, pageHeightVp\)/);
   assert.match(indexTs, /pageCount: tops\.length/);
   assert.match(indexTs, /pageTops: JSON\.stringify\(tops\)/);
+});
+
+test('源级：rawfile 产物已同步标题合并规则（53.7）', () => {
+  const bundle = readRepoFile('entry/src/main/resources/rawfile/mdpreview/index.html');
+  // esbuild 混淆函数名，断言行为标记：块收集带 heading 标记（h1-h6 判定）。
+  assert.ok(bundle.includes('H[1-6]'), 'rawfile mdpreview 产物缺少标题判定正则，请重跑 web/mdpreview 的 node build.mjs');
 });
 
 test('源级：rawfile 构建产物已同步 preparePdfPages（防 v1.50 产物 stale 复发）', () => {
@@ -132,6 +216,21 @@ test('源级：NotePdfDocumentService 走 PDF Kit 图片→PDF 路线且 syscap 
   assert.equal(service.includes('ohos.permission.PRINT'), false);
 });
 
+test('源级：exportFromPageImages 删除 createDocument 自带的富余空白页（2026-11-11 实测）', () => {
+  const service = readRepoFile('entry/src/main/ets/model/NotePdfDocumentService.ets');
+  // 模拟器实测（PDF-1.7）：createDocument 自带一张初始空白页，逐图 insertBlankPage 后
+  // 悬在文档末尾（末页 /Resources<<>> 全空白）→ 每本 PDF 多一张空白尾页。
+  // 贴完图后按 getPageCount 富余量 deletePage；若实现不建初始页则 surplus 为 0 不删。
+  assert.match(service, /getPageCount\(\)/);
+  assert.match(service, /const surplus: number = document\.getPageCount\(\) - pageJpegs\.length;/);
+  assert.match(service, /if \(surplus > 0\) \{\s*\n\s*document\.deletePage\(pageJpegs\.length, surplus\);/);
+  // 删除动作必须发生在 saveDocument 之前。
+  const cleanup = service.indexOf('const surplus: number');
+  const del = service.indexOf('document.deletePage(');
+  const save = service.indexOf('document.saveDocument(');
+  assert.ok(cleanup > 0 && del > cleanup && save > del, 'surplus 清理须在 saveDocument 之前');
+});
+
 test('源级：Index 含 PDF 路由、捕获层 PDF 模式与分享面板 PDF 行', () => {
   const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
   assert.match(index, /format === 'pdf' && scope === 'note'/);
@@ -142,6 +241,19 @@ test('源级：Index 含 PDF 路由、捕获层 PDF 模式与分享面板 PDF �
   assert.match(index, /NotePdfDocumentService\.isSupported\(\)/);
   assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF/);
   assert.match(index, /writeJpegTo\(/);
+});
+
+test('源级：PDF 捕获页尺寸随窗口自适应且挂捕获层前重算（2026-11-11 修复）', () => {
+  const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
+  // 固定 700×990.59 在窗口高 < 990.59vp 时分页高度永远补不齐；宽度上限 700 不变，
+  // 比例恒 A4，高度取整消除 scrollHeight 取整歧义。
+  assert.match(index, /private updatePdfPageSize\(\): void/);
+  assert.match(index, /Math\.min\(700, widthByWindow, widthByHeight\)/);
+  assert.match(index, /pdfPageHeightVp = Math\.round\(/);
+  assert.doesNotMatch(index, /readonly pdfPageWidthVp/);
+  assert.doesNotMatch(index, /readonly pdfPageHeightVp/);
+  // 必须在置 shareCapturePdfMode / shareCaptureActive 挂捕获层之前重算尺寸。
+  assert.match(index, /this\.updatePdfPageSize\(\);\s*\n\s*this\.shareCapturePdfMode = true;/);
 });
 
 test('红线：module.json5 零新增权限（硬约束 13；打印框架路线已否决）', () => {
@@ -156,4 +268,53 @@ test('红线：module.json5 零新增权限（硬约束 13；打印框架路线�
   for (const name of declared) {
     assert.ok(allowed.has(name), `requestPermissions 出现例外之外的权限：${name}`);
   }
+});
+
+// ---------- 53.7 分页预览弹窗（对齐 v2 原型 previewPdfShare） ----------
+
+test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（53.7）', () => {
+  const dialog = readRepoFile('entry/src/main/ets/components/SharePdfPreviewDialog.ets');
+  assert.match(dialog, /export struct SharePdfPreviewDialog/);
+  // 原型 pdf-specs 四枚胶囊
+  for (const chip of ['A4 竖版', '浅色纸面', '按段落分页', '末页水印']) {
+    assert.ok(dialog.includes(`this.SpecChip('${chip}')`), `缺少规格胶囊「${chip}」`);
+  }
+  // 原型 shareMeta：1 个 PDF + 文件名 + N 页
+  assert.match(dialog, /'1 个 PDF'/);
+  assert.match(dialog, /this\.pageUris\.length\.toString\(\) \+ ' 页'/);
+  // 缩略图：逐页 Image + 「N / M」页码 + 第 N 页共 M 页读屏
+  assert.match(dialog, /aspectRatio\(595 \/ 842\)/);
+  assert.match(dialog, /Size\.pdfThumbW/);
+  assert.match(dialog, /' \/ ' \+ this\.pageUris\.length\.toString\(\)/);
+  assert.match(dialog, /'第 ' \+ \(index \+ 1\)\.toString\(\) \+ ' 页，共 '/);
+  assert.match(dialog, /ForEach\(this\.pageUris/);
+  // 主按钮「分享 PDF」与返回
+  assert.match(dialog, /'分享 PDF'/);
+  assert.match(dialog, /'正在生成…'/);
+  // 颜色 / 圆角 / 间距 / 字号只走 token 与主题资源（硬约束 17）
+  assert.equal(/#[0-9a-fA-F]{3,8}/.test(dialog), false, '组件内不得散写十六进制颜色');
+  assert.equal(/Color\.(?!Transparent)[A-Z]/.test(dialog), false, '组件内不得散写 Color 枚举');
+});
+
+test('源级：Index PDF 链路先进分页预览弹窗，确认后才合成（53.7）', () => {
+  const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
+  assert.match(index, /import \{ SharePdfPreviewDialog \} from '\.\.\/components\/SharePdfPreviewDialog';/);
+  assert.match(index, /private sharePdfPreviewCtl: CustomDialogController \| null = null;/);
+  assert.match(index, /private sharePdfPreviewSessionId: string = '';/);
+  assert.match(index, /private sharePdfPreviewPages: string\[\] = \[\];/);
+  // 捕获完成后进预览弹窗，捕获层卸下；导出不再内联在 prepareNotePdfShare
+  assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, pageJpegs, vaultId\);/);
+  const prepare = index.slice(index.indexOf('private async prepareNotePdfShare'),
+    index.indexOf('private pdfFileNameOf'));
+  assert.ok(prepare.length > 0, 'prepareNotePdfShare 区间未定位');
+  assert.doesNotMatch(prepare, /exportFromPageImages/, 'prepareNotePdfShare 不得内联合成 PDF（53.7 改预览后确认）');
+  assert.doesNotMatch(prepare, /openShareFilePreview\(/, 'prepareNotePdfShare 不得直接进文件预览');
+  // onConfirm 内合成 PDF 并进入文件预览（精确 utd PDF）
+  assert.match(index, /NotePdfDocumentService\.exportFromPageImages\(pages, pdfPath\);/);
+  // 返回：清理会话回到分享面板
+  assert.match(index, /private cleanupSharePdfPreview\(\): void/);
+  assert.match(index, /NoteShareService\.removeTree\(VaultRegistry\.get\(\), sessionId\);\s*\n\s*\} catch \(error\) \{\s*\n\s*hilog\.warn\(DOMAIN, TAG, 'PDF 分页预览临时文件清理失败'\);/);
+  assert.match(index, /this\.cleanupSharePdfPreview\(\);\s*\n\s*this\.openShareDialog\('note', notePath\);/);
+  // 缩略图 URI 走 fileUri.getUriFromPath
+  assert.match(index, /pageUris\.push\(fileUri\.getUriFromPath\(pageJpegs\[i\]\)\);/);
 });

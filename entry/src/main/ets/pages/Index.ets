@@ -119,6 +119,7 @@ import { SplitHandle } from '../components/SplitHandle';
 import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from '../components/ShareNoteDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
+import { SharePdfPreviewDialog } from '../components/SharePdfPreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
 import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
@@ -636,6 +637,10 @@ struct Index {
   private shareImagePreviewCtl: CustomDialogController | null = null;
   private shareFilePreviewCtl: CustomDialogController | null = null;
   private shareTextPreviewCtl: CustomDialogController | null = null;
+  /** 53.7：PDF 分页预览弹窗与页面捕获会话 */
+  private sharePdfPreviewCtl: CustomDialogController | null = null;
+  private sharePdfPreviewSessionId: string = '';
+  private sharePdfPreviewPages: string[] = [];
   private shareCaptureBridge: PreviewBridge = new PreviewBridge();
   private readonly shareCaptureComponentId: string = 'note-image-share-capture';
   private shareCaptureReadyResolver: (() => void) | null = null;
@@ -649,10 +654,18 @@ struct Index {
   @State shareCaptureWidthVp: number = 0;
   private shareCapturePaneWidthVp: number = 0;
   @State shareCaptureWidthId: string = 'phone';
-  /** v1.53 PDF 模式：捕获层按 A4 比例固定尺寸 + 浅色主题渲染（53.3）。 */
+  /** v1.53 PDF 模式：捕获层按 A4 比例 + 浅色主题渲染（53.3）。 */
   @State shareCapturePdfMode: boolean = false;
-  private readonly pdfPageWidthVp: number = 700;
-  private readonly pdfPageHeightVp: number = 700 * NotePdfDocumentService.A4_HEIGHT_PT /
+  /**
+   * PDF 捕获页尺寸（2026-11-11 修复）：不再固定 700×990.59vp——窗口高不足 990.59vp
+   * （模拟器 776vp、XT2 折叠 / 展开横屏均如此）时捕获层超出布局边界，#content 实际
+   * 视口被压矮，分页要求 scrollHeight ≥ 末页顶 + 990.59 永远补不齐（PDF 分页高度
+   * 不足）。现按当前窗口自适应：比例恒 A4 竖版，宽度 ≤ 700vp 且不超窗口宽高，
+   * 高度取整（scrollHeight / clientHeight 均为取整值，整数页高消除 ±0.5px 歧义）。
+   * prepareNotePdfShare 挂捕获层前调 updatePdfPageSize() 重算。
+   */
+  private pdfPageWidthVp: number = 700;
+  private pdfPageHeightVp: number = 700 * NotePdfDocumentService.A4_HEIGHT_PT /
     NotePdfDocumentService.A4_WIDTH_PT;
   @State shareImagePreviewImage: ShareImagePreviewImage = {
     uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
@@ -9066,6 +9079,16 @@ struct Index {
     }
   }
 
+  /** PDF 捕获页尺寸自适应（2026-11-11 修复，见字段注释）：挂捕获层前按当前窗口重算。 */
+  private updatePdfPageSize(): void {
+    const widthByHeight: number = this.windowHeightVp > 0 ? this.windowHeightVp *
+      NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT : this.pdfPageWidthVp;
+    const widthByWindow: number = this.windowWidthVp > 0 ? this.windowWidthVp : widthByHeight;
+    this.pdfPageWidthVp = Math.min(700, widthByWindow, widthByHeight);
+    this.pdfPageHeightVp = Math.round(this.pdfPageWidthVp *
+      NotePdfDocumentService.A4_HEIGHT_PT / NotePdfDocumentService.A4_WIDTH_PT);
+  }
+
   /**
    * v1.53 导出 PDF（需求 53.3）：复用隐藏捕获层按 A4 比例逐页渲染截图，
    * 逐页 JPEG 经 PDF Kit 合成 note.pdf 后走文件预览分享（utd 精确类型 com.adobe.pdf）。
@@ -9088,6 +9111,7 @@ struct Index {
       }
       bridge.setNoteDir(NoteShareService.parentOf(notePath));
       bridge.setContent(markdown);
+      this.updatePdfPageSize();
       this.shareCapturePdfMode = true;
       this.shareCaptureActive = true;
       await this.waitForShareCaptureReady();
@@ -9141,13 +9165,11 @@ struct Index {
       if (this.shareCaptureCancelled) {
         throw new Error('分享图片生成已取消');
       }
-      const pdfPath: string = registry.sharePath(sessionId + '/note.pdf');
-      NotePdfDocumentService.exportFromPageImages(pageJpegs, pdfPath);
+      // 53.7：先逐页捕获成 JPEG 进分页预览弹窗；「分享 PDF」确认后才在 onConfirm
+      // 里合成 PDF。捕获层此时卸下（页面已落盘），预览读会话目录里的 JPEG。
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
-      this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
-        itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
-        vaultId, -1, '', uniformTypeDescriptor.UniformDataType.PDF);
+      this.openSharePdfPreview(itemName, notePath, sessionId, pageJpegs, vaultId);
     } catch (error) {
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
@@ -9176,6 +9198,73 @@ struct Index {
     const baseName: string = itemName.endsWith('.md')
       ? itemName.substring(0, itemName.length - 3) : itemName;
     return baseName + '.pdf';
+  }
+
+  /**
+   * 53.7：PDF 分页预览弹窗。逐页 JPEG 已在会话目录，本弹窗展示缩略图；
+   * 「分享 PDF」确认后合成 PDF 并进入文件预览；返回则清理会话回到分享面板。
+   */
+  private openSharePdfPreview(itemName: string, notePath: string, sessionId: string,
+    pageJpegs: string[], vaultId: string): void {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    this.sharePdfPreviewCtl?.close();
+    this.sharePdfPreviewSessionId = sessionId;
+    this.sharePdfPreviewPages = pageJpegs;
+    const pageUris: string[] = [];
+    for (let i: number = 0; i < pageJpegs.length; i++) {
+      pageUris.push(fileUri.getUriFromPath(pageJpegs[i]));
+    }
+    this.sharePdfPreviewCtl = new CustomDialogController({
+      builder: SharePdfPreviewDialog({
+        itemName: itemName,
+        fileName: this.pdfFileNameOf(itemName),
+        pageUris: pageUris,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        onConfirm: (): Promise<void> => {
+          const sid: string = this.sharePdfPreviewSessionId;
+          if (sid.length === 0) {
+            throw new Error('PDF 分页会话已失效，请返回重试');
+          }
+          const pages: string[] = this.sharePdfPreviewPages;
+          if (pages.length === 0) {
+            throw new Error('PDF 分页页面缺失，请返回重试');
+          }
+          const pdfPath: string = VaultRegistry.get().sharePath(sid + '/note.pdf');
+          NotePdfDocumentService.exportFromPageImages(pages, pdfPath);
+          this.sharePdfPreviewCtl?.close();
+          this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
+            itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
+            vaultId, -1, '', uniformTypeDescriptor.UniformDataType.PDF);
+          return Promise.resolve();
+        },
+        onCancel: (): void => {
+          this.cleanupSharePdfPreview();
+          this.openShareDialog('note', notePath);
+        }
+      }),
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: false,
+      customStyle: true
+    });
+    this.sharePdfPreviewCtl.open();
+  }
+
+  private cleanupSharePdfPreview(): void {
+    const sessionId: string = this.sharePdfPreviewSessionId;
+    this.sharePdfPreviewSessionId = '';
+    this.sharePdfPreviewPages = [];
+    if (sessionId.length === 0) {
+      return;
+    }
+    try {
+      NoteShareService.removeTree(VaultRegistry.get(), sessionId);
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, 'PDF 分页预览临时文件清理失败');
+    }
   }
 
   private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,

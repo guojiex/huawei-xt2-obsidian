@@ -44,6 +44,13 @@ export class NotePdfDocumentService {
           NotePdfDocumentService.A4_WIDTH_PT, NotePdfDocumentService.A4_HEIGHT_PT);
         page.release();
       }
+      // createDocument 实测（模拟器 PDF-1.7）自带一张初始空白页：逐图 insertBlankPage 后
+      // 该页悬在文档末尾，导出的 PDF 会多一张空白尾页。删除富余页；
+      // 若实现不建初始页（getPageCount 恰等于图片数）则无需删除。
+      const surplus: number = document.getPageCount() - pageJpegs.length;
+      if (surplus > 0) {
+        document.deletePage(pageJpegs.length, surplus);
+      }
       if (!document.saveDocument(pdfPath)) {
         throw new Error('PDF 保存失败，请重试');
       }
