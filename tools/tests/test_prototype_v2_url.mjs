@@ -27,7 +27,7 @@ function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience
  const rootStyle=new Set(['--ink','--paper','--line','--muted','--nav','--blue']);rootStyle.getPropertyValue=name=>name==='--ink'?'#202530':'';
  for(const id of ['navSplitter','contentSplitter'])get(id).querySelector=selector=>selector==='.split-tip'?get(id+'Tip'):null;
  for(const id of ['leftPane','referencePane'])get(id).querySelector=selector=>selector==='.pane-label'?get(id+'Label'):null;
- for(const id of ['switchPane','mobileBacklinks','mobileFollow'])get(id).querySelector=selector=>selector==='.menu-label'?get(id+'Label'):null;
+ for(const id of ['switchPane','mobileBacklinks','mobileFollow','mobileFavorite'])get(id).querySelector=selector=>selector==='.menu-label'?get(id+'Label'):null;
  for(const id of ['leftEmpty','rightEmpty']){
   const box=get(id),prefix=id==='rightEmpty'?'rightEmpty':'empty';
   box.querySelector=selector=>selector==='.pane-empty-reopen'?null:selector==='.primary'?get(prefix+'NewNote'):null;
@@ -335,7 +335,7 @@ test('phone more menu groups actions and updates labels without replacing icons'
  const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];
  assert(menu.indexOf('aria-label="当前笔记"')<menu.indexOf('aria-label="快捷编辑模式"'));
  assert(menu.indexOf('aria-label="快捷编辑模式"')<menu.indexOf('aria-label="应用"'));
- assert.equal((menu.match(/class="menu-icon"/g)||[]).length,8);
+  assert.equal((menu.match(/class="menu-icon"/g)||[]).length,9);
  assert.match(menu,/class="git-sync-count"/);
  const f=fixture();f.run("setViewport('phone');backlinksPane=activePane;updatePaneChrome()");
  assert.equal(f.get('mobileBacklinksLabel').textContent,'隐藏反链');
@@ -425,7 +425,7 @@ test('trash is a collapsed bottom folder; delete updates entries without auto-ex
 });
 
 test('trash entry uses a trash icon and only appears for a nonempty current-vault trash',()=>{
- const f=fixture();assert(f.get('trashFolder').classList.contains('hidden'));f.run("deleteFile('reading_stream')");assert(!f.get('trashFolder').classList.contains('hidden'));assert.equal(f.get('trashFolder').open,false);assert(f.get('openTrash').attrs['aria-label'].includes('1'));f.run("switchVault('projects')");assert(f.get('trashFolder').classList.contains('hidden'));f.run("switchVault('reading')");assert(!f.get('trashFolder').classList.contains('hidden'));f.run("trashFolderState[activeVault]=true;restoreFile('reading_stream')");assert(f.get('trashFolder').classList.contains('hidden'));assert.equal(f.get('trashFolder').open,false);const entry=html.match(/<details id="trashFolder"[\s\S]*?<\/details>/)[0];assert(entry.includes('M4 7h16M9 7V4'));
+ const f=fixture();assert(f.get('trashFolder').classList.contains('hidden'));f.run("deleteFile('reading_stream')");assert(!f.get('trashFolder').classList.contains('hidden'));assert.equal(f.get('trashFolder').open,false);assert(f.get('openTrash').attrs['aria-label'].includes('1'));f.run("switchVault('projects')");assert(f.get('trashFolder').classList.contains('hidden'));f.run("switchVault('reading')");assert(!f.get('trashFolder').classList.contains('hidden'));f.run("trashFolderState[activeVault]=true;restoreFile('reading_stream')");assert(f.get('trashFolder').classList.contains('hidden'));assert.equal(f.get('trashFolder').open,false);const entry=html.match(/<details\b[^>]*id="trashFolder"[\s\S]*?<\/details>/)[0];assert(entry.includes('M4 7h16M9 7V4'));assert(entry.includes('data-empty-trash'));
 });
 
 test('preview scaling is pane-local, hides reset at 100 and leaves source/editor unchanged',()=>{
@@ -641,7 +641,7 @@ test('Escape closes swipe actions and returns focus to the file or folder row',(
  for(const type of ['file','folder']){
   const f=fixture(),action={},actions={inert:false,contains:element=>element===action},front={style:{},classList:{remove(){}}},trigger={focus(){this.focused=true;}};
   const wrap={classList:{toggle(){},remove(){}},querySelector(selector){if(selector==='.file-actions,.folder-actions')return actions;if(selector==='.file-front,.folder-front')return front;if(selector==='[data-note],[data-folder]')return trigger;return null;}};
-  f.get('notes').querySelectorAll=()=>[wrap];f.run('document').activeElement=action;f.event('document','keydown',{key:'Escape'});
+  f.run('document').querySelectorAll=selector=>selector==='[data-file-wrap],[data-folder-wrap]'?[wrap]:[];f.run('document').activeElement=action;f.event('document','keydown',{key:'Escape'});
   assert.equal(actions.inert,true);assert.equal(trigger.focused,true,`${type} trigger regains focus`);
  }
 });
