@@ -8788,9 +8788,12 @@ struct Index {
           }, vault.id, vaultNoteCount, focusReturnId);
         return;
       }
+      const err = error as BusinessError;
+      const linkFailureReason: string = err.message ?? '';
       void this.getUIContext().getPromptAction().showDialog({
         title: '分享失败',
-        message: '分享链接准备失败；原因未确定。请重试，或返回后选择其他分享方式。',
+        message: linkFailureReason.length > 0 ? linkFailureReason
+          : '分享链接准备失败；请重试，或返回后选择其他分享方式。',
         buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
       });
     }
@@ -10132,7 +10135,10 @@ struct Index {
           });
           scopeOptions[i].notice = linkResult.accessNotice;
         } catch (error) {
-          scopeOptions[i].notice = '远端链接准备失败；原因未确定，仍可分享本地文件。';
+          const err = error as BusinessError;
+          const linkNoticeReason: string = err.message ?? '';
+          scopeOptions[i].notice = linkNoticeReason.length > 0
+            ? '远端链接准备失败：' + linkNoticeReason : '远端链接准备失败；仍可分享本地文件。';
         }
       }
     }

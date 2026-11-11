@@ -85,8 +85,7 @@ test('Share Kit rejection remains visible in the long-image detail and can be re
 
   await dialog.share();
 
-  assert.equal(dialog.errorMessage,
-    '系统分享交接未完成；接收端状态未知。原因未确定，请重试或选择其他格式。');
+  assert.equal(dialog.errorMessage, 'target unavailable');
   assert.equal(dialog.sharing, false);
 });
 
@@ -96,8 +95,7 @@ test('failed long-image generation keeps its detail error and offers an alternat
 
   await dialog.generatePreview();
 
-  assert.equal(dialog.errorMessage,
-    '长图准备失败；原笔记未修改。原因未确定，请重试或改用 Markdown / ZIP。');
+  assert.equal(dialog.errorMessage, '本地图片缺失');
   assert.equal(dialog.preparing, false);
   assert.match(indexSource, /onGenerate: async \(widthId: string, theme: string\): Promise<ShareImagePreviewImage> => \{/);
   assert.match(indexSource, /const preview: ShareImagePreviewImage = await this\.prepareNoteImageShare\(/);

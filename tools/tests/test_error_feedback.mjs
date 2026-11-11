@@ -51,27 +51,37 @@ vm.runInContext(feedbackCode, vm.createContext({
   hilog: { warn() {} }
 }));
 
-test('unknown share exceptions are replaced with phase-specific actionable feedback', () => {
+test('share exceptions surface their real message instead of replacing it', () => {
+  // 2026-11-11 用户拍板：数据是用户自己的，分享失败直出真实错误，
+  // 白名单放行 / 前缀改写 / 「原因未确定」替换兜底全部移除。
   const secret = 'path=/private/vault/note.md token=secret-token response=private';
   const phases = ['image_prepare', 'text_prepare', 'file_prepare', 'handoff'];
   for (const phase of phases) {
-    const message = shareFailureMessage(new Error(secret), phase);
-    assert.ok(!message.includes(secret));
-    assert.match(message, /原因未确定/);
+    assert.equal(shareFailureMessage(new Error(secret), phase), secret);
   }
   assert.match(shareFailureMessage(
     new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。'),
     'text_prepare'
   ), /200 KB/);
+  // 白名单与前缀改写分支已删干净；Index 两处 link 失败分支透传真实 message
+  assert.doesNotMatch(userErrorSource, /SAFE_SHARE_MESSAGES|startsWith\(/);
+  assert.match(sourceFiles.index, /linkFailureReason\.length > 0 \? linkFailureReason/);
+  assert.match(sourceFiles.index, /'远端链接准备失败：' \+ linkNoticeReason/);
 });
 
-test('known missing-image errors do not expose their path', () => {
+test('errors without a message fall back to phase guidance', () => {
+  const phases = ['image_prepare', 'text_prepare', 'file_prepare', 'handoff'];
+  for (const phase of phases) {
+    assert.match(shareFailureMessage({}, phase), /原因未确定/);
+  }
+});
+
+test('missing-image errors keep their real message including the referenced path', () => {
   const message = shareFailureMessage(
     new Error('缺少本地图片，未生成分享文件：/private/vault/assets/secret.png'),
     'file_prepare'
   );
-  assert.match(message, /图片缺失或不可用/);
-  assert.ok(!message.includes('/private/vault/assets/secret.png'));
+  assert.equal(message, '缺少本地图片，未生成分享文件：/private/vault/assets/secret.png');
 });
 
 test('registry failures identify the operation and pass the real error code and message into diagnostics', () => {
@@ -109,7 +119,7 @@ test('registry failures identify the operation and pass the real error code and 
   assert.equal(calls[4][7], 'No such file or directory');
 });
 
-test('critical failure surfaces do not display raw system exception text', () => {
+test('critical failure surfaces keep their guarded error paths', () => {
   assert.doesNotMatch(sourceFiles.index, /showToast\(\{\s*message:\s*(?:err|error)\.message/);
   assert.doesNotMatch(sourceFiles.sync, /appendLog\(\s*(?:err|error)\.message/);
   assert.doesNotMatch(sourceFiles.sync, /appendLog\([^;\n]*\+\s*(?:err|error)\.message/);

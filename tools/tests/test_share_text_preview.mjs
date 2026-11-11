@@ -61,8 +61,7 @@ test('text Share Kit failure stays in the detail and leaves the text available f
 
   await dialog.confirm();
 
-  assert.equal(dialog.errorMessage,
-    '系统分享交接未完成；接收端状态未知。原因未确定，请重试或选择其他格式。');
+  assert.equal(dialog.errorMessage, 'target unavailable');
   assert.equal(dialog.sharing, false);
 });
 
