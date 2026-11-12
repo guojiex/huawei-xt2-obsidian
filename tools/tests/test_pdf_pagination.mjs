@@ -77,24 +77,24 @@ test('无效输入：页高非正数、bounds 非数组、无效块跳过', () =
 
 test('末页补白：内容不足一页时补齐整页高度（含 1px 舍入余量）', () => {
   // tops=[0]，页高 990，内容只有 400 → 补 590 + 1 舍入余量
-  assert.equal(pdfBottomPadding([0], 990, 400, 0), 591);
+  assert.equal(pdfBottomPadding([0], 990, 400), 591);
   // 内容恰好满页 → 只补舍入余量
-  assert.equal(pdfBottomPadding([0], 990, 990, 0), 1);
+  assert.equal(pdfBottomPadding([0], 990, 990), 1);
   // 内容超出末页需求 → 只补舍入余量
-  assert.equal(pdfBottomPadding([0], 990, 1200, 0), 1);
+  assert.equal(pdfBottomPadding([0], 990, 1200), 1);
 });
 
-test('末页补白：多页场景按末页顶计算（含现有 padding 叠加与舍入余量）', () => {
-  // 末页顶 800，页高 990 → 需要 1790；scrollHeight 1500（已含现有 padding 20）→ 补 270 + 20 + 1
-  assert.equal(pdfBottomPadding([0, 800], 990, 1500, 20), 311);
-  // scrollHeight 已覆盖 → 现有 padding + 舍入余量
-  assert.equal(pdfBottomPadding([0, 800], 990, 2000, 20), 21);
+test('末页补白：多页场景按末页顶计算（流内 spacer，不叠加 #content padding）', () => {
+  // 末页顶 800，页高 990 → 需要 1790；scrollHeight 1500 → 补 290 + 1
+  assert.equal(pdfBottomPadding([0, 800], 990, 1500), 291);
+  // scrollHeight 已覆盖 → 只补舍入余量
+  assert.equal(pdfBottomPadding([0, 800], 990, 2000), 1);
 });
 
 test('末页补白：无效输入抛错', () => {
-  assert.throws(() => pdfBottomPadding([], 990, 100, 0), /分页结果为空/);
-  assert.throws(() => pdfBottomPadding([0], 0, 100, 0), /页高参数无效/);
-  assert.throws(() => pdfBottomPadding([0], 990, -1, 0), /内容高度无效/);
+  assert.throws(() => pdfBottomPadding([], 990, 100), /分页结果为空/);
+  assert.throws(() => pdfBottomPadding([0], 0, 100), /页高参数无效/);
+  assert.throws(() => pdfBottomPadding([0], 990, -1), /内容高度无效/);
 });
 
 // ---------- 53.7 标题与下一块合并（对齐 v2 原型 previewPdfShare） ----------
@@ -317,4 +317,39 @@ test('源级：Index PDF 链路先进分页预览弹窗，确认后才合成（5
   assert.match(index, /this\.cleanupSharePdfPreview\(\);\s*\n\s*this\.openShareDialog\('note', notePath\);/);
   // 缩略图 URI 走 fileUri.getUriFromPath
   assert.match(index, /pageUris\.push\(fileUri\.getUriFromPath\(pageJpegs\[i\]\)\);/);
+});
+
+// ---------- 53.10 分段快照旧帧校验（XT2「一页渲染两页且重复」修复） ----------
+
+test('源级：Index 分段快照带旧帧校验与重试（53.10）', () => {
+  const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
+  // 逐字节比较 + readPixelsToBuffer 读帧 + 有界重试 + 明确报错
+  assert.match(index, /private segmentBuffersIdentical\(a: ArrayBuffer, b: ArrayBuffer\): boolean/);
+  assert.match(index, /await snapshot\.readPixelsToBuffer\(buffer\);/);
+  assert.match(index, /private async captureSegmentVerified\(prevBuffer: ArrayBuffer \| null\)/);
+  assert.match(index, /throw new Error\('分享预览渲染未更新，请重试'\);/);
+  // 重试有界（4 次）且等待 180ms 后重拍
+  assert.match(index, /const maxAttempts: number = 4;/);
+  assert.match(index, /\}, 180\);/);
+  // 长图与 PDF 两循环都走校验快照，不再直连 getComponentSnapshot
+  const imageLoop = index.slice(index.indexOf('private async prepareNoteImageShare'),
+    index.indexOf('/** PDF 捕获页尺寸自适应'));
+  assert.ok(imageLoop.length > 0, 'prepareNoteImageShare 区间未定位');
+  assert.match(imageLoop, /await this\.captureSegmentVerified\(prevSegmentBuffer\)/);
+  assert.doesNotMatch(imageLoop, /getComponentSnapshot\(\)/, '长图循环不得绕过旧帧校验直连快照');
+  const pdfLoop = index.slice(index.indexOf('private async prepareNotePdfShare'),
+    index.indexOf('private pdfFileNameOf'));
+  assert.ok(pdfLoop.length > 0, 'prepareNotePdfShare 区间未定位');
+  assert.match(pdfLoop, /await this\.captureSegmentVerified\(prevPageBuffer\)/);
+  assert.doesNotMatch(pdfLoop, /getComponentSnapshot\(\)/, 'PDF 循环不得绕过旧帧校验直连快照');
+});
+
+test('源级：web setShareCaptureScrollTop 滚动后给渲染服务留合成时间（53.10）', () => {
+  const indexTs = readRepoFile('web/mdpreview/src/index.ts');
+  const scrollFn = indexTs.slice(indexTs.indexOf('async setShareCaptureScrollTop'),
+    indexTs.indexOf('async preparePdfPages'));
+  assert.ok(scrollFn.length > 0, 'setShareCaptureScrollTop 区间未定位');
+  // 双 rAF 之后仍有 64ms 沉淀，避免组件快照取到滚动前旧表面
+  assert.match(scrollFn, /await nextRenderedFrame\(\)/);
+  assert.match(scrollFn, /\}, 64\)/);
 });

@@ -72,7 +72,7 @@ export function computePdfPageTops(bounds, pageHeight) {
   return tops
 }
 
-export function pdfBottomPadding(tops, pageHeight, scrollHeight, currentPadding) {
+export function pdfBottomPadding(tops, pageHeight, scrollHeight) {
   if (!Array.isArray(tops) || tops.length === 0) {
     throw new Error('PDF 分页结果为空')
   }
@@ -82,12 +82,12 @@ export function pdfBottomPadding(tops, pageHeight, scrollHeight, currentPadding)
   if (!Number.isFinite(scrollHeight) || scrollHeight < 0) {
     throw new Error('PDF 内容高度无效')
   }
-  const basePadding = Number.isFinite(currentPadding) && currentPadding > 0 ? currentPadding : 0
   const lastTop = tops[tops.length - 1]
-  const missing = lastTop + pageHeight - scrollHeight
   // scrollHeight / clientHeight 是浏览器取整值：真实可滚动高度可比报告值小 0.5px，
   // 末页顶为小数（块边界）时按取整值补白会差半像素（2026-11-11 修复）。
   // 恒定多补 1px 舍入余量，保证最终 scrollHeight ≥ 末页顶 + 页高；多余 1px 落在
   // 末页空白，不可见。
-  return basePadding + Math.max(0, missing) + 1
+  // 53.8：返回的是流内 spacer 高度，不再叠加 #content 现有 padding（border-box
+  // 钳制会虚增 clientHeight，见 shareCaptureBottomPadding 同步修复）。
+  return Math.max(0, lastTop + pageHeight - scrollHeight) + 1
 }

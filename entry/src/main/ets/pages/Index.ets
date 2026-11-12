@@ -207,6 +207,12 @@ interface TableEditUndoState {
   expectedContent: string;
 }
 
+/** 53.10：带旧帧校验的分段快照结果（快照本体 + 用于下一段比对的像素缓冲）。 */
+interface ShareSegmentCapture {
+  snapshot: image.PixelMap;
+  buffer: ArrayBuffer;
+}
+
 /** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
 function formLabelOf(bp: string, widthVp: number, heightVp: number): string {
   if (isSingleLandscapeWindow(widthVp, heightVp)) {
@@ -8948,6 +8954,64 @@ struct Index {
     this.rejectShareCaptureReady(new Error('分享图片生成已取消'));
   }
 
+  /**
+   * 53.10：读取分段快照的像素缓冲，用于旧帧检测。
+   * XT2 实测：滚动后 DOM 状态正确（scrollTop 回读一致），但组件快照可能取到
+   * 滚动前的旧合成表面（「一页渲染两页且重复」）。两段快照像素完全相同即旧帧。
+   */
+  private async readSegmentBuffer(snapshot: image.PixelMap): Promise<ArrayBuffer> {
+    const info: image.ImageInfo = await snapshot.getImageInfo();
+    const buffer: ArrayBuffer = new ArrayBuffer(info.size.width * info.size.height * 4);
+    await snapshot.readPixelsToBuffer(buffer);
+    return buffer;
+  }
+
+  /** 逐字节比较两个分段缓冲；首处差异立即判定不同（连续分段正常应在头部附近即分叉）。 */
+  private segmentBuffersIdentical(a: ArrayBuffer, b: ArrayBuffer): boolean {
+    if (a.byteLength !== b.byteLength) {
+      return false;
+    }
+    const av: Uint8Array = new Uint8Array(a);
+    const bv: Uint8Array = new Uint8Array(b);
+    for (let i: number = 0; i < av.length; i++) {
+      if (av[i] !== bv[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * 53.10：带旧帧校验的分段快照。与上一分段像素完全相同 → 判定合成器未出新帧，
+   * 等待 180ms 重拍（最多 4 次）；重试耗尽报错，绝不输出重复内容。
+   * Markdown 连续空白会折叠、分页贪心装填，两段合法快照像素完全相同几乎不可能；
+   * 若出现该极端场景将以明确报错替代静默输出重复图。
+   */
+  private async captureSegmentVerified(prevBuffer: ArrayBuffer | null): Promise<ShareSegmentCapture> {
+    const maxAttempts: number = 4;
+    let attempt: number = 0;
+    while (true) {
+      const snapshot: image.PixelMap = await this.getUIContext().getComponentSnapshot()
+        .get(this.shareCaptureComponentId, { waitUntilRenderFinished: true });
+      const buffer: ArrayBuffer = await this.readSegmentBuffer(snapshot);
+      if (prevBuffer === null || !this.segmentBuffersIdentical(buffer, prevBuffer)) {
+        return { snapshot: snapshot, buffer: buffer };
+      }
+      await snapshot.release();
+      attempt++;
+      // 临时调试 53.10：旧帧重试记录（定位 XT2「两页重复」后移除）
+      hilog.info(0x0000, 'ShareDbg', 'stale segment retry attempt=%{public}d', attempt);
+      if (attempt >= maxAttempts) {
+        throw new Error('分享预览渲染未更新，请重试');
+      }
+      await new Promise<void>((resolve: () => void) => {
+        setTimeout((): void => {
+          resolve();
+        }, 180);
+      });
+    }
+  }
+
   private async prepareNoteImageShare(vaultId: string, notePath: string,
     itemName: string): Promise<ShareImagePreviewImage> {
     const registry: VaultRegistry = VaultRegistry.get();
@@ -8971,6 +9035,13 @@ struct Index {
       const initial: PreviewCaptureResult = await bridge.appendShareWatermark();
       const captureTops: number[] = NoteImageShareService.pageTops(initial.scrollHeight, initial.viewportHeight);
       const prepared: PreviewCaptureResult = await bridge.prepareShareCapturePages(captureTops.length);
+      // 临时调试：53.8 长图分页度量诊断（定位「长图分段尺寸不足」真因后移除）
+      hilog.info(0x0000, 'ShareDbg', 'initial sh=%{public}d vh=%{public}d vw=%{public}d st=%{public}d n=%{public}d',
+        initial.scrollHeight, initial.viewportHeight, initial.viewportWidth, initial.scrollTop, captureTops.length);
+      hilog.info(0x0000, 'ShareDbg', 'initialDbg %{public}s', initial.debug ?? '');
+      hilog.info(0x0000, 'ShareDbg', 'prepared sh=%{public}d vh=%{public}d vw=%{public}d st=%{public}d',
+        prepared.scrollHeight, prepared.viewportHeight, prepared.viewportWidth, prepared.scrollTop);
+      hilog.info(0x0000, 'ShareDbg', 'preparedDbg %{public}s', prepared.debug ?? '');
       if (prepared.viewportHeight <= 0 || prepared.viewportWidth <= 0 ||
         prepared.scrollHeight < captureTops.length * prepared.viewportHeight) {
         throw new Error('长图分段尺寸不足，无法覆盖全文');
@@ -8979,6 +9050,7 @@ struct Index {
       let geometry: NoteImageShareGeometry | null = null;
       let captureWidth: number = 0;
       let captureHeight: number = 0;
+      let prevSegmentBuffer: ArrayBuffer | null = null;
       for (let i = 0; i < captureTops.length; i++) {
         if (this.shareCaptureCancelled) {
           throw new Error('分享图片生成已取消');
@@ -8991,8 +9063,10 @@ struct Index {
           Math.abs(positioned.viewportHeight - initial.viewportHeight) > 1) {
           throw new Error('分享预览尺寸发生变化，请重新生成长图');
         }
-        const segment = await this.getUIContext().getComponentSnapshot().get(this.shareCaptureComponentId,
-          { waitUntilRenderFinished: true });
+        // 53.10：旧帧校验快照——与上一分段完全相同即重拍，杜绝「两页重复」
+        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevSegmentBuffer);
+        const segment = captured.snapshot;
+        prevSegmentBuffer = captured.buffer;
         try {
           const imageInfo = await segment.getImageInfo();
           let segmentGeometry: NoteImageShareGeometry;
@@ -9133,6 +9207,7 @@ struct Index {
       const pageJpegs: string[] = [];
       let expectedWidth: number = 0;
       let expectedHeight: number = 0;
+      let prevPageBuffer: ArrayBuffer | null = null;
       for (let i: number = 0; i < tops.length; i++) {
         if (this.shareCaptureCancelled) {
           throw new Error('分享图片生成已取消');
@@ -9141,8 +9216,10 @@ struct Index {
         if (Math.abs(positioned.scrollTop - tops[i]) > 1) {
           throw new Error('PDF 预览无法定位到第 ' + (i + 1).toString() + ' 页');
         }
-        const pageShot: image.PixelMap = await this.getUIContext().getComponentSnapshot()
-          .get(this.shareCaptureComponentId, { waitUntilRenderFinished: true });
+        // 53.10：旧帧校验快照——与上一页完全相同即重拍，杜绝「一页内容渲染成两页」
+        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevPageBuffer);
+        const pageShot: image.PixelMap = captured.snapshot;
+        prevPageBuffer = captured.buffer;
         try {
           const imageInfo: image.ImageInfo = await pageShot.getImageInfo();
           if (i === 0) {

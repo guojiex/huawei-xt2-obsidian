@@ -28,6 +28,8 @@ export interface PreviewCaptureResult {
   pageCount?: number;
   /** v1.53 PDF 分页：每页顶部偏移的 JSON 数组字符串（非 PDF 链路缺省空串）。 */
   pageTops?: string;
+  /** 临时调试 53.8：web 侧布局诊断（仅尺寸数值），定位视口高度漂移后移除。 */
+  debug?: string;
 }
 
 export type PreviewEditHistoryAction = 'undo' | 'redo';
@@ -952,7 +954,8 @@ export class PreviewBridge {
       viewportWidth: result['viewportWidth'] as number,
       scrollTop: result['scrollTop'] as number,
       pageCount: (result['pageCount'] as number) ?? 0,
-      pageTops: (result['pageTops'] as string) ?? ''
+      pageTops: (result['pageTops'] as string) ?? '',
+      debug: (result['debug'] as string) ?? ''
     });
   }
 

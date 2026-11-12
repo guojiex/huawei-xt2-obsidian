@@ -453,8 +453,9 @@ export function renderMarkdown(markdown) {
   return /** @type {string} */ (marked.parse(markdown))
 }
 
-/** Preserve the viewport's existing bottom padding while extending a partial final capture page. */
-export function shareCaptureBottomPadding(scrollHeight, viewportHeight, pageCount, currentPadding) {
-  const targetHeight = viewportHeight * pageCount
-  return currentPadding + Math.max(0, targetHeight - scrollHeight)
+/** 53.8：返回需额外垫高的流内 spacer 像素，使 scrollHeight 覆盖 pageCount*viewportHeight。
+ * 不再改 #content 自身 padding-bottom：border-box 下超大 padding 会把内容盒钳到 0，
+ * 盒高下限=上下 padding 之和，clientHeight 随之虚增（710→766），两侧视口不一致。 */
+export function shareCaptureBottomPadding(scrollHeight, viewportHeight, pageCount) {
+  return Math.max(0, viewportHeight * pageCount - scrollHeight)
 }

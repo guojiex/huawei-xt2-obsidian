@@ -683,20 +683,62 @@ function shareCaptureMetrics(): { scrollHeight: number; viewportHeight: number; 
   }
 }
 
+function shareCaptureDebugInfo(): string {
+  try {
+    const bodyChildren: string[] = []
+    for (let i = 0; i < document.body.children.length; i++) {
+      const child = document.body.children[i] as HTMLElement
+      const cs = window.getComputedStyle(child)
+      bodyChildren.push(`<${child.tagName.toLowerCase()}${child.id ? '#' + child.id : ''} h=${child.offsetHeight} d=${cs.display}>`)
+    }
+    const content = document.getElementById('content') as HTMLElement
+    const contentStyle = window.getComputedStyle(content)
+    const vv = window.visualViewport
+    return `iw=${window.innerWidth} ih=${window.innerHeight} deCH=${document.documentElement.clientHeight}` +
+      ` body=[${bodyChildren.join('')}]` +
+      ` cRect=${content.getBoundingClientRect().height.toFixed(1)} cH=${contentStyle.height}` +
+      ` padT=${contentStyle.paddingTop} padB=${contentStyle.paddingBottom}` +
+      ` vv=${vv ? `${vv.height.toFixed(1)}/${vv.scale}` : 'n/a'} dpr=${window.devicePixelRatio}`
+  } catch (error) {
+    return `debug-failed:${String(error)}`
+  }
+}
+
 function sendShareCaptureResult(id: number, errorText: string = ''): void {
   const arkts = window.__arkts
   if (!arkts || typeof arkts.onShareCaptureResult !== 'function') {
     return
   }
   const metrics = shareCaptureMetrics()
+  // 临时调试 53.8：附带布局诊断（仅尺寸数值，无笔记内容），定位视口高度漂移后移除
   arkts.onShareCaptureResult(JSON.stringify({
     id: id,
     error: errorText,
     scrollHeight: metrics.scrollHeight,
     viewportHeight: metrics.viewportHeight,
     viewportWidth: metrics.viewportWidth,
-    scrollTop: metrics.scrollTop
+    scrollTop: metrics.scrollTop,
+    debug: shareCaptureDebugInfo()
   }))
+}
+
+const SHARE_CAPTURE_SPACER_ID = 'share-capture-spacer'
+
+/** 53.8：末页补白改用 #content 内部流内 spacer，并归零旧 spacer（重试幂等）。
+ * 旧实现把 #content 的 padding-bottom 撑到数百像素：border-box 下内容盒被钳到 0，
+ * 盒高下限=上下 padding 之和（710→766），clientHeight 虚增且溢出视口，
+ * ArkTS/web 两侧视口不一致 →「长图分段尺寸不足」。spacer 不参与 #content 盒高，
+ * clientHeight 恒等于视口，补白只影响 scrollHeight。 */
+function resetShareCaptureSpacer(): HTMLElement {
+  const content = document.getElementById('content') as HTMLElement
+  let spacer = document.getElementById(SHARE_CAPTURE_SPACER_ID)
+  if (!spacer) {
+    spacer = document.createElement('div')
+    spacer.id = SHARE_CAPTURE_SPACER_ID
+    content.appendChild(spacer)
+  }
+  spacer.style.height = '0px'
+  return spacer
 }
 
 async function waitForLocalImages(root: HTMLElement): Promise<void> {
@@ -2787,14 +2829,14 @@ const api: MdPreviewApi = {
   async prepareShareCapturePages(id: number, pageCount: number): Promise<void> {
     try {
       const content = document.getElementById('content') as HTMLElement
+      const spacer = resetShareCaptureSpacer()
       const metrics = shareCaptureMetrics()
       if (!Number.isInteger(pageCount) || pageCount < 1 || metrics.viewportHeight <= 0) {
         throw new Error('分享图片分页参数无效')
       }
       const targetHeight = pageCount * metrics.viewportHeight
-      const currentPadding = Number.parseFloat(getComputedStyle(content).paddingBottom) || 0
-      content.style.paddingBottom = `${shareCaptureBottomPadding(metrics.scrollHeight,
-        metrics.viewportHeight, pageCount, currentPadding)}px`
+      spacer.style.height = `${shareCaptureBottomPadding(metrics.scrollHeight,
+        metrics.viewportHeight, pageCount)}px`
       content.scrollTop = 0
       await nextRenderedFrame()
       if (content.scrollHeight < targetHeight) {
@@ -2814,6 +2856,13 @@ const api: MdPreviewApi = {
       }
       content.scrollTop = top
       await nextRenderedFrame()
+      // 53.10：双 rAF 后再等一拍，给渲染服务留出合成时间——
+      // XT2 实测仅双 rAF 时组件快照可能取到滚动前的旧表面（「两页重复」根因）。
+      await new Promise<void>((resolve: () => void): void => {
+        setTimeout((): void => {
+          resolve()
+        }, 64)
+      })
       sendShareCaptureResult(id)
     } catch (error) {
       sendShareCaptureResult(id, String(error))
@@ -2833,6 +2882,7 @@ const api: MdPreviewApi = {
       if (!body) {
         throw new Error('分享预览内容不可用')
       }
+      const spacer = resetShareCaptureSpacer()
       const metrics = shareCaptureMetrics()
       if (metrics.viewportHeight <= 0) {
         throw new Error('分享预览没有可用的页面尺寸')
@@ -2852,9 +2902,7 @@ const api: MdPreviewApi = {
       // 53.7：标题与下一块合并为一个分页单元，标题不孤悬页尾（与 v2 原型同一规则）。
       const units = mergeHeadingUnits(bounds)
       const tops = computePdfPageTops(units, pageHeightVp)
-      const currentPadding = Number.parseFloat(getComputedStyle(content).paddingBottom) || 0
-      const padding = pdfBottomPadding(tops, pageHeightVp, metrics.scrollHeight, currentPadding)
-      content.style.paddingBottom = `${padding}px`
+      spacer.style.height = `${pdfBottomPadding(tops, pageHeightVp, metrics.scrollHeight)}px`
       content.scrollTop = 0
       await nextRenderedFrame()
       const finalMetrics = shareCaptureMetrics()
