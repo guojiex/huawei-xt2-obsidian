@@ -26,7 +26,7 @@ import { Driver, Component, Rect } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText, waitByTextContains,
   clickById, clickByText, existsById, existsByText, waitGoneById, waitGoneByText,
   uniqueUiName, ensureSidebarVisible, waitByIdSoft, waitByTextContainsSoft, tryWaitById,
-  SNACK_MS } from './UiTestHelpers';
+  scrollSidebarToTop, SNACK_MS } from './UiTestHelpers';
 
 /** 样例库 id（树行 id 形如 file-tree-row-<vaultId>:<relPath>，见 FileTreeView.treeRowFocusId） */
 const VAULT_ID: string = '曜石笔记教程';
@@ -67,47 +67,79 @@ async function swipeTreeRow(driver: Driver, row: Component, distanceRatio: numbe
 }
 
 /**
+ * 滑动删除笔记（trash 用例共用）：0.7 全滑越过三档阈值直接删除；未删成（行仍在）时
+ * 回退 0.45 半滑 +「删除」按钮确认链。20261111_232952 全量：两 trash 用例 0.7 全滑
+ * 同签名未删成（38s = 30s waitGone 超时），而同套件 0.45 路径两用例均过——半滑确认链
+ * 在同场景下更可靠，做兜底。
+ */
+async function swipeDeleteNote(driver: Driver, row: Component, rowId: string): Promise<void> {
+  await swipeTreeRow(driver, row, 0.7);
+  // 滑动删除触发 onAction 后需要等待动画 + 回调完成
+  await driver.delayMs(1000);
+  if (!(await existsById(driver, rowId))) {
+    return;
+  }
+  // 未删成：0.7 可能停在阈值之间（操作条半开）——「删除」按钮已在就直接点，否则半滑拉出
+  if (!(await existsByText(driver, '删除'))) {
+    const rowAgain: Component = await findTreeRow(driver, rowId);
+    await swipeTreeRow(driver, rowAgain, 0.45);
+  }
+  await clickByText(driver, '删除');
+  await waitByText(driver, '删除笔记？');
+  await clickByText(driver, '确认删除');
+}
+
+/** 可见性探针窗口：x86 模拟器一次成功匹配可花 2~12s（UiTestHelpers 头注），
+ * 20261112_005414 run 实证 2s 翻页探针 0/48 命中（行可见也等不完匹配即超时）、
+ * 5s 锚点探针全命中。统一 8s：命中即早返回，只有真不可见才耗满窗口。 */
+const TREE_PROBE_MS: number = 8000;
+
+/**
  * 树内找行：LazyForEach 折叠线以下的行不入控件树（185753 run 实测 ~9 行），
  * 直接等不到就以库首行为锚点把树向上滚，滚出后面的行再找。
  *
- * 增强锚点搜索：若 00_开始 锚点不在可见区，先尝试向下滚回顶部再查找。
+ * 增强锚点搜索：若 00_开始 锚点不在可见区，先滚回顶部再查找；滚回顶部后
+ * 也先探再滑（避免把刚滚进可见区的行又被首滑滚走）。
  */
 async function findTreeRow(driver: Driver, rowId: string): Promise<Component> {
-  let comp: Component | null = await tryWaitById(driver, rowId, 5000);
+  let comp: Component | null = await tryWaitById(driver, rowId, TREE_PROBE_MS);
   if (comp !== null) {
     return comp;
   }
-  // 锚点可能不在可见区——先尝试找到，找不到则向下滚回顶部
+  // 锚点可能不在可见区——先尝试找到，找不到则滚回顶部
+  let scrolled: boolean = false;
   let anchor: Component | null = await tryWaitById(driver, 'file-tree-row-' + VAULT_ID + ':00_开始', 5000);
   if (anchor === null) {
-    // 锚点不可见：用任意可见的 vault-sidebar 组件定位树区，向下滚回顶部
-    const newNoteBtn: Component | null = await tryWaitById(driver, 'vault-sidebar-new-note', 3000);
-    if (newNoteBtn !== null) {
-      const btnRect: Rect = await newNoteBtn.getBounds();
-      const sx: number = Math.round((btnRect.left + btnRect.right) / 2);
-      // 向下滑 3 次（从侧栏底部向上拖 = 内容向下滚 = 顶部行露出）
-      for (let j: number = 0; j < 3; j++) {
-        await driver.swipe(sx, btnRect.top + 300, sx, btnRect.top - 600);
-        await driver.delayMs(500);
-      }
-    }
+    // 锚点不可见：树被滚离顶部（前序套件或本套件滚动残留）——滚回顶部再找。
+    // 原实现在这里向上拖（内容向上滚，离顶部更远），方向反了；语义见 scrollSidebarToTop 注释
+    await scrollSidebarToTop(driver);
+    scrolled = true;
     anchor = await tryWaitById(driver, 'file-tree-row-' + VAULT_ID + ':00_开始', 5000);
   }
   if (anchor === null) {
     // 仍找不到锚点——可能树结构不同，直接再尝试目标行
-    comp = await tryWaitById(driver, rowId, 5000);
+    comp = await tryWaitById(driver, rowId, TREE_PROBE_MS);
     if (comp !== null) {
       return comp;
     }
     throw new Error('树中未找到行: ' + rowId + '（锚点 00_开始 也不可见）');
   }
+  if (scrolled) {
+    // 滚回顶部后先探一次当前位置：目标行若随滚动进入可见区（顶部驻留行）直接返回
+    comp = await tryWaitById(driver, rowId, TREE_PROBE_MS);
+    if (comp !== null) {
+      return comp;
+    }
+  }
   const rect: Rect = await anchor.getBounds();
   const x: number = Math.round((rect.left + rect.right) / 2);
-  for (let i: number = 0; i < 4 && comp === null; i++) {
-    // 从锚点下方起向上滑：列表内容下移露出更靠后的行；起点在锚点行上（列表内），
-    // 终点可越出树区（拖拽跟手即可），单次约滚 2-3 行
-    await driver.swipe(x, rect.bottom + 250, x, rect.top - 250);
-    comp = await tryWaitById(driver, rowId, 5000);
+  for (let i: number = 0; i < 6 && comp === null; i++) {
+    // 从顶部向下翻找：起点/终点都固定在树行区内的安全坐标（列表行区 ~y890-2010，lg 断点实测），
+    // 不复用锚点 rect——首滑后锚点已被滚出视口，旧 rect 是失效坐标（002604 首用例败因之一）。
+    // 手指上滑 = 内容上移 = 露出更靠后的行，单次 ~600px；行区尾（uitest* 排序在底）约 4 次可达，
+    // 6 次（3600px）已越过树全高 ~2800px，留余量。
+    await driver.swipe(x, 1600, x, 1000);
+    comp = await tryWaitById(driver, rowId, TREE_PROBE_MS);
   }
   if (comp === null) {
     throw new Error('树中未找到行: ' + rowId);
@@ -197,9 +229,7 @@ export default function uiNoteFlowTest() {
       const rowId: string = noteRowId(name);
       await createNoteByName(driver, name);
       const row: Component = await findTreeRow(driver, rowId);
-      await swipeTreeRow(driver, row, 0.7);
-      // 滑动删除触发 onAction 后需要等待动画 + 回调完成
-      await driver.delayMs(1000);
+      await swipeDeleteNote(driver, row, rowId);
       expect(await waitGoneById(driver, rowId)).assertTrue();
       // 已移入回收站 snackbar 出现即确认删除成功
       const snackbarSeen: boolean = await waitByTextContainsSoft(driver, '已移入回收站', SNACK_MS);

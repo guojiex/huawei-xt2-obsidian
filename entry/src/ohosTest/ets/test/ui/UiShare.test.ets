@@ -16,7 +16,7 @@ import { Driver, ON, Component } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText,
   clickById, clickByText, existsById, existsByText, waitGoneById,
   waitByIdSoft, waitByTextContainsSoft, clickUntilTextAppear, clickByTextUntilTextAppear,
-  ensureSidebarVisible, uniqueUiName } from './UiTestHelpers';
+  ensureSidebarVisible, scrollSidebarToTop, uniqueUiName } from './UiTestHelpers';
 
 /** 首装教程库 id（uitest.ps1 清理目录同名） */
 const TUTORIAL_VAULT_ID: string = '曜石笔记教程';
@@ -46,9 +46,12 @@ async function closeLeftoverDialogs(driver: Driver): Promise<void> {
   }
 }
 
-/** 等教程笔记「快速上手」出现在侧栏：文件树异步加载 + 00_开始 目录可能折叠（点开重试） */
+/** 等教程笔记「快速上手」出现在侧栏：文件树异步加载 + 00_开始 目录可能折叠（点开重试）。
+ *  树被前序套件滚离顶部时顶行不入 a11y 树（LazyForEach 折叠线；20261111_232952 全量：
+ *  UiNoteFlow 滚树后本套件 9 ERROR 同签名）——探测落空先滚回顶部再探。 */
 async function waitForTutorialNote(driver: Driver, probeMs: number): Promise<boolean> {
   const deadline: number = Date.now() + probeMs;
+  let scrolledUp: boolean = false;
   while (Date.now() < deadline) {
     if (await existsByText(driver, '快速上手')) {
       return true;
@@ -56,6 +59,11 @@ async function waitForTutorialNote(driver: Driver, probeMs: number): Promise<boo
     if (await existsByText(driver, '00_开始')) {
       await clickByText(driver, '00_开始');
       await driver.delayMs(800);
+      continue;
+    }
+    if (!scrolledUp) {
+      scrolledUp = true;
+      await scrollSidebarToTop(driver);
       continue;
     }
     await driver.delayMs(600);
@@ -333,9 +341,10 @@ export default function uiShareTest() {
       const driver: Driver = await getDriver();
       await closeLeftoverDialogs(driver);
       await ensureSidebarVisible(driver);
-      await clickById(driver, 'vault-switcher-trigger');
-      await clickByText(driver, '管理库…');
-      await waitByText(driver, '＋ 新建笔记库');
+      // x86 注入抖动：切换器/管理库两跳点击均可能被单次吞掉（20261111_232952 全量 case 11
+      // 实测 30s 超时即此因；case 8 同路径带重试通过）——每跳「点到位才继续」，与 case 8 同款
+      await clickUntilTextAppear(driver, 'vault-switcher-trigger', '管理库…', 3, 8000);
+      await clickByTextUntilTextAppear(driver, '管理库…', '＋ 新建笔记库', 3, 8000);
       await clickByText(driver, '＋ 新建笔记库');
       const vaultName: string = uniqueUiName('uitest_share_empty');
       const input: Component = await waitById(driver, 'vault-create-input');

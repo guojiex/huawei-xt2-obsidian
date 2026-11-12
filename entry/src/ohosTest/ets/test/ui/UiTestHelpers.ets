@@ -7,7 +7,7 @@
  * - 默认等待 15s：x86 模拟器渲染慢；撤销条只停 5 秒，用 SNACK_MS 短超时。
  */
 
-import { Driver, ON, Component, MatchPattern } from '@ohos.UiTest';
+import { Driver, ON, Component, MatchPattern, Rect } from '@ohos.UiTest';
 import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { Want } from '@kit.AbilityKit';
 
@@ -140,6 +140,32 @@ export async function waitGoneByText(driver: Driver, txt: string, timeoutMs: num
     await driver.delayMs(300);
   }
   return !await existsByText(driver, txt);
+}
+
+/**
+ * 把侧栏文件树滚回顶部（顶行重新进入 LazyForEach 视口 / a11y 树）。
+ * 前序套件的滚动残留会把树停在下方：顶行（00_开始/快速上手）离开 a11y 树后，
+ * 依赖它的探针全部落空（20261111_232952 全量：UiNoteFlow 滚树后 UiSmDrawer 2 ERROR
+ * + UiShare 9 ERROR 同签名；实验 .local/uitest/exp_d2/d3 实证滚动后顶行 0 命中）。
+ * 手指向下拖 = 内容上移 = 顶行露出（与 UiNoteFlow trash 滚动注释同一套语义，
+ * uitest uiInput swipe 实测校准）。侧栏不可见时锚点缺失，静默跳过（调用方负责侧栏可见性）。
+ * ⚠️ 起点必须落在树行区内（按钮底 + 300）：+100 的空隙点实测完全不触发滚动
+ * （exp2_e/f 对照实验，20261112——002604 run 17 ERROR 的根因）。
+ * 轮数 5：单次 ~600px，5 次 3000px 覆盖满滚到底（~2500px）的最坏污染态，顶部余量只会回弹。
+ */
+export async function scrollSidebarToTop(driver: Driver, rounds: number = 5): Promise<void> {
+  // 按钮恒可见，但匹配本身可花 2~12s（见头注）——窗口太短会把「按钮在」误判成
+  // 「侧栏不在」静默跳过滚动，下游探针全部落空（005414 校准：2s 必失败、5s 实证够用）
+  const btn: Component | null = await tryWaitById(driver, 'vault-sidebar-new-note', 6000);
+  if (btn === null) {
+    return;
+  }
+  const r: Rect = await btn.getBounds();
+  const sx: number = Math.round((r.left + r.right) / 2);
+  for (let i: number = 0; i < rounds; i++) {
+    await driver.swipe(sx, r.bottom + 300, sx, r.bottom + 900);
+    await driver.delayMs(400);
+  }
 }
 
 /** 确保侧栏可见（依赖侧栏内控件的用例前置）：

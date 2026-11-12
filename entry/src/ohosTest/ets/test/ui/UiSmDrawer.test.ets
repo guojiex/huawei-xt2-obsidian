@@ -16,7 +16,8 @@
 import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver, Component } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, clickById, clickByText,
-  existsById, waitGoneById, tryWaitById, uniqueUiName, ensureSidebarVisible } from './UiTestHelpers';
+  existsById, waitGoneById, tryWaitById, uniqueUiName, ensureSidebarVisible,
+  scrollSidebarToTop } from './UiTestHelpers';
 
 /** 样例库 id（树行 id = file-tree-row-<vaultId>:<relPath>，见 FileTreeView.treeRowFocusId） */
 const VAULT_ID: string = '曜石笔记教程';
@@ -61,6 +62,14 @@ async function collapseFolderIfExpanded(driver: Driver): Promise<void> {
  */
 async function ensureTreeInteractive(driver: Driver): Promise<void> {
   for (let i: number = 0; i < 4; i++) {
+    if (await probeFolderToggle(driver)) {
+      await collapseFolderIfExpanded(driver);
+      return;
+    }
+    // 00_开始 可能只是被前序套件滚出 LazyForEach 视口（不入 a11y 树），不是失步：
+    // 20261111_232952 全量 UiNoteFlow 滚树后本套件 2 ERROR，~22s/例 = 4s 探针超时 × 4 轮
+    // （点击无响应路径应为 ~9s/轮）——先滚回顶部再探，避免把滚动残留误判成失步
+    await scrollSidebarToTop(driver);
     if (await probeFolderToggle(driver)) {
       await collapseFolderIfExpanded(driver);
       return;
