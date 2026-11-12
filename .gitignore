@@ -53,3 +53,4 @@ Thumbs.db
 .env
 agc_private.json
 __pycache__/
+/tmp/
