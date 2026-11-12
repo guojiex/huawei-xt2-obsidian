@@ -229,8 +229,11 @@ Start-Sleep -Seconds 2
 if ($suites | Where-Object { $_ -like 'UiNoteFlow*' -or $_ -like 'UiSmDrawer*' }) {
     Write-Line '清理样例库 uitest* 残留…' 'Gray'
     $vaultDir = "/data/app/el2/100/base/$Bundle/haps/entry/files/vaults/曜石笔记教程"
+    # 回收站 v1.5 起在 haps/entry/files/trash/<vaultKey>/（vaultKey 形如 vault-<ts>-<seq>，
+    # 非库名）——旧 <vault>/.trash/ 已不存在，用 */ 通配各库键目录清理
+    $trashBase = "/data/app/el2/100/base/$Bundle/haps/entry/files/trash"
     (& $Hdc -t $Target shell "rm -rf '$vaultDir/'uitest*" 2>&1) | Out-Null
-    (& $Hdc -t $Target shell "rm -rf '$vaultDir/.trash/'uitest*" 2>&1) | Out-Null
+    (& $Hdc -t $Target shell "rm -rf '$trashBase/'*/uitest*" 2>&1) | Out-Null
 }
 
 # ---------------- 运行 ----------------

@@ -26,7 +26,7 @@ import { Driver, Component, Rect } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText, waitByTextContains,
   clickById, clickByText, existsById, existsByText, waitGoneById, waitGoneByText,
   uniqueUiName, ensureSidebarVisible, waitByIdSoft, waitByTextContainsSoft, tryWaitById,
-  scrollSidebarToTop, SNACK_MS } from './UiTestHelpers';
+  scrollSidebarToTop, ensureNoteView, SNACK_MS } from './UiTestHelpers';
 
 /** 样例库 id（树行 id 形如 file-tree-row-<vaultId>:<relPath>，见 FileTreeView.treeRowFocusId） */
 const VAULT_ID: string = '曜石笔记教程';
@@ -153,6 +153,7 @@ export default function uiNoteFlowTest() {
       // uitest* 残留已由 tools/uitest.ps1 在本套件 aa test 前清理（宿主侧，应用停止时）
       await launchMainApp();
       const driver: Driver = await getDriver();
+      await ensureNoteView(driver);
       await ensureSidebarVisible(driver);
     });
 
@@ -261,8 +262,8 @@ export default function uiNoteFlowTest() {
       const trashRowId: string = 'trash-row-' + VAULT_ID + ':' + name + '.md';
       await createNoteByName(driver, name);
       const row: Component = await findTreeRow(driver, rowId);
-      await swipeTreeRow(driver, row, 0.7);
-      await driver.delayMs(1000);
+      // 0.7 全滑同场景间歇不越三档阈值（swipeDeleteNote 注释），统一走带兜底的删除链
+      await swipeDeleteNote(driver, row, rowId);
       expect(await waitGoneById(driver, rowId)).assertTrue();
       // 回收站区块在侧栏底部——必要时滚动侧栏使其可见
       let trashVisible: boolean = await existsById(driver, 'trash-section-header');

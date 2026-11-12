@@ -8,7 +8,7 @@ import { Driver } from '@ohos.UiTest';
 import display from '@ohos.display';
 import { getDriver, launchMainApp, waitById, waitByText, waitByTextContains,
   clickById, clickByText, existsByText, waitGoneByText, existsById, ensureSidebarVisible,
-  clickUntilTextAppear, waitByIdSoft } from './UiTestHelpers';
+  ensureNoteView, clickUntilTextAppear, waitByIdSoft } from './UiTestHelpers';
 
 /**
  * 关闭快切换：优先点弹窗的「×」（UtilityDialogShell onClose 直达）。
@@ -33,6 +33,8 @@ export default function uiLaunchTest() {
   describe('UiLaunch', () => {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
+      // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(await getDriver());
     });
 
     it('cold_launch_workspace_ready', 0, async (): Promise<void> => {

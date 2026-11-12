@@ -12,7 +12,7 @@ import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText, clickById,
   existsById, existsByText, waitGoneByText, ensureSidebarVisible,
-  clickUntilTextAppear, waitByIdSoft } from './UiTestHelpers';
+  ensureNoteView, clickUntilTextAppear, waitByIdSoft } from './UiTestHelpers';
 
 async function openQuickSwitcher(driver: Driver): Promise<void> {
   await ensureSidebarVisible(driver);
@@ -30,6 +30,8 @@ export default function uiQuickSwitchTest() {
   describe('UiQuickSwitch', () => {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
+      // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(await getDriver());
     });
 
     /** EM-E1：快切弹窗打开后搜索输入框与标题可见 */

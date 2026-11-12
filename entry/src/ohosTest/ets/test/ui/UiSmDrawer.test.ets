@@ -17,7 +17,7 @@ import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver, Component } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, clickById, clickByText,
   existsById, waitGoneById, tryWaitById, uniqueUiName, ensureSidebarVisible,
-  scrollSidebarToTop } from './UiTestHelpers';
+  ensureNoteView, scrollSidebarToTop } from './UiTestHelpers';
 
 /** 样例库 id（树行 id = file-tree-row-<vaultId>:<relPath>，见 FileTreeView.treeRowFocusId） */
 const VAULT_ID: string = '曜石笔记教程';
@@ -85,6 +85,8 @@ export default function uiSmDrawerTest() {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
       const driver: Driver = await getDriver();
+      // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(driver);
       await ensureSidebarVisible(driver);
     });
 

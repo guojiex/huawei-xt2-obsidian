@@ -12,7 +12,7 @@ import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver, Point } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText, clickById,
   clickByText, existsById, existsByText, waitGoneByText,
-  clickUntilTextAppear, waitByIdSoft, WAIT_MS } from './UiTestHelpers';
+  ensureNoteView, clickUntilTextAppear, waitByIdSoft, WAIT_MS } from './UiTestHelpers';
 
 /** 打开设置页：更多菜单 → 设置与关于 */
 async function openSettings(driver: Driver): Promise<void> {
@@ -31,6 +31,8 @@ export default function uiSettingsExtTest() {
   describe('UiSettingsExt', () => {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
+      // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(await getDriver());
     });
 
     /** EM-F2：诊断信息区可见并可展开 */

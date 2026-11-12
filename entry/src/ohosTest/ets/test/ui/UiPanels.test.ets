@@ -8,7 +8,8 @@ import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText,
   clickById, clickByText, existsById, waitGoneById, clickUntilTextAppear,
-  existsByText, waitByIdSoft, ensureSidebarVisible } from './UiTestHelpers';
+  existsByText, waitByIdSoft, ensureSidebarVisible, ensureNoteView,
+  clickByTextUntilTextAppear } from './UiTestHelpers';
 
 /** 从次级视图返回笔记视图：onBackPress 已覆盖（Index 2.7c） */
 async function backToNoteView(driver: Driver): Promise<void> {
@@ -20,6 +21,8 @@ export default function uiPanelsTest() {
   describe('UiPanels', () => {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
+      // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(await getDriver());
     });
 
     it('settings_groups_visible_and_back', 0, async (): Promise<void> => {
@@ -50,9 +53,11 @@ export default function uiPanelsTest() {
 
     it('vault_manager_open_and_back', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
-      await clickById(driver, 'vault-switcher-trigger');
-      await clickByText(driver, '管理库…');
-      await waitByText(driver, '＋ 新建笔记库');
+      // 侧栏可能收起（会话态）：先展开；切换器/管理库两跳点击均可能被单次吞掉
+      // （UiShare share_empty_vault 同款加固），每跳「点到位才继续」
+      await ensureSidebarVisible(driver);
+      await clickUntilTextAppear(driver, 'vault-switcher-trigger', '管理库…', 3, 8000);
+      await clickByTextUntilTextAppear(driver, '管理库…', '＋ 新建笔记库', 3, 8000);
       await backToNoteView(driver);
     });
 
@@ -95,16 +100,15 @@ export default function uiPanelsTest() {
     /** EM-M1：导入弹窗入口可达——库管理中的导入按钮 */
     it('import_dialog_accessible_from_vault_manager', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
-      await clickById(driver, 'vault-switcher-trigger');
-      await clickByText(driver, '管理库…');
-      await waitByText(driver, '＋ 新建笔记库');
+      await ensureSidebarVisible(driver);
+      await clickUntilTextAppear(driver, 'vault-switcher-trigger', '管理库…', 3, 8000);
+      await clickByTextUntilTextAppear(driver, '管理库…', '＋ 新建笔记库', 3, 8000);
       // 导入按钮可见（Git 导入或 ZIP 导入）
       const importVisible: boolean = await existsByText(driver, '导入');
       // 首装后库管理器可见，导入操作入口可达
       expect(importVisible === true || importVisible === false).assertTrue();
-      // 返回
-      await driver.pressBack();
-      await driver.delayMs(800);
+      // 返回（等待回到笔记视图，避免把次级视图漏给下个用例）
+      await backToNoteView(driver);
     });
   });
 }

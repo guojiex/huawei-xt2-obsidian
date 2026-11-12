@@ -154,6 +154,16 @@ export async function waitGoneByText(driver: Driver, txt: string, timeoutMs: num
  * 轮数 5：单次 ~600px，5 次 3000px 覆盖满滚到底（~2500px）的最坏污染态，顶部余量只会回弹。
  */
 export async function scrollSidebarToTop(driver: Driver, rounds: number = 5): Promise<void> {
+  // 回收站展开时先收起：展开后回收站区块挤压树 List 视口（layoutWeight，~7.5 行 →
+  // ~4.5 行），mtime 排序下第 7 行的 00_开始 锚点落到 LazyForEach 折线下——探针找不到；
+  // 且下方滑动的终点 y（button.bottom+900≈1655）会越过缩水后的 List 底（≈1526）落进
+  // 回收站区块，手势被误路由、树滚不回顶（20261112_120216 全量 #14/#25/#26 失败根因；
+  // 104425 跑同用例通过是因 #13 早夭、回收站从未展开——差分已对齐）。
+  // 有恢复按钮 = 展开且有内容；点区块头切换回收起。空回收站区块整体隐藏，不会误触。
+  if (await existsById(driver, 'trash-restore-button')) {
+    await clickById(driver, 'trash-section-header');
+    await driver.delayMs(600);
+  }
   // 按钮恒可见，但匹配本身可花 2~12s（见头注）——窗口太短会把「按钮在」误判成
   // 「侧栏不在」静默跳过滚动，下游探针全部落空（005414 校准：2s 必失败、5s 实证够用）
   const btn: Component | null = await tryWaitById(driver, 'vault-sidebar-new-note', 6000);
@@ -182,6 +192,27 @@ export async function ensureSidebarVisible(driver: Driver): Promise<void> {
     }
   }
   await waitById(driver, 'vault-switcher-trigger');
+}
+
+/** 确保应用回到笔记主视图（汉堡/更多按钮仅 topView='note' 时渲染，见 Index Appbar builder：
+ *  次级视图整棵顶栏替换为返回箭头）。上个套件把应用留在次级视图或其弹窗里时，本套件
+ *  的顶栏/侧栏探针会整组 30s 超时并级联拖垮后续所有用例（20261112_104425 全量实测：
+ *  库管理一次未按返，#17→#30 共 15 用例连环错，10:54 才自愈）。
+ *  more-button 在则直接返回（正常路径命中即返，不耗满窗口）；不在则 pressBack 退出次级视图。
+ *  首探针必须 ≥ 冷启动渲染耗时（20261112_104425 实测 #1 冷启动到顶栏可达 12.6s）：
+ *  探针过短会在冷启动完成前误发 pressBack（命中前台桌面无害，但若恰好应用刚上前台
+ *  会把笔记视图按到后台，反而制造级联）。 */
+export async function ensureNoteView(driver: Driver): Promise<void> {
+  if (await waitByIdSoft(driver, 'workspace-more-button', 15000)) {
+    return;
+  }
+  await driver.pressBack();
+  if (await waitByIdSoft(driver, 'workspace-more-button', 10000)) {
+    return;
+  }
+  // 还不在：可能是「次级视图 + 弹窗」两层（一次 Back 只关弹窗），再按一次
+  await driver.pressBack();
+  await waitById(driver, 'workspace-more-button');
 }
 
 /**

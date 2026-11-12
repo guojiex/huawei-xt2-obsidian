@@ -16,7 +16,7 @@ import { Driver, ON, Component } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, waitByText,
   clickById, clickByText, existsById, existsByText, waitGoneById,
   waitByIdSoft, waitByTextContainsSoft, clickUntilTextAppear, clickByTextUntilTextAppear,
-  ensureSidebarVisible, scrollSidebarToTop, uniqueUiName } from './UiTestHelpers';
+  ensureSidebarVisible, ensureNoteView, scrollSidebarToTop, uniqueUiName } from './UiTestHelpers';
 
 /** 首装教程库 id（uitest.ps1 清理目录同名） */
 const TUTORIAL_VAULT_ID: string = '曜石笔记教程';
@@ -132,6 +132,8 @@ export default function uiShareTest() {
   describe('UiShare', () => {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
+      // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(await getDriver());
     });
 
     /** EM-J2 核心：更多菜单「分享笔记」点击穿透——应用内分享面板真的打开 */
@@ -322,8 +324,12 @@ export default function uiShareTest() {
       const pdfRowVisible: boolean = await existsByText(driver, 'PDF 文档');
       if (pdfRowVisible) {
         await clickByText(driver, 'PDF 文档');
-        // PDF 渲染是异步的：成功走文件预览（分享文件/返回），失败也走文件预览（重试生成）
-        await waitByText(driver, '分享文件', 30000);
+        // 53.7 起点击后先逐页捕获 JPEG 进分页预览弹窗（「PDF 分享」标题 +
+        // 规格胶囊 + 「分享 PDF」主按钮 + 返回），确认后才合成 PDF 进文件预览——
+        // 不再直接出现「分享文件」（20261112_104425 全量 #42 即按旧流断言而败）
+        await waitByText(driver, 'PDF 分享', 30000);
+        expect(await existsByText(driver, '分享 PDF')).assertTrue();
+        expect(await existsByText(driver, '按段落分页')).assertTrue();
         expect(await existsByText(driver, '返回')).assertTrue();
         await clickByText(driver, '返回');
         await waitByText(driver, '长图');

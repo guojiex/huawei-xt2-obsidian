@@ -30,7 +30,9 @@
 - 前置：x86_64 模拟器在线（不在线时脚本会尝试启动 `Huawei_TripleFold`），ABI 需为 x86_64 或 dual
   （`tools/abi.ps1 -Status`）；两种架构的 libgit2 都已编过时用 `-Dual`。
 - UiNoteFlow 的 `uitest*` 测试残留由 harness **宿主侧清理**：force-stop 后、aa test 前
-  `rm -rf` 库内 `uitest*` 与 `.trash/uitest*`（测试进程跨模块够不到 entry 沙箱，见「实测结论」）。
+  `rm -rf` 库内 `uitest*` 与回收站 `trash/*/uitest*`（v1.5 起回收站在模块级
+  `haps/entry/files/trash/<vaultKey>/`，vaultKey 形如 `vault-<ts>-<seq>` 非库名；
+  测试进程跨模块够不到 entry 沙箱，见「实测结论」）。
 - 结果解析自 `aa test` 的 `OHOS_REPORT_*` 输出；原始输出与 hilog 存 `.local/uitest/<时间戳>/`（gitignore）。
 - 与既有仪器化测试（GitImport / GitCredentialStore / Git2Native，依赖本机 fixture）互不干扰：
   harness 用 `-s class` 只跑 UI 套件；DevEco 内运行时按套件过滤。
@@ -173,3 +175,34 @@ Aa 格式面板打开时压制 Web 选区 UI 的修复（`suppressPaneSelectionU
 diff 0.008%）。注意 Aa 按钮本身是开关：面板开着再点 Aa 会触发 autoCancel 关闭 + onClick 重开的竞争，
 自动化断言应走「完成」按钮路径。同批 46.12（表格浮条 `visualBlockRect`）验证见
 `.local/uitest/20261110_visual_block_rect/`（双击结构可编辑表格单元格后浮条可见）。
+
+## 实测结论补遗（2026-11-12，x86_64 模拟器：43/43 全绿与两轮根因收敛）
+
+修复轮全量 43/43（证据 `.local/uitest/20261112_124710`，含 75 张 `.jpeg` 截图与运行窗口 hilog；
+上一轮 39/1/3 见 `20261112_120216`，再上一轮级联崩坏 28/1/14 见 `20261112_104425`）。
+本轮全部为**测试侧**修复，主工程零改动：
+
+- **回收站展开挤压树视口（#14/#25/#26 统一根因）**：`trash-section-header` 展开后回收站
+  区块占高，树 List（`layoutWeight`）视口从 ~7.5 行缩到 ~4.5 行——mtime 排序下第 7 行的
+  `00_开始` 锚点落到 LazyForEach 折线下（探针查无），且 `scrollSidebarToTop` 的滑动终点
+  （按钮底 +900 ≈ y1655）越过缩水后的 List 底（≈1526）落进回收站区块，手势被误路由、
+  树滚不回顶，恢复链全灭。差分实证：上一轮 #13 早夭没展开回收站，同批 #14 反而是过的。
+  防线：`scrollSidebarToTop` 开场先探 `trash-restore-button`（存在 = 展开且有内容），
+  有则点区块头收起再滚——空回收站区块整体隐藏，不会误触。
+- **回收站区块头是 toggle（#28）**：上游留下展开态时盲点会把展开收起、恢复按钮断言秒败。
+  防线：先探 `trash-restore-button` 已存在则跳过点击，不存在才点开再断言。
+- **0.7 全滑间歇不越三档阈值（#13 trash_purge）**：裸 `swipeTreeRow(0.7)` 在删除场景
+  间歇不触发（同签名失败），统一走带兜底重试的 `swipeDeleteNote`（#12 已用故过）。
+- **套件间级联遏制**：单套件把应用留在次级视图（如库管理）会连坐下一套件整批超时
+  （28/1/14 那轮 15 连错）。防线：全部套件 `beforeAll` 加 `ensureNoteView`——15s 探
+  `workspace-more-button`（实测冷启动到顶栏可达 12.6s，探针窗口必须 ≥15s），缺则
+  pressBack 回笔记视图再复探；外加库管理路径 `clickUntilTextAppear` 逐跳驱动。
+- **share_pdf_row 按 53.7 更新**：有「PDF 文档」行时点入「PDF 分享」二级弹窗，断言
+  「分享 PDF / 按段落分页 / 返回」后点返回回「长图」列表。
+- **监控与解析坑**：`snapshot_display -f` 后缀必须是 `.jpeg`（`.jpg` 静默失败 0 字节）；
+  宿主侧 `hilog -x` 重定向不可靠（写完当前缓冲即死），取证改拉设备侧
+  `/data/log/hilog/*.gz`（二进制按 UTF-8 字节模式搜中文，`strings` 只认 ASCII）；
+  `aa test` 输出为分行 `OHOS_REPORT_STATUS: key=value` + `OHOS_REPORT_STATUS_CODE: N`
+  （0 过 / -1 错 / -2 败 / 1 起），无 `code=` 内联形式。
+- **数据路径澄清**：模块级 `context.filesDir` 是 `haps/entry/files/`（vaults 与 trash 都在
+  这）；bundle 级 `files/` 只有 `__arkweb/`、`hiappevent/`，别再当 vault 根。

@@ -12,12 +12,14 @@
 import { describe, beforeAll, it, expect } from '@ohos/hypium';
 import { Driver } from '@ohos.UiTest';
 import { getDriver, launchMainApp, waitById, clickById,
-  existsById, existsByText, ensureSidebarVisible, waitByIdSoft } from './UiTestHelpers';
+  existsById, existsByText, ensureSidebarVisible, ensureNoteView, waitByIdSoft } from './UiTestHelpers';
 
 export default function uiTrashTest() {
   describe('UiTrash', () => {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
+      // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(await getDriver());
     });
 
     /** EM-B4：回收站区块可见性——空回收站时区块隐藏，有内容时可见 */
@@ -34,14 +36,19 @@ export default function uiTrashTest() {
     it('trash_restore_button_accessible_when_items_exist', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
       await ensureSidebarVisible(driver);
-      // 展开回收站（如有内容）
+      // 展开回收站（如有内容）。注意区块头点击是 toggle：回收站可能已被上游用例
+      // 展开留下（如 UiNoteFlow #13 的滑动删除流程）——先探恢复按钮，已展开就别再点，
+      // 否则一点反而把它收起、断言秒败（20261112_120216 全量 #28 失败根因）。
       const trashHeader: boolean = await existsById(driver, 'trash-section-header');
       if (trashHeader) {
-        // 点击展开回收站
-        await clickById(driver, 'trash-section-header');
-        await driver.delayMs(800);
+        let restoreVisible: boolean = await existsById(driver, 'trash-restore-button');
+        if (!restoreVisible) {
+          await clickById(driver, 'trash-section-header');
+          await driver.delayMs(800);
+          restoreVisible = await existsById(driver, 'trash-restore-button');
+        }
         // 恢复按钮应该可见
-        expect(await existsById(driver, 'trash-restore-button')).assertTrue();
+        expect(restoreVisible).assertTrue();
       }
       // 无内容时不测试恢复按钮（正常：空回收站无需恢复操作）
     });
