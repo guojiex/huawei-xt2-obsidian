@@ -122,6 +122,8 @@ import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/S
 import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
 import { SharePdfPreviewDialog } from '../components/SharePdfPreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
+import { SaveShareDialog } from '../components/SaveShareDialog';
+import { ShareIngestDraft, ShareIngestPayload, ShareIngestService } from '../model/ShareIngestService';
 import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
 import { NotePdfDocumentService } from '../model/NotePdfDocumentService';
@@ -262,6 +264,13 @@ struct Index {
    * v1.39 39.2/39.7：分栏下限按 k=clamp(值,1,1.45) 放大；只钳制布局，不改写已保存比例（39.3）。
    */
   @StorageProp('fontSizeScale') fontSizeScale: number = 1;
+  /**
+   * v1.56 56.2/56.4：接收系统分享的载荷通道。EntryAbility 在 onCreate / onNewWant
+   * 解析 sendData want 后把 JSON 写进 `incomingShare`（receivedAt 时间戳保证同内容
+   * 重复分享也触发 @Watch）；aboutToAppear 兜「早到」（冷启动解析先于页面挂载完成），
+   * @Watch 兜「晚到」，消费后清空键防重复弹层。
+   */
+  @StorageProp('incomingShare') @Watch('onIncomingShareChanged') incomingShareJson: string = '';
   /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
   @State vaults: VaultEntry[] = [];
   @State vaultManagerShareSummaries: VaultManagerShareSummary[] = [];
@@ -642,10 +651,13 @@ struct Index {
   private shareImagePreviewCtl: CustomDialogController | null = null;
   private shareFilePreviewCtl: CustomDialogController | null = null;
   private shareTextPreviewCtl: CustomDialogController | null = null;
+  /** v1.56 56.3：接收系统分享的保存确认层 controller（每次拉起重建） */
+  private saveShareCtl: CustomDialogController | null = null;
   /** 53.7：PDF 分页预览弹窗与页面捕获会话 */
   private sharePdfPreviewCtl: CustomDialogController | null = null;
   private sharePdfPreviewSessionId: string = '';
   private sharePdfPreviewPages: string[] = [];
+  private sharePdfPreviewPageAspects: number[] = [];
   private shareCaptureBridge: PreviewBridge = new PreviewBridge();
   private readonly shareCaptureComponentId: string = 'note-image-share-capture';
   private shareCaptureReadyResolver: (() => void) | null = null;
@@ -727,6 +739,13 @@ struct Index {
     void this.initializeWorkspaceSession();
     this.startExternalVaultPolling();
     this.cleanupZipImportStaging();
+    // v1.56 56.4：冷启动分享——EntryAbility 的载荷可能早于页面挂载就已写进 AppStorage
+    //（@StorageProp 初始化同步了它但 @Watch 不触发），这里兜底消费一次。
+    if (this.incomingShareJson.length > 0) {
+      setTimeout((): void => {
+        this.consumeIncomingShare();
+      }, 0);
+    }
   }
 
   private async loadAgentKitSlot(): Promise<void> {
@@ -8905,6 +8924,112 @@ struct Index {
     await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
   }
 
+  /** v1.56 56.2：@Watch 入口（热启动 / 冷启动晚到的分享载荷）。 */
+  private onIncomingShareChanged(): void {
+    if (this.incomingShareJson.length > 0) {
+      setTimeout((): void => {
+        this.consumeIncomingShare();
+      }, 0);
+    }
+  }
+
+  /**
+   * v1.56 56.4：消费分享载荷。读 → **立刻清键**（防 @Watch 与消费双触发、防同键
+   * 重复弹层）→ 校验 → 错误载荷 toast、有效载荷弹保存确认层。
+   * JSON.parse 结果先 cast 到具名模型再校验（ShareIngestService.isValidPayload），
+   * 脏数据一律按「无法读取分享内容」兜住，不崩、不弹层。
+   */
+  private consumeIncomingShare(): void {
+    const raw: string = AppStorage.get<string>(ShareIngestService.STORAGE_KEY) ?? '';
+    AppStorage.setOrCreate(ShareIngestService.STORAGE_KEY, '');
+    if (raw.length === 0) {
+      return;
+    }
+    let payload: ShareIngestPayload;
+    try {
+      payload = JSON.parse(raw) as ShareIngestPayload;
+    } catch (error) {
+      promptAction.showToast({ message: '无法读取分享内容' });
+      return;
+    }
+    if (!ShareIngestService.isValidPayload(payload)) {
+      promptAction.showToast({ message: '无法读取分享内容' });
+      return;
+    }
+    if (payload.message.length > 0) {
+      promptAction.showToast({ message: payload.message });
+      return;
+    }
+    this.openSaveShareDialog(payload);
+  }
+
+  /** v1.56 56.3：拉起保存确认层（默认草稿按 56.3 标题链 / 正文模板算好再传入）。 */
+  private openSaveShareDialog(payload: ShareIngestPayload): void {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const vaults: VaultEntry[] = registry.list();
+    if (vaults.length === 0) {
+      promptAction.showToast({ message: '还没有可写入的笔记本，无法保存分享内容' });
+      return;
+    }
+    const draft: ShareIngestDraft = ShareIngestService.buildDraft(payload, Date.now());
+    const shareSheet: boolean = this.isSingleScreenLayout() ||
+      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
+    this.saveShareCtl?.close();
+    this.saveShareCtl = new CustomDialogController({
+      builder: SaveShareDialog({
+        initialTitle: draft.title,
+        initialContent: draft.content,
+        vaults: vaults,
+        defaultVaultId: this.currentVaultId.length > 0 ? this.currentVaultId : vaults[0].id,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        singleScreen: shareSheet,
+        onCancel: (): void => {
+        },
+        onConfirm: (vaultId: string, rawName: string, content: string): Promise<void> => {
+          return this.saveSharedNote(vaultId, rawName, content);
+        }
+      }),
+      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: false,
+      customStyle: true
+    });
+    this.saveShareCtl.open();
+  }
+
+  /**
+   * v1.56 56.4：落盘与打开。
+   * - 保存位置固定目标库根（首期不做文件夹选择）：normalizeRelPath 后含 `/` 即拒绝；
+   * - 唯一命名去重走 NoteService.previewCreatePath + createNoteWithContent
+   *   （AtomicFile 原子写、CREATE_CONFLICT 不覆盖现有文件，硬约束 10/15 语义）；
+   * - 跨库保存先 switchVault；切换未完成只 toast，不盲目打开（避免把笔记开进错库）；
+   * - 成功：打开 + revealPath + 刷新树 + toast「已保存到〈库〉/〈文件名〉」。
+   */
+  private async saveSharedNote(vaultId: string, rawName: string, content: string): Promise<void> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    const rel: string = NoteService.normalizeRelPath(rawName);
+    if (rel.indexOf('/') >= 0) {
+      throw new Error('保存位置固定在库根，标题不能包含 /');
+    }
+    const target: string = NoteService.previewCreatePath(registry, vaultId, rel);
+    await NoteService.createNoteWithContent(registry, vaultId, target, content);
+    if (vaultId !== this.currentVaultId) {
+      await this.switchVault(vaultId);
+      if (this.currentVaultId !== vaultId) {
+        promptAction.showToast({ message: '已保存到 ' + vaultId + '/' + target + '，但切换知识库未完成' });
+        return;
+      }
+    }
+    this.onSelectFile(target, 'left', true);
+    this.revealPath = target;
+    this.refreshFileTree();
+    if (this.breakpoint === Breakpoint.SM) {
+      this.setDrawerOpen(false);
+      this.smMode = 'edit';
+    }
+    promptAction.showToast({ message: '已保存到 ' + vaultId + '/' + target });
+  }
+
   private waitForShareCaptureReady(): Promise<void> {
     return new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {
       this.shareCaptureReadyResolver = resolve;
@@ -9197,6 +9322,7 @@ struct Index {
       }
       sessionId = NoteImageShareService.createSession(registry);
       const pageJpegs: string[] = [];
+      const pageAspects: number[] = [];
       let expectedWidth: number = 0;
       let expectedHeight: number = 0;
       let prevPageBuffer: ArrayBuffer | null = null;
@@ -9224,9 +9350,21 @@ struct Index {
           } else if (imageInfo.size.width !== expectedWidth || imageInfo.size.height !== expectedHeight) {
             throw new Error('PDF 渲染期间页面尺寸变化，请重试');
           }
+          // 53.12：贪心分页切片高（块边界）小于页高，整屏快照会把下一页开头的
+          // 内容重复拍进本页页尾（XT2 实测「三种形态」在页缝出现两次）。非末页
+          // 裁到切片高；末页含水印与补白保持整页。纸面纯白（PDF 模式强制 light，
+          // --paper:#fff），A4 页上图片下方留白即自然分页留白，无缝衔接。
+          const sliceVp: number = i === tops.length - 1 ? this.pdfPageHeightVp :
+            Math.max(1, Math.min(this.pdfPageHeightVp, tops[i + 1] - tops[i]));
+          const cropPx: number = Math.max(1, Math.min(imageInfo.size.height,
+            Math.round(imageInfo.size.height * sliceVp / this.pdfPageHeightVp)));
+          if (cropPx < imageInfo.size.height) {
+            await pageShot.crop({ x: 0, y: 0, size: { width: imageInfo.size.width, height: cropPx } });
+          }
           const pagePath: string = registry.sharePath(sessionId + '/page-' + (i + 1).toString() + '.jpg');
           await NoteImageShareService.writeJpegTo(pagePath, pageShot);
           pageJpegs.push(pagePath);
+          pageAspects.push(imageInfo.size.width / cropPx);
         } finally {
           await pageShot.release();
         }
@@ -9238,7 +9376,7 @@ struct Index {
       // 里合成 PDF。捕获层此时卸下（页面已落盘），预览读会话目录里的 JPEG。
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
-      this.openSharePdfPreview(itemName, notePath, sessionId, pageJpegs, vaultId);
+      this.openSharePdfPreview(itemName, notePath, sessionId, pageJpegs, pageAspects, vaultId);
     } catch (error) {
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
@@ -9272,13 +9410,14 @@ struct Index {
    * 「分享 PDF」确认后合成 PDF 并进入文件预览；返回则清理会话回到分享面板。
    */
   private openSharePdfPreview(itemName: string, notePath: string, sessionId: string,
-    pageJpegs: string[], vaultId: string): void {
+    pageJpegs: string[], pageAspects: number[], vaultId: string): void {
     const registry: VaultRegistry = VaultRegistry.get();
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
     this.sharePdfPreviewCtl?.close();
     this.sharePdfPreviewSessionId = sessionId;
     this.sharePdfPreviewPages = pageJpegs;
+    this.sharePdfPreviewPageAspects = pageAspects;
     const pageUris: string[] = [];
     for (let i: number = 0; i < pageJpegs.length; i++) {
       pageUris.push(fileUri.getUriFromPath(pageJpegs[i]));
@@ -9288,6 +9427,7 @@ struct Index {
         itemName: itemName,
         fileName: this.pdfFileNameOf(itemName),
         pageUris: pageUris,
+        pageAspects: pageAspects,
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
         singleScreen: shareSheet,
@@ -9300,8 +9440,12 @@ struct Index {
           if (pages.length === 0) {
             throw new Error('PDF 分页页面缺失，请返回重试');
           }
+          const aspects: number[] = this.sharePdfPreviewPageAspects;
+          if (aspects.length !== pages.length) {
+            throw new Error('PDF 分页页面缺失，请返回重试');
+          }
           const pdfPath: string = VaultRegistry.get().sharePath(sid + '/note.pdf');
-          NotePdfDocumentService.exportFromPageImages(pages, pdfPath);
+          NotePdfDocumentService.exportFromPageImages(pages, aspects, pdfPath);
           this.sharePdfPreviewCtl?.close();
           this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
             itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
@@ -9324,6 +9468,7 @@ struct Index {
     const sessionId: string = this.sharePdfPreviewSessionId;
     this.sharePdfPreviewSessionId = '';
     this.sharePdfPreviewPages = [];
+    this.sharePdfPreviewPageAspects = [];
     if (sessionId.length === 0) {
       return;
     }
