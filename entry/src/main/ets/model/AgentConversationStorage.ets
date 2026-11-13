@@ -1,5 +1,5 @@
-import { BusinessError } from '@kit.BasicServicesKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { atomicWriteText } from '../common/AtomicWrite';
 import { AgentMessage, AgentSession } from './AgentModels';
 import { VaultRegistry } from './VaultRegistry';
 
@@ -184,61 +184,7 @@ export class AgentConversationStorage {
   }
 
   private writeAtomic(path: string, content: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(path);
-      let settled: boolean = false;
-      let timerId: number = -1;
-      const fail = (message: string): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.failWrite();
-        } catch (error) {
-          // Keep the original write error.
-        }
-        reject(new Error(message));
-      };
-      const finish = (): void => {
-        if (settled) {
-          return;
-        }
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.finishWrite();
-        } catch (error) {
-          const err = error as BusinessError;
-          fail(err.message);
-          return;
-        }
-        settled = true;
-        resolve();
-      };
-      try {
-        const stream: fileIo.WriteStream = atomicFile.startWrite();
-        timerId = setTimeout((): void => { fail('Agent 对话 AtomicFile 写入回调超时'); }, 3000);
-        if (content.length === 0) {
-          finish();
-        } else {
-          stream.end(content, 'utf-8', (err?: BusinessError): void => {
-            if (err !== undefined && err !== null) {
-              fail(err.message);
-              return;
-            }
-            finish();
-          });
-        }
-      } catch (error) {
-        const err = error as BusinessError;
-        fail(err.message);
-      }
-    });
+    return atomicWriteText(path, content, { timeoutMessage: 'Agent 对话 AtomicFile 写入回调超时' });
   }
 
   private removeTree(path: string): void {

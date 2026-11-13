@@ -23,6 +23,7 @@ import { FileTree, ExpandStore, PinStore, TreeNode } from '../model/FileTree';
 import { VaultAccess, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
+import { noteDisplayName } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
@@ -328,14 +329,7 @@ export struct FileTreeView {
     if (node.isDir) {
       return node.name;
     }
-    const lowerName: string = node.name.toLowerCase();
-    if (lowerName.endsWith('.markdown')) {
-      return node.name.substring(0, node.name.length - '.markdown'.length);
-    }
-    if (lowerName.endsWith('.md')) {
-      return node.name.substring(0, node.name.length - '.md'.length);
-    }
-    return node.name;
+    return noteDisplayName(node.name);
   }
 
   /** 展开/折叠：换整个数组触发刷新，并立刻落盘（需求 1.3） */
@@ -617,12 +611,12 @@ export struct FileTreeView {
             Row({ space: Space.s2 }) {
               if (n.isDir) {
                 Icon(this.isExpanded(n.relPath) ? 'chevronDown' : 'chevronRight',
-                  14, $r('app.color.text_tertiary'))
+                  Size.treeChevron, $r('app.color.text_tertiary'))
               } else {
                 // 占位：让文件名与目录名左对齐（文件没有箭头，用等宽空白顶替）
                 Column()
-                  .width(14)
-                  .height(14)
+                  .width(Size.treeChevron)
+                  .height(Size.treeChevron)
               }
               Icon(n.isDir ? 'folder' : 'note', Size.treeIcon,
                 n.isDir ? $r('app.color.brand') : n.relPath === this.currentFilePath

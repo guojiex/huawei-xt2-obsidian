@@ -239,7 +239,7 @@ export struct DeleteVaultDialog {
         .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_tertiary'))
         .width('100%')
-        .padding({ left: Space.s2, right: Space.s2, top: 5, bottom: 5 })
+        .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
         .backgroundColor($r('app.color.bg_secondary'))
         .borderRadius(Radius.icon)
         .margin({ bottom: Space.s3 })

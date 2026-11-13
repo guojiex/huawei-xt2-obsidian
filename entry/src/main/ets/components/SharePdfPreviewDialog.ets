@@ -1,5 +1,5 @@
 import { LengthMetrics, UIUtils } from '@kit.ArkUI';
-import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { FontSize, Radius, Size, Space, Weight } from '../common/Tokens';
 import { shareFailureMessage } from '../model/UserErrorMessages';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
@@ -83,7 +83,7 @@ export struct SharePdfPreviewDialog {
       Row({ space: Space.s3 }) {
         Text('1 个 PDF')
           .fontSize(FontSize.caption)
-          .fontWeight(600)
+          .fontWeight(Weight.semibold)
           .fontColor($r('app.color.text_primary'))
         Text(this.fileName)
           .fontSize(FontSize.caption)

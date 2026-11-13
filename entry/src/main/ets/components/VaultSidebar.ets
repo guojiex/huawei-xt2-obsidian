@@ -15,6 +15,7 @@ import { FileListSortMode, FileListSortStore } from '../model/FileTree';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { FileTreeView } from './FileTreeView';
 import { Icon } from '../common/Icons';
+import { noteDisplayNameOfPath } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
@@ -143,12 +144,7 @@ export struct VaultSidebar {
     if (this.currentFilePath.length === 0) {
       return '未选择笔记 · 0 个章节';
     }
-    const slash: number = this.currentFilePath.lastIndexOf('/');
-    let title: string = this.currentFilePath.substring(slash + 1);
-    if (title.endsWith('.md')) {
-      title = title.substring(0, title.length - 3);
-    }
-    return title + ' · ' + this.chapters.length.toString() + ' 个章节';
+    return noteDisplayNameOfPath(this.currentFilePath) + ' · ' + this.chapters.length.toString() + ' 个章节';
   }
 
   private hasChapterChildren(index: number): boolean {

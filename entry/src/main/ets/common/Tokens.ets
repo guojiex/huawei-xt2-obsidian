@@ -56,6 +56,11 @@ export class FontSize {
   static readonly heading: number = 32;  // v2 --heading（关于 hero 图标字）
 }
 
+/** 字重：数字档（ArkUI fontWeight 接受 number），600 = semibold 强调档。 */
+export class Weight {
+  static readonly semibold: number = 600;
+}
+
 /** 尺寸 */
 export class Size {
   static readonly appbarH: number = 56;    // 顶栏（4.5）
@@ -77,8 +82,10 @@ export class Size {
   static readonly paneEmptyTopMax: number = Space.s16 * 1.5;
   static readonly paneEmptyTopRatio: number = 0.14;
   static readonly paneEmptyBrandTracking: number = FontSize.caption * 0.12;
+  /** v1.28 §6.1.1 空态视觉居中：行尾全角句号悬挂比例。实测 HarmonyOS Sans SC「。」墨迹止于 +0.383em、汉字右侧留白 ≈0.06em，悬挂 0.55em 后墨迹居中（残差 <0.02em） */
+  static readonly paneEmptyPunctHangRatio: number = 0.55;
   static readonly paneEmptyRecentRowH: number = Space.s12 + Space.s1;
-  static readonly paneEmptyTitleWeight: number = 600;
+  static readonly paneEmptyTitleWeight: number = Weight.semibold;
   static readonly paneEmptyTitleWide: number = FontSize.s3 + Space.s2;
   static readonly paneEmptyTitleSingle: number = FontSize.s3 + Space.s1;
   static readonly paneEmptyTitleRight: number = FontSize.s3;
@@ -95,6 +102,14 @@ export class Size {
   static readonly treeIndent: number = 24;
   /** 文件树图标尺寸：映射 v2 `--tree-icon`。 */
   static readonly treeIcon: number = 18;
+  /** 文件树目录箭头（chevron）与文件行占位块尺寸：比 treeIcon 小一档的视觉档。 */
+  static readonly treeChevron: number = 14;
+  /** 单屏态分段控件（segItem）按钮高度。 */
+  static readonly segItemH: number = 28;
+  /** Agent 设置：系统提示词编辑区高度。 */
+  static readonly promptAreaH: number = 180;
+  /** Agent 设置：内置 Skill 提示词编辑区高度。 */
+  static readonly skillPromptAreaH: number = 128;
   /** 内容页限宽（4.9）：三屏 1061vp 下不把设置项拉成一整行 */
   static readonly contentMaxW: number = 760;
   /** 分栏把手胶囊高度：映射 v2 `--split-height`（宽度用 `Space.s1`，命中区用 `Space.s4` = `--split-hit`） */

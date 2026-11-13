@@ -1,6 +1,7 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { atomicWriteText } from '../common/AtomicWrite';
 import { FsOpMsg, FsReadResult, FsReaddirResult, FsStatResult, OkResult } from './GitBridgeModels';
 
 /**
@@ -18,6 +19,8 @@ export class GitFsBackend {
 
   constructor(root: string, allowImportBinaryWrites: boolean = false) {
     const rootName: string = root.substring(root.lastIndexOf('/') + 1);
+    // '__importing' 必须与 model/VaultRegistry 的 GIT_IMPORTING_SUFFIX 同值；
+    // 本层刻意不依赖 model，保持可独立发布，故仅在此注释锚定口径。
     if (allowImportBinaryWrites && !rootName.endsWith('__importing')) {
       throw new Error('EACCES: binary import writes require an __importing root');
     }
@@ -155,67 +158,9 @@ export class GitFsBackend {
   }
 
   private writeAtomic(abs: string, rel: string, content: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const atomicFile = new fs.AtomicFile(abs);
-      let settled = false;
-      let timerId = -1;
-      const fail = (stage: string, error: Error | Object): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.failWrite();
-        } catch (cleanupError) {
-          // Keep the original write error.
-        }
-        reject(this.toWriteError(stage, rel, error, 'AtomicFile'));
-      };
-      const commit = (): void => {
-        if (settled) {
-          return;
-        }
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.finishWrite();
-        } catch (error) {
-          fail('finishWrite', error as Error);
-          return;
-        }
-        settled = true;
-        resolve();
-      };
-
-      let stream: fs.WriteStream;
-      try {
-        stream = atomicFile.startWrite();
-      } catch (error) {
-        fail('startWrite', error as Error);
-        return;
-      }
-      timerId = setTimeout((): void => {
-        fail('write', new Error('write callback timed out'));
-      }, 3000);
-      if (content.length === 0) {
-        commit();
-      } else {
-        try {
-          stream.end(content, 'utf-8', (error?: BusinessError): void => {
-            if (error !== undefined && error !== null) {
-              fail('write', error);
-              return;
-            }
-            commit();
-          });
-        } catch (error) {
-          fail('write', error as Error);
-        }
-      }
+    return atomicWriteText(abs, content, {
+      timeoutMessage: 'write callback timed out',
+      wrapError: (stage: string, error: Error): Error => this.toWriteError(stage, rel, error, 'AtomicFile')
     });
   }
 

@@ -5,27 +5,23 @@ import { readSourceFile } from './lib/source.mjs';
 // 防回归：v1.34 4970d5c —— AtomicFile 统一 end 收尾
 // 根因：AtomicFile 的 end() 方法未在所有路径调用，导致 x86_64 模拟器删除笔记空副本
 // 修复：统一在 try/finally 中调用 stream.end + finishWrite/failWrite
-// NoteDraftService 的 writeAtomic 方法封装了这一模式
+// 2026-11-13 起该模式收敛到 common/AtomicWrite.ets 单一真源，锁定对象随之迁移；
+// NoteDraftService 等写入方必须走 atomicWriteText，不得再内联样板
 
+const atomicWrite = readSourceFile(new URL('../../entry/src/main/ets/common/AtomicWrite.ets', import.meta.url));
 const draftService = readSourceFile(new URL('../../entry/src/main/ets/model/NoteDraftService.ets', import.meta.url));
 
-test('NoteDraftService writeAtomic uses AtomicFile with startWrite/end/finishWrite pattern', () => {
-  const writeAtomic = draftService.substring(
-    draftService.indexOf('private static async writeAtomic('),
-    draftService.indexOf('\n  private static', draftService.indexOf('private static async writeAtomic(') + 1)
-  );
-  assert.match(writeAtomic, /AtomicFile/);
-  assert.match(writeAtomic, /startWrite\(\)/);
-  assert.match(writeAtomic, /stream\.end\(/);
-  assert.match(writeAtomic, /finishWrite\(\)/);
+test('atomicWriteText single source uses AtomicFile with startWrite/end/finishWrite pattern', () => {
+  assert.match(atomicWrite, /new fileIo\.AtomicFile\(/);
+  assert.match(atomicWrite, /startWrite\(\)/);
+  assert.match(atomicWrite, /stream\.end\(/);
+  assert.match(atomicWrite, /finishWrite\(\)/);
+  // 写入方走单一真源，不再各持一份样板
+  assert.match(draftService, /return atomicWriteText\(/);
 });
 
-test('NoteDraftService writeAtomic has failWrite fallback for error paths', () => {
-  const writeAtomic = draftService.substring(
-    draftService.indexOf('private static async writeAtomic('),
-    draftService.indexOf('\n  private static', draftService.indexOf('private static async writeAtomic(') + 1)
-  );
-  assert.match(writeAtomic, /failWrite\(\)/);
+test('atomicWriteText has failWrite fallback for error paths', () => {
+  assert.match(atomicWrite, /failWrite\(\)/);
 });
 
 // 防回归：v1.34 05c97ad —— 回收站根目录单级 mkdirSync 导致删除必然失败

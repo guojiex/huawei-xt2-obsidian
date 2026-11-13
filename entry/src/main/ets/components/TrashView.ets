@@ -6,6 +6,7 @@ import { TrashItem, TrashService } from '../model/TrashService';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, FontSize, Size } from '../common/Tokens';
 import { Icon } from '../common/Icons';
+import { noteDisplayName } from '../common/NoteDisplayName';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
@@ -98,15 +99,7 @@ export struct TrashView {
   }
 
   private displayName(item: TrashItem): string {
-    const name: string = item.name;
-    const lowerName: string = name.toLowerCase();
-    if (lowerName.endsWith('.markdown')) {
-      return name.substring(0, name.length - '.markdown'.length);
-    }
-    if (lowerName.endsWith('.md')) {
-      return name.substring(0, name.length - '.md'.length);
-    }
-    return name;
+    return noteDisplayName(item.name);
   }
 
   private originFolder(item: TrashItem): string {

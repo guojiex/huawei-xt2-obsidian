@@ -22,6 +22,7 @@
 import { fileIo, fileShare, picker } from '@kit.CoreFileKit';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { atomicWriteText } from '../common/AtomicWrite';
 import nativeVaultDir, {
   VaultDirListResult, VaultDirIoResult, VaultDirReadResult
 } from 'libvaultdir_napi.so';
@@ -97,52 +98,15 @@ export class DeviceProbeFs implements ProbeFsLike {
   /**
    * 更新外部目录里的已有文件。沿用仓库硬约束 10 / 15 的 AtomicFile 语义：
    * 写失败调 `failWrite()` 回滚，不自己拼 tmp + rename。
-   * 写入回调写法照 `git/GitFsBackend.ets` 已验证的那套（WriteStream 没有 writeSync/closeSync）。
+   * 写入本体走公共 atomicWriteText（单一真源，含 3s 超时兜底与空内容特判）；
+   * ⚠️ 绝不在 finishWrite 前调 `stream.close()`（2026-10-18 真机 cppcrash 实证，
+   * close+finishWrite 双重释放 native 引用，见 api_notes C1）。
    */
   writeAtomic(uri: string, content: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(uri);
-      const fail = (stage: string, error: Object): void => {
-        try {
-          atomicFile.failWrite();
-        } catch (rollbackError) {
-          // 回滚本身也失败时保留原始异常
-        }
-        reject(new ProbeWriteError((error as BusinessError).code ?? -1, stage + ' 失败'));
-      };
-      let stream: fileIo.WriteStream;
-      try {
-        stream = atomicFile.startWrite();
-      } catch (error) {
-        fail('startWrite', error as Object);
-        return;
-      }
-      const commit = (): void => {
-        try {
-          stream.close();
-          atomicFile.finishWrite();
-        } catch (error) {
-          fail('finishWrite', error as Object);
-          return;
-        }
-        resolve();
-      };
-      if (content.length === 0) {
-        commit();
-        return;
-      }
-      try {
-        // 第二个参数是 encoding 字符串（SDK 重载如此），不是 WriteOptions 对象
-        stream.end(content, 'utf-8', (error?: BusinessError): void => {
-          if (error !== undefined && error !== null) {
-            fail('write', error as Object);
-            return;
-          }
-          commit();
-        });
-      } catch (error) {
-        fail('write', error as Object);
-      }
+    return atomicWriteText(uri, content, {
+      timeoutMessage: '探测写入回调超时',
+      wrapError: (stage: string, error: Error): Error =>
+        new ProbeWriteError((error as BusinessError).code ?? -1, stage + ' 失败')
     });
   }
 }

@@ -3,6 +3,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitBranchNameValidation, validateGitBranchName } from '../git/GitBranchName';
 import { GitNativeService } from '../git/GitNativeService';
+import { applyRemoteAuth, isGitHubRemote } from '../git/GitRemoteAuth';
 import { Git2ActionOptions, Git2FileChange, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { VaultEntry } from '../model/Vault';
@@ -276,8 +277,8 @@ export struct GitSyncDialog {
   }
 
   private isGitHubRemote(): boolean {
-    return this.remoteLabel.toLowerCase().startsWith('github.com/') ||
-      this.remoteLabel.toLowerCase().startsWith('www.github.com/');
+    // remoteLabel 是 host/path 形式；git/GitRemoteAuth 的 host 解析兼容该形态。
+    return isGitHubRemote(this.remoteLabel);
   }
 
   private makeActionOptions(operation: 'stage' | 'commit' | 'fetch' | 'push',
@@ -302,14 +303,7 @@ export struct GitSyncDialog {
         }
       }
     };
-    if (token.length > 0) {
-      if (this.isGitHubRemote()) {
-        options.bearerToken = token;
-      } else {
-        options.username = this.authUsername.trim();
-        options.password = token;
-      }
-    }
+    applyRemoteAuth(options, this.remoteLabel, this.authUsername.trim(), token);
     return options;
   }
 

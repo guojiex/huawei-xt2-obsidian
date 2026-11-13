@@ -1,5 +1,5 @@
 import { Binding } from '@kit.ArkUI';
-import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { FontSize, Radius, Size, Space, Weight } from '../common/Tokens';
 import { Icon } from '../common/Icons';
 
 @Component
@@ -39,7 +39,7 @@ export struct UtilityDialogShell {
   private DefaultHeaderTexts() {
     Text(this.title)
       .fontSize(FontSize.s3)
-      .fontWeight(600)
+      .fontWeight(Weight.semibold)
       .fontColor($r('app.color.text_primary'))
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })

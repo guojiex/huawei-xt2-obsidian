@@ -1,6 +1,6 @@
 import { ShareLinkScope } from '../model/ShareLinkService';
 import { Icon } from '../common/Icons';
-import { FontSize, Motion, Radius, Size, Space } from '../common/Tokens';
+import { FontSize, Motion, Radius, Size, Space, Weight } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { UtilityDialogShell } from './UtilityDialogShell';
 
@@ -66,7 +66,7 @@ export struct ShareNoteDialog {
   HeaderTexts() {
     Text(this.currentOption().title)
       .fontSize(FontSize.s3)
-      .fontWeight(600)
+      .fontWeight(Weight.semibold)
       .fontColor($r('app.color.text_primary'))
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })

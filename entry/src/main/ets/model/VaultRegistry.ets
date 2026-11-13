@@ -23,6 +23,9 @@ import { SearchVaultRegistry } from './SearchStore';
 const REG_DOMAIN: number = 0x0001;
 const REG_TAG: string = 'VaultRegistry';
 
+/** 导入中临时库 id 的后缀（单一真源）：clone 先落 `<id>__importing`，成功后 rename 到正式 id。 */
+export const GIT_IMPORTING_SUFFIX: string = '__importing';
+
 /** 注册表持久化结构（JSON 存 preferences 单 key，plan.md R3）。 */
 interface VaultRegistryState {
   vaults: VaultEntry[];
@@ -55,7 +58,6 @@ interface VaultEntryRaw {
 
 export class VaultRegistry implements SearchVaultRegistry {
   private static instance: VaultRegistry | null = null;
-  private static readonly GIT_IMPORTING_SUFFIX: string = '__importing';
 
   /** preferences 实例名（单一真源，plan.md Data Model）。 */
   private readonly PREF_NAME: string = 'vault_registry';
@@ -502,7 +504,7 @@ export class VaultRegistry implements SearchVaultRegistry {
   /** 在 clone 开始前登记恢复意图；标记目录与库内容分离，不进入 Git 工作树。 */
   beginGitImport(finalId: string, importingId: string): void {
     this.recoverGitImportResidues();
-    if (!importingId.startsWith(finalId + VaultRegistry.GIT_IMPORTING_SUFFIX)) {
+    if (!importingId.startsWith(finalId + GIT_IMPORTING_SUFFIX)) {
       throw new Error('导入临时库 id 不匹配: ' + importingId);
     }
     if (this.idTaken(finalId, '') || this.idTaken(importingId, '')) {
@@ -533,7 +535,7 @@ export class VaultRegistry implements SearchVaultRegistry {
     if (!fileIo.accessSync(markerDir)) {
       return;
     }
-    if (!importingId.startsWith(finalId + VaultRegistry.GIT_IMPORTING_SUFFIX)) {
+    if (!importingId.startsWith(finalId + GIT_IMPORTING_SUFFIX)) {
       throw new Error('导入临时库 id 不匹配，拒绝清理: ' + importingId);
     }
     if (!fileIo.accessSync(this.resolver.gitImportTempMarkerDir(finalId, importingId))) {
@@ -1024,7 +1026,7 @@ export class VaultRegistry implements SearchVaultRegistry {
         let safeToFinish: boolean = true;
         for (let j = 0; j < importingIds.length; j++) {
           const importingId: string = importingIds[j];
-          if (!importingId.startsWith(finalId + VaultRegistry.GIT_IMPORTING_SUFFIX)) {
+          if (!importingId.startsWith(finalId + GIT_IMPORTING_SUFFIX)) {
             safeToFinish = false;
             continue;
           }

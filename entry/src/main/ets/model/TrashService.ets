@@ -23,6 +23,7 @@
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { atomicWriteText } from '../common/AtomicWrite';
 import { VaultRegistry } from './VaultRegistry';
 import { VaultAccess, VaultDirChild, isVaultNoteName } from './VaultAccess';
 import { FullTextSearchService } from './FullTextSearchService';
@@ -446,66 +447,7 @@ export class TrashService {
 
   /** Write a private copy with AtomicFile; the source note remains untouched until verification. */
   private static writePrivateAtomic(path: string, content: string): Promise<void> {
-    return new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {
-      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(path);
-      let settled: boolean = false;
-      let timerId: number = -1;
-      const fail = (error: Error): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.failWrite();
-        } catch (rollbackError) {
-          // Preserve the initial write error.
-        }
-        reject(error);
-      };
-      const finish = (): void => {
-        if (settled) {
-          return;
-        }
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.finishWrite();
-        } catch (error) {
-          const err = error as BusinessError;
-          fail(new Error(err.message));
-          return;
-        }
-        settled = true;
-        resolve();
-      };
-      try {
-        const stream: fileIo.WriteStream = atomicFile.startWrite();
-        if (content.length === 0) {
-          finish();
-          return;
-        }
-        timerId = setTimeout((): void => {
-          fail(new Error('回收站写入回调 3s 未触发'));
-        }, 3000);
-        // 用 end 而非 write：API26 x86_64 模拟器实测（2026-11-07 探针矩阵）write 的回调
-        // 先于数据落盘触发（finishWrite 后文件仍 0 字节，数据 ≤800ms 后才到），
-        // end 的回调在数据真正写入后才触发；finishWrite 在 end 回调里安全。
-        stream.end(content, 'utf-8', (error?: BusinessError): void => {
-          if (error !== undefined && error !== null) {
-            fail(new Error(error.message));
-          } else {
-            finish();
-          }
-        });
-      } catch (error) {
-        const err = error as BusinessError;
-        fail(new Error(err.message));
-      }
-    });
+    return atomicWriteText(path, content, { timeoutMessage: '回收站写入回调 3s 未触发' });
   }
 
   /**

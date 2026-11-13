@@ -17,6 +17,7 @@
 
 import { VaultAccess } from './VaultAccess';
 import { VaultEntry } from './Vault';
+import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
 
 /** 单条正文命中（v1.1 起的既有形状；v1.40 起从本文件导出，SearchIndex.ets 已删除）。 */
 export interface FullTextSearchResult {
@@ -172,12 +173,5 @@ export function searchTitleOf(path: string, content: string): string {
   }
   const slash: number = path.lastIndexOf('/');
   const name: string = slash >= 0 ? path.substring(slash + 1) : path;
-  const lower: string = name.toLowerCase();
-  if (lower.endsWith('.markdown')) {
-    return name.substring(0, name.length - '.markdown'.length);
-  }
-  if (lower.endsWith('.md')) {
-    return name.substring(0, name.length - '.md'.length);
-  }
-  return name;
+  return noteDisplayName(name);
 }

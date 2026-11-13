@@ -15,6 +15,9 @@ import {
   OkResult
 } from './GitBridgeModels';
 
+/** 常驻隐形 Web 的占位边长（硬约束 8：git 容器不动态卸载，仅视觉隐藏）。 */
+const HIDDEN_WEB_EDGE: number = 1;
+
 /** 注入到 WebView window.__arkts 的对象：JS -> ArkTS 的唯一入口 */
 class GitNativeProxy {
   handler: (msg: string) => void = () => {};
@@ -267,8 +270,9 @@ export struct GitBridgeView {
       .onErrorReceive((event) => {
         this.onLog('Web 加载错误: ' + (event?.error?.getErrorInfo() ?? ''));
       })
-      .width(1)
-      .height(1)
+      // 常驻隐形 Web（硬约束 8：不卸载，仅视觉隐藏）；1×1 + opacity 0 把渲染开销压到最小。
+      .width(HIDDEN_WEB_EDGE)
+      .height(HIDDEN_WEB_EDGE)
       .opacity(0)
   }
 }

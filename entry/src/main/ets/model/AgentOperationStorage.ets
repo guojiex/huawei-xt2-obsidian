@@ -1,6 +1,6 @@
-import { BusinessError } from '@kit.BasicServicesKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { atomicWriteText } from '../common/AtomicWrite';
 import { AgentRunConfig, AgentNoteSnapshot } from './AgentModels';
 import { VaultRegistry } from './VaultRegistry';
 
@@ -302,97 +302,37 @@ export class AgentOperationStorage {
     fileIo.mkdirSync(path);
   }
 
+  /**
+   * 写入 + 写后读回校验（2026-11-11 Z4 引入）：
+   * 写本体走公共 atomicWriteText（finishWrite 完成才 resolve）；此后再轮询读回比对，
+   * 超时只报错**不回滚** —— finishWrite 已完成，文件已是权威内容，回滚反而会丢写。
+   */
   private writeJson(path: string, content: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(path);
-      const recordKind: string = path.endsWith('/state.json') ? 'run-state' : 'operation-record';
-      let settled: boolean = false;
-      let writeFinished: boolean = false;
-      let timerId: number = -1;
-      const fail = (message: string): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        if (!writeFinished) {
-          try {
-            atomicFile.failWrite();
-          } catch (error) {
-            // Keep the original write error.
-          }
-        }
-        reject(new Error(message));
-      };
-      const finish = (): void => {
-        if (settled) {
-          return;
-        }
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.finishWrite();
-          writeFinished = true;
-        } catch (error) {
-          const err = error as BusinessError;
-          hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
-            'AtomicFile finishWrite 失败 kind=%{public}s', recordKind);
-          fail(err.message);
-          return;
-        }
-        const deadline: number = Date.now() + 3000;
-        const verifyReadBack = (): void => {
-          if (settled) {
-            return;
-          }
-          try {
-            const persisted: string = this.readText(path);
-            if (persisted === content) {
-              settled = true;
-              if (timerId !== -1) {
-                clearTimeout(timerId);
-              }
-              resolve();
-              return;
-            }
-          } catch (error) {
-            // Retry until the committed file becomes visible, or fail without rolling back a finished write.
-          }
-          if (Date.now() >= deadline) {
-            fail('Agent 操作账 AtomicFile 写入后读回超时');
-            return;
-          }
-          timerId = setTimeout(verifyReadBack, 50);
-        };
-        verifyReadBack();
-      };
-      try {
-        const stream: fileIo.WriteStream = atomicFile.startWrite();
-        hilog.info(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
-          'AtomicFile startWrite 完成 kind=%{public}s', recordKind);
-        timerId = setTimeout((): void => { fail('Agent 操作账 AtomicFile 写入超时'); }, 3000);
-        if (content.length === 0) {
-          finish();
-        } else {
-          stream.end(content, 'utf-8', (err?: BusinessError): void => {
-            if (err !== undefined && err !== null) {
-              hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
-                'AtomicFile write 回调失败 kind=%{public}s', recordKind);
-              fail(err.message);
-              return;
-            }
-            hilog.info(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
-              'AtomicFile write 回调成功 kind=%{public}s', recordKind);
-            finish();
-          });
-        }
-      } catch (error) {
-        const err = error as BusinessError;
-        fail(err.message);
+    const recordKind: string = path.endsWith('/state.json') ? 'run-state' : 'operation-record';
+    return atomicWriteText(path, content, { timeoutMessage: 'Agent 操作账 AtomicFile 写入超时' })
+      .then((): Promise<void> => this.verifyPersisted(path, content))
+      .catch((error: Error): Promise<void> => {
+        hilog.error(AGENT_STORAGE_DOMAIN, AGENT_STORAGE_TAG,
+          'AtomicFile 写入失败 kind=%{public}s', recordKind);
+        throw error;
+      });
+  }
+
+  /** finishWrite 后间歇性读到旧内容（API26 x86_64 模拟器实测）：50ms 轮询重试，3s 截止。 */
+  private verifyPersisted(path: string, content: string,
+    deadline: number = Date.now() + 3000): Promise<void> {
+    try {
+      if (this.readText(path) === content) {
+        return Promise.resolve();
       }
-    });
+    } catch (error) {
+      // 提交后的读回可能瞬时失败：重试到截止时间。
+    }
+    if (Date.now() >= deadline) {
+      return Promise.reject(new Error('Agent 操作账 AtomicFile 写入后读回超时'));
+    }
+    return new Promise<void>((resolve: () => void): void => {
+      setTimeout((): void => { resolve(); }, 50);
+    }).then((): Promise<void> => this.verifyPersisted(path, content, deadline));
   }
 }

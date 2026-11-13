@@ -6,8 +6,8 @@
  * 避免较旧草稿覆盖已经更新的正式笔记。
  */
 import { fileIo } from '@kit.CoreFileKit';
-import { BusinessError } from '@kit.BasicServicesKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { atomicWriteText } from '../common/AtomicWrite';
 import { VaultRegistry } from './VaultRegistry';
 
 interface NoteDraftRecord {
@@ -341,59 +341,7 @@ export class NoteDraftService {
     content: string): Promise<void> {
     NoteDraftService.ensureParents(registry, vaultId, relPath);
     const path: string = registry.absoluteDraftIn(vaultId, relPath);
-    return new Promise<void>((resolve, reject) => {
-      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(path);
-      let settled: boolean = false;
-      let timerId: number = -1;
-      const fail = (message: string): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.failWrite();
-        } catch (error) {
-          // Preserve the original write failure.
-        }
-        reject(new Error(message));
-      };
-      const finish = (): void => {
-        if (settled) {
-          return;
-        }
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.finishWrite();
-        } catch (error) {
-          const err = error as BusinessError;
-          fail(err.message);
-          return;
-        }
-        settled = true;
-        resolve();
-      };
-      try {
-        const stream: fileIo.WriteStream = atomicFile.startWrite();
-        timerId = setTimeout((): void => {
-          fail('草稿写入回调超时');
-        }, 3000);
-        stream.end(content, 'utf-8', (err?: BusinessError): void => {
-          if (err !== undefined && err !== null) {
-            fail(err.message);
-            return;
-          }
-          finish();
-        });
-      } catch (error) {
-        const err = error as BusinessError;
-        fail(err.message);
-      }
-    });
+    return atomicWriteText(path, content, { timeoutMessage: '草稿写入回调超时' });
   }
 
   private static ensureParents(registry: VaultRegistry, vaultId: string, relPath: string): void {

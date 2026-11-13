@@ -5,16 +5,15 @@ import { promptAction, router } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
+import { applyRemoteAuth, isGiteeRemote, isGitHubRemote } from '../git/GitRemoteAuth';
 import { Git2ActionOptions, Git2CloneOptions, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
-import { VaultRegistry } from '../model/VaultRegistry';
+import { GIT_IMPORTING_SUFFIX, VaultRegistry } from '../model/VaultRegistry';
 import { sanitizeVaultName, VaultEntry } from '../model/Vault';
 import { GitImportDraft, GitImportDraftStore } from '../model/GitImportDraftStore';
 import { FontSize, Space } from '../common/Tokens';
 
 /** 旧版把令牌明文存在这个 preferences store（v0.3 起令牌只进 Asset Store Kit，进页一次性清除） */
 const LEGACY_STORE_NAME: string = 'git_sync';
-/** 导入中临时目录的后缀：先 clone 到 vaults/<id>__importing，成功后 rename 到正式 id（mvp_design §9 导入失败残留） */
-const IMPORTING_SUFFIX: string = '__importing';
 
 /**
  * 从仓库地址推导库名：取最后一段路径，去掉 .git 后缀，再走库名消毒。
@@ -126,10 +125,10 @@ struct SyncPage {
     if (message.includes('401') || message.includes('Unauthorized') ||
       message.toLowerCase().includes('authentication')) {
       const remote: string = this.syncMode ? this.syncRemote : this.repoUrl;
-      if (this.isGitHubRemote(remote)) {
+      if (isGitHubRemote(remote)) {
         return 'GitHub 认证失败，请检查仓库地址和访问令牌权限；私有仓库需要有效令牌';
       }
-      if (this.isGiteeRemote(remote)) {
+      if (isGiteeRemote(remote)) {
         // Gitee 对「仓库不存在」和「私有库未认证」都可能回 401。
         return 'Gitee 认证失败。仓库不存在或私有库未授权都可能返回 401，请检查地址、用户名和私人令牌';
       }
@@ -164,14 +163,14 @@ struct SyncPage {
     }
     const username: string = this.username.trim();
     const token: string = this.token;
-    const isGitHub: boolean = this.isGitHubRemote(url);
+    const isGitHub: boolean = isGitHubRemote(url);
     if (token.length > 0 && !isGitHub && username.length === 0) {
       promptAction.showToast({ message: '此 Git 服务需要填写用户名' });
       return;
     }
     const reg: VaultRegistry = VaultRegistry.get();
     const finalId: string = this.previewVaultId();
-    const tempId: string = reg.uniqueVaultId(finalId + IMPORTING_SUFFIX, '');
+    const tempId: string = reg.uniqueVaultId(finalId + GIT_IMPORTING_SUFFIX, '');
     this.pendingFinalId = finalId;
     this.pendingTempId = tempId;
     this.busy = true;
@@ -189,14 +188,7 @@ struct SyncPage {
           this.progressText = GitNativeService.progressLabel(progress);
         },
       };
-      if (token.length > 0) {
-        if (isGitHub) {
-          options.bearerToken = token;
-        } else {
-          options.username = username;
-          options.password = token;
-        }
-      }
+      applyRemoteAuth(options, url, username, token);
       const clonedPath: string = await GitNativeService.clone(options);
       if (clonedPath !== tempDir) {
         throw new Error('Native clone 返回的目录与隔离目标不一致');
@@ -214,24 +206,6 @@ struct SyncPage {
       }
       this.onCloneDone(false, message);
     }
-  }
-
-  private remoteHost(url: string): string {
-    const scheme: number = url.indexOf('://');
-    const authorityStart: number = scheme >= 0 ? scheme + 3 : 0;
-    const slash: number = url.indexOf('/', authorityStart);
-    const authority: string = url.substring(authorityStart, slash >= 0 ? slash : url.length);
-    return authority.substring(authority.lastIndexOf('@') + 1).split(':')[0].toLowerCase();
-  }
-
-  private isGitHubRemote(url: string): boolean {
-    const host: string = this.remoteHost(url);
-    return host === 'github.com' || host === 'www.github.com';
-  }
-
-  private isGiteeRemote(url: string): boolean {
-    const host: string = this.remoteHost(url);
-    return host === 'gitee.com' || host.endsWith('.gitee.com');
   }
 
   private urlHasInlineCredentials(url: string): boolean {
@@ -316,7 +290,7 @@ struct SyncPage {
       promptAction.showToast({ message: '当前 Git 库已变化，请返回主页重新打开同步页' });
       return;
     }
-    if (this.syncToken.length > 0 && !this.isGitHubRemote(this.syncRemote) && this.syncUsername.trim().length === 0) {
+    if (this.syncToken.length > 0 && !isGitHubRemote(this.syncRemote) && this.syncUsername.trim().length === 0) {
       promptAction.showToast({ message: '此 Git 服务需要填写用户名' });
       return;
     }
@@ -337,14 +311,7 @@ struct SyncPage {
           this.progressText = GitNativeService.progressLabel(progress);
         },
       };
-      if (this.syncToken.length > 0) {
-        if (this.isGitHubRemote(this.syncRemote)) {
-          options.bearerToken = this.syncToken;
-        } else {
-          options.username = this.syncUsername.trim();
-          options.password = this.syncToken;
-        }
-      }
+      applyRemoteAuth(options, this.syncRemote, this.syncUsername.trim(), this.syncToken);
       if (operation === 'commit') {
         options.message = this.commitMessage.trim();
         options.authorName = this.authorName.trim();
@@ -353,7 +320,7 @@ struct SyncPage {
       const result: string = await GitNativeService.action(options);
       if (operation === 'fetch' || operation === 'push') {
         try {
-          const authUsername: string = this.isGitHubRemote(this.syncRemote) ? '' : this.syncUsername.trim();
+          const authUsername: string = isGitHubRemote(this.syncRemote) ? '' : this.syncUsername.trim();
           reg.updateGitAuthUsername(this.syncVaultId, authUsername);
         } catch (error) {
           const err = error as BusinessError;

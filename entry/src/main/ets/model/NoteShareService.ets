@@ -1,5 +1,7 @@
-import { zlib, BusinessError } from '@kit.BasicServicesKit';
+import { zlib } from '@kit.BasicServicesKit';
 import { fileIo } from '@kit.CoreFileKit';
+import { atomicWriteText } from '../common/AtomicWrite';
+import { noteDisplayName } from '../common/NoteDisplayName';
 import { VaultRegistry } from './VaultRegistry';
 
 export interface MarkdownImageReference {
@@ -357,8 +359,7 @@ export class NoteShareService {
         archiveImages);
       const packagedNote: string = registry.sharePath(shareId + '/payload/' + notePath);
       await NoteShareService.writeAtomic(packagedNote, packagedMarkdown);
-      const stem: string = noteName.toLowerCase().endsWith('.md')
-        ? noteName.substring(0, noteName.length - 3) : noteName;
+      const stem: string = noteDisplayName(noteName);
       const zipName: string = stem + '.zip';
       const zipPath: string = registry.sharePath(shareId + '/' + zipName);
       await zlib.compressFile(payloadDir, zipPath, {});
@@ -621,62 +622,9 @@ export class NoteShareService {
     return null;
   }
 
+  /** 原子写公共工具的薄封装（保持既有公共签名）。 */
   static writeAtomic(path: string, content: string): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      const atomicFile: fileIo.AtomicFile = new fileIo.AtomicFile(path);
-      let settled: boolean = false;
-      let timerId: number = -1;
-      const fail = (message: string): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.failWrite();
-        } catch (error) {
-          // Preserve the original write failure.
-        }
-        reject(new Error(message));
-      };
-      const commit = (): void => {
-        if (settled) {
-          return;
-        }
-        if (timerId !== -1) {
-          clearTimeout(timerId);
-        }
-        try {
-          atomicFile.finishWrite();
-        } catch (error) {
-          const err = error as BusinessError;
-          fail(err.message);
-          return;
-        }
-        settled = true;
-        resolve();
-      };
-      try {
-        const stream: fileIo.WriteStream = atomicFile.startWrite();
-        timerId = setTimeout((): void => { fail('AtomicFile write 回调超时'); }, 3000);
-        if (content.length === 0) {
-          commit();
-        } else {
-          stream.end(content, 'utf-8', (err?: BusinessError): void => {
-            if (err !== undefined && err !== null) {
-              fail(err.message);
-              return;
-            }
-            commit();
-          });
-        }
-      } catch (error) {
-        const err = error as BusinessError;
-        fail(err.message);
-      }
-    });
+    return atomicWriteText(path, content);
   }
 
   /** 分享产物只留在 App cacheDir；下次分享时清理本服务超过 24 小时的临时目录。 */

@@ -2,6 +2,7 @@
 import { UIUtils } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { GitImportDraft } from '../model/GitImportDraftStore';
+import { isGiteeRemote, isGitHubRemote } from '../git/GitRemoteAuth';
 import { Icon } from '../common/Icons';
 import { FocusRequest } from '../common/FocusRequest';
 import { ZipChooseOutcome, ZipImportOutcome } from '../model/ZipImportService';
@@ -62,26 +63,6 @@ export struct ImportVaultDialog {
   private setWorking(working: boolean): void {
     this.working = working;
     this.onBusyChange(working);
-  }
-
-  private isGiteeRemote(): boolean {
-    const scheme: number = this.gitRemote.indexOf('://');
-    const authorityStart: number = scheme >= 0 ? scheme + 3 : 0;
-    const slash: number = this.gitRemote.indexOf('/', authorityStart);
-    const authority: string =
-      this.gitRemote.substring(authorityStart, slash >= 0 ? slash : this.gitRemote.length);
-    const host: string = authority.substring(authority.lastIndexOf('@') + 1).split(':')[0].toLowerCase();
-    return host === 'gitee.com' || host.endsWith('.gitee.com');
-  }
-
-  private isGitHubRemote(): boolean {
-    const scheme: number = this.gitRemote.indexOf('://');
-    const authorityStart: number = scheme >= 0 ? scheme + 3 : 0;
-    const slash: number = this.gitRemote.indexOf('/', authorityStart);
-    const authority: string =
-      this.gitRemote.substring(authorityStart, slash >= 0 ? slash : this.gitRemote.length);
-    const host: string = authority.substring(authority.lastIndexOf('@') + 1).split(':')[0].toLowerCase();
-    return host === 'github.com' || host === 'www.github.com';
   }
 
   private clearGitCredentials(): void {
@@ -204,7 +185,7 @@ export struct ImportVaultDialog {
       return;
     }
     const username: string = this.gitUsername.trim();
-    if (this.isGiteeRemote() && this.gitToken.length > 0 && username.length === 0) {
+    if (isGiteeRemote(this.gitRemote) && this.gitToken.length > 0 && username.length === 0) {
       this.gitAuthHint = '使用 Gitee 私人令牌时，请填写对应用户名。';
       return;
     }
@@ -516,7 +497,7 @@ export struct ImportVaultDialog {
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
-            if (this.isGiteeRemote()) {
+            if (isGiteeRemote(this.gitRemote)) {
               Column({ space: Space.s1 }) {
                 Text('用户名')
                   .fontSize(FontSize.body3)
@@ -572,7 +553,7 @@ export struct ImportVaultDialog {
             .alignItems(HorizontalAlign.Start)
             Text(this.gitAuthHint.length > 0
               ? this.gitAuthHint
-              : (this.isGitHubRemote()
+              : (isGitHubRemote(this.gitRemote)
                 ? 'GitHub 使用 Bearer 认证；私有仓库需要令牌，公开仓库可留空。'
                 : '私有仓库需要令牌，公开仓库可留空。'))
               .fontSize(FontSize.caption)

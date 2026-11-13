@@ -23,7 +23,7 @@ import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { FocusRequest } from '../common/FocusRequest';
 import { SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from '../model/Vault';
-import { VaultRegistry } from '../model/VaultRegistry';
+import { GIT_IMPORTING_SUFFIX, VaultRegistry } from '../model/VaultRegistry';
 import { VaultDirChild } from '../model/VaultAccess';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
 import { AgentRuntime } from '../model/AgentRuntime';
@@ -88,7 +88,8 @@ import {
 import { AgentWorkspace } from '../components/AgentWorkspace';
 import { StartupMask } from '../components/StartupMask';
 import { Icon } from '../common/Icons';
-import { FontSize, Motion, Radius, Shadow, Size, Space } from '../common/Tokens';
+import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
+import { FontSize, Motion, Radius, Shadow, Size, Space, Weight } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
 import { DEFAULT_EDITOR_EXPERIENCE, EditorExperienceMode } from '../model/EditorExperiencePolicy';
@@ -175,8 +176,6 @@ const GIT_ENTRY_UI_ENABLED: boolean = true;
 /** v1.45：由 .local/local-agent-ui.json 构建参数决定是否显示。 */
 const XIAOYI_DIALOG_ENTRY_PROFILE_VALUE: string = BuildProfile.showXiaoyiDialogEntry;
 const XIAOYI_DIALOG_ENTRY_ENABLED: boolean = XIAOYI_DIALOG_ENTRY_PROFILE_VALUE === 'true';
-/** v1.36：导入临时库 id 后缀（与 VaultRegistry.GIT_IMPORTING_SUFFIX 同值，复用导入标记机制）。 */
-const ZIP_IMPORTING_SUFFIX: string = '__importing';
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -233,7 +232,7 @@ function segItem(active: boolean) {
   .fontSize(FontSize.body3)
   .fontColor(active ? $r('app.color.text_primary') : $r('app.color.text_secondary'))
   .fontWeight(active ? FontWeight.Medium : FontWeight.Normal)
-  .height(28)
+  .height(Size.segItemH)
   .padding({ left: Space.s3, right: Space.s3 })
   .textAlign(TextAlign.Center)
   .borderRadius(Radius.full)
@@ -2830,7 +2829,7 @@ struct Index {
     const registry: VaultRegistry = VaultRegistry.get();
     const resolver: VaultPathResolver = new VaultPathResolver(registry.abilityContext());
     const finalId: string = registry.uniqueVaultId(sanitizeVaultName(name), '');
-    const tempId: string = registry.uniqueVaultId(finalId + ZIP_IMPORTING_SUFFIX, '');
+    const tempId: string = registry.uniqueVaultId(finalId + GIT_IMPORTING_SUFFIX, '');
     const tempDir: string = registry.vaultDirOf(tempId);
     const finalDir: string = registry.vaultDirOf(finalId);
     let marked: boolean = false;
@@ -3008,14 +3007,12 @@ struct Index {
   }
 
   private currentNoteName(): string {
-    const name: string = this.currentFileName();
-    return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
+    return noteDisplayName(this.currentFileName());
   }
 
   /** v1.31 31.1：切换笔记项显示笔记标题（去 .md），不显示带扩展名的文件名 */
   private paneNoteTitle(path: string): string {
-    const name: string = path.substring(path.lastIndexOf('/') + 1);
-    return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
+    return noteDisplayNameOfPath(path);
   }
 
   private activeNotePane(): string {
@@ -5654,14 +5651,7 @@ struct Index {
     if (this.blockPanelWikiAlias.length > 0) {
       return this.blockPanelWikiAlias;
     }
-    let target: string = this.blockPanelWikiTarget;
-    if (target.endsWith('.markdown')) {
-      target = target.substring(0, target.length - '.markdown'.length);
-    } else if (target.endsWith('.md')) {
-      target = target.substring(0, target.length - 3);
-    }
-    const slash: number = target.lastIndexOf('/');
-    return slash >= 0 ? target.substring(slash + 1) : target;
+    return noteDisplayNameOfPath(this.blockPanelWikiTarget);
   }
 
   private async unlinkBlockPanelWiki(): Promise<void> {
@@ -6622,6 +6612,16 @@ struct Index {
     return pane === 'right' ? this.rightLastClosedPath : this.leftLastClosedPath;
   }
 
+  private paneEmptyTitleSize(pane: string): number {
+    return pane === 'right' ? Size.paneEmptyTitleRight :
+      (this.isSingleScreenLayout() ? Size.paneEmptyTitleSingle : Size.paneEmptyTitleWide);
+  }
+
+  /** 行尾全角句号悬挂：负字距抵消「。」字身框右侧空档，使墨迹（而非文本框）视觉居中 */
+  private paneEmptyPunctHang(fontSize: number): number {
+    return -fontSize * Size.paneEmptyPunctHangRatio;
+  }
+
   private paneRecentPaths(pane: string): string[] {
     const closedPath: string = this.paneLastClosedPath(pane);
     const paths: string[] = [];
@@ -6634,8 +6634,7 @@ struct Index {
   }
 
   private noteTitleForPath(path: string): string {
-    const name: string = path.substring(path.lastIndexOf('/') + 1);
-    return name.endsWith('.md') ? name.substring(0, name.length - 3) : name;
+    return noteDisplayNameOfPath(path);
   }
 
   private noteFolderForPath(path: string): string {
@@ -8385,14 +8384,7 @@ struct Index {
 
   /** 回收站视图「永久删除」（47.3）：确认弹窗即唯一保护，确认后真删，不进撤销。 */
   private openPurgeTrashDialog(relPath: string): void {
-    const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
-    const lower: string = name.toLowerCase();
-    let display: string = name;
-    if (lower.endsWith('.markdown')) {
-      display = name.substring(0, name.length - '.markdown'.length);
-    } else if (lower.endsWith('.md')) {
-      display = name.substring(0, name.length - '.md'.length);
-    }
+    const display: string = noteDisplayNameOfPath(relPath);
     const slash: number = relPath.lastIndexOf('/');
     const origin: string = slash >= 0 ? relPath.substring(0, slash) : '根目录';
     this.purgeTrashCtl = new CustomDialogController({
@@ -9272,9 +9264,7 @@ struct Index {
 
   /** v1.53 PDF 文件名：笔记名去 .md 后缀加 .pdf（无后缀直接加）。 */
   private pdfFileNameOf(itemName: string): string {
-    const baseName: string = itemName.endsWith('.md')
-      ? itemName.substring(0, itemName.length - 3) : itemName;
-    return baseName + '.pdf';
+    return noteDisplayName(itemName) + '.pdf';
   }
 
   /**
@@ -9498,15 +9488,7 @@ struct Index {
    */
   private openRenamePathDialog(relPath: string, isDir: boolean): void {
     const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
-    let initial: string = name;
-    if (!isDir) {
-      const lower: string = name.toLowerCase();
-      if (lower.endsWith(NoteService.EXT)) {
-        initial = name.substring(0, name.length - NoteService.EXT.length);
-      } else if (lower.endsWith('.markdown')) {
-        initial = name.substring(0, name.length - '.markdown'.length);
-      }
-    }
+    const initial: string = isDir ? name : noteDisplayName(name);
     this.renamePathCtl = new CustomDialogController({
       builder: RenamePathDialog({
         relPath: relPath,
@@ -9932,22 +9914,31 @@ struct Index {
           Text('曜石笔记')
             .fontSize(FontSize.caption)
             .letterSpacing(Size.paneEmptyBrandTracking)
+            .offset({ x: Size.paneEmptyBrandTracking / 2 })
             .fontColor($r('app.color.text_tertiary'))
-          Text(this.currentVaultNoteCount === 0 ? '空白，是最好的开始。' : '把空间，留给思考。')
-            .fontSize(pane === 'right' ? Size.paneEmptyTitleRight :
-              this.isSingleScreenLayout() ? Size.paneEmptyTitleSingle : Size.paneEmptyTitleWide)
+          Text() {
+            Span(this.currentVaultNoteCount === 0 ? '空白，是最好的开始' : '把空间，留给思考')
+            Span('。').letterSpacing(this.paneEmptyPunctHang(this.paneEmptyTitleSize(pane)))
+          }
+            .fontSize(this.paneEmptyTitleSize(pane))
             .fontWeight(Size.paneEmptyTitleWeight)
             .fontColor($r('app.color.text_primary'))
             .textAlign(TextAlign.Center)
             .width('100%')
           if (this.currentVaultNoteCount === 0) {
-            Text('这个库还没有笔记。新建第一篇，开始写作。')
+            Text() {
+              Span('这个库还没有笔记。新建第一篇，开始写作')
+              Span('。').letterSpacing(this.paneEmptyPunctHang(FontSize.body2))
+            }
               .fontSize(FontSize.body2)
               .fontColor($r('app.color.text_secondary'))
               .textAlign(TextAlign.Center)
           } else {
-            Text(this.isSingleScreenLayout()
-              ? '从文件列表选一篇笔记，或新建一篇。' : '从文件列表选一篇，或拖到这一栏打开。')
+            Text() {
+              Span(this.isSingleScreenLayout()
+                ? '从文件列表选一篇笔记，或新建一篇' : '从文件列表选一篇，或拖到这一栏打开')
+              Span('。').letterSpacing(this.paneEmptyPunctHang(FontSize.body2))
+            }
               .fontSize(FontSize.body2)
               .fontColor($r('app.color.text_secondary'))
               .textAlign(TextAlign.Center)
@@ -10730,7 +10721,7 @@ struct Index {
       if (this.gitAheadCommitCount > 0) {
         Text(this.gitAheadBadgeLabel())
           .fontSize(FontSize.caption)
-          .fontWeight(600)
+          .fontWeight(Weight.semibold)
           .lineHeight(Space.s5)
           .fontColor($r('app.color.on_brand'))
           .textAlign(TextAlign.Center)

@@ -1899,6 +1899,21 @@ model 层再无结构类型混用）。
 **校验方式**：hvigor `assembleHap` 全量编译通过（含 x86_64 与 arm64-v8a 两个 ABI 的 Native 编译），
 `tools/tests` 345/345 用例通过。
 
+**2026-11-13 补充（AtomicWrite.ets 编译实测 + scratch 探针二分）**：`Error` 本身就是这道线的
+重灾区——**`extends Error` 的自定义错误类，其实例不能作为实参 / 赋值目标传给显式标注 `Error`
+的形参 / 变量**，同样报 10605030：
+
+- 触发：`fail('write', new AtomicWriteError(...))`（实参位）、`const e: Error = new AtomicWriteError(...)`
+  （赋值位）；
+- **不触发**的位置：`throw new 子类(...)`（既有 ZipImportError / VaultAccessError 全走这条）；
+  函数**直返**（`function f(): Error { return new 子类(...); }` 探针干净）；形参未标类型
+  （HEAD 已上线代码 `reject(new ProbeWriteError(...))` 合法，因为 Promise executor 参数无标注）；
+- 解法（`common/AtomicWrite.ets` 落地）：加一个以 `Error` 静态类型**直返**子类实例的包装函数
+  （`function atomicWriteErrorOf(error: Error): Error { const err = error as BusinessError; return new AtomicWriteError(err.message, err.code ?? -1); }`），
+  调用点改走它——实参静态类型即 `Error`，语义零变化；
+- 机理：ArkTS 标准库的 `Error` 声明为**接口**，`class X extends Error` 与 `Error` 之间编译器
+  只能做结构兼容判断 → 被 arkts-no-structural-typing 拦截；`throw` 与直返位置不做该检查。
+
 ### T10 ✅ Native 侧补齐 15.3 需要的四个能力（2026-10-31 编译 + 既有设备通路实测）
 
 在既有 T5（枚举）/ T7（写链路）之上补了四个方法，均走同一条「持有目录 fd + 相对名字」通路：
@@ -2241,4 +2256,35 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
   文件体积近似不变。
 - ⏭ 待真机回归：API24 / XT2 上 `createDocument` 是否同样自带初始页（用「分享 PDF → 产物
   无空白尾页」验收即可，不必解析结构）。
+
+## AE 组：expandSafeArea 与底部系统安全区（2026-11-13）
+
+### AE1 ✅ 屏幕底部 80px 灰条 = 系统手势条窗口（SCBGestureNavBar），应用内容按规范不应使用；根 Stack 已刻意把底色画进去（2026-11-13 模拟器实测 + 错误诊断复盘）
+
+来源：用户提问（设置与关于页「为什么没顶到屏幕下沿，底部一行灰色条没用上」），API26 x86_64
+Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口取证 +
+`uitest dumpLayout` 组件树取证 + 修复前后逐像素对比。非 API24 / XT2 证据，真机验收时顺带回归。
+
+- **窗口层事实（hidumper）**：应用窗口 `huaweiobsidian0` 本身就是全屏 `[0,0,3184,2232]`
+  （无需 `setWindowLayoutFullScreen`）；系统手势条窗口 `SCBGestureNavBar` 为独立系统窗口
+  `[0,2152,3184,80]`、ZOrd 2200 浮在应用之上，状态栏 `SCBStatusBar` `[0,0,3184,112]`、
+  ZOrd 2202。中间的白色小横条是系统 home indicator。
+- **布局层事实（uitest dumpLayout）**：ArkUI 安全区避让默认生效——全部页面（工作区与次级
+  页面）的组件布局都落在 `[112,2152]`，没有组件延伸进底部 80px。
+- **「灰条」的真身**：`Index.ets` build() 根 Stack（`.backgroundColor(bg_page)` +
+  `.expandSafeArea([SafeAreaType.SYSTEM],[SafeAreaEdge.BOTTOM])`，注释「页面底色延伸到
+  系统底部手势安全区；交互控件仍按原窗口安全区排版」）**早就**把 bg_page 画进手势条区域
+  ——灰条是刻意的沉浸式底色，不是没画到的窗口底色；里面不放交互内容是设计决策
+  （避免被半透明手势条遮挡/误触），不是 bug。
+- ⚠️ **错误诊断复盘（防止重蹈）**：曾误判「次级视图宿主缺 expandSafeArea → 底部露出窗口
+  底色灰条」，给宿主 Column 补了 `.expandSafeArea(BOTTOM)`——**修复前后逐像素完全一致**
+  （多模态识别的「安全区条带」描述有诱导性，先入为主不可信）。原因：根 Stack 已负责整页
+  底色延伸，宿主层再加 expandSafeArea 对像素零影响，只会让次级页面的滚动视口多出 80px、
+  内容可滑进手势条下面——与应用「控件按安全区排版」的设计相悖。该改动已回退。
+- **结论**：回答「底部灰条为什么没用上」——那是系统手势导航条专属区域，任何页面都不该
+  放内容；应用已把手势区染成页面底色保证视觉连续。若未来要做沉浸阅读（内容延伸到
+  手势条下），必须整页统一改（含工作区），不能只改次级页面。
+- ⏭ 待真机回归：XT2 / API24 上 SCBGestureNavBar 的高度与融合行为（模拟器 80px ≈ 26vp）。
+
+
 

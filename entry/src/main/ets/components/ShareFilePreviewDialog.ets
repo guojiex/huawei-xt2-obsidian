@@ -1,6 +1,6 @@
 import { UIUtils } from '@kit.ArkUI';
 import { Icon } from '../common/Icons';
-import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { FontSize, Radius, Size, Space, Weight } from '../common/Tokens';
 import { shareFailureMessage } from '../model/UserErrorMessages';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
@@ -155,7 +155,7 @@ export struct ShareFilePreviewDialog {
         Row({ space: Space.s3 }) {
           Text(this.metaLead())
             .fontSize(FontSize.caption)
-            .fontWeight(600)
+            .fontWeight(Weight.semibold)
             .fontColor($r('app.color.text_primary'))
           Text(this.noteCount.toString() + ' 篇笔记')
             .fontSize(FontSize.caption)

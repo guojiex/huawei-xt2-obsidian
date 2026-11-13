@@ -1051,7 +1051,7 @@ export struct SettingsView {
         .fontColor($r('app.color.text_primary'))
         .backgroundColor($r('app.color.bg_card'))
         .padding(Space.s3)
-        .height(180)
+        .height(Size.promptAreaH)
         .borderRadius(Radius.control)
         .border({ width: 1, color: $r('app.color.line') })
         .onChange((value: string): void => { this.systemPromptDraft = value; })
@@ -1082,7 +1082,7 @@ export struct SettingsView {
             .fontColor($r('app.color.text_primary'))
             .backgroundColor($r('app.color.bg_card'))
             .padding(Space.s3)
-            .height(128)
+            .height(Size.skillPromptAreaH)
             .borderRadius(Radius.control)
             .border({ width: 1, color: $r('app.color.line') })
             .onChange((value: string): void => {

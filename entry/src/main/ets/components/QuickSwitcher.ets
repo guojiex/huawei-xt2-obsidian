@@ -1,5 +1,6 @@
 /** v0.4 当前库文件名搜索与最近打开面板；v1.35 增加「当前库 / 全部库」范围与跨库结果分组。 */
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { noteDisplayName } from '../common/NoteDisplayName';
 import { FullTextSearchResult, SearchOutcome } from '../model/SearchStore';
 import { CrossVaultSearchOutcome, CrossVaultSearchGroup, CrossVaultHit } from '../model/CrossVaultSearchService';
 import { UtilityDialogShell } from './UtilityDialogShell';
@@ -244,15 +245,7 @@ export struct QuickSwitcher {
 
   /** 快切主标题按 v2 隐藏扩展名，完整路径仍用于区分同名文件。 */
   private displayName(path: string): string {
-    const name: string = this.fileName(path);
-    const lowerName: string = name.toLowerCase();
-    if (lowerName.endsWith('.markdown')) {
-      return name.substring(0, name.length - '.markdown'.length);
-    }
-    if (lowerName.endsWith('.md')) {
-      return name.substring(0, name.length - '.md'.length);
-    }
-    return name;
+    return noteDisplayName(this.fileName(path));
   }
 
   private isDuplicate(path: string): boolean {

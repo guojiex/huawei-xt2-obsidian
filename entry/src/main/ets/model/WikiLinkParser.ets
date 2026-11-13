@@ -1,4 +1,5 @@
 import { BridgeCodec } from '../common/BridgeCodec';
+import { noteDisplayNameOfPath } from '../common/NoteDisplayName';
 
 export interface WikiLinkReference {
   start: number;
@@ -242,11 +243,7 @@ export class WikiLinkParser {
   }
 
   private static displayLabel(target: string): string {
-    const noExtension: string = target.endsWith('.markdown')
-      ? target.substring(0, target.length - '.markdown'.length)
-      : (target.endsWith('.md') ? target.substring(0, target.length - 3) : target);
-    const slash: number = noExtension.lastIndexOf('/');
-    return slash >= 0 ? noExtension.substring(slash + 1) : noExtension;
+    return noteDisplayNameOfPath(target);
   }
 
   private static escapeHtml(text: string): string {

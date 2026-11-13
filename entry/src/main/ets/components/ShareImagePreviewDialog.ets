@@ -1,5 +1,5 @@
 import { UIUtils } from '@kit.ArkUI';
-import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { FontSize, Radius, Size, Space, Weight } from '../common/Tokens';
 import { shareFailureMessage } from '../model/UserErrorMessages';
 import { ShareImageWidthOption, ShareImageWidthPresets } from './ShareImageSettingsDialog';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
@@ -217,7 +217,7 @@ export struct ShareImagePreviewDialog {
           Row({ space: Space.s3 }) {
             Text('1 张长图')
               .fontSize(FontSize.caption)
-              .fontWeight(600)
+              .fontWeight(Weight.semibold)
               .fontColor($r('app.color.text_primary'))
             Text(this.previewImage.width.toString() + ' × ' + this.previewImage.height.toString() + ' px')
               .fontSize(FontSize.caption)
