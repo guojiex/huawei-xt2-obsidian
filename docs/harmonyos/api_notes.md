@@ -2363,6 +2363,31 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
 - 机制小结：布局默认止于安全区下沿；根 Stack expandSafeArea 铺 bg_page 兜底无内容页；
   有内容的表面由各分支自带的「背景色 + expandSafeArea」连续画进条带，宿主不得 clip。
 
+### AE5 ✅ v1.57 57.7 落地实测：固定内容压条带只能 `.offset()`；`Area` 单位是 vp；expandSafeArea 只延伸渲染边界、**滚动范围仍止于布局区下沿**（2026-11-14，API26 模拟器）
+
+> 工作区可见文字压到物理下沿（需求池 Y-03，状态条 / 钉底簇 / 连写条）；
+> 防线测试同文件第 5、6 组断言。
+
+- ✅ **固定内容压进条带的唯一途径是 `.offset()`**（AE4「布局不进安全区」的推论）：
+  状态条 / 钉底簇 / 连写条卡 `.offset({ y: navClearanceVp })` 后渲染与**命中测试同步
+  位移**（点击、像素采样均确认）；下移量一律取 `navIndicatorHeightPx` 动态值。
+- ✅ **`onAreaChange` 回调的 `Area.height/width` 单位是 vp（非 px）**：消费处再包
+  `px2vp` 即二次换算。实测事故：两行连写条实测高 51.5vp，首版按 `px2vp(chipH)` 当
+  ~18vp 用且簇 offset 钳 0 → 回收站行被压进连写条后面（真机图像素复盘定位）。
+- ✅ **expandSafeArea 对 List/Scroll 只延伸渲染边界，滚动范围仍止于布局区下沿**：
+  dump 里 List bounds 显示延伸到物理下沿（[0,..,2232]），但**滚动到底时末条底 =
+  布局区下沿 2152 − List 底 padding**（树 303px → 末条底 1849、章节 79.5px → 2072，
+  均精确实测）——AE4「Scroll bounds 本身延伸」只对 dump 可见性成立，**滚动 extent
+  不延伸**；让位公式不得再叠加 navClearance（叠了即多让一个条带高度 80px）。
+- ✅ 实测几何（API26 模拟器，density **2.875**——以 nav 按钮 138px=48vp、appbar
+  207px=72vp、树行缩进 46px=16vp、卡内缩 34px=12vp 四组精确吻合定标，纠正早前
+  px2vp=2 的错误假设）：布局区底 2152px；条带 [2152..2232]；navIndicatorHeightPx=80
+  → navClearanceVp≈27.83vp；Space.s1=4vp≈11.5px；锚点：树末条底 1849=簇顶 1860−s1、
+  章节末条底 2072=连写条顶 2084−s1、连写条卡底 flush 2232。
+- ⚠️ **expandSafeArea 的让位公式形态无关项**：树末条底 = 簇顶 − s1 对抽屉（簇贴物理
+  下沿）与嵌入（簇在连写条上方）两形态都成立，但抽屉形态未在本模拟器实测
+  （triplefold 模拟器 `emulator fold` 不改显示分辨率），待 XT2 真机验收。
+
 
 ## AF 组：分享接收（存入笔记，2026-11-13 官方答复 + 本机 SDK 声明核对）
 
