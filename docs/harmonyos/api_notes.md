@@ -2326,14 +2326,42 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
   照样延伸到 2232（底色浸入实测 F5F6F8）⚠️ 与官方 FAQ（faqs-vision-7）「不能设置固定宽高尺寸」
   的字面表述冲突——至少「固定宽度」不阻碍 bottom 方向扩展，该约束按字面理解过严。
 - ✅ `layoutWeight(1)` + `width('100%')` 的 Scroll 同样生效。
-- ⚠️ 未解：工作区 nav Column（固定宽 + `.animation`）expandSafeArea 不生效（AE1 观测）——
-  固定宽度已被上一条证伪为阻断原因，真实原因未定（候选：`.animation`/`.translate`、父容器
-  边界条件）；工作区范围 v1.57 不动，留待后续版本需求。
+- ✅ ~~未解：工作区 nav Column（固定宽 + `.animation`）expandSafeArea 不生效~~（2026-11-13
+  晚间探针定论：阻断点是**宿主的 `.clip(true)`**，固定宽度与动画均无关，见 AE4）。
 - ✅ 末条让位链路：EntryAbility `avoidAreaChange` TYPE_NAVIGATION_INDICATOR 分支 + 启动时
   `getWindowAvoidArea` 补发初始值 → AppStorage `navIndicatorHeightPx`（**px**），页面侧
   `@StorageProp` + `px2vp` 消费（同 keyboardInsetPx / creasePx 口径：UIAbility 早期 px2vp
   可能异常）；内容底部 padding = 既有间距 + 避让高度，滚动到底时末条完整露出小白条上方
   （实测末条止于 1933 < 2152，条带内 0 内容像素残留）。
+
+### AE4 ✅ v1.57 57.6 落地实测：`.clip(true)` 裁掉子组件 expandSafeArea 的条带延伸；Column 扩展只在绘制层、layout dump 不可见（2026-11-13，API26 模拟器）
+
+> 工作区（三栏笔记视图）条带收尾（需求池 Y-02）；防线测试
+> [`tools/tests/test_nav_indicator_immersion.mjs`](../../tools/tests/test_nav_indicator_immersion.mjs)
+> 第 4 组断言。
+
+- ✅ **宿主 `.clip(true)` 是 expandSafeArea 失效的真实阻断点**（AE3 未解项定论）：工作区
+  多屏分支 Row / 单屏分支 Stack 带 `.clip(true)` 时，子列（含 expandSafeArea）的条带延伸
+  整体被裁掉，条带回落到根 Stack 铺的 bg_page；移除两处 clip 后 nav Column（bg_navigation）
+  与内容 Column（bg_card）的既有 expandSafeArea 立即生效——固定宽度、`.animation`、
+  `.translate` 均非阻断原因。
+- ✅ **`height('100%')` 不阻碍 BOTTOM 方向扩展**：根 Stack（`height('100%')` +
+  expandSafeArea）自始生效，与官方 FAQ（faqs-arkui-1103）「设置固定宽高时扩展方向仅
+  TOP/START，**百分比除外**」一致；AE1 观测的「根 Stack 生效、子列不生效」差异完全由
+  clip 解释。
+- ✅ **Column 的安全区扩展只在绘制层**：扩展后组件在 `ui layout` dump 的 bounds 仍止于
+  安全区下沿（实测 2152），**像素采样是验证条带延伸的唯一可靠手段**（Scroll 例外，AE3
+  实测其 bounds 本身延伸）。
+- ✅ 遮罩（半透明压暗层）也要自带 `expandSafeArea`：单屏抽屉遮罩 Column 不带时条带内
+  不被压暗（内容透过小白条区域高亮）；补 `expandSafeArea([SafeAreaType.SYSTEM],
+  [SafeAreaEdge.BOTTOM])` 后压暗覆盖到物理下沿（实测条带内 (162,168,176) 一致）。
+- ✅ 折叠/展开（宽度动画 + translate）在 clip 移除后无残影、无条带破相（连续截图实测）；
+  侧栏滚动条带底色 bg_navigation、内容区 bg_card，与上方表面无缝衔接。
+- 颜色 token 实测澄清：**bg_page=#E9EDF2、bg_navigation=#F5F6F8、bg_card=#FFFFFF**
+  （`entry/src/main/resources/base/element/color.json`）；此前把 #F5F6F8 当 bg_page 是误读，
+  条带内观测的 `#E9EDF1` ≈ bg_page（蓝通道 ±1 为渲染噪声）。
+- 机制小结：布局默认止于安全区下沿；根 Stack expandSafeArea 铺 bg_page 兜底无内容页；
+  有内容的表面由各分支自带的「背景色 + expandSafeArea」连续画进条带，宿主不得 clip。
 
 
 ## AF 组：分享接收（存入笔记，2026-11-13 官方答复 + 本机 SDK 声明核对）

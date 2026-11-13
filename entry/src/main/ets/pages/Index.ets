@@ -10213,6 +10213,7 @@ struct Index {
               .translate({ x: this.drawerNavigationWidth() *
                 (this.breakpoint === Breakpoint.SM ? this.drawerProgress : this.noteNavigationProgress()) })
               .backgroundColor($r('app.color.mask'))
+              .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
               .opacity(this.singleScreenNavigationOpen() ? 1 : 0)
               .hitTestBehavior(this.singleScreenNavigationOpen() ? HitTestMode.Block : HitTestMode.None)
               .focusable(false)
@@ -10228,7 +10229,6 @@ struct Index {
         }
         .width('100%')
         .height('100%')
-        .clip(true)
       } else {
         Row() {
           Column() {
@@ -10282,7 +10282,6 @@ struct Index {
         }
         .width('100%')
         .height('100%')
-        .clip(true)
       }
 
       if (this.undoVisible) {

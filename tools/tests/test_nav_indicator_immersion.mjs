@@ -71,3 +71,27 @@ test('消费视图必须走 StorageProp + 页面侧 px2vp', () => {
       `${rel} 避让高度禁止硬编码 26vp（三折叠各形态高度未记载）`);
   }
 });
+
+test('工作区底部表面延伸不被宿主裁剪（57.6，Y-02）', () => {
+  const src = read('pages/Index.ets');
+  // 阻断点实测（2026-11-13 探针）：工作区分支宿主（多屏 Row / 单屏 Stack）的
+  // .clip(true) 会把子列 expandSafeArea 的条带延伸整体裁掉——移除后侧栏
+  // bg_navigation / 内容 bg_card 立即延伸到物理下沿。防御性再加回即回归。
+  assert.ok(!src.includes('.clip(true)'),
+    'pages/Index.ets 工作区分支宿主不得带 .clip(true)（裁掉底部安全区延伸，v1.57 57.6）；确需局部裁剪须改为不覆盖条带的形式并同步更新本测试');
+  // 底部三个表面的「背景色 + expandSafeArea」配对必须保持：
+  // 导航侧栏 ×2（单屏抽屉 / 多屏侧栏）、内容列 ×1、单屏遮罩 ×1。
+  const pairs = [
+    ['bg_navigation', 2],
+    ['bg_card', 1],
+    ['mask', 1],
+  ];
+  for (const [color, minCount] of pairs) {
+    const re = new RegExp(
+      `\\.backgroundColor\\(\\$r\\('app\\.color\\.${color}'\\)\\)\\s*` +
+      `\\.expandSafeArea\\(\\[SafeAreaType\\.SYSTEM\\], \\[SafeAreaEdge\\.BOTTOM\\]\\)`, 'g');
+    const count = (src.match(re) || []).length;
+    assert.ok(count >= minCount,
+      `pages/Index.ets 底部表面 ${color} 应有 ≥${minCount} 处「背景色 + expandSafeArea(BOTTOM)」配对，实际 ${count}（v1.57 57.6 误删即回归）`);
+  }
+});
