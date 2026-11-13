@@ -6,6 +6,10 @@ const shellSource = readSourceFile(new URL(
   '../../entry/src/main/ets/components/UtilityDialogShell.ets',
   import.meta.url
 ));
+const tokensSource = readSourceFile(new URL(
+  '../../entry/src/main/ets/common/Tokens.ets',
+  import.meta.url
+));
 const noteDialogSource = readSourceFile(new URL(
   '../../entry/src/main/ets/components/NoteDialogs.ets',
   import.meta.url
@@ -35,7 +39,9 @@ test('utility shell matches the wide dialog and single-screen sheet geometry', (
   assert.match(shellSource, /return Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 2\);/);
   assert.match(shellSource, /Radius\.dialog \* 2/);
   assert.match(shellSource, /height\(Space\.s10\)/);
-  assert.match(shellSource, /\.fontWeight\(600\)/);
+  // 2026-11-13 起字重不散写数值，走 Weight.semibold（=600）token。
+  assert.match(shellSource, /\.fontWeight\(Weight\.semibold\)/);
+  assert.match(tokensSource, /static readonly semibold: number = 600;/);
 });
 
 test('native note, vault, quick-switch, import, and share dialogs use the shared shell', () => {

@@ -7,6 +7,10 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 const source = readSourceFile(new URL('../../entry/src/main/ets/components/QuickSwitcher.ets', import.meta.url));
+// 2026-11-13 起 .md/.markdown 显示名收敛到 common/NoteDisplayName.ets，一并内联。
+const noteDisplayNameSource = readSourceFile(new URL('../../entry/src/main/ets/common/NoteDisplayName.ets', import.meta.url))
+  .replace(/^import .*;\n/gm, '')
+  .replace(/^export /gm, '');
 
 function extractMethod(signature, nextMarker, modifier = 'private') {
   const prefix = modifier.length > 0 ? `  ${modifier} ${signature}` : `  ${signature}`;
@@ -24,7 +28,8 @@ const methods = [
   extractMethod('displayName(path: string): string {', '\n  private isDuplicate'),
   extractMethod('isDuplicate(path: string): boolean {', '\n  @Builder\n  ScopeOption')
 ];
-const code = transformSync(`class QuickSwitcherHarness {\n${methods.join('\n')}\n}; module.exports = QuickSwitcherHarness;`,
+const code = transformSync(noteDisplayNameSource + '\n' +
+  `class QuickSwitcherHarness {\n${methods.join('\n')}\n}; module.exports = QuickSwitcherHarness;`,
   { loader: 'ts', format: 'cjs' }).code;
 
 function createHarness() {

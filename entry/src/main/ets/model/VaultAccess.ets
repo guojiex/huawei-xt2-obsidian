@@ -23,6 +23,7 @@
  * 定位是**纯逻辑 + 依赖注入**（与 ExternalDirProbe / VaultDirNative 同套路）：
  * 真正的系统 IO 由调用方注入，工具侧单测可以在 Node 里裸跑。
  */
+import { ErrorCodeCarrier, errorCodeOf } from '../common/ErrorCode';
 
 /** 库根的形态。上层只允许拿它做差异化**提示**，不允许据此分支 IO。 */
 export type VaultAccessKind = 'sandbox' | 'external';
@@ -1030,7 +1031,7 @@ export class ExternalVaultAccess implements VaultAccess {
     try {
       fd = this.fdSource.openRootFd();
     } catch (error) {
-      const code: number = ExternalVaultAccess.errorCodeOf(error);
+      const code: number = errorCodeOf(error);
       throw new VaultAccessError(code, ExternalVaultAccess.describe(code));
     }
     try {
@@ -1156,14 +1157,6 @@ export class ExternalVaultAccess implements VaultAccess {
     }
   }
 
-  static errorCodeOf(error: Object): number {
-    const carry: ErrorCodeCarrier = error as ErrorCodeCarrier;
-    if (carry !== undefined && carry !== null && typeof carry.code === 'number') {
-      return carry.code;
-    }
-    return -1;
-  }
-
   /** errno → 人话（15.1 的用户提示要走这一段）。 */
   static describe(code: number): string {
     if (code === 2) {
@@ -1183,8 +1176,4 @@ export class ExternalVaultAccess implements VaultAccess {
     }
     return '无法访问所选目录（errno=' + code + '）';
   }
-}
-
-interface ErrorCodeCarrier {
-  code?: number;
 }

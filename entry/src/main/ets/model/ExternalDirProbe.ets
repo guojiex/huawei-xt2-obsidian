@@ -30,6 +30,7 @@
  * IO 全部经构造函数注入（picker / share / fs），Node 测试用受控假实现覆盖完整时序，
  * 设备实测只替换这三个注入对象 —— UI 不承担任何核实逻辑。
  */
+import { errorCodeOf } from '../common/ErrorCode';
 
 /** Picker 返回的目录 URI 形如 file://...，这里只做基本形状检查，不解析内容。 */
 export const PROBE_URI_PREFIX: string = 'file://';
@@ -318,7 +319,7 @@ export class ExternalDirProbeRunner {
     try {
       await this.fs.writeAtomic(targetUri, original + '\n' + PROBE_MARK + '\n');
     } catch (error) {
-      return describeProbeStep('atomic', false, ExternalDirProbeRunner.errorCodeOf(error), '写入失败');
+      return describeProbeStep('atomic', false, errorCodeOf(error), '写入失败');
     }
     try {
       const after: string = await this.fs.readText(targetUri);
@@ -328,7 +329,7 @@ export class ExternalDirProbeRunner {
       }
     } catch (error) {
       await this.restore(targetUri, original);
-      return describeProbeStep('atomic', false, ExternalDirProbeRunner.errorCodeOf(error), '回读失败');
+      return describeProbeStep('atomic', false, errorCodeOf(error), '回读失败');
     }
     await this.restore(targetUri, original);
     return describeProbeStep('atomic', true, 0, '写入与回读通过，原内容已还原');
@@ -341,14 +342,5 @@ export class ExternalDirProbeRunner {
     } catch (error) {
       // 还原不了也到此为止，UI 会显示原内容已改动，请手动检查
     }
-  }
-
-  /** 从异常对象里取 code，取不到返回 -1（UI 原样展示，不把它当成成功）。 */
-  static errorCodeOf(error: Object): number {
-    const typed: ProbeWriteError = error as ProbeWriteError;
-    if (typed !== undefined && typed !== null && typeof typed.code === 'number') {
-      return typed.code;
-    }
-    return -1;
   }
 }

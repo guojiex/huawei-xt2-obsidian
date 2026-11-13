@@ -15,6 +15,7 @@
  * 本文件的定位是**纯逻辑 + 依赖注入**：真正的 native 桥接由调用方传入，
  * 这样工具侧单测能在 Node 里跑（见 tools/tests/test_vault_dir_native.mjs）。
  */
+import { errorCodeOf } from '../common/ErrorCode';
 
 /** native 桥接契约，对应 vaultdir_napi 的两个导出。 */
 export interface VaultDirListResult {
@@ -105,11 +106,6 @@ export function selectVaultMarkdown(entries: VaultDirEntry[]): string[] {
   return picked;
 }
 
-/** BusinessError 的 code 字段。ArkTS 不允许用对象字面量当类型，必须具名。 */
-interface ErrorCodeCarrier {
-  code?: number;
-}
-
 /** errno → 人话。只写核实过程中真见过的，其余原样带上数字。 */
 const VAULT_DIR_ERROR_TEXT: Record<number, string> = {
   2: '目录不存在或已被移动（ENOENT）',
@@ -164,7 +160,7 @@ export class VaultDirectoryScanner {
     try {
       fd = this.fsImpl.openDirFd(uri);
     } catch (error) {
-      const code: number = VaultDirectoryScanner.errorCodeOf(error);
+      const code: number = errorCodeOf(error);
       return { ok: false, code: code, message: describeVaultDirError(code), entries: [] };
     }
 
@@ -180,22 +176,9 @@ export class VaultDirectoryScanner {
         this.fsImpl.closeFd(fd);
       } catch (error) {
         // 关闭失败不影响遍历结果，核实阶段只需知道发生了什么
-        hilogWarnOnce('vault dir fd close failed: ' + VaultDirectoryScanner.errorCodeOf(error));
+        hilogWarnOnce('vault dir fd close failed: ' + errorCodeOf(error));
       }
     }
-  }
-
-  /**
-   * BusinessError / Error 都能掏出数字码；掏不到返回 -1（沿用 ExternalDirProbe 口径）。
-   * 入参用 `Object` 而不是 `unknown`：ArkTS 禁 unknown/any（arkts-no-any-unknown），
-   * 类型也不能用对象字面量现写（arkts-no-obj-literals-as-types），必须具名 interface。
-   */
-  static errorCodeOf(error: Object): number {
-    const carry: ErrorCodeCarrier = error as ErrorCodeCarrier;
-    if (carry !== undefined && carry !== null && typeof carry.code === 'number') {
-      return carry.code;
-    }
-    return -1;
   }
 }
 
@@ -228,7 +211,7 @@ abstract class VaultDirSession {
     try {
       fd = this.fsImpl.openDirFd(uri);
     } catch (error) {
-      return onOpenFailed(VaultDirectoryScanner.errorCodeOf(error));
+      return onOpenFailed(errorCodeOf(error));
     }
     try {
       return action(fd);
@@ -236,7 +219,7 @@ abstract class VaultDirSession {
       try {
         this.fsImpl.closeFd(fd);
       } catch (error) {
-        hilogWarnOnce('vault dir fd close failed: ' + VaultDirectoryScanner.errorCodeOf(error));
+        hilogWarnOnce('vault dir fd close failed: ' + errorCodeOf(error));
       }
     }
   }

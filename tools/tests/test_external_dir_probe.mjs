@@ -36,7 +36,8 @@ function loadModule(source) {
 }
 
 const probe = loadModule(readSourceFile(
-  new URL('../../entry/src/main/ets/model/ExternalDirProbe.ets', import.meta.url)));
+  new URL('../../entry/src/main/ets/common/ErrorCode.ets', import.meta.url)) + '\n' +
+  readSourceFile(new URL('../../entry/src/main/ets/model/ExternalDirProbe.ets', import.meta.url)));
 
 const DIR_URI = 'file://docs/picked/My%20Notes';
 
@@ -252,10 +253,10 @@ test('probeWrite fails without pretending success when read-back loses the mark'
 });
 
 test('errorCodeOf reads numeric codes and degrades to -1 for unknown shapes', () => {
-  assert.equal(probe.ExternalDirProbeRunner.errorCodeOf({ code: 201 }), 201);
-  assert.equal(probe.ExternalDirProbeRunner.errorCodeOf(new Error('boom')), -1);
-  assert.equal(probe.ExternalDirProbeRunner.errorCodeOf(null), -1);
-  assert.equal(probe.ExternalDirProbeRunner.errorCodeOf('text'), -1);
+  assert.equal(probe.errorCodeOf({ code: 201 }), 201);
+  assert.equal(probe.errorCodeOf(new Error('boom')), -1);
+  assert.equal(probe.errorCodeOf(null), -1);
+  assert.equal(probe.errorCodeOf('text'), -1);
 });
 
 // ---- 诊断转发：openDirForDiagnosis / closeDirForDiagnosis ----

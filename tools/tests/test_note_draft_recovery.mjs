@@ -7,6 +7,9 @@ import { createRequire } from 'node:module';
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 const source = readSourceFile(new URL('../../entry/src/main/ets/model/NoteDraftService.ets', import.meta.url));
+// 2026-11-13 起原子写收敛到 common/AtomicWrite.ets 单一真源，一并内联。
+const atomicWriteSource = readSourceFile(new URL('../../entry/src/main/ets/common/AtomicWrite.ets', import.meta.url))
+  .replace(/^import .*;\n/gm, '');
 
 function loadDraftService(files = new Map(), directories = new Set()) {
   const context = vm.createContext({
@@ -33,6 +36,7 @@ function loadDraftService(files = new Map(), directories = new Set()) {
     hilog: { info() {}, error() {} }
   });
   const compiled = transformSync(
+    atomicWriteSource + '\n' +
     source.replace(/^import .*;\n/gm, '') + '\nmodule.exports = NoteDraftService;',
     { loader: 'ts', format: 'cjs' }
   ).code;

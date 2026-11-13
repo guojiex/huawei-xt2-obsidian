@@ -17,6 +17,7 @@ import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { FontSize, Radius, Space } from '../common/Tokens';
+import { errorCodeOf } from '../common/ErrorCode';
 import {
   ExternalDirProbeRunner, ProbeStep, describeProbeStep, displayNameFromUri, selectProbeMarkdown,
   safeDecodeUriComponent
@@ -242,7 +243,7 @@ struct ExternalDirProbePage {
       const detail: string = await action();
       this.push(describeProbeStep(id, true, 0, detail));
     } catch (error) {
-      const code: number = ExternalDirProbeRunner.errorCodeOf(error);
+      const code: number = errorCodeOf(error);
       this.push(describeProbeStep(id, false, code, '失败'));
     }
   }

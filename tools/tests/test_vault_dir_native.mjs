@@ -31,7 +31,8 @@ function loadModule(source) {
 }
 
 const vault = loadModule(readSourceFile(
-  new URL('../../entry/src/main/ets/model/VaultDirNative.ets', import.meta.url)));
+  new URL('../../entry/src/main/ets/common/ErrorCode.ets', import.meta.url)) + '\n' +
+  readSourceFile(new URL('../../entry/src/main/ets/model/VaultDirNative.ets', import.meta.url)));
 
 const DIR_URI = 'file://docs/storage/Users/currentUser/Download/vault';
 
@@ -200,9 +201,9 @@ test('close failure does not swallow an otherwise good scan', () => {
 });
 
 test('errorCodeOf reads BusinessError.code and falls back to -1', () => {
-  assert.equal(vault.VaultDirectoryScanner.errorCodeOf({ code: 13900002 }), 13900002);
-  assert.equal(vault.VaultDirectoryScanner.errorCodeOf(new Error('boom')), -1);
-  assert.equal(vault.VaultDirectoryScanner.errorCodeOf(undefined), -1);
+  assert.equal(vault.errorCodeOf({ code: 13900002 }), 13900002);
+  assert.equal(vault.errorCodeOf(new Error('boom')), -1);
+  assert.equal(vault.errorCodeOf(undefined), -1);
 });
 
 // ---- VaultDirFileStore：读写删改全部走 Native，且 fd 生命周期自控 ----

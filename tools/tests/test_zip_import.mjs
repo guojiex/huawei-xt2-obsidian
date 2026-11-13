@@ -387,7 +387,8 @@ const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index
 const registrySource = readSourceFile(new URL('../../entry/src/main/ets/model/VaultRegistry.ets', import.meta.url));
 
 test('v1.36 36.6 Index 清理暂存残留：启动清根、弹窗关闭清状态、临时目录后缀同源', () => {
-  assert.match(indexSource, /const ZIP_IMPORTING_SUFFIX: string = '__importing';/);
+  // 2026-11-13 起临时目录后缀不再本地自抄，与 VaultRegistry 的 GIT_IMPORTING_SUFFIX 同源。
+  assert.match(indexSource, /import \{ GIT_IMPORTING_SUFFIX, VaultRegistry \} from '\.\.\/model\/VaultRegistry';/);
   // aboutToAppear 尾部：启动即清 staging 根，残留不跨启动累积
   assert.match(indexSource, /this\.startExternalVaultPolling\(\);\r?\n\s*this\.cleanupZipImportStaging\(\);/);
   // 弹窗取消/关闭（clearImportDraft）同步清理 zip 解析与暂存
@@ -420,7 +421,7 @@ test('v1.36 36.1/36.2 chooseZipBackup：取消保原状态、暂存复制、解�
 test('v1.36 36.3–36.7 importZipBackup：空间预检、隔离解压、原子登记与失败清理（源断言）', () => {
   // 弹窗状态与暂存不一致（stale）按 io 失败，不落盘；46.9 失败携带底层错误 detail
   assert.match(indexSource, /const stale: ZipImportOutcome = \{\r?\n\s*status: 'failed', kind: 'io', detail: '暂存的解析结果已失效，请重新选择 ZIP 文件', result: null\r?\n\s*\};/);
-  assert.match(indexSource, /const tempId: string = registry\.uniqueVaultId\(finalId \+ ZIP_IMPORTING_SUFFIX, ''\);/);
+  assert.match(indexSource, /const tempId: string = registry\.uniqueVaultId\(finalId \+ GIT_IMPORTING_SUFFIX, ''\);/);
   assert.match(indexSource, /registry\.beginGitImport\(finalId, tempId\);/);
   // 36.7 空间预检：解压总量超过剩余空间按 no_space 失败，不报告虚假成功
   assert.match(indexSource, /freeBytesUnder\(resolver\.vaultsRoot\(\)\) < parsed\.totalUncompressed/);

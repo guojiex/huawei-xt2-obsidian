@@ -37,7 +37,8 @@ function loadModule(source) {
 }
 
 const access = loadModule(readSourceFile(
-  new URL('../../entry/src/main/ets/model/VaultAccess.ets', import.meta.url)));
+  new URL('../../entry/src/main/ets/common/ErrorCode.ets', import.meta.url)) + '\n' +
+  readSourceFile(new URL('../../entry/src/main/ets/model/VaultAccess.ets', import.meta.url)));
 
 const ROOT = '/files/vaults/v1';
 

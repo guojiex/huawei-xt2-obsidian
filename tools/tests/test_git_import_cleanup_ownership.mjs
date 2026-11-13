@@ -21,6 +21,8 @@ function createHarness(markedImports, registered = []) {
   const removed = [];
   const context = vm.createContext({
     module: { exports: {} },
+    // 2026-11-13 起后缀改为 VaultRegistry.ets 文件级导出常量，方法内是裸标识符引用。
+    GIT_IMPORTING_SUFFIX: '__importing',
     VaultRegistry: { GIT_IMPORTING_SUFFIX: '__importing' },
     fileIo: {
       accessSync(path) { return markerDirs.has(path); }

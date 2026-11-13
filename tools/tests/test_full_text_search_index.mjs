@@ -18,6 +18,8 @@ const { transformSync } = require('esbuild');
 import { readSourceFile } from './lib/source.mjs';
 
 const searchStoreSource = readSourceFile(new URL('../../entry/src/main/ets/model/SearchStore.ets', import.meta.url));
+const noteDisplayNameSource = readSourceFile(new URL('../../entry/src/main/ets/common/NoteDisplayName.ets', import.meta.url));
+const errorCodeSource = readSourceFile(new URL('../../entry/src/main/ets/common/ErrorCode.ets', import.meta.url));
 const vaultAccessSource = readSourceFile(new URL('../../entry/src/main/ets/model/VaultAccess.ets', import.meta.url));
 const ftsSource = readSourceFile(new URL('../../entry/src/main/ets/model/FullTextSearchService.ets', import.meta.url));
 const deviceSource = readSourceFile(new URL('../../entry/src/main/ets/model/SearchStoreDevice.ets', import.meta.url));
@@ -35,8 +37,8 @@ function loadModule(source) {
   return context.module.exports;
 }
 
-const searchStore = loadModule(searchStoreSource);
-const vaultAccess = loadModule(vaultAccessSource);
+const searchStore = loadModule(noteDisplayNameSource + '\n' + searchStoreSource);
+const vaultAccess = loadModule(errorCodeSource + '\n' + vaultAccessSource);
 
 const serviceCode = transformSync(
   `${ftsSource.slice(ftsSource.indexOf('export class FullTextSearchService')).trim().replace('export class', 'class')}\nmodule.exports = FullTextSearchService;`,

@@ -44,6 +44,17 @@ assert.ok(copyMethodsStart >= 0 && copyMethodsEnd > copyMethodsStart)
 const inlineParserSource = readSourceFile(
   new URL('entry/src/main/ets/model/MarkdownInlineParser.ets', root)
 )
+// 2026-11-13 起 .md/.markdown 显示名收敛到 common/NoteDisplayName.ets，Index 的
+// blockPanelWikiDisplayText 改调它，harness 注入同一实现。
+const noteDisplayNameModule = { exports: {} }
+vm.runInNewContext(
+  transformSync(
+    readSourceFile(new URL('entry/src/main/ets/common/NoteDisplayName.ets', root)) +
+    '\nmodule.exports = { noteDisplayName, noteDisplayNameOfPath };',
+    { loader: 'ts', format: 'cjs' }
+  ).code,
+  { module: noteDisplayNameModule }
+)
 const inlineParserModule = { exports: {} }
 vm.runInNewContext(
   transformSync(`${inlineParserSource}\nmodule.exports = MarkdownInlineParser;`, {
@@ -105,6 +116,8 @@ function makeApp() {
   let wikiFiles = ['target.md', 'folder/next.md']
   const context = vm.createContext({
     module: { exports: {} },
+    noteDisplayName: noteDisplayNameModule.exports.noteDisplayName,
+    noteDisplayNameOfPath: noteDisplayNameModule.exports.noteDisplayNameOfPath,
     MarkdownInlineParser: inlineParserModule.exports,
     MarkdownComplexBlockEdit: complexEditModule.exports,
     WikiLinkParser: wikiParserModule.exports,

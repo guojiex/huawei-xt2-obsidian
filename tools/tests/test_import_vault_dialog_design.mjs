@@ -11,6 +11,10 @@ const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index
 const syncSource = readSourceFile(new URL('../../entry/src/main/ets/pages/SyncPage.ets', import.meta.url));
 const vaultManagerSource = readSourceFile(new URL('../../entry/src/main/ets/components/VaultManagerView.ets', import.meta.url));
 const utilityShellSource = readSourceFile(new URL('../../entry/src/main/ets/components/UtilityDialogShell.ets', import.meta.url));
+// 2026-11-13 起 Gitee/GitHub 判定收敛到 git/GitRemoteAuth.ets，harness 剥掉 import/export 内联。
+const gitAuthSource = readSourceFile(new URL('../../entry/src/main/ets/git/GitRemoteAuth.ets', import.meta.url))
+  .replace(/^import .*;\n/gm, '')
+  .replace(/^export /gm, '');
 
 function extract(startMarker, endMarker) {
   const start = dialogSource.indexOf(startMarker);
@@ -19,16 +23,16 @@ function extract(startMarker, endMarker) {
   return dialogSource.slice(start, end).trim();
 }
 
-const harnessCode = transformSync(`
+const harnessCode = transformSync(gitAuthSource + '\n' + `
 class ImportVaultDialogHarness {
-  ${extract('  private setWorking(', '\n  private isGiteeRemote(')}
-  ${extract('  private isGiteeRemote(', '\n  private clearGitCredentials(')}
+  ${extract('  private setWorking(', '\n  private clearGitCredentials(')}
   ${extract('  private clearGitCredentials(', '\n  private toggleGitTokenVisibility(')}
   ${extract('  private toggleGitTokenVisibility(', '\n  private close(')}
   ${extract('  private close(', '\n  aboutToDisappear(')}
   ${extract('  aboutToDisappear(): void {', '\n  private chooseSource(')}
   ${extract('  private chooseSource(', '\n  private hasPicked(')}
-  ${extract('  private hasPicked(', '\n  private continueGit(')}
+  ${extract('  private hasPicked(', '\n  private directoryTitle(')}
+  ${extract('  private directoryTitle(', '\n  private continueGit(')}
   ${extract('  private continueGit(', '\n  @Builder')}
   constructor() {
     this.source = 'local';
@@ -138,7 +142,7 @@ test('Git source collects provider credentials in the dialog and documents safe 
   assert.match(dialogSource, /Text\('仓库地址'\)/);
   assert.match(dialogSource, /placeholder: 'https:\/\/github\.com\/用户名\/仓库\.git'/);
   assert.match(dialogSource, /Text\('分支'\)/);
-  assert.match(dialogSource, /if \(this\.isGiteeRemote\(\)\) \{[\s\S]*?Text\('用户名'\)/);
+  assert.match(dialogSource, /if \(isGiteeRemote\(this\.gitRemote\)\) \{[\s\S]*?Text\('用户名'\)/);
   assert.match(dialogSource, /TextInput\(\{ placeholder: 'Gitee 用户名', text: this\.gitUsername \}\)/);
   assert.match(dialogSource, /TextInput\(\{ placeholder: '私有仓库访问令牌', text: this\.gitToken \}\)/);
   assert.match(dialogSource, /\.type\(this\.showGitToken \? InputType\.Normal : InputType\.Password\)/);

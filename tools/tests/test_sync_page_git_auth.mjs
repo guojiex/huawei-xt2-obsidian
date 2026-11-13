@@ -7,6 +7,11 @@ import { readSourceFile } from './lib/source.mjs';
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 const source = readSourceFile(new URL('../../entry/src/main/ets/pages/SyncPage.ets', import.meta.url));
+// 2026-11-13 起 GitHub/Gitee 判定与认证赋值收敛到 git/GitRemoteAuth.ets 单一真源，
+// harness 把它剥掉 import/export 后内联进同一脚本作用域；独立模块用只剥 import 的版本。
+const gitAuthRaw = readSourceFile(new URL('../../entry/src/main/ets/git/GitRemoteAuth.ets', import.meta.url))
+  .replace(/^import .*;\n/gm, '');
+const gitAuthSource = gitAuthRaw.replace(/^export /gm, '');
 
 function method(startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -15,14 +20,14 @@ function method(startMarker, endMarker) {
   return source.slice(start, end).trim();
 }
 
-const classCode = transformSync(`
-const IMPORTING_SUFFIX = '__importing';
-class SyncPageGitAuthHarness {
-  ${method('  private async doClone(): Promise<void> {', '\n  private isGitHubRemote(')}
-  ${method('  private remoteHost(', '\n  private urlHasInlineCredentials(')}
-  ${method('  private urlHasInlineCredentials(', '\n  private refreshSyncStatus(')}
-  ${method('  private explainError(', '\n  /** 将导入到的库 id')}
-  previewVaultId() { return 'isolated-repo'; }
+const classCode = transformSync(
+  'const GIT_IMPORTING_SUFFIX = \'__importing\';\n' +
+  gitAuthSource + '\n' +
+  'class SyncPageGitAuthHarness {\n' +
+  method('  private async doClone(): Promise<void> {', '\n  private urlHasInlineCredentials(') + '\n' +
+  method('  private urlHasInlineCredentials(', '\n  private refreshSyncStatus(') + '\n' +
+  method('  private explainError(', '\n  private previewVaultId(): string {') + '\n' +
+  `  previewVaultId() { return 'isolated-repo'; }
   appendLog(line) { this.logs.push(line); }
   onCloneDone(ok, message) { this.cloneResult = { ok, message }; }
   constructor() { this.logs = []; this.cloneResult = null; }
@@ -30,17 +35,25 @@ class SyncPageGitAuthHarness {
 module.exports = SyncPageGitAuthHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
 
-const actionCode = transformSync(`
-class SyncPageActionHarness {
-  ${method('  private syncFailureDetail(', '\n  private async performGitAction(')}
-  ${method('  private async performGitAction(', '\n  /** clone 结果')}
-  ${method('  private remoteHost(', '\n  private urlHasInlineCredentials(')}
-  ${method('  private isGitHubRemote(', '\n  private urlHasInlineCredentials(')}
-  ${method('  private explainError(', '\n  /** 将导入到的库 id')}
-  appendLog(line) { this.logs.push(line); }
+const actionCode = transformSync(
+  gitAuthSource + '\n' +
+  'class SyncPageActionHarness {\n' +
+  method('  private syncFailureDetail(', '\n  private async performGitAction(') + '\n' +
+  method('  private async performGitAction(', '\n  private onCloneDone(') + '\n' +
+  method('  private explainError(', '\n  private previewVaultId(): string {') + '\n' +
+  `  appendLog(line) { this.logs.push(line); }
 }
 module.exports = SyncPageActionHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
+
+const gitAuthModule = (() => {
+  const module = { exports: {} };
+  vm.runInContext(
+    transformSync(gitAuthRaw, { loader: 'ts', format: 'cjs' }).code,
+    vm.createContext({ module, exports: module.exports })
+  );
+  return module.exports;
+})();
 
 function harness({
   clonePathMismatch = false,
@@ -216,6 +229,9 @@ test('failure copy carries the underlying error with token redaction (46.9)', ()
   assert.match(source, /'远端操作已完成，但用户名设置未能保存：' \+ this\.syncFailureDetail\(err\)/);
   assert.match(source, /'令牌未能安全保存；下次同步时需要重新填写：' \+ this\.syncFailureDetail\(err\)/);
   assert.match(source, /'推送成功，但上次同步时间未能保存：' \+ this\.syncFailureDetail\(err\)/);
+  // 认证赋值走 GitRemoteAuth 单一真源（2026-11-13 收敛后）
+  assert.match(source, /applyRemoteAuth\(options, url, username, token\)/);
+  assert.match(source, /applyRemoteAuth\(options, this\.syncRemote, this\.syncUsername\.trim\(\), this\.syncToken\)/);
 });
 
 test('GitHub clone sends the token as bearer auth and omits username/password', async () => {
@@ -284,11 +300,31 @@ test('authentication failures stay actionable, redact the token, and do not regi
 });
 
 test('GitHub detection matches the host rather than an arbitrary containing domain', () => {
-  const f = harness();
-  assert.equal(f.page.isGitHubRemote('https://github.com/team/repo.git'), true);
-  assert.equal(f.page.isGitHubRemote('https://WWW.GITHUB.COM:443/team/repo.git'), true);
-  assert.equal(f.page.isGitHubRemote('https://github.com.attacker.example/team/repo.git'), false);
-  assert.equal(f.page.isGitHubRemote('https://gitee.com/team/repo.git'), false);
+  assert.equal(gitAuthModule.isGitHubRemote('https://github.com/team/repo.git'), true);
+  assert.equal(gitAuthModule.isGitHubRemote('https://WWW.GITHUB.COM:443/team/repo.git'), true);
+  assert.equal(gitAuthModule.isGitHubRemote('https://github.com.attacker.example/team/repo.git'), false);
+  assert.equal(gitAuthModule.isGitHubRemote('https://gitee.com/team/repo.git'), false);
+  // GitSyncDialog 的 remoteLabel 是 host/path 形态，解析器必须兼容
+  assert.equal(gitAuthModule.isGitHubRemote('github.com/team/repo'), true);
+  assert.equal(gitAuthModule.isGiteeRemote('gitee.com/team/repo'), true);
+  assert.equal(gitAuthModule.gitRemoteHost('user@github.com:443/o/r.git'), 'github.com');
+});
+
+test('applyRemoteAuth writes bearer for GitHub and Basic for others, skipping empty tokens', () => {
+  const githubOptions = {};
+  gitAuthModule.applyRemoteAuth(githubOptions, 'https://github.com/team/repo.git', 'user', 'tok');
+  assert.equal(githubOptions.bearerToken, 'tok');
+  assert.equal('username' in githubOptions, false);
+
+  const giteeOptions = {};
+  gitAuthModule.applyRemoteAuth(giteeOptions, 'https://gitee.com/team/repo.git', 'user', 'tok');
+  assert.equal(giteeOptions.username, 'user');
+  assert.equal(giteeOptions.password, 'tok');
+  assert.equal('bearerToken' in giteeOptions, false);
+
+  const emptyToken = {};
+  gitAuthModule.applyRemoteAuth(emptyToken, 'https://github.com/team/repo.git', 'user', '');
+  assert.deepEqual(Object.keys(emptyToken), []);
 });
 
 test('common authentication, missing repository and network errors receive actionable messages', () => {
