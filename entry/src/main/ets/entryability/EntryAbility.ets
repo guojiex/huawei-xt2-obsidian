@@ -45,10 +45,15 @@ export default class EntryAbility extends UIAbility {
   private debugLaunchWant: Want | null = null;
   private colorModeObserverRegistered: boolean = false;
   private readonly keyboardAvoidAreaListener = (options: window.AvoidAreaOptions): void => {
-    if (options.type !== window.AvoidAreaType.TYPE_KEYBOARD) {
+    if (options.type === window.AvoidAreaType.TYPE_KEYBOARD) {
+      this.publishKeyboardInset(options.area);
       return;
     }
-    this.publishKeyboardInset(options.area);
+    // v1.57 57.2：导航条避让高度同源发布（qa/2026-11-13 手势条问答；
+    // 三折叠各形态高度未记载，禁止硬编码，页面侧 px2vp 消费）
+    if (options.type === window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR) {
+      this.publishNavIndicatorInset(options.area);
+    }
   };
   private readonly colorModeObserver: ColorModeObserver = {
     onColorModeUpdated: (colorMode: ConfigurationConstant.ColorMode): void => {
@@ -147,6 +152,7 @@ export default class EntryAbility extends UIAbility {
       });
       this.mainWindow.on('avoidAreaChange', this.keyboardAvoidAreaListener);
       this.publishKeyboardInset(this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_KEYBOARD));
+      this.publishNavIndicatorInset(this.mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR));
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, '断点监听注册失败 code=%{public}d', err.code);
@@ -256,6 +262,11 @@ export default class EntryAbility extends UIAbility {
   private publishKeyboardInset(area: window.AvoidArea): void {
     const keyboardHeightPx: number = area.visible ? area.bottomRect.height : 0;
     AppStorage.setOrCreate('keyboardInsetPx', Math.max(0, keyboardHeightPx));
+  }
+
+  /** v1.57 57.2：底部导航条避让高度（px），存 px 页面侧换算（同 keyboardInsetPx / creasePx 口径）。 */
+  private publishNavIndicatorInset(area: window.AvoidArea): void {
+    AppStorage.setOrCreate('navIndicatorHeightPx', Math.max(0, area.bottomRect.height));
   }
 
   private publishAppTheme(colorMode: ConfigurationConstant.ColorMode | undefined): void {

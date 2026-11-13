@@ -56,6 +56,8 @@ export struct SettingsView {
   @Prop showLineNumbers: boolean = false;
   @Prop experienceMode: EditorExperienceMode = 'simple';
   @StorageProp('appTheme') appTheme: string = 'light';
+  // v1.57 57.2：导航条避让高度 px（EntryAbility avoidAreaChange 发布，页面侧换算）
+  @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
   @Prop vaults: VaultEntry[] = [];
   @Prop @Watch('onSelectedCategoryChanged') selectedCategory: string = 'general';
   @Prop showCategoryList: boolean = false;
@@ -588,6 +590,7 @@ export struct SettingsView {
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
         .backgroundColor($r('app.color.bg_navigation'))
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       } else if (this.singleScreenLayout) {
         this.CategoryContent()
       } else {
@@ -608,6 +611,7 @@ export struct SettingsView {
           .scrollBar(BarState.Off)
           .backgroundColor($r('app.color.bg_navigation'))
           .border({ width: { right: 1 }, color: $r('app.color.line') })
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
           Column() {
             this.CategoryContent()
@@ -630,6 +634,11 @@ export struct SettingsView {
    */
   private isCategoryListOnly(): boolean {
     return this.singleScreenLayout && this.showCategoryList;
+  }
+
+  /** v1.57 57.2：导航条避让高度 vp（页面侧 px2vp，禁止硬编码，qa/2026-11-13 手势条问答）。 */
+  private navClearanceVp(): number {
+    return px2vp(Math.max(0, this.navIndicatorHeightPx));
   }
 
   private isCategoryHighlighted(category: string): boolean {
@@ -687,13 +696,14 @@ export struct SettingsView {
         }
         .width('100%')
         .constraintSize({ maxWidth: Size.contentMaxW })
-        .padding({ left: Space.s5, right: Space.s5, top: Space.s4, bottom: Space.s8 })
+        .padding({ left: Space.s5, right: Space.s5, top: Space.s4, bottom: Space.s8 + this.navClearanceVp() })
       }
       .layoutWeight(1)
       .width('100%')
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
       .backgroundColor($r('app.color.bg_page'))
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
     }
   }
 

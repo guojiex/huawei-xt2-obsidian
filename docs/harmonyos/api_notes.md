@@ -2259,7 +2259,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 ## AE 组：expandSafeArea 与底部系统安全区（2026-11-13）
 
-### AE1 ✅ 屏幕底部 80px 灰条 = 系统手势条窗口（SCBGestureNavBar），应用内容按规范不应使用；根 Stack 已刻意把底色画进去（2026-11-13 模拟器实测 + 错误诊断复盘）
+### AE1 ✅ 屏幕底部 80px 灰条 = 系统手势条窗口（SCBGestureNavBar），~~应用内容按规范不应使用~~（该断言 2026-11-13 被官方答复推翻，见 AE2）；根 Stack 已刻意把底色画进去（2026-11-13 模拟器实测 + 错误诊断复盘 + 同日官方答复更正）
 
 来源：用户提问（设置与关于页「为什么没顶到屏幕下沿，底部一行灰色条没用上」），API26 x86_64
 Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口取证 +
@@ -2281,10 +2281,119 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
   （多模态识别的「安全区条带」描述有诱导性，先入为主不可信）。原因：根 Stack 已负责整页
   底色延伸，宿主层再加 expandSafeArea 对像素零影响，只会让次级页面的滚动视口多出 80px、
   内容可滑进手势条下面——与应用「控件按安全区排版」的设计相悖。该改动已回退。
-- **结论**：回答「底部灰条为什么没用上」——那是系统手势导航条专属区域，任何页面都不该
-  放内容；应用已把手势区染成页面底色保证视觉连续。若未来要做沉浸阅读（内容延伸到
-  手势条下），必须整页统一改（含工作区），不能只改次级页面。
+- **结论**：~~回答「底部灰条为什么没用上」——那是系统手势导航条专属区域，任何页面都不该
+  放内容~~（**2026-11-13 官方答复推翻**：UX 标准要求可滚动内容显示在导航条下方，见 AE2 与
+  [qa/2026-11-13 存档](qa/2026-11-13_手势条区域应用内容延伸_API24.md)）；应用已把手势区染成
+  页面底色保证视觉连续。若未来要做沉浸阅读（内容延伸到手势条下），必须整页统一改
+  （含工作区），不能只改次级页面——该工程约束仍然成立。
 - ⏭ 待真机回归：XT2 / API24 上 SCBGestureNavBar 的高度与融合行为（模拟器 80px ≈ 26vp）。
+
+### AE2 ✅ 官方答复：底部导航条区域非系统独占，UX 标准要求可滚动内容显示在小白条下方，仅固定控件需避让（2026-11-13 官方问答 + 本机 SDK 复核）
+
+来源：[qa/2026-11-13_手势条区域应用内容延伸_API24.md](qa/2026-11-13_手势条区域应用内容延伸_API24.md)
+（用户质疑「其他应用没有底部空带」后向官方求证 5 问，答复推翻 AE1 的「应用内容按规范不应使用」；
+关键声明已用本机 API 26 SDK 逐条复核，全部 ≤ 24）。
+
+- ✅ **沉浸式布局下应用内容可以渲染到小白条下方**，系统 UI（含 `SCBGestureNavBar`）浮在应用
+  内容之上；官方通用应用 UX 体验标准明确要求「应用内可滚动内容需要能显示在导航条下方」，
+  底部固定控件/悬浮按钮向上避让——**推荐形态：可滚动内容铺满物理下沿（小白条浮于内容之上），
+  仅固定交互控件避让**（备忘录等系统应用即此形态）。
+- ✅ 取高度：`getWindowAvoidArea(AvoidAreaType.TYPE_NAVIGATION_INDICATOR)`（@since 11）→
+  `bottomRect.height`（px，布局 px2vp）；动态更新注册 `on('avoidAreaChange')`（@since 9，回调
+  `AvoidAreaOptions { type, area }`）。本应用主窗口已全屏（AE1 hidumper 实测），无需再
+  `setWindowLayoutFullScreen(true)`（@since 9）/ `setImmersiveModeEnabledState(true)`（@since 12）。
+- ✅ 小白条深浅可调：`setWindowSystemBarProperties`（@since 9）的 `navigationBarColor`（@since 7）/
+  `navigationBarContentColor`（@since 8）；⚠️ 仅全屏主窗口生效（分屏/悬浮窗/自由多窗不立即生效、
+  2in1 不生效），XT2 待实测。
+- ❓ 三折叠各展开形态的导航条高度数值**未记载**，不得硬编码 26vp，以 `avoidAreaChange` 回调为准
+  （模拟器 80px ≈ 26vp 仅 x86_64 API26 观测）。
+- ⚠️ `AvoidArea.visible` 无实际含义，官方明确建议避免使用；全局悬浮窗/模态窗等系统窗口取避让区
+  需先 `setSystemAvoidAreaEnabled(true)`（@since 18），主窗口无需。
+- 📌 对本工程的意义：当前「交互内容布局止于安全区、底部留 26vp 底色空带」**不符合官方 UX 标准**，
+  属可修的产品问题；落地（列表铺满 + 固定控件避让 + 指示条配色）需版本需求承接，改动范围 =
+  整页统一（呼应 AE1 回退复盘：不能只改次级页面）。
+
+### AE3 ✅ v1.57 落地实测：expandSafeArea 加在滚动容器上即可让内容穿小白条；「固定宽高禁用」约束至少对固定宽度不成立（2026-11-13，API26 模拟器）
+
+> v1.57（需求池 Y-01）落地时三探针实验定论；防线测试
+> [`tools/tests/test_nav_indicator_immersion.mjs`](../../tools/tests/test_nav_indicator_immersion.mjs)。
+
+- ✅ **expandSafeArea 直接加在滚动容器（Scroll）上**：组件边界、滚动视口、滚动极值（maxScroll）
+  三者都延伸到窗口物理下沿（实测 Scroll bounds `[0,319][3184,2232]`，安全区下沿 2152）；
+  滚动时内容渲染于小白条之下（dump 实测文本 `[2163,2232]`、条带内 5882 内容像素）。
+- ✅ **滚动容器可延伸越过父容器边界**：宿主 Stack / Column 止于 2152，其内 Scroll 延伸到 2232。
+- ✅ **固定宽度不阻碍 BOTTOM 方向扩展**：`width(Size.sidebarW)`（固定 vp 宽）的侧栏 Scroll
+  照样延伸到 2232（底色浸入实测 F5F6F8）⚠️ 与官方 FAQ（faqs-vision-7）「不能设置固定宽高尺寸」
+  的字面表述冲突——至少「固定宽度」不阻碍 bottom 方向扩展，该约束按字面理解过严。
+- ✅ `layoutWeight(1)` + `width('100%')` 的 Scroll 同样生效。
+- ⚠️ 未解：工作区 nav Column（固定宽 + `.animation`）expandSafeArea 不生效（AE1 观测）——
+  固定宽度已被上一条证伪为阻断原因，真实原因未定（候选：`.animation`/`.translate`、父容器
+  边界条件）；工作区范围 v1.57 不动，留待后续版本需求。
+- ✅ 末条让位链路：EntryAbility `avoidAreaChange` TYPE_NAVIGATION_INDICATOR 分支 + 启动时
+  `getWindowAvoidArea` 补发初始值 → AppStorage `navIndicatorHeightPx`（**px**），页面侧
+  `@StorageProp` + `px2vp` 消费（同 keyboardInsetPx / creasePx 口径：UIAbility 早期 px2vp
+  可能异常）；内容底部 padding = 既有间距 + 避让高度，滚动到底时末条完整露出小白条上方
+  （实测末条止于 1933 < 2152，条带内 0 内容像素残留）。
+
+
+## AF 组：分享接收（存入笔记，2026-11-13 官方答复 + 本机 SDK 声明核对）
+
+> 需求池「系统分享：文本/链接存入笔记」的前置核实；发送方向已在 v0.8 落地，本组只管接收方向。
+> 答复与复核全文见 [qa/2026-11-13_分享接收_API24.md](qa/2026-11-13_分享接收_API24.md)。
+
+### AF1 ✅ 接收方 = 主 UIAbility skills 声明 want action + UTD 类型，无需新 ability（2026-11-13）
+
+- 机制：`module.json5` 现有主 UIAbility 的 `skills` 数组追加一个 skill 对象——
+  `actions: ["ohos.want.action.viewData", "ohos.want.action.sendData"]` +
+  `uris: [{ scheme: "file", utd: <UTD 类型>, maxFileSupported: N }]`；action 常量本机
+  SDK 核实（`@ohos.ability.wantConstant.d.ts` 行 171/195：`ACTION_SEND_DATA` /
+  `ACTION_VIEW_DATA`）。
+- ✅ **构建期 schema 实测（2026-11-13，v1.56 落码踩到）**：打包校验 schema
+  （`toolchains/modulecheck/module.json`）的 `skills[].uris[]` 项 **`scheme` 必填**
+  （`required: ["scheme"]`），不带 scheme 直接 BUILD FAILED
+  （`must have required property 'scheme'`）——**文本/链接记录虽无文件 URI，声明也必须带
+  `scheme`**，官方答复示例对文本/链接同样用 `"scheme": "file"` + `"maxFileSupported": 1`；
+  补齐后构建通过。
+- `utd` 需穷举可接收类型（`general.plain-text` / `general.hyperlink`，本机
+  `udmf_meta.h` 行 81/95 核实；文件类以官方 UTD 文档为准）；`maxFileSupported`
+  默认 0 = 不支持，须显式设置。
+- 声明后应用**自动**出现在系统分享面板推荐区，无需 AGC 配置（⚠️ 未实测）。
+- `ShareExtensionAbility`（分享详情页进阶形态）存在于 SDK，本应用不采纳。
+
+### AF2 ✅ `systemShare.getSharedData(want)` 解析接收数据，since 4.1.0(11) ≤ API24（2026-11-13）
+
+- 本机 `@hms.collaboration.systemShare.d.ts` 核实：`getSharedData(want: Want):
+  Promise<SharedData>` @since 4.1.0(11)，失败抛 `1003703001 Parse data failed`。
+- 返回的 `SharedData.getRecords()` 取 `SharedRecord[]`：`utd`（必填）、`content?`
+  （**文本与链接内容都在这里**，content/uri 二选一）、`uri?`（文件 URI）、`title?` /
+  `description?` / `extraData?`。**不要手动解析 `want.parameters`**——承载键名未记载。
+- 仅记录数超限（1003703001）时官方 FAQ 建议降级从 `want.uri` 解析链接。
+- `SharedData` 上限 500 条 / 总 200KB（IPC 限制）——与发送侧 200KB 文本上限同源。
+
+### AF3 ✅ 生命周期：冷启动 onCreate / 运行中 onNewWant，launchType 推荐 singleton（2026-11-13）
+
+- `singleton` / `specified`：已存在实例回调 `onNewWant(want)`；`multiton`：新建实例走
+  `onCreate`。两处都要接 `getSharedData` 解析逻辑。本应用主 UIAbility 即 singleton，
+  无需改动。
+
+### AF4 ✅ 分享文件 URI 是临时授权：官方做法 = 立即拷贝进本应用沙箱，无需额外权限（2026-11-13）
+
+- 授权随应用退出/设备重启失效；接收方不能长期操作宿主沙箱文件。
+- 官方路径：`fileIo.openSync(record.uri, READ_ONLY)` → 拷贝到本应用沙箱 → 使用副本；
+  无需新增权限（不触碰硬约束 13 例外）。
+- 与仓库硬约束 10/15 的对齐：接收侧落盘均为**新建**文件（新笔记 / 新附件），可按新建
+  路径选择写入方式，对齐既有附件导入「拷贝 → 校验 → 引用，失败清理半成品」链路；
+  不修改既有笔记则无 AtomicFile 诉求。
+
+### AF5 ⚠️ 未记载 / 待实测项（落码与验收补齐）
+
+- ~~`module.json5` skills 中 `utd` / `maxFileSupported` 的构建期 schema 校验行为未验证~~
+  → ✅ 已实测（2026-11-13，v1.56 落码）：`scheme` 必填，见 AF1 构建期 schema 实测。
+- 面板推荐区排序、多记录（BATCH）在接收侧的表现未记载。
+- 官方示例代码三处不可照抄：`AppStorage` 单值传参丢多文件、`closeSync` 后取 `path` 的
+  顺序隐患、`copyFileSync` 无校验直拷——落码按本仓库约定重写（v1.56 已按本仓库约定实现）。
+- 全链路（浏览器/相册分享 → 存入笔记）待模拟器 + XT2 实测后回填 ✅。
+
 
 
 

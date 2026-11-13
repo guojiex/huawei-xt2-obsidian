@@ -35,6 +35,8 @@ export struct VaultManagerView {
   /** 当前库 id（高亮用） */
   @Prop currentVaultId: string = '';
   @Prop shareSummaries: VaultManagerShareSummary[] = [];
+  // v1.57 57.2：导航条避让高度 px（EntryAbility avoidAreaChange 发布，页面侧换算）
+  @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
   onSetCurrent: (id: string) => void = (id: string) => {};
   onShare: (id: string, focusId: string) => void = (id: string, focusId: string) => {};
   onRename: (id: string) => void = (id: string) => {};
@@ -49,6 +51,11 @@ export struct VaultManagerView {
       }
     }
     return false;
+  }
+
+  /** v1.57 57.2：导航条避让高度 vp（页面侧 px2vp，禁止硬编码，qa/2026-11-13 手势条问答）。 */
+  private navClearanceVp(): number {
+    return px2vp(Math.max(0, this.navIndicatorHeightPx));
   }
 
   @Builder
@@ -215,12 +222,13 @@ export struct VaultManagerView {
         .constraintSize({ maxWidth: Size.contentMaxW })
       }
       .width('100%')
-      .padding({ left: Space.s5, right: Space.s5, top: Space.s5, bottom: Space.s8 })
+      .padding({ left: Space.s5, right: Space.s5, top: Space.s5, bottom: Space.s8 + this.navClearanceVp() })
     }
     .width('100%')
     .height('100%')
     .align(Alignment.Top)
     .backgroundColor($r('app.color.bg_page'))
     .scrollBar(BarState.Off)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

@@ -102,6 +102,13 @@ export struct VaultStatsView {
   @Prop scanFailed: boolean = false;
   /** 扫描中：数字卡显示「…」占位，热力图 / 徽章区待完成后渲染。 */
   @Prop scanning: boolean = false;
+  // v1.57 57.2：导航条避让高度 px（EntryAbility avoidAreaChange 发布，页面侧换算）
+  @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
+
+  /** v1.57 57.2：导航条避让高度 vp（页面侧 px2vp，禁止硬编码，qa/2026-11-13 手势条问答）。 */
+  private navClearanceVp(): number {
+    return px2vp(Math.max(0, this.navIndicatorHeightPx));
+  }
 
   /* ---- 数字卡取值（扫描中占位；总字数 ≥ 10000 按原型折「万」） ---- */
 
@@ -389,11 +396,13 @@ export struct VaultStatsView {
       // 需求 4.9：内容页限宽 760vp 居中
       .width('100%')
       .constraintSize({ maxWidth: Size.contentMaxW })
+      .padding({ bottom: Space.s8 + this.navClearanceVp() })
     }
     .width('100%')
     .height('100%')
     .align(Alignment.Top)
     .backgroundColor($r('app.color.bg_page'))
     .scrollBar(BarState.Off)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

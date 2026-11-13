@@ -9,6 +9,13 @@ import { Space, Radius, FontSize, Size } from '../common/Tokens';
 export struct ReleaseHistoryView {
   /** v1.32 32.9：已安装版本（运行时读包信息，不写死）；空串 = 读取失败，不过滤。 */
   @State installedVersion: string = '';
+  // v1.57 57.2：导航条避让高度 px（EntryAbility avoidAreaChange 发布，页面侧换算）
+  @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
+
+  /** v1.57 57.2：导航条避让高度 vp（禁止硬编码，qa/2026-11-13 手势条问答）。 */
+  private navClearanceVp(): number {
+    return px2vp(Math.max(0, this.navIndicatorHeightPx));
+  }
 
   aboutToAppear(): void {
     try {
@@ -45,11 +52,12 @@ export struct ReleaseHistoryView {
       }
       .width('100%')
       .constraintSize({ maxWidth: Size.contentMaxW })
-      .padding({ left: Space.s5, right: Space.s5, top: Space.s5, bottom: Space.s8 })
+      .padding({ left: Space.s5, right: Space.s5, top: Space.s5, bottom: Space.s8 + this.navClearanceVp() })
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
     .scrollBar(BarState.Off)
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }
