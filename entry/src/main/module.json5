@@ -30,6 +30,25 @@
             "actions": [
               "ohos.want.action.home"
             ]
+          },
+          {
+            "actions": [
+              "ohos.want.action.sendData"
+            ],
+            "uris": [
+              {
+                "scheme": "file",
+                "utd": "general.text"
+              },
+              {
+                "scheme": "file",
+                "utd": "general.plain-text"
+              },
+              {
+                "scheme": "file",
+                "utd": "general.hyperlink"
+              }
+            ]
           }
         ]
       }

@@ -17,6 +17,8 @@ import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthoriz
 import { CrashGuard } from '../common/CrashGuard';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { createSearchStore } from '../model/SearchStoreDevice';
+import { systemShare } from '@kit.ShareKit';
+import { ShareIngestPayload, ShareIngestService } from '../model/ShareIngestService';
 
 const DOMAIN = 0x0000;
 const TAG = 'EntryAbility';
@@ -70,6 +72,75 @@ export default class EntryAbility extends UIAbility {
     // onCreate 即主线程）。调用侧 try-catch（FocusRequest.safely 等）仍是第一防线。
     CrashGuard.install();
     this.debugLaunchWant = want;
+    // v1.56 56.2：分享拉起的冷启动路径。getSharedData 必须在 onCreate / onNewWant
+    // 里调（官方 FAQ：不能在 onForeground 取数）；解析是异步 IPC，载荷就绪后才写
+    // AppStorage —— Index 的 @Watch 兜晚到、aboutToAppear 兜早到，两头都覆盖。
+    this.handleSharedWant(want);
+  }
+
+  /**
+   * v1.56 56.2：分享拉起的热启动路径（App 已在运行）。与 onCreate 同一入口，
+   * 转发机制同一条（AppStorage + 时间戳 nonce），Index 不区分冷热来源。
+   */
+  onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onNewWant');
+    this.handleSharedWant(want);
+  }
+
+  /** 只处理 sendData want；正常桌面启动等零行为变化（v1.56 需求文档 56.2）。 */
+  private handleSharedWant(want: Want): void {
+    if (want.action !== ShareIngestService.ACTION_SEND_DATA) {
+      return;
+    }
+    void this.resolveSharedWant(want);
+  }
+
+  /**
+   * 解析分享 want → 载荷 → AppStorage['incomingShare']。
+   * - 只取第一条 utd 为文本/链接且 content 非空的记录（批量不做，56.2）；
+   * - 无有效记录 / getSharedData 抛错（1003703001 等）→ 不崩溃，发错误载荷，
+   *   Index 侧 toast「无法读取分享内容」；
+   * - 红线（56.5）：标题与内容不进日志、不进埋点，日志只记记录数与错误码。
+   */
+  private async resolveSharedWant(want: Want): Promise<void> {
+    try {
+      const shared: systemShare.SharedData = await systemShare.getSharedData(want);
+      const records: Array<systemShare.SharedRecord> = shared.getRecords();
+      let chosen: systemShare.SharedRecord | null = null;
+      for (let i = 0; i < records.length; i++) {
+        const record: systemShare.SharedRecord = records[i];
+        if (!ShareIngestService.isTextLikeUtd(record.utd)) {
+          continue;
+        }
+        if ((record.content ?? '').trim().length === 0) {
+          continue;
+        }
+        chosen = record;
+        break;
+      }
+      hilog.info(DOMAIN, TAG, '分享记录数=%{public}d 有效=%{public}s',
+        records.length, chosen === null ? '否' : '是');
+      if (chosen === null) {
+        this.publishIncomingShare(ShareIngestService.errorPayload('无法读取分享内容', Date.now()));
+        return;
+      }
+      const payload: ShareIngestPayload = {
+        utd: chosen.utd,
+        title: chosen.title ?? '',
+        content: chosen.content ?? '',
+        message: '',
+        receivedAt: Date.now()
+      };
+      this.publishIncomingShare(payload);
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '读取分享数据失败 code=%{public}d', err.code);
+      this.publishIncomingShare(ShareIngestService.errorPayload('无法读取分享内容', Date.now()));
+    }
+  }
+
+  private publishIncomingShare(payload: ShareIngestPayload): void {
+    AppStorage.setOrCreate(ShareIngestService.STORAGE_KEY, JSON.stringify(payload));
   }
 
   /**
