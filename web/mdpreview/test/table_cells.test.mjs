@@ -205,6 +205,67 @@ test('14.2 keeps source outside the table untouched when applying the returned r
     'before\r\n|  | A | B |\r\n| --- | --- | --- |\r\n|  | one | two |\r\nafter')
 })
 
+test('14.2 keeps the blank separator that marked raw absorbs after the table block', () => {
+  const block = '| A | B |\r\n| --- | --- |\r\n| one | two |\r\n| three | four |\r\n\r\n'
+
+  const inserted = applyTableStructureOperation(block, {
+    type: 'insertRow',
+    side: 'down',
+    row: 1,
+    column: 0
+  })
+  assert.equal(inserted.source,
+    '| A | B |\r\n| --- | --- |\r\n| one | two |\r\n|  |  |\r\n| three | four |\r\n\r\n')
+
+  const deleted = applyTableStructureOperation(block, {
+    type: 'deleteRow',
+    row: 1,
+    column: 0
+  })
+  assert.equal(deleted.source,
+    '| A | B |\r\n| --- | --- |\r\n| three | four |\r\n\r\n')
+
+  const columned = applyTableStructureOperation(block, {
+    type: 'insertColumn',
+    side: 'right',
+    row: 1,
+    column: 0
+  })
+  assert.equal(columned.source,
+    '| A |  | B |\r\n| --- | --- | --- |\r\n| one |  | two |\r\n| three |  | four |\r\n\r\n')
+
+  const lfBlock = '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n'
+  const lfDeleted = applyTableStructureOperation(lfBlock, {
+    type: 'deleteColumn',
+    row: 1,
+    column: 1
+  })
+  assert.equal(lfDeleted.source, '| a |\n| --- |\n| 1 |\n\n')
+})
+
+test('14.2 a structure edit does not glue the table to the following paragraph', () => {
+  const note = '段落一\r\n\r\n| 日期 | 下一步 |\r\n| --- | --- |\r\n| 今天 | 任务 |\r\n\r\n任务框说明\r\n'
+  const block = '| 日期 | 下一步 |\r\n| --- | --- |\r\n| 今天 | 任务 |\r\n\r\n'
+  const from = note.indexOf(block)
+  const result = applyTableStructureOperation(block, {
+    type: 'insertRow',
+    side: 'down',
+    row: 1,
+    column: 0
+  })
+
+  const next = note.slice(0, from) + result.source + note.slice(from + block.length)
+  assert.equal(next.includes('| 今天 | 任务 |\r\n|  |  |\r\n\r\n任务框说明\r\n'), true)
+
+  const relexed = marked.lexer(next.replace(/\r\n/g, '\n'))
+  const tableToken = relexed.find((token) => token.type === 'table')
+  assert.ok(tableToken)
+  assert.equal(relexed.some((token) => token.type === 'paragraph'), true)
+  const reparsed = parseTableSource(tableToken.raw)
+  assert.ok(reparsed)
+  assert.equal(reparsed.rows.length, 2)
+})
+
 test('14.2 preserves existing alignment and rejects malformed tables and operations', () => {
   const source = '| L | C | R |\n| :--- | :---: | ---: |\n| l | c | r |\n'
   const inserted = applyTableStructureOperation(source, {

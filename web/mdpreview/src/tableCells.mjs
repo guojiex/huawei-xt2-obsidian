@@ -363,10 +363,18 @@ export function applyTableStructureOperation(source, operation) {
   }
 
   if (!hadFinalNewline) prepared.lines[prepared.lines.length - 1].ending = ''
-  const replacement = matrix.map((cells, index) => {
+  const serialized = matrix.map((cells, index) => {
     const line = prepared.lines[index]
     return `${line.prefix}| ${cells.join(' | ')} |${line.ending}`
-  }).join('')
+  })
+  // marked 的 table raw 会连带吸收表格后的空行分隔符；这些空 text 行位于 matrix 之外，
+  // 必须原样拼回，否则表格与后续段落粘连，下次刷新会被判「表格结构不规范」锁表。
+  // parseTableSource 已保证内容行数与 matrix 一致，因此越界行必然是空行分隔符。
+  for (let index = matrix.length; index < prepared.lines.length; index++) {
+    const line = prepared.lines[index]
+    serialized.push(`${line.prefix}${line.text}${line.ending}`)
+  }
+  const replacement = serialized.join('')
   return { source: replacement, selection, error: '' }
 }
 
