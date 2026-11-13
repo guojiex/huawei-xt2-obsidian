@@ -130,6 +130,20 @@ export class Size {
    * 配合 ListItem.swipeAction 的 actionAreaDistance；越过即触发 onAction（文件 → 移入回收站）。
    */
   static readonly swipeDelExtra: number = 36;
+  /**
+   * 置顶区（v1.62 · 62.1，规格源 v1.54 §54.1 第三稿）：
+   * - 行高取粗指针档 48vp（`--touch`），与目录树行同高；目标设备 XT2 为触屏，
+   *   原生不做指针类型分支，细指针档 40vp 由原型表达；
+   * - 区内滚动上限 5.5 行，行间距 2vp；
+   * - 首字色块 24vp，圆角 `calc(--small-r * .7)`；
+   * - 分区标签字距 `0.08em`（按 caption 字号折算）。
+   */
+  static readonly pinRowH: number = Space.s12;
+  static readonly pinRowGap: number = 2;
+  static readonly pinListMaxRows: number = 5.5;
+  static readonly pinMonogram: number = Space.s6;
+  static readonly pinMonogramRadius: number = Radius.control * 0.7;
+  static readonly pinLabelTracking: number = FontSize.caption * 0.08;
 }
 
 /** 动效（4.10）—— 与系统观感一致 */

@@ -19,13 +19,14 @@
  * sdk/default/openharmony/ets/component/list_item.d.ts:563），故本文件从一开始就用 List/ListItem。
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { FileTree, ExpandStore, PinStore, TreeNode } from '../model/FileTree';
-import { VaultAccess, VaultFileStat } from '../model/VaultAccess';
+import { promptAction } from '@kit.ArkUI';
+import { FileTree, ExpandStore, PinStore, TreeNode, PinnedNote } from '../model/FileTree';
+import { VaultAccess, VaultDirChild, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon } from '../common/Icons';
-import { noteDisplayName } from '../common/NoteDisplayName';
+import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
-import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { Space, Radius, FontSize, Size, Weight } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { unifiedDataChannel } from '@kit.ArkData';
 import { TrashView } from './TrashView';
@@ -68,6 +69,43 @@ class TreeRowDataSource implements IDataSource {
 
   reload(nodes: TreeNode[]): void {
     this.nodes = nodes;
+    for (let i = 0; i < this.listeners.length; i++) {
+      this.listeners[i].onDataReloaded();
+    }
+  }
+}
+
+/**
+ * 置顶区数据源（v1.62）：与树行**完全独立**的列表段，LazyForEach 键以 `pin-` 开头，
+ * 不会和树行键撞复用。行数少（区内滚动上限 5.5 行），但仍走懒加载保持口径一致。
+ */
+class PinRowDataSource implements IDataSource {
+  private rows: PinnedNote[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number {
+    return this.rows.length;
+  }
+
+  getData(index: number): PinnedNote {
+    return this.rows[index];
+  }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (this.listeners.indexOf(listener) < 0) {
+      this.listeners.push(listener);
+    }
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const pos: number = this.listeners.indexOf(listener);
+    if (pos >= 0) {
+      this.listeners.splice(pos, 1);
+    }
+  }
+
+  reload(rows: PinnedNote[]): void {
+    this.rows = rows;
     for (let i = 0; i < this.listeners.length; i++) {
       this.listeners[i].onDataReloaded();
     }
@@ -128,12 +166,19 @@ export struct FileTreeView {
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
   @State pinned: string[] = [];
+  /** 置顶区可见行（v1.62）：由 PinStore 数组 ∩ 当前库全量笔记解析，陈旧条目自动不显示。 */
+  @State pinRows: PinnedNote[] = [];
+  /** 置顶区折叠状态，按库持久化（PinStore.loadSectionOpen / saveSectionOpen）。 */
+  @State pinSectionOpen: boolean = true;
+  @State pinHoverPath: string = '';
+  @State pinFocusPath: string = '';
   @State pathMenuPath: string = '';
   @State helpHintOpen: boolean = false;
   private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
   private pinStore: PinStore | null = null;
   private treeSource: TreeRowDataSource = new TreeRowDataSource();
+  private pinSource: PinRowDataSource = new PinRowDataSource();
 
   aboutToAppear(): void {
     this.ensureStore();
@@ -201,40 +246,53 @@ export struct FileTreeView {
     this.treeSource.reload(nodes);
   }
 
+  /** 置顶区同理：显隐判断用的 @State 与独立数据源必须同批更新。 */
+  private applyPinRows(rows: PinnedNote[]): void {
+    this.pinRows = rows;
+    this.pinSource.reload(rows);
+  }
+
   /** 重扫：读出该库的展开状态 → scan → 刷新可见行 */
   private reload(): void {
     this.ensureStore();
     this.ensurePinStore();
     if (this.vaultId.length === 0) {
       this.applyNodes([]);
+      this.applyPinRows([]);
       return;
     }
     const store: ExpandStore = this.store as ExpandStore;
     this.expanded = store.load(this.vaultId);
     const pins: PinStore = this.pinStore as PinStore;
     this.pinned = pins.load(this.vaultId);
+    this.pinSectionOpen = pins.loadSectionOpen(this.vaultId);
+    this.pinHoverPath = '';
+    this.pinFocusPath = '';
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描开始');
     this.rescan();
   }
 
-  /** 按当前 expanded 重新扫描库目录 */
+  /** 按当前 expanded 重新扫描库目录，并同源解析置顶区（v1.62：一次 snapshot 两处用）。 */
   private rescan(): void {
     if (this.vaultId.length === 0) {
       this.applyNodes([]);
+      this.applyPinRows([]);
       return;
     }
     // v1.5：不再拿绝对路径自己递归 —— 外部授权库给不出绝对路径。
     // VaultAccess 负责遍历（沙箱 fileIo / 外部 Native POSIX），这里只做剪枝与排版。
     const access: VaultAccess = VaultRegistry.get().accessFor(this.vaultId);
-    let nodes: TreeNode[] = FileTree.scan(access, this.expanded);
-    // v1.49 排序 / v1.50 置顶：mtime 按修改时间重排（stat 拿不到按最旧，
-    // FileTree.resort 内兜底，只打可见节点）；置顶是显式排序权重（同层最前），
-    // 与排序模式正交。name 模式且无置顶时 resort 走快路径原样返回。
+    const entries: VaultDirChild[] = access.snapshot();
+    let nodes: TreeNode[] = FileTree.scanEntries(entries, this.expanded);
+    // v1.49 排序（v1.62 恢复纯规则）：mtime 按修改时间重排，stat 拿不到按最旧；
+    // 置顶已在 62.2 从树内排序中移除，两种模式都不受置顶影响。
     nodes = FileTree.resort(nodes, this.sortMode === 'mtime' ? 'mtime' : 'name',
       (relPath: string): number => {
         const meta: VaultFileStat | null = access.stat(relPath);
         return meta === null ? -1 : meta.mtimeSec;
-      }, this.pinned);
+      });
+    // 折叠文件夹里的置顶笔记也要显示（62.1 核心价值），故置顶区取**全量**笔记而非可见行。
+    this.applyPinRows(FileTree.pinnedNotes(FileTree.notesOfEntries(entries), this.pinned));
     this.applyNodes(nodes);
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成');
   }
@@ -367,37 +425,115 @@ export struct FileTreeView {
   }
 
   /**
-   * 置顶 / 取消置顶（v1.50 · 50.2）：切换后立即落盘并重排。
-   * 改名 / 移动后旧置顶路径留存为陈旧条目（50.4：不自动清理，无副作用）。
+   * 置顶 / 取消置顶（v1.50 · 50.2 入口，v1.62 语义）：切换后立即落盘、toast 反馈、
+   * 置顶区即时增删行。改名 / 移动后旧路径留存为陈旧条目（50.4：不自动清理，无副作用），
+   * 由 pinnedNotes 与全量笔记的交集自然不显示。
    */
   private togglePin(node: TreeNode): void {
     if (node.isDir) {
       return;
     }
+    this.togglePinPath(node.relPath);
+  }
+
+  /** 树内入口与置顶区取消入口共用的唯一写入口。 */
+  private togglePinPath(relPath: string): void {
+    if (this.vaultId.length === 0 || relPath.length === 0) {
+      return;
+    }
     const next: string[] = [];
     let found: boolean = false;
     for (let i = 0; i < this.pinned.length; i++) {
-      if (this.pinned[i] === node.relPath) {
+      if (this.pinned[i] === relPath) {
         found = true;
       } else {
         next.push(this.pinned[i]);
       }
     }
     if (!found) {
-      next.push(node.relPath);
+      next.push(relPath);
     }
     this.pinned = next;
     this.ensurePinStore();
     const pins: PinStore = this.pinStore as PinStore;
     pins.save(this.vaultId, next);
+    // 62.3：v1.50 无反馈，用户抱怨的核心就是「置顶了看不出来」。
+    // toast 是本地 UI 反馈，不是埋点（62.5 红线只禁标题 / 路径进埋点）。
+    promptAction.showToast({
+      message: (found ? '已取消置顶：' : '已置顶：') + noteDisplayNameOfPath(relPath)
+    });
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：置顶切换');
     this.rescan();
+  }
+
+  /** 置顶区折叠：按库记忆，默认展开。 */
+  private togglePinSection(): void {
+    const next: boolean = !this.pinSectionOpen;
+    this.pinSectionOpen = next;
+    this.ensurePinStore();
+    const pins: PinStore = this.pinStore as PinStore;
+    pins.saveSectionOpen(this.vaultId, next);
+  }
+
+  /** 区内滚动：最多约 5.5 行，不推挤目录树。 */
+  private pinListHeight(): number {
+    const rows: number = this.pinRows.length < Size.pinListMaxRows
+      ? this.pinRows.length : Size.pinListMaxRows;
+    return rows * (Size.pinRowH + Size.pinRowGap);
+  }
+
+  /** 指针设备悬停 / 键盘焦点时，行尾文件夹名换成「取消置顶」按钮。 */
+  private pinRowActive(relPath: string): boolean {
+    return this.pinHoverPath === relPath || this.pinFocusPath === relPath;
+  }
+
+  private pinLocation(row: PinnedNote): string {
+    return row.folderPath.length === 0 ? '根目录' : row.folderPath;
+  }
+
+  /** callout 色板（v1.54 §54.1 第三稿），颜色一律走资源 token，深色自动切换。 */
+  private pinToneFg(tone: number): ResourceColor {
+    if (tone === 1) {
+      return $r('app.color.cb_tip');
+    }
+    if (tone === 2) {
+      return $r('app.color.cb_warn');
+    }
+    if (tone === 3) {
+      return $r('app.color.cb_purple');
+    }
+    if (tone === 4) {
+      return $r('app.color.cb_gray');
+    }
+    return $r('app.color.cb_note');
+  }
+
+  private pinToneBg(tone: number): ResourceColor {
+    if (tone === 1) {
+      return $r('app.color.cb_tip_bg');
+    }
+    if (tone === 2) {
+      return $r('app.color.cb_warn_bg');
+    }
+    if (tone === 3) {
+      return $r('app.color.cb_purple_bg');
+    }
+    if (tone === 4) {
+      return $r('app.color.cb_gray_bg');
+    }
+    return $r('app.color.cb_note_bg');
   }
 
   build() {
     // 根节点必须是**唯一**容器：空态与列表走 if/else 挂在同一个 Column 下，
     // 不能在 build 里提前 return（ArkTS 会报 10905210：只允许一个根节点）。
     Column() {
+      // v1.62：置顶区在计数头之下、目录树之上；仅当前库至少有一篇置顶时显示。
+      // referenceOnly（Agent 引用侧栏）保持纯树，「章节」页签由父级整树隐藏。
+      if (!this.referenceOnly && this.pinRows.length > 0) {
+        this.PinSection()
+        this.AllNotesLabel()
+      }
       if (this.nodes.length === 0) {
         this.EmptyHint()
       } else {
@@ -434,6 +570,199 @@ export struct FileTreeView {
     }
     .layoutWeight(1)
     .width('100%')
+  }
+
+  /**
+   * 置顶区（v1.62 · 62.1）：分区标签 + 独立行列表，视觉规格沿用 v1.54 §54.1 第三稿。
+   * 区头箭头常显（原生不做指针类型判断，触屏与键盘都要能发现折叠入口）。
+   */
+  @Builder
+  PinSection() {
+    Column() {
+      Row({ space: Space.s2 }) {
+        Text('置顶')
+          .fontSize(FontSize.caption)
+          .fontWeight(FontWeight.Medium)
+          .letterSpacing(Size.pinLabelTracking)
+          .fontColor($r('app.color.text_tertiary'))
+        Text(this.pinRows.length.toString())
+          .fontSize(FontSize.caption)
+          .fontWeight(FontWeight.Normal)
+          .fontColor($r('app.color.text_tertiary'))
+          .opacity(0.8)
+        Row() {
+          // 全局 @Builder 按值实参会首帧固化（api_notes Z2/L-7）：图标名不能写
+          // this.xxx ? 'a' : 'b'，必须拆成字面量分支，否则箭头方向不刷新。
+          if (this.pinSectionOpen) {
+            Icon('chevronDown', Size.treeChevron, $r('app.color.text_tertiary'))
+          } else {
+            Icon('chevronRight', Size.treeChevron, $r('app.color.text_tertiary'))
+          }
+        }
+        .width(Size.touch)
+        .height(Space.s6)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s4, right: Space.s1 })
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(Radius.control)
+      .onClick((): void => { this.togglePinSection(); })
+      .focusable(true)
+      .accessibilityText('置顶，' + this.pinRows.length.toString() + ' 篇笔记，点按展开 / 收起')
+
+      if (this.pinSectionOpen) {
+        List() {
+          LazyForEach(this.pinSource, (row: PinnedNote) => {
+            ListItem() {
+              this.PinRow(row)
+            }
+            .width('100%')
+            .padding({ right: Space.s2 })
+            // 62.3：置顶区左滑是独立手势，滑到底 = 取消置顶，
+            // 绝不复用树行的三档删除语义（滑一下把笔记删进回收站是不可接受的）。
+            .swipeAction({
+              end: {
+                builder: (): void => { this.PinSwipeBar(row); },
+                actionAreaDistance: Size.swipeDelExtra,
+                onAction: (): void => { this.togglePinPath(row.relPath); }
+              },
+              edgeEffect: SwipeEdgeEffect.Spring
+            })
+          }, (row: PinnedNote): string => {
+            // 独立键空间；当前态 / 悬停态进键，避免 faqs-arkui-219 行子树复用不刷新。
+            return 'pin-' + row.relPath +
+              (row.relPath === this.currentFilePath ? '|cur' : '|u') +
+              (this.pinRowActive(row.relPath) ? '|act' : '');
+          })
+        }
+        .width('100%')
+        .height(this.pinListHeight())
+        .padding({ left: Space.s4 })
+        .scrollBar(BarState.Auto)
+        .cachedCount(10)
+        .backgroundColor($r('app.color.bg_navigation'))
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  /** 置顶区可见时，目录树上方补同款分区标签（62.1）。 */
+  @Builder
+  AllNotesLabel() {
+    Text('全部笔记')
+      .fontSize(FontSize.caption)
+      .fontWeight(FontWeight.Medium)
+      .letterSpacing(Size.pinLabelTracking)
+      .fontColor($r('app.color.text_tertiary'))
+      .width('100%')
+      .padding({ left: Space.s4, right: Space.s2, top: Space.s2, bottom: Space.s1 })
+  }
+
+  /** 置顶区行：首字色块 + 标题 + 所在文件夹 / 行尾取消置顶按钮。 */
+  @Builder
+  PinRow(row: PinnedNote) {
+    Row() {
+      Row({ space: Space.s2 }) {
+        Row() {
+          Text(row.initial)
+            .fontSize(FontSize.caption)
+            .fontWeight(Weight.semibold)
+            .fontColor(this.pinToneFg(row.tone))
+            .textAlign(TextAlign.Center)
+        }
+        .width(Size.pinMonogram)
+        .height(Size.pinMonogram)
+        .borderRadius(Size.pinMonogramRadius)
+        .backgroundColor(this.pinToneBg(row.tone))
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+
+        Text(row.title)
+          .fontSize(FontSize.body2)
+          .fontWeight(row.relPath === this.currentFilePath ? FontWeight.Medium : FontWeight.Normal)
+          .fontColor(row.relPath === this.currentFilePath
+            ? $r('app.color.brand') : $r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .layoutWeight(1)
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: Space.s2, right: Space.s3 })
+      // 同树行坑：内容子树透明，点击统一冒泡到外层 Row；行尾按钮在子树之外才点得动。
+      .hitTestBehavior(HitTestMode.None)
+
+      if (this.pinRowActive(row.relPath)) {
+        Row() {
+          Icon('pin', Space.s4, $r('app.color.text_tertiary'))
+        }
+        .width(Size.touch)
+        .height(Size.touch)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .borderRadius(Radius.icon)
+        .onClick((): void => { this.togglePinPath(row.relPath); })
+        .accessibilityText('取消置顶：' + row.title)
+      } else {
+        Text(row.folder)
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(TextAlign.End)
+          .width('40%')
+      }
+    }
+    .width('100%')
+    .height(Size.pinRowH)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.control)
+    .onClick((): void => {
+      if (row.relPath !== this.currentFilePath) {
+        this.onSelectFile(row.relPath);
+      }
+    })
+    .onHover((isHover: boolean): void => {
+      this.pinHoverPath = isHover ? row.relPath : '';
+    })
+    .onFocus((): void => { this.pinFocusPath = row.relPath; })
+    .onBlur((): void => {
+      if (this.pinFocusPath === row.relPath) {
+        this.pinFocusPath = '';
+      }
+    })
+    .focusable(true)
+    .id('pin-row-' + this.vaultId + ':' + row.relPath)
+    .accessibilityText('打开置顶的笔记：' + row.title + '，位于 ' + this.pinLocation(row))
+  }
+
+  /** 置顶区左滑操作条：可点「取消置顶」，滑到底松手同样取消（不触发删除）。 */
+  @Builder
+  PinSwipeBar(row: PinnedNote) {
+    Row() {
+      Row() {
+        Text('取消置顶')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.brand'))
+      }
+      .width(Size.touch)
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor($r('app.color.brand_bg'))
+      .onClick((): void => { this.togglePinPath(row.relPath); })
+      Text('· 松手取消置顶')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.brand'))
+        .maxLines(1)
+        .padding({ right: Space.s2 })
+    }
+    .height('100%')
+    .backgroundColor($r('app.color.brand_bg'))
   }
 
   @Builder

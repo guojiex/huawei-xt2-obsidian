@@ -74,13 +74,13 @@ function visibleNodes() {
 
 test('resort: name 模式原样返回（scan 已排好）', () => {
   const nodes = visibleNodes();
-  const out = FileTree.resort(nodes, 'name', mtimeOf, []);
+  const out = FileTree.resort(nodes, 'name', mtimeOf);
   assert.deepEqual(plain(out.map((n) => n.relPath)),
     plain(nodes.map((n) => n.relPath)));
 });
 
 test('resort: mtime 模式目录前文件后，同组按 mtime 降序', () => {
-  const out = FileTree.resort(visibleNodes(), 'mtime', mtimeOf, []);
+  const out = FileTree.resort(visibleNodes(), 'mtime', mtimeOf);
   // 根层：目录 [docs(9), alpha(5)] 降序 → docs 先；文件 [root.md(8)] 随后。
   // alpha 子层：目录 [deep(7)] 在前、文件 [a.md(10)] 在后（分组先后不因 mtime 翻转）。
   assert.deepEqual(plain(out.map((n) => n.relPath)), [
@@ -91,7 +91,7 @@ test('resort: mtime 模式目录前文件后，同组按 mtime 降序', () => {
 });
 
 test('resort: 父目录永远在子项之前（扁平 DFS 结构不破）', () => {
-  const out = FileTree.resort(visibleNodes(), 'mtime', mtimeOf, []);
+  const out = FileTree.resort(visibleNodes(), 'mtime', mtimeOf);
   const seen = new Set();
   for (const n of out) {
     const parent = FileTree.parentOf(n.relPath);
@@ -108,7 +108,7 @@ test('resort: mtime 相同按名称升序稳定', () => {
   ];
   const nodes = FileTree.scan(accessWith(entries), []);
   const sameTime = () => 42;
-  const out = FileTree.resort(nodes, 'mtime', sameTime, []);
+  const out = FileTree.resort(nodes, 'mtime', sameTime);
   assert.deepEqual(plain(out.map((n) => n.relPath)), ['aa', 'zz', 'a.md', 'b.md']);
 });
 
@@ -118,22 +118,22 @@ test('resort: stat 失败（返回负值）按最旧处理，排序不崩', () =
   ];
   const nodes = FileTree.scan(accessWith(entries), []);
   const brokenStat = (relPath) => (relPath === 'gone.md' ? -1 : MTIMES.get(relPath) ?? -1);
-  const out = FileTree.resort(nodes, 'mtime', brokenStat, []);
+  const out = FileTree.resort(nodes, 'mtime', brokenStat);
   // mid(默认 -1) 与 gone(-1) 都拿不到：按名称升序在尾部；fresh 有值在最前。
   assert.deepEqual(plain(out.map((n) => n.relPath)), ['fresh.md', 'gone.md', 'mid.md']);
 });
 
 test('resort: 折叠子树不进入输入，重排不凭空造行', () => {
   const collapsed = FileTree.scan(accessWith(TREE), []);
-  const out = FileTree.resort(collapsed, 'mtime', mtimeOf, []);
+  const out = FileTree.resort(collapsed, 'mtime', mtimeOf);
   assert.deepEqual(plain(out.map((n) => n.relPath)), ['docs', 'alpha', 'root.md']);
   assert.equal(out.length, 3);
 });
 
 test('resort: 空树与全文件根不崩', () => {
-  assert.deepEqual(plain(FileTree.resort([], 'mtime', mtimeOf, [])), []);
+  assert.deepEqual(plain(FileTree.resort([], 'mtime', mtimeOf)), []);
   const files = FileTree.scan(accessWith([['c.md', false], ['a.md', false]]), []);
-  assert.deepEqual(plain(FileTree.resort(files, 'mtime', () => 1, []).map((n) => n.relPath)),
+  assert.deepEqual(plain(FileTree.resort(files, 'mtime', () => 1).map((n) => n.relPath)),
     ['a.md', 'c.md']);
 });
 

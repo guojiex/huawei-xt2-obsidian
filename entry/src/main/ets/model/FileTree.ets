@@ -36,6 +36,21 @@ export interface TreeNode {
   depth: number;
 }
 
+/** 置顶区一行（v1.62 · 62.1）：由 PinStore 数组 + 全量笔记路径解析，纯数据无 UI 依赖。 */
+export interface PinnedNote {
+  relPath: string;
+  /** 剥掉 .md / .markdown 的显示标题 */
+  title: string;
+  /** 最近一级文件夹名；根目录显示「根目录」 */
+  folder: string;
+  /** 完整父路径（悬停提示与读屏用） */
+  folderPath: string;
+  /** 首字色块里的字符 */
+  initial: string;
+  /** callout 色板索引 0..4，按文件夹哈希 */
+  tone: number;
+}
+
 /** 文件树排序模式（v1.49）：名称 = 现状默认；mtime = 按修改时间降序（新的在前）。 */
 export type FileListSortMode = 'name' | 'mtime';
 
@@ -72,7 +87,14 @@ export class FileTree {
    * 所以这里只要顺序过一遍、滤掉祖先没展开的分支，产出的行序就与原递归版完全一致。
    */
   static scan(access: VaultAccess, expanded: string[]): TreeNode[] {
-    const entries: VaultDirChild[] = access.snapshot();
+    return FileTree.scanEntries(access.snapshot(), expanded);
+  }
+
+  /**
+   * 从一次快照排版可见行（v1.62）：置顶区与目录树共用同一份 entries，
+   * 避免同一帧里两处数据不一致，也省掉一次全库遍历。
+   */
+  static scanEntries(entries: VaultDirChild[], expanded: string[]): TreeNode[] {
     const out: TreeNode[] = [];
     for (let i = 0; i < entries.length; i++) {
       if (out.length >= FileTree.MAX_NODES) {
@@ -94,6 +116,79 @@ export class FileTree {
       });
     }
     return out;
+  }
+
+  /**
+   * 快照内的全量笔记路径（v1.62 置顶区用）：不受展开状态影响。
+   * VaultAccess.listDir 已过滤隐藏项与非笔记文件，故这里只需排除目录；
+   * `.trash` 属隐藏项，回收站里的笔记不在其中（62.4 删除隐藏 / 恢复回显）。
+   */
+  static notesOfEntries(entries: VaultDirChild[]): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (!entries[i].isDir) {
+        out.push(entries[i].name);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 置顶区行（v1.62 · 62.1）：由 `pinned_<vaultId>` 数组与全量笔记路径解析。
+   * - 数组顺序即置顶先后，逆序渲染 = 最近置顶在前；不存时间戳、不改数据结构；
+   * - 路径不在当前库笔记里（陈旧条目 / 改名 / 移动 / 进回收站 / 永久删除）直接跳过，
+   *   不自动清理偏好（50.4 口径），恢复后自然回到置顶区；
+   * - 目录路径与重复路径同样由 allNotes 交集过滤；
+   * - 标题、所在文件夹、首字与色板索引都在这里算好，渲染层只画，纯逻辑可单测。
+   */
+  static pinnedNotes(allNotes: string[], pinned: string[]): PinnedNote[] {
+    const out: PinnedNote[] = [];
+    const seen: Map<string, boolean> = new Map<string, boolean>();
+    for (let i = pinned.length - 1; i >= 0; i--) {
+      const relPath: string = pinned[i];
+      if (relPath.length === 0 || seen.has(relPath) || allNotes.indexOf(relPath) < 0) {
+        continue;
+      }
+      seen.set(relPath, true);
+      const title: string = FileTree.noteTitleOf(FileTree.lastSegment(relPath));
+      const folderPath: string = FileTree.parentOf(relPath);
+      out.push({
+        relPath: relPath,
+        title: title,
+        folder: folderPath.length === 0 ? '根目录' : FileTree.lastSegment(folderPath),
+        folderPath: folderPath,
+        initial: FileTree.initialOf(title),
+        tone: FileTree.toneOf(folderPath)
+      });
+    }
+    return out;
+  }
+
+  /** 与 NoteDisplayName 同口径：剥一层 .markdown / .md，大小写不敏感。 */
+  private static noteTitleOf(fileName: string): string {
+    const lower: string = fileName.toLowerCase();
+    if (lower.endsWith('.markdown')) {
+      return fileName.substring(0, fileName.length - '.markdown'.length);
+    }
+    if (lower.endsWith('.md')) {
+      return fileName.substring(0, fileName.length - '.md'.length);
+    }
+    return fileName;
+  }
+
+  /** 首字色块里的字符：标题首字（拉丁字母大写），空标题兜底中点。 */
+  private static initialOf(title: string): string {
+    const trimmed: string = title.trim();
+    return trimmed.length === 0 ? '·' : trimmed.substring(0, 1).toUpperCase();
+  }
+
+  /** 按所在文件夹完整路径哈希取 callout 色板索引（同文件夹同色，v1.54 §54.1 第三稿）。 */
+  private static toneOf(folderPath: string): number {
+    let hash: number = 0;
+    for (let i = 0; i < folderPath.length; i++) {
+      hash = (hash * 31 + folderPath.charCodeAt(i)) % 1000003;
+    }
+    return hash % 5;
   }
 
   /**
@@ -150,28 +245,21 @@ export class FileTree {
   }
 
   /**
-   * 按排序模式重排可见行（v1.49 · 49.1；v1.50 · 50.1 扩展置顶权重）。
+   * 按排序模式重排可见行（v1.49 · 49.1；v1.62 废弃 v1.50 置顶权重）。
    *
    * 约定：输入是 scan 产出的可见行（已按展开状态剪枝），输出保持
-   * 「父目录在子项之前」的扁平 DFS 结构；每层内部**置顶笔记最前**（v1.50：
-   * 显式排序权重，仅文件行可置顶，高于目录），其余行目录在前、文件在后，
+   * 「父目录在子项之前」的扁平 DFS 结构；每层内部目录在前、文件在后，
    * 同组按模式排序——name = 字典序升序，mtime = mtimeOf(relPath) 降序
    * （新的在前），相同或拿不到按名称升序稳定。stat 失败（返回负值）按最旧
    * 处理，排序不崩。纯逻辑：mtimeOf 由调用方注入（沙箱 / 外部都从
    * VaultAccess.stat 拿），两类库共用，不按 rootKind 分叉。
    *
-   * 快路径：name 模式且可见行里没有置顶笔记时原样返回（scan 已排好）。
+   * v1.62：置顶不再参与树内排序（置顶的唯一可见效果在顶部独立置顶区），
+   * 因此去掉 pinned 参数，name 模式恢复 v1.49 的快路径原样返回。
    */
   static resort(nodes: TreeNode[], mode: FileListSortMode,
-    mtimeOf: (relPath: string) => number, pinned: string[]): TreeNode[] {
-    let pinnedVisible: boolean = false;
-    for (let i = 0; i < nodes.length; i++) {
-      if (!nodes[i].isDir && pinned.indexOf(nodes[i].relPath) >= 0) {
-        pinnedVisible = true;
-        break;
-      }
-    }
-    if (mode !== 'mtime' && !pinnedVisible) {
+    mtimeOf: (relPath: string) => number): TreeNode[] {
+    if (mode !== 'mtime') {
       return nodes;
     }
     const byParent: Map<string, TreeNode[]> = new Map<string, TreeNode[]>();
@@ -192,7 +280,7 @@ export class FileTree {
       const group: TreeNode[] | undefined = byParent.get(parents[p]);
       if (group !== undefined) {
         group.sort((a: TreeNode, b: TreeNode): number =>
-          FileTree.compareSiblings(a, b, mode, mtimeOf, pinned));
+          FileTree.compareSiblings(a, b, mode, mtimeOf));
       }
     }
     const out: TreeNode[] = [];
@@ -201,17 +289,11 @@ export class FileTree {
   }
 
   /**
-   * 同层比较（v1.50）：置顶笔记最前（仅文件行，显式权重高于目录）→
-   * 目录在前、文件在后 → 同组按模式（name 字典序 / mtime 降序），
-   * 平局按名称升序稳定。
+   * 同层比较（v1.49 纯规则，v1.62 恢复）：目录在前、文件在后 →
+   * 同组按模式（name 字典序 / mtime 降序），平局按名称升序稳定。
    */
   private static compareSiblings(a: TreeNode, b: TreeNode, mode: FileListSortMode,
-    mtimeOf: (relPath: string) => number, pinned: string[]): number {
-    const aPinned: boolean = !a.isDir && pinned.indexOf(a.relPath) >= 0;
-    const bPinned: boolean = !b.isDir && pinned.indexOf(b.relPath) >= 0;
-    if (aPinned !== bPinned) {
-      return aPinned ? -1 : 1;
-    }
+    mtimeOf: (relPath: string) => number): number {
     if (a.isDir !== b.isDir) {
       return a.isDir ? -1 : 1;
     }
@@ -382,6 +464,35 @@ export class PinStore {
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, '置顶状态写入失败 code=%{public}d', err.code);
+    }
+  }
+
+  /**
+   * 置顶区展开 / 收起（v1.62 · 62.4）：`pinSectionOpen_<vaultId>`，按库记忆，
+   * 默认展开——置顶是主动行为，有置顶就该看到。坏值 / 读失败回退展开。
+   */
+  loadSectionOpen(vaultId: string): boolean {
+    if (this.store === null || vaultId.length === 0) {
+      return true;
+    }
+    try {
+      const raw: boolean = this.store.getSync('pinSectionOpen_' + vaultId, true) as boolean;
+      return typeof raw === 'boolean' ? raw : true;
+    } catch (error) {
+      return true;
+    }
+  }
+
+  saveSectionOpen(vaultId: string, open: boolean): void {
+    if (this.store === null || vaultId.length === 0) {
+      return;
+    }
+    try {
+      this.store.putSync('pinSectionOpen_' + vaultId, open);
+      this.store.flush();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '置顶区状态写入失败 code=%{public}d', err.code);
     }
   }
 }

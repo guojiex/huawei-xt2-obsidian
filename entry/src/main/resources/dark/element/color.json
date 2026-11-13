@@ -16,6 +16,17 @@
     { "name": "danger_bg", "value": "#24FF6B6B" },
     { "name": "hl_code", "value": "#4EC5A5" },
 
+    { "name": "cb_note", "value": "#5AA4FF" },
+    { "name": "cb_tip", "value": "#75C7A0" },
+    { "name": "cb_warn", "value": "#E2A54C" },
+    { "name": "cb_purple", "value": "#A991F0" },
+    { "name": "cb_gray", "value": "#9AA1AD" },
+    { "name": "cb_note_bg", "value": "#245AA4FF" },
+    { "name": "cb_tip_bg", "value": "#2475C7A0" },
+    { "name": "cb_warn_bg", "value": "#24E2A54C" },
+    { "name": "cb_purple_bg", "value": "#24A991F0" },
+    { "name": "cb_gray_bg", "value": "#249AA1AD" },
+
     { "name": "bg_page", "value": "#10151D" },
     { "name": "bg_navigation", "value": "#171D25" },
     { "name": "bg_card", "value": "#1D232B" },
