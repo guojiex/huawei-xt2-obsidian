@@ -554,7 +554,7 @@ export struct ImportVaultDialog {
             Text(this.gitAuthHint.length > 0
               ? this.gitAuthHint
               : (isGitHubRemote(this.gitRemote)
-                ? 'GitHub 使用 Bearer 认证；私有仓库需要令牌，公开仓库可留空。'
+                ? 'GitHub 使用令牌（Basic 认证）；私有仓库需要令牌，公开仓库可留空。'
                 : '私有仓库需要令牌，公开仓库可留空。'))
               .fontSize(FontSize.caption)
               .fontColor(this.gitAuthHint.length > 0
@@ -568,7 +568,7 @@ export struct ImportVaultDialog {
               .padding(Space.s3)
               .borderRadius(Radius.control)
               .backgroundColor($r('app.color.bg_secondary'))
-            Text('GitHub 使用 Bearer；Gitee 使用用户名和令牌。移除库只删除手机副本，远端仓库保留。')
+            Text('GitHub 与 Gitee 均使用令牌（Basic 认证）；移除库只删除手机副本，远端仓库保留。')
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
