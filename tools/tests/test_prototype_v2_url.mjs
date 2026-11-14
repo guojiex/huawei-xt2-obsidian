@@ -291,7 +291,7 @@ test('phone navigation pushes the retained workspace and reverses without losing
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&lm=edit&nav=0');
  const editor=f.get('editor'),workspace=f.get('noteWorkspace');editor.value='动画中保留的编辑内容';editor.oninput();editor.setSelectionRange(4,7);editor.scrollTop=120;
  assert.equal(f.get('navSidebar').inert,true);assert.equal(workspace.inert,false);
- for(let i=0;i<3;i++){f.get('menu').onclick();assert.equal(f.get('navSidebar').inert,false);assert.equal(workspace.inert,false);assert.equal(f.get('notePanes').inert,true);assert.equal(f.get('menu').attrs['aria-expanded'],'true');f.get('closeNav').onclick();assert.equal(f.get('navSidebar').inert,true);assert.equal(workspace.inert,false);}
+ for(let i=0;i<3;i++){f.get('menu').onclick();assert.equal(f.get('navSidebar').inert,false);assert.equal(workspace.inert,false);assert.equal(f.get('notePanes').inert,true);assert.equal(f.get('menu').attrs['aria-expanded'],'true');f.get('menu').onclick();assert.equal(f.get('navSidebar').inert,true);assert.equal(workspace.inert,false);}
  assert.equal(f.get('editor'),editor);assert.equal(f.get('noteWorkspace'),workspace);assert.equal(editor.value,'动画中保留的编辑内容');assert.equal(editor.selectionStart,4);assert.equal(editor.selectionEnd,7);assert.equal(editor.scrollTop,120);
  f.get('menu').onclick();f.run("selectNote('reading_reading_journal')");assert(!f.get('window').classList.contains('nav-open'));assert.equal(workspace.inert,false);
 });
@@ -558,7 +558,7 @@ test('open Aa panel stays within its visible pane while phone navigation pushes 
  f.get('window').rect={left:0,right:380,top:0,bottom:780,width:380,height:780};
  f.get('leftPane').rect={left:0,right:380,top:0,bottom:780,width:380,height:780};
  f.get('formatBtn').rect={left:100,right:148,top:700,bottom:748,width:48,height:48};
- f.event('document','pointerdown',{target:f.get('closeNav')});f.get('closeNav').onclick();assert(!f.get('window').classList.contains('nav-open'));
+ f.event('document','pointerdown',{target:f.get('menu')});f.get('menu').onclick();assert(!f.get('window').classList.contains('nav-open'));
  assert(panel.open);assert.equal(panel.style.width,'360px');assert.equal(panel.classList.contains('compact'),false);assert(f.get('formatFollowDemo').checked);
 });
 
