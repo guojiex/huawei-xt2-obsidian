@@ -75,13 +75,13 @@ test('share scope hides the folder segment when it would duplicate the vault roo
   assert.equal(f.get('shareScope').value,'note');
   assert(f.get('shareFolderScope').classList.contains('hidden'));
 });
-test('settings backup shares the current library and blocks empty-library export',()=>{
+test('settings keeps single-vault export and recommends full app backup before reset',()=>{
  const f=fixture();const extension=html.match(/\/\/ v1\.37: data page backup export[\s\S]*?(?=<\/script>)/)[0];f.run(extension);
  assert.equal(f.get('exportVaultBackup').disabled,false);f.get('exportVaultBackup').onclick();
  assert.equal(f.run('shareSnapshot.title'),'阅读笔记');assert.equal(f.run('shareSnapshot.scope'),'vault');assert(f.run('shareSnapshot.zip'));
- f.get('resetConfirm').classList.remove('hidden');f.get('resetExportFirst').onclick();assert(f.get('resetConfirm').classList.contains('hidden'));
+ f.get('shareDialog').open=false;f.get('resetConfirm').classList.remove('hidden');f.get('resetExportFirst').onclick();assert(f.get('resetConfirm').classList.contains('hidden'));assert(f.get('appBackupDialog').open);assert.equal(f.run('appBackupMode'),'export');f.run('closeAppBackup()');
  f.run("notes.filter(n=>n.vault===activeVault).forEach(n=>n.deleted=true);syncExportBackup()");
- assert(f.get('exportVaultBackup').disabled);f.get('shareDialog').open=false;f.get('resetExportFirst').onclick();assert.equal(f.get('shareDialog').open,false);
+ assert(f.get('exportVaultBackup').disabled);f.get('shareDialog').open=false;f.get('resetExportFirst').onclick();assert.equal(f.get('shareDialog').open,false);assert(f.get('appBackupDialog').open,'app backup remains available when the current vault is empty');
 });
 test('decision prototypes handle TSV, cross-vault search and ZIP import states',()=>{
  const f=fixture();const extension=html.match(/\/\/ v1\.14 14\.4:[\s\S]*?(?=\/\/ v1\.32 32\.1:)/)[0];f.run(extension);
@@ -905,4 +905,46 @@ test('v1.58 58.10: view=stats URL 复现打开写作统计弹窗，热力图 7×
  assert.equal(f.get('statsDialog').open,false);
  assert.equal(f.run('vaultStatsOpen'),false);
  assert.equal(f.get('mobileMoreTrigger').focused,true,'关闭后焦点回到更多按钮');
+});
+
+
+function appBackupFixture(){const f=fixture();f.run(html.match(/\/\/ v1\.66: design-only application backup[\s\S]*?(?=<\/script>)/)[0]);return f;}
+test('v1.66 app export previews all vaults and completes without modifying samples',()=>{
+ const f=appBackupFixture();const before=f.run('JSON.stringify({libraries,notes})');
+ f.get('exportAppBackup').onclick();assert(f.get('appBackupDialog').open);
+ assert.equal(f.run('appBackupMode'),'export');assert.match(f.get('appBackupSummary').textContent,/3 个知识库/);
+ assert.match(f.get('appBackupVaultNames').textContent,/本地笔记.*阅读笔记.*项目笔记/);
+ f.get('appBackupPrimary').onclick();assert.equal(f.run('appBackupStep'),'working');
+ assert(f.get('appBackupPrimary').disabled);assert(f.get('closeAppBackup').disabled);
+ f.flush();assert.equal(f.run('appBackupStep'),'done');
+ assert.match(f.get('appBackupDoneCopy').textContent,/保存位置后才算完成/);
+ assert.equal(f.run('JSON.stringify({libraries,notes})'),before);
+});
+test('v1.66 restore requires file review and separate acknowledged replacement confirmation',()=>{
+ const f=appBackupFixture();const before=f.run('JSON.stringify({libraries,notes})');
+ f.get('restoreAppBackup').onclick();assert.equal(f.run('appBackupStep'),'choose');assert(f.get('appBackupPrimary').disabled);
+ f.get('chooseAppBackupFile').onclick();assert.equal(f.run('appBackupStep'),'review');
+ f.get('appBackupPrimary').onclick();assert.equal(f.run('appBackupStep'),'confirm');assert(f.get('appBackupPrimary').disabled);
+ f.get('appBackupPrimary').onclick();assert.equal(f.run('appBackupStep'),'confirm');
+ f.get('ackAppBackupReplace').checked=true;f.get('ackAppBackupReplace').onchange();assert(!f.get('appBackupPrimary').disabled);
+ f.get('appBackupPrimary').onclick();f.flush();assert.equal(f.run('appBackupStep'),'done');
+ assert.equal(f.run('JSON.stringify({libraries,notes})'),before,'prototype must not replace sample data');
+});
+test('v1.66 corrupt, future and failed restore states preserve data and allow retry',()=>{
+ for(const scenario of ['corrupt','future','failed']){
+  const f=appBackupFixture();const before=f.run('JSON.stringify({libraries,notes})');
+  f.run("appBackupScenario='"+scenario+"';openAppBackup('import')");f.get('chooseAppBackupFile').onclick();
+  if(scenario==='failed'){f.get('appBackupPrimary').onclick();f.get('ackAppBackupReplace').checked=true;f.get('ackAppBackupReplace').onchange();f.get('appBackupPrimary').onclick();f.flush();}
+  assert.equal(f.run('appBackupStep'),'error');assert(f.get('appBackupPrimary').disabled===false);
+  assert.match(f.get('appBackupErrorCopy').textContent,scenario==='corrupt'?/清单/:scenario==='future'?/升级/:/空间不足/);
+  assert.equal(f.run('JSON.stringify({libraries,notes})'),before);
+  f.get('appBackupPrimary').onclick();assert.equal(f.run('appBackupStep'),'choose');assert(f.get('appBackupPrimary').disabled);
+ }
+});
+test('v1.66 cancel and Escape close backup before settings and restore the trigger focus',()=>{
+ for(const preset of ['phone','double','wide']){
+  const f=appBackupFixture();f.run("setViewport('"+preset+"');openSettings();chooseSettings('data',false);openAppBackup('import')");
+  let prevented=false;f.event('document','keydown',{key:'Escape',preventDefault(){prevented=true}});
+  assert(prevented);assert(!f.get('appBackupDialog').open);assert.equal(f.run('settingsOpen'),true);assert(f.get('restoreAppBackup').focused);
+ }
 });
