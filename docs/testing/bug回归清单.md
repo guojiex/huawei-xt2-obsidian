@@ -16,10 +16,10 @@
 | 状态 | 计数 |
 | --- | --- |
 | 已有防线 | 123 |
-| 已补防线 | 5 |
+| 已补防线 | 6 |
 | 不可自动化 | 1 |
 | 根因已消除 | 20 |
-| **合计** | 149 |
+| **合计** | 150 |
 
 > **注**：
 > - T004–T009 新增的 6 个 Node 防回归测试文件是对「已有防线」条目的**加固**（源码级断言防模式退化），
@@ -41,6 +41,7 @@
 | ca71bd8 | guard mode and workspace target transitions——模式/工作区目标切换保护 | 状态管理 | — | test_editor_experience_transition.mjs | 已有防线 |
 | 4314462 | protect editor composition save state——组合输入保存状态保护 | 状态管理 | — | test_editor_composition_save.mjs | 已有防线 |
 | 6ce06f3 | 修正栏内菜单宽度为原型min-width内容自适应 | 状态管理 | v1.32 | test_pane_more_menu_design.mjs | 已有防线 |
+| 2e9b4dc | 选择空栏时误加载另一栏笔记、文件树打开目标栏错位 | 状态管理 | v1.28 | test_empty_pane_target_selection.mjs；EM-B5 手动双栏步骤 | 已补防线 |
 | 3f5433f | switch split and focus controls by layout——按布局切换分栏/专注控件 | 状态管理 | v1.8 | test_split_layout_store.mjs | 已有防线 |
 | a2ca64e | keep focus entry with split pane——分栏时保留专注入口 | 状态管理 | v1.8 | test_focus_mode_entry.mjs | 已有防线 |
 | 48e00a5 | avoid duplicate focus and split controls——避免重复专注/分栏控件 | 状态管理 | v1.8 | test_split_layout_store.mjs | 已有防线 |
