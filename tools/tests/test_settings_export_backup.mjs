@@ -7,6 +7,8 @@ const settings = readSourceFile(
   new URL('../../entry/src/main/ets/components/SettingsView.ets', import.meta.url));
 const index = readSourceFile(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const shareFlow = readSourceFile(
+  new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 const prototype = readSourceFile(
   new URL('../../docs/prototype/v2/index.html', import.meta.url));
 
@@ -45,10 +47,11 @@ test('export reuses the 25.18 vault share entry with focus return (37.2)', () =>
   assert.ok(paneStart >= 0 && paneEnd > paneStart, 'could not find Index.SettingsPane');
   assert.match(pane, /currentVaultNoteCount: this\.currentVaultNoteCount,/);
   assert.match(pane, /onExportCurrentVault: \(focusId: string\): void => \{/);
-  assert.match(pane, /this\.openShareVaultFromManager\(this\.currentVaultId, focusId\)/);
-  // 25.18 入口保持：按库 id 计数、空库 toast、focusReturnId 透传
-  assert.match(index, /private openShareVaultFromManager\(vaultId: string, focusId: string\): void \{/);
-  assert.match(index, /this\.openShareDialog\('vault', '', vaultId, noteCount, focusId\)/);
+  // 分享域已拆至 ShareFlowPanel，导出经 shareFlowApi 转发
+  assert.match(pane, /this\.shareFlowApi\?\.openShareVaultFromManager\(this\.currentVaultId, focusId\)/);
+  // 25.18 入口保持：按库 id 计数、空库 toast、focusReturnId 透传（ShareFlowPanel 内）
+  assert.match(shareFlow, /private openShareVaultFromManager\(vaultId: string, focusId: string\): void \{/);
+  assert.match(shareFlow, /this\.openShareDialog\('vault', '', vaultId, noteCount, focusId\)/);
 });
 
 test('empty vault disables the row and swaps the hint (37.3)', () => {

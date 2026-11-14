@@ -7,6 +7,9 @@ import { readSourceFile } from './lib/source.mjs';
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
 const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+// 分享域拆至 ShareFlowPanel：捕获宽度链路的源级断言改为读子组件
+const shareFlowSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 const settingsSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/ShareImageSettingsDialog.ets', import.meta.url));
 const methodStart = indexSource.indexOf('  private activeSharePaneWidthVp(): number {');
@@ -61,15 +64,15 @@ test('shareLayoutWidthVp maps phone/wide/pane to fixed or dynamic widths', () =>
 });
 
 test('settings dialog provides width segment with phone/wide/pane and capture uses the selected width', () => {
-  assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(this\.shareCaptureWidthId, paneWidthVp\)/);
-  assert.match(indexSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(widthId, resolvedPaneWidthVp\)/);
+  assert.match(shareFlowSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(this\.shareCaptureWidthId, paneWidthVp\)/);
+  assert.match(shareFlowSource, /this\.shareCaptureWidthVp = this\.shareLayoutWidthVp\(widthId, resolvedPaneWidthVp\)/);
   // v1.53 PDF 模式分支在前，长图宽度回退链保持不变
-  assert.match(indexSource, /\.width\(this\.shareCapturePdfMode \? this\.pdfPageWidthVp :/);
-  assert.match(indexSource, /this\.shareCaptureWidthVp > 0 \? this\.shareCaptureWidthVp : '100%'\)/);
+  assert.match(shareFlowSource, /\.width\(this\.shareCapturePdfMode \? this\.pdfPageWidthVp :/);
+  assert.match(shareFlowSource, /this\.shareCaptureWidthVp > 0 \? this\.shareCaptureWidthVp : '100%'\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.PHONE\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.WIDE\)/);
   assert.match(settingsSource, /this\.WidthOption\(ShareImageWidthPresets\.PANE\)/);
   assert.match(settingsSource, /ShareImageWidthPresets\.hintWithPx/);
-  assert.match(indexSource, /initialWidthId: this\.shareCaptureWidthId/);
+  assert.match(shareFlowSource, /initialWidthId: this\.shareCaptureWidthId/);
   assert.match(settingsSource, /onConfirm: \(widthId: string, theme: string\)/);
 });

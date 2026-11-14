@@ -29,10 +29,10 @@ const serviceContext = vm.createContext({
 });
 vm.runInContext(serviceCode, serviceContext);
 const NoteTextShareService = serviceContext.module.exports;
-const source = fs.readFileSync(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url), 'utf8');
 const start = source.indexOf('  private async shareTextContent(title: string, content: string): Promise<void> {');
 const end = source.indexOf('\n  private waitForShareCaptureReady()', start);
-assert.ok(start >= 0 && end > start, 'could not find Index.shareTextContent');
+assert.ok(start >= 0 && end > start, 'could not find ShareFlowPanel.shareTextContent');
 const method = source.slice(start, end).trim();
 const code = transformSync(`class ShareHarness { ${method} }; module.exports = ShareHarness;`, {
   loader: 'ts',

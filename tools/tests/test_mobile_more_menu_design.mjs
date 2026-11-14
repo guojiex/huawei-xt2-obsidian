@@ -101,7 +101,8 @@ test('git ahead count is a blue pill badge, not link-style text (31.4)', () => {
 test('note actions dim to 40% and stay disabled when no note is open (31.5)', () => {
   assert.match(menu, /\.opacity\(isEnabled \? 1 : 0\.4\)/);
   assert.match(menu, /\.enabled\(isEnabled\)/);
-  assert.match(menu, /this\.activeFilePath\(\)\.length > 0, \(\): void => \{\s*this\.openShareNoteDialog\(\);/);
+  // 分享域已拆至 ShareFlowPanel，菜单动作经 shareFlowApi 转发
+  assert.match(menu, /this\.activeFilePath\(\)\.length > 0, \(\): void => \{\s*this\.shareFlowApi\?\.openShareNoteDialog\(\);/);
   assert.match(menu, /this\.activeFilePath\(\)\.length > 0, \(\): void => \{\s*this\.toggleBacklinks\(this\.activeNotePane\(\)\);/);
 });
 
@@ -126,7 +127,8 @@ test('menu shell matches the v2 mobile-top-more spec (31.6)', () => {
 });
 
 test('menu actions still trigger the original operations', () => {
-  assert.match(index, /this\.openShareNoteDialog\(\);/);
+  // 分享域已拆至 ShareFlowPanel，菜单动作经 shareFlowApi 转发
+  assert.match(index, /this\.shareFlowApi\?\.openShareNoteDialog\(\);/);
   assert.match(index, /this\.toggleBacklinks\(this\.activeNotePane\(\)\);/);
   assert.match(index, /this\.toggleActivePane\(\);/);
   assert.match(index, /void this\.openGitSyncPage\(\);/);
