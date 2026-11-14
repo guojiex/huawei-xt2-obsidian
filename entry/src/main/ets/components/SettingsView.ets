@@ -74,6 +74,7 @@ export struct SettingsView {
   @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
   @Prop vaults: VaultEntry[] = [];
   @Prop @Watch('onSelectedCategoryChanged') selectedCategory: string = 'general';
+  @Prop showXiaoyiDialogEntry: boolean = false;
   @Prop showCategoryList: boolean = false;
   @Prop showPrivacyPolicy: boolean = false;
   onSelectCategory: (category: string) => void = (category: string) => {};
@@ -84,6 +85,7 @@ export struct SettingsView {
   onExportCurrentVault: (focusId: string) => void = (_focusId: string) => {};
   onResetSplit: () => void = () => {};
   onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
+  onShowXiaoyiDialogEntryChange: (show: boolean) => void = (_show: boolean) => {};
   onStatsEnabledChange: (enabled: boolean) => void = (_enabled: boolean) => {};
   onScreenSaverIntervalChange: (ms: number) => void = (_ms: number) => {};
   onExperienceModeChange: (mode: EditorExperienceMode) => void = (_mode: EditorExperienceMode) => {};
@@ -770,6 +772,33 @@ export struct SettingsView {
       this.GroupTitle('外观')
       Column() {
         this.InfoRow('显示主题', this.appTheme === 'dark' ? '深色（跟随系统）' : '浅色（跟随系统）', false)
+      }
+      .width('100%')
+      .padding(Space.s5)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
+      this.GroupTitle('小艺入口')
+      Column() {
+        Row() {
+          Column({ space: Space.s1 }) {
+            Text('显示主页面小艺入口')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_primary'))
+            Text('开启后在笔记页顶栏显示 Agent 对话入口；关闭后隐藏')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Toggle({ type: ToggleType.Switch, isOn: this.showXiaoyiDialogEntry })
+            .accessibilityText('显示主页面小艺入口')
+            .onChange((show: boolean): void => { this.onShowXiaoyiDialogEntryChange(show); })
+        }
+        .width('100%')
+        .constraintSize({ minHeight: Size.hsRowMinH })
+        .padding({ top: Space.s2, bottom: Space.s2 })
       }
       .width('100%')
       .padding(Space.s5)

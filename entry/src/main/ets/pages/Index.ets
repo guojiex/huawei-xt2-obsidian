@@ -100,6 +100,7 @@ import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
 import { VaultStatsPreferenceStore } from '../model/VaultStatsPreferenceStore';
 import { ScreenSaverPreferenceStore } from '../model/ScreenSaverPreferenceStore';
+import { XiaoyiEntryPreferenceStore } from '../model/XiaoyiEntryPreferenceStore';
 import { DEFAULT_EDITOR_EXPERIENCE, EditorExperienceMode } from '../model/EditorExperiencePolicy';
 import { EditorExperienceStore } from '../model/EditorExperienceStore';
 import { ShareImagePreferenceStore } from '../model/ShareImagePreferenceStore';
@@ -176,16 +177,12 @@ import { uniformTypeDescriptor } from '@kit.ArkData';
 import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
-import BuildProfile from 'BuildProfile';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
 /** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
 const GIT_ENTRY_UI_ENABLED: boolean = true;
-/** v1.45：由 .local/local-agent-ui.json 构建参数决定是否显示。 */
-const XIAOYI_DIALOG_ENTRY_PROFILE_VALUE: string = BuildProfile.showXiaoyiDialogEntry;
-const XIAOYI_DIALOG_ENTRY_ENABLED: boolean = XIAOYI_DIALOG_ENTRY_PROFILE_VALUE === 'true';
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -308,6 +305,7 @@ struct Index {
   /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
   @State @Watch('onFormatContextChanged') topView: string = 'note';
   @State agentKitSlotBuilder: WrappedBuilder<[() => void, string]> | null = null;
+  @State showXiaoyiDialogEntry: boolean = false;
   @State vaultManagerReturnView: string = 'note';
   /** v1.58：统计缓存（侧栏连写条只读这里）；打开弹窗时重算并回写，不落盘。 */
   @State vaultStatsModel: VaultStatsModel = emptyStatsModel();
@@ -465,6 +463,7 @@ struct Index {
   private editorPreferenceStore: EditorPreferenceStore | null = null;
   private vaultStatsPreferenceStore: VaultStatsPreferenceStore | null = null;
   private screenSaverPreferenceStore: ScreenSaverPreferenceStore | null = null;
+  private xiaoyiEntryPreferenceStore: XiaoyiEntryPreferenceStore | null = null;
   private editorExperienceStore: EditorExperienceStore | null = null;
   private shareImagePreferenceStore: ShareImagePreferenceStore | null = null;
   private agentKitLoadStarted: boolean = false;
@@ -740,7 +739,9 @@ struct Index {
     this.rightPreviewBridge.onContentReplacing = (): void => {
       this.onPreviewContentReplacing('right');
     };
-    if (XIAOYI_DIALOG_ENTRY_ENABLED) {
+    this.ensureXiaoyiEntryPreferenceStore();
+    this.showXiaoyiDialogEntry = (this.xiaoyiEntryPreferenceStore as XiaoyiEntryPreferenceStore).load();
+    if (this.showXiaoyiDialogEntry) {
       void this.loadAgentKitSlot();
     }
     this.refreshFromRegistry();
@@ -1135,6 +1136,24 @@ struct Index {
   private ensureScreenSaverPreferenceStore(): void {
     if (this.screenSaverPreferenceStore === null) {
       this.screenSaverPreferenceStore = new ScreenSaverPreferenceStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private ensureXiaoyiEntryPreferenceStore(): void {
+    if (this.xiaoyiEntryPreferenceStore === null) {
+      this.xiaoyiEntryPreferenceStore = new XiaoyiEntryPreferenceStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private setShowXiaoyiDialogEntry(show: boolean): void {
+    this.ensureXiaoyiEntryPreferenceStore();
+    if (!(this.xiaoyiEntryPreferenceStore as XiaoyiEntryPreferenceStore).save(show)) {
+      promptAction.showToast({ message: '小艺入口设置保存失败，当前状态未更改。' });
+      return;
+    }
+    this.showXiaoyiDialogEntry = show;
+    if (show) {
+      void this.loadAgentKitSlot();
     }
   }
 
@@ -10723,7 +10742,7 @@ struct Index {
           }
         }))
       if (this.topView === 'note') {
-        if (XIAOYI_DIALOG_ENTRY_ENABLED && this.agentKitSlotBuilder !== null) {
+        if (this.showXiaoyiDialogEntry && this.agentKitSlotBuilder !== null) {
           Row() {
             this.agentKitSlotBuilder.builder(this.xiaoyiDialogClosed, this.xiaoyiNoteHint())
           }
@@ -13196,6 +13215,7 @@ struct Index {
       currentVaultNoteCount: this.currentVaultNoteCount,
       vaults: this.vaults,
       showLineNumbers: this.showLineNumbers,
+      showXiaoyiDialogEntry: this.showXiaoyiDialogEntry,
       statsEnabled: this.statsEnabled,
       screenSaverIntervalMs: this.screenSaverIntervalMs,
       experienceMode: this.experienceMode,
@@ -13219,6 +13239,7 @@ struct Index {
       },
       onResetSplit: (): void => { this.resetSplitLayout(); },
       onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); },
+      onShowXiaoyiDialogEntryChange: (show: boolean): void => { this.setShowXiaoyiDialogEntry(show); },
       onStatsEnabledChange: (enabled: boolean): void => { this.setStatsEnabled(enabled); },
       onScreenSaverIntervalChange: (ms: number): void => { this.setScreenSaverInterval(ms); },
       onExperienceModeChange: (mode: EditorExperienceMode): void => { void this.selectEditorExperience(mode); }

@@ -6,8 +6,8 @@
     // 「install version downgrade code:9568263」——已装旧包的设备/模拟器一律装不上。
     // versionName 跟随**对外版本**（真源 changelog.json 的 version 字段，2026-11-09 决定），
     // 不与内部版本目录（docs/releases/vX.Y，迭代编号）对应；versionCode 只管递增。
-    "versionCode": 1000005,
-    "versionName": "1.8.0",
+    "versionCode": 1000006,
+    "versionName": "1.9.0",
     "buildVersion": "1",
     "icon": "$media:layered_image",
     "label": "$string:app_name",
