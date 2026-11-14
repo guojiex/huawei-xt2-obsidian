@@ -16,6 +16,11 @@
   - 折叠形态切换（single/double/triple）—— 由宿主侧 Emulator.exe 控制，设备内测试中途切不了；
   - 像素级视觉断言 —— 颜色 / 间距 / token 验收归人工回归；
   - 崩溃 / 强杀 / 写入中断注入 —— 测试边界（`AGENTS.md`）。
+  - Git 库入口可见性（EM-K1 正向）—— 需真实 clone 的 Git 库，设备上没有；只保留非 Git
+    库的反向断言（`git_entry_hidden_for_non_git_vault`）。
+  - 深色模式 —— 系统级切换，宿主 Emulator.exe 侧控制，设备内切不了（同折叠形态）。
+  - 屏保覆盖层内容断言 —— StartupMask 根 `accessibilityLevel('no')`，uitest 读不到覆盖层；
+    屏保套件只做入口冒烟 + 点击退出 + 设置组可见。
 - 树行 MENU 键路径**作废**：UiTest 的 touch click 不给树行键盘焦点，`triggerKey(KEYCODE_MENU)`
   打不开行内菜单；行内操作一律走 swipeAction 注入（半滑 0.45 出操作条、全滑 0.7 触发删除）。
 
@@ -65,6 +70,10 @@
 | UiNoteFlow | `delete_note_dialog_cancel_keeps` | 删除确认取消后文件保留 | EM-G1 |
 | UiNoteFlow | `trash_section_visible_after_delete` | 删除后侧栏回收站区块出现 | EM-B4（可达部分） |
 | UiNoteFlow | `trash_purge_confirm_and_cancel` | 回收站永久删除全链路：行内按钮 → 确认弹窗 → 取消保留 / 确认真删（行消失，无撤销条）；复用 UiNoteFlow 树操作 helpers，故不放 UiTrash | EM-B7 |
+| UiNoteFlow | `pin_note_moves_row_to_pin_section` | 行操作条「置顶」→ 置顶区行（pin-row）出现 + 树行消失（62.2 双向）；`clickByText('置顶')` 不可用（先命中区头），用 findComponents 按 y 重叠过滤 | v1.50 50.1–50.3 / v1.62 62.1/62.2 |
+| UiNoteFlow | `unpin_from_pin_section_restores_tree_row` | 置顶区行左滑「取消置顶」→ 置顶区行消失 + 树行恢复 | v1.50 50.2 / v1.62 62.3 |
+| UiNoteFlow | `pin_section_collapse_toggle` | 置顶区头点击折叠（行隐藏、头保留）/ 再点展开 | v1.62 62.4 |
+| UiNoteFlow | `backlinks_panel_opens_from_more_menu` | 更多菜单「查看反链」→ 空反链占位「暂无来源笔记」→ 「隐藏反链」收起 | v1.2 |
 | UiNoteFlow | `close_note_shows_empty_state` | 关闭当前笔记 → 空态（新建入口 id 就位） | EM-B5（可达部分） |
 | UiPanels | `settings_groups_visible_and_back` | 设置页分组标题就位 + 返回 | EM-F1（可达部分） |
 | UiPanels | `settings_editor_mode_toggle` | 设置内简单 / 专业模式切换与还原 | EM-C1 / EM-F1 |
@@ -76,6 +85,7 @@
 | UiQuickSwitch | `scope_defaults_to_current_vault` | 范围分段「当前库」默认选中 | EM-E1 |
 | UiQuickSwitch | `scope_toggle_to_all_vaults` | 范围分段切换到「全部库」 | EM-E2（可达部分） |
 | UiQuickSwitch | `skip_hint_ui_skeleton_accessible` | 跳过提示 UI 骨架可达 | EM-E3（可达部分） |
+| UiQuickSwitch | `content_search_returns_matching_note` | 模式切「正文」→ inputText('曜石') → FTS5 全文命中显示名「快速上手」（样例库 快速上手.md） | v1.1 正文搜索 / v1.40 RDB |
 | UiSmDrawer | `folder_toggle_responds_in_navigation` | 文件列表目录行点按有翻转响应，导航异常时汉堡 toggle 自愈后重试（2026-11-08 抽屉失步回归防线） | —（回归新增） |
 | UiSmDrawer | `create_note_keeps_navigation_usable` | 抽屉头「+」新建笔记后导航仍可复用（doCreateNote 收抽屉走 setDrawerOpen 的链路） | EM-B2 增补 |
 | UiTrash | `trash_section_visibility` | 回收站区块可见性（空/非空两种正确状态） | EM-B4 |
@@ -84,6 +94,10 @@
 | UiSettingsExt | `diagnostics_info_row_visible_and_expandable` | 诊断信息行可见且可展开（含构建提交行） | EM-F2 |
 | UiSettingsExt | `changelog_section_visible` | 更新日志区可见且有内容或占位 | EM-F5 |
 | UiSettingsExt | `reset_pane_widths_row_visible` | 恢复等分栏宽行可见 | EM-F6 |
+| UiStats | `streak_chip_visible_in_note_sidebar` | lg 笔记视图侧栏连写条（vault-stats-streak-chip）可见 | v1.58 58.2 |
+| UiStats | `stats_dialog_opens_from_more_menu` | 更多菜单「写作统计」→ 弹窗（独有锚点副标题「只在本机统计」）→ × 关闭；菜单项与弹窗标题同名，判定避开同名碰撞 | v1.58 58.3/58.4 |
+| UiScreensaver | `screensaver_entry_open_and_exit_smoke` | 菜单「屏保 / 台历」进入 → 覆盖层入场后点击退出 → 应用可交互；覆盖层 a11y 不可断言（accessibilityLevel('no')），仅冒烟 | v1.65 65.3/65.4 |
+| UiScreensaver | `screensaver_settings_group_visible` | 设置「屏保 / 台历」组 + 名言轮换间隔档位可见 | v1.65 65.5 |
 | UiShare | `share_panel_opens_from_more_menu` | 更多菜单「分享笔记」**点击穿透**：应用内分享面板真的打开（格式行/描述就位，标题与菜单项同名，判定用弹窗独有文本「长图」）；非 Git 库不显示「远端网页链接」行 | EM-J2 / EM-J4（反向） |
 | UiShare | `share_scope_segments_switch_formats` | 范围分段「笔记/文件夹/知识库」切换，各范围标题与格式列表正确 | EM-J2 25.12/25.13 |
 | UiShare | `share_note_text_preview_roundtrip` | 文本分享详情（可编辑说明 + 返回格式选择）可达并返回 | v0.9 9.14 |
@@ -249,4 +263,46 @@ diff 0.008%）。注意 Aa 按钮本身是开关：面板开着再点 Aa 会触�
   x1 y1 x2 y2`（默认 smooth 1000ms）；快滑显式 `-k 1 300`（keep=0 非法，第 5 位置参
   是 keep、尾参 smooth）。与 `Driver.swipe(x1,y1,x2,y2,speed)`（px/s）量纲不同，换算
   对比时注意。
+
+## 实测结论补遗（2026-11-15，x86_64 模拟器：覆盖差距收口，正文搜索/置顶/统计/屏保/反链补测）
+
+- **背景**：Phase 1-3 重构 43/43 全绿（`20261114_233140`）后盘点「已实现需求 vs UI 用例」
+  覆盖差距：node 侧 ~190 文件覆盖完整（callout / 双链 / KaTeX / Mermaid / FTS5 / 表格 /
+  置顶 / 小艺 / 屏保设计全有），UI 层缺口为 5 项 —— ①正文搜索（v1.1）、②置顶区
+  （v1.50/v1.62）、③统计面板（v1.52/v1.58）、④屏保（v1.65）、⑤反链面板（v1.2）。
+- **本轮补测**：UiQuickSwitch +1（`content_search_returns_matching_note`）、UiNoteFlow +4
+  （置顶×3 + 反链×1）、新套件 UiStats（2 例）、UiScreensaver（2 例，冒烟级）；
+  `List.test.ets` 注册、`uitest.ps1` `$knownSuites` 同步。
+- **选择器锚点决策**（写码前全部源码核实）：
+  - 正文搜索：模式分段 `Text('正文')`，命中行显示名 `Text(displayName)`；
+  - 置顶：**`clickByText('置顶')` 不可用** —— 置顶区头 `Text('置顶')` 在树前、
+    findComponent 先命中头（点了收起置顶区）。改 `findComponents(ON.text('置顶'))` 按
+    「与目标行 y 重叠 + 行右侧近端（`r.left > rowRect.right - 620`）」过滤操作条按钮；
+  - 统计：菜单项与弹窗标题同名「写作统计」，弹窗判定用独有副标题「只在本机统计」，
+    关闭走 `utility-dialog-close`；
+  - 屏保：覆盖层 a11y 不可断言，只验入口 → 点击退出 → 应用可交互 + 设置组
+    「屏保 / 台历 / 名言轮换间隔」可见。
+- **Git 库入口正向 / 深色模式不自动化**，理由入「边界与不做」。
+- **断言形式约定**：waitById/waitByText/waitByTextContains 返回 Component 的直接 await
+  （超时抛错）；只有返回 boolean 的（existsById 等）才包 expect().assertTrue()——
+  `expect(await waitByText(...)).assertTrue()` 恒假（"actualValue is [object Object]"），
+  本轮修复 3 例此型假失败（`20261115_001720` 取证）。
+- **置顶用例必须结尾清场**：置顶区是侧栏固定区块，残留置顶会吃掉
+  `scrollSidebarToTop` 的滑动起点（`vault-sidebar-new-note` 下 +300px 落进置顶区），
+  树滚不回顶、`00_开始` 锚点不可达，连坐后续用例。每个置顶用例结尾
+  `unpinNoteByName` 清场。
+- **UiStats 设备状态自愈**：`statsEnabled` 持久化开关可能被手工回归拨关
+  （`20261115_001720` UiStats 2 例真未命中根因，dumpLayout+uinput 实证）。套件先经
+  设置页 Toggle 拨开再断言。
+- **closeQuickSwitcher 加固（`20261115_004237`→`011507` 排查）**：旧写法返回值被丢弃，
+  弹窗泄漏会静默通过并级联污染后续套件；且输入法大 a11y 树下慢轮询让
+  `content_search` 恒耗 ~33s（表面像 FTS 慢，实为 close 确认慢——加固后同用例 6.6s）。
+  改为「标题在才 pressBack（防误按到桌面）、最多两次、关不掉抛错」；
+  `content_search` 结果等待显式 60s 防 FTS 贴线。
+- **`20261115_004237` 全量 49/52 的 3 例失败归档**：UiSmDrawer×2（109s/例，4 轮探针
+  全灭）+ UiTrash#restore，当时整轮所有套件慢 30-50%（模拟器高负载）。随后 3 轮
+  （`010712` 疑似级联序列 10/10、`011507` 同序全量 52/52、含 `011108` 单套件 dumpLayout
+  取证）均未复现，归为负载抖动；加固后的 `011507` 全量 52/52 全绿为准。
+
+
 

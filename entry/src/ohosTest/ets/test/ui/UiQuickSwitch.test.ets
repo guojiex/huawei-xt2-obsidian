@@ -9,8 +9,8 @@
  */
 
 import { describe, beforeAll, it, expect } from '@ohos/hypium';
-import { Driver } from '@ohos.UiTest';
-import { getDriver, launchMainApp, waitById, waitByText, clickById,
+import { Driver, Component } from '@ohos.UiTest';
+import { getDriver, launchMainApp, waitById, waitByText, waitByTextContains, clickById, clickByText,
   existsById, existsByText, waitGoneByText, ensureSidebarVisible,
   ensureNoteView, clickUntilTextAppear, waitByIdSoft } from './UiTestHelpers';
 
@@ -19,11 +19,20 @@ async function openQuickSwitcher(driver: Driver): Promise<void> {
   await clickUntilTextAppear(driver, 'vault-sidebar-search', '快切与搜索');
 }
 
-async function closeQuickSwitcher(driver: Driver): Promise<boolean> {
-  if (await existsByText(driver, '×')) {
+/** 关闭快切层并断言关净：标题在才 pressBack（防误按到桌面），输入法可能吃掉第一次
+ * pressBack，最多两次；仍关不掉直接抛错——返回值被丢弃的旧写法会让「弹窗泄漏」静默
+ * 通过并级联污染后续套件（20261115_004237 全量 UiSmDrawer 2 ERROR 排查时发现的风险点） */
+async function closeQuickSwitcher(driver: Driver): Promise<void> {
+  for (let i: number = 0; i < 2; i++) {
+    if (!await existsByText(driver, '快切与搜索')) {
+      return;
+    }
     await driver.pressBack();
+    if (await waitGoneByText(driver, '快切与搜索', 3000)) {
+      return;
+    }
   }
-  return await waitGoneByText(driver, '快切与搜索');
+  throw new Error('快切层未关闭：两次 pressBack 后「快切与搜索」仍在');
 }
 
 export default function uiQuickSwitchTest() {
@@ -89,6 +98,22 @@ export default function uiQuickSwitchTest() {
       // skipHint 可能为 false（正常：没有暂不可读库时不出）
       // 重点是 UI 不崩，不做强断言
       expect(skipHint === true || skipHint === false).assertTrue();
+      await closeQuickSwitcher(driver);
+    });
+
+    /** v1.1 全文搜索：切「正文」模式搜样例库关键词，命中教程笔记（快速上手.md 含「曜石笔记」） */
+    it('content_search_returns_matching_note', 0, async (): Promise<void> => {
+      const driver: Driver = await getDriver();
+      await openQuickSwitcher(driver);
+      // 模式分段默认「文件名与路径」，切到「正文」触发全文检索（FTS5，v1.40 RDB）
+      await clickByText(driver, '正文');
+      const input: Component = await waitById(driver, 'quick-switcher-search-input');
+      await input.inputText('曜石');
+      // 正文命中后结果行显示笔记显示名（QuickSwitcher displayName）；
+      // waitByTextContains 返回 Component：抛错即失败，不包 expect(...).assertTrue()（对象恒假）。
+      // FTS 正文检索在 x86 模拟器上实测 ~30s（两轮恒定），默认 30s 超时只留 <3s 余量
+      // （20261115_010712/011108 实测 33.6s/33.6s 总耗时），显式放宽到 60s 防贴线假失败
+      await waitByTextContains(driver, '快速上手', 60000);
       await closeQuickSwitcher(driver);
     });
   });

@@ -30,6 +30,7 @@ import { Component, Driver, ON, Rect } from '@ohos.UiTest';
 import {
   clickById,
   clickByText,
+  clickUntilTextAppear,
   ensureNoteView,
   ensureSidebarVisible,
   existsById,
@@ -172,6 +173,63 @@ async function ensureRowAboveCluster(driver: Driver, rowId: string): Promise<Com
     await driver.delayMs(800);
   }
   throw new Error('行被钉底簇遮挡，4 次上滚仍未露出: ' + rowId);
+}
+
+/** 置顶区行 id（v1.62 PinSection，FileTreeView pin-row- 前缀，relPath 同树行） */
+function pinRowId(name: string): string {
+  return 'pin-row-' + VAULT_ID + ':' + name + '.md';
+}
+
+/**
+ * 在已拉出的操作条里点「置顶」。不能 clickByText('置顶')：已存在置顶时置顶区头
+ * Text('置顶') 排在树前，findComponent 先命中头（点了会把置顶区收起）而非操作条按钮；
+ * 按「与目标行 y 重叠 + 在行右侧近端」过滤候选。
+ */
+async function clickPinButtonInBar(driver: Driver, rowRect: Rect): Promise<void> {
+  const cands: Component[] = await driver.findComponents(ON.text('置顶'));
+  for (const c of cands) {
+    const r: Rect = await c.getBounds();
+    if (r.top >= rowRect.top - 8 && r.bottom <= rowRect.bottom + 8 && r.left > rowRect.right - 620) {
+      await c.click();
+      return;
+    }
+  }
+  throw new Error('操作条上未找到「置顶」按钮');
+}
+
+/**
+ * 置顶笔记（v1.50 / v1.62）：拉出操作条点「置顶」，等置顶区行出现。
+ * 62.2：置顶行从树内排序移除——置顶成功 = pin-row 出现 + 树行消失，双向断言。
+ */
+async function pinNoteByName(driver: Driver, name: string): Promise<void> {
+  const rowId: string = noteRowId(name);
+  const row: Component = await ensureRowAboveCluster(driver, rowId);
+  const rowRect: Rect = await row.getBounds();
+  await swipeTreeRow(driver, row, 0.45);
+  await driver.delayMs(800);
+  await clickPinButtonInBar(driver, rowRect);
+  await driver.delayMs(SNACK_MS); // 「已置顶：…」toast 短窗
+  await waitById(driver, pinRowId(name));
+  await waitGoneById(driver, rowId);
+}
+
+/**
+ * 置顶区行左滑「取消置顶」。置顶区在侧栏顶部、无钉底簇遮挡：行中心直接滑。
+ * ⚠️ 置顶用例必须在结尾清场（本函数）：置顶区是固定区块，会把
+ * scrollSidebarToTop 的滑动起点（vault-sidebar-new-note 下 +300px）吃掉，
+ * 树滚不回顶、00_开始 锚点不可达，连坐后续 createNoteByName（20261115_001720 #11 实锤）。
+ */
+async function unpinNoteByName(driver: Driver, name: string): Promise<void> {
+  const pinRow: Component = await waitById(driver, pinRowId(name));
+  const r: Rect = await pinRow.getBounds();
+  const y: number = Math.round((r.top + r.bottom) / 2);
+  const startX: number = r.right - 30;
+  const distance: number = Math.round((r.right - r.left) * 0.45);
+  await driver.swipe(startX, y, startX - distance, y, 300);
+  await clickByText(driver, '取消置顶');
+  await driver.delayMs(SNACK_MS); // 「已取消置顶：…」toast
+  await waitGoneById(driver, pinRowId(name));
+  await waitById(driver, noteRowId(name));
 }
 
 /** 可见性探针窗口：x86 模拟器一次成功匹配可花 2~12s（UiTestHelpers 头注），
@@ -409,6 +467,58 @@ export default function uiNoteFlowTest() {
       await clickByText(driver, '永久删除');
       expect(await waitGoneByText(driver, '永久删除笔记？')).assertTrue();
       expect(await waitGoneById(driver, trashRowId)).assertTrue();
+    });
+
+    /** v1.50 50.1–50.3 + v1.62 62.1/62.2：置顶后行进独立置顶区，树内按 62.2 移除 */
+    it('pin_note_moves_row_to_pin_section', 0, async (): Promise<void> => {
+      const driver: Driver = await getDriver();
+      const name: string = uniqueUiName('uitest置顶');
+      await createNoteByName(driver, name);
+      await pinNoteByName(driver, name);
+      // 置顶区头（Text('置顶') + 计数）可见
+      expect(await existsByText(driver, '置顶')).assertTrue();
+      // 清场（见 unpinNoteByName ⚠️）：置顶区是固定区块，不清场连坐后续用例的树滚动
+      await unpinNoteByName(driver, name);
+    });
+
+    /** v1.50 50.2 + v1.62 62.3：置顶区行左滑「取消置顶」，行回树、置顶区行消失 */
+    it('unpin_from_pin_section_restores_tree_row', 0, async (): Promise<void> => {
+      const driver: Driver = await getDriver();
+      const name: string = uniqueUiName('uitest取消');
+      await createNoteByName(driver, name);
+      await pinNoteByName(driver, name);
+      await unpinNoteByName(driver, name);
+    });
+
+    /** v1.62 62.4：置顶区头点击折叠（行隐藏、头保留），再点展开 */
+    it('pin_section_collapse_toggle', 0, async (): Promise<void> => {
+      const driver: Driver = await getDriver();
+      const name: string = uniqueUiName('uitest折叠');
+      await createNoteByName(driver, name);
+      await pinNoteByName(driver, name);
+      // 此时无已拉开的操作条，Text('置顶') 唯一命中置顶区头
+      await clickByText(driver, '置顶');
+      await waitGoneById(driver, pinRowId(name));
+      expect(await existsByText(driver, '置顶')).assertTrue();
+      await clickByText(driver, '置顶');
+      await waitById(driver, pinRowId(name));
+      // 清场（见 unpinNoteByName ⚠️）
+      await unpinNoteByName(driver, name);
+    });
+
+    /** v1.2：笔记打开时「查看反链」可达，新笔记无反链显示「暂无来源笔记」 */
+    it('backlinks_panel_opens_from_more_menu', 0, async (): Promise<void> => {
+      const driver: Driver = await getDriver();
+      const name: string = uniqueUiName('uitest反链');
+      await createNoteByName(driver, name);
+      await clickUntilTextAppear(driver, 'workspace-more-button', '查看反链');
+      await clickByText(driver, '查看反链');
+      // waitByText 返回 Component：抛错即失败，不包 expect(...).assertTrue()（对象恒假）
+      await waitByText(driver, '暂无来源笔记');
+      // 收起反链面板，避免残留连坐后续用例（菜单项 label 随展开态翻转为「隐藏反链」）
+      await clickUntilTextAppear(driver, 'workspace-more-button', '隐藏反链');
+      await clickByText(driver, '隐藏反链');
+      await waitGoneByText(driver, '暂无来源笔记');
     });
 
     it('close_note_shows_empty_state', 0, async (): Promise<void> => {
