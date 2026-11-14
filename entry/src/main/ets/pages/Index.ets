@@ -7318,7 +7318,8 @@ struct Index {
         .constraintSize({ maxWidth: Size.paneEmptyMaxW })
         .alignItems(HorizontalAlign.Center)
         .accessibilityGroup(true)
-        .accessibilityText(pane === 'right' ? '右栏未打开笔记' : '左栏未打开笔记')
+        .accessibilityText((pane === 'right' ? '右栏' : '左栏') +
+          (this.activePane === pane ? '已选择' : '未选择') + '，未打开笔记')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Center)
@@ -7333,6 +7334,7 @@ struct Index {
     .height('100%')
     .scrollBar(BarState.Off)
     .backgroundColor($r('app.color.bg_card'))
+    .onClick((): void => { this.setActivePane(pane, true); })
   }
 
   /** 57.7：导航条避让高度（vp）；布局区不进安全区（AE4），固定内容压条带靠 offset。 */
@@ -8062,11 +8064,19 @@ struct Index {
       .height('100%')
       .visibility(this.experienceMode === 'simple' || this.smMode === 'preview'
         ? Visibility.Visible : Visibility.Hidden)
+
+      if (this.currentFilePath.length === 0 && this.activePane === 'left') {
+        Row() {}
+          .width('100%')
+          .height(Size.paneSelectionIndicator)
+          .backgroundColor($r('app.color.brand'))
+          .hitTestBehavior(HitTestMode.None)
+      }
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_card'))
-    .onClick((): void => { this.setActivePane('left'); })
+    .onClick((): void => { this.setActivePane('left', true); })
   }
 
   /**
@@ -8334,6 +8344,13 @@ struct Index {
   @Builder
   RightWorkspacePane() {
     Column() {
+      if (this.rightFilePath.length === 0 && this.activePane === 'right') {
+        Row() {}
+          .width('100%')
+          .height(Size.paneSelectionIndicator)
+          .backgroundColor($r('app.color.brand'))
+          .hitTestBehavior(HitTestMode.None)
+      }
       if (this.experienceMode === 'professional' && this.rightFilePath.length > 0) {
         this.PaneHead({ pane: 'right' })
       }
@@ -8482,7 +8499,7 @@ struct Index {
     .onAreaChange((oldArea: Area, newArea: Area) => {
       this.recordFormatPaneArea('right', newArea);
     })
-    .onClick((): void => { this.setActivePane('right'); })
+    .onClick((): void => { this.setActivePane('right', true); })
   }
 
   /**

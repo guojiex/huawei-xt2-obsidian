@@ -78,6 +78,8 @@ export class Size {
   /** v1.39 39.1：目录栏基准下限（内容栏仍是 paneMinW 240）；对应原型 --pane-min-nav */
   static readonly paneMinNavW: number = 200;
   static readonly paneClose: number = Space.s10;
+  /** v1.28 §6.7：空栏活动目标指示线。 */
+  static readonly paneSelectionIndicator: number = Space.s1 / 2;
   static readonly paneEmptyMaxW: number = Space.s16 * 5.5;
   static readonly paneEmptyTopMax: number = Space.s16 * 1.5;
   static readonly paneEmptyTopRatio: number = 0.14;
