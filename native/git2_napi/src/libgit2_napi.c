@@ -1079,6 +1079,77 @@ static int acquire_credentials(git_credential **out, const char *url,
   return git_credential_userpass_plaintext_new(out, work->username, work->password);
 }
 
+/**
+ * 克隆前轻量预检：连接远端并列出引用，确认用户填写的分支是否存在于远端。
+ * 只拉引用列表，不下载任何对象。返回：
+ *   0  = 分支存在
+ *   1  = 分支不存在
+ *  <0 = 连接/认证失败（交由后续 git_clone 产生更精确的错误）
+ * out_branches 非 NULL 时，写入逗号分隔的远端分支名（refs/heads/ 之后部分）。
+ */
+static int clone_check_remote_branch(clone_work_t *work,
+                                    const git_remote_callbacks *callbacks,
+                                    const git_strarray *headers,
+                                    char *out_branches, size_t out_size) {
+  if (out_branches != NULL && out_size > 0) {
+    out_branches[0] = '\0';
+  }
+  git_remote *remote = NULL;
+  if (git_remote_create_detached(&remote, work->url) < 0) {
+    return -1;
+  }
+  git_remote_connect_options connect_options;
+  if (git_remote_connect_options_init(&connect_options,
+                                      GIT_REMOTE_CONNECT_OPTIONS_VERSION) < 0) {
+    git_remote_free(remote);
+    return -1;
+  }
+  connect_options.callbacks = *callbacks;
+  connect_options.custom_headers = *headers;
+  if (git_remote_connect_ext(remote, GIT_DIRECTION_FETCH, &connect_options) < 0) {
+    git_remote_free(remote);
+    return -1;
+  }
+  const git_remote_head **heads = NULL;
+  size_t head_count = 0;
+  const int list_result = git_remote_ls(&heads, &head_count, remote);
+  int result = -1;
+  if (list_result == 0) {
+    char wanted[MAX_ARGUMENT_BYTES + 12];
+    const int wanted_length = snprintf(wanted, sizeof(wanted),
+                                       "refs/heads/%s", work->branch);
+    bool exists = false;
+    if (wanted_length >= 0 && (size_t)wanted_length < sizeof(wanted)) {
+      size_t collected = 0;
+      for (size_t i = 0; i < head_count; i++) {
+        if (heads[i] == NULL || heads[i]->name == NULL) {
+          continue;
+        }
+        if (strcmp(heads[i]->name, wanted) == 0) {
+          exists = true;
+        }
+        if (out_branches != NULL && out_size > 1 &&
+            strncmp(heads[i]->name, "refs/heads/", 11) == 0) {
+          const char *name = heads[i]->name + 11;
+          const size_t need = strlen(name);
+          if (collected + (collected > 0 ? 1 : 0) + need < out_size) {
+            if (collected > 0) {
+              out_branches[collected] = ',';
+              collected++;
+            }
+            memcpy(out_branches + collected, name, need + 1);
+            collected += need;
+          }
+        }
+      }
+    }
+    result = exists ? 0 : 1;
+  }
+  git_remote_disconnect(remote);
+  git_remote_free(remote);
+  return result;
+}
+
 static void execute_clone(napi_env env, void *data) {
   (void)env;
   clone_work_t *work = (clone_work_t *)data;
@@ -1126,6 +1197,37 @@ static void execute_clone(napi_env env, void *data) {
     authorization_headers[0] = authorization_header;
     options.fetch_opts.custom_headers.strings = authorization_headers;
     options.fetch_opts.custom_headers.count = 1;
+  }
+
+  // 克隆前轻量预检：在下载任何对象前确认远端存在填写的分支，
+  // 避免“把整个仓库拉下来才发现分支错”。仅列引用，不下载对象。
+  if (work->branch != NULL && work->branch[0] != '\0') {
+    git_remote_callbacks pre_callbacks = {0};
+    pre_callbacks.version = GIT_REMOTE_CALLBACKS_VERSION;
+    pre_callbacks.credentials = acquire_credentials;
+    pre_callbacks.transfer_progress = report_transfer_progress;
+    pre_callbacks.payload = work;
+    git_strarray pre_headers = { NULL, 0 };
+    if (work->bearer_token != NULL) {
+      pre_headers.strings = authorization_headers;
+      pre_headers.count = 1;
+    }
+    char available[1024];
+    const int branch_check =
+        clone_check_remote_branch(work, &pre_callbacks, &pre_headers, available, sizeof(available));
+    if (branch_check == 1) {
+      char message[1200];
+      const int off = snprintf(message, sizeof(message), "远端不存在分支 '%s'", work->branch);
+      if (off > 0 && (size_t)off < sizeof(message) && available[0] != '\0') {
+        snprintf(message + off, sizeof(message) - (size_t)off, "；可用分支：%s", available);
+      }
+      work->error_message = strdup(message);
+      work->result_code = -16;
+      free(authorization_header);
+      pthread_mutex_unlock(&g_clone_mutex);
+      return;
+    }
+    // branch_check < 0：连接/认证失败，交给下方 git_clone 产生更精确错误
   }
 
   git_repository *repository = NULL;

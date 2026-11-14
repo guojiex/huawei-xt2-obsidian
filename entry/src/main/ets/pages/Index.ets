@@ -19,7 +19,6 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { ColorMetrics, KeyboardAvoidMode, LengthMetrics, promptAction, router } from '@kit.ArkUI';
 import { BusinessError, deviceInfo, pasteboard } from '@kit.BasicServicesKit';
-import { image } from '@kit.ImageKit';
 import { Breakpoint } from '../model/Breakpoint';
 import { FocusRequest } from '../common/FocusRequest';
 import { SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from '../model/Vault';
@@ -30,18 +29,9 @@ import { AgentRuntime } from '../model/AgentRuntime';
 import { NotePathMutationResult, NoteService } from '../model/NoteService';
 import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 import { FileTree } from '../model/FileTree';
-import { WikiLinkCandidate, WikiLinkParser, WikiLinkReference, WikiLinkResolution } from '../model/WikiLinkParser';
+import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
-import { MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts } from '../model/MarkdownInlineParser';
-import {
-  CalloutSourceModel,
-  FootnoteSourceModel,
-  FootnoteSourceRange,
-  FormulaSourceModel,
-  FrontmatterPropertyModel,
-  FrontmatterSourceModel,
-  MarkdownComplexBlockEdit
-} from '../model/MarkdownComplexBlockEdit';
+import { MarkdownImageParts, MarkdownInlineParser } from '../model/MarkdownInlineParser';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerShareSummary, VaultManagerView } from '../components/VaultManagerView';
 import {
@@ -76,17 +66,14 @@ import {
   RecentErrorPhase,
   RecentErrorStore
 } from '../model/RecentErrorStore';
-import { shareFailureMessage } from '../model/UserErrorMessages';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
 import { EditorBridge, EditorSnapshot, EditorWebView } from '../components/EditorWebView';
 import { EditorNoteSession } from '../model/EditorNoteSession';
 import {
-  FormulaPreviewWeb,
+  isSameBlockPanelTarget,
   PreviewBlockAnchor,
-  PreviewBlockInlineItem,
   PreviewBridge,
-  PreviewCaptureResult,
   PreviewCodeEditRequest,
   PreviewEditHistoryAction,
   PreviewWebView
@@ -103,7 +90,6 @@ import { ScreenSaverPreferenceStore } from '../model/ScreenSaverPreferenceStore'
 import { XiaoyiEntryPreferenceStore } from '../model/XiaoyiEntryPreferenceStore';
 import { DEFAULT_EDITOR_EXPERIENCE, EditorExperienceMode } from '../model/EditorExperiencePolicy';
 import { EditorExperienceStore } from '../model/EditorExperienceStore';
-import { ShareImagePreferenceStore } from '../model/ShareImagePreferenceStore';
 import { PreviewFollowAnchor, PreviewFollowPair, resolvePreviewFollowPair } from '../model/PreviewFollowPolicy';
 import {
   restoreWorkspacePane,
@@ -126,22 +112,10 @@ import {
   navMinVp
 } from '../model/PaneLayout';
 import { SplitHandle } from '../components/SplitHandle';
-import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from '../components/ShareNoteDialog';
-import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
-import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
-import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
-import { SaveShareDialog } from '../components/SaveShareDialog';
-import { ShareIngestDraft, ShareIngestPayload, ShareIngestService } from '../model/ShareIngestService';
-import { SharePdfPreviewFlow, SharePdfPreviewRequest } from '../model/SharePdfPreviewFlow';
-import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
-import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
-import { NotePdfDocumentService } from '../model/NotePdfDocumentService';
-import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteImageService } from '../model/NoteImageService';
 import { NoteDraftRecovery, NoteDraftService } from '../model/NoteDraftService';
 import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
-import { PreparedArchiveShare, ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
-import { ShareLinkScope, ShareLinkService } from '../model/ShareLinkService';
+import { ShareArchiveService } from '../model/ShareArchiveService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { SearchOutcome } from '../model/SearchStore';
 import { CrossVaultSearchOutcome, CrossVaultSearchService } from '../model/CrossVaultSearchService';
@@ -172,11 +146,13 @@ import {
   TempVaultZipWriter,
   ZlibRawInflate
 } from '../model/ZipImportDevice';
-import { systemShare } from '@kit.ShareKit';
-import { uniformTypeDescriptor } from '@kit.ArkData';
-import { fileIo, fileUri } from '@kit.CoreFileKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
+import { blockPanelTitleFor, BlockPropertyPanel, PanelImageReplaceContext } from '../components/BlockPropertyPanel';
+import { ShareFlowApi, ShareFlowPanel } from '../components/ShareFlowPanel';
+import { FormatDockPanel } from '../components/FormatDockPanel';
+import { BlockToolbarAction, PreviewBlockToolbarAnchor } from '../components/PreviewBlockToolbarAnchor';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -197,13 +173,6 @@ interface AnchoredPopupLayout {
   maxHeight: number;
 }
 
-interface BlockToolbarAction {
-  id: string;
-  icon: string;
-  accessibilityText: string;
-  onActivate: () => void;
-}
-
 interface TableEditUndoState {
   pane: string;
   vaultId: string;
@@ -211,12 +180,6 @@ interface TableEditUndoState {
   requestId: number;
   documentRevision: number;
   expectedContent: string;
-}
-
-/** 53.10：带旧帧校验的分段快照结果（快照本体 + 用于下一段比对的像素缓冲）。 */
-interface ShareSegmentCapture {
-  snapshot: image.PixelMap;
-  buffer: ArrayBuffer;
 }
 
 /** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
@@ -344,8 +307,6 @@ struct Index {
   private leftFormatAnchorArea: number[] = [0, 0, 0, 0];
   private rightFormatAnchorArea: number[] = [0, 0, 0, 0];
   private formatWindowArea: number[] = [0, 0, 0, 0];
-  private readonly tableGridRowOptions: number[] = [1, 2, 3, 4, 5, 6, 7, 8];
-  private readonly tableGridColumnOptions: number[] = [1, 2, 3, 4, 5, 6];
   @State blockToolbarOpen: boolean = false;
   @State blockToolbarPane: string = 'left';
   @State blockToolbarPlacement: Placement = Placement.BottomLeft;
@@ -361,71 +322,9 @@ struct Index {
   @State blockPanelPane: string = 'left';
   @State blockPanelTitle: string = '当前块';
   @State blockPanelAnchor: PreviewBlockAnchor | null = null;
-  @State blockPanelInlineItems: PreviewBlockInlineItem[] = [];
-  @State tableInsertRowSide: string = 'down';
-  @State tableInsertColumnSide: string = 'right';
-  @State blockPanelLinkReady: boolean = false;
-  @State blockPanelLinkLabel: string = '';
-  @State blockPanelLinkDestination: string = '';
-  @State blockPanelLinkParts: MarkdownLinkParts | null = null;
-  @State blockPanelLinkMessage: string = '';
-  private blockPanelLinkRaw: string = '';
-  @State blockPanelWikiReady: boolean = false;
-  @State blockPanelWikiTarget: string = '';
-  @State blockPanelWikiAlias: string = '';
-  @State blockPanelWikiMessage: string = '';
-  @State blockPanelWikiFiles: string[] = [];
-  @State blockPanelWikiResolutionStatus: string = '';
-  @State blockPanelWikiResolutionPath: string = '';
-  private blockPanelWikiRaw: string = '';
-  @State blockPanelImageReady: boolean = false;
-  @State blockPanelImageAlt: string = '';
-  @State blockPanelImageDestination: string = '';
-  @State blockPanelImageWidth: string = '';
-  @State blockPanelImageMessage: string = '';
-  private blockPanelImageRaw: string = '';
-  private blockPanelImageParts: MarkdownImageParts | null = null;
-  @State blockPanelFormulaReady: boolean = false;
-  @State blockPanelFormulaValue: string = '';
-  @State blockPanelFormulaMessage: string = '';
-  private blockPanelFormulaRaw: string = '';
-  private blockPanelFormulaModel: FormulaSourceModel | null = null;
-  @State blockPanelCalloutReady: boolean = false;
-  @State blockPanelCalloutTitle: string = '';
-  @State blockPanelCalloutFold: string = '';
-  @State blockPanelCalloutMessage: string = '';
-  @State blockPanelCalloutSaving: boolean = false;
-  private blockPanelCalloutRaw: string = '';
-  private blockPanelCalloutModel: CalloutSourceModel | null = null;
-  private blockPanelCalloutSaveTail: Promise<void> = Promise.resolve();
-  @State blockPanelFrontmatterReady: boolean = false;
-  @State blockPanelFrontmatterEntries: FrontmatterPropertyModel[] = [];
-  @State blockPanelFrontmatterMessage: string = '';
-  @State blockPanelFrontmatterNewKey: string = '';
-  @State blockPanelFrontmatterNewValue: string = '';
-  @State blockPanelFrontmatterDateKey: string = '';
-  @State blockPanelFrontmatterDateDraft: string = '';
-  @State blockPanelFrontmatterSaving: boolean = false;
-  private blockPanelFrontmatterRaw: string = '';
-  private blockPanelFrontmatterModel: FrontmatterSourceModel | null = null;
-  private blockPanelFrontmatterSaveTail: Promise<void> = Promise.resolve();
-  @State blockPanelFootnoteReady: boolean = false;
-  @State blockPanelFootnoteEditable: boolean = false;
-  @State blockPanelFootnoteHasDefinition: boolean = false;
-  @State blockPanelFootnoteBody: string = '';
-  @State blockPanelFootnoteMessage: string = '';
-  @State blockPanelFootnoteSaving: boolean = false;
-  @State blockPanelFootnoteJumpFrom: number = -1;
-  private blockPanelFootnoteLabel: string = '';
-  private blockPanelFootnoteSourceSnapshot: string = '';
-  private blockPanelFootnoteDefinitionFrom: number = -1;
-  private blockPanelFootnoteDefinitionTo: number = -1;
-  private blockPanelFootnoteDefinitionRaw: string = '';
-  private blockPanelFootnoteModel: FootnoteSourceModel | null = null;
-  @State blockPanelBlockIdReady: boolean = false;
-  @State blockPanelBlockId: string = '';
-  @State blockPanelBlockIdMessage: string = '';
-  @State blockPanelLanguagePickerOpen: boolean = false;
+  @State pushedAnchor: PreviewBlockAnchor | null = null;
+  @State pushedAnchorSeq: number = 0;
+  @State pushedAnchorMode: string = 'open';
   @State blockPanelPlacement: Placement = Placement.Bottom;
   @State blockPanelWidth: number = Size.blockPanelW;
   @State blockPanelMaxHeight: number = Size.menuMaxH;
@@ -440,13 +339,6 @@ struct Index {
   private leftCodeEditPending: boolean = false;
   private rightCodeEditPending: boolean = false;
   @State blockSourceEditing: boolean = false;
-  @State blockSourceDraft: string = '';
-  @State blockSourceBlockType: string = '';
-  private blockSourceSnapshot: string = '';
-  private blockSourceFrom: number = 0;
-  private blockSourceTo: number = 0;
-  private blockSourceDocumentRevision: number = 0;
-  private blockSourceOpenRequestId: number = 0;
   private formatMenuSourceVaultId: string = '';
   private formatMenuSourcePath: string = '';
   @State navigationRatio: number = -1;
@@ -465,7 +357,6 @@ struct Index {
   private screenSaverPreferenceStore: ScreenSaverPreferenceStore | null = null;
   private xiaoyiEntryPreferenceStore: XiaoyiEntryPreferenceStore | null = null;
   private editorExperienceStore: EditorExperienceStore | null = null;
-  private shareImagePreferenceStore: ShareImagePreferenceStore | null = null;
   private agentKitLoadStarted: boolean = false;
   private readonly agentKitUnavailableInSimulator: boolean =
     deviceInfo.productModel.toLowerCase().indexOf('emulator') >= 0;
@@ -677,43 +568,8 @@ struct Index {
   /** 重命名 / 移动对话框 controller（1.6 左滑操作条） */
   private renamePathCtl: CustomDialogController | null = null;
   private movePathCtl: CustomDialogController | null = null;
-  private shareNoteCtl: CustomDialogController | null = null;
-  private shareImagePreviewCtl: CustomDialogController | null = null;
-  private shareFilePreviewCtl: CustomDialogController | null = null;
-  private shareTextPreviewCtl: CustomDialogController | null = null;
-  /** v1.56 56.3：接收系统分享的保存确认层 controller（每次拉起重建） */
-  private saveShareCtl: CustomDialogController | null = null;
-  /** 53.7：PDF 分页预览流程（会话状态与弹窗编排拆至 model/SharePdfPreviewFlow） */
-  private sharePdfPreviewFlow: SharePdfPreviewFlow = new SharePdfPreviewFlow();
-  private shareCaptureBridge: PreviewBridge = new PreviewBridge();
-  private readonly shareCaptureComponentId: string = 'note-image-share-capture';
-  private shareCaptureReadyResolver: (() => void) | null = null;
-  private shareCaptureReadyRejecter: ((error: Error) => void) | null = null;
-  private shareCaptureReadyTimer: number = -1;
-  private shareCaptureCancelled: boolean = false;
-  private shareImagePreviewSessionId: string = '';
-  private shareImagePreviewTitle: string = '';
-  @State shareCaptureActive: boolean = false;
-  @State shareCaptureTheme: string = 'light';
-  @State shareCaptureWidthVp: number = 0;
-  private shareCapturePaneWidthVp: number = 0;
-  @State shareCaptureWidthId: string = 'phone';
-  /** v1.53 PDF 模式：捕获层按 A4 比例 + 浅色主题渲染（53.3）。 */
-  @State shareCapturePdfMode: boolean = false;
-  /**
-   * PDF 捕获页尺寸（2026-11-11 修复）：不再固定 700×990.59vp——窗口高不足 990.59vp
-   * （模拟器 776vp、XT2 折叠 / 展开横屏均如此）时捕获层超出布局边界，#content 实际
-   * 视口被压矮，分页要求 scrollHeight ≥ 末页顶 + 990.59 永远补不齐（PDF 分页高度
-   * 不足）。现按当前窗口自适应：比例恒 A4 竖版，宽度 ≤ 700vp 且不超窗口宽高，
-   * 高度取整（scrollHeight / clientHeight 均为取整值，整数页高消除 ±0.5px 歧义）。
-   * prepareNotePdfShare 挂捕获层前调 updatePdfPageSize() 重算。
-   */
-  private pdfPageWidthVp: number = 700;
-  private pdfPageHeightVp: number = 700 * NotePdfDocumentService.A4_HEIGHT_PT /
-    NotePdfDocumentService.A4_WIDTH_PT;
-  @State shareImagePreviewImage: ShareImagePreviewImage = {
-    uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
-  };
+  /** v1.68 拆分：分享域子组件 API（ShareFlowPanel 挂载后经 onApiReady 回传持有）。 */
+  private shareFlowApi: ShareFlowApi | null = null;
 
   aboutToAppear(): void {
     // v1.46 46.6 修复真机双重避让时固定了 RESIZE，但 RESIZE 把键盘起落变成一次
@@ -752,9 +608,6 @@ struct Index {
     this.statsEnabled = (this.vaultStatsPreferenceStore as VaultStatsPreferenceStore).statsEnabled();
     this.ensureScreenSaverPreferenceStore();
     this.screenSaverIntervalMs = (this.screenSaverPreferenceStore as ScreenSaverPreferenceStore).intervalMs();
-    this.ensureShareImagePreferenceStore();
-    this.shareCaptureTheme = (this.shareImagePreferenceStore as ShareImagePreferenceStore).loadTheme();
-    this.shareCaptureWidthId = (this.shareImagePreferenceStore as ShareImagePreferenceStore).loadWidth();
     this.ensureEditorExperienceStore();
     this.experienceMode = (this.editorExperienceStore as EditorExperienceStore).load();
     this.synchronizePreviewFollowContext();
@@ -772,13 +625,6 @@ struct Index {
     void this.initializeWorkspaceSession();
     this.startExternalVaultPolling();
     this.cleanupZipImportStaging();
-    // v1.56 56.4：冷启动分享——EntryAbility 的载荷可能早于页面挂载就已写进 AppStorage
-    //（@StorageProp 初始化同步了它但 @Watch 不触发），这里兜底消费一次。
-    if (this.incomingShareJson.length > 0) {
-      setTimeout((): void => {
-        this.consumeIncomingShare();
-      }, 0);
-    }
     // v1.58 §5：连写条缓存的首次扫描排到空闲时机，不进入启动页首帧关键路径。
     this.scheduleIdleStatsRefresh();
   }
@@ -821,12 +667,6 @@ struct Index {
   private ensureEditorExperienceStore(): void {
     if (this.editorExperienceStore === null) {
       this.editorExperienceStore = new EditorExperienceStore(VaultRegistry.get().abilityContext());
-    }
-  }
-
-  private ensureShareImagePreferenceStore(): void {
-    if (this.shareImagePreferenceStore === null) {
-      this.shareImagePreferenceStore = new ShareImagePreferenceStore(VaultRegistry.get().abilityContext());
     }
   }
 
@@ -2063,6 +1903,28 @@ struct Index {
       summaries.push({ vaultId: entries[i].id, noteCount: noteCount });
     }
     this.vaultManagerShareSummaries = summaries;
+  }
+
+  /**
+   * v1.68 拆分：分享保存收尾（原 saveSharedNote 后半段，父级工作区操作持真源）。
+   * 跨库保存先 switchVault；切换未完成返回 false（子组件只 toast，不盲目打开，
+   * 避免把笔记开进错库）。成功：打开 + revealPath + 刷新树 + 单屏收抽屉。
+   */
+  private async finishSaveShareNote(vaultId: string, target: string): Promise<boolean> {
+    if (vaultId !== this.currentVaultId) {
+      await this.switchVault(vaultId);
+      if (this.currentVaultId !== vaultId) {
+        return false;
+      }
+    }
+    this.onSelectFile(target, 'left', true);
+    this.revealPath = target;
+    this.refreshFileTree();
+    if (this.breakpoint === Breakpoint.SM) {
+      this.setDrawerOpen(false);
+      this.smMode = 'edit';
+    }
+    return true;
   }
 
   private refreshCurrentVaultNoteCount(): void {
@@ -3790,8 +3652,10 @@ struct Index {
             };
           }
           this.blockPanelAnchor = panelAnchor;
-          this.blockPanelInlineItems = panelAnchor.inlineItems;
-          this.blockPanelTitle = this.blockSourceEditing ? '以源码编辑' : this.blockPanelTitleFor(panelAnchor);
+          this.pushedAnchor = panelAnchor;
+          this.pushedAnchorMode = 'merge';
+          this.pushedAnchorSeq++;
+          this.blockPanelTitle = this.blockSourceEditing ? '以源码编辑' : blockPanelTitleFor(panelAnchor);
           this.updateBlockPropertyPanelLayout(pane);
         }
       }
@@ -3948,161 +3812,6 @@ struct Index {
     return [anchor.x - paneArea[0], anchor.y - paneArea[1], anchor.width, anchor.height];
   }
 
-  @Builder
-  FormatCell(glyph: string, caption: string, kind: string) {
-    Column({ space: Space.s1 }) {
-      Text(glyph)
-        .fontSize(FontSize.s2)
-        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
-          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
-          ? $r('app.color.brand') : $r('app.color.text_primary'))
-        .maxLines(1)
-      Text(caption)
-        .fontSize(FontSize.caption)
-        .fontColor(kind === 'code' && (this.formatMenuPane === 'right'
-          ? this.rightCodeBlockActive : this.leftCodeBlockActive)
-          ? $r('app.color.brand') : $r('app.color.text_primary'))
-        .maxLines(1)
-    }
-    .width('100%')
-    .constraintSize({ minHeight: Size.touch })
-    .padding({ top: Space.s2, bottom: Space.s2 })
-    .justifyContent(FlexAlign.Center)
-    .borderRadius(Radius.icon)
-    .backgroundColor(kind === 'code' && (this.formatMenuPane === 'right'
-      ? this.rightCodeBlockActive : this.leftCodeBlockActive)
-      ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
-    .enabled(this.isPaneEditable(this.formatMenuPane))
-    .onClick((): void => {
-      this.closeFormatMenu();
-      this.applyEditorFormat(kind, this.formatMenuPane);
-    })
-  }
-
-  @Builder
-  TableToolbarAction(text: string, label: string, type: string, side: string, enabled: boolean) {
-    Text(text)
-      .fontSize(FontSize.caption)
-      .fontColor($r('app.color.text_primary'))
-      .width(Size.touch)
-      .height(Size.touch)
-      .textAlign(TextAlign.Center)
-      .borderRadius(Radius.icon)
-      .enabled(enabled)
-      .onClick((): void => {
-        this.blockToolbarOpen = false;
-        if (type === 'more') {
-          this.openBlockPropertyPanel(this.blockToolbarPane);
-        } else {
-          this.applyTableStructureOperation(this.blockToolbarPane, type, side);
-        }
-      })
-      .accessibilityText(label)
-  }
-
-  @Builder
-  BlockToolbarContent() {
-    Row({ space: Space.s1 }) {
-      if (this.tableToolbarForPane(this.blockToolbarPane)) {
-        this.TableToolbarAction('下加行', '下方加行', 'insertRow', 'down', true)
-        this.TableToolbarAction('右加列', '右侧加列', 'insertColumn', 'right', true)
-        this.TableToolbarAction('删除', '删除当前行', 'deleteRow', 'down',
-          this.tableToolbarCanDeleteRow(this.blockToolbarPane))
-        this.TableToolbarAction('更多', '更多表格操作', 'more', '', true)
-      } else {
-        ForEach(this.blockToolbarActions.slice(0, 4), (action: BlockToolbarAction) => {
-          Row() {
-            Icon(action.icon, Space.s5, $r('app.color.text_primary'))
-          }
-          .width(Size.touch)
-          .height(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .onClick((): void => {
-            this.blockToolbarOpen = false;
-            action.onActivate();
-          })
-          .accessibilityText(action.accessibilityText)
-        }, (action: BlockToolbarAction) => action.id)
-        if (this.blockToolbarActions.length > 0) {
-          Row() {
-            Icon('more', Space.s5, $r('app.color.text_primary'))
-          }
-          .width(Size.touch)
-          .height(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .onClick((): void => {
-            this.openBlockPropertyPanel(this.blockToolbarPane);
-          })
-          .accessibilityText('更多')
-        }
-      }
-    }
-    .width(this.blockToolbarWidth)
-    .constraintSize({ maxHeight: this.blockToolbarMaxHeight })
-    .padding({ left: Space.s2, right: Space.s2, top: Space.s2, bottom: Space.s2 })
-    .borderRadius(Radius.card)
-    .backgroundColor($r('app.color.bg_card'))
-    .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
-    .onKeyEvent((event: KeyEvent): void => {
-      if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
-        this.closeBlockToolbar(true);
-      }
-    })
-  }
-
-  /** v1.30 30.2：格式按钮序列（Aa/B/I/任务/表格/图片）；专业浮条与简单模式停靠栏共用，按钮集合不变（30.7） */
-  @Builder
-  FormatActionsRow(pane: string, gap: number) {
-    Row({ space: gap }) {
-      Row() {
-        Text('Aa')
-          .fontSize(FontSize.s3)
-          .fontColor($r('app.color.text_primary'))
-      }
-      .width(Size.touch)
-      .height(Size.touch)
-      .justifyContent(FlexAlign.Center)
-      .borderRadius(Radius.full)
-      .enabled(this.isPaneEditable(pane))
-      .onClick((): void => {
-        this.toggleFormatMenu(pane);
-      })
-      .onAreaChange((oldArea: Area, newArea: Area) => {
-        this.recordFormatAnchorArea(pane, newArea);
-      })
-      .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(pane, event); })
-      .bindPopup(this.formatMenuOpen && this.formatMenuPane === pane, {
-        builder: this.FormatMenu(),
-        placement: this.formatPopupPlacement,
-        enableArrow: false,
-        offset: { x: this.formatPopupOffsetX, y: this.formatPopupOffsetY },
-        mask: false,
-        autoCancel: true,
-        popupColor: Color.Transparent,
-        onWillDismiss: (action: DismissPopupAction): void => {
-          action.dismiss();
-          this.closeFormatMenu();
-        }
-      })
-      this.FormatAction('B', 'bold', pane)
-      if ((pane === 'right' ? this.rightPaneWidthVp : this.leftPaneWidthVp) >= 280) {
-        this.FormatAction('I', 'italic', pane)
-      }
-      this.FormatAction('☐', 'task', pane)
-      if (this.experienceMode === 'simple') {
-        this.TableInsertAction(pane)
-      }
-      if (this.paneFilePath(pane).length > 0) {
-        this.ImageFormatAction(pane)
-      }
-    }
-  }
-
   private toggleTableGrid(pane: string): void {
     if (this.tableGridOpen && this.tableGridPane === pane) {
       this.tableGridOpen = false;
@@ -4222,58 +3931,6 @@ struct Index {
     return [this.blockPanelHostX - paneArea[0], this.blockPanelHostY - paneArea[1], Space.s1, Space.s1];
   }
 
-  private blockPanelTitleFor(anchor: PreviewBlockAnchor): string {
-    switch (anchor.tapType) {
-      case 'image':
-        return '图片';
-      case 'link':
-        return '链接';
-      case 'wikilink':
-        return '双链';
-      case 'inlinecode':
-        return '行内代码';
-      case 'mathInline':
-        return '行内公式';
-      case 'footnoteRef':
-        return '脚注';
-    }
-    switch (anchor.type) {
-      case 'table':
-        return '表格';
-      case 'code':
-        return '代码块';
-      case 'image':
-        return '图片';
-      case 'link':
-        return '链接';
-      case 'wikilink':
-        return '双链';
-      case 'frontmatter':
-        return '属性';
-      case 'formula':
-        return '公式';
-      case 'callout':
-        return '提示块';
-      case 'footnoteDefinition':
-        return '脚注';
-      case 'html':
-        return 'HTML';
-      case 'directive':
-        return '指令块';
-      case 'mixed':
-        return '混合语法';
-      case 'paragraph':
-        return '这一段';
-      case 'heading':
-        return '标题';
-      case 'list':
-        return '列表';
-      case 'blockquote':
-        return '引用';
-      default:
-        return '当前块';
-    }
-  }
 
   private updateBlockPropertyPanelLayout(pane: string): void {
     if (!this.isBlockPropertyPanelOpen() || pane !== this.blockPanelPane ||
@@ -4341,96 +3998,15 @@ struct Index {
     }
   }
 
-  private openBlockInlineItem(item: PreviewBlockInlineItem): void {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor === null || !this.blockPanelInlineItems.some((candidate: PreviewBlockInlineItem): boolean =>
-      candidate.index === item.index && candidate.from === item.from && candidate.to === item.to &&
-      candidate.type === item.type)) {
-      return;
-    }
-    const itemAnchor: PreviewBlockAnchor = {
-      type: anchor.type,
-      tapType: item.type,
-      from: anchor.from,
-      to: anchor.to,
-      inlineItems: this.blockPanelInlineItems,
-      inlineSafe: anchor.inlineSafe,
-      inlineIndex: item.index,
-      itemFrom: item.from,
-      itemTo: item.to,
-      codeLanguage: anchor.codeLanguage,
-      codeLanguageFrom: anchor.codeLanguageFrom,
-      codeLanguageTo: anchor.codeLanguageTo,
-      codeLanguageSelectable: anchor.codeLanguageSelectable,
-      codeLanguages: anchor.codeLanguages,
-      codeEditable: anchor.codeEditable,
-      tableRow: anchor.tableRow,
-      tableColumn: anchor.tableColumn,
-      tableRows: anchor.tableRows,
-      tableColumns: anchor.tableColumns,
-      tableStructureEditable: anchor.tableStructureEditable,
-      x: anchor.x,
-      y: anchor.y,
-      width: anchor.width,
-      height: anchor.height
-    };
-    this.blockPanelAnchor = itemAnchor;
-    this.blockPanelTitle = this.blockPanelTitleFor(itemAnchor);
-    this.updateBlockPropertyPanelLayout(this.blockPanelPane);
-    this.blockPanelLinkReady = itemAnchor.tapType !== 'link';
-    this.blockPanelLinkLabel = '';
-    this.blockPanelLinkDestination = '';
-    this.blockPanelLinkParts = null;
-    this.blockPanelLinkMessage = itemAnchor.tapType === 'link' ? '正在读取链接…' : '';
-    this.blockPanelLinkRaw = '';
-    this.blockPanelWikiReady = false;
-    this.blockPanelWikiTarget = '';
-    this.blockPanelWikiAlias = '';
-    this.blockPanelWikiMessage = itemAnchor.tapType === 'wikilink' ? '正在读取双链…' : '';
-    this.blockPanelWikiFiles = [];
-    this.blockPanelWikiResolutionStatus = '';
-    this.blockPanelWikiResolutionPath = '';
-    this.blockPanelWikiRaw = '';
-    this.blockPanelImageReady = false;
-    this.blockPanelImageAlt = '';
-    this.blockPanelImageDestination = '';
-    this.blockPanelImageWidth = '';
-    this.blockPanelImageMessage = itemAnchor.tapType === 'image' ? '正在读取图片…' : '';
-    this.blockPanelImageRaw = '';
-    this.blockPanelImageParts = null;
-    this.blockPanelFormulaReady = false;
-    this.blockPanelFormulaValue = '';
-    this.blockPanelFormulaMessage = itemAnchor.tapType === 'mathInline' ? '正在读取公式…' : '';
-    this.blockPanelFormulaRaw = '';
-    this.blockPanelFormulaModel = null;
-    this.blockPanelFootnoteReady = false;
-    this.blockPanelFootnoteEditable = false;
-    this.blockPanelFootnoteHasDefinition = false;
-    this.blockPanelFootnoteBody = '';
-    this.blockPanelFootnoteMessage = itemAnchor.tapType === 'footnoteRef' ? '正在读取脚注…' : '';
-    this.blockPanelFootnoteSaving = false;
-    this.blockPanelFootnoteJumpFrom = -1;
-    this.blockPanelFootnoteLabel = '';
-    this.blockPanelFootnoteSourceSnapshot = '';
-    this.blockPanelFootnoteDefinitionFrom = -1;
-    this.blockPanelFootnoteDefinitionTo = -1;
-    this.blockPanelFootnoteDefinitionRaw = '';
-    this.blockPanelFootnoteModel = null;
-    if (itemAnchor.tapType === 'link') {
-      void this.loadBlockPanelLink();
-    } else if (itemAnchor.tapType === 'wikilink') {
-      void this.loadBlockPanelWikiLink();
-    } else if (itemAnchor.tapType === 'image') {
-      void this.loadBlockPanelImage();
-    } else if (itemAnchor.tapType === 'mathInline') {
-      void this.loadBlockPanelFormula();
-    } else if (itemAnchor.tapType === 'footnoteRef') {
-      void this.loadBlockPanelFootnote();
-    }
+  private closeBlockPropertyPanel(restoreFocus: boolean = true): void {
+    this.blockPanelRestoreFocus = restoreFocus;
+    this.leftBlockPanelOpen = false;
+    this.rightBlockPanelOpen = false;
+    this.resetBlockSourceEditor();
   }
 
-  private codeLanguageLabel(language: string): string {
-    return language.length > 0 ? language : '纯文本';
+  private resetBlockSourceEditor(): void {
+    this.blockSourceEditing = false;
   }
 
   private async copyTextToPasteboard(content: string, label: string): Promise<void> {
@@ -4447,1660 +4023,6 @@ struct Index {
     await this.copyTextToPasteboard(content, '代码');
   }
 
-  private async readBlockPanelParagraphSource(anchor: PreviewBlockAnchor): Promise<string | null> {
-    if (anchor.type !== 'paragraph' || anchor.tapType !== '' || anchor.inlineIndex >= 0) {
-      return null;
-    }
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    try {
-      const flushError: string = await this.flushSimplePreviewChanges();
-      if (flushError.length > 0) {
-        return null;
-      }
-      const bridge: EditorBridge = this.editorBridgeForPane(pane);
-      const documentRevision: number = bridge.currentDocumentRevision;
-      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
-        !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
-        this.blockPanelAnchor?.type !== 'paragraph') {
-        return null;
-      }
-      const source: string = await bridge.getContent();
-      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
-        !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
-        this.blockPanelAnchor?.type !== 'paragraph' ||
-        !Number.isInteger(anchor.from) || !Number.isInteger(anchor.to) ||
-        anchor.from < 0 || anchor.to <= anchor.from || anchor.to > source.length) {
-        return null;
-      }
-      return source.slice(anchor.from, anchor.to);
-    } catch {
-      return null;
-    }
-  }
-
-  private async loadBlockPanelBlockId(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor === null || anchor.type !== 'paragraph' || anchor.tapType !== '' || anchor.inlineIndex >= 0) {
-      return;
-    }
-    this.blockPanelBlockIdReady = false;
-    this.blockPanelBlockId = '';
-    this.blockPanelBlockIdMessage = '正在读取块 ID…';
-    const raw: string | null = await this.readBlockPanelParagraphSource(anchor);
-    if (!this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
-      this.blockPanelAnchor?.type !== 'paragraph') {
-      return;
-    }
-    if (raw === null) {
-      this.blockPanelBlockIdMessage = '无法读取本段，请重新打开面板';
-      return;
-    }
-    this.blockPanelBlockId = MarkdownComplexBlockEdit.parseBlockId(raw) ?? '';
-    this.blockPanelBlockIdReady = true;
-    this.blockPanelBlockIdMessage = '';
-  }
-
-  private async copyBlockLink(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor === null) {
-      return;
-    }
-    const raw: string | null = await this.readBlockPanelParagraphSource(anchor);
-    if (raw === null) {
-      promptAction.showToast({ message: '无法读取本段，请重新打开面板' });
-      return;
-    }
-    const blockId: string | null = MarkdownComplexBlockEdit.parseBlockId(raw);
-    this.blockPanelBlockId = blockId ?? '';
-    this.blockPanelBlockIdReady = true;
-    this.blockPanelBlockIdMessage = '';
-    if (blockId === null) {
-      promptAction.showToast({ message: '本段尚无块 ID，请先生成 ID' });
-      return;
-    }
-    await this.copyTextToPasteboard(`[[#^${blockId}]]`, '块链接');
-  }
-
-  private copyCodeBlockFromPanel(): void {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor === null || anchor.type !== 'code') {
-      return;
-    }
-    this.previewBridgeForPane(this.blockPanelPane).copyCodeBlock(anchor.from, anchor.to);
-  }
-
-  private async changeBlockCodeLanguage(language: string): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.type !== 'code' || !anchor.codeEditable || !anchor.codeLanguageSelectable ||
-      anchor.codeLanguages.indexOf(language) < 0 ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return;
-    }
-    this.blockPanelLanguagePickerOpen = false;
-    if (language === anchor.codeLanguage) {
-      return;
-    }
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      promptAction.showToast({ message: '无法同步当前笔记，未修改代码语言' });
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
-      latestAnchor.type !== 'code' || !latestAnchor.codeLanguageSelectable) {
-      promptAction.showToast({ message: '代码块已变化，请重新打开面板' });
-      return;
-    }
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      promptAction.showToast({ message: '读取代码语言失败；笔记未修改。请关闭面板后重新打开再试。' });
-      return;
-    }
-    const from: number = latestAnchor.codeLanguageFrom;
-    const to: number = latestAnchor.codeLanguageTo;
-    const expected: string = latestAnchor.codeLanguage;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) || from < latestAnchor.from ||
-      to < from || to > latestAnchor.to || source.slice(from, to) !== expected) {
-      promptAction.showToast({ message: '代码块已变化，请重新打开面板' });
-      return;
-    }
-
-    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
-    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
-    WorkspaceEditGuard.mark(pane, vaultId, path);
-    if (pane === 'right') {
-      this.rightEditorDirty = true;
-    } else {
-      this.editorDirty = true;
-    }
-    let applied: boolean = false;
-    try {
-      applied = await editor.replaceBlockSource(from, to, expected, language, revision);
-    } catch {
-      promptAction.showToast({ message: '代码语言修改未完成；当前源码仍保留。请重新打开面板后重试。' });
-    }
-    if (!applied) {
-      if (!wasDirty && !wasUnsaved &&
-        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
-        WorkspaceEditGuard.clear(pane, vaultId, path);
-        if (pane === 'right') {
-          this.rightEditorDirty = false;
-        } else {
-          this.editorDirty = false;
-        }
-      }
-      promptAction.showToast({ message: '代码块已变化，未修改语言' });
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return;
-    }
-    if (pane === 'right') {
-      this.scheduleRightSave();
-    } else {
-      this.scheduleSave();
-    }
-    this.blockPanelAnchor = {
-      type: latestAnchor.type,
-      tapType: latestAnchor.tapType,
-      from: latestAnchor.from,
-      to: latestAnchor.to + language.length - expected.length,
-      inlineItems: latestAnchor.inlineItems,
-      inlineSafe: latestAnchor.inlineSafe,
-      inlineIndex: latestAnchor.inlineIndex,
-      itemFrom: latestAnchor.itemFrom,
-      itemTo: latestAnchor.itemTo,
-      codeLanguage: language,
-      codeLanguageFrom: from,
-      codeLanguageTo: from + language.length,
-      codeLanguageSelectable: true,
-      codeLanguages: latestAnchor.codeLanguages,
-      codeEditable: latestAnchor.codeEditable,
-      tableRow: latestAnchor.tableRow,
-      tableColumn: latestAnchor.tableColumn,
-      tableRows: latestAnchor.tableRows,
-      tableColumns: latestAnchor.tableColumns,
-      tableStructureEditable: latestAnchor.tableStructureEditable,
-      x: latestAnchor.x,
-      y: latestAnchor.y,
-      width: latestAnchor.width,
-      height: latestAnchor.height
-    };
-    this.updateBlockPropertyPanelLayout(pane);
-  }
-
-  private blockPanelInlineItemLabel(item: PreviewBlockInlineItem): string {
-    let ordinal: number = 0;
-    for (const candidate of this.blockPanelInlineItems) {
-      if (candidate.type === item.type) {
-        ordinal++;
-      }
-      if (candidate.index === item.index) {
-        break;
-      }
-    }
-    let label: string = '链接';
-    if (item.type === 'image') {
-      label = '图片';
-    } else if (item.type === 'inlinecode') {
-      label = '行内代码';
-    } else if (item.type === 'mathInline') {
-      label = '行内公式';
-    } else if (item.type === 'wikilink') {
-      label = '双链';
-    }
-    return `${label} ${ordinal}`;
-  }
-
-  private async loadBlockPanelFormula(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || (anchor.tapType !== 'mathInline' && anchor.type !== 'formula') ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return;
-    }
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelFormulaMessage = '无法同步当前笔记，请关闭面板后重试';
-      this.blockPanelFormulaReady = true;
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelFormulaMessage = '读取公式失败，请关闭面板后重试';
-      this.blockPanelFormulaReady = true;
-      return;
-    }
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
-      return;
-    }
-    const inline: boolean = latestAnchor.tapType === 'mathInline';
-    const from: number = inline ? latestAnchor.itemFrom : latestAnchor.from;
-    const to: number = inline ? latestAnchor.itemTo : latestAnchor.to;
-    if (from < latestAnchor.from || to > latestAnchor.to || to <= from || to > source.length) {
-      this.blockPanelFormulaMessage = '公式范围无效，请以源码编辑此项';
-      this.blockPanelFormulaReady = true;
-      return;
-    }
-    const raw: string = source.slice(from, to);
-    const model: FormulaSourceModel | null = MarkdownComplexBlockEdit.parseFormula(raw, inline);
-    if (model === null) {
-      this.blockPanelFormulaMessage = '此公式写法暂不支持结构化编辑';
-      this.blockPanelFormulaReady = true;
-      return;
-    }
-    this.blockPanelFormulaRaw = raw;
-    this.blockPanelFormulaModel = model;
-    this.blockPanelFormulaValue = model.expression;
-    this.blockPanelFormulaMessage = '';
-    this.blockPanelFormulaReady = true;
-  }
-
-  private async saveBlockPanelFormula(): Promise<void> {
-    const model: FormulaSourceModel | null = this.blockPanelFormulaModel;
-    if (!this.blockPanelFormulaReady || model === null || this.blockPanelFormulaRaw.length === 0) {
-      return;
-    }
-    const replacement: string | null = MarkdownComplexBlockEdit.serializeFormula(
-      model, this.blockPanelFormulaValue);
-    if (replacement === null) {
-      this.blockPanelFormulaMessage = model.inline && this.blockPanelFormulaValue.includes('$')
-        ? '行内公式不能包含 $' : '公式不能为空';
-      return;
-    }
-    if (!await this.replaceBlockPanelInlineSource(
-      this.blockPanelFormulaRaw, replacement, '修改公式失败，请重试')) {
-      this.blockPanelFormulaMessage = '公式已变化或保存失败，请重新打开面板';
-      return;
-    }
-    this.blockPanelFormulaRaw = replacement;
-    this.blockPanelFormulaModel = MarkdownComplexBlockEdit.parseFormula(replacement, model.inline);
-    this.blockPanelFormulaMessage = '';
-  }
-
-  private async loadBlockPanelFootnote(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    this.blockPanelFootnoteReady = false;
-    this.blockPanelFootnoteEditable = false;
-    this.blockPanelFootnoteHasDefinition = false;
-    this.blockPanelFootnoteJumpFrom = -1;
-    if (anchor === null || (anchor.tapType !== 'footnoteRef' && anchor.type !== 'footnoteDefinition') ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      this.blockPanelFootnoteReady = true;
-      this.blockPanelFootnoteMessage = '脚注已变化，请重新打开面板';
-      return;
-    }
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelFootnoteReady = true;
-      this.blockPanelFootnoteMessage = '无法同步当前笔记，请关闭面板后重试';
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelFootnoteReady = true;
-      this.blockPanelFootnoteMessage = '读取脚注失败，请关闭面板后重试';
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
-      return;
-    }
-
-    let label: string | null = null;
-    if (anchor.tapType === 'footnoteRef') {
-      if (anchor.itemFrom >= anchor.from && anchor.itemTo <= anchor.to &&
-        anchor.itemTo <= source.length) {
-        label = MarkdownComplexBlockEdit.parseFootnoteReference(
-          source.slice(anchor.itemFrom, anchor.itemTo));
-      }
-    } else {
-      const definitions: FootnoteSourceRange[] = MarkdownComplexBlockEdit.findFootnoteDefinitions(source, '');
-      for (const definition of definitions) {
-        if (definition.from === anchor.from) {
-          label = definition.label;
-          break;
-        }
-      }
-    }
-    if (label === null) {
-      this.blockPanelFootnoteReady = true;
-      this.blockPanelFootnoteMessage = '脚注范围无效，请以源码编辑';
-      return;
-    }
-
-    const definitions: FootnoteSourceRange[] =
-      MarkdownComplexBlockEdit.findFootnoteDefinitions(source, label);
-    this.blockPanelFootnoteLabel = label;
-    this.blockPanelFootnoteSourceSnapshot = source;
-    this.blockPanelFootnoteReady = true;
-    this.blockPanelFootnoteHasDefinition = definitions.length > 0;
-    if (definitions.length > 1) {
-      this.blockPanelFootnoteMessage = '存在多个同名定义，无法安全编辑，请以源码编辑';
-      return;
-    }
-    if (definitions.length === 0) {
-      if (anchor.tapType !== 'footnoteRef') {
-        this.blockPanelFootnoteMessage = '脚注定义无法解析，请以源码编辑';
-        return;
-      }
-      this.blockPanelFootnoteEditable = true;
-      this.blockPanelFootnoteBody = '';
-      this.blockPanelFootnoteMessage = '当前引用缺少定义；应用正文时会在文末创建定义';
-      return;
-    }
-
-    const definition: FootnoteSourceRange = definitions[0];
-    const model: FootnoteSourceModel | null =
-      MarkdownComplexBlockEdit.parseFootnoteDefinition(definition.source);
-    if (model === null) {
-      this.blockPanelFootnoteMessage = '此脚注定义写法暂不支持结构化编辑，请以源码编辑';
-      return;
-    }
-    this.blockPanelFootnoteEditable = true;
-    this.blockPanelFootnoteBody = model.body;
-    this.blockPanelFootnoteDefinitionFrom = definition.from;
-    this.blockPanelFootnoteDefinitionTo = definition.to;
-    this.blockPanelFootnoteDefinitionRaw = definition.source;
-    this.blockPanelFootnoteModel = model;
-    if (anchor.tapType === 'footnoteRef') {
-      this.blockPanelFootnoteJumpFrom = definition.from;
-    } else {
-      const reference: FootnoteSourceRange | null =
-        MarkdownComplexBlockEdit.findFootnoteReference(source, label);
-      this.blockPanelFootnoteJumpFrom = reference === null ? -1 : reference.from;
-    }
-    this.blockPanelFootnoteMessage = '';
-  }
-
-  private async saveBlockPanelFootnote(): Promise<void> {
-    if (!this.blockPanelFootnoteReady || !this.blockPanelFootnoteEditable ||
-      this.blockPanelFootnoteSaving) {
-      return;
-    }
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return;
-    }
-    let replacement: string | null = null;
-    let from: number = this.blockPanelFootnoteDefinitionFrom;
-    let to: number = this.blockPanelFootnoteDefinitionTo;
-    let expectedSource: string = this.blockPanelFootnoteDefinitionRaw;
-    let appendedPrefix: string = '';
-    if (this.blockPanelFootnoteHasDefinition) {
-      const model: FootnoteSourceModel | null = this.blockPanelFootnoteModel;
-      if (model === null) {
-        this.blockPanelFootnoteMessage = '脚注定义无法解析，请以源码编辑';
-        return;
-      }
-      replacement = MarkdownComplexBlockEdit.serializeFootnoteDefinition(model, this.blockPanelFootnoteBody);
-    } else {
-      const source: string = this.blockPanelFootnoteSourceSnapshot;
-      const lineEnding: string = MarkdownComplexBlockEdit.sourceLineEnding(source);
-      appendedPrefix = source.length === 0 ? '' : source.endsWith(lineEnding + lineEnding)
-        ? '' : source.endsWith(lineEnding) ? lineEnding : lineEnding + lineEnding;
-      const definition: string | null = MarkdownComplexBlockEdit.createFootnoteDefinition(
-        this.blockPanelFootnoteLabel, this.blockPanelFootnoteBody, lineEnding, lineEnding);
-      replacement = definition === null ? null : appendedPrefix + definition;
-      from = source.length;
-      to = source.length;
-      expectedSource = '';
-    }
-    if (replacement === null) {
-      this.blockPanelFootnoteMessage = this.blockPanelFootnoteBody.trim().length === 0
-        ? '脚注正文不能为空' : '脚注正文格式暂不支持';
-      return;
-    }
-    this.blockPanelFootnoteSaving = true;
-    try {
-      const flushError: string = await this.flushSimplePreviewChanges();
-      if (flushError.length > 0) {
-        this.blockPanelFootnoteMessage = '无法同步当前笔记，未修改脚注';
-        return;
-      }
-      const revision: number = editor.currentDocumentRevision;
-      let source: string = '';
-      try {
-        source = await editor.getContent();
-      } catch {
-        this.blockPanelFootnoteMessage = '读取当前笔记失败，未修改脚注';
-        return;
-      }
-      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-        !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
-        source !== this.blockPanelFootnoteSourceSnapshot ||
-        from < 0 || to < from || to > source.length || source.slice(from, to) !== expectedSource) {
-        this.blockPanelFootnoteMessage = '笔记内容已变化，未修改脚注；请重新打开面板';
-        return;
-      }
-      if (replacement === expectedSource) {
-        this.blockPanelFootnoteMessage = '';
-        return;
-      }
-
-      const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
-      const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
-      WorkspaceEditGuard.mark(pane, vaultId, path);
-      if (pane === 'right') {
-        this.rightEditorDirty = true;
-      } else {
-        this.editorDirty = true;
-      }
-      let applied: boolean = false;
-      try {
-        applied = await editor.replaceBlockSource(from, to, expectedSource, replacement, revision, 'input', false);
-      } catch {}
-      if (!applied) {
-        if (!wasDirty && !wasUnsaved &&
-          this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
-          WorkspaceEditGuard.clear(pane, vaultId, path);
-          if (pane === 'right') {
-            this.rightEditorDirty = false;
-          } else {
-            this.editorDirty = false;
-          }
-        }
-        this.blockPanelFootnoteMessage = '脚注已变化或保存失败，未修改内容';
-        return;
-      }
-      if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-        return;
-      }
-      const updatedSource: string = source.slice(0, from) + replacement + source.slice(to);
-      this.blockPanelFootnoteSourceSnapshot = updatedSource;
-      this.blockPanelFootnoteHasDefinition = true;
-      if (expectedSource.length === 0) {
-        this.blockPanelFootnoteDefinitionFrom = from + appendedPrefix.length;
-        this.blockPanelFootnoteDefinitionTo = this.blockPanelFootnoteDefinitionFrom + replacement.length - appendedPrefix.length;
-        this.blockPanelFootnoteDefinitionRaw = replacement.slice(appendedPrefix.length);
-      } else {
-        this.blockPanelFootnoteDefinitionTo = from + replacement.length;
-        this.blockPanelFootnoteDefinitionRaw = replacement;
-      }
-      this.blockPanelFootnoteModel = MarkdownComplexBlockEdit.parseFootnoteDefinition(
-        this.blockPanelFootnoteDefinitionRaw);
-      this.blockPanelFootnoteJumpFrom = this.blockPanelAnchor?.tapType === 'footnoteRef'
-        ? this.blockPanelFootnoteDefinitionFrom
-        : MarkdownComplexBlockEdit.findFootnoteReference(updatedSource, this.blockPanelFootnoteLabel)?.from ?? -1;
-      this.blockPanelFootnoteMessage = '';
-      if (pane === 'right') {
-        this.scheduleRightSave();
-      } else {
-        this.scheduleSave();
-      }
-    } finally {
-      this.blockPanelFootnoteSaving = false;
-    }
-  }
-
-  private async jumpBlockPanelFootnote(): Promise<void> {
-    const from: number = this.blockPanelFootnoteJumpFrom;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (from < 0 || !this.isCurrentBlockSourceTarget(
-      pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return;
-    }
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelFootnoteMessage = '无法同步当前笔记，暂时不能跳转';
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelFootnoteMessage = '读取当前笔记失败，暂时不能跳转';
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      source !== this.blockPanelFootnoteSourceSnapshot || from > source.length) {
-      this.blockPanelFootnoteMessage = '笔记内容已变化，请重新打开面板后跳转';
-      return;
-    }
-    let line: number = 1;
-    for (let index = 0; index < from; index++) {
-      if (source[index] === '\n') {
-        line++;
-      }
-    }
-    const target: PreviewFollowAnchor = {
-      line, lineProgress: 0, viewportRatio: 0.2, atStart: false, atEnd: false
-    };
-    this.previewBridgeForPane(pane).scrollToSourceLine(target);
-  }
-
-  private async loadBlockPanelFrontmatter(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.type !== 'frontmatter' || anchor.from !== 0 ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      this.blockPanelFrontmatterReady = true;
-      this.blockPanelFrontmatterMessage = '属性区间已变化，请重新打开面板';
-      return;
-    }
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelFrontmatterReady = true;
-      this.blockPanelFrontmatterMessage = '无法同步当前笔记，请关闭面板后重试';
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelFrontmatterReady = true;
-      this.blockPanelFrontmatterMessage = '读取属性失败，请关闭面板后重试';
-      return;
-    }
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
-      latestAnchor.from !== 0 || latestAnchor.to <= 0 || latestAnchor.to > source.length) {
-      this.blockPanelFrontmatterReady = true;
-      this.blockPanelFrontmatterMessage = '属性区间已变化，请重新打开面板';
-      return;
-    }
-    const raw: string = source.slice(latestAnchor.from, latestAnchor.to);
-    const model: FrontmatterSourceModel | null = MarkdownComplexBlockEdit.parseFrontmatter(raw);
-    this.blockPanelFrontmatterRaw = raw;
-    this.blockPanelFrontmatterModel = model;
-    this.blockPanelFrontmatterReady = true;
-    this.blockPanelFrontmatterMessage = model === null
-      ? '文档头不是可安全编辑的 YAML，请以源码编辑' : '';
-    this.blockPanelFrontmatterEntries = model === null ? [] : model.properties;
-  }
-
-  private saveBlockPanelFrontmatterProperty(
-    action: string, key: string, value: string
-  ): Promise<boolean> {
-    const task: Promise<boolean> = this.blockPanelFrontmatterSaveTail.then(async (): Promise<boolean> => {
-      return await this.applyBlockPanelFrontmatterProperty(action, key, value);
-    });
-    this.blockPanelFrontmatterSaveTail = task.then((): void => {}, (): void => {});
-    return task;
-  }
-
-  private async applyBlockPanelFrontmatterProperty(
-    action: string, key: string, value: string
-  ): Promise<boolean> {
-    if (!this.blockPanelFrontmatterReady || this.blockPanelFrontmatterModel === null ||
-      this.blockPanelFrontmatterSaving) {
-      return false;
-    }
-    let replacement: string | null = null;
-    if (action === 'set') {
-      replacement = MarkdownComplexBlockEdit.setFrontmatterProperty(
-        this.blockPanelFrontmatterRaw, key, value);
-    } else if (action === 'remove') {
-      replacement = MarkdownComplexBlockEdit.removeFrontmatterProperty(
-        this.blockPanelFrontmatterRaw, key);
-    } else if (action === 'add') {
-      replacement = MarkdownComplexBlockEdit.addFrontmatterProperty(
-        this.blockPanelFrontmatterRaw, key, value);
-    }
-    if (replacement === null) {
-      this.blockPanelFrontmatterMessage = action === 'add'
-        ? '属性名无效或已存在，值无法安全写入'
-        : '属性已变化或值无效，未修改';
-      return false;
-    }
-    if (replacement === this.blockPanelFrontmatterRaw) {
-      this.blockPanelFrontmatterMessage = '';
-      return true;
-    }
-
-    this.blockPanelFrontmatterSaving = true;
-    try {
-      if (!await this.replaceBlockPanelInlineSource(
-        this.blockPanelFrontmatterRaw, replacement, '修改属性失败，请重试')) {
-        this.blockPanelFrontmatterMessage = '属性已变化或保存失败，请重新打开面板';
-        return false;
-      }
-      const model: FrontmatterSourceModel | null = MarkdownComplexBlockEdit.parseFrontmatter(replacement);
-      if (model === null) {
-        this.blockPanelFrontmatterModel = null;
-        this.blockPanelFrontmatterEntries = [];
-        this.blockPanelFrontmatterMessage = '属性写回后无法解析，请以源码编辑';
-        return false;
-      }
-      this.blockPanelFrontmatterRaw = replacement;
-      this.blockPanelFrontmatterModel = model;
-      this.blockPanelFrontmatterEntries = model.properties;
-      this.blockPanelFrontmatterMessage = '';
-      this.blockPanelFrontmatterDateKey = '';
-      if (action === 'add') {
-        this.blockPanelFrontmatterNewKey = '';
-        this.blockPanelFrontmatterNewValue = '';
-      }
-      return true;
-    } finally {
-      this.blockPanelFrontmatterSaving = false;
-    }
-  }
-
-  private updateBlockPanelFrontmatterDraft(key: string, value: string): void {
-    const entries: FrontmatterPropertyModel[] = [];
-    for (const entry of this.blockPanelFrontmatterEntries) {
-      if (entry.key === key) {
-        entry.text = value;
-      }
-      entries.push(entry);
-    }
-    this.blockPanelFrontmatterEntries = entries;
-  }
-
-  private blockPanelFrontmatterDate(): Date {
-    const parts: RegExpExecArray | null =
-      /^(\d{4})-(\d{2})-(\d{2})$/.exec(this.blockPanelFrontmatterDateDraft);
-    if (parts === null) {
-      return new Date();
-    }
-    return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
-  }
-
-  private blockPanelFrontmatterDateSelectable(value: string): boolean {
-    const parts: RegExpExecArray | null = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (parts === null) {
-      return false;
-    }
-    const date: number = Number(parts[1]) * 10000 + Number(parts[2]) * 100 + Number(parts[3]);
-    return date >= 19000131 && date <= 21001231;
-  }
-
-  private beginBlockPanelFrontmatterDate(key: string): void {
-    for (const entry of this.blockPanelFrontmatterEntries) {
-      if (entry.key !== key) {
-        continue;
-      }
-      if (!this.blockPanelFrontmatterDateSelectable(entry.text)) {
-        this.blockPanelFrontmatterMessage = '该日期超出系统选择范围，请以源码编辑';
-        return;
-      }
-      this.blockPanelFrontmatterDateKey = key;
-      this.blockPanelFrontmatterDateDraft = entry.text;
-      this.blockPanelFrontmatterMessage = '';
-      return;
-    }
-  }
-
-  private cancelBlockPanelFrontmatterDate(): void {
-    this.blockPanelFrontmatterDateKey = '';
-    this.blockPanelFrontmatterDateDraft = '';
-  }
-
-  private blockPanelFrontmatterDateValue(value: Date): string {
-    const year: string = String(value.getFullYear());
-    const month: string = String(value.getMonth() + 1).padStart(2, '0');
-    const day: string = String(value.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private async finishBlockPanelFrontmatterDate(): Promise<void> {
-    const key: string = this.blockPanelFrontmatterDateKey;
-    if (key.length === 0) {
-      return;
-    }
-    if (await this.saveBlockPanelFrontmatterProperty('set', key, this.blockPanelFrontmatterDateDraft)) {
-      this.cancelBlockPanelFrontmatterDate();
-    }
-  }
-
-  private blockPanelCalloutTypeOptions(): SelectOption[] {
-    const options: SelectOption[] = [];
-    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
-    const types: string[] = MarkdownComplexBlockEdit.calloutTypes();
-    const labels: string[] = MarkdownComplexBlockEdit.calloutLabels();
-    if (model !== null && !types.includes(model.type)) {
-      options.push({ value: `保留：${model.type}` });
-    }
-    for (let index = 0; index < types.length; index++) {
-      options.push({ value: labels[index] });
-    }
-    return options;
-  }
-
-  private blockPanelCalloutTypeIndex(): number {
-    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
-    if (model === null) {
-      return -1;
-    }
-    const types: string[] = MarkdownComplexBlockEdit.calloutTypes();
-    const index: number = types.indexOf(model.type);
-    return index < 0 ? 0 : index + (types.includes(model.type) ? 0 : 1);
-  }
-
-  private blockPanelCalloutTypeValue(): string {
-    const options: SelectOption[] = this.blockPanelCalloutTypeOptions();
-    const index: number = this.blockPanelCalloutTypeIndex();
-    return index >= 0 && index < options.length ? options[index].value as string : '';
-  }
-
-  private blockPanelCalloutFoldOptions(): SelectOption[] {
-    return [{ value: '不折叠' }, { value: '默认展开' }, { value: '默认收起' }];
-  }
-
-  private blockPanelCalloutFoldValue(): string {
-    const options: SelectOption[] = this.blockPanelCalloutFoldOptions();
-    return options[this.blockPanelCalloutFoldIndex()].value as string;
-  }
-
-  private blockPanelCalloutFoldIndex(): number {
-    if (this.blockPanelCalloutFold === '+') {
-      return 1;
-    }
-    return this.blockPanelCalloutFold === '-' ? 2 : 0;
-  }
-
-  private async saveBlockPanelCalloutType(index: number): Promise<void> {
-    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
-    const types: string[] = MarkdownComplexBlockEdit.calloutTypes();
-    const offset: number = model !== null && !types.includes(model.type) ? 1 : 0;
-    if (model === null || index < 0 || index >= types.length + offset) {
-      return;
-    }
-    if (this.blockPanelCalloutTitle !== model.title) {
-      if (!await this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle)) {
-        return;
-      }
-    }
-    const latest: CalloutSourceModel | null = this.blockPanelCalloutModel;
-    const type: string = offset > 0 && index === 0 ? latest?.type ?? '' : types[index - offset];
-    if (type.length > 0) {
-      await this.saveBlockPanelCalloutField('type', type);
-    }
-  }
-
-  private async saveBlockPanelCalloutFold(index: number): Promise<void> {
-    if (this.blockPanelCalloutModel === null || index < 0 || index > 2) {
-      return;
-    }
-    if (this.blockPanelCalloutTitle !== this.blockPanelCalloutModel.title) {
-      if (!await this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle)) {
-        return;
-      }
-    }
-    await this.saveBlockPanelCalloutField('fold', index === 1 ? '+' : index === 2 ? '-' : '');
-  }
-
-  private saveBlockPanelCalloutField(field: string, value: string): Promise<boolean> {
-    const task: Promise<boolean> = this.blockPanelCalloutSaveTail.then(async (): Promise<boolean> => {
-      return await this.applyBlockPanelCalloutField(field, value);
-    });
-    this.blockPanelCalloutSaveTail = task.then((): void => {}, (): void => {});
-    return task;
-  }
-
-  private async applyBlockPanelCalloutField(field: string, value: string): Promise<boolean> {
-    const model: CalloutSourceModel | null = this.blockPanelCalloutModel;
-    if (!this.blockPanelCalloutReady || model === null || this.blockPanelCalloutSaving) {
-      return false;
-    }
-    const replacement: string | null = MarkdownComplexBlockEdit.serializeCallout(model, field, value);
-    if (replacement === null) {
-      this.blockPanelCalloutMessage = '此提示块内容暂不支持该设置';
-      return false;
-    }
-    if (replacement === this.blockPanelCalloutRaw) {
-      this.blockPanelCalloutMessage = '';
-      return true;
-    }
-    this.blockPanelCalloutSaving = true;
-    try {
-      if (!await this.replaceBlockPanelInlineSource(
-        this.blockPanelCalloutRaw, replacement, '修改提示块失败，请重试')) {
-        this.blockPanelCalloutMessage = '提示块已变化或保存失败，请重新打开面板';
-        return false;
-      }
-      const updated: CalloutSourceModel | null = MarkdownComplexBlockEdit.parseCallout(replacement);
-      if (updated === null) {
-        this.blockPanelCalloutMessage = '提示块解析失败，请以源码编辑';
-        return false;
-      }
-      this.blockPanelCalloutRaw = replacement;
-      this.blockPanelCalloutModel = updated;
-      this.blockPanelCalloutTitle = updated.title;
-      this.blockPanelCalloutFold = updated.fold;
-      this.blockPanelCalloutMessage = '';
-      return true;
-    } finally {
-      this.blockPanelCalloutSaving = false;
-    }
-  }
-
-  private async loadBlockPanelCallout(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.type !== 'callout' ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      this.blockPanelCalloutReady = true;
-      this.blockPanelCalloutMessage = '提示块已变化，请重新打开面板';
-      return;
-    }
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelCalloutReady = true;
-      this.blockPanelCalloutMessage = '无法同步当前笔记，请关闭面板后重试';
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelCalloutReady = true;
-      this.blockPanelCalloutMessage = '读取提示块失败，请关闭面板后重试';
-      return;
-    }
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
-      latestAnchor.from < 0 || latestAnchor.to <= latestAnchor.from || latestAnchor.to > source.length) {
-      this.blockPanelCalloutReady = true;
-      this.blockPanelCalloutMessage = '提示块已变化，请重新打开面板';
-      return;
-    }
-    const raw: string = source.slice(latestAnchor.from, latestAnchor.to);
-    const model: CalloutSourceModel | null = MarkdownComplexBlockEdit.parseCallout(raw);
-    this.blockPanelCalloutReady = true;
-    if (model === null) {
-      this.blockPanelCalloutMessage = '此提示块写法暂不支持结构化编辑';
-      return;
-    }
-    this.blockPanelCalloutRaw = raw;
-    this.blockPanelCalloutModel = model;
-    this.blockPanelCalloutTitle = model.title;
-    this.blockPanelCalloutFold = model.fold;
-    this.blockPanelCalloutMessage = '';
-  }
-
-  private async loadBlockPanelLink(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.tapType !== 'link' || anchor.inlineIndex < 0 ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      this.blockPanelLinkReady = true;
-      this.blockPanelLinkMessage = '链接已变化，请重新打开面板';
-      return;
-    }
-
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelLinkReady = true;
-      this.blockPanelLinkMessage = '无法同步当前笔记，请关闭面板后重试';
-      promptAction.showToast({ message: '无法同步当前笔记，链接暂时不能编辑' });
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
-      return;
-    }
-
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelLinkReady = true;
-      this.blockPanelLinkMessage = '读取链接源码失败；笔记未修改。请关闭面板后重新打开再试。';
-      promptAction.showToast({ message: '读取链接源码失败；笔记未修改，请重新打开面板重试' });
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
-      return;
-    }
-    const from: number = latestAnchor.itemFrom;
-    const to: number = latestAnchor.itemTo;
-    if (from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
-      this.blockPanelLinkReady = true;
-      this.blockPanelLinkMessage = '链接范围无效，请以源码编辑此项';
-      return;
-    }
-
-    const raw: string = source.slice(from, to);
-    const parts: MarkdownLinkParts | null = MarkdownInlineParser.parseLink(raw);
-    this.blockPanelLinkRaw = raw;
-    this.blockPanelLinkParts = parts;
-    if (parts !== null) {
-      this.blockPanelLinkLabel = parts.label;
-      this.blockPanelLinkDestination = parts.destination;
-      this.blockPanelLinkMessage = '';
-    } else {
-      this.blockPanelLinkMessage = '此链接写法暂不支持结构化编辑';
-    }
-    this.blockPanelLinkReady = true;
-  }
-
-  private async loadBlockPanelImage(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.tapType !== 'image' ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      this.blockPanelImageReady = true;
-      this.blockPanelImageMessage = '图片已变化，请重新打开面板';
-      return;
-    }
-
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelImageReady = true;
-      this.blockPanelImageMessage = '无法同步当前笔记，请关闭面板后重试';
-      promptAction.showToast({ message: '无法同步当前笔记，图片暂时不能编辑' });
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
-      return;
-    }
-
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelImageReady = true;
-      this.blockPanelImageMessage = '读取图片源码失败；笔记未修改。请关闭面板后重新打开再试。';
-      promptAction.showToast({ message: '读取图片源码失败；笔记未修改，请重新打开面板重试' });
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
-      return;
-    }
-    const from: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemFrom : latestAnchor.from;
-    const to: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemTo : latestAnchor.to;
-    if (from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
-      this.blockPanelImageReady = true;
-      this.blockPanelImageMessage = '图片范围无效，请以源码编辑此项';
-      return;
-    }
-
-    const raw: string = source.slice(from, to);
-    const parts: MarkdownImageParts | null = MarkdownInlineParser.parseImage(raw);
-    this.blockPanelImageRaw = raw;
-    this.blockPanelImageParts = parts;
-    if (parts === null) {
-      this.blockPanelImageMessage = '此图片写法暂不支持结构化编辑';
-    } else {
-      this.blockPanelImageAlt = parts.alt;
-      this.blockPanelImageDestination = parts.destination;
-      this.blockPanelImageWidth = parts.width;
-      this.blockPanelImageMessage = '';
-    }
-    this.blockPanelImageReady = true;
-  }
-
-  private async replaceBlockPanelInlineSource(expectedSource: string, replacement: string,
-    failureMessage: string): Promise<boolean> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || (anchor.inlineIndex < 0 && anchor.tapType !== 'image' &&
-      anchor.type !== 'formula' && anchor.type !== 'callout' && anchor.type !== 'frontmatter') ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return false;
-    }
-    if (expectedSource === replacement) {
-      return true;
-    }
-
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      promptAction.showToast({ message: '无法同步当前笔记，未修改内容' });
-      return false;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
-      promptAction.showToast({ message: '这一项已经变化，请重新打开面板' });
-      return false;
-    }
-
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      promptAction.showToast({ message: '读取块内容失败；笔记未修改。请重新打开面板后再试。' });
-      return false;
-    }
-    const from: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemFrom : latestAnchor.from;
-    const to: number = latestAnchor.inlineIndex >= 0 ? latestAnchor.itemTo : latestAnchor.to;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
-      from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from ||
-      source.slice(from, to) !== expectedSource) {
-      promptAction.showToast({ message: '这一项已经变化，请重新打开面板' });
-      return false;
-    }
-
-    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
-    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
-    WorkspaceEditGuard.mark(pane, vaultId, path);
-    if (pane === 'right') {
-      this.rightEditorDirty = true;
-    } else {
-      this.editorDirty = true;
-    }
-    let applied: boolean = false;
-    try {
-      applied = await editor.replaceBlockSource(from, to, expectedSource, replacement, revision, 'input', false);
-    } catch {}
-    if (!applied) {
-      if (!wasDirty && !wasUnsaved &&
-        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
-        WorkspaceEditGuard.clear(pane, vaultId, path);
-        if (pane === 'right') {
-          this.rightEditorDirty = false;
-        } else {
-          this.editorDirty = false;
-        }
-      }
-      promptAction.showToast({ message: failureMessage });
-      return false;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return true;
-    }
-    if (pane === 'right') {
-      this.scheduleRightSave();
-    } else {
-      this.scheduleSave();
-    }
-    this.updateBlockPanelInlineAnchor(latestAnchor, from, to, replacement.length);
-    return true;
-  }
-
-  private updateBlockPanelInlineAnchor(anchor: PreviewBlockAnchor, from: number, to: number,
-    replacementLength: number): void {
-    const delta: number = replacementLength - (to - from);
-    const items: PreviewBlockInlineItem[] = [];
-    for (const item of anchor.inlineItems) {
-      if ((anchor.inlineIndex >= 0 && item.index === anchor.inlineIndex) ||
-        (anchor.inlineIndex < 0 && item.from === from && item.to === to)) {
-        items.push({ index: item.index, type: item.type, from: item.from, to: item.to + delta });
-      } else if (item.from >= to) {
-        items.push({ index: item.index, type: item.type, from: item.from + delta, to: item.to + delta });
-      } else {
-        items.push({ index: item.index, type: item.type, from: item.from, to: item.to });
-      }
-    }
-    this.blockPanelInlineItems = items;
-    this.blockPanelAnchor = {
-      type: anchor.type,
-      tapType: anchor.tapType,
-      from: anchor.from,
-      to: anchor.to + delta,
-      inlineItems: items,
-      inlineSafe: anchor.inlineSafe,
-      inlineIndex: anchor.inlineIndex,
-      itemFrom: anchor.inlineIndex >= 0 ? anchor.itemFrom : -1,
-      itemTo: anchor.inlineIndex >= 0 ? anchor.itemTo + delta : -1,
-      codeLanguage: anchor.codeLanguage,
-      codeLanguageFrom: anchor.codeLanguageFrom,
-      codeLanguageTo: anchor.codeLanguageTo,
-      codeLanguageSelectable: anchor.codeLanguageSelectable,
-      codeLanguages: anchor.codeLanguages,
-      codeEditable: anchor.codeEditable,
-      tableRow: anchor.tableRow,
-      tableColumn: anchor.tableColumn,
-      tableRows: anchor.tableRows,
-      tableColumns: anchor.tableColumns,
-      tableStructureEditable: anchor.tableStructureEditable,
-      x: anchor.x,
-      y: anchor.y,
-      width: anchor.width,
-      height: anchor.height
-    };
-    this.updateBlockPropertyPanelLayout(this.blockPanelPane);
-  }
-
-  private async saveBlockPanelLinkField(field: string): Promise<void> {
-    const parts: MarkdownLinkParts | null = this.blockPanelLinkParts;
-    if (parts === null || !this.blockPanelLinkReady) {
-      return;
-    }
-    let replacement: string | null = null;
-    if (field === 'label') {
-      const label: string = this.blockPanelLinkLabel.trim().length > 0
-        ? this.blockPanelLinkLabel.trim() : parts.destination;
-      replacement = MarkdownInlineParser.replaceLabel(this.blockPanelLinkRaw, parts, label);
-    } else if (field === 'destination') {
-      replacement = MarkdownInlineParser.replaceDestination(
-        this.blockPanelLinkRaw, parts, this.blockPanelLinkDestination);
-      if (replacement === null) {
-        promptAction.showToast({ message: '地址不能为空或包含空格，未修改链接' });
-        return;
-      }
-    }
-    if (replacement === null) {
-      return;
-    }
-    if (!await this.replaceBlockPanelInlineSource(this.blockPanelLinkRaw, replacement, '修改链接失败，请重试')) {
-      return;
-    }
-    this.blockPanelLinkRaw = replacement;
-    this.blockPanelLinkParts = MarkdownInlineParser.parseLink(replacement);
-    if (this.blockPanelLinkParts !== null) {
-      this.blockPanelLinkLabel = this.blockPanelLinkParts.label;
-      this.blockPanelLinkDestination = this.blockPanelLinkParts.destination;
-    }
-  }
-
-  private async unlinkBlockPanelLink(): Promise<void> {
-    const parts: MarkdownLinkParts | null = this.blockPanelLinkParts;
-    if (parts === null) {
-      return;
-    }
-    const applied: boolean = await this.replaceBlockPanelInlineSource(
-      this.blockPanelLinkRaw, parts.label, '取消链接失败，请重试');
-    if (applied) {
-      this.closeBlockPropertyPanel();
-    }
-  }
-
-  private async loadBlockPanelWikiLink(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.tapType !== 'wikilink' || anchor.inlineIndex < 0 ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '双链已变化，请重新打开面板';
-      return;
-    }
-
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '无法同步当前笔记，请关闭面板后重试';
-      promptAction.showToast({ message: '无法同步当前笔记，双链暂时不能编辑' });
-      return;
-    }
-    const revision: number = editor.currentDocumentRevision;
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null) {
-      return;
-    }
-
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '读取双链源码失败；笔记未修改。请关闭面板后重新打开再试。';
-      promptAction.showToast({ message: '读取双链源码失败；笔记未修改，请重新打开面板重试' });
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor)) {
-      return;
-    }
-    const from: number = latestAnchor.itemFrom;
-    const to: number = latestAnchor.itemTo;
-    if (from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
-      this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '双链范围无效，请以源码编辑此项';
-      return;
-    }
-
-    const raw: string = source.slice(from, to);
-    const references: WikiLinkReference[] = WikiLinkParser.parse(raw);
-    if (references.length !== 1 || references[0].start !== 0 || references[0].end !== raw.length) {
-      this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '此双链写法暂不支持结构化编辑';
-      return;
-    }
-    let files: string[] = [];
-    try {
-      files = WikiLinkService.files(VaultRegistry.get(), vaultId);
-    } catch {
-      this.blockPanelWikiReady = true;
-      this.blockPanelWikiMessage = '读取当前库笔记列表失败；双链未修改。请关闭面板后重试。';
-      promptAction.showToast({ message: '读取当前库笔记列表失败；双链未修改，请关闭面板后重试' });
-      return;
-    }
-
-    const reference: WikiLinkReference = references[0];
-    const resolution: WikiLinkResolution = WikiLinkService.resolve(reference.target, path, files);
-    this.blockPanelWikiRaw = raw;
-    this.blockPanelWikiTarget = reference.target;
-    this.blockPanelWikiAlias = reference.alias;
-    this.blockPanelWikiFiles = files;
-    this.blockPanelWikiResolutionStatus = resolution.status;
-    this.blockPanelWikiResolutionPath = resolution.path;
-    this.blockPanelWikiMessage = this.blockPanelWikiResolutionMessage(reference.target, resolution.status);
-    this.blockPanelWikiReady = true;
-  }
-
-  private blockPanelWikiResolutionMessage(target: string, status: string): string {
-    if (status === 'resolved') {
-      return '';
-    }
-    if (status === 'missing') {
-      return '目标笔记还没有创建；仍可修改显示文字或重新选择目标笔记。';
-    }
-    if (target.indexOf('#') >= 0) {
-      return '标题锚点暂不支持跳转；可改显示文字或重新选择目标笔记。';
-    }
-    return '目标不唯一或路径无效，请重新选择目标。';
-  }
-
-  private blockPanelWikiSelectOptions(): SelectOption[] {
-    const options: SelectOption[] = [];
-    for (const path of this.blockPanelWikiFiles) {
-      options.push({ value: WikiLinkParser.pathToTarget(path) });
-    }
-    return options;
-  }
-
-  private blockPanelWikiSelectedIndex(): number {
-    if (this.blockPanelWikiResolutionStatus !== 'resolved') {
-      return -1;
-    }
-    const target: string = WikiLinkParser.pathToTarget(this.blockPanelWikiResolutionPath);
-    const options: SelectOption[] = this.blockPanelWikiSelectOptions();
-    for (let i = 0; i < options.length; i++) {
-      if (options[i].value === target) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  private blockPanelWikiSelectValue(): string {
-    if (!this.blockPanelWikiReady) {
-      return '正在读取双链…';
-    }
-    if (this.blockPanelWikiResolutionStatus === 'resolved') {
-      return WikiLinkParser.pathToTarget(this.blockPanelWikiResolutionPath);
-    }
-    if (this.blockPanelWikiTarget.length === 0) {
-      return '重新选择目标';
-    }
-    if (this.blockPanelWikiResolutionStatus === 'missing') {
-      return `${this.blockPanelWikiTarget}（未创建）`;
-    }
-    if (this.blockPanelWikiTarget.indexOf('#') >= 0) {
-      return `${this.blockPanelWikiTarget}（暂不支持标题锚点）`;
-    }
-    return `${this.blockPanelWikiTarget}（无法解析）`;
-  }
-
-  private async saveBlockPanelWikiField(field: string, value: string): Promise<void> {
-    if (!this.blockPanelWikiReady || this.blockPanelWikiRaw.length === 0 ||
-      (field !== 'target' && field !== 'alias')) {
-      return;
-    }
-    let target: string = this.blockPanelWikiTarget;
-    let alias: string = this.blockPanelWikiAlias;
-    if (field === 'target') {
-      const options: SelectOption[] = this.blockPanelWikiSelectOptions();
-      if (!options.some((option: SelectOption): boolean => option.value === value)) {
-        return;
-      }
-      target = value;
-    } else {
-      alias = value.trim();
-      if (alias.indexOf(']]') >= 0 || alias.indexOf('\n') >= 0 || alias.indexOf('\r') >= 0) {
-        promptAction.showToast({ message: '显示文字不能包含换行或 ]]' });
-        return;
-      }
-    }
-    const replacement: string = `[[${target}${alias.length > 0 ? `|${alias}` : ''}]]`;
-    if (!await this.replaceBlockPanelInlineSource(this.blockPanelWikiRaw, replacement, '修改双链失败，请重试')) {
-      return;
-    }
-    this.blockPanelWikiRaw = replacement;
-    this.blockPanelWikiTarget = target;
-    this.blockPanelWikiAlias = alias;
-    const resolution: WikiLinkResolution = WikiLinkService.resolve(
-      target, this.blockPanelSourcePath, this.blockPanelWikiFiles);
-    this.blockPanelWikiResolutionStatus = resolution.status;
-    this.blockPanelWikiResolutionPath = resolution.path;
-    this.blockPanelWikiMessage = this.blockPanelWikiResolutionMessage(target, resolution.status);
-  }
-
-  private blockPanelWikiDisplayText(): string {
-    if (this.blockPanelWikiAlias.length > 0) {
-      return this.blockPanelWikiAlias;
-    }
-    return noteDisplayNameOfPath(this.blockPanelWikiTarget);
-  }
-
-  private async unlinkBlockPanelWiki(): Promise<void> {
-    if (this.blockPanelWikiRaw.length === 0) {
-      return;
-    }
-    const applied: boolean = await this.replaceBlockPanelInlineSource(
-      this.blockPanelWikiRaw, this.blockPanelWikiDisplayText(), '移除双链失败，请重试');
-    if (applied) {
-      this.closeBlockPropertyPanel();
-    }
-  }
-
-  private blockPanelImageRemote(): boolean {
-    const parts: MarkdownImageParts | null = this.blockPanelImageParts;
-    return parts !== null && NoteShareService.isRemoteImage(parts.destination);
-  }
-
-  private blockPanelImageWidthOptions(): SelectOption[] {
-    return [
-      { value: '原始' },
-      { value: '小 · 240 px' },
-      { value: '中 · 360 px' },
-      { value: '大 · 480 px' }
-    ];
-  }
-
-  private blockPanelImageWidthIndex(): number {
-    switch (this.blockPanelImageWidth) {
-      case '':
-        return 0;
-      case '240':
-        return 1;
-      case '360':
-        return 2;
-      case '480':
-        return 3;
-      default:
-        return -1;
-    }
-  }
-
-  private blockPanelImageWidthValue(): string {
-    if (this.blockPanelImageWidth.length === 0) {
-      return '原始';
-    }
-    const selected: number = this.blockPanelImageWidthIndex();
-    if (selected >= 0) {
-      return this.blockPanelImageWidthOptions()[selected].value as string;
-    }
-    return '当前 ' + this.blockPanelImageWidth + ' px';
-  }
-
-  private blockPanelImageWidthForIndex(index: number): string {
-    switch (index) {
-      case 0:
-        return '';
-      case 1:
-        return '240';
-      case 2:
-        return '360';
-      case 3:
-        return '480';
-      default:
-        return '';
-    }
-  }
-
-  private async saveBlockPanelImageField(field: string, value: string): Promise<void> {
-    const parts: MarkdownImageParts | null = this.blockPanelImageParts;
-    if (!this.blockPanelImageReady || parts === null ||
-      (field !== 'alt' && field !== 'width' && field !== 'destination')) {
-      return;
-    }
-    let replacement: string | null = null;
-    if (field === 'alt') {
-      replacement = MarkdownInlineParser.replaceImageAlt(this.blockPanelImageRaw, parts, value);
-    } else if (field === 'width') {
-      replacement = MarkdownInlineParser.replaceImageWidth(this.blockPanelImageRaw, parts, value);
-      if (replacement === null) {
-        promptAction.showToast({ message: '图片宽度选项无效，未修改' });
-        return;
-      }
-    } else {
-      if (!this.blockPanelImageRemote()) {
-        return;
-      }
-      replacement = MarkdownInlineParser.replaceImageDestination(
-        this.blockPanelImageRaw, parts, value);
-      if (replacement === null) {
-        promptAction.showToast({ message: '图片地址不能为空或包含空格，未修改' });
-        return;
-      }
-    }
-    if (!await this.replaceBlockPanelInlineSource(
-      this.blockPanelImageRaw, replacement, '修改图片失败，请重试')) {
-      return;
-    }
-    this.blockPanelImageRaw = replacement;
-    this.blockPanelImageParts = MarkdownInlineParser.parseImage(replacement);
-    if (this.blockPanelImageParts !== null) {
-      this.blockPanelImageAlt = this.blockPanelImageParts.alt;
-      this.blockPanelImageDestination = this.blockPanelImageParts.destination;
-      this.blockPanelImageWidth = this.blockPanelImageParts.width;
-    }
-  }
-
-  private async deleteBlockPanelImage(): Promise<void> {
-    if (this.blockPanelImageParts === null || this.blockPanelImageRaw.length === 0) {
-      return;
-    }
-    const applied: boolean = await this.replaceBlockPanelInlineSource(
-      this.blockPanelImageRaw, '', '删除图片失败，请重试');
-    if (applied) {
-      this.closeBlockPropertyPanel();
-    }
-  }
-
-  private openBlockPanelWikiTarget(): void {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    if (anchor === null || anchor.tapType !== 'wikilink' || !this.blockPanelWikiReady ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
-        this.editorBridgeForPane(pane).currentDocumentRevision)) {
-      return;
-    }
-    const resolution: WikiLinkResolution = WikiLinkService.resolve(
-      this.blockPanelWikiTarget, path, this.blockPanelWikiFiles);
-    if (resolution.status !== 'resolved') {
-      return;
-    }
-    this.closeBlockPropertyPanel(false);
-    this.openFileInOtherPane(resolution.path);
-  }
-
-  private async convertInlineCodeToPlainText(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    const editor: EditorBridge = this.editorBridgeForPane(pane);
-    if (anchor === null || anchor.tapType !== 'inlinecode' || anchor.inlineIndex < 0 ||
-      !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return;
-    }
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      promptAction.showToast({ message: '无法同步当前笔记，未转换行内代码' });
-      return;
-    }
-
-    const revision: number = editor.currentDocumentRevision;
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) || latestAnchor === null ||
-      latestAnchor.tapType !== 'inlinecode' || latestAnchor.inlineIndex < 0) {
-      promptAction.showToast({ message: '行内代码已变化，请重新打开面板' });
-      return;
-    }
-
-    let source: string = '';
-    try {
-      source = await editor.getContent();
-    } catch {
-      promptAction.showToast({ message: '读取行内代码源码失败；内容未转换。请重新打开面板后再试。' });
-      return;
-    }
-    const from: number = latestAnchor.itemFrom;
-    const to: number = latestAnchor.itemTo;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision) ||
-      !this.isSameBlockPanelTarget(this.blockPanelAnchor, anchor) ||
-      from < latestAnchor.from || to > latestAnchor.to || to > source.length || to <= from) {
-      promptAction.showToast({ message: '行内代码已变化，请重新打开面板' });
-      return;
-    }
-
-    const expected: string = source.slice(from, to);
-    const openingMatch = /^`+/.exec(expected);
-    const closingMatch = /`+$/.exec(expected);
-    const opening: string = openingMatch === null ? '' : openingMatch[0];
-    const closing: string = closingMatch === null ? '' : closingMatch[0];
-    if (opening.length === 0 || opening.length !== closing.length || expected.length <= opening.length * 2) {
-      promptAction.showToast({ message: '行内代码格式已变化，未转换' });
-      return;
-    }
-    const replacement: string = expected.slice(opening.length, expected.length - closing.length);
-    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
-    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
-    WorkspaceEditGuard.mark(pane, vaultId, path);
-    if (pane === 'right') {
-      this.rightEditorDirty = true;
-    } else {
-      this.editorDirty = true;
-    }
-
-    let applied: boolean = false;
-    let requestFailed: boolean = false;
-    try {
-      applied = await editor.replaceBlockSource(from, to, expected, replacement, revision, 'input', false);
-    } catch {
-      requestFailed = true;
-    }
-    if (!applied) {
-      if (!wasDirty && !wasUnsaved &&
-        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, revision)) {
-        WorkspaceEditGuard.clear(pane, vaultId, path);
-        if (pane === 'right') {
-          this.rightEditorDirty = false;
-        } else {
-          this.editorDirty = false;
-        }
-      }
-      promptAction.showToast({ message: requestFailed
-        ? '转为纯文本失败，请重试' : '行内代码已变化，未转换' });
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, editor.currentDocumentRevision)) {
-      return;
-    }
-    if (pane === 'right') {
-      this.scheduleRightSave();
-    } else {
-      this.scheduleSave();
-    }
-    this.closeBlockPropertyPanel(false);
-  }
-
-  private blockSourceActionLabel(): string {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor !== null && anchor.type === 'paragraph') {
-      return anchor.inlineIndex < 0 ? '以源码编辑这一段' : '以源码编辑这一项';
-    }
-    return '以源码编辑此块';
-  }
-
-  private blockSourceDescription(): string {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor !== null && anchor.type === 'paragraph') {
-      return anchor.inlineIndex < 0
-        ? '只显示这一段的 Markdown，保存后只替换这一段'
-        : '只显示这一项的 Markdown，保存后只替换这一项';
-    }
-    return '只显示这一块的 Markdown，保存后只替换这一块';
-  }
-
-  private closeBlockPropertyPanel(restoreFocus: boolean = true): void {
-    this.blockPanelRestoreFocus = restoreFocus;
-    this.blockPanelLanguagePickerOpen = false;
-    this.leftBlockPanelOpen = false;
-    this.rightBlockPanelOpen = false;
-    this.resetBlockSourceEditor();
-  }
-
-  private resetBlockSourceEditor(): void {
-    this.blockSourceEditing = false;
-    this.blockSourceDraft = '';
-    this.blockSourceBlockType = '';
-    this.blockSourceSnapshot = '';
-    this.blockSourceFrom = 0;
-    this.blockSourceTo = 0;
-    this.blockSourceDocumentRevision = 0;
-    this.blockSourceOpenRequestId = 0;
-  }
-
   private isCurrentBlockSourceTarget(pane: string, vaultId: string, path: string, requestId: number,
     documentRevision: number): boolean {
     return this.isBlockPropertyPanelOpen() && this.blockPanelPane === pane && this.activePane === pane &&
@@ -6110,196 +4032,7 @@ struct Index {
       this.editorBridgeForPane(pane).currentDocumentRevision === documentRevision;
   }
 
-  private isSameBlockPanelTarget(current: PreviewBlockAnchor | null, expected: PreviewBlockAnchor): boolean {
-    return current !== null && current.from === expected.from && current.to === expected.to &&
-      current.tapType === expected.tapType && current.inlineIndex === expected.inlineIndex &&
-      current.itemFrom === expected.itemFrom && current.itemTo === expected.itemTo;
-  }
 
-  private async openBlockSourceDrawer(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId;
-    if (anchor === null || !this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
-      this.editorBridgeForPane(pane).currentDocumentRevision)) {
-      return;
-    }
-    const sourceFrom: number = anchor.inlineIndex >= 0 ? anchor.itemFrom : anchor.from;
-    const sourceTo: number = anchor.inlineIndex >= 0 ? anchor.itemTo : anchor.to;
-    const flushError: string = await this.flushSimplePreviewChanges();
-    if (flushError.length > 0) {
-      promptAction.showToast({ message: '无法同步当前笔记，未打开块源码' });
-      return;
-    }
-    const bridge: EditorBridge = this.editorBridgeForPane(pane);
-    const documentRevision: number = bridge.currentDocumentRevision;
-    const currentAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
-      !this.isSameBlockPanelTarget(currentAnchor, anchor)) {
-      return;
-    }
-    let source: string = '';
-    try {
-      source = await bridge.getContent();
-    } catch {
-      promptAction.showToast({ message: '读取块源码失败；笔记未修改。请重新打开面板后再试。' });
-      return;
-    }
-    const latestAnchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision) ||
-      !this.isSameBlockPanelTarget(latestAnchor, anchor) ||
-      !Number.isInteger(sourceFrom) || !Number.isInteger(sourceTo) ||
-      sourceFrom < anchor.from || sourceTo > anchor.to || sourceTo <= sourceFrom ||
-      sourceTo > source.length) {
-      promptAction.showToast({ message: '块内容已变化，请重新打开面板' });
-      return;
-    }
-    const snapshot: string = source.slice(sourceFrom, sourceTo);
-    if (snapshot.length === 0) {
-      promptAction.showToast({ message: '未能读取块源码，请重新打开面板' });
-      return;
-    }
-    this.blockSourceFrom = sourceFrom;
-    this.blockSourceTo = sourceTo;
-    this.blockSourceSnapshot = snapshot;
-    this.blockSourceDraft = snapshot;
-    this.blockSourceBlockType = this.blockPanelTitleFor(anchor);
-    this.blockSourceDocumentRevision = documentRevision;
-    this.blockSourceOpenRequestId = requestId;
-    this.blockPanelTitle = '以源码编辑';
-    this.blockSourceEditing = true;
-    this.updateBlockPropertyPanelLayout(pane);
-  }
-
-  private cancelBlockSourceDrawer(): void {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    this.resetBlockSourceEditor();
-    if (anchor !== null) {
-      this.blockPanelTitle = this.blockPanelTitleFor(anchor);
-    }
-    this.updateBlockPropertyPanelLayout(this.blockPanelPane);
-  }
-
-  private onBlockSourceEditorKey(event: KeyEvent): boolean {
-    if (event.type !== KeyType.Down) {
-      return false;
-    }
-    if (event.keyCode === KeyCode.KEYCODE_ESCAPE) {
-      this.cancelBlockSourceDrawer();
-      event.stopPropagation();
-      return true;
-    }
-    const ctrlPressed: boolean = event.getModifierKeyState !== undefined &&
-      event.getModifierKeyState(['Ctrl']);
-    if (event.keyCode === KeyCode.KEYCODE_ENTER && (ctrlPressed || event.metaKey === 1)) {
-      void this.saveBlockSourceDrawer();
-      event.stopPropagation();
-      return true;
-    }
-    return false;
-  }
-
-  private async saveBlockSourceDrawer(): Promise<void> {
-    const pane: string = this.blockPanelPane;
-    const vaultId: string = this.blockPanelSourceVaultId;
-    const path: string = this.blockPanelSourcePath;
-    const requestId: number = this.blockSourceOpenRequestId;
-    const bridge: EditorBridge = this.editorBridgeForPane(pane);
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
-      this.blockSourceDocumentRevision)) {
-      promptAction.showToast({ message: '当前笔记已变化，请重新打开块源码' });
-      return;
-    }
-    const wasDirty: boolean = pane === 'right' ? this.rightEditorDirty : this.editorDirty;
-    const wasUnsaved: boolean = WorkspaceEditGuard.isUnsaved(vaultId, path);
-    this.resetSaveFeedback();
-    WorkspaceEditGuard.mark(pane, vaultId, path);
-    if (pane === 'right') {
-      this.rightEditorDirty = true;
-    } else {
-      this.editorDirty = true;
-    }
-    let applied: boolean = false;
-    let requestFailed: boolean = false;
-    try {
-      applied = await bridge.replaceBlockSource(this.blockSourceFrom, this.blockSourceTo,
-        this.blockSourceSnapshot, this.blockSourceDraft, this.blockSourceDocumentRevision);
-    } catch {
-      requestFailed = true;
-    }
-    if (!applied) {
-      if (requestFailed) {
-        if (this.currentVaultId === vaultId && this.paneFilePath(pane) === path &&
-          (pane === 'right' ? this.rightOpenRequestId : this.leftOpenRequestId) === requestId) {
-          if (pane === 'right') {
-            this.scheduleRightSave();
-          } else {
-            this.scheduleSave();
-          }
-        }
-        promptAction.showToast({ message: '块源码应用失败；笔记内容仍保留在编辑区。请检查后重试保存。' });
-        return;
-      }
-      if (!wasDirty && !wasUnsaved &&
-        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, this.blockSourceDocumentRevision)) {
-        WorkspaceEditGuard.clear(pane, vaultId, path);
-        if (pane === 'right') {
-          this.rightEditorDirty = false;
-        } else {
-          this.editorDirty = false;
-        }
-      }
-      promptAction.showToast({ message: requestFailed
-        ? '块源码应用失败；笔记内容仍保留在编辑区。请检查后重试保存。'
-        : '块内容已变化；本次修改未应用。请重新打开块源码后再编辑。' });
-      return;
-    }
-    if (!this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId,
-      this.blockSourceDocumentRevision)) {
-      return;
-    }
-    if (pane === 'right') {
-      this.scheduleRightSave();
-    } else {
-      this.scheduleSave();
-    }
-    this.closeBlockPropertyPanel(false);
-  }
-
-  private blockPanelActionLabel(): string {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor === null) {
-      return '';
-    }
-    switch (anchor.tapType) {
-      case 'image':
-        return '查看大图';
-      case 'link':
-        return '打开链接';
-      case 'wikilink':
-        return this.blockPanelWikiReady && this.blockPanelWikiResolutionStatus === 'resolved'
-          ? '打开目标笔记' : '';
-      case 'inlinecode':
-        return '转为纯文本';
-      default:
-        return '';
-    }
-  }
-
-  private async performBlockPanelAction(): Promise<void> {
-    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
-    if (anchor !== null && anchor.tapType === 'inlinecode') {
-      await this.convertInlineCodeToPlainText();
-      return;
-    }
-    if (anchor !== null && anchor.tapType === 'wikilink') {
-      this.openBlockPanelWikiTarget();
-      return;
-    }
-    this.closeBlockPanelForContentAction();
-  }
 
   private closeBlockPanelForContentAction(): void {
     this.blockPanelPendingAction = true;
@@ -6352,11 +4085,6 @@ struct Index {
     }
   }
 
-  private onBlockPropertyPanelKey(event: KeyEvent): void {
-    if (event.type === KeyType.Down && event.keyCode === KeyCode.KEYCODE_ESCAPE) {
-      this.closeBlockPropertyPanel();
-    }
-  }
 
   private calculateAnchoredPopupLayout(
     pane: string,
@@ -7810,14 +5538,14 @@ struct Index {
 
   /** Select one Gallery image, copy it into the current vault, and insert its relative Markdown path. */
   private async pickImageForCurrentNote(pane: string = 'left',
-    replaceSelectedImage: boolean = false): Promise<void> {
+    replaceSelectedImage: boolean = false, context: PanelImageReplaceContext | null = null): Promise<void> {
     const isRight: boolean = pane === 'right';
     const notePath: string = isRight ? this.rightFilePath : this.currentFilePath;
     const editorBridge: EditorBridge = isRight ? this.rightEditorBridge : this.editorBridge;
     const previewBridge: PreviewBridge = isRight ? this.rightPreviewBridge : this.previewBridge;
-    const imageAnchor: PreviewBlockAnchor | null = replaceSelectedImage ? this.blockPanelAnchor : null;
-    const imageRaw: string = replaceSelectedImage ? this.blockPanelImageRaw : '';
-    const imageParts: MarkdownImageParts | null = replaceSelectedImage ? this.blockPanelImageParts : null;
+    const imageAnchor: PreviewBlockAnchor | null = replaceSelectedImage && context !== null ? context.anchor : null;
+    const imageRaw: string = replaceSelectedImage && context !== null ? context.raw : '';
+    const imageParts: MarkdownImageParts | null = replaceSelectedImage && context !== null ? context.parts : null;
     const requestId: number = isRight ? this.rightOpenRequestId : this.leftOpenRequestId;
     const documentRevision: number = editorBridge.currentDocumentRevision;
     if (this.imagePickerBusy || this.rightImagePickerBusy) {
@@ -7864,7 +5592,7 @@ struct Index {
       }
       if (replaceSelectedImage && (imageAnchor === null ||
         !this.isCurrentBlockSourceTarget(pane, vaultId, notePath, requestId, documentRevision) ||
-        !this.isSameBlockPanelTarget(this.blockPanelAnchor, imageAnchor))) {
+        !isSameBlockPanelTarget(this.blockPanelAnchor, imageAnchor))) {
         promptAction.showToast({ message: '图片已变化，未替换' });
         return;
       }
@@ -7879,7 +5607,7 @@ struct Index {
       }
       if (replaceSelectedImage && (imageAnchor === null ||
         !this.isCurrentBlockSourceTarget(pane, vaultId, notePath, requestId, documentRevision) ||
-        !this.isSameBlockPanelTarget(this.blockPanelAnchor, imageAnchor))) {
+        !isSameBlockPanelTarget(this.blockPanelAnchor, imageAnchor))) {
         NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
         promptAction.showToast({ message: '图片已变化，未替换' });
         return;
@@ -7905,18 +5633,14 @@ struct Index {
           }
           replacement = withWidth;
         }
-        const applied: boolean = await this.replaceBlockPanelInlineSource(
-          imageRaw, replacement, '替换图片失败，请重试');
+        const applied: boolean = context !== null
+          ? await context.replaceInlineSource(imageRaw, replacement, '替换图片失败，请重试') : false;
         if (!applied) {
           NoteImageService.removeImportedImage(registry, vaultId, imported.assetPath);
           return;
         }
-        this.blockPanelImageRaw = replacement;
-        this.blockPanelImageParts = MarkdownInlineParser.parseImage(replacement);
-        if (this.blockPanelImageParts !== null) {
-          this.blockPanelImageAlt = this.blockPanelImageParts.alt;
-          this.blockPanelImageDestination = this.blockPanelImageParts.destination;
-          this.blockPanelImageWidth = this.blockPanelImageParts.width;
+        if (context !== null) {
+          context.onImageReplaced(replacement);
         }
         return;
       }
@@ -8180,6 +5904,10 @@ struct Index {
     const wasSessionSavingEnabled: boolean = this.workspaceSessionSavingEnabled;
     if (deletingCurrent) {
       this.stopWorkspaceSessionSaving();
+      // 删库过程中先摘掉笔记防抖写盘定时器：库目录一旦被 removeVaultTree 删掉，
+      // 定时器再触发就会拿旧路径写盘，accessFor(旧库) 会抛「库不存在」把界面卡死。
+      // 删除失败时由下方 reschedulePendingNoteSaves() 排回去，不丢未保存改动。
+      this.cancelPendingNoteSaves();
     }
     try {
       const reg: VaultRegistry = VaultRegistry.get();
@@ -8188,15 +5916,24 @@ struct Index {
       const removed: boolean = await AgentRuntime.deleteVaultWithCleanup(id,
         async (): Promise<void> => {
           await AgentMemoryStore.removeVaultData(id);
-        },
-        async (): Promise<void> => {
+          // 外部目录授权释放是异步的，必须待在会被 await 的 cleanup 里。
+          // 放进 removeVault 会让该回调变成 async 却没人 await，
+          // removed=true 先返回、注册表还没移除，UI 拿旧 currentVaultId 清工作区就错序。
           if (target !== undefined && target.rootKind === 'external' && target.rootUri !== undefined) {
             const authorization: ExternalVaultAuthorizationService =
               createExternalVaultAuthorization(reg.abilityContext());
             await authorization.release(target.rootUri);
           }
+        },
+        (): void => {
           AgentRuntime.forgetVault(id, reg);
           reg.remove(id);
+          // 注册表已移除该库。必须**同步**、且赶在 refreshFromRegistry() 触发重渲染之前
+          // 清掉已打开的笔记状态：否则下一帧渲染拿旧库 id 的 currentFilePath 去
+          // accessFor() 会抛「库不存在」把界面卡死。等 await 返回再清就来不及了。
+          if (deletingCurrent) {
+            this.resetOpenNotesAfterVaultRemoval();
+          }
           // v1.47 47.4：删库时清理其每库工作区会话，避免 Preferences 键泄漏。
           try {
             this.ensureWorkspaceSessionStore();
@@ -8216,7 +5953,20 @@ struct Index {
         if (deletingCurrent && this.currentVaultId === id && wasSessionSavingEnabled) {
           this.workspaceSessionSavingEnabled = true;
         }
+        if (deletingCurrent) {
+          this.reschedulePendingNoteSaves();
+        }
         promptAction.showToast({ message: '该库的 Agent 正在运行或删除；稍后再试。' });
+      } else if (deletingCurrent) {
+        // 当前库已删：注册表把 currentVaultId 回落到别的库（或空串），但左右栏打开的
+        // 笔记、编辑器会话与 Web 内容仍属于被删库。不清理，后续渲染 / 预览重算 /
+        // 自动保存都会拿旧路径去 accessFor()，抛「库不存在」把界面卡死。
+        // 清理失败只记日志，不改变删除成功的结果。
+        try {
+          await this.restoreWorkspaceAfterVaultRemoval();
+        } catch (workspaceError) {
+          hilog.warn(DOMAIN, TAG, '删库后重建工作区失败');
+        }
       }
     } catch (error) {
       try {
@@ -8224,10 +5974,118 @@ struct Index {
       } catch (persistError) {
         // Keep the deletion error visible; a later user edit can retry the conversation save.
       }
-      if (deletingCurrent && this.currentVaultId === id && wasSessionSavingEnabled) {
-        this.workspaceSessionSavingEnabled = true;
+      if (deletingCurrent) {
+        // 删除失败（库仍在）或 reg.remove 已落地但后续清理抛错（库已不在、currentVaultId
+        // 已回落）时都要恢复会话保存，否则本页之后再也不会自动保存工作区会话。
+        if (wasSessionSavingEnabled || this.currentVaultId !== id) {
+          this.workspaceSessionSavingEnabled = true;
+        }
+        this.reschedulePendingNoteSaves();
       }
       this.toastRegistryError('删除失败', error, 'vault', 'delete');
+    }
+  }
+
+  /** 摘掉左右栏的防抖写盘定时器；删库期间避免把内容写进已删除的库。 */
+  private cancelPendingNoteSaves(): void {
+    if (this.saveTimer !== -1) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = -1;
+    }
+    if (this.rightSaveTimer !== -1) {
+      clearTimeout(this.rightSaveTimer);
+      this.rightSaveTimer = -1;
+    }
+  }
+
+  /** 删除未执行/失败，库仍在：把被摘掉的防抖写盘排回去，不让未保存改动丢掉。 */
+  private reschedulePendingNoteSaves(): void {
+    this.scheduleSave();
+    this.scheduleRightSave();
+  }
+
+  /**
+   * 删除当前库后**同步**清空已打开笔记的全部 UI 状态。
+   *
+   * 必须在 reg.remove(id) 之后、refreshFromRegistry() 之前调用：注册表一移除，
+   * currentFilePath / rightFilePath、leftSession / rightSession 与常驻 Web 组件里
+   * 的正文仍属于被删库，下一帧渲染或预览重算会拿旧库 id 调
+   * VaultRegistry.accessFor()，而它对已删除的库直接抛「库不存在: id」→ 界面卡死。
+   *
+   * 与 switchVault / adoptExternalVaultSwitch 的切库清理同构（作废在途请求、清两栏、
+   * 清面板），差别是删库**不 flush 旧库编辑** —— 库目录已删，写回无意义且会抛错。
+   */
+  private resetOpenNotesAfterVaultRemoval(): void {
+    // 作废在途的异步打开/关闭，避免删库期间的旧结果回灌到已清理的工作区。
+    this.leftOpenRequestId++;
+    this.rightOpenRequestId++;
+    this.cancelPendingNoteSaves();
+    this.stopWorkspaceSessionSaving();
+
+    this.currentFilePath = '';
+    this.rightFilePath = '';
+    this.rightPaneIntentionallyEmpty = false;
+    this.quickSwitchOpen = false;
+    this.quickSwitchFiles = [];
+    this.recentOpenPaths = [];
+    this.leftLastClosedPath = '';
+    this.rightLastClosedPath = '';
+    this.smMode = 'edit';
+    this.leftSession = null;
+    this.rightSession = null;
+    this.editorDirty = false;
+    this.rightEditorDirty = false;
+    this.chapterEntries = [];
+    this.selectedChapterIndex = -1;
+    this.chapterPath = '';
+    this.closeFormatMenu(false);
+    this.closeBlockPropertyPanel(false);
+    this.tableGridOpen = false;
+    this.backlinksExpanded = false;
+    this.backlinksPane = '';
+    this.paneCloseHovered = '';
+  }
+
+  /**
+   * 删库成功、注册表已刷新后重建工作区：优先按回落库自己的会话恢复，
+   * 没有会话（或恢复失败）则把常驻编辑器 / 预览推空。
+   * 只改 ArkTS 状态不够，Web 组件仍显示被删库的笔记正文，必须显式推内容。
+   */
+  private async restoreWorkspaceAfterVaultRemoval(): Promise<void> {
+    const nextVaultId: string = this.currentVaultId;
+    let targetSession: WorkspaceSession | null = null;
+    if (nextVaultId.length > 0) {
+      try {
+        this.ensureWorkspaceSessionStore();
+        targetSession = (this.workspaceSessionStore as WorkspaceSessionStore).loadFor(nextVaultId);
+      } catch (sessionError) {
+        targetSession = null;
+        hilog.warn(DOMAIN, TAG, '删库后读取回落库工作区会话失败');
+      }
+    }
+
+    let restored: boolean = false;
+    if (targetSession !== null) {
+      this.workspaceSessionRestoring = true;
+      try {
+        restored = await this.applyWorkspaceSession(targetSession);
+      } catch (sessionError) {
+        restored = false;
+        hilog.warn(DOMAIN, TAG, '删库后恢复回落库工作区失败');
+      } finally {
+        this.workspaceSessionRestoring = false;
+      }
+    }
+    if (!restored) {
+      // 空路径不读盘，也不会访问已删除的库。
+      this.currentFilePath = '';
+      this.rightFilePath = '';
+      await this.readAndPush('', false);
+      await this.readRightAndPush('');
+    }
+    this.workspaceSessionSavingEnabled = true;
+    if (restored) {
+      this.flushWorkspaceSessionSave(true);
     }
   }
 
@@ -8743,57 +6601,44 @@ struct Index {
     this.createDialogCtl.open();
   }
 
-  private openShareNoteDialog(): void {
-    const path: string = this.activeFilePath();
-    if (this.topView !== 'note' || path.length === 0) {
-      promptAction.showToast({ message: '请先打开一篇笔记' });
-      return;
-    }
-    this.openShareDialog('note', path, this.currentVaultId);
-  }
-
-  private openSharePath(relPath: string, isDir: boolean): void {
-    if (this.topView !== 'note' || !isDir) {
-      return;
-    }
-    this.openShareDialog('folder', relPath, this.currentVaultId);
-  }
-
-  private openShareVaultFromManager(vaultId: string, focusId: string): void {
-    const registry: VaultRegistry = VaultRegistry.get();
-    let noteCount: number = 0;
-    try {
-      noteCount = ShareArchiveService.countScope(registry, vaultId, '').noteCount;
-    } catch (error) {
-      promptAction.showToast({ message: '无法读取该知识库，暂时无法分享' });
-      return;
-    }
-    if (noteCount === 0) {
-      this.refreshVaultManagerShareSummaries();
-      promptAction.showToast({ message: '这个库还没有笔记' });
-      return;
-    }
-    this.openShareDialog('vault', '', vaultId, noteCount, focusId);
-  }
-
-  private sharePathForScope(targetScope: ShareLinkScope, entryScope: ShareLinkScope, entryPath: string,
-    notePath: string): string {
-    if (targetScope === 'vault') {
-      return '';
-    }
-    if (targetScope === 'note') {
-      return notePath;
-    }
-    return entryScope === 'folder' ? entryPath : NoteShareService.parentOf(notePath);
-  }
-
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      // 长图捕获层放最底层：被下方不透明工作区完全遮住，挂载/卸载不再闪到笔记页；
-      // 组件截图只截目标自身内容，遮住它的兄弟节点不会进入快照（见 api_notes.md）。
-      if (this.shareCaptureActive) {
-        this.ShareImageCaptureLayer()
-      }
+      // v1.68 拆分：分享域子组件放最底层——长图捕获层在其 build 内部，被下方不透明
+      // 工作区完全遮住，挂载/卸载不再闪到笔记页；组件截图只截目标自身内容，
+      // 遮住它的兄弟节点不会进入快照（见 api_notes.md）。
+      ShareFlowPanel({
+        currentVaultId: this.currentVaultId,
+        topView: this.topView,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onApiReady: (api: ShareFlowApi): void => {
+          this.shareFlowApi = api;
+        },
+        activeFilePath: (): string => {
+          return this.activeFilePath();
+        },
+        editorBridgeForPath: (path: string): EditorBridge => {
+          return this.editorBridgeForPath(path);
+        },
+        isSingleScreenLayout: (): boolean => {
+          return this.isSingleScreenLayout();
+        },
+        activeSharePaneWidthVp: (): number => {
+          return this.activeSharePaneWidthVp();
+        },
+        shareLayoutWidthVp: (widthId: string, paneWidthVp: number): number => {
+          return this.shareLayoutWidthVp(widthId, paneWidthVp);
+        },
+        readVaultAsset: (relPath: string): string => {
+          return this.readVaultAsset(relPath);
+        },
+        saveShareNoteToVault: (vaultId: string, target: string): Promise<boolean> => {
+          return this.finishSaveShareNote(vaultId, target);
+        },
+        refreshVaultManagerShareSummaries: (): void => {
+          this.refreshVaultManagerShareSummaries();
+        }
+      })
       Column() {
         this.NoteWorkspaceShell()
       }
@@ -8880,809 +6725,13 @@ struct Index {
     })
   }
 
-  private openShareImageSettings(vaultId: string, notePath: string, itemName: string): void {
-    const paneWidthVp: number = this.activeSharePaneWidthVp();
-    this.shareCapturePaneWidthVp = paneWidthVp;
-    this.shareCaptureWidthVp = this.shareLayoutWidthVp(this.shareCaptureWidthId, paneWidthVp);
-    this.cleanupShareImagePreview();
-    this.openShareImagePreview(itemName, {
-      uri: '', aspectRatio: 1, width: 0, height: 0,
-      theme: this.shareCaptureTheme, scaled: false, widthId: this.shareCaptureWidthId
-    }, notePath, vaultId, '', paneWidthVp);
-  }
-
-  /**
-   * 分享 / 导出取笔记正文（v1.53 53.6 修复）：编辑器桥就绪时走桥（含编辑器内未保存改动）；
-   * 未就绪（隐藏的源码编辑器 Web 未加载或加载失败——预览显示与简单模式编辑不受影响）时
-   * 直接读库文件兜底：编辑器未就绪就不存在「编辑器内未保存改动」，简单模式的预览编辑
-   * 直接落盘，磁盘文件即权威内容。不再因「编辑器尚未就绪」阻断分享。
-   */
-  private async noteMarkdownForShare(vaultId: string, path: string): Promise<string> {
-    const bridge: EditorBridge = this.editorBridgeForPath(path);
-    if (bridge.ready) {
-      return await bridge.getContent();
-    }
-    const text: string | null = NoteService.tryReadNote(VaultRegistry.get(), vaultId, path);
-    if (text === null) {
-      throw new Error('未能读取笔记内容，暂时无法分享');
-    }
-    return text;
-  }
-
-  private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
-    vault: VaultEntry, vaultNoteCount: number = -1, focusReturnId: string = ''): Promise<void> {
-    const registry: VaultRegistry = VaultRegistry.get();
-    try {
-      if (format === 'link') {
-        const link: ShareLinkScope = scope;
-        const targetPath: string = path;
-        const result = ShareLinkService.build(vault, link, targetPath);
-        await this.shareLink(result.url, itemName, registry);
-        return;
-      }
-      if (format === 'image' && scope === 'note') {
-        this.openShareImageSettings(vault.id, path, itemName);
-        return;
-      }
-      if (format === 'pdf' && scope === 'note') {
-        await this.prepareNotePdfShare(vault.id, path, itemName);
-        return;
-      }
-      if (format === 'text' && scope === 'note') {
-        const markdown: string = await this.noteMarkdownForShare(vault.id, path);
-        const preview: NoteTextSharePreview = NoteTextShareService.createPreview(path, markdown);
-        this.openShareTextPreview(preview, path);
-        return;
-      }
-      if (scope === 'note') {
-        const markdown: string = await this.noteMarkdownForShare(vault.id, path);
-        const prepared: PreparedNoteShare = await NoteShareService.prepareNote(registry, vault.id,
-          path, markdown);
-        this.openShareFilePreview(prepared.filePath, prepared.fileName, prepared.format, prepared.entries,
-          itemName, 1, prepared.imageCount, scope, path, registry, '', async (): Promise<void> => {},
-          vault.id, vaultNoteCount, focusReturnId);
-        return;
-      }
-      let snapshot: ShareSnapshot | null = null;
-      const activePath: string = this.activeFilePath();
-      const activeBridge: EditorBridge = this.editorBridgeForPath(activePath);
-      if (vault.id === this.currentVaultId && activeBridge.ready && activePath.length > 0 &&
-        (scope === 'vault' || activePath.startsWith(path + '/') || activePath === path)) {
-        snapshot = { path: activePath, markdown: await activeBridge.getContent() };
-      }
-      const prepared: PreparedArchiveShare = await ShareArchiveService.prepareZip(registry, vault.id,
-        path, snapshot);
-      this.openShareFilePreview(prepared.filePath, prepared.fileName, 'ZIP', prepared.entries,
-        itemName, prepared.noteCount, prepared.imageCount, scope, path, registry,
-        '', async (): Promise<void> => {}, vault.id, vaultNoteCount, focusReturnId);
-    } catch (error) {
-      if (this.shareCaptureCancelled) {
-        return;
-      }
-      if (scope === 'note' && format === 'text') {
-        this.openShareTextPreview(NoteTextShareService.createPreview(path, ''), path,
-          shareFailureMessage(error, 'text_prepare'),
-          (): Promise<void> => {
-            return this.prepareShare(scope, path, format, itemName, vault, vaultNoteCount, focusReturnId);
-          });
-        return;
-      }
-      if (format === 'pdf' && scope === 'note') {
-        this.openShareFilePreview('', this.pdfFileNameOf(itemName), 'PDF', [],
-          itemName, 0, 0, scope, path, registry,
-          shareFailureMessage(error, 'file_prepare'),
-          (): Promise<void> => {
-            return this.prepareShare(scope, path, format, itemName, vault, vaultNoteCount, focusReturnId);
-          }, vault.id, vaultNoteCount, focusReturnId,
-          uniformTypeDescriptor.UniformDataType.PDF);
-        return;
-      }
-      if (format !== 'link') {
-        const detailFormat: string = format === 'file' ? 'Markdown / ZIP' : 'ZIP';
-        this.openShareFilePreview('', itemName, detailFormat, [], itemName, 0, 0, scope, path, registry,
-          shareFailureMessage(error, 'file_prepare'),
-          (): Promise<void> => {
-            return this.prepareShare(scope, path, format, itemName, vault, vaultNoteCount, focusReturnId);
-          }, vault.id, vaultNoteCount, focusReturnId);
-        return;
-      }
-      const err = error as BusinessError;
-      const linkFailureReason: string = err.message ?? '';
-      void this.getUIContext().getPromptAction().showDialog({
-        title: '分享失败',
-        message: linkFailureReason.length > 0 ? linkFailureReason
-          : '分享链接准备失败；请重试，或返回后选择其他分享方式。',
-        buttons: [{ text: '知道了', color: $r('app.color.text_primary') }]
-      });
-    }
-  }
-
-  private async shareFile(filePath: string, title: string, utd: string, registry: VaultRegistry): Promise<void> {
-    const shared = new systemShare.SharedData({
-      utd: utd,
-      uri: fileUri.getUriFromPath(filePath),
-      title: title
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
-  }
-
-  private openShareFilePreview(filePath: string, fileName: string, format: string, entries: string[],
-    itemName: string, noteCount: number, imageCount: number, scope: ShareLinkScope, path: string,
-    registry: VaultRegistry, initialError: string = '',
-    onRetryPreparation: () => Promise<void> = async (): Promise<void> => {},
-    targetVaultId: string = this.currentVaultId, vaultNoteCount: number = -1,
-    focusReturnId: string = '', utd: string = uniformTypeDescriptor.UniformDataType.FILE): void {
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    this.shareFilePreviewCtl?.close();
-    this.shareFilePreviewCtl = new CustomDialogController({
-      builder: ShareFilePreviewDialog({
-        fileName: fileName,
-        format: format,
-        itemName: itemName,
-        noteCount: noteCount,
-        imageCount: imageCount,
-        entries: entries,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        initialError: initialError,
-        canShare: filePath.length > 0,
-        onBack: (): void => {
-          this.openShareDialog(scope, path, targetVaultId, vaultNoteCount, focusReturnId);
-        },
-        onRetryPreparation: onRetryPreparation,
-        onConfirm: (): Promise<void> => {
-          return this.shareFile(filePath, fileName, utd, registry);
-        }
-      }),
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      autoCancel: false,
-      customStyle: true
-    });
-    this.shareFilePreviewCtl.open();
-  }
-
-  private async shareLink(url: string, title: string, registry: VaultRegistry): Promise<void> {
-    const shared = new systemShare.SharedData({
-      utd: uniformTypeDescriptor.UniformDataType.HYPERLINK,
-      content: url,
-      title: title,
-      label: 'HYPERLINK'
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
-  }
-
-  private openShareTextPreview(preview: NoteTextSharePreview, notePath: string, initialError: string = '',
-    onRetryPreparation: () => Promise<void> = async (): Promise<void> => {}): void {
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    this.shareTextPreviewCtl?.close();
-    this.shareTextPreviewCtl = new CustomDialogController({
-      builder: ShareTextPreviewDialog({
-        itemName: preview.title,
-        initialContent: preview.content,
-        limitations: preview.limitations,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        initialError: initialError,
-        onRetryPreparation: onRetryPreparation,
-        onBack: (): void => { this.openShareDialog('note', notePath); },
-        onConfirm: (content: string): Promise<void> => { return this.shareTextContent(preview.title, content); }
-      }),
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      autoCancel: false,
-      customStyle: true
-    });
-    this.shareTextPreviewCtl.open();
-  }
-
-  private async shareTextContent(title: string, content: string): Promise<void> {
-    const registry: VaultRegistry = VaultRegistry.get();
-    if (!NoteTextShareService.isWithinShareLimit(title, content)) {
-      throw new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。');
-    }
-    const shared = new systemShare.SharedData({
-      utd: uniformTypeDescriptor.UniformDataType.TEXT,
-      content: content,
-      title: title,
-      label: 'TEXT'
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
-  }
-
   /** v1.56 56.2：@Watch 入口（热启动 / 冷启动晚到的分享载荷）。 */
   private onIncomingShareChanged(): void {
     if (this.incomingShareJson.length > 0) {
       setTimeout((): void => {
-        this.consumeIncomingShare();
+        this.shareFlowApi?.consumeIncomingShare();
       }, 0);
     }
-  }
-
-  /**
-   * v1.56 56.4：消费分享载荷。读 → **立刻清键**（防 @Watch 与消费双触发、防同键
-   * 重复弹层）→ 校验 → 错误载荷 toast、有效载荷弹保存确认层。
-   * JSON.parse 结果先 cast 到具名模型再校验（ShareIngestService.isValidPayload），
-   * 脏数据一律按「无法读取分享内容」兜住，不崩、不弹层。
-   */
-  private consumeIncomingShare(): void {
-    const raw: string = AppStorage.get<string>(ShareIngestService.STORAGE_KEY) ?? '';
-    AppStorage.setOrCreate(ShareIngestService.STORAGE_KEY, '');
-    if (raw.length === 0) {
-      return;
-    }
-    let payload: ShareIngestPayload;
-    try {
-      payload = JSON.parse(raw) as ShareIngestPayload;
-    } catch (error) {
-      promptAction.showToast({ message: '无法读取分享内容' });
-      return;
-    }
-    if (!ShareIngestService.isValidPayload(payload)) {
-      promptAction.showToast({ message: '无法读取分享内容' });
-      return;
-    }
-    if (payload.message.length > 0) {
-      promptAction.showToast({ message: payload.message });
-      return;
-    }
-    this.openSaveShareDialog(payload);
-  }
-
-  /** v1.56 56.3：拉起保存确认层（默认草稿按 56.3 标题链 / 正文模板算好再传入）。 */
-  private openSaveShareDialog(payload: ShareIngestPayload): void {
-    const registry: VaultRegistry = VaultRegistry.get();
-    const vaults: VaultEntry[] = registry.list();
-    if (vaults.length === 0) {
-      promptAction.showToast({ message: '还没有可写入的笔记本，无法保存分享内容' });
-      return;
-    }
-    const draft: ShareIngestDraft = ShareIngestService.buildDraft(payload, Date.now());
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    this.saveShareCtl?.close();
-    this.saveShareCtl = new CustomDialogController({
-      builder: SaveShareDialog({
-        initialTitle: draft.title,
-        initialContent: draft.content,
-        vaults: vaults,
-        defaultVaultId: this.currentVaultId.length > 0 ? this.currentVaultId : vaults[0].id,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        onCancel: (): void => {
-        },
-        onConfirm: (vaultId: string, rawName: string, content: string): Promise<void> => {
-          return this.saveSharedNote(vaultId, rawName, content);
-        }
-      }),
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      autoCancel: false,
-      customStyle: true
-    });
-    this.saveShareCtl.open();
-  }
-
-  /**
-   * v1.56 56.4：落盘与打开。
-   * - 保存位置固定目标库根（首期不做文件夹选择）：normalizeRelPath 后含 `/` 即拒绝；
-   * - 唯一命名去重走 NoteService.previewCreatePath + createNoteWithContent
-   *   （AtomicFile 原子写、CREATE_CONFLICT 不覆盖现有文件，硬约束 10/15 语义）；
-   * - 跨库保存先 switchVault；切换未完成只 toast，不盲目打开（避免把笔记开进错库）；
-   * - 成功：打开 + revealPath + 刷新树 + toast「已保存到〈库〉/〈文件名〉」。
-   */
-  private async saveSharedNote(vaultId: string, rawName: string, content: string): Promise<void> {
-    const registry: VaultRegistry = VaultRegistry.get();
-    const rel: string = NoteService.normalizeRelPath(rawName);
-    if (rel.indexOf('/') >= 0) {
-      throw new Error('保存位置固定在库根，标题不能包含 /');
-    }
-    const target: string = NoteService.previewCreatePath(registry, vaultId, rel);
-    await NoteService.createNoteWithContent(registry, vaultId, target, content);
-    if (vaultId !== this.currentVaultId) {
-      await this.switchVault(vaultId);
-      if (this.currentVaultId !== vaultId) {
-        promptAction.showToast({ message: '已保存到 ' + vaultId + '/' + target + '，但切换知识库未完成' });
-        return;
-      }
-    }
-    this.onSelectFile(target, 'left', true);
-    this.revealPath = target;
-    this.refreshFileTree();
-    if (this.breakpoint === Breakpoint.SM) {
-      this.setDrawerOpen(false);
-      this.smMode = 'edit';
-    }
-    promptAction.showToast({ message: '已保存到 ' + vaultId + '/' + target });
-  }
-
-  private waitForShareCaptureReady(): Promise<void> {
-    return new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {
-      this.shareCaptureReadyResolver = resolve;
-      this.shareCaptureReadyRejecter = reject;
-      this.shareCaptureReadyTimer = setTimeout((): void => {
-        this.rejectShareCaptureReady(new Error('分享预览加载超时，请重试'));
-      }, 10000);
-    });
-  }
-
-  private resolveShareCaptureReady(): void {
-    if (this.shareCaptureReadyResolver === null) {
-      return;
-    }
-    clearTimeout(this.shareCaptureReadyTimer);
-    this.shareCaptureReadyTimer = -1;
-    const resolve: () => void = this.shareCaptureReadyResolver;
-    this.shareCaptureReadyResolver = null;
-    this.shareCaptureReadyRejecter = null;
-    resolve();
-  }
-
-  private rejectShareCaptureReady(error: Error): void {
-    if (this.shareCaptureReadyRejecter === null) {
-      return;
-    }
-    clearTimeout(this.shareCaptureReadyTimer);
-    this.shareCaptureReadyTimer = -1;
-    const reject: (error: Error) => void = this.shareCaptureReadyRejecter;
-    this.shareCaptureReadyResolver = null;
-    this.shareCaptureReadyRejecter = null;
-    reject(error);
-  }
-
-  private cancelShareImageCapture(): void {
-    this.shareCaptureCancelled = true;
-    this.shareCaptureActive = false;
-    this.shareCaptureBridge.cancelShareCaptureRequests('分享图片生成已取消');
-    this.rejectShareCaptureReady(new Error('分享图片生成已取消'));
-  }
-
-  /**
-   * 53.10：读取分段快照的像素缓冲，用于旧帧检测。
-   * XT2 实测：滚动后 DOM 状态正确（scrollTop 回读一致），但组件快照可能取到
-   * 滚动前的旧合成表面（「一页渲染两页且重复」）。两段快照像素完全相同即旧帧。
-   */
-  private async readSegmentBuffer(snapshot: image.PixelMap): Promise<ArrayBuffer> {
-    const info: image.ImageInfo = await snapshot.getImageInfo();
-    const buffer: ArrayBuffer = new ArrayBuffer(info.size.width * info.size.height * 4);
-    await snapshot.readPixelsToBuffer(buffer);
-    return buffer;
-  }
-
-  /** 逐字节比较两个分段缓冲；首处差异立即判定不同（连续分段正常应在头部附近即分叉）。 */
-  private segmentBuffersIdentical(a: ArrayBuffer, b: ArrayBuffer): boolean {
-    if (a.byteLength !== b.byteLength) {
-      return false;
-    }
-    const av: Uint8Array = new Uint8Array(a);
-    const bv: Uint8Array = new Uint8Array(b);
-    for (let i: number = 0; i < av.length; i++) {
-      if (av[i] !== bv[i]) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  /**
-   * 53.10：带旧帧校验的分段快照。与上一分段像素完全相同 → 判定合成器未出新帧，
-   * 等待 180ms 重拍（最多 4 次）；重试耗尽报错，绝不输出重复内容。
-   * Markdown 连续空白会折叠、分页贪心装填，两段合法快照像素完全相同几乎不可能；
-   * 若出现该极端场景将以明确报错替代静默输出重复图。
-   */
-  private async captureSegmentVerified(prevBuffer: ArrayBuffer | null): Promise<ShareSegmentCapture> {
-    const maxAttempts: number = 4;
-    let attempt: number = 0;
-    while (true) {
-      const snapshot: image.PixelMap = await this.getUIContext().getComponentSnapshot()
-        .get(this.shareCaptureComponentId, { waitUntilRenderFinished: true });
-      const buffer: ArrayBuffer = await this.readSegmentBuffer(snapshot);
-      if (prevBuffer === null || !this.segmentBuffersIdentical(buffer, prevBuffer)) {
-        return { snapshot: snapshot, buffer: buffer };
-      }
-      await snapshot.release();
-      attempt++;
-      // 临时调试 53.10：旧帧重试记录（定位 XT2「两页重复」后移除）
-      hilog.info(0x0000, 'ShareDbg', 'stale segment retry attempt=%{public}d', attempt);
-      if (attempt >= maxAttempts) {
-        throw new Error('分享预览渲染未更新，请重试');
-      }
-      await new Promise<void>((resolve: () => void) => {
-        setTimeout((): void => {
-          resolve();
-        }, 180);
-      });
-    }
-  }
-
-  private async prepareNoteImageShare(vaultId: string, notePath: string,
-    itemName: string): Promise<ShareImagePreviewImage> {
-    const registry: VaultRegistry = VaultRegistry.get();
-    this.shareCaptureCancelled = false;
-    this.shareCapturePdfMode = false;
-    let sessionId: string = '';
-    let longImage: image.PixelMap | null = null;
-    const bridge: PreviewBridge = new PreviewBridge();
-    this.shareCaptureBridge = bridge;
-    try {
-      const markdown: string = await this.noteMarkdownForShare(vaultId, notePath);
-      if (this.shareCaptureCancelled) {
-        throw new Error('分享图片生成已取消');
-      }
-      bridge.setNoteDir(NoteShareService.parentOf(notePath));
-      bridge.setContent(markdown);
-      this.shareCaptureActive = true;
-      const ready: Promise<void> = this.waitForShareCaptureReady();
-      await ready;
-      await bridge.requestShareCaptureMetrics();
-      const initial: PreviewCaptureResult = await bridge.appendShareWatermark();
-      const captureTops: number[] = NoteImageShareService.pageTops(initial.scrollHeight, initial.viewportHeight);
-      const prepared: PreviewCaptureResult = await bridge.prepareShareCapturePages(captureTops.length);
-      // 临时调试：53.8 长图分页度量诊断（定位「长图分段尺寸不足」真因后移除）
-      hilog.info(0x0000, 'ShareDbg', 'initial sh=%{public}d vh=%{public}d vw=%{public}d st=%{public}d n=%{public}d',
-        initial.scrollHeight, initial.viewportHeight, initial.viewportWidth, initial.scrollTop, captureTops.length);
-      hilog.info(0x0000, 'ShareDbg', 'initialDbg %{public}s', initial.debug ?? '');
-      hilog.info(0x0000, 'ShareDbg', 'prepared sh=%{public}d vh=%{public}d vw=%{public}d st=%{public}d',
-        prepared.scrollHeight, prepared.viewportHeight, prepared.viewportWidth, prepared.scrollTop);
-      hilog.info(0x0000, 'ShareDbg', 'preparedDbg %{public}s', prepared.debug ?? '');
-      if (prepared.viewportHeight <= 0 || prepared.viewportWidth <= 0 ||
-        prepared.scrollHeight < captureTops.length * prepared.viewportHeight) {
-        throw new Error('长图分段尺寸不足，无法覆盖全文');
-      }
-      sessionId = NoteImageShareService.createSession(registry);
-      let geometry: NoteImageShareGeometry | null = null;
-      let captureWidth: number = 0;
-      let captureHeight: number = 0;
-      let prevSegmentBuffer: ArrayBuffer | null = null;
-      for (let i = 0; i < captureTops.length; i++) {
-        if (this.shareCaptureCancelled) {
-          throw new Error('分享图片生成已取消');
-        }
-        const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(captureTops[i]);
-        if (Math.abs(positioned.scrollTop - captureTops[i]) > 1) {
-          throw new Error('分享预览无法定位到第 ' + (i + 1).toString() + ' 个渲染分段');
-        }
-        if (Math.abs(positioned.viewportWidth - initial.viewportWidth) > 1 ||
-          Math.abs(positioned.viewportHeight - initial.viewportHeight) > 1) {
-          throw new Error('分享预览尺寸发生变化，请重新生成长图');
-        }
-        // 53.10：旧帧校验快照——与上一分段完全相同即重拍，杜绝「两页重复」
-        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevSegmentBuffer);
-        const segment = captured.snapshot;
-        prevSegmentBuffer = captured.buffer;
-        try {
-          const imageInfo = await segment.getImageInfo();
-          let segmentGeometry: NoteImageShareGeometry;
-          if (geometry === null) {
-            captureWidth = imageInfo.size.width;
-            captureHeight = imageInfo.size.height;
-            segmentGeometry = NoteImageShareService.longImageGeometry(imageInfo.size.width, imageInfo.size.height,
-              initial.scrollHeight, initial.viewportHeight);
-            geometry = segmentGeometry;
-            longImage = NoteImageShareService.createLongImage(segmentGeometry);
-          } else if (imageInfo.size.width !== captureWidth || imageInfo.size.height !== captureHeight) {
-            throw new Error('长图渲染期间视口尺寸发生变化，请重新生成');
-          } else {
-            segmentGeometry = geometry;
-          }
-          const segmentEnd: number = Math.min(initial.scrollHeight, captureTops[i] + initial.viewportHeight);
-          const destinationTop: number = Math.round(captureTops[i] * segmentGeometry.pixelsPerVp * segmentGeometry.scale);
-          const destinationBottom: number = i === captureTops.length - 1 ? segmentGeometry.height :
-            Math.round(segmentEnd * segmentGeometry.pixelsPerVp * segmentGeometry.scale);
-          const destinationHeight: number = destinationBottom - destinationTop;
-          const remainingHeight: number = segmentEnd - captureTops[i];
-          const cropHeight: number = Math.max(1, Math.min(imageInfo.size.height,
-            Math.round(imageInfo.size.height * remainingHeight / initial.viewportHeight)));
-          if (cropHeight < imageInfo.size.height) {
-            await segment.crop({ x: 0, y: 0, size: { width: imageInfo.size.width, height: cropHeight } });
-          }
-          if (longImage === null || destinationHeight <= 0) {
-            throw new Error('长图分段输出尺寸无效');
-          }
-          await NoteImageShareService.appendSegment(segment, longImage, destinationTop,
-            segmentGeometry.width, destinationHeight);
-        } finally {
-          await segment.release();
-        }
-      }
-      if (this.shareCaptureCancelled) {
-        throw new Error('分享图片生成已取消');
-      }
-      if (geometry === null || longImage === null) {
-        throw new Error('没有生成可分享的长图');
-      }
-      const filePath: string = NoteImageShareService.imagePath(registry, sessionId);
-      const completedImage: image.PixelMap = longImage;
-      longImage = null;
-      await NoteImageShareService.writeJpeg(filePath, completedImage);
-      if (this.shareCaptureCancelled) {
-        throw new Error('分享图片生成已取消');
-      }
-      this.shareCaptureActive = false;
-      this.shareImagePreviewSessionId = sessionId;
-      this.shareImagePreviewTitle = itemName;
-      this.shareImagePreviewImage = {
-        uri: fileUri.getUriFromPath(filePath),
-        aspectRatio: geometry.width / geometry.height,
-        width: geometry.width,
-        height: geometry.height,
-        theme: this.shareCaptureTheme,
-        scaled: geometry.scale < 1,
-        widthId: this.shareCaptureWidthId
-      };
-      return this.shareImagePreviewImage;
-    } catch (error) {
-      this.shareCaptureActive = false;
-      bridge.cancelShareCaptureRequests('分享图片生成已结束');
-      if (sessionId.length > 0) {
-        try {
-          NoteShareService.removeTree(registry, sessionId);
-        } catch (cleanupError) {
-          // The cache directory is private to this failed preparation and expires after 24 hours.
-        }
-      }
-      const err = error as Error;
-      throw new Error(err.message);
-    } finally {
-      if (longImage !== null) {
-        await longImage.release();
-      }
-      if (this.shareCaptureReadyTimer >= 0) {
-        clearTimeout(this.shareCaptureReadyTimer);
-        this.shareCaptureReadyTimer = -1;
-      }
-      this.shareCaptureReadyResolver = null;
-      this.shareCaptureReadyRejecter = null;
-    }
-  }
-
-  /** PDF 捕获页尺寸自适应（2026-11-11 修复，见字段注释）：挂捕获层前按当前窗口重算。 */
-  private updatePdfPageSize(): void {
-    const widthByHeight: number = this.windowHeightVp > 0 ? this.windowHeightVp *
-      NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT : this.pdfPageWidthVp;
-    const widthByWindow: number = this.windowWidthVp > 0 ? this.windowWidthVp : widthByHeight;
-    this.pdfPageWidthVp = Math.min(700, widthByWindow, widthByHeight);
-    this.pdfPageHeightVp = Math.round(this.pdfPageWidthVp *
-      NotePdfDocumentService.A4_HEIGHT_PT / NotePdfDocumentService.A4_WIDTH_PT);
-  }
-
-  /**
-   * v1.53 导出 PDF（需求 53.3）：复用隐藏捕获层按 A4 比例逐页渲染截图，
-   * 逐页 JPEG 经 PDF Kit 合成 note.pdf 后走文件预览分享（utd 精确类型 com.adobe.pdf）。
-   * 失败清理会话目录不留半成品；取消语义与长图一致。
-   */
-  private async prepareNotePdfShare(vaultId: string, notePath: string,
-    itemName: string): Promise<void> {
-    const registry: VaultRegistry = VaultRegistry.get();
-    if (!NotePdfDocumentService.isSupported()) {
-      throw new Error('此设备不支持 PDF 导出');
-    }
-    this.shareCaptureCancelled = false;
-    let sessionId: string = '';
-    const bridge: PreviewBridge = new PreviewBridge();
-    this.shareCaptureBridge = bridge;
-    try {
-      const markdown: string = await this.noteMarkdownForShare(vaultId, notePath);
-      if (this.shareCaptureCancelled) {
-        throw new Error('分享图片生成已取消');
-      }
-      bridge.setNoteDir(NoteShareService.parentOf(notePath));
-      bridge.setContent(markdown);
-      this.updatePdfPageSize();
-      this.shareCapturePdfMode = true;
-      this.shareCaptureActive = true;
-      await this.waitForShareCaptureReady();
-      await bridge.requestShareCaptureMetrics();
-      await bridge.appendShareWatermark();
-      const prepared: PreviewCaptureResult = await bridge.preparePdfPages(this.pdfPageHeightVp);
-      const pageCount: number = prepared.pageCount ?? 0;
-      if (pageCount <= 0 || pageCount > NotePdfDocumentService.MAX_PAGES) {
-        throw new Error('笔记超过单文件 PDF 页数上限；请改用 Markdown / ZIP');
-      }
-      const tops: number[] = JSON.parse(prepared.pageTops ?? '[]') as number[];
-      if (tops.length !== pageCount) {
-        throw new Error('PDF 分页结果无效，请重试');
-      }
-      if (Math.abs(prepared.viewportHeight - this.pdfPageHeightVp) > 2) {
-        throw new Error('PDF 页面尺寸与渲染视口不符，请重试');
-      }
-      sessionId = NoteImageShareService.createSession(registry);
-      const pageJpegs: string[] = [];
-      const pageAspects: number[] = [];
-      let expectedWidth: number = 0;
-      let expectedHeight: number = 0;
-      let prevPageBuffer: ArrayBuffer | null = null;
-      for (let i: number = 0; i < tops.length; i++) {
-        if (this.shareCaptureCancelled) {
-          throw new Error('分享图片生成已取消');
-        }
-        const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(tops[i]);
-        if (Math.abs(positioned.scrollTop - tops[i]) > 1) {
-          throw new Error('PDF 预览无法定位到第 ' + (i + 1).toString() + ' 页');
-        }
-        // 53.10：旧帧校验快照——与上一页完全相同即重拍，杜绝「一页内容渲染成两页」
-        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevPageBuffer);
-        const pageShot: image.PixelMap = captured.snapshot;
-        prevPageBuffer = captured.buffer;
-        try {
-          const imageInfo: image.ImageInfo = await pageShot.getImageInfo();
-          if (i === 0) {
-            expectedWidth = imageInfo.size.width;
-            expectedHeight = imageInfo.size.height;
-            if (Math.abs(expectedWidth / expectedHeight -
-              NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT) > 0.01) {
-              throw new Error('PDF 页面比例异常，请重试');
-            }
-          } else if (imageInfo.size.width !== expectedWidth || imageInfo.size.height !== expectedHeight) {
-            throw new Error('PDF 渲染期间页面尺寸变化，请重试');
-          }
-          // 53.12：贪心分页切片高（块边界）小于页高，整屏快照会把下一页开头的
-          // 内容重复拍进本页页尾（XT2 实测「三种形态」在页缝出现两次）。非末页
-          // 裁到切片高；末页含水印与补白保持整页。纸面纯白（PDF 模式强制 light，
-          // --paper:#fff），A4 页上图片下方留白即自然分页留白，无缝衔接。
-          const sliceVp: number = i === tops.length - 1 ? this.pdfPageHeightVp :
-            Math.max(1, Math.min(this.pdfPageHeightVp, tops[i + 1] - tops[i]));
-          const cropPx: number = Math.max(1, Math.min(imageInfo.size.height,
-            Math.round(imageInfo.size.height * sliceVp / this.pdfPageHeightVp)));
-          if (cropPx < imageInfo.size.height) {
-            await pageShot.crop({ x: 0, y: 0, size: { width: imageInfo.size.width, height: cropPx } });
-          }
-          const pagePath: string = registry.sharePath(sessionId + '/page-' + (i + 1).toString() + '.jpg');
-          await NoteImageShareService.writeJpegTo(pagePath, pageShot);
-          pageJpegs.push(pagePath);
-          pageAspects.push(imageInfo.size.width / cropPx);
-        } finally {
-          await pageShot.release();
-        }
-      }
-      if (this.shareCaptureCancelled) {
-        throw new Error('分享图片生成已取消');
-      }
-      // 53.7：先逐页捕获成 JPEG 进分页预览弹窗；「分享 PDF」确认后才在 onConfirm
-      // 里合成 PDF。捕获层此时卸下（页面已落盘），预览读会话目录里的 JPEG。
-      this.shareCaptureActive = false;
-      this.shareCapturePdfMode = false;
-      this.openSharePdfPreview(itemName, notePath, sessionId, pageJpegs, pageAspects, vaultId);
-    } catch (error) {
-      this.shareCaptureActive = false;
-      this.shareCapturePdfMode = false;
-      bridge.cancelShareCaptureRequests('PDF 导出已结束');
-      if (sessionId.length > 0) {
-        try {
-          NoteShareService.removeTree(registry, sessionId);
-        } catch (cleanupError) {
-          // 失败清理不掩盖原错误；会话目录有 24 小时过期机制兜底。
-        }
-      }
-      const err = error as Error;
-      throw new Error(err.message);
-    } finally {
-      if (this.shareCaptureReadyTimer >= 0) {
-        clearTimeout(this.shareCaptureReadyTimer);
-        this.shareCaptureReadyTimer = -1;
-      }
-      this.shareCaptureReadyResolver = null;
-      this.shareCaptureReadyRejecter = null;
-    }
-  }
-
-  /** v1.53 PDF 文件名：笔记名去 .md 后缀加 .pdf（无后缀直接加）。 */
-  private pdfFileNameOf(itemName: string): string {
-    return noteDisplayName(itemName) + '.pdf';
-  }
-
-  /**
-   * 53.7：PDF 分页预览。会话与弹窗编排在 model/SharePdfPreviewFlow，
-   * 此处只补布局参数与「合成完成 → 文件预览」「取消 → 回分享面板」两条回调。
-   */
-  private openSharePdfPreview(itemName: string, notePath: string, sessionId: string,
-    pageJpegs: string[], pageAspects: number[], vaultId: string): void {
-    const registry: VaultRegistry = VaultRegistry.get();
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    const request: SharePdfPreviewRequest = {
-      itemName: itemName,
-      fileName: this.pdfFileNameOf(itemName),
-      sessionId: sessionId,
-      pageJpegs: pageJpegs,
-      pageAspects: pageAspects,
-      windowWidthVp: this.windowWidthVp,
-      windowHeightVp: this.windowHeightVp,
-      singleScreen: shareSheet,
-      onComposed: (pdfPath: string): void => {
-        this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
-          itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
-          vaultId, -1, '', uniformTypeDescriptor.UniformDataType.PDF);
-      },
-      onCancelled: (): void => {
-        this.openShareDialog('note', notePath);
-      }
-    };
-    this.sharePdfPreviewFlow.open(request);
-  }
-
-  private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,
-    vaultId: string, initialError: string = '', paneWidthVp: number = 0): void {
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    const resolvedPaneWidthVp: number = paneWidthVp > 0 ? paneWidthVp : this.activeSharePaneWidthVp();
-    this.shareCapturePaneWidthVp = resolvedPaneWidthVp;
-    this.shareImagePreviewCtl?.close();
-    this.shareImagePreviewCtl = new CustomDialogController({
-      builder: ShareImagePreviewDialog({
-        itemName: itemName,
-        image: previewImage,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        widthVp: this.shareCaptureWidthVp,
-        paneWidthVp: resolvedPaneWidthVp,
-        initialWidthId: this.shareCaptureWidthId,
-        initialTheme: this.shareCaptureTheme,
-        initialError: initialError,
-        onConfirm: (): Promise<void> => {
-          const image: ShareImagePreviewImage = this.shareImagePreviewImage;
-          const title: string = this.shareImagePreviewTitle;
-          return this.shareImage(image, title, VaultRegistry.get());
-        },
-        onGenerate: async (widthId: string, theme: string): Promise<ShareImagePreviewImage> => {
-          this.shareCaptureWidthId = widthId;
-          this.shareCaptureTheme = theme;
-          this.shareCaptureWidthVp = this.shareLayoutWidthVp(widthId, resolvedPaneWidthVp);
-          this.cleanupShareImagePreview();
-          const preview: ShareImagePreviewImage = await this.prepareNoteImageShare(
-            vaultId, notePath, itemName);
-          this.ensureShareImagePreferenceStore();
-          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveTheme(theme)) {
-            promptAction.showToast({ message: '本次外观已应用，但未能保存长图偏好' });
-          }
-          if (!(this.shareImagePreferenceStore as ShareImagePreferenceStore).saveWidth(widthId)) {
-            promptAction.showToast({ message: '本次宽度已应用，但未能保存长图偏好' });
-          }
-          return preview;
-        },
-        onCancel: (): void => {
-          this.cancelShareImageCapture();
-          this.cleanupShareImagePreview();
-          this.openShareDialog('note', notePath);
-        }
-      }),
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      autoCancel: false,
-      customStyle: true
-    });
-    this.shareImagePreviewCtl.open();
-  }
-
-  private cleanupShareImagePreview(): void {
-    const sessionId: string = this.shareImagePreviewSessionId;
-    this.shareImagePreviewSessionId = '';
-    this.shareImagePreviewImage = {
-      uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
-    };
-    if (sessionId.length === 0) {
-      return;
-    }
-    try {
-      NoteShareService.removeTree(VaultRegistry.get(), sessionId);
-    } catch (error) {
-      hilog.warn(DOMAIN, TAG, '分享预览临时文件清理失败');
-    }
-  }
-
-  private async shareImage(previewImage: ShareImagePreviewImage, title: string, registry: VaultRegistry): Promise<void> {
-    if (previewImage.uri.length === 0) {
-      throw new Error('长图文件无效，请重新生成');
-    }
-    const shared = new systemShare.SharedData({
-      utd: uniformTypeDescriptor.UniformDataType.JPEG,
-      uri: previewImage.uri,
-      title: title,
-      label: 'IMAGE'
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
   }
 
   /**
@@ -10481,139 +7530,6 @@ struct Index {
     .height('100%')
   }
 
-  private openShareDialog(scope: ShareLinkScope, path: string, targetVaultId: string = this.currentVaultId,
-    vaultNoteCount: number = -1, focusReturnId: string = ''): void {
-    const registry: VaultRegistry = VaultRegistry.get();
-    const entries: VaultEntry[] = registry.list();
-    let vault: VaultEntry | null = null;
-    for (let i = 0; i < entries.length; i++) {
-      if (entries[i].id === targetVaultId) {
-        vault = entries[i];
-        break;
-      }
-    }
-    if (vault === null) {
-      promptAction.showToast({ message: '这个知识库已不存在' });
-      return;
-    }
-    const notePath: string = vault.id === this.currentVaultId ? this.activeFilePath() : '';
-    if (scope === 'note' && notePath.length === 0) {
-      promptAction.showToast({ message: '请先打开一篇笔记' });
-      return;
-    }
-    const folderPath: string = this.sharePathForScope('folder', scope, path, notePath);
-    const noteName: string = notePath.substring(notePath.lastIndexOf('/') + 1);
-    const noteOptions: ShareFormatOption[] = [
-      { value: 'image', label: '长图', detail: '整篇笔记合成一张带水印的图片。', icon: 'image' },
-      { value: 'file', label: 'Markdown / ZIP', detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc' },
-      { value: 'text', label: '文本', detail: '预览并编辑本次分享文本，不写回笔记。', icon: 'message' }
-    ];
-    if (NotePdfDocumentService.isSupported()) {
-      noteOptions.splice(1, 0, {
-        value: 'pdf', label: 'PDF 文档',
-        detail: 'A4 竖版逐页排版，适合打印与通用阅读。', icon: 'doc'
-      });
-    }
-    const folderOptions: ShareFormatOption[] = [
-      { value: 'zip', label: 'ZIP 文件', detail: '保留目录结构，并补齐引用的本地图片。', icon: 'archive' }
-    ];
-    const vaultOptions: ShareFormatOption[] = [
-      { value: 'zip', label: 'ZIP 文件', detail: '打包当前知识库中的可分享文件。', icon: 'archive' }
-    ];
-    const noteOption: ShareScopeOption = {
-      scope: 'note',
-      path: notePath,
-      label: '笔记',
-      title: '分享笔记',
-      itemName: noteName,
-      description: '当前笔记及其引用的库内图片，不包含链接到的其他笔记。',
-      summary: '当前编辑内容',
-      notice: '',
-      available: notePath.length > 0,
-      options: noteOptions
-    };
-    const folderOption: ShareScopeOption = {
-      scope: 'folder',
-      path: folderPath,
-      label: '文件夹',
-      title: '分享文件夹',
-      itemName: folderPath.length > 0 ? folderPath : '知识库根目录',
-      description: '递归包含所选文件夹中的文件，并补齐笔记引用的库内图片。',
-      summary: '递归文件与图片',
-      notice: '',
-      available: true,
-      options: folderOptions
-    };
-    const vaultOption: ShareScopeOption = {
-      scope: 'vault',
-      path: '',
-      label: '知识库',
-      title: '分享知识库',
-      itemName: vault.id,
-      description: '排除隐藏项、回收站、缓存、草稿、凭据及内部状态。',
-      summary: focusReturnId.length > 0 && vaultNoteCount >= 0
-        ? vaultNoteCount.toString() + ' 篇笔记' : '当前库的可分享文件',
-      notice: '',
-      available: true,
-      options: vaultOptions
-    };
-    const folderScopeDistinct: boolean = folderPath.length > 0;
-    const scopeOptions: ShareScopeOption[] = focusReturnId.length > 0
-      ? [vaultOption]
-      : folderScopeDistinct ? [noteOption, folderOption, vaultOption] : [noteOption, vaultOption];
-    for (let i: number = 0; i < scopeOptions.length; i++) {
-      if (vault.type === 'git' && focusReturnId.length === 0) {
-        try {
-          const linkResult = ShareLinkService.build(vault, scopeOptions[i].scope, scopeOptions[i].path);
-          scopeOptions[i].options.push({
-            value: 'link',
-            label: '远端网页链接',
-            detail: '来自已配置的 Git 远端和跟踪分支。',
-            icon: 'share'
-          });
-          scopeOptions[i].notice = linkResult.accessNotice;
-        } catch (error) {
-          const err = error as BusinessError;
-          const linkNoticeReason: string = err.message ?? '';
-          scopeOptions[i].notice = linkNoticeReason.length > 0
-            ? '远端链接准备失败：' + linkNoticeReason : '远端链接准备失败；仍可分享本地文件。';
-        }
-      }
-    }
-
-    const shareSheet: boolean = this.isSingleScreenLayout() ||
-      (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    let focusRestoreScheduled: boolean = false;
-    const restoreShareTriggerFocus = (): void => {
-      if (focusReturnId.length === 0 || focusRestoreScheduled) {
-        return;
-      }
-      focusRestoreScheduled = true;
-      setTimeout((): void => {
-        FocusRequest.safely(this.getUIContext(), focusReturnId);
-      }, 0);
-    };
-    this.shareNoteCtl = new CustomDialogController({
-      builder: ShareNoteDialog({
-        scopeOptions: scopeOptions,
-        initialScope: scope,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        onConfirm: (targetScope: ShareLinkScope, targetPath: string, format: string, itemName: string): void => {
-          void this.prepareShare(targetScope, targetPath, format, itemName, vault as VaultEntry,
-            vaultNoteCount, focusReturnId);
-        },
-        onDismiss: restoreShareTriggerFocus
-      }),
-      autoCancel: true,
-      cancel: restoreShareTriggerFocus,
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      customStyle: true
-    });
-    this.shareNoteCtl.open();
-  }
-
   /**
    * 撤销条（1.7，照原型 .undo-bar / HdsSnackBar 观感）：
    * 深底 snack_bg + snack_text 文案 + snack_action 色「撤销」按钮，圆角 --r-snack。
@@ -10653,33 +7569,6 @@ struct Index {
     // 原型 --elev-3 的单层近似（与 VaultMenu 同款）
     .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
     .margin({ bottom: Space.s6 })
-  }
-
-  @Builder
-  ShareImageCaptureLayer() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      PreviewWebView({
-        bridge: this.shareCaptureBridge,
-        componentId: this.shareCaptureComponentId,
-        hideScrollBar: true,
-        themeOverride: this.shareCapturePdfMode ? 'light' : this.shareCaptureTheme,
-        onReadAsset: (relPath: string): string => {
-          return this.readVaultAsset(relPath);
-        },
-        onReady: (): void => {
-          this.resolveShareCaptureReady();
-        },
-        onError: (msg: string): void => {
-          hilog.error(DOMAIN, TAG, '分享预览加载错误');
-          this.rejectShareCaptureReady(new Error('分享预览加载失败，请重试'));
-        }
-      })
-        .width(this.shareCapturePdfMode ? this.pdfPageWidthVp :
-          (this.shareCaptureWidthVp > 0 ? this.shareCaptureWidthVp : '100%'))
-        .height(this.shareCapturePdfMode ? this.pdfPageHeightVp : '100%')
-    }
-    .width('100%')
-    .height('100%')
   }
 
   /**
@@ -10754,7 +7643,7 @@ struct Index {
           }
           if (this.activeFilePath().length > 0) {
             this.IconButton('share', $r('app.color.text_secondary'), (): void => {
-              this.openShareNoteDialog();
+              this.shareFlowApi?.openShareNoteDialog();
             })
           }
         }
@@ -10857,7 +7746,7 @@ struct Index {
         .accessibilityText(this.activeNoteMenuScopeLabel())
       this.MobileMoreMenuItem('share', 'share', '分享笔记',
         this.activeFilePath().length > 0, (): void => {
-          this.openShareNoteDialog();
+          this.shareFlowApi?.openShareNoteDialog();
         })
       this.MobileMoreMenuItem('backlinks', 'link',
         this.backlinksExpanded && this.backlinksPane === this.activeNotePane() ? '隐藏反链' : '查看反链',
@@ -11137,7 +8026,7 @@ struct Index {
       },
       onSharePath: (relPath: string, isDir: boolean): void => {
         this.closeNoteNavigation();
-        this.openSharePath(relPath, isDir);
+        this.shareFlowApi?.openSharePath(relPath, isDir);
       },
       onSwipeDelete: (relPath: string): void => {
         this.closeNoteNavigation();
@@ -11180,139 +8069,6 @@ struct Index {
     .onClick((): void => { this.setActivePane('left'); })
   }
 
-  @Builder
-  FormatAction(label: string, kind: string, pane: string) {
-    Row() {
-      if (kind === 'task') {
-        Icon('task', Space.s5, $r('app.color.text_primary'))
-      } else {
-        Text(label)
-          .fontSize(FontSize.s3)
-          .fontWeight(kind === 'bold' ? FontWeight.Bold : FontWeight.Normal)
-          .fontStyle(kind === 'italic' ? FontStyle.Italic : FontStyle.Normal)
-          .fontColor($r('app.color.text_primary'))
-      }
-    }
-    .width(Size.touch)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(Radius.icon)
-    .enabled(this.isPaneEditable(pane))
-    .onClick((): void => { this.applyEditorFormat(kind, pane); })
-    // v1.10 读屏：kind === 'task' 只画图标，没有可见文字，统一用 label 当名称
-    .accessibilityText(label)
-  }
-
-  @Builder
-  ImageFormatAction(pane: string) {
-    Row() {
-      // L-7/Z2：全局 @Builder 按值实参不随状态刷新，忙碌色必须走 if 分支，不能写成三元实参
-      if (this.isImagePickerBusy(pane)) {
-        Icon('image', Space.s5, $r('app.color.text_tertiary'))
-      } else {
-        Icon('image', Space.s5, $r('app.color.text_primary'))
-      }
-    }
-    .width(Size.touch)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(Radius.icon)
-    .enabled(this.isPaneEditable(pane) && !this.isImagePickerBusy(pane))
-    .onClick((): void => { void this.pickImageForCurrentNote(pane); })
-    .accessibilityText(this.isImagePickerBusy(pane) ? '正在选择图片' : '插入图片')
-  }
-
-  @Builder
-  TableGridCell(pane: string, rows: number, columns: number, selected: boolean) {
-    Row() {
-      Text(`${rows}×${columns}`)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_primary'))
-    }
-    .width(Size.touch)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(Radius.control)
-    .backgroundColor(selected ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
-    .focusable(true)
-    .id(this.tableGridCellFocusId(pane, rows, columns))
-    .enabled(this.isPaneEditable(pane))
-    .onAppear((): void => {
-      if (selected && this.tableGridOpen && this.tableGridPane === pane) {
-        FocusRequest.safely(this.getUIContext(), this.tableGridCellFocusId(pane, rows, columns));
-      }
-    })
-    .onKeyEvent((event: KeyEvent): boolean => {
-      return this.onTableGridCellKey(pane, rows, columns, event);
-    })
-    .onClick((): void => {
-      this.insertTableFromGrid(pane, rows, columns);
-    })
-    .accessibilityText(`插入 ${rows} 行 ${columns} 列表格`)
-  }
-
-  @Builder
-  TableGridPicker(pane: string) {
-    Column({ space: Space.s2 }) {
-      Text('选择表格大小')
-        .fontSize(FontSize.body2)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('app.color.text_primary'))
-        .width('100%')
-      Scroll() {
-        Column({ space: Space.s1 }) {
-          ForEach(this.tableGridRowOptions, (rows: number): void => {
-            Row({ space: Space.s1 }) {
-              ForEach(this.tableGridColumnOptions, (columns: number): void => {
-                this.TableGridCell(pane, rows, columns,
-                  this.tableGridFocusedRows === rows && this.tableGridFocusedColumns === columns)
-              }, (columns: number): string => String(columns))
-            }
-            .width('100%')
-          }, (rows: number): string => String(rows))
-        }
-        .width('100%')
-      }
-      .width('100%')
-      .constraintSize({ maxHeight: Math.max(Size.touch, this.formatMenuMaxHeight - Size.touch * 2) })
-      .scrollBar(BarState.Auto)
-    }
-    .width(Size.touch * 6 + Space.s1 * 5 + Space.s5 * 2)
-    .constraintSize({ maxHeight: this.formatMenuMaxHeight })
-    .padding(Space.s5)
-    .borderRadius(Radius.card)
-    .backgroundColor($r('app.color.bg_card'))
-    .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
-  }
-
-  @Builder
-  TableInsertAction(pane: string) {
-    Row() {
-      Icon('plus', Space.s5, $r('app.color.text_primary'))
-    }
-    .width(Size.touch)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(Radius.icon)
-    .enabled(this.isPaneEditable(pane))
-    .onClick((): void => { this.toggleTableGrid(pane); })
-    .bindPopup(this.tableGridOpen && this.tableGridPane === pane, {
-      builder: this.TableGridPicker(pane),
-      // v1.46 46.9：格式栏停靠栏顶后，表格网格向下弹（原 Placement.Top 会顶出栏外）
-      placement: Placement.Bottom,
-      enableArrow: false,
-      mask: false,
-      autoCancel: true,
-      popupColor: Color.Transparent
-    })
-    .accessibilityText('插入表格')
-  }
-
   /**
    * Aa 面板避让系统选区 UI（faqs-arkui-669 思路）：开面板时清当前栏位 Web 的 DOM 选区，
    * 隐藏与面板重叠的选区手柄/胶囊菜单；Web 侧保留编辑选区（简单模式 savedEditableSelection、
@@ -11336,128 +8092,6 @@ struct Index {
       return;
     }
     this.previewBridgeForPane(pane).editHistory(action);
-  }
-
-  @Builder
-  FormatHistoryButton(action: PreviewEditHistoryAction, label: string) {
-    Row({ space: Space.s2 }) {
-      Icon(action, Space.s4, $r('app.color.text_secondary'))
-      Text(label)
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.text_secondary'))
-    }
-    .layoutWeight(1)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(Radius.control)
-    .onClick((): void => { this.applyFormatHistoryAction(action); })
-    .accessibilityText(label)
-  }
-
-  @Builder
-  FormatMenu() {
-    Column() {
-      Row() {
-        Text('文字与段落')
-          .fontSize(FontSize.s2)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-        Text('完成')
-          .fontSize(FontSize.body1)
-          .fontColor($r('app.color.text_primary'))
-          .height(Size.touch)
-          .textAlign(TextAlign.Center)
-          .focusable(true)
-          .onClick((): void => { this.closeFormatMenu(true); })
-      }
-      .width('100%')
-      .height(Size.touch)
-      .padding({ left: Space.s5, right: Space.s5 })
-      .alignItems(VerticalAlign.Center)
-      Scroll() {
-        Column({ space: Space.s4 }) {
-          Column() {
-            Text('段落')
-              .fontSize(FontSize.body2)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-            GridRow({ columns: 3, gutter: { x: Space.s2, y: Space.s2 } }) {
-              GridCol() { this.FormatCell('Aa', '正文', 'paragraph') }
-              GridCol() { this.FormatCell('H1', '1 级标题', 'h1') }
-              GridCol() { this.FormatCell('H2', '2 级标题', 'h2') }
-              GridCol() { this.FormatCell('H3', '3 级标题', 'h3') }
-              GridCol() { this.FormatCell('H4', '4 级标题', 'h4') }
-              GridCol() { this.FormatCell('H5', '5 级标题', 'h5') }
-              GridCol() { this.FormatCell('H6', '6 级标题', 'h6') }
-            }
-            .width('100%')
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
-          Column() {
-            Text('文字')
-              .fontSize(FontSize.body2)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-            GridRow({ columns: 3, gutter: { x: Space.s2, y: Space.s2 } }) {
-              GridCol() { this.FormatCell('B', '加粗', 'bold') }
-              GridCol() { this.FormatCell('I', '斜体', 'italic') }
-              GridCol() { this.FormatCell('</>', '行内代码', 'inlineCode') }
-              GridCol() { this.FormatCell('```', '代码块', 'code') }
-              GridCol() { this.FormatCell('↗', '链接', 'link') }
-            }
-            .width('100%')
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
-          .border({ width: { top: 1 }, color: $r('app.color.line') })
-          .padding({ top: Space.s4 })
-          Column() {
-            Text('列表与引用')
-              .fontSize(FontSize.body2)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_secondary'))
-              .width('100%')
-            GridRow({ columns: 3, gutter: { x: Space.s2, y: Space.s2 } }) {
-              GridCol() { this.FormatCell('≡', '无序列表', 'list') }
-              GridCol() { this.FormatCell('1.', '有序列表', 'ordered') }
-              GridCol() { this.FormatCell('☑', '待办', 'task') }
-              GridCol() { this.FormatCell('❞', '引用', 'quote') }
-            }
-            .width('100%')
-          }
-          .width('100%')
-          .alignItems(HorizontalAlign.Start)
-          .border({ width: { top: 1 }, color: $r('app.color.line') })
-          .padding({ top: Space.s4 })
-          Row({ space: Space.s2 }) {
-            this.FormatHistoryButton('undo', '撤销')
-            this.FormatHistoryButton('redo', '重做')
-          }
-          .width('100%')
-          .border({ width: { top: 1 }, color: $r('app.color.line') })
-          .padding({ top: Space.s4, left: Space.s5, right: Space.s5 })
-        }
-        .width('100%')
-        .margin({ top: Space.s4 })
-        .padding({ left: Space.s5, right: Space.s5, bottom: Space.s5 })
-      }
-      .width('100%')
-      .constraintSize({ maxHeight: Math.max(0, this.formatMenuMaxHeight - Size.touch - Space.s5) })
-      .scrollBar(BarState.Auto)
-    }
-    .width(this.formatMenuWidth)
-    .constraintSize({ maxHeight: this.formatMenuMaxHeight })
-    .padding({ top: Space.s5 })
-    .borderRadius(Radius.card)
-    .backgroundColor($r('app.color.bg_card'))
-    .border({ width: 1, color: $r('app.color.line') })
-    .shadow({ radius: 80, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 24 })
-    .onKeyEvent((event: KeyEvent): void => { this.onFormatMenuKey(this.formatMenuPane, event); })
   }
 
   /** 关闭 Aa 面板后按开面板时记录的栏位/模式还原选区 UI；未压制时是空操作 */
@@ -11503,976 +8137,61 @@ struct Index {
   }
 
   @Builder
-  BlockPanelBlockIdAction() {
-    if (this.blockPanelBlockIdMessage.length > 0) {
-      Text(this.blockPanelBlockIdMessage)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-    } else if (this.blockPanelBlockIdReady) {
-      Column({ space: Space.s1 }) {
-        Row() {
-          Text(this.blockPanelBlockId.length > 0 ? '复制块链接' : '复制指向本段的链接')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
+  private panelContent(pane: string) {
+    BlockPropertyPanel({
+      sheetSide: pane,
+      blockPanelPane: this.blockPanelPane,
+      blockPanelSourceVaultId: this.blockPanelSourceVaultId,
+      blockPanelSourcePath: this.blockPanelSourcePath,
+      blockPanelMaxHeight: this.blockPanelMaxHeight,
+      blockSourceEditing: this.blockSourceEditing,
+      currentVaultId: this.currentVaultId,
+      leftOpenRequestId: this.leftOpenRequestId,
+      rightOpenRequestId: this.rightOpenRequestId,
+      pushedAnchor: this.pushedAnchor,
+      pushedAnchorSeq: this.pushedAnchorSeq,
+      pushedAnchorMode: this.pushedAnchorMode,
+      onCloseRequest: (restoreFocus: boolean): void => { this.closeBlockPropertyPanel(restoreFocus); },
+      onContentActionClose: (): void => { this.closeBlockPanelForContentAction(); },
+      onAnchorChange: (anchor: PreviewBlockAnchor): void => {
+        if (this.blockPanelAnchor !== anchor) {
+          this.blockPanelAnchor = anchor;
         }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .focusable(true)
-        .accessibilityText(this.blockPanelBlockId.length > 0
-          ? `复制块链接 [[#^${this.blockPanelBlockId}]]`
-          : '复制指向本段的链接，需要先生成 ID')
-        .onClick((): void => { void this.copyBlockLink(); })
-        if (this.blockPanelBlockId.length === 0) {
-          Text('需要先生成 ID；本操作不会自动生成。')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-            .padding({ left: Space.s3, right: Space.s3 })
-        }
-      }
-      .width('100%')
-    }
-  }
-
-  @Builder
-  TableDirectionOption(axis: string, side: string, label: string, selected: boolean) {
-    Text(label)
-      .fontSize(FontSize.body2)
-      .fontColor(selected ? $r('app.color.brand') : $r('app.color.text_primary'))
-      .width(Size.touch * 1.5)
-      .height(Size.touch)
-      .textAlign(TextAlign.Center)
-      .backgroundColor(selected ? $r('app.color.brand_bg') : $r('app.color.bg_secondary'))
-      .borderRadius(Radius.control)
-      .focusable(true)
-      .onClick((): void => {
-        if (axis === 'row') {
-          this.tableInsertRowSide = side;
+      },
+      onTitleChange: (title: string): void => { this.blockPanelTitle = title; },
+      onSourceEditingChange: (editing: boolean): void => { this.blockSourceEditing = editing; },
+      onDirtyChange: (pane: string, dirty: boolean): void => {
+        if (pane === 'right') {
+          this.rightEditorDirty = dirty;
         } else {
-          this.tableInsertColumnSide = side;
+          this.editorDirty = dirty;
         }
-      })
-      .accessibilityText(`${axis === 'row' ? '行' : '列'}插入方向：${label}`)
-  }
-
-  @Builder
-  TableStructurePanelAction(label: string, icon: string, type: string, side: string, enabled: boolean) {
-    Row({ space: Space.s2 }) {
-      Icon(icon, Space.s5, $r('app.color.text_primary'))
-      Text(label)
-        .fontSize(FontSize.body2)
-        .fontColor($r('app.color.text_primary'))
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(Size.touch)
-    .padding({ left: Space.s3, right: Space.s3 })
-    .backgroundColor($r('app.color.bg_secondary'))
-    .borderRadius(Radius.control)
-    .enabled(enabled)
-    .focusable(true)
-    .onClick((): void => {
-      this.applyTableStructureOperation(this.blockPanelPane, type, side);
+      },
+      isDirty: (pane: string): boolean => pane === 'right' ? this.rightEditorDirty : this.editorDirty,
+      isCurrentTarget: (pane: string, vaultId: string, path: string, requestId: number, documentRevision: number): boolean =>
+        this.isCurrentBlockSourceTarget(pane, vaultId, path, requestId, documentRevision),
+      requestRelayout: (pane: string): void => { this.updateBlockPropertyPanelLayout(pane); },
+      editorBridgeFor: (pane: string): EditorBridge => this.editorBridgeForPane(pane),
+      previewBridgeFor: (pane: string): PreviewBridge => this.previewBridgeForPane(pane),
+      scheduleSaveFor: (pane: string): void => {
+        if (pane === 'right') {
+          this.scheduleRightSave();
+        } else {
+          this.scheduleSave();
+        }
+      },
+      flushSimplePreview: (): Promise<string> => this.flushSimplePreviewChanges(),
+      paneFileFor: (pane: string): string => this.paneFilePath(pane),
+      onResetSaveFeedback: (): void => { this.resetSaveFeedback(); },
+      recordFailure: (operation: RecentErrorOperation, phase: RecentErrorPhase, category: RecentErrorCategory, outcome: RecentErrorOutcome, nextStep: RecentErrorNextStep, code?: number, message?: string): void =>
+        this.recordBackgroundFailure(operation, phase, category, outcome, nextStep, code, message),
+      isImagePickerBusyFor: (pane: string): boolean => pane === 'right' ? this.rightImagePickerBusy : this.imagePickerBusy,
+      pickImage: (pane: string, replaceSelectedImage: boolean, context: PanelImageReplaceContext | null): void => {
+        void this.pickImageForCurrentNote(pane, replaceSelectedImage, context);
+      },
+      applyTableOp: (pane: string, type: string, side: string): void => { this.applyTableStructureOperation(pane, type, side); },
+      openNoteInOtherPane: (relPath: string): void => { this.openFileInOtherPane(relPath); }
     })
-    .accessibilityText(label)
-  }
-
-  @Builder
-  TableStructurePanel() {
-    if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tableStructureEditable) {
-      Column({ space: Space.s2 }) {
-        Text('插入行')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-        Row({ space: Space.s2 }) {
-          this.TableDirectionOption('row', 'up', '上方',
-            this.tableInsertRowSide === 'up')
-          this.TableDirectionOption('row', 'down', '下方',
-            this.tableInsertRowSide === 'down')
-        }
-        .width('100%')
-        this.TableStructurePanelAction('插入行', 'plus', 'insertRow', this.tableInsertRowSide,
-          this.blockPanelAnchor.tableRow > 0 || this.tableInsertRowSide === 'down')
-        if (this.blockPanelAnchor.tableRow === 0 && this.tableInsertRowSide === 'up') {
-          Text('表头上方不能插入行')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-        }
-
-        Text('插入列')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .padding({ top: Space.s2 })
-        Row({ space: Space.s2 }) {
-          this.TableDirectionOption('column', 'left', '左侧',
-            this.tableInsertColumnSide === 'left')
-          this.TableDirectionOption('column', 'right', '右侧',
-            this.tableInsertColumnSide === 'right')
-        }
-        .width('100%')
-        this.TableStructurePanelAction('插入列', 'plus', 'insertColumn', this.tableInsertColumnSide, true)
-
-        Text('删除')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-          .padding({ top: Space.s2 })
-        this.TableStructurePanelAction('删除当前行', 'trash', 'deleteRow', 'down',
-          this.blockPanelAnchor.tableRow > 0)
-        if (this.blockPanelAnchor.tableRow === 0) {
-          Text('表头行不能删除')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-        }
-        this.TableStructurePanelAction('删除当前列', 'trash', 'deleteColumn', 'left',
-          this.blockPanelAnchor.tableColumns > 1)
-        if (this.blockPanelAnchor.tableColumns <= 1) {
-          Text('至少保留一列')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-        }
-      }
-      .width('100%')
-      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-    }
-  }
-
-  @Builder
-  BlockPropertyPanel() {
-    if (this.blockSourceEditing) {
-      Column() {
-        Text(this.blockSourceBlockType)
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_secondary'))
-          .width('100%')
-        Text(this.blockSourceDescription())
-          .fontSize(FontSize.body3)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-        TextArea({ text: this.blockSourceDraft })
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .fontFamily('monospace')
-          .backgroundColor($r('app.color.bg_secondary'))
-          .width('100%')
-          .layoutWeight(1)
-          .constraintSize({ minHeight: Size.touch * 4 })
-          .onChange((value: string): void => { this.blockSourceDraft = value; })
-          .onKeyEvent((event: KeyEvent): boolean => { return this.onBlockSourceEditorKey(event); })
-          .accessibilityText('块源码')
-        Row({ space: Space.s2 }) {
-          Button('取消')
-            .onClick((): void => { this.cancelBlockSourceDrawer(); })
-          Button('保存')
-            .onClick((): void => { void this.saveBlockSourceDrawer(); })
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.End)
-      }
-      .width('100%')
-      .constraintSize({ maxHeight: this.blockPanelMaxHeight })
-      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-      .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
-    } else {
-      Column() {
-        Scroll() {
-          Column() {
-            if (this.blockPanelAnchor !== null &&
-              (this.blockPanelAnchor.type === 'html' || this.blockPanelAnchor.type === 'directive' ||
-              this.blockPanelAnchor.type === 'mixed' ||
-              (this.blockPanelAnchor.type === 'paragraph' && !this.blockPanelAnchor.inlineSafe))) {
-              Text('此内容请在专业模式编辑')
-                .fontSize(FontSize.caption)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'table') {
-              this.TableStructurePanel()
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'paragraph' &&
-              this.blockPanelAnchor.tapType === '' && this.blockPanelAnchor.inlineIndex < 0) {
-              if (this.blockPanelInlineItems.length > 0) {
-                ForEach(this.blockPanelInlineItems, (item: PreviewBlockInlineItem): void => {
-                  Row({ space: Space.s2 }) {
-                    Text(this.blockPanelInlineItemLabel(item))
-                      .fontSize(FontSize.body2)
-                      .fontColor($r('app.color.text_primary'))
-                      .layoutWeight(1)
-                    Icon('chevronRight', Space.s4, $r('app.color.text_tertiary'))
-                  }
-                  .width('100%')
-                  .height(Size.touch)
-                  .padding({ left: Space.s3, right: Space.s3 })
-                  .focusable(true)
-                  .accessibilityText(this.blockPanelInlineItemLabel(item))
-                  .onClick((): void => { this.openBlockInlineItem(item); })
-                }, (item: PreviewBlockInlineItem): string => String(item.index))
-              }
-              this.BlockPanelBlockIdAction()
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'callout') {
-              if (this.blockPanelCalloutReady && this.blockPanelCalloutModel !== null) {
-                if (this.blockPanelCalloutModel.knownType) {
-                  Column({ space: Space.s1 }) {
-                    Text('类型')
-                      .fontSize(FontSize.caption)
-                      .fontColor($r('app.color.text_secondary'))
-                      .width('100%')
-                    Select(this.blockPanelCalloutTypeOptions())
-                      .selected(this.blockPanelCalloutTypeIndex())
-                      .value(this.blockPanelCalloutTypeValue())
-                      .fontColor($r('app.color.text_primary'))
-                      .width('100%')
-                      .onSelect((index: number, _value: string): void => {
-                        void this.saveBlockPanelCalloutType(index);
-                      })
-                  }
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                } else {
-                  Text(`类型 · 保留：${this.blockPanelCalloutModel.type}`)
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                    .height(Size.touch)
-                    .padding({ left: Space.s3, right: Space.s3 })
-                }
-                Column({ space: Space.s1 }) {
-                  Text('标题')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                  TextInput({ text: this.blockPanelCalloutTitle, placeholder: '留空则使用默认标题' })
-                    .height(Size.buttonH)
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .placeholderColor($r('app.color.text_tertiary'))
-                    .padding({ left: Space.s2, right: Space.s2 })
-                    .backgroundColor($r('app.color.bg_secondary'))
-                    .borderRadius(Radius.control)
-                    .width('100%')
-                    .onChange((value: string): void => { this.blockPanelCalloutTitle = value; })
-                    .onSubmit((): void => {
-                      void this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle);
-                    })
-                    .onBlur((): void => {
-                      void this.saveBlockPanelCalloutField('title', this.blockPanelCalloutTitle);
-                    })
-                    .accessibilityText('提示块标题')
-                }
-                .width('100%')
-                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                if (this.blockPanelCalloutModel.knownType) {
-                  Column({ space: Space.s1 }) {
-                    Text('折叠')
-                      .fontSize(FontSize.caption)
-                      .fontColor($r('app.color.text_secondary'))
-                      .width('100%')
-                    Select(this.blockPanelCalloutFoldOptions())
-                      .selected(this.blockPanelCalloutFoldIndex())
-                      .value(this.blockPanelCalloutFoldValue())
-                      .fontColor($r('app.color.text_primary'))
-                      .width('100%')
-                      .onSelect((index: number, _value: string): void => {
-                        void this.saveBlockPanelCalloutFold(index);
-                      })
-                  }
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                }
-              } else {
-                Text(this.blockPanelCalloutMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-              }
-              if (this.blockPanelCalloutMessage.length > 0 && this.blockPanelCalloutModel !== null) {
-                Text(this.blockPanelCalloutMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s2 })
-              }
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'frontmatter') {
-              if (!this.blockPanelFrontmatterReady || this.blockPanelFrontmatterModel === null) {
-                Text(this.blockPanelFrontmatterMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-              } else {
-                ForEach(this.blockPanelFrontmatterEntries, (entry: FrontmatterPropertyModel): void => {
-                  Column({ space: Space.s1 }) {
-                    Row({ space: Space.s1 }) {
-                      Column({ space: Space.s1 }) {
-                        Text(entry.key)
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_primary'))
-                        Text(entry.key === 'tags' ? '标签' : entry.key === 'aliases'
-                          ? '别名' : entry.kind === 'list' ? '列表' : entry.kind === 'date'
-                          ? '日期' : entry.kind === 'bool' ? '复选框' : entry.kind === 'text'
-                          ? '文本' : '保留原值')
-                          .fontSize(FontSize.caption)
-                          .fontColor($r('app.color.text_tertiary'))
-                      }
-                      .layoutWeight(1)
-                      Button('移除')
-                        .enabled(!this.blockPanelFrontmatterSaving)
-                        .onClick((): void => {
-                          void this.saveBlockPanelFrontmatterProperty('remove', entry.key, '');
-                        })
-                    }
-                    .width('100%')
-                    if (entry.kind === 'complex') {
-                      Text('嵌套或未知结构保持原值，请以源码编辑')
-                        .fontSize(FontSize.caption)
-                        .fontColor($r('app.color.text_tertiary'))
-                        .width('100%')
-                    } else if (entry.kind === 'bool') {
-                      Row({ space: Space.s2 }) {
-                        Text(entry.text === 'true' ? '开启' : '关闭')
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_secondary'))
-                          .layoutWeight(1)
-                        Checkbox({ name: entry.key })
-                          .select(entry.text === 'true')
-                          .onChange((checked: boolean): void => {
-                            void this.saveBlockPanelFrontmatterProperty(
-                              'set', entry.key, checked ? 'true' : 'false');
-                          })
-                          .accessibilityText(`${entry.key} ${entry.text === 'true' ? '开启' : '关闭'}`)
-                      }
-                      .width('100%')
-                      .height(Size.touch)
-                    } else if (entry.kind === 'date') {
-                      Row({ space: Space.s2 }) {
-                        Text(entry.text)
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_primary'))
-                          .layoutWeight(1)
-                        if (this.blockPanelFrontmatterDateSelectable(entry.text)) {
-                          Button(this.blockPanelFrontmatterDateKey === entry.key ? '已选择' : '选择日期')
-                            .enabled(!this.blockPanelFrontmatterSaving)
-                            .onClick((): void => { this.beginBlockPanelFrontmatterDate(entry.key); })
-                        } else {
-                          Text('超出选择范围')
-                            .fontSize(FontSize.caption)
-                            .fontColor($r('app.color.text_tertiary'))
-                        }
-                      }
-                      .width('100%')
-                      if (this.blockPanelFrontmatterDateKey === entry.key) {
-                        DatePicker({
-                          start: new Date(1900, 0, 31),
-                          end: new Date(2100, 11, 31),
-                          selected: this.blockPanelFrontmatterDate()
-                        })
-                          .onDateChange((value: Date): void => {
-                            this.blockPanelFrontmatterDateDraft =
-                              this.blockPanelFrontmatterDateValue(value);
-                          })
-                        Row({ space: Space.s2 }) {
-                          Text(this.blockPanelFrontmatterDateDraft)
-                            .fontSize(FontSize.body2)
-                            .fontColor($r('app.color.text_secondary'))
-                            .layoutWeight(1)
-                          Button('取消')
-                            .onClick((): void => { this.cancelBlockPanelFrontmatterDate(); })
-                          Button('保存')
-                            .enabled(!this.blockPanelFrontmatterSaving)
-                            .onClick((): void => { void this.finishBlockPanelFrontmatterDate(); })
-                        }
-                        .width('100%')
-                      }
-                    } else {
-                      Row({ space: Space.s1 }) {
-                        TextInput({
-                          text: entry.text,
-                          placeholder: entry.kind === 'list' ? '用顿号或逗号分隔' : '属性值'
-                        })
-                          .height(Size.buttonH)
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_primary'))
-                          .placeholderColor($r('app.color.text_tertiary'))
-                          .padding({ left: Space.s2, right: Space.s2 })
-                          .backgroundColor($r('app.color.bg_secondary'))
-                          .borderRadius(Radius.control)
-                          .layoutWeight(1)
-                          .onChange((value: string): void => {
-                            this.updateBlockPanelFrontmatterDraft(entry.key, value);
-                          })
-                          .onSubmit((): void => {
-                            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
-                          })
-                          .accessibilityText(`${entry.key} ${entry.kind === 'list' ? '列表' : '文本'}`)
-                        Button('保存')
-                          .enabled(!this.blockPanelFrontmatterSaving)
-                          .onClick((): void => {
-                            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
-                          })
-                      }
-                      .width('100%')
-                    }
-                  }
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                }, (entry: FrontmatterPropertyModel): string => entry.key)
-                if (this.blockPanelFrontmatterEntries.length === 0) {
-                  Text('暂无属性')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                }
-                Column({ space: Space.s1 }) {
-                  Text('添加属性')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .width('100%')
-                  TextInput({ text: this.blockPanelFrontmatterNewKey, placeholder: '名称' })
-                    .height(Size.buttonH)
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .placeholderColor($r('app.color.text_tertiary'))
-                    .padding({ left: Space.s2, right: Space.s2 })
-                    .backgroundColor($r('app.color.bg_secondary'))
-                    .borderRadius(Radius.control)
-                    .width('100%')
-                    .onChange((value: string): void => { this.blockPanelFrontmatterNewKey = value; })
-                    .accessibilityText('新属性名称')
-                  Row({ space: Space.s1 }) {
-                    TextInput({
-                      text: this.blockPanelFrontmatterNewValue,
-                      placeholder: '值；a、b 表示列表'
-                    })
-                      .height(Size.buttonH)
-                      .fontSize(FontSize.body2)
-                      .fontColor($r('app.color.text_primary'))
-                      .placeholderColor($r('app.color.text_tertiary'))
-                      .padding({ left: Space.s2, right: Space.s2 })
-                      .backgroundColor($r('app.color.bg_secondary'))
-                      .borderRadius(Radius.control)
-                      .layoutWeight(1)
-                      .onChange((value: string): void => { this.blockPanelFrontmatterNewValue = value; })
-                      .accessibilityText('新属性值')
-                    Button('添加')
-                      .enabled(!this.blockPanelFrontmatterSaving)
-                      .onClick((): void => {
-                        void this.saveBlockPanelFrontmatterProperty(
-                          'add', this.blockPanelFrontmatterNewKey, this.blockPanelFrontmatterNewValue);
-                      })
-                  }
-                  .width('100%')
-                  Text('只改动当前属性；其他行、注释与嵌套结构保持原样。')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('100%')
-                }
-                .width('100%')
-                .padding({ left: Space.s3, right: Space.s3, top: Space.s3, bottom: Space.s2 })
-                if (this.blockPanelFrontmatterMessage.length > 0) {
-                  Text(this.blockPanelFrontmatterMessage)
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s2 })
-                }
-              }
-            } else if (this.blockPanelAnchor !== null &&
-              (this.blockPanelAnchor.tapType === 'footnoteRef' ||
-              this.blockPanelAnchor.type === 'footnoteDefinition')) {
-              if (!this.blockPanelFootnoteReady) {
-                Text(this.blockPanelFootnoteMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-              } else {
-                if (this.blockPanelFootnoteMessage.length > 0) {
-                  Text(this.blockPanelFootnoteMessage)
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                }
-                if (this.blockPanelFootnoteEditable) {
-                  Text('脚注正文')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2 })
-                  TextArea({ text: this.blockPanelFootnoteBody })
-                    .height(Size.touch * 4)
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .fontFamily('monospace')
-                    .backgroundColor($r('app.color.bg_secondary'))
-                    .onChange((value: string): void => {
-                      if (!this.blockPanelFootnoteSaving) {
-                        this.blockPanelFootnoteBody = value;
-                      }
-                    })
-                    .accessibilityText('脚注正文')
-                  Button('应用')
-                    .enabled(!this.blockPanelFootnoteSaving)
-                    .onClick((): void => { void this.saveBlockPanelFootnote(); })
-                }
-                if (this.blockPanelFootnoteJumpFrom >= 0) {
-                  Button(this.blockPanelAnchor.tapType === 'footnoteRef' ? '跳到定义处' : '跳回引用处')
-                    .onClick((): void => { void this.jumpBlockPanelFootnote(); })
-                }
-              }
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'link') {
-              Row() {
-                Column({ space: Space.s1 }) {
-                  Text(this.blockPanelActionLabel())
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .width('100%')
-                  if (this.blockPanelLinkParts !== null) {
-                    Text(this.blockPanelLinkParts.destination)
-                      .fontSize(FontSize.caption)
-                      .fontColor($r('app.color.text_secondary'))
-                      .width('100%')
-                      .maxLines(2)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  }
-                }
-                .layoutWeight(1)
-              }
-              .width('100%')
-              .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-              .constraintSize({ minHeight: Size.touch })
-              .focusable(true)
-              .accessibilityText(this.blockPanelActionLabel())
-              .onClick((): void => { void this.performBlockPanelAction(); })
-              if (this.blockPanelLinkReady && this.blockPanelLinkParts !== null) {
-                this.BlockPanelLinkField('显示文字', 'label', this.blockPanelLinkLabel, '链接上显示的文字')
-                this.BlockPanelLinkField('地址', 'destination', this.blockPanelLinkDestination, '链接地址')
-                Row() {
-                  Text('取消链接')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .height(Size.touch)
-                .padding({ left: Space.s3, right: Space.s3 })
-                .focusable(true)
-                .accessibilityText('取消链接，保留显示文字')
-                .onClick((): void => { void this.unlinkBlockPanelLink(); })
-              } else {
-                Text(this.blockPanelLinkMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-              }
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'wikilink') {
-              if (this.blockPanelActionLabel().length > 0) {
-                Row() {
-                  Text(this.blockPanelActionLabel())
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .height(Size.touch)
-                .padding({ left: Space.s3, right: Space.s3 })
-                .focusable(true)
-                .accessibilityText(this.blockPanelActionLabel())
-                .onClick((): void => { void this.performBlockPanelAction(); })
-              }
-              if (this.blockPanelWikiReady) {
-                if (this.blockPanelWikiMessage.length > 0) {
-                  Text(this.blockPanelWikiMessage)
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                }
-                Column({ space: Space.s1 }) {
-                  Text('重新选择目标')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                  if (this.blockPanelWikiFiles.length > 0) {
-                    Select(this.blockPanelWikiSelectOptions())
-                      .selected(this.blockPanelWikiSelectedIndex())
-                      .value(this.blockPanelWikiSelectValue())
-                      .fontColor($r('app.color.text_primary'))
-                      .width('100%')
-                      .onSelect((index: number, value: string): void => {
-                        void this.saveBlockPanelWikiField('target', value);
-                      })
-                  } else {
-                    Text(this.blockPanelWikiSelectValue())
-                      .fontSize(FontSize.body2)
-                      .fontColor($r('app.color.text_tertiary'))
-                      .width('100%')
-                  }
-                }
-                .width('100%')
-                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                this.BlockPanelWikiAliasField()
-                Row() {
-                  Text('移除双链')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .height(Size.touch)
-                .padding({ left: Space.s3, right: Space.s3 })
-                .focusable(true)
-                .accessibilityText('移除双链，保留显示文字')
-                .onClick((): void => { void this.unlinkBlockPanelWiki(); })
-              } else {
-                Text(this.blockPanelWikiMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-              }
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.tapType === 'image') {
-              if (this.blockPanelActionLabel().length > 0) {
-                Row() {
-                  Text(this.blockPanelActionLabel())
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-                }
-                .width('100%')
-                .height(Size.touch)
-                .padding({ left: Space.s3, right: Space.s3 })
-                .focusable(true)
-                .accessibilityText('查看大图')
-                .onClick((): void => { void this.performBlockPanelAction(); })
-              }
-              if (this.blockPanelImageReady && this.blockPanelImageParts !== null) {
-                this.BlockPanelImageField('alt', '替代文字', this.blockPanelImageAlt, '描述图片内容')
-                if (this.blockPanelImageRemote()) {
-                  this.BlockPanelImageField(
-                    'destination', '图片地址', this.blockPanelImageDestination, 'https://…');
-                  Text('外链图片只修改地址，不下载或转为本地附件')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, bottom: Space.s2 })
-                }
-                Column({ space: Space.s1 }) {
-                  Text('显示宽度')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                  Select(this.blockPanelImageWidthOptions())
-                    .selected(this.blockPanelImageWidthIndex())
-                    .value(this.blockPanelImageWidthValue())
-                    .fontColor($r('app.color.text_primary'))
-                    .width('100%')
-                    .onSelect((index: number, value: string): void => {
-                      void this.saveBlockPanelImageField('width', this.blockPanelImageWidthForIndex(index));
-                    })
-                  Text(this.blockPanelImageWidthIndex() < 0
-                    ? '当前宽度 ' + this.blockPanelImageWidth + ' px'
-                    : '按 Markdown 写作 ![替代文字|宽度](路径)')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('100%')
-                }
-                .width('100%')
-                .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                if (!this.blockPanelImageRemote()) {
-                  Row() {
-                    Text('替换图片')
-                      .fontSize(FontSize.body2)
-                      .fontColor($r('app.color.text_primary'))
-                      .layoutWeight(1)
-                    Text('从图库选择')
-                      .fontSize(FontSize.caption)
-                      .fontColor($r('app.color.text_secondary'))
-                  }
-                  .width('100%')
-                  .height(Size.touch)
-                  .padding({ left: Space.s3, right: Space.s3 })
-                  .focusable(true)
-                  .enabled(!this.isImagePickerBusy(this.blockPanelPane))
-                  .accessibilityText('替换图片，从图库选择')
-                  .onClick((): void => { void this.pickImageForCurrentNote(this.blockPanelPane, true); })
-                }
-                Row() {
-                  Text('删除图片')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.danger'))
-                    .layoutWeight(1)
-                  Text('仅移除引用')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                }
-                .width('100%')
-                .height(Size.touch)
-                .padding({ left: Space.s3, right: Space.s3 })
-                .focusable(true)
-                .accessibilityText('删除图片引用，保留附件文件')
-                .onClick((): void => { void this.deleteBlockPanelImage(); })
-              } else {
-                Text(this.blockPanelImageMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-              }
-            } else if (this.blockPanelAnchor !== null &&
-              (this.blockPanelAnchor.tapType === 'mathInline' || this.blockPanelAnchor.type === 'formula')) {
-              Text('LaTeX')
-                .fontSize(FontSize.caption)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-                .padding({ left: Space.s3, right: Space.s3, top: Space.s2 })
-              TextArea({ text: this.blockPanelFormulaValue })
-                .height(Size.touch * 2)
-                .fontSize(FontSize.body2)
-                .fontColor($r('app.color.text_primary'))
-                .fontFamily('monospace')
-                .backgroundColor($r('app.color.bg_secondary'))
-                .onChange((value: string): void => { this.blockPanelFormulaValue = value; })
-                .accessibilityText('LaTeX 公式')
-              FormulaPreviewWeb({
-                expression: this.blockPanelFormulaValue,
-                displayMode: !this.blockPanelFormulaModel?.inline,
-                onError: (): void => {
-                  this.recordBackgroundFailure('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry');
-                }
-              })
-                .width('100%')
-                .height(Size.touch * 3)
-                .accessibilityText('公式实时预览')
-              if (this.blockPanelFormulaMessage.length > 0) {
-                Text(this.blockPanelFormulaMessage)
-                  .fontSize(FontSize.caption)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3 })
-              }
-              Button('应用')
-                .onClick((): void => { void this.saveBlockPanelFormula(); })
-            } else if (this.blockPanelActionLabel().length > 0) {
-              Row() {
-                Text(this.blockPanelActionLabel())
-                  .fontSize(FontSize.body2)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-              }
-              .width('100%')
-              .height(Size.touch)
-              .padding({ left: Space.s3, right: Space.s3 })
-              .focusable(true)
-              .accessibilityText(this.blockPanelActionLabel())
-              .onClick((): void => { void this.performBlockPanelAction(); })
-            } else if (this.blockPanelAnchor !== null && this.blockPanelAnchor.type === 'code') {
-              Row() {
-                Text('复制代码')
-                  .fontSize(FontSize.body2)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-              }
-              .width('100%')
-              .height(Size.touch)
-              .padding({ left: Space.s3, right: Space.s3 })
-              .focusable(true)
-              .accessibilityText('复制代码')
-              .onClick((): void => { this.copyCodeBlockFromPanel(); })
-              if (this.blockPanelAnchor.codeEditable && this.blockPanelAnchor.codeLanguageSelectable) {
-                Row() {
-                  Text('语言')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .layoutWeight(1)
-                  Text(`${this.codeLanguageLabel(this.blockPanelAnchor.codeLanguage)} ▾`)
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_secondary'))
-                }
-                .width('100%')
-                .height(Size.touch)
-                .padding({ left: Space.s3, right: Space.s3 })
-                .focusable(true)
-                .accessibilityText(`代码语言：${this.codeLanguageLabel(this.blockPanelAnchor.codeLanguage)}`)
-                .onClick((): void => {
-                  this.blockPanelLanguagePickerOpen = !this.blockPanelLanguagePickerOpen;
-                })
-                if (this.blockPanelLanguagePickerOpen) {
-                  ForEach(this.blockPanelAnchor.codeLanguages, (language: string): void => {
-                    Row() {
-                      Text(this.codeLanguageLabel(language))
-                        .fontSize(FontSize.body2)
-                        .fontColor(language === this.blockPanelAnchor?.codeLanguage
-                          ? $r('app.color.brand') : $r('app.color.text_primary'))
-                        .layoutWeight(1)
-                    }
-                    .width('100%')
-                    .height(Size.touch)
-                    .padding({ left: Space.s3, right: Space.s3 })
-                    .focusable(true)
-                    .accessibilityText(`选择代码语言：${this.codeLanguageLabel(language)}`)
-                    .onClick((): void => { void this.changeBlockCodeLanguage(language); })
-                  }, (language: string): string => language)
-                }
-              } else if (this.blockPanelAnchor.codeLanguage.length > 0) {
-                Text(`保留：${this.blockPanelAnchor.codeLanguage}`)
-                  .fontSize(FontSize.body2)
-                  .fontColor($r('app.color.text_secondary'))
-                  .width('100%')
-                  .height(Size.touch)
-                  .padding({ left: Space.s3, right: Space.s3 })
-              }
-            } else {
-              Row() {
-                Text('暂无可用属性')
-                  .fontSize(FontSize.body2)
-                  .fontColor($r('app.color.text_tertiary'))
-                  .layoutWeight(1)
-              }
-              .width('100%')
-              .height(Size.touch)
-              .padding({ left: Space.s3, right: Space.s3 })
-            }
-          }
-          .width('100%')
-        }
-        .width('100%')
-        .constraintSize({
-          maxHeight: Math.max(Space.s1, this.blockPanelMaxHeight - Size.touch - Space.s4)
-        })
-
-        Row() {
-          Text(this.blockSourceActionLabel())
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .accessibilityText(this.blockSourceActionLabel())
-        .onClick((): void => { void this.openBlockSourceDrawer(); })
-      }
-      .width('100%')
-      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-      .constraintSize({ maxHeight: this.blockPanelMaxHeight })
-      .focusable(true)
-      .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
-    }
-  }
-
-  @Builder
-  BlockPanelLinkField(label: string, field: string, value: string, placeholder: string) {
-    Column({ space: Space.s1 }) {
-      Text(label)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      Row({ space: Space.s1 }) {
-        TextInput({ text: value, placeholder: placeholder })
-          .height(Size.buttonH)
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .placeholderColor($r('app.color.text_tertiary'))
-          .padding({ left: Space.s2, right: Space.s2 })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .borderRadius(Radius.control)
-          .layoutWeight(1)
-          .onChange((nextValue: string): void => {
-            if (field === 'label') {
-              this.blockPanelLinkLabel = nextValue;
-            } else {
-              this.blockPanelLinkDestination = nextValue;
-            }
-          })
-        Button('保存')
-          .onClick((): void => { void this.saveBlockPanelLinkField(field); })
-      }
-      .width('100%')
-      if (field === 'destination') {
-        Text('不自动补全协议')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-      }
-    }
-    .width('100%')
-    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-  }
-
-  @Builder
-  BlockPanelImageField(field: string, label: string, value: string, placeholder: string) {
-    Column({ space: Space.s1 }) {
-      Text(label)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      Row({ space: Space.s1 }) {
-        TextInput({ text: value, placeholder: placeholder })
-          .height(Size.buttonH)
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .placeholderColor($r('app.color.text_tertiary'))
-          .padding({ left: Space.s2, right: Space.s2 })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .borderRadius(Radius.control)
-          .layoutWeight(1)
-          .onChange((nextValue: string): void => {
-            if (field === 'alt') {
-              this.blockPanelImageAlt = nextValue;
-            } else {
-              this.blockPanelImageDestination = nextValue;
-            }
-          })
-        Button('保存')
-          .onClick((): void => {
-            const nextValue: string = field === 'alt'
-              ? this.blockPanelImageAlt : this.blockPanelImageDestination;
-            void this.saveBlockPanelImageField(field, nextValue);
-          })
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-  }
-
-  @Builder
-  BlockPanelWikiAliasField() {
-    Column({ space: Space.s1 }) {
-      Text('显示文字')
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_secondary'))
-        .width('100%')
-      Row({ space: Space.s1 }) {
-        TextInput({ text: this.blockPanelWikiAlias, placeholder: '留空则显示笔记名' })
-          .height(Size.buttonH)
-          .fontSize(FontSize.body2)
-          .fontColor($r('app.color.text_primary'))
-          .placeholderColor($r('app.color.text_tertiary'))
-          .padding({ left: Space.s2, right: Space.s2 })
-          .backgroundColor($r('app.color.bg_secondary'))
-          .borderRadius(Radius.control)
-          .layoutWeight(1)
-          .onChange((nextValue: string): void => { this.blockPanelWikiAlias = nextValue; })
-        Button('保存')
-          .onClick((): void => { void this.saveBlockPanelWikiField('alias', this.blockPanelWikiAlias); })
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
   }
 
   @Builder
@@ -12486,7 +8205,7 @@ struct Index {
           y: this.blockPanelAnchorGeometry(pane)[1]
         })
         .hitTestBehavior(HitTestMode.None)
-        .bindSheet($$this.rightBlockPanelOpen, this.BlockPropertyPanel(), this.blockPanelSheetOptions())
+        .bindSheet($$this.rightBlockPanelOpen, this.panelContent('right'), this.blockPanelSheetOptions())
     } else {
       Blank()
         .width(Math.max(Space.s1, this.blockPanelAnchorGeometry(pane)[2]))
@@ -12496,34 +8215,32 @@ struct Index {
           y: this.blockPanelAnchorGeometry(pane)[1]
         })
         .hitTestBehavior(HitTestMode.None)
-        .bindSheet($$this.leftBlockPanelOpen, this.BlockPropertyPanel(), this.blockPanelSheetOptions())
+        .bindSheet($$this.leftBlockPanelOpen, this.panelContent('left'), this.blockPanelSheetOptions())
     }
   }
 
   @Builder
   PreviewBlockToolbar(pane: string) {
     if (this.hasBlockToolbarForPane(pane)) {
-      Blank()
-        .width(this.blockToolbarAnchorGeometry(pane)[2])
-        .height(this.blockToolbarAnchorGeometry(pane)[3])
-        .position({
-          x: this.blockToolbarAnchorGeometry(pane)[0],
-          y: this.blockToolbarAnchorGeometry(pane)[1]
-        })
-        .hitTestBehavior(HitTestMode.None)
-        .bindPopup(this.blockToolbarOpen && this.blockToolbarPane === pane, {
-          builder: this.BlockToolbarContent(),
-          placement: this.blockToolbarPlacement,
-          enableArrow: false,
-          offset: { x: this.blockToolbarOffsetX, y: this.blockToolbarOffsetY },
-          mask: false,
-          autoCancel: true,
-          popupColor: Color.Transparent,
-          onWillDismiss: (action: DismissPopupAction): void => {
-            action.dismiss();
-            this.blockToolbarOpen = false;
-          }
-        })
+      PreviewBlockToolbarAnchor({
+        pane: pane,
+        blockToolbarOpen: this.blockToolbarOpen,
+        blockToolbarPane: this.blockToolbarPane,
+        blockToolbarPlacement: this.blockToolbarPlacement,
+        blockToolbarOffsetX: this.blockToolbarOffsetX,
+        blockToolbarOffsetY: this.blockToolbarOffsetY,
+        blockToolbarWidth: this.blockToolbarWidth,
+        blockToolbarMaxHeight: this.blockToolbarMaxHeight,
+        blockToolbarActions: this.blockToolbarActions,
+        blockToolbarAnchorGeometry: (pane: string): number[] => this.blockToolbarAnchorGeometry(pane),
+        closeBlockToolbar: (restoreFocus: boolean): void => { this.closeBlockToolbar(restoreFocus); },
+        openBlockPropertyPanel: (pane: string): void => { this.openBlockPropertyPanel(pane); },
+        applyTableStructureOperation: (pane: string, type: string, side: string): void => {
+          this.applyTableStructureOperation(pane, type, side);
+        },
+        tableToolbarForPane: (pane: string): boolean => this.tableToolbarForPane(pane),
+        tableToolbarCanDeleteRow: (pane: string): boolean => this.tableToolbarCanDeleteRow(pane)
+      })
     }
   }
 
@@ -12541,207 +8258,77 @@ struct Index {
     this.closeFormatMenu();
     this.blockPanelPane = pane;
     this.blockPanelAnchor = anchor;
-    this.blockPanelInlineItems = anchor.inlineItems;
-    this.blockPanelLinkReady = anchor.tapType !== 'link';
-    this.blockPanelLinkLabel = '';
-    this.blockPanelLinkDestination = '';
-    this.blockPanelLinkParts = null;
-    this.blockPanelLinkMessage = anchor.tapType === 'link' ? '正在读取链接…' : '';
-    this.blockPanelLinkRaw = '';
-    this.blockPanelWikiReady = false;
-    this.blockPanelWikiTarget = '';
-    this.blockPanelWikiAlias = '';
-    this.blockPanelWikiMessage = anchor.tapType === 'wikilink' ? '正在读取双链…' : '';
-    this.blockPanelWikiFiles = [];
-    this.blockPanelWikiResolutionStatus = '';
-    this.blockPanelWikiResolutionPath = '';
-    this.blockPanelWikiRaw = '';
-    this.blockPanelImageReady = false;
-    this.blockPanelImageAlt = '';
-    this.blockPanelImageDestination = '';
-    this.blockPanelImageWidth = '';
-    this.blockPanelImageMessage = anchor.tapType === 'image' ? '正在读取图片…' : '';
-    this.blockPanelImageRaw = '';
-    this.blockPanelImageParts = null;
-    this.blockPanelFormulaReady = false;
-    this.blockPanelFormulaValue = '';
-    this.blockPanelFormulaMessage = anchor.tapType === 'mathInline' || anchor.type === 'formula'
-      ? '正在读取公式…' : '';
-    this.blockPanelFormulaRaw = '';
-    this.blockPanelFormulaModel = null;
-    this.blockPanelCalloutReady = false;
-    this.blockPanelCalloutTitle = '';
-    this.blockPanelCalloutFold = '';
-    this.blockPanelCalloutMessage = anchor.type === 'callout' ? '正在读取提示块…' : '';
-    this.blockPanelCalloutSaving = false;
-    this.blockPanelCalloutRaw = '';
-    this.blockPanelCalloutModel = null;
-    this.blockPanelCalloutSaveTail = Promise.resolve();
-    this.blockPanelFrontmatterReady = false;
-    this.blockPanelFrontmatterEntries = [];
-    this.blockPanelFrontmatterMessage = anchor.type === 'frontmatter' ? '正在读取属性…' : '';
-    this.blockPanelFrontmatterNewKey = '';
-    this.blockPanelFrontmatterNewValue = '';
-    this.blockPanelFrontmatterDateKey = '';
-    this.blockPanelFrontmatterDateDraft = '';
-    this.blockPanelFrontmatterSaving = false;
-    this.blockPanelFrontmatterRaw = '';
-    this.blockPanelFrontmatterModel = null;
-    this.blockPanelFrontmatterSaveTail = Promise.resolve();
-    this.blockPanelFootnoteReady = false;
-    this.blockPanelFootnoteEditable = false;
-    this.blockPanelFootnoteHasDefinition = false;
-    this.blockPanelFootnoteBody = '';
-    this.blockPanelFootnoteMessage = anchor.tapType === 'footnoteRef' ||
-      anchor.type === 'footnoteDefinition' ? '正在读取脚注…' : '';
-    this.blockPanelFootnoteSaving = false;
-    this.blockPanelFootnoteJumpFrom = -1;
-    this.blockPanelFootnoteLabel = '';
-    this.blockPanelFootnoteSourceSnapshot = '';
-    this.blockPanelFootnoteDefinitionFrom = -1;
-    this.blockPanelFootnoteDefinitionTo = -1;
-    this.blockPanelFootnoteDefinitionRaw = '';
-    this.blockPanelFootnoteModel = null;
-    this.blockPanelBlockIdReady = false;
-    this.blockPanelBlockId = '';
-    this.blockPanelBlockIdMessage = '';
-    this.blockPanelLanguagePickerOpen = false;
-    this.blockPanelTitle = this.blockPanelTitleFor(anchor);
+    this.pushedAnchor = anchor;
+    this.pushedAnchorMode = 'open';
+    this.pushedAnchorSeq++;
+    this.blockPanelTitle = blockPanelTitleFor(anchor);
     this.blockPanelSourceVaultId = this.currentVaultId;
     this.blockPanelSourcePath = this.paneFilePath(pane);
     this.blockPanelRestoreFocus = true;
     this.blockPanelPendingAction = false;
     this.blockSourceEditing = false;
-    this.blockSourceDraft = '';
-    this.blockSourceBlockType = '';
     this.blockPanelWidth = Size.blockPanelW;
     this.blockPanelMaxHeight = Size.menuMaxH;
     this.leftBlockPanelOpen = pane === 'left';
     this.rightBlockPanelOpen = pane === 'right';
     this.updateBlockPropertyPanelLayout(pane);
-    if (anchor.tapType === 'link') {
-      void this.loadBlockPanelLink();
-    } else if (anchor.tapType === 'wikilink') {
-      void this.loadBlockPanelWikiLink();
-    } else if (anchor.tapType === 'image') {
-      void this.loadBlockPanelImage();
-    } else if (anchor.tapType === 'mathInline' || anchor.type === 'formula') {
-      void this.loadBlockPanelFormula();
-    } else if (anchor.type === 'callout') {
-      void this.loadBlockPanelCallout();
-    } else if (anchor.type === 'frontmatter') {
-      void this.loadBlockPanelFrontmatter();
-    } else if (anchor.tapType === 'footnoteRef' || anchor.type === 'footnoteDefinition') {
-      void this.loadBlockPanelFootnote();
-    } else if (anchor.type === 'paragraph' && anchor.tapType === '' && anchor.inlineIndex < 0) {
-      void this.loadBlockPanelBlockId();
-    }
   }
 
-  /**
-   * v1.32 32.2：专业模式格式栏停靠 —— 与 v1.30 简单模式停靠栏同形（v2 规则
-   * `.window:not(.simple-mode) …>.edit-tools`）：该栏顶部整行（内容区上方）、底部细线、
-   * bg_card 底、无阴影圆角；宽屏按钮靠左（左内边距 s5）、单屏居中（s3）；无「完成编辑」按钮——
-   * 专业模式走 PaneHead 编辑/预览切换。内容区经 layoutWeight 收缩，源码末行不被遮挡。
-   * 仅编辑状态显示，预览时隐藏（沿用既有规则）。
-   * v1.46 46.9：停靠位从栏底移到栏顶 —— OFFSET_WITH_CARET 只保证光标可见，
-   * 栏底停靠被软键盘盖住（XT2 真机实测），栏顶不依赖窗口底部避让空间。
-   */
   @Builder
   ProfFormatDock(pane: string) {
-    Row() {
-      Scroll() {
-        Row({ space: Space.s1 }) {
-          this.FormatActionsRow(pane, Space.s1)
-        }
-        .constraintSize({ minWidth: '100%' })
-        .justifyContent(this.isSingleScreenLayout() ? FlexAlign.Center : FlexAlign.Start)
-        .padding({
-          left: this.isSingleScreenLayout() ? Space.s3 : Space.s5,
-          right: Space.s3
-        })
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .layoutWeight(1)
-    }
-    .width('100%')
-    .height(Size.touch + Space.s1 * 2)
-    .padding({
-      top: Space.s1,
-      bottom: Space.s1
-    })
-    .alignItems(VerticalAlign.Center)
-    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
-    .backgroundColor($r('app.color.bg_card'))
-    .onAreaChange((oldArea: Area, newArea: Area) => {
-      if (typeof newArea.width === 'number') {
-        this.recordPaneWidth(pane, newArea.width);
-      }
-    })
+    this.FormatDockHost(pane, 'prof')
   }
 
-  /** v1.30 30.4：「完成编辑」—— 收起软键盘并结束编辑焦点，读屏名「完成编辑」 */
   @Builder
-  SimpleDoneAction(pane: string) {
-    Row() {
-      Icon('keyboardDone', Space.s5, $r('app.color.brand'))
-    }
-    .width(Size.touch)
-    .height(Size.touch)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(Radius.icon)
-    .margin({ left: Space.s2 })
-    .onClick((): void => { this.finishSimpleEditingFor(pane); })
-    .accessibilityText('完成编辑')
+  private FormatDockHost(pane: string, dockKind: string) {
+    FormatDockPanel({
+      pane: pane,
+      dockKind: dockKind,
+      formatMenuOpen: this.formatMenuOpen,
+      formatMenuPane: this.formatMenuPane,
+      formatPopupPlacement: this.formatPopupPlacement,
+      formatPopupOffsetX: this.formatPopupOffsetX,
+      formatPopupOffsetY: this.formatPopupOffsetY,
+      formatMenuWidth: this.formatMenuWidth,
+      formatMenuMaxHeight: this.formatMenuMaxHeight,
+      tableGridOpen: this.tableGridOpen,
+      tableGridPane: this.tableGridPane,
+      tableGridFocusedRows: this.tableGridFocusedRows,
+      tableGridFocusedColumns: this.tableGridFocusedColumns,
+      experienceMode: this.experienceMode,
+      leftPaneWidthVp: this.leftPaneWidthVp,
+      rightPaneWidthVp: this.rightPaneWidthVp,
+      leftCodeBlockActive: this.leftCodeBlockActive,
+      rightCodeBlockActive: this.rightCodeBlockActive,
+      isPaneEditable: (pane: string): boolean => this.isPaneEditable(pane),
+      paneFilePath: (pane: string): string => this.paneFilePath(pane),
+      isImagePickerBusy: (pane: string): boolean => this.isImagePickerBusy(pane),
+      toggleFormatMenu: (pane: string): void => { this.toggleFormatMenu(pane); },
+      closeFormatMenu: (restoreEditor?: boolean): void => { this.closeFormatMenu(restoreEditor); },
+      applyEditorFormat: (kind: string, pane: string): void => { this.applyEditorFormat(kind, pane); },
+      recordFormatAnchorArea: (pane: string, area: Area): void => { this.recordFormatAnchorArea(pane, area); },
+      onFormatMenuKey: (pane: string, event: KeyEvent): void => { this.onFormatMenuKey(pane, event); },
+      toggleTableGrid: (pane: string): void => { this.toggleTableGrid(pane); },
+      insertTableFromGrid: (pane: string, rows: number, columns: number): void => {
+        this.insertTableFromGrid(pane, rows, columns);
+      },
+      onTableGridCellKey: (pane: string, rows: number, columns: number, event: KeyEvent): boolean =>
+        this.onTableGridCellKey(pane, rows, columns, event),
+      tableGridCellFocusId: (pane: string, rows: number, columns: number): string =>
+        this.tableGridCellFocusId(pane, rows, columns),
+      pickImageForCurrentNote: (pane: string): void => { void this.pickImageForCurrentNote(pane); },
+      applyFormatHistoryAction: (action: PreviewEditHistoryAction): void => {
+        this.applyFormatHistoryAction(action);
+      },
+      isSingleScreenLayout: (): boolean => this.isSingleScreenLayout(),
+      finishSimpleEditingFor: (pane: string): void => { this.finishSimpleEditingFor(pane); },
+      recordPaneWidth: (pane: string, widthVp: number): void => { this.recordPaneWidth(pane, widthVp); }
+    })
   }
 
-  /**
-   * v1.30 30.2/30.3：简单模式停靠格式栏 —— 该栏顶部整行（内容区上方）：通栏宽、
-   * 底部分隔线、bg_card 底、无阴影圆角；宽屏按钮靠左、完成编辑靠右；单屏按钮居中、
-   * 完成编辑在末尾；按钮超出横向滑动。内容区经 layoutWeight 自动收缩，末行不被遮挡。
-   * v1.46 46.9：停靠位从栏底移到栏顶 —— OFFSET_WITH_CARET 下栏底停靠被软键盘盖住。
-   */
   @Builder
   SimpleFormatDock(pane: string) {
-    Row() {
-      Scroll() {
-        Row({ space: Space.s1 }) {
-          this.FormatActionsRow(pane, Space.s1)
-          if (this.isSingleScreenLayout()) {
-            this.SimpleDoneAction(pane)
-          }
-        }
-        .constraintSize({ minWidth: '100%' })
-        .justifyContent(this.isSingleScreenLayout() ? FlexAlign.Center : FlexAlign.Start)
-        .padding({
-          left: this.isSingleScreenLayout() ? Space.s3 : Space.s5,
-          right: Space.s3
-        })
-      }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .layoutWeight(1)
-      if (!this.isSingleScreenLayout()) {
-        this.SimpleDoneAction(pane)
-      }
-    }
-    .width('100%')
-    .height(Size.touch + Space.s1 * 2)
-    .padding({
-      top: Space.s1,
-      bottom: Space.s1,
-      right: this.isSingleScreenLayout() ? 0 : Space.s3
-    })
-    .alignItems(VerticalAlign.Center)
-    .border({ width: { bottom: 1 }, color: $r('app.color.line') })
-    .backgroundColor($r('app.color.bg_card'))
-    .onAreaChange((oldArea: Area, newArea: Area) => {
-      if (typeof newArea.width === 'number') {
-        this.recordPaneWidth(pane, newArea.width);
-      }
-    })
+    this.FormatDockHost(pane, 'simple')
   }
 
   @Builder
@@ -13185,7 +8772,7 @@ struct Index {
         this.doSwitchVault(id);
       },
       onShare: (id: string, focusId: string): void => {
-        this.openShareVaultFromManager(id, focusId);
+        this.shareFlowApi?.openShareVaultFromManager(id, focusId);
       },
       onRename: (id: string): void => {
         this.openRenameDialog(id);
@@ -13235,7 +8822,7 @@ struct Index {
       onClosePrivacyPolicy: (): void => { this.settingsPrivacyPolicyOpen = false; },
       onOpenHistory: (): void => { this.topView = 'history'; },
       onExportCurrentVault: (focusId: string): void => {
-        this.openShareVaultFromManager(this.currentVaultId, focusId);
+        this.shareFlowApi?.openShareVaultFromManager(this.currentVaultId, focusId);
       },
       onResetSplit: (): void => { this.resetSplitLayout(); },
       onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); },
@@ -13330,3 +8917,4 @@ struct Index {
     }
   }
 }
+

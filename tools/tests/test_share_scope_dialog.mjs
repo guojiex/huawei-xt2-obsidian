@@ -6,15 +6,15 @@ import { readSourceFile } from './lib/source.mjs';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const shareFlowSource = readSourceFile(new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 const dialogSource = readSourceFile(new URL('../../entry/src/main/ets/components/ShareNoteDialog.ets', import.meta.url));
-const pathStart = indexSource.indexOf('  private sharePathForScope(');
-const pathEnd = indexSource.indexOf('\n  build() {', pathStart);
+const pathStart = shareFlowSource.indexOf('  private sharePathForScope(');
+const pathEnd = shareFlowSource.indexOf('\n  private openShareImageSettings(', pathStart);
 assert.ok(pathStart >= 0 && pathEnd > pathStart, 'could not find sharePathForScope');
 
 const harnessCode = transformSync(`
 class ShareScopeHarness {
-  ${indexSource.slice(pathStart, pathEnd)}
+  ${shareFlowSource.slice(pathStart, pathEnd)}
 }
 module.exports = ShareScopeHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
@@ -100,9 +100,9 @@ test('range changes animate for 200ms and reserve the largest format area', () =
 });
 
 test('native share selector exposes three ranges, keyboard switching, and actionable format rows', () => {
-  assert.match(indexSource, /label: '笔记'/);
-  assert.match(indexSource, /label: '文件夹'/);
-  assert.match(indexSource, /label: '知识库'/);
+  assert.match(shareFlowSource, /label: '笔记'/);
+  assert.match(shareFlowSource, /label: '文件夹'/);
+  assert.match(shareFlowSource, /label: '知识库'/);
   assert.match(dialogSource, /KEYCODE_DPAD_LEFT/);
   assert.match(dialogSource, /KEYCODE_DPAD_RIGHT/);
   assert.match(dialogSource, /KEYCODE_ESCAPE/);
@@ -116,8 +116,8 @@ test('native share selector exposes three ranges, keyboard switching, and action
 });
 
 test('folder range is deduplicated against the vault range when the note sits at the vault root', () => {
-  assert.match(indexSource, /folderScopeDistinct: boolean = folderPath\.length > 0/);
-  assert.match(indexSource,
+  assert.match(shareFlowSource, /folderScopeDistinct: boolean = folderPath\.length > 0/);
+  assert.match(shareFlowSource,
     /: folderScopeDistinct \? \[noteOption, folderOption, vaultOption\] : \[noteOption, vaultOption\]/);
   const app = createHarness();
   assert.equal(app.sharePathForScope('folder', 'note', '根笔记.md', '根笔记.md'), '');

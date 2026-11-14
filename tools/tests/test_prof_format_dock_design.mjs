@@ -7,13 +7,17 @@ import { readSourceFile } from './lib/source.mjs';
 // 栏底停靠被软键盘盖住（XT2 真机实测）；分隔线随之从栏顶改到栏底。
 const index = readSourceFile(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+// v1.30/v1.32/v1.46 停靠格式栏视图已从 Index 拆到 FormatDockPanel（Phase 3 重构），
+// 停靠栏本体与表格网格弹层的断言改读子组件；挂载点与门控仍在 Index。
+const dockSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/FormatDockPanel.ets', import.meta.url));
 const prototype = readSourceFile(
   new URL('../../docs/prototype/v2/index.html', import.meta.url));
 
-const dockStart = index.indexOf('  ProfFormatDock(pane: string) {');
-const dockEnd = index.indexOf('\n  @Builder\n', dockStart + 1);
-assert.ok(dockStart >= 0 && dockEnd > dockStart, 'could not find Index.ProfFormatDock');
-const dock = index.slice(dockStart, dockEnd);
+const dockStart = dockSource.indexOf('  ProfFormatDock(pane: string) {');
+const dockEnd = dockSource.indexOf('\n  @Builder\n', dockStart + 1);
+assert.ok(dockStart >= 0 && dockEnd > dockStart, 'could not find FormatDockPanel.ProfFormatDock');
+const dock = dockSource.slice(dockStart, dockEnd);
 
 test('professional format bar docks as a full row like v1.30 simple mode', () => {
   // 整行停靠：通栏宽 + 底部细线（栏顶停靠后分隔线在栏底）+ bg_card 底；无阴影、无圆角
@@ -84,7 +88,7 @@ test('simple-mode docks sit above the content stack too (v1.46 46.9)', () => {
   const previewPane = index.slice(previewPaneStart, previewPaneEnd);
   assert.match(previewPane,
     /this\.SimpleFormatDock\('left'\)[\s\S]*?\.layoutWeight\(1\)/);
-  // 表格网格弹层随栏顶停靠改为向下弹
-  assert.match(index,
+  // 表格网格弹层随栏顶停靠改为向下弹（视图已拆到 FormatDockPanel）
+  assert.match(dockSource,
     /builder: this\.TableGridPicker\(pane\),\s*\n\s*\/\/ v1\.46 46\.9[^\n]*\n\s*placement: Placement\.Bottom,/);
 });

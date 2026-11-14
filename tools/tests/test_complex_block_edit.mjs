@@ -49,12 +49,14 @@ test('21.5 block IDs parse at the paragraph end without rewriting their source',
 })
 
 test('21.1 native panel uses the bundled preview and exact block replacement path', () => {
-  const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
-  const preview = fs.readFileSync(new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8')
+  const panel = fs.readFileSync(new URL(
+    'entry/src/main/ets/components/BlockPropertyPanel.ets', root), 'utf8')
+  const preview = fs.readFileSync(new URL(
+    'entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8')
 
-  assert.match(index, /FormulaPreviewWeb\(\{[\s\S]*?displayMode: !this\.blockPanelFormulaModel\?\.inline/)
-  assert.match(index, /MarkdownComplexBlockEdit\.parseFormula\(raw, inline\)/)
-  assert.match(index, /replaceBlockPanelInlineSource\(\s*this\.blockPanelFormulaRaw, replacement/)
+  assert.match(panel, /FormulaPreviewWeb\(\{[\s\S]*?displayMode: !this\.blockPanelFormulaModel\?\.inline/)
+  assert.match(panel, /MarkdownComplexBlockEdit\.parseFormula\(raw, inline\)/)
+  assert.match(panel, /replaceBlockPanelInlineSource\(\s*this\.blockPanelFormulaRaw, replacement/)
   assert.match(preview, /\$rawfile\('mdpreview\/index\.html'\)/)
 })
 
@@ -105,11 +107,12 @@ test('21.2 callout parser rejects non-callouts and multiline panel values', () =
 })
 
 test('21.2 native panel keeps unknown callout types and writes the exact source block', () => {
-  const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
-  assert.match(index, /anchor\.type === 'callout'[\s\S]*?loadBlockPanelCallout\(\)/)
-  assert.match(index, /MarkdownComplexBlockEdit\.parseCallout\(raw\)/)
-  assert.match(index, /this\.replaceBlockPanelInlineSource\(\s*this\.blockPanelCalloutRaw, replacement/)
-  assert.match(index, /this\.blockPanelCalloutModel\.knownType/)
+  const panel = fs.readFileSync(new URL(
+    'entry/src/main/ets/components/BlockPropertyPanel.ets', root), 'utf8')
+  assert.match(panel, /anchor\.type === 'callout'[\s\S]*?loadBlockPanelCallout\(\)/)
+  assert.match(panel, /MarkdownComplexBlockEdit\.parseCallout\(raw\)/)
+  assert.match(panel, /this\.replaceBlockPanelInlineSource\(\s*this\.blockPanelCalloutRaw, replacement/)
+  assert.match(panel, /this\.blockPanelCalloutModel\.knownType/)
 })
 
 test('21.2 preview edits only safe callout bodies and preserves their header', () => {
@@ -190,16 +193,17 @@ test('21.3 malformed frontmatter is rejected for structured edits and panel sour
     null
   )
 
-  const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
+  const panel = fs.readFileSync(new URL(
+    'entry/src/main/ets/components/BlockPropertyPanel.ets', root), 'utf8')
   const preview = fs.readFileSync(new URL('web/mdpreview/src/index.ts', root), 'utf8')
   const renderer = fs.readFileSync(new URL('web/mdpreview/src/renderer.mjs', root), 'utf8')
   assert.match(renderer, /data-preview-frontmatter-entry/)
   assert.match(preview, /dataset\.sourceType = 'frontmatter'/)
-  assert.match(index, /anchor\.type === 'frontmatter'[\s\S]*?loadBlockPanelFrontmatter\(\)/)
-  assert.match(index, /anchor\.type !== 'frontmatter'\) \|\|/)
-  assert.match(index, /this\.blockSourceActionLabel\(\)[\s\S]*?openBlockSourceDrawer\(\)/)
-  assert.match(index, /Checkbox\(\{ name: entry\.key \}\)/)
-  assert.match(index, /DatePicker\(\{[\s\S]*?onDateChange/)
+  assert.match(panel, /anchor\.type === 'frontmatter'[\s\S]*?loadBlockPanelFrontmatter\(\)/)
+  assert.match(panel, /anchor\.type !== 'frontmatter'\) \|\|/)
+  assert.match(panel, /this\.blockSourceActionLabel\(\)[\s\S]*?openBlockSourceDrawer\(\)/)
+  assert.match(panel, /Checkbox\(\{ name: entry\.key \}\)/)
+  assert.match(panel, /DatePicker\(\{[\s\S]*?onDateChange/)
 })
 
 test('21.4 footnote definitions parse, edit, and preserve CRLF continuation formatting', () => {
@@ -265,20 +269,21 @@ test('21.4 new footnote definitions use the source line ending without a termina
 })
 
 test('21.4 native panel wires footnote references, definitions, jumps, and guarded writes', () => {
-  const index = fs.readFileSync(new URL('entry/src/main/ets/pages/Index.ets', root), 'utf8')
+  const panel = fs.readFileSync(new URL(
+    'entry/src/main/ets/components/BlockPropertyPanel.ets', root), 'utf8')
   const preview = fs.readFileSync(new URL('entry/src/main/ets/components/PreviewWebView.ets', root), 'utf8')
   const renderer = fs.readFileSync(new URL('web/mdpreview/src/renderer.mjs', root), 'utf8')
   const mapping = fs.readFileSync(new URL('web/mdpreview/src/sourceMapping.mjs', root), 'utf8')
 
-  assert.match(index, /anchor\.tapType === 'footnoteRef'[\s\S]*?loadBlockPanelFootnote\(\)/)
-  assert.match(index, /MarkdownComplexBlockEdit\.findFootnoteDefinitions/)
-  assert.match(index, /MarkdownComplexBlockEdit\.findFootnoteReference/)
-  assert.match(index, /MarkdownComplexBlockEdit\.createFootnoteDefinition/)
-  assert.match(index, /definitions\.length > 1/)
-  assert.match(index, /source !== this\.blockPanelFootnoteSourceSnapshot/)
-  assert.match(index, /replaceBlockSource\(from, to, expectedSource, replacement, revision, 'input', false\)/)
-  assert.match(index, /scrollToSourceLine\(target\)/)
-  assert.match(index, /脚注正文/)
+  assert.match(panel, /anchor\.tapType === 'footnoteRef'[\s\S]*?loadBlockPanelFootnote\(\)/)
+  assert.match(panel, /MarkdownComplexBlockEdit\.findFootnoteDefinitions/)
+  assert.match(panel, /MarkdownComplexBlockEdit\.findFootnoteReference/)
+  assert.match(panel, /MarkdownComplexBlockEdit\.createFootnoteDefinition/)
+  assert.match(panel, /definitions\.length > 1/)
+  assert.match(panel, /source !== this\.blockPanelFootnoteSourceSnapshot/)
+  assert.match(panel, /replaceBlockSource\(from, to, expectedSource, replacement, revision, 'input', false\)/)
+  assert.match(panel, /scrollToSourceLine\(target\)/)
+  assert.match(panel, /脚注正文/)
   assert.match(preview, /'footnoteRef'/)
   assert.match(renderer, /name: 'footnoteDefinition'/)
   assert.match(renderer, /name: 'footnoteRef'/)

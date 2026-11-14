@@ -8,6 +8,8 @@ const { transformSync } = require('esbuild');
 import { readSourceFile } from './lib/source.mjs';
 
 const source = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const shareFlowSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 
 function method(startMarker, endMarker) {
   const start = source.indexOf(startMarker);
@@ -95,10 +97,10 @@ test('Git entry visibility does not gate remote-link sharing', () => {
   assert.match(source, /const GIT_ENTRY_UI_ENABLED: boolean = true/);
   assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);
   assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitSyncButton\(\)/);
-  // openShareDialog（含分享范围与格式选项构建）已移到 prepareShare 之后、UndoBar 之前
-  const shareDialogStart = source.indexOf('  private openShareDialog(scope: ShareLinkScope');
-  const shareDialog = source.slice(shareDialogStart,
-    source.indexOf('\n  @Builder\n  UndoBar()', shareDialogStart));
+  // openShareDialog（含分享范围与格式选项构建）已随分享域拆至 ShareFlowPanel
+  const shareDialogStart = shareFlowSource.indexOf('  private openShareDialog(scope: ShareLinkScope');
+  const shareDialog = shareFlowSource.slice(shareDialogStart,
+    shareFlowSource.indexOf('\n  build() {', shareDialogStart));
   assert.match(shareDialog, /value: 'file', label: 'Markdown \/ ZIP'/);
   assert.match(shareDialog, /if \(vault\.type === 'git' && focusReturnId\.length === 0\) \{[\s\S]*?value: 'link'/);
   assert.doesNotMatch(shareDialog, /GIT_ENTRY_UI_ENABLED/);

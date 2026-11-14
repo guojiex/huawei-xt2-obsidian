@@ -6,17 +6,21 @@ import { readSourceFile } from './lib/source.mjs'
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url))
 const { transformSync } = require('esbuild')
 const source = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url))
+// 工具条视图（TableToolbarAction / BlockToolbarContent）已从 Index 拆到
+// PreviewBlockToolbarAnchor（Phase 3 重构），builder 切片改读子组件；
+// 可见性判定、锚点变更与开关方法仍在 Index。
+const toolbar = readSourceFile(new URL('../../entry/src/main/ets/components/PreviewBlockToolbarAnchor.ets', import.meta.url))
 const start = source.indexOf('  private hasBlockToolbarForPane(pane: string): boolean {')
 const end = source.indexOf('\n  private calculateAnchoredPopupLayout(', start)
 const anchorChangeStart = source.indexOf('  private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {')
 const anchorChangeEnd = source.indexOf('\n  private recordBlockToolbarPaneArea(', anchorChangeStart)
-const builderStart = source.indexOf('  BlockToolbarContent() {')
-const builderEnd = source.indexOf('\n  @Builder\n  PreviewBlockToolbar(', builderStart)
+const builderStart = toolbar.indexOf('  BlockToolbarContent() {')
+const builderEnd = toolbar.indexOf('\n  build() {', builderStart)
 const toggleStart = source.indexOf('  private toggleFormatMenu(pane: string): void {')
 const toggleEnd = source.indexOf('\n  private onFormatMenuKey(', toggleStart)
 assert.ok(start >= 0 && end > start, 'could not find Index.hasBlockToolbarForPane')
 assert.ok(anchorChangeStart >= 0 && anchorChangeEnd > anchorChangeStart, 'could not find Index.onBlockAnchorChange')
-assert.ok(builderStart >= 0 && builderEnd > builderStart, 'could not find Index.BlockToolbarContent')
+assert.ok(builderStart >= 0 && builderEnd > builderStart, 'could not find PreviewBlockToolbarAnchor.BlockToolbarContent')
 assert.ok(toggleStart >= 0 && toggleEnd > toggleStart, 'could not find Index.toggleFormatMenu')
 
 const code = transformSync(
@@ -85,7 +89,7 @@ test('an inactive preview cannot take ownership of the active pane toolbar', () 
 
 test('the rendered toolbar is bounded to four registered actions and remains separate from Aa', () => {
   const eligibility = source.slice(start, end)
-  const builder = source.slice(builderStart, builderEnd)
+  const builder = toolbar.slice(builderStart, builderEnd)
   const toggle = source.slice(toggleStart, toggleEnd)
   assert.match(builder, /ForEach\(this\.blockToolbarActions\.slice\(0,\s*4\)/)
   assert.match(eligibility, /this\.blockToolbarActions\.length > 0/)

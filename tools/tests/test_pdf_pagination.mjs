@@ -231,8 +231,8 @@ test('源级：exportFromPageImages 删除 createDocument 自带的富余空白�
   assert.ok(cleanup > 0 && del > cleanup && save > del, 'surplus 清理须在 saveDocument 之前');
 });
 
-test('源级：Index 含 PDF 路由、捕获层 PDF 模式与分享面板 PDF 行', () => {
-  const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
+test('源级：ShareFlowPanel 含 PDF 路由、捕获层 PDF 模式与分享面板 PDF 行', () => {
+  const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
   assert.match(index, /format === 'pdf' && scope === 'note'/);
   assert.match(index, /prepareNotePdfShare\(/);
   assert.match(index, /shareCapturePdfMode/);
@@ -244,7 +244,7 @@ test('源级：Index 含 PDF 路由、捕获层 PDF 模式与分享面板 PDF �
 });
 
 test('源级：PDF 捕获页尺寸随窗口自适应且挂捕获层前重算（2026-11-11 修复）', () => {
-  const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
+  const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
   // 固定 700×990.59 在窗口高 < 990.59vp 时分页高度永远补不齐；宽度上限 700 不变，
   // 比例恒 A4，高度取整消除 scrollHeight 取整歧义。
   assert.match(index, /private updatePdfPageSize\(\): void/);
@@ -299,8 +299,8 @@ test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（5
   assert.equal(/Color\.(?!Transparent)[A-Z]/.test(dialog), false, '组件内不得散写 Color 枚举');
 });
 
-test('源级：PDF 预览流程拆至 SharePdfPreviewFlow，Index 只留接线（53.7，2026-11-13 拆分）', () => {
-  const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
+test('源级：PDF 预览流程拆至 SharePdfPreviewFlow，ShareFlowPanel 只留接线（53.7，2026-11-13 拆分）', () => {
+  const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
   const flow = readRepoFile('entry/src/main/ets/model/SharePdfPreviewFlow.ets');
   // Index：导入流程类并持有单一实例；不再直接持有 controller / 会话散状态
   assert.match(index, /import \{ SharePdfPreviewFlow, SharePdfPreviewRequest \} from '\.\.\/model\/SharePdfPreviewFlow';/);
@@ -334,8 +334,8 @@ test('源级：PDF 预览流程拆至 SharePdfPreviewFlow，Index 只留接线�
 
 // ---------- 53.10 分段快照旧帧校验（XT2「一页渲染两页且重复」修复） ----------
 
-test('源级：Index 分段快照带旧帧校验与重试（53.10）', () => {
-  const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
+test('源级：ShareFlowPanel 分段快照带旧帧校验与重试（53.10）', () => {
+  const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
   // 逐字节比较 + readPixelsToBuffer 读帧 + 有界重试 + 明确报错
   assert.match(index, /private segmentBuffersIdentical\(a: ArrayBuffer, b: ArrayBuffer\): boolean/);
   assert.match(index, /await snapshot\.readPixelsToBuffer\(buffer\);/);

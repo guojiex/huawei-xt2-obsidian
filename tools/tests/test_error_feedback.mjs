@@ -10,6 +10,10 @@ const userErrorSource = readSourceFile(
   new URL('../../entry/src/main/ets/model/UserErrorMessages.ets', import.meta.url));
 const sourceFiles = {
   index: readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url)),
+  shareFlow: readSourceFile(
+    new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url)),
+  blockPanel: readSourceFile(
+    new URL('../../entry/src/main/ets/components/BlockPropertyPanel.ets', import.meta.url)),
   sync: readSourceFile(new URL('../../entry/src/main/ets/pages/SyncPage.ets', import.meta.url)),
   settings: readSourceFile(new URL('../../entry/src/main/ets/components/SettingsView.ets', import.meta.url)),
   switcher: readSourceFile(new URL('../../entry/src/main/ets/components/QuickSwitcher.ets', import.meta.url)),
@@ -62,10 +66,10 @@ test('share exceptions surface their real message instead of replacing it', () =
     new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。'),
     'text_prepare'
   ), /200 KB/);
-  // 直出行为源级锁定；Index 两处 link 失败分支透传真实 message
+  // 直出行为源级锁定；分享域两处 link 失败分支透传真实 message
   assert.doesNotMatch(userErrorSource, /SAFE_SHARE_MESSAGES|startsWith\(/);
-  assert.match(sourceFiles.index, /linkFailureReason\.length > 0 \? linkFailureReason/);
-  assert.match(sourceFiles.index, /'远端链接准备失败：' \+ linkNoticeReason/);
+  assert.match(sourceFiles.shareFlow, /linkFailureReason\.length > 0 \? linkFailureReason/);
+  assert.match(sourceFiles.shareFlow, /'远端链接准备失败：' \+ linkNoticeReason/);
 });
 
 test('errors without a message fall back to phase guidance', () => {
@@ -134,7 +138,8 @@ test('critical failure surfaces keep their guarded error paths', () => {
   assert.match(sourceFiles.index, /recordFailure\(operation, phase, category, outcome, nextStep, code, message\)/);
   assert.match(sourceFiles.index, /private toastRegistryError\([\s\S]*RecentErrorOperation[\s\S]*RecentErrorPhase/);
   assert.equal(
-    (sourceFiles.index.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length,
+    (sourceFiles.index.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length +
+    (sourceFiles.blockPanel.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length,
     3
   );
   assert.match(sourceFiles.agentRuntime, /event\.result = AgentRuntime\.failureMessage\(event\.errorCode\)/);

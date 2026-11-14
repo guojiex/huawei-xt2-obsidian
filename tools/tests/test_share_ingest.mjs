@@ -121,6 +121,7 @@ test('56.5 零新增权限：requestPermissions 白名单不变', () => {
 
 const entryAbility = readSourceFile(new URL('entry/src/main/ets/entryability/EntryAbility.ets', root))
 const indexSource = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', root))
+const shareFlowSource = readSourceFile(new URL('entry/src/main/ets/components/ShareFlowPanel.ets', root))
 const dialogSource = readSourceFile(new URL('entry/src/main/ets/components/SaveShareDialog.ets', root))
 
 test('56.2 onCreate / onNewWant 双路径都接线 handleSharedWant + getSharedData', () => {
@@ -148,23 +149,24 @@ test('56.5 分享内容与标题不进 EntryAbility 日志', () => {
 
 test('56.4 Index 消费链：@StorageProp + @Watch + 消费后清键 + 落盘 + 打开', () => {
   assert.match(indexSource, /@StorageProp\('incomingShare'\) @Watch\('onIncomingShareChanged'\)/)
-  assert.match(indexSource, /private consumeIncomingShare\(\): void/)
-  assert.match(indexSource,
+  assert.match(indexSource, /this\.shareFlowApi\?\.consumeIncomingShare\(\)/)
+  assert.match(shareFlowSource, /private consumeIncomingShare\(\): void/)
+  assert.match(shareFlowSource,
     /AppStorage\.setOrCreate\(ShareIngestService\.STORAGE_KEY, ''\)/)
-  assert.match(indexSource, /NoteService\.previewCreatePath\(registry, vaultId, rel\)/)
-  assert.match(indexSource, /NoteService\.createNoteWithContent\(registry, vaultId, target, content\)/)
+  assert.match(shareFlowSource, /NoteService\.previewCreatePath\(registry, vaultId, rel\)/)
+  assert.match(shareFlowSource, /NoteService\.createNoteWithContent\(registry, vaultId, target, content\)/)
   assert.match(indexSource, /this\.onSelectFile\(target, 'left', true\)/)
   assert.match(indexSource, /this\.revealPath = target/)
-  assert.match(indexSource, /已保存到 /)
+  assert.match(shareFlowSource, /已保存到 /)
 })
 
 test('56.4 库根约束：normalizeRelPath 后含 / 即拒绝（不建子目录）', () => {
-  assert.match(indexSource, /if \(rel\.indexOf\('\/'\) >= 0\) \{[\s\S]*?保存位置固定在库根/)
+  assert.match(shareFlowSource, /if \(rel\.indexOf\('\/'\) >= 0\) \{[\s\S]*?保存位置固定在库根/)
 })
 
 test('56.4 冷启动兜底：aboutToAppear 检查早到载荷', () => {
-  assert.match(indexSource,
-    /if \(this\.incomingShareJson\.length > 0\) \{\s*\n\s*setTimeout\(\(\): void => \{\s*\n\s*this\.consumeIncomingShare\(\);/)
+  assert.match(shareFlowSource,
+    /const raw: string = AppStorage\.get<string>\(ShareIngestService\.STORAGE_KEY\) \?\? '';\s*\n\s*if \(raw\.length > 0\) \{\s*\n\s*setTimeout\(\(\): void => \{\s*\n\s*this\.consumeIncomingShare\(\);/)
 })
 
 test('56.3 确认层：标题为空 / 无库禁用保存，失败保留现场，成功才关闭', () => {

@@ -8,6 +8,9 @@ const require = createRequire(new URL('../../web/mdpreview/package.json', import
 const { transformSync } = require('esbuild');
 const indexSource = readSourceFile(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+// 分享域拆至 ShareFlowPanel：文本预览接线的源级断言改为读子组件
+const shareFlowSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 const dialogSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/ShareTextPreviewDialog.ets', import.meta.url));
 const userErrorSource = readSourceFile(
@@ -75,8 +78,8 @@ test('text preparation failure can retry and replace the error detail', async ()
   assert.equal(retries, 1);
   assert.equal(dialog.errorMessage, '');
   assert.equal(dialog.preparing, false);
-  assert.match(indexSource, /initialError: initialError,\s*onRetryPreparation: onRetryPreparation/);
-  assert.match(indexSource, /onConfirm: \(content: string\): Promise<void> => \{ return this\.shareTextContent/);
+  assert.match(shareFlowSource, /initialError: initialError,\s*onRetryPreparation: onRetryPreparation/);
+  assert.match(shareFlowSource, /onConfirm: \(content: string\): Promise<void> => \{ return this\.shareTextContent/);
 });
 
 test('text detail uses the shared utility shell on single-screen layouts', () => {
@@ -85,7 +88,7 @@ test('text detail uses the shared utility shell on single-screen layouts', () =>
   assert.match(dialogSource, /preferredWidthVp: Size\.shareW/);
   assert.match(dialogSource, /windowWidthVp: this\.windowWidthVp/);
   assert.match(dialogSource, /windowHeightVp: this\.windowHeightVp/);
-  assert.match(indexSource, /alignment: shareSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
+  assert.match(shareFlowSource, /alignment: shareSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
 });
 
 test('text detail uses its format icon block and the close action returns to format selection', () => {

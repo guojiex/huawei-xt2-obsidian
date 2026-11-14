@@ -96,9 +96,10 @@ test('invalid or failed saves do not claim persistence', () => {
   assert.equal(createStore({ flushError: true }).store.saveTheme('dark'), false);
 });
 
-test('Index restores the app-wide theme and passes it to the next settings dialog', () => {
+test('ShareFlowPanel restores the app-wide theme and passes it to the next settings dialog', () => {
+  // 分享域拆至 ShareFlowPanel 后，主题偏好的恢复与落盘都在子组件内
   const indexSource = readSourceFile(
-    new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+    new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
   const dialogSource = readSourceFile(
     new URL('../../entry/src/main/ets/components/ShareImageSettingsDialog.ets', import.meta.url));
   assert.match(indexSource,
@@ -137,9 +138,10 @@ test('invalid or failed width saves do not claim persistence', () => {
   assert.equal(createStore({ flushError: true }).store.saveWidth('wide'), false);
 });
 
-test('Index restores the app-wide width preference and passes it to the settings dialog', () => {
+test('ShareFlowPanel restores the app-wide width preference and passes it to the settings dialog', () => {
+  // 分享域拆至 ShareFlowPanel 后，宽度偏好的恢复与落盘都在子组件内
   const indexSource = readSourceFile(
-    new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+    new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
   assert.match(indexSource,
     /this\.shareCaptureWidthId = \(this\.shareImagePreferenceStore as ShareImagePreferenceStore\)\.loadWidth\(\)/);
   assert.match(indexSource, /initialWidthId: this\.shareCaptureWidthId/);

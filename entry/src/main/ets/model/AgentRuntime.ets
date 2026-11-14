@@ -3,12 +3,19 @@ import { VaultAccess } from './VaultAccess';
 import { NoteService } from './NoteService';
 import { VaultRegistry } from './VaultRegistry';
 import {
-  AgentMessage, AgentMessagePart, AgentNoteSnapshot, AgentRunConfig, AgentScenario,
-  AgentSession, AgentToolEvent, AgentToolStep, AgentWriteResult
+  AgentMessage,
+  AgentMessagePart,
+  AgentNoteSnapshot,
+  AgentRunConfig,
+  AgentScenario,
+  AgentSession,
+  AgentToolEvent,
+  AgentToolStep,
+  AgentWriteResult
 } from './AgentModels';
 import { AgentRules } from './AgentRules';
 import { AGENT_MOCK_SCENARIOS } from './AgentDefaults';
-import { AgentOperationStorage, AgentOperationStatus, AgentStoredOperation } from './AgentOperationStorage';
+import { AgentOperationStatus, AgentOperationStorage, AgentStoredOperation } from './AgentOperationStorage';
 
 interface StoredOperation {
   signature: string;
@@ -53,6 +60,11 @@ export class AgentRuntime {
     return AgentRuntime.deletingVaults.has(vaultId);
   }
 
+  /**
+   * removeVault 必须是**纯同步**回调：本实现不 await 它，若回调内含 await，
+   * 调用方拿到 removed=true 时注册表可能还没移除（外部授权释放曾踩过这个坑）。
+   * 所有异步清理（Agent 私有数据、外部目录授权释放）请放进被 await 的 cleanup。
+   */
   static async deleteVaultWithCleanup(vaultId: string, cleanup: () => Promise<void>,
     removeVault: () => void): Promise<boolean> {
     if (AgentRuntime.isVaultBusy(vaultId)) {

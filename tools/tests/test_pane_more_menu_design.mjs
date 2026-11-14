@@ -24,7 +24,8 @@ test('pane headers have no more button; active note scope appears in the top men
 });
 
 test('the shared top menu keeps actions scoped to the active pane', () => {
-  assert.match(noteGroup, /this\.openShareNoteDialog\(\)/);
+  // 分享域已拆至 ShareFlowPanel，菜单动作经 shareFlowApi 转发
+  assert.match(noteGroup, /this\.shareFlowApi\?\.openShareNoteDialog\(\)/);
   assert.match(noteGroup, /this\.toggleBacklinks\(this\.activeNotePane\(\)\)/);
   assert.match(noteGroup, /this\.previewActiveNoteInOtherPane\(this\.activeNotePane\(\)\)/);
   assert.match(noteGroup, /this\.setPreviewFollowEnabled\(!this\.followPreviewEnabled\)/);

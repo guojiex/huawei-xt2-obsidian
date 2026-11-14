@@ -147,7 +147,8 @@ test('Git source collects provider credentials in the dialog and documents safe 
   assert.match(dialogSource, /TextInput\(\{ placeholder: '私有仓库访问令牌', text: this\.gitToken \}\)/);
   assert.match(dialogSource, /\.type\(this\.showGitToken \? InputType\.Normal : InputType\.Password\)/);
   assert.match(dialogSource, /accessibilityText\(this\.showGitToken \? '隐藏访问令牌' : '显示访问令牌'\)/);
-  assert.match(dialogSource, /GitHub 使用 Bearer；Gitee 使用用户名和令牌/);
+  assert.match(dialogSource, /GitHub 与 Gitee 均使用令牌（Basic 认证）/);
+  assert.match(dialogSource, /GitHub 使用令牌（Basic 认证）；私有仓库需要令牌/);
   assert.match(dialogSource, /成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换/);
   assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.working \? '处理中…' : '导入 Git 仓库'\), 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.gitRemote\.trim\(\)\.length > 0 && !this\.working\)/);
   assert.match(dialogSource, /username: username,\s*token: this\.gitToken/);

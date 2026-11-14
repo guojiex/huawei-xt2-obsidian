@@ -6,8 +6,9 @@ import { readSourceFile } from './lib/source.mjs';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
+// 分享域拆至 ShareFlowPanel：长图生成的源级断言改为读子组件
 const indexSource = readSourceFile(
-  new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+  new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 const previewSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/ShareImagePreviewDialog.ets', import.meta.url));
 const userErrorSource = readSourceFile(

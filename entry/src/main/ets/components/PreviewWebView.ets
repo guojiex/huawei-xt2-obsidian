@@ -139,6 +139,12 @@ export interface PreviewBlockAnchor {
   height: number;
 }
 
+export function isSameBlockPanelTarget(current: PreviewBlockAnchor | null, expected: PreviewBlockAnchor): boolean {
+  return current !== null && current.from === expected.from && current.to === expected.to &&
+    current.tapType === expected.tapType && current.inlineIndex === expected.inlineIndex &&
+    current.itemFrom === expected.itemFrom && current.itemTo === expected.itemTo;
+}
+
 export function mapPreviewBlockAnchor(payload: string, area: number[]): PreviewBlockAnchor | null {
   if (payload.length === 0 || area.length < 4) {
     return null;

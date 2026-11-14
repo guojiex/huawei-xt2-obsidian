@@ -14,6 +14,8 @@ const dialogSource = readSourceFile(new URL(
   '../../entry/src/main/ets/components/ShareNoteDialog.ets', import.meta.url));
 const indexSource = readSourceFile(new URL(
   '../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const shareFlowSource = readSourceFile(new URL(
+  '../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 
 const helperStart = managerSource.indexOf('  private vaultHasNoNotes(');
 const helperEnd = managerSource.indexOf('\n  @Builder', helperStart);
@@ -62,14 +64,14 @@ test('manager share action is accessible and returns to its own trigger', () => 
 });
 
 test('manager share stays on the selected vault, exposes ZIP only, and preserves detail back navigation', () => {
-  const openFromManager = sourceMethod(indexSource, '  private openShareVaultFromManager(',
+  const openFromManager = sourceMethod(shareFlowSource, '  private openShareVaultFromManager(',
     '\n  private sharePathForScope(');
-  // openShareDialog 已移到各 @Builder 之前、紧邻 UndoBar
-  const openDialog = sourceMethod(indexSource, '  private openShareDialog(',
-    '\n  @Builder\n  UndoBar()');
-  const prepareShare = sourceMethod(indexSource, '  private async prepareShare(',
+  // openShareDialog 在 ShareFlowPanel 内紧邻 build()
+  const openDialog = sourceMethod(shareFlowSource, '  private openShareDialog(',
+    '\n  build() {');
+  const prepareShare = sourceMethod(shareFlowSource, '  private async prepareShare(',
     '\n  private async shareFile(');
-  const preview = sourceMethod(indexSource, '  private openShareFilePreview(',
+  const preview = sourceMethod(shareFlowSource, '  private openShareFilePreview(',
     '\n  private async shareLink(');
 
   assert.match(openFromManager, /countScope\(registry, vaultId, ''\)/);
@@ -85,9 +87,9 @@ test('manager share stays on the selected vault, exposes ZIP only, and preserves
 });
 
 test('normal note share retains the vault range and Git remote-link path', () => {
-  // openShareDialog 已移到各 @Builder 之前、紧邻 UndoBar
-  const openDialog = sourceMethod(indexSource, '  private openShareDialog(',
-    '\n  @Builder\n  UndoBar()');
+  // openShareDialog 在 ShareFlowPanel 内紧邻 build()
+  const openDialog = sourceMethod(shareFlowSource, '  private openShareDialog(',
+    '\n  build() {');
   assert.match(openDialog, /folderScopeDistinct \? \[noteOption, folderOption, vaultOption\] : \[noteOption, vaultOption\]/);
   assert.match(openDialog, /if \(vault\.type === 'git' && focusReturnId\.length === 0\)/);
   assert.match(sidebarSource, /onManageVaults: \(\) => void/);

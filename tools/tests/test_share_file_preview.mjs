@@ -6,7 +6,7 @@ import { readSourceFile } from './lib/source.mjs';
 
 const require = createRequire(new URL('../../web/mdpreview/package.json', import.meta.url));
 const { transformSync } = require('esbuild');
-const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const shareFlowSource = readSourceFile(new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
 const dialogSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/ShareFilePreviewDialog.ets', import.meta.url));
 const userErrorSource = readSourceFile(
@@ -35,13 +35,13 @@ class ShareFilePreviewHarness {
 module.exports = ShareFilePreviewHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
 
-const openPreviewStart = indexSource.indexOf('  private openShareFilePreview(');
-const openPreviewEnd = indexSource.indexOf('\n  private async shareLink(', openPreviewStart);
-assert.ok(openPreviewStart >= 0 && openPreviewEnd > openPreviewStart, 'could not find Index.openShareFilePreview');
+const openPreviewStart = shareFlowSource.indexOf('  private openShareFilePreview(');
+const openPreviewEnd = shareFlowSource.indexOf('\n  private async shareLink(', openPreviewStart);
+assert.ok(openPreviewStart >= 0 && openPreviewEnd > openPreviewStart, 'could not find ShareFlowPanel.openShareFilePreview');
 
 const indexHarnessCode = transformSync(`
 class IndexSharePreviewHarness {
-  ${indexSource.slice(openPreviewStart, openPreviewEnd)}
+  ${shareFlowSource.slice(openPreviewStart, openPreviewEnd)}
 }
 module.exports = IndexSharePreviewHarness;
 `, { loader: 'ts', format: 'cjs' }).code;

@@ -21,12 +21,28 @@
  *   挤到折叠线以下、控件树里查无（183046 run 实测，文件在盘上但行不可见）。
  */
 
-import { describe, beforeAll, it, expect } from '@ohos/hypium';
-import { Driver, Component, Rect } from '@ohos.UiTest';
-import { getDriver, launchMainApp, waitById, waitByText, waitByTextContains,
-  clickById, clickByText, existsById, existsByText, waitGoneById, waitGoneByText,
-  uniqueUiName, ensureSidebarVisible, waitByIdSoft, waitByTextContainsSoft, tryWaitById,
-  scrollSidebarToTop, ensureNoteView, SNACK_MS } from './UiTestHelpers';
+import { beforeAll, describe, expect, it } from '@ohos/hypium';
+import { Component, Driver, Rect } from '@ohos.UiTest';
+import {
+  clickById,
+  clickByText,
+  ensureNoteView,
+  ensureSidebarVisible,
+  existsById,
+  existsByText,
+  getDriver,
+  launchMainApp,
+  scrollSidebarToTop,
+  SNACK_MS,
+  tryWaitById,
+  uniqueUiName,
+  waitById,
+  waitByIdSoft,
+  waitByText,
+  waitByTextContainsSoft,
+  waitGoneById,
+  waitGoneByText
+} from './UiTestHelpers';
 
 /** 样例库 id（树行 id 形如 file-tree-row-<vaultId>:<relPath>，见 FileTreeView.treeRowFocusId） */
 const VAULT_ID: string = '曜石笔记教程';
@@ -81,12 +97,29 @@ async function swipeDeleteNote(driver: Driver, row: Component, rowId: string): P
   }
   // 未删成：0.7 可能停在阈值之间（操作条半开）——「删除」按钮已在就直接点，否则半滑拉出
   if (!(await existsByText(driver, '删除'))) {
-    const rowAgain: Component = await findTreeRow(driver, rowId);
-    await swipeTreeRow(driver, rowAgain, 0.45);
+    await revealRowDelete(driver, rowId);
   }
   await clickByText(driver, '删除');
   await waitByText(driver, '删除笔记？');
   await clickByText(driver, '确认删除');
+}
+
+/**
+ * 半滑拉出操作条并确认「删除」已入树：0.45 半滑间歇不触发 swipeAction（20261114 两轮
+ * 全量同签名 2 连错——delete_note_dialog_cancel_keeps / trash_section_visible_after_delete
+ * 均 30s 等不到 text=删除，单独复跑转绿；与 2026-11-12 #13 trash_purge 的 0.7 抖动同源，
+ * swipeAction 注入手势不稳），套「滑动→短窗探针→重找行重滑」兜底，最多 3 次。
+ */
+async function revealRowDelete(driver: Driver, rowId: string): Promise<void> {
+  for (let i: number = 0; i < 3; i++) {
+    const row: Component = await findTreeRow(driver, rowId);
+    await swipeTreeRow(driver, row, 0.45);
+    await driver.delayMs(1000);
+    if (await existsByText(driver, '删除')) {
+      return;
+    }
+  }
+  throw new Error('半滑 3 次未拉出「删除」操作条: ' + rowId);
 }
 
 /** 可见性探针窗口：x86 模拟器一次成功匹配可花 2~12s（UiTestHelpers 头注），
@@ -198,8 +231,8 @@ export default function uiNoteFlowTest() {
       const name: string = uniqueUiName('uitest删');
       const rowId: string = noteRowId(name);
       await createNoteByName(driver, name);
-      const row: Component = await findTreeRow(driver, rowId);
-      await swipeTreeRow(driver, row, 0.45);
+      // 裸 0.45 半滑间歇不触发（revealRowDelete 注释），统一走带兜底的拉出链
+      await revealRowDelete(driver, rowId);
       await clickByText(driver, '删除');
       await waitByText(driver, '删除笔记？');
       await clickByText(driver, '确认删除');
@@ -214,8 +247,8 @@ export default function uiNoteFlowTest() {
       const name: string = uniqueUiName('uitest留');
       const rowId: string = noteRowId(name);
       await createNoteByName(driver, name);
-      const row: Component = await findTreeRow(driver, rowId);
-      await swipeTreeRow(driver, row, 0.45);
+      // 裸 0.45 半滑间歇不触发（revealRowDelete 注释），统一走带兜底的拉出链
+      await revealRowDelete(driver, rowId);
       await clickByText(driver, '删除');
       await waitByText(driver, '删除笔记？');
       await clickByText(driver, '取消');

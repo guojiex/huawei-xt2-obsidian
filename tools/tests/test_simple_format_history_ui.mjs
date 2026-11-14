@@ -4,6 +4,10 @@ import test from 'node:test';
 
 const index = fs.readFileSync(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url), 'utf8');
+// Aa 面板（FormatMenu / FormatHistoryButton）视图已从 Index 拆到 FormatDockPanel（Phase 3 重构），
+// 面板本体的断言改读子组件；formatMenuMaxHeight 表达式与路由方法仍在 Index。
+const dock = fs.readFileSync(
+  new URL('../../entry/src/main/ets/components/FormatDockPanel.ets', import.meta.url), 'utf8');
 const previewBridge = fs.readFileSync(
   new URL('../../entry/src/main/ets/components/PreviewWebView.ets', import.meta.url), 'utf8');
 const previewSource = fs.readFileSync(
@@ -14,13 +18,13 @@ const icons = fs.readFileSync(
   new URL('../../entry/src/main/ets/common/Icons.ets', import.meta.url), 'utf8');
 
 test('Aa menu places undo and redo in a separated two-button footer', () => {
-  const formatMenu = index.slice(index.indexOf('  FormatMenu() {'), index.indexOf('  BlockToolbarContent() {'));
+  const formatMenu = dock.slice(dock.indexOf('  FormatMenu() {'), dock.indexOf('\n  @Builder', dock.indexOf('  FormatMenu() {')));
   assert.match(formatMenu, /this\.FormatHistoryButton\('undo', '撤销'\)/);
   assert.match(formatMenu, /this\.FormatHistoryButton\('redo', '重做'\)/);
   assert.match(formatMenu, /Row\(\{ space: Space\.s2 \}\) \{[\s\S]*?FormatHistoryButton\('undo'[\s\S]*?FormatHistoryButton\('redo'[\s\S]*?\.border\(\{ width: \{ top: 1 \}, color: \$r\('app\.color\.line'\) \}\)/);
-  assert.match(index, /FormatHistoryButton\(action: PreviewEditHistoryAction, label: string\)/);
-  assert.match(index, /Icon\(action, Space\.s4, \$r\('app\.color\.text_secondary'\)\)/);
-  assert.match(index, /\.accessibilityText\(label\)/);
+  assert.match(dock, /FormatHistoryButton\(action: PreviewEditHistoryAction, label: string\)/);
+  assert.match(dock, /Icon\(action, Space\.s4, \$r\('app\.color\.text_secondary'\)\)/);
+  assert.match(dock, /\.accessibilityText\(label\)/);
   assert.equal((index.match(/Size\.touch \* 6 \+ Space\.s2 \* 6 \+ Size\.touch \+ Space\.s6 \* 2 \+ Size\.touch \+ Space\.s2/g) ?? []).length, 3);
 });
 

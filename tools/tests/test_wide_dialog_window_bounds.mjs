@@ -22,6 +22,7 @@ const shareText = read('../../entry/src/main/ets/components/ShareTextPreviewDial
 const shareImageSettings = read('../../entry/src/main/ets/components/ShareImageSettingsDialog.ets');
 const shareNote = read('../../entry/src/main/ets/components/ShareNoteDialog.ets');
 const index = read('../../entry/src/main/ets/pages/Index.ets');
+const shareFlow = read('../../entry/src/main/ets/components/ShareFlowPanel.ets');
 const proto = read('../../docs/prototype/v2/index.html');
 
 test('32.13 原型：宽屏弹窗上下边距 gap=--s8，超出滚动', () => {
@@ -61,8 +62,9 @@ test('32.13 原生：分享面板标题不跳（恒高法沿用 v1.25），宽�
   assert.match(shareNote, /private scopeFormatAreaHeight\(\): number \{[\s\S]*?maxRows/s);
   assert.match(shareNote, /\.height\(this\.scopeFormatAreaHeight\(\)\)/);
   // 宽屏分享面板与其他弹窗一样垂直居中（DialogAlignment.Center），不改为 Top 锚定
-  assert.match(index, /alignment: shareSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
-  assert.doesNotMatch(index, /DialogAlignment\.Top/);
+  //（分享域拆至 ShareFlowPanel，弹窗对齐断言读子组件）
+  assert.match(shareFlow, /alignment: shareSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
+  assert.doesNotMatch(shareFlow, /DialogAlignment\.Top/);
 });
 
 test('32.13 原生：单屏半模态不变（Bottom 贴底 + 0.86）', () => {
