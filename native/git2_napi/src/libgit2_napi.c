@@ -49,6 +49,12 @@ typedef struct {
   napi_threadsafe_function progress_function;
   int result_code;
   char *error_message;
+  unsigned int auth_callback_allowed_types;
+  unsigned int auth_callback_calls;
+  bool auth_callback_invoked;
+  bool auth_username_present;
+  bool auth_password_present;
+  bool auth_bearer_present;
 } clone_work_t;
 
 typedef struct {
@@ -886,6 +892,27 @@ static void capture_clone_error(clone_work_t *work, int result_code) {
   work->error_message = (char *)malloc(length + 1);
   if (work->error_message != NULL) {
     memcpy(work->error_message, message, length + 1);
+    char diagnostic[320];
+    const int diagnostic_length = snprintf(
+        diagnostic, sizeof(diagnostic),
+        " [libgit2_error_class=%d; auth_callback=%s; calls=%u; allowed_types=0x%X; "
+        "userpass_allowed=%s; username=%s; password=%s; bearer=%s]",
+        error != NULL ? error->klass : -1,
+        work->auth_callback_invoked ? "called" : "not_called",
+        work->auth_callback_calls,
+        work->auth_callback_allowed_types,
+        (work->auth_callback_allowed_types & GIT_CREDENTIAL_USERPASS_PLAINTEXT) != 0
+            ? "yes" : "no",
+        work->auth_username_present ? "present" : "missing",
+        work->auth_password_present ? "present" : "missing",
+        work->auth_bearer_present ? "present" : "missing");
+    if (diagnostic_length >= 0 && (size_t)diagnostic_length < sizeof(diagnostic)) {
+      char *expanded = (char *)realloc(work->error_message, length + (size_t)diagnostic_length + 1);
+      if (expanded != NULL) {
+        memcpy(expanded + length, diagnostic, (size_t)diagnostic_length + 1);
+        work->error_message = expanded;
+      }
+    }
   }
   work->result_code = result_code;
 }
@@ -1010,6 +1037,14 @@ static int acquire_credentials(git_credential **out, const char *url,
   (void)url;
   (void)username_from_url;
   clone_work_t *work = (clone_work_t *)payload;
+  if (work != NULL) {
+    work->auth_callback_invoked = true;
+    work->auth_callback_calls++;
+    work->auth_callback_allowed_types = allowed_types;
+    work->auth_username_present = work->username != NULL && work->username[0] != '\0';
+    work->auth_password_present = work->password != NULL && work->password[0] != '\0';
+    work->auth_bearer_present = work->bearer_token != NULL && work->bearer_token[0] != '\0';
+  }
   if (work == NULL || work->username == NULL || work->password == NULL ||
       (allowed_types & GIT_CREDENTIAL_USERPASS_PLAINTEXT) == 0) {
     return GIT_PASSTHROUGH;

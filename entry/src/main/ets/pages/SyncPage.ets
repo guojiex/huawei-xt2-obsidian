@@ -1,11 +1,12 @@
 import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { preferences } from '@kit.ArkData';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
-import { applyRemoteAuth, isGiteeRemote, isGitHubRemote } from '../git/GitRemoteAuth';
+import { applyRemoteAuth, gitRemoteHost, isGiteeRemote, isGitHubRemote } from '../git/GitRemoteAuth';
 import { Git2ActionOptions, Git2CloneOptions, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
 import { GIT_IMPORTING_SUFFIX, VaultRegistry } from '../model/VaultRegistry';
 import { sanitizeVaultName, VaultEntry } from '../model/Vault';
@@ -14,6 +15,8 @@ import { FontSize, Radius, Space } from '../common/Tokens';
 
 /** 旧版把令牌明文存在这个 preferences store（v0.3 起令牌只进 Asset Store Kit，进页一次性清除） */
 const LEGACY_STORE_NAME: string = 'git_sync';
+const GIT_DIAGNOSTIC_DOMAIN: number = 0x0000;
+const GIT_DIAGNOSTIC_TAG: string = 'GitSync';
 
 /**
  * 从仓库地址推导库名：取最后一段路径，去掉 .git 后缀，再走库名消毒。
@@ -147,7 +150,7 @@ struct SyncPage {
     return '原因未确定，请检查网络、仓库地址和当前库状态后重试';
   }
 
-  /** 导入错误仅展示在用户界面；令牌始终脱敏。 */
+  /** 导入错误展示在页面并写入本地 hilog；令牌始终脱敏。 */
   private redactImportDetail(message: string, token: string): string {
     return token.length > 0 ? message.split(token).join('[令牌已隐藏]') : message;
   }
@@ -210,7 +213,9 @@ struct SyncPage {
       this.onCloneDone(true, 'Native clone 与磁盘状态校验完成');
     } catch (error) {
       const err = error as BusinessError;
-      this.onCloneDone(false, this.redactImportDetail(err.message ?? String(error), token));
+      const detail: string = this.redactImportDetail(err.message ?? String(error), token);
+      this.logGitFailure('clone', url, err, detail);
+      this.onCloneDone(false, detail);
     }
   }
 
@@ -274,6 +279,7 @@ struct SyncPage {
       const err = error as BusinessError;
       this.syncStatusText = '无法读取 Git 状态：' + (err.message ?? String(error)) +
         '。请稍后刷新，操作前先核对当前库。';
+      this.logGitFailure('status', this.syncRemote, err, this.syncFailureDetail(err));
     }
   }
 
@@ -284,6 +290,14 @@ struct SyncPage {
       detail = detail.split(this.syncToken).join('[令牌已隐藏]');
     }
     return detail;
+  }
+
+  /** Git 诊断只写本地 hilog；保留底层错误，令牌在调用前脱敏。 */
+  private logGitFailure(operation: string, remote: string, error: BusinessError, detail: string): void {
+    const code: number = error.code ?? -1;
+    hilog.error(GIT_DIAGNOSTIC_DOMAIN, GIT_DIAGNOSTIC_TAG,
+      'Git %{public}s failure host=%{public}s code=%{public}d detail=%{public}s',
+      operation, gitRemoteHost(remote), code, detail);
   }
 
   private async performGitAction(operation: 'stage' | 'commit' | 'fetch' | 'push'): Promise<void> {
@@ -364,6 +378,7 @@ struct SyncPage {
       const detail: string = this.syncFailureDetail(err);
       const label: string = operation === 'stage' ? '暂存' : operation === 'commit' ? '本地提交' :
         operation === 'fetch' ? '获取远端状态' : '推送';
+      this.logGitFailure(label, this.syncRemote, err, detail);
       this.appendLog(label + '失败；当前状态未确认。' +
         this.explainError(detail) + '。底层错误：' + detail + '。请刷新 Git 状态后再决定是否重试。');
     } finally {
