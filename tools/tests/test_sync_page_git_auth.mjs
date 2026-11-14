@@ -234,7 +234,9 @@ test('failure copy carries the underlying error with token redaction (46.9)', ()
   assert.match(source, /applyRemoteAuth\(options, this\.syncRemote, this\.syncUsername\.trim\(\), this\.syncToken\)/);
 });
 
-test('GitHub clone sends the token as bearer auth and omits username/password', async () => {
+// GitHub 的 git 传输层只认 Basic；Bearer 仅对 REST/GraphQL API 有效。
+// 之前把令牌当 Bearer 发会触发 libgit2 "remote authentication required but no callback set"。
+test('GitHub clone sends the token as Basic credentials with a placeholder username', async () => {
   const f = harness();
   f.page.repoUrl = 'https://github.com/team/repo.git';
   f.page.token = 'synthetic-token';
@@ -242,9 +244,9 @@ test('GitHub clone sends the token as bearer auth and omits username/password', 
   await f.page.doClone();
 
   assert.equal(f.cloneCalls.length, 1);
-  assert.equal(f.cloneCalls[0].bearerToken, 'synthetic-token');
-  assert.equal('username' in f.cloneCalls[0], false);
-  assert.equal('password' in f.cloneCalls[0], false);
+  assert.equal(f.cloneCalls[0].username, 'x-access-token');
+  assert.equal(f.cloneCalls[0].password, 'synthetic-token');
+  assert.equal('bearerToken' in f.cloneCalls[0], false);
   assert.equal(f.page.cloneResult.ok, true);
 });
 
@@ -310,11 +312,19 @@ test('GitHub detection matches the host rather than an arbitrary containing doma
   assert.equal(gitAuthModule.gitRemoteHost('user@github.com:443/o/r.git'), 'github.com');
 });
 
-test('applyRemoteAuth writes bearer for GitHub and Basic for others, skipping empty tokens', () => {
+test('applyRemoteAuth writes Basic for GitHub and Gitee, skipping empty tokens', () => {
   const githubOptions = {};
   gitAuthModule.applyRemoteAuth(githubOptions, 'https://github.com/team/repo.git', 'user', 'tok');
-  assert.equal(githubOptions.bearerToken, 'tok');
-  assert.equal('username' in githubOptions, false);
+  assert.equal(githubOptions.username, 'user');
+  assert.equal(githubOptions.password, 'tok');
+  assert.equal('bearerToken' in githubOptions, false);
+
+  // GitHub 不要求用户填用户名：用 x-access-token 占位，经典 PAT / 细粒度 PAT 均兼容。
+  const githubNoUsername = {};
+  gitAuthModule.applyRemoteAuth(githubNoUsername, 'https://github.com/team/repo.git', '', 'tok');
+  assert.equal(githubNoUsername.username, 'x-access-token');
+  assert.equal(githubNoUsername.password, 'tok');
+  assert.equal('bearerToken' in githubNoUsername, false);
 
   const giteeOptions = {};
   gitAuthModule.applyRemoteAuth(giteeOptions, 'https://gitee.com/team/repo.git', 'user', 'tok');

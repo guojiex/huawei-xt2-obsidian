@@ -30,18 +30,9 @@ import { AgentRuntime } from '../model/AgentRuntime';
 import { NotePathMutationResult, NoteService } from '../model/NoteService';
 import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
 import { FileTree } from '../model/FileTree';
-import { WikiLinkCandidate, WikiLinkParser, WikiLinkReference, WikiLinkResolution } from '../model/WikiLinkParser';
+import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
-import { MarkdownImageParts, MarkdownInlineParser, MarkdownLinkParts } from '../model/MarkdownInlineParser';
-import {
-  CalloutSourceModel,
-  FootnoteSourceModel,
-  FootnoteSourceRange,
-  FormulaSourceModel,
-  FrontmatterPropertyModel,
-  FrontmatterSourceModel,
-  MarkdownComplexBlockEdit
-} from '../model/MarkdownComplexBlockEdit';
+import { MarkdownImageParts, MarkdownInlineParser } from '../model/MarkdownInlineParser';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerShareSummary, VaultManagerView } from '../components/VaultManagerView';
 import {
@@ -82,10 +73,8 @@ import { GitNativeService } from '../git/GitNativeService';
 import { EditorBridge, EditorSnapshot, EditorWebView } from '../components/EditorWebView';
 import { EditorNoteSession } from '../model/EditorNoteSession';
 import {
-  FormulaPreviewWeb,
   isSameBlockPanelTarget,
   PreviewBlockAnchor,
-  PreviewBlockInlineItem,
   PreviewBridge,
   PreviewCaptureResult,
   PreviewCodeEditRequest,
@@ -178,7 +167,7 @@ import { uniformTypeDescriptor } from '@kit.ArkData';
 import { fileIo, fileUri } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
-import { BlockPropertyPanel, blockPanelTitleFor, PanelImageReplaceContext } from '../components/BlockPropertyPanel';
+import { blockPanelTitleFor, BlockPropertyPanel, PanelImageReplaceContext } from '../components/BlockPropertyPanel';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
@@ -6130,6 +6119,10 @@ struct Index {
     const wasSessionSavingEnabled: boolean = this.workspaceSessionSavingEnabled;
     if (deletingCurrent) {
       this.stopWorkspaceSessionSaving();
+      // 删库过程中先摘掉笔记防抖写盘定时器：库目录一旦被 removeVaultTree 删掉，
+      // 定时器再触发就会拿旧路径写盘，accessFor(旧库) 会抛「库不存在」把界面卡死。
+      // 删除失败时由下方 reschedulePendingNoteSaves() 排回去，不丢未保存改动。
+      this.cancelPendingNoteSaves();
     }
     try {
       const reg: VaultRegistry = VaultRegistry.get();
@@ -6138,15 +6131,24 @@ struct Index {
       const removed: boolean = await AgentRuntime.deleteVaultWithCleanup(id,
         async (): Promise<void> => {
           await AgentMemoryStore.removeVaultData(id);
-        },
-        async (): Promise<void> => {
+          // 外部目录授权释放是异步的，必须待在会被 await 的 cleanup 里。
+          // 放进 removeVault 会让该回调变成 async 却没人 await，
+          // removed=true 先返回、注册表还没移除，UI 拿旧 currentVaultId 清工作区就错序。
           if (target !== undefined && target.rootKind === 'external' && target.rootUri !== undefined) {
             const authorization: ExternalVaultAuthorizationService =
               createExternalVaultAuthorization(reg.abilityContext());
             await authorization.release(target.rootUri);
           }
+        },
+        (): void => {
           AgentRuntime.forgetVault(id, reg);
           reg.remove(id);
+          // 注册表已移除该库。必须**同步**、且赶在 refreshFromRegistry() 触发重渲染之前
+          // 清掉已打开的笔记状态：否则下一帧渲染拿旧库 id 的 currentFilePath 去
+          // accessFor() 会抛「库不存在」把界面卡死。等 await 返回再清就来不及了。
+          if (deletingCurrent) {
+            this.resetOpenNotesAfterVaultRemoval();
+          }
           // v1.47 47.4：删库时清理其每库工作区会话，避免 Preferences 键泄漏。
           try {
             this.ensureWorkspaceSessionStore();
@@ -6166,7 +6168,20 @@ struct Index {
         if (deletingCurrent && this.currentVaultId === id && wasSessionSavingEnabled) {
           this.workspaceSessionSavingEnabled = true;
         }
+        if (deletingCurrent) {
+          this.reschedulePendingNoteSaves();
+        }
         promptAction.showToast({ message: '该库的 Agent 正在运行或删除；稍后再试。' });
+      } else if (deletingCurrent) {
+        // 当前库已删：注册表把 currentVaultId 回落到别的库（或空串），但左右栏打开的
+        // 笔记、编辑器会话与 Web 内容仍属于被删库。不清理，后续渲染 / 预览重算 /
+        // 自动保存都会拿旧路径去 accessFor()，抛「库不存在」把界面卡死。
+        // 清理失败只记日志，不改变删除成功的结果。
+        try {
+          await this.restoreWorkspaceAfterVaultRemoval();
+        } catch (workspaceError) {
+          hilog.warn(DOMAIN, TAG, '删库后重建工作区失败');
+        }
       }
     } catch (error) {
       try {
@@ -6174,10 +6189,118 @@ struct Index {
       } catch (persistError) {
         // Keep the deletion error visible; a later user edit can retry the conversation save.
       }
-      if (deletingCurrent && this.currentVaultId === id && wasSessionSavingEnabled) {
-        this.workspaceSessionSavingEnabled = true;
+      if (deletingCurrent) {
+        // 删除失败（库仍在）或 reg.remove 已落地但后续清理抛错（库已不在、currentVaultId
+        // 已回落）时都要恢复会话保存，否则本页之后再也不会自动保存工作区会话。
+        if (wasSessionSavingEnabled || this.currentVaultId !== id) {
+          this.workspaceSessionSavingEnabled = true;
+        }
+        this.reschedulePendingNoteSaves();
       }
       this.toastRegistryError('删除失败', error, 'vault', 'delete');
+    }
+  }
+
+  /** 摘掉左右栏的防抖写盘定时器；删库期间避免把内容写进已删除的库。 */
+  private cancelPendingNoteSaves(): void {
+    if (this.saveTimer !== -1) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = -1;
+    }
+    if (this.rightSaveTimer !== -1) {
+      clearTimeout(this.rightSaveTimer);
+      this.rightSaveTimer = -1;
+    }
+  }
+
+  /** 删除未执行/失败，库仍在：把被摘掉的防抖写盘排回去，不让未保存改动丢掉。 */
+  private reschedulePendingNoteSaves(): void {
+    this.scheduleSave();
+    this.scheduleRightSave();
+  }
+
+  /**
+   * 删除当前库后**同步**清空已打开笔记的全部 UI 状态。
+   *
+   * 必须在 reg.remove(id) 之后、refreshFromRegistry() 之前调用：注册表一移除，
+   * currentFilePath / rightFilePath、leftSession / rightSession 与常驻 Web 组件里
+   * 的正文仍属于被删库，下一帧渲染或预览重算会拿旧库 id 调
+   * VaultRegistry.accessFor()，而它对已删除的库直接抛「库不存在: id」→ 界面卡死。
+   *
+   * 与 switchVault / adoptExternalVaultSwitch 的切库清理同构（作废在途请求、清两栏、
+   * 清面板），差别是删库**不 flush 旧库编辑** —— 库目录已删，写回无意义且会抛错。
+   */
+  private resetOpenNotesAfterVaultRemoval(): void {
+    // 作废在途的异步打开/关闭，避免删库期间的旧结果回灌到已清理的工作区。
+    this.leftOpenRequestId++;
+    this.rightOpenRequestId++;
+    this.cancelPendingNoteSaves();
+    this.stopWorkspaceSessionSaving();
+
+    this.currentFilePath = '';
+    this.rightFilePath = '';
+    this.rightPaneIntentionallyEmpty = false;
+    this.quickSwitchOpen = false;
+    this.quickSwitchFiles = [];
+    this.recentOpenPaths = [];
+    this.leftLastClosedPath = '';
+    this.rightLastClosedPath = '';
+    this.smMode = 'edit';
+    this.leftSession = null;
+    this.rightSession = null;
+    this.editorDirty = false;
+    this.rightEditorDirty = false;
+    this.chapterEntries = [];
+    this.selectedChapterIndex = -1;
+    this.chapterPath = '';
+    this.closeFormatMenu(false);
+    this.closeBlockPropertyPanel(false);
+    this.tableGridOpen = false;
+    this.backlinksExpanded = false;
+    this.backlinksPane = '';
+    this.paneCloseHovered = '';
+  }
+
+  /**
+   * 删库成功、注册表已刷新后重建工作区：优先按回落库自己的会话恢复，
+   * 没有会话（或恢复失败）则把常驻编辑器 / 预览推空。
+   * 只改 ArkTS 状态不够，Web 组件仍显示被删库的笔记正文，必须显式推内容。
+   */
+  private async restoreWorkspaceAfterVaultRemoval(): Promise<void> {
+    const nextVaultId: string = this.currentVaultId;
+    let targetSession: WorkspaceSession | null = null;
+    if (nextVaultId.length > 0) {
+      try {
+        this.ensureWorkspaceSessionStore();
+        targetSession = (this.workspaceSessionStore as WorkspaceSessionStore).loadFor(nextVaultId);
+      } catch (sessionError) {
+        targetSession = null;
+        hilog.warn(DOMAIN, TAG, '删库后读取回落库工作区会话失败');
+      }
+    }
+
+    let restored: boolean = false;
+    if (targetSession !== null) {
+      this.workspaceSessionRestoring = true;
+      try {
+        restored = await this.applyWorkspaceSession(targetSession);
+      } catch (sessionError) {
+        restored = false;
+        hilog.warn(DOMAIN, TAG, '删库后恢复回落库工作区失败');
+      } finally {
+        this.workspaceSessionRestoring = false;
+      }
+    }
+    if (!restored) {
+      // 空路径不读盘，也不会访问已删除的库。
+      this.currentFilePath = '';
+      this.rightFilePath = '';
+      await this.readAndPush('', false);
+      await this.readRightAndPush('');
+    }
+    this.workspaceSessionSavingEnabled = true;
+    if (restored) {
+      this.flushWorkspaceSessionSave(true);
     }
   }
 
