@@ -130,6 +130,13 @@ export struct FileTreeView {
   @Prop referenceOnly: boolean = false;
   /** 单屏工作区不显示跨栏打开入口。 */
   @Prop hideOtherPane: boolean = false;
+  /**
+   * 57.7：钉底簇（左滑提示 + 回收站）整体下移量（vp），父级 VaultSidebar 算好传入：
+   * 嵌入形态 = 避让高度 − 连写条高 − s1（簇底与连写条顶相接，可为负）、
+   * 单屏抽屉 = 全额避让高度（无连写条）、Agent 引用侧栏 = 0。
+   * ArkUI 布局不进安全区（api_notes AE4），固定内容压进条带只能靠 offset 渲染位移。
+   */
+  @Prop clusterOffsetVp: number = 0;
   /** 选中文件回调（把相对路径交给父级，由父级决定编辑器要做什么） */
   onSelectFile: (relPath: string) => void = (relPath: string) => {};
   /** 从行尾按钮在另一栏打开笔记。 */
@@ -174,11 +181,34 @@ export struct FileTreeView {
   @State pinFocusPath: string = '';
   @State pathMenuPath: string = '';
   @State helpHintOpen: boolean = false;
+  /** 57.7：导航条避让高度（px，EntryAbility 发布；px2vp 后即下移量）。 */
+  @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
+  /** 57.7：钉底簇（左滑提示 + 回收站）实测高（onAreaChange 的 Area.height，单位 vp），用于文件树末条让位。 */
+  @State clusterH: number = 0;
   private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
   private pinStore: PinStore | null = null;
   private treeSource: TreeRowDataSource = new TreeRowDataSource();
   private pinSource: PinRowDataSource = new PinRowDataSource();
+
+  /** 57.7：导航条避让高度（vp）；布局区不进安全区（AE4），固定内容压条带靠 offset。 */
+  private navClearanceVp(): number {
+    return px2vp(Math.max(0, this.navIndicatorHeightPx));
+  }
+
+  /**
+   * 57.7：文件树末条让位（vp）。expandSafeArea 只延伸渲染边界，滚动内容底仍止于
+   * 布局区下沿（2152px，2026-11-14 实测：末条底 = 2152 − 本值），末条让到簇顶
+   * 上方一格（s1）。clusterH 来自 onAreaChange 的 Area.height，单位 vp，不得再
+   * px2vp（二次换算回归）。referenceOnly（Agent 引用树）不渲染钉底簇，保持现状。
+   */
+  private treeBottomClearanceVp(): number {
+    if (this.referenceOnly) {
+      return 0;
+    }
+    return Math.max(Space.s1,
+      -this.clusterOffsetVp + Math.max(0, this.clusterH) + Space.s1);
+  }
 
   aboutToAppear(): void {
     this.ensureStore();
@@ -525,46 +555,63 @@ export struct FileTreeView {
   }
 
   build() {
-    // 根节点必须是**唯一**容器：空态与列表走 if/else 挂在同一个 Column 下，
-    // 不能在 build 里提前 return（ArkTS 会报 10905210：只允许一个根节点）。
-    Column() {
+    // 57.7：根改 Bottom Stack——滚动列铺满，钉底簇（左滑提示+回收站）offset 压进
+    // 底部手势条条带（布局不进安全区 AE4；offset 渲染+命中同步位移）。
+    // 根节点仍是**唯一**容器：空态与列表走 if/else，不能提前 return（10905210）。
+    Stack({ alignContent: Alignment.Bottom }) {
       // v1.62：置顶区在计数头之下、目录树之上；仅当前库至少有一篇置顶时显示。
       // referenceOnly（Agent 引用侧栏）保持纯树，「章节」页签由父级整树隐藏。
-      if (!this.referenceOnly && this.pinRows.length > 0) {
-        this.PinSection()
-        this.AllNotesLabel()
+      Column() {
+        if (!this.referenceOnly && this.pinRows.length > 0) {
+          this.PinSection()
+          this.AllNotesLabel()
+        }
+        if (this.nodes.length === 0) {
+          this.EmptyHint()
+        } else {
+          this.TreeList()
+        }
       }
-      if (this.nodes.length === 0) {
-        this.EmptyHint()
-      } else {
-        this.TreeList()
-      }
-      if (!this.referenceOnly) {
-        Text('左滑操作 · 拖图标到任一栏')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_tertiary'))
-          .width('100%')
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .padding({ top: Space.s2, left: Space.s2, right: Space.s2, bottom: Space.s1 })
-          .onHover((isHover: boolean): void => {
-            this.helpHintOpen = isHover;
-          })
-          .accessibilityText('左滑文件可操作；拖动行尾图标到任一栏打开')
-          .bindPopup(this.helpHintOpen, {
-            builder: this.HelpHint(),
-            placement: Placement.Top,
-            enableArrow: false,
-            mask: false,
-            autoCancel: false,
-            popupColor: Color.Transparent
-          })
+      .width('100%')
+      .height('100%')
 
-        TrashView({
-          vaultId: this.vaultId,
-          refreshSeq: this.trashRefreshSeq,
-          onRestore: (relPath: string): void => { this.onRestoreTrash(relPath); },
-          onPurge: (relPath: string): void => { this.onPurgeTrash(relPath); }
+      if (!this.referenceOnly) {
+        Column() {
+          Text('左滑操作 · 拖图标到任一栏')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .padding({ top: Space.s2, left: Space.s2, right: Space.s2, bottom: Space.s1 })
+            .onHover((isHover: boolean): void => {
+              this.helpHintOpen = isHover;
+            })
+            .accessibilityText('左滑文件可操作；拖动行尾图标到任一栏打开')
+            .bindPopup(this.helpHintOpen, {
+              builder: this.HelpHint(),
+              placement: Placement.Top,
+              enableArrow: false,
+              mask: false,
+              autoCancel: false,
+              popupColor: Color.Transparent
+            })
+
+          TrashView({
+            vaultId: this.vaultId,
+            refreshSeq: this.trashRefreshSeq,
+            onRestore: (relPath: string): void => { this.onRestoreTrash(relPath); },
+            onPurge: (relPath: string): void => { this.onPurgeTrash(relPath); }
+          })
+        }
+        .width('100%')
+        // 遮住穿小白条滚上来的树行（树 List 已 extend 到物理下沿）。
+        .backgroundColor($r('app.color.bg_navigation'))
+        .offset({ y: this.clusterOffsetVp })
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          if (typeof newArea.height === 'number') {
+            this.clusterH = newArea.height;
+          }
         })
       }
     }
@@ -1107,9 +1154,13 @@ export struct FileTreeView {
     }
     .layoutWeight(1)
     .width('100%')
-    .padding({ left: Space.s4 })
+    .padding({ left: Space.s4, bottom: this.treeBottomClearanceVp() })
     .scrollBar(BarState.Auto)
     .cachedCount(10)
     .backgroundColor($r('app.color.bg_navigation'))
+    // 57.7：树 List 底边与安全区边界重合，extend 视口到物理下沿（api_notes AE3），
+    // 穿小白条；末条按 treeBottomClearanceVp 让位钉底簇。referenceOnly（Agent 页）
+    // 连写条仍在流内 → 底边不与安全区重合 → 天然 no-op，Agent 页零变化。
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

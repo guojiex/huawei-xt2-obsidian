@@ -283,7 +283,10 @@ test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（5
   assert.match(dialog, /'1 个 PDF'/);
   assert.match(dialog, /this\.pageUris\.length\.toString\(\) \+ ' 页'/);
   // 缩略图：逐页 Image + 「N / M」页码 + 第 N 页共 M 页读屏
-  assert.match(dialog, /aspectRatio\(595 \/ 842\)/);
+  // 53.12：非末页裁到切片高后比例非 A4，缩略图按逐页真实比例（thumbAspectOf），A4 比例仅兜底
+  assert.match(dialog, /aspectRatio\(this\.thumbAspectOf\(index\)\)/);
+  assert.match(dialog, /return 595 \/ 842;/);
+  assert.match(dialog, /@Prop pageAspects: number\[\] = \[\];/);
   assert.match(dialog, /Size\.pdfThumbW/);
   assert.match(dialog, /' \/ ' \+ this\.pageUris\.length\.toString\(\)/);
   assert.match(dialog, /'第 ' \+ \(index \+ 1\)\.toString\(\) \+ ' 页，共 '/);
@@ -296,27 +299,37 @@ test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（5
   assert.equal(/Color\.(?!Transparent)[A-Z]/.test(dialog), false, '组件内不得散写 Color 枚举');
 });
 
-test('源级：Index PDF 链路先进分页预览弹窗，确认后才合成（53.7）', () => {
+test('源级：PDF 预览流程拆至 SharePdfPreviewFlow，Index 只留接线（53.7，2026-11-13 拆分）', () => {
   const index = readRepoFile('entry/src/main/ets/pages/Index.ets');
-  assert.match(index, /import \{ SharePdfPreviewDialog \} from '\.\.\/components\/SharePdfPreviewDialog';/);
-  assert.match(index, /private sharePdfPreviewCtl: CustomDialogController \| null = null;/);
-  assert.match(index, /private sharePdfPreviewSessionId: string = '';/);
-  assert.match(index, /private sharePdfPreviewPages: string\[\] = \[\];/);
+  const flow = readRepoFile('entry/src/main/ets/model/SharePdfPreviewFlow.ets');
+  // Index：导入流程类并持有单一实例；不再直接持有 controller / 会话散状态
+  assert.match(index, /import \{ SharePdfPreviewFlow, SharePdfPreviewRequest \} from '\.\.\/model\/SharePdfPreviewFlow';/);
+  assert.match(index, /private sharePdfPreviewFlow: SharePdfPreviewFlow = new SharePdfPreviewFlow\(\);/);
+  assert.doesNotMatch(index, /sharePdfPreviewCtl|sharePdfPreviewSessionId|sharePdfPreviewPages|sharePdfPreviewPageAspects|cleanupSharePdfPreview/);
+  assert.doesNotMatch(index, /SharePdfPreviewDialog/, 'Index 不得再直接引用弹窗组件');
   // 捕获完成后进预览弹窗，捕获层卸下；导出不再内联在 prepareNotePdfShare
-  assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, pageJpegs, vaultId\);/);
+  assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, pageJpegs, pageAspects, vaultId\);/);
   const prepare = index.slice(index.indexOf('private async prepareNotePdfShare'),
     index.indexOf('private pdfFileNameOf'));
   assert.ok(prepare.length > 0, 'prepareNotePdfShare 区间未定位');
   assert.doesNotMatch(prepare, /exportFromPageImages/, 'prepareNotePdfShare 不得内联合成 PDF（53.7 改预览后确认）');
   assert.doesNotMatch(prepare, /openShareFilePreview\(/, 'prepareNotePdfShare 不得直接进文件预览');
-  // onConfirm 内合成 PDF 并进入文件预览（精确 utd PDF）
-  assert.match(index, /NotePdfDocumentService\.exportFromPageImages\(pages, pdfPath\);/);
-  // 返回：清理会话回到分享面板
-  assert.match(index, /private cleanupSharePdfPreview\(\): void/);
-  assert.match(index, /NoteShareService\.removeTree\(VaultRegistry\.get\(\), sessionId\);\s*\n\s*\} catch \(error\) \{\s*\n\s*hilog\.warn\(DOMAIN, TAG, 'PDF 分页预览临时文件清理失败'\);/);
-  assert.match(index, /this\.cleanupSharePdfPreview\(\);\s*\n\s*this\.openShareDialog\('note', notePath\);/);
+  // Flow：请求对象带逐页宽高比（53.12）；onConfirm 内合成并回调；onCancel 清理后回调
+  assert.match(flow, /export class SharePdfPreviewFlow/);
+  assert.match(flow, /export class SharePdfPreviewRequest/);
+  assert.match(flow, /pageAspects: number\[\] = \[\];/);
+  assert.match(flow, /NotePdfDocumentService\.exportFromPageImages\(pages, aspects, pdfPath\);/);
+  assert.match(flow, /request\.onComposed\(pdfPath\);/);
+  assert.match(flow, /this\.cleanup\(\);\s*\n\s*request\.onCancelled\(\);/);
+  assert.doesNotMatch(flow, /SharePdfPreviewRequest[\s\S]*@CustomDialog/, '流程类不得是弹窗组件');
+  // 返回：清理会话回到分享面板（removeTree + 失败告警）
+  assert.match(flow, /NoteShareService\.removeTree\(VaultRegistry\.get\(\), sessionId\);\s*\n\s*\} catch \(error\) \{\s*\n\s*hilog\.warn\(DOMAIN, TAG, 'PDF 分页预览临时文件清理失败'\);/);
+  // Index 接线：合成完成进文件预览（精确 utd PDF）、取消回分享面板
+  assert.match(index, /onComposed: \(pdfPath: string\): void => \{\s*\n\s*this\.openShareFilePreview\(pdfPath, this\.pdfFileNameOf\(itemName\), 'PDF', \[\]/);
+  assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF\);/);
+  assert.match(index, /onCancelled: \(\): void => \{\s*\n\s*this\.openShareDialog\('note', notePath\);/);
   // 缩略图 URI 走 fileUri.getUriFromPath
-  assert.match(index, /pageUris\.push\(fileUri\.getUriFromPath\(pageJpegs\[i\]\)\);/);
+  assert.match(flow, /pageUris\.push\(fileUri\.getUriFromPath\(request\.pageJpegs\[i\]\)\);/);
 });
 
 // ---------- 53.10 分段快照旧帧校验（XT2「一页渲染两页且重复」修复） ----------
@@ -352,4 +365,30 @@ test('源级：web setShareCaptureScrollTop 滚动后给渲染服务留合成时
   // 双 rAF 之后仍有 64ms 沉淀，避免组件快照取到滚动前旧表面
   assert.match(scrollFn, /await nextRenderedFrame\(\)/);
   assert.match(scrollFn, /\}, 64\)/);
+});
+
+test('源级：PDF 水印转末页 fixed 徽标，不参与分页 bounds（53.13）', () => {
+  const indexTs = readRepoFile('web/mdpreview/src/index.ts');
+  // 水印在分页前转为隐藏徽标（脱离文档流），bounds 收集显式排除
+  assert.match(indexTs, /pdfWatermarkBadge = prepareShareWatermarkForPdfCapture\(body\)/);
+  assert.match(indexTs, /classList\.contains\('share-watermark'\)/);
+  assert.match(indexTs, /pdfWatermarkLastTop = tops\[tops\.length - 1\]/);
+  // 逐页滚动捕获时仅末页显示徽标；长图分页不复用徽标状态
+  assert.match(indexTs, /setShareWatermarkVisibleAtScroll\(pdfWatermarkBadge, top, pdfWatermarkLastTop\)/);
+  const imagePages = indexTs.slice(indexTs.indexOf('async prepareShareCapturePages'),
+    indexTs.indexOf('async setShareCaptureScrollTop'));
+  assert.match(imagePages, /pdfWatermarkBadge = null/, '长图分页须清空 PDF 水印徽标状态');
+  const watermarkModule = readRepoFile('web/mdpreview/src/shareWatermark.mjs');
+  assert.match(watermarkModule, /position = 'fixed'/);
+  assert.match(watermarkModule, /display = 'none'/);
+  assert.match(watermarkModule, /Math\.abs\(top - lastTop\) < 1/);
+  // 复用水印时清掉徽标内联样式，长图水印保持流内
+  assert.match(watermarkModule, /removeAttribute\('style'\)/);
+});
+
+test('源级：rawfile 产物已同步 53.13 水印徽标', () => {
+  const bundle = readRepoFile('entry/src/main/resources/rawfile/mdpreview/index.html');
+  // esbuild 混淆标识符，断言内联样式字符串字面量（徽标圆角与间距 token）
+  assert.ok(bundle.includes('var(--pill) 0 0 0'), 'rawfile mdpreview 产物缺少水印徽标样式，请重跑 web/mdpreview 的 node build.mjs');
+  assert.ok(bundle.includes('classList.contains'), 'rawfile mdpreview 产物缺少水印排除逻辑，请重跑 web/mdpreview 的 node build.mjs');
 });

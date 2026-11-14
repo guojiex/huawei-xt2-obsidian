@@ -190,7 +190,7 @@ assert.throws(() => parseReadOnlyFolders('---\nreadonly: ["../raw/"]\n---'), /WI
 assert.throws(() => parseReadOnlyFolders('---\nreadonly: ["raw/"]\nreadonly: []\n---'), /WIKI_RULE_INVALID/);
 assert.throws(() => parseReadOnlyFolders('---\nreadonly: raw/\n---'), /WIKI_RULE_INVALID/);
 
-// 源码接线：新只读工具已路由，但不在平台意图清单里（绑定不在本版范围）
+// 源码接线：只读 wiki 工具已随小艺接通（2026-11-13，api_notes F18）登记为平台意图
 const executor = fs.readFileSync(new URL('../../entry/src/main/ets/entryability/InsightIntentExecutorImpl.ets',
   import.meta.url), 'utf8');
 const profile = JSON.parse(fs.readFileSync(new URL('../../entry/src/main/resources/base/profile/insight_intent.json',
@@ -198,8 +198,8 @@ const profile = JSON.parse(fs.readFileSync(new URL('../../entry/src/main/resourc
 for (const name of ['SearchNotes', 'ListTree', 'GetLinks']) {
   assert.ok(source.includes(`name === '${name}'`), `${name} must be dispatched by the note service`);
   assert.ok(executor.includes(`'${name}'`), `${name} must be routed by the executor`);
-  assert.ok(!profile.insightIntents.some((intent) => intent.intentName === name),
-    `${name} must not be registered as a platform intent in this release`);
+  assert.ok(profile.insightIntents.some((intent) => intent.intentName === name),
+    `${name} must be registered as a platform intent (小艺接通 2026-11-13, api_notes F18)`);
 }
 for (const method of ['searchNotes', 'listTree', 'getLinks']) {
   const start = source.search(new RegExp(`private (?:async )?${method}\\(`));

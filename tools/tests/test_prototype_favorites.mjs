@@ -23,7 +23,9 @@ test('v2 files panel hosts a collapsible favorites section mirroring the trash f
   assert.ok(html.includes('<span class="fav-head-label">收藏</span><small id="favCount"></small>'));
   assert.ok(html.includes('<div class="tree-section-label" aria-hidden="true">全部笔记</div>'));
   assert.match(html, /aria-label="收藏的笔记" class="fav-list" id="favList"/);
-  assert.match(html, /\.favorites-folder\.hidden\+\.tree-section-label\{display:none\}/);
+  // v1.62 同框：置顶区在收藏区上方；「全部笔记」标签只在两区都隐藏时才隐藏。
+  assert.match(html, /#pinFolder\.hidden~#favoritesFolder\.hidden\+\.tree-section-label\{display:none\}/);
+  assert.ok(html.indexOf('id="pinFolder"') < html.indexOf('id="favoritesFolder"'));
 });
 
 test('v2 file rows carry an end-of-row star toggle wired to toggleFavorite', () => {
@@ -61,7 +63,8 @@ test('favorites rows are single-line nav rows aligned with tree file titles', ()
 });
 
 test('favorites re-render joins the render() pipeline and stays per-vault isolated', () => {
-  assert.match(html, /renderVaultPicker\(\);renderTree\(\);renderTrash\(\);renderFavorites\(\);renderReference\(\);/);
+  // v1.62 同框：置顶区刷新插在收藏区之前（renderStreakChip 为 v1.59 并入）。
+  assert.match(html, /renderVaultPicker\(\);renderTree\(\);renderTrash\(\);renderPins\(\);renderFavorites\(\);renderStreakChip\(\);renderReference\(\);/);
   assert.match(html, /function visibleFavorites\(\)\{return favoriteIds\(\)\.map\(id=>notes\.find\(n=>n\.id===id&&n\.vault===activeVault&&!n\.deleted\)\)\.filter\(Boolean\);\}/);
   assert.match(html, /const favoritesByVault=\{local:\['tob','stream','reading_journal','idea','inbox'\],reading:\['reading_stream','reading_reading_journal'\]\};const favoritesFolderState=\{local:true,reading:true\};/);
   assert.match(html, /\$\('favoritesFolder'\)\.classList\.toggle\('hidden',items\.length===0\)/);
@@ -150,7 +153,8 @@ test('favorite rows expose the same left-swipe actions as tree file rows', () =>
   assert.ok(html.includes('<div class="file-entry fav-entry" data-file-wrap="\'+n.id+\'"><div class="file-actions" inert>'));
   assert.ok(html.includes('<button data-file-action="rename" data-action-note="\'+n.id+\'">改名</button><button class="delete-file fav-remove" data-fav-remove="\'+n.id+\'">移出收藏</button>'));
   assert.ok(html.includes('data-swipe-commit="unfavorite"'));
-  assert.ok(html.includes("if(button.dataset.swipeCommit==='unfavorite')toggleFavorite(button.dataset.note);else deleteFile(button.dataset.note);"));
+  // v1.62：滑到底提交按 data-swipe-commit 分派 —— unpin 先于 unfavorite，其余走删除。
+  assert.ok(html.includes("if(button.dataset.swipeCommit==='unpin')togglePin(button.dataset.note);else if(button.dataset.swipeCommit==='unfavorite')toggleFavorite(button.dataset.note);else deleteFile(button.dataset.note);"));
   // 改名与移出收藏仍复用现有文件操作与收藏切换流程。
   assert.ok(html.includes("$('favList').querySelectorAll('[data-file-action]').forEach(b=>b.onclick=()=>b.dataset.fileAction==='delete'?deleteFile(b.dataset.actionNote):openFileAction(b.dataset.fileAction,b.dataset.actionNote));"));
   assert.ok(html.includes("$('favList').querySelectorAll('[data-fav-open]').forEach(b=>{b.onclick=()=>{if(swipeSuppressed===b.dataset.note){swipeSuppressed=null;return;}selectNote(b.dataset.favOpen);};"));

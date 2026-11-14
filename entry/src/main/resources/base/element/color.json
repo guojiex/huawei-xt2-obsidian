@@ -3,6 +3,7 @@
     { "name": "start_window_background", "value": "#E9EDF2" },
 
     { "name": "brand", "value": "#007DFF" },
+    { "name": "startup_aura_purple", "value": "#7A5CD6" },
     { "name": "brand_press", "value": "#0062CC" },
     { "name": "brand_bg", "value": "#EAF3FF" },
     { "name": "brand_bg_solid", "value": "#EAF3FF" },

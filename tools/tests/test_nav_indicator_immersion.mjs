@@ -13,7 +13,15 @@
  *  2. EntryAbility 必须监听 TYPE_NAVIGATION_INDICATOR 并发布
  *     `navIndicatorHeightPx`（初始 + avoidAreaChange 两处）；
  *  3. 消费该值的视图必须同时有 `@StorageProp('navIndicatorHeightPx')` 与
- *     页面侧 `px2vp` 换算（官方口径：px2vp 在 UI 上下文才可靠）。
+ *     页面侧 `px2vp` 换算（官方口径：px2vp 在 UI 上下文才可靠）；
+ *  4. 工作区底部表面延伸不被宿主 `.clip(true)` 裁剪（57.6，Y-02）；
+ *  5. 工作区固定内容（状态条 / 钉底簇 / 连写条）offset 压进条带、滚动容器
+ *     （文件树 / 章节列表）穿小白条且末条让位（57.7，Y-03）——下移量一律取
+ *     `navIndicatorHeightPx` 动态值，禁止硬编码；
+ *  6. onAreaChange 的 `Area.height/width` 单位是 vp：chipH / clusterH 消费处
+ *     禁止再 `px2vp`（2026-11-14 真机图实测二次换算把回收站行压进两行连写条
+ *     后面）；嵌入簇 offset 不得钳 0——连写条（两行卡 ~49vp）高于条带（~28vp）
+ *     时差值为负，簇要上移与连写条顶相接。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -94,5 +102,72 @@ test('工作区底部表面延伸不被宿主裁剪（57.6，Y-02）', () => {
     const count = (src.match(re) || []).length;
     assert.ok(count >= minCount,
       `pages/Index.ets 底部表面 ${color} 应有 ≥${minCount} 处「背景色 + expandSafeArea(BOTTOM)」配对，实际 ${count}（v1.57 57.6 误删即回归）`);
+  }
+});
+
+test('工作区可见文字压到物理下沿（57.7，Y-03）', () => {
+  // 状态条：NoteWorkspaceContent 根改 Bottom Stack，Statusbar 整条 offset 进条带
+  const idx = read('pages/Index.ets');
+  assert.ok(idx.includes("@StorageProp('navIndicatorHeightPx')"),
+    "pages/Index.ets 缺 @StorageProp('navIndicatorHeightPx')（v1.57 57.7）");
+  assert.ok(idx.includes('px2vp(Math.max(0, this.navIndicatorHeightPx))'),
+    'pages/Index.ets navClearanceVp() 必须页面侧 px2vp 换算（官方提醒 UIAbility 早期换算可能异常）');
+  assert.ok(/Stack\(\{ alignContent: Alignment\.Bottom \}\) \{\s*\n\s*Column\(\) \{\s*\n\s*this\.Appbar\(\)/.test(idx),
+    'pages/Index.ets NoteWorkspaceContent 须为 Bottom Stack{Column[Appbar, NoteBody], Statusbar}（57.7 重构被撤销即文字悬在 2152 上方）');
+  assert.ok(/\.backgroundColor\(\$r\('app\.color\.bg_card'\)\)[\s\S]{0,220}?\.offset\(\{ y: this\.navClearanceVp\(\) \}\)/.test(idx),
+    'pages/Index.ets Statusbar 必须带 .offset({ y: this.navClearanceVp() })（整条压进手势条条带，边界线到 2152、条底贴 2232）');
+
+  // 文件树：钉底簇 offset 进条带 + 树 List 穿小白条 + 末条让位（Agent 引用树除外）
+  const ftv = read('components/FileTreeView.ets');
+  assert.ok(ftv.includes('@Prop clusterOffsetVp: number = 0;'),
+    'FileTreeView 缺 @Prop clusterOffsetVp（父级算好的钉底簇下移量，抽屉/嵌入两形态不同）');
+  assert.ok(ftv.includes("@StorageProp('navIndicatorHeightPx')"),
+    "FileTreeView 缺 @StorageProp('navIndicatorHeightPx')");
+  assert.ok(ftv.includes('.offset({ y: this.clusterOffsetVp })'),
+    'FileTreeView 钉底簇必须 .offset({ y: this.clusterOffsetVp })（AE4：布局不进安全区，固定内容压条带只能靠 offset）');
+  assert.ok(ftv.includes('treeBottomClearanceVp()'),
+    'FileTreeView 树 List 必须按 treeBottomClearanceVp() 让位末条（滚动到头末条完整露出钉底簇上方）');
+  assert.ok(!/px2vp\([^)]*this\.clusterH/.test(ftv),
+    'FileTreeView clusterH 来自 onAreaChange 的 Area.height（单位 vp），再包 px2vp 即二次换算（2026-11-14 实测回归）');
+  assert.ok(/private treeBottomClearanceVp\(\): number \{[\s\S]{0,160}?if \(this\.referenceOnly\)[\s\S]{0,60}?return 0;/.test(ftv),
+    'FileTreeView treeBottomClearanceVp() 必须对 referenceOnly 归零（Agent 页连写条在流内、树不延伸，加了让位即 Agent 页回归）');
+  assert.ok(ftv.includes('-this.clusterOffsetVp + Math.max(0, this.clusterH) + Space.s1'),
+    'FileTreeView 树让位必须是 −簇offset + 簇高 + s1（expandSafeArea 只延伸渲染边界，滚动内容底止于布局区下沿 2152，公式再叠 navClearance 即重复计入条带）');
+  assert.ok(ftv.includes(EXPAND),
+    'FileTreeView 树 List 缺 expandSafeArea(BOTTOM)（穿小白条；referenceOnly 下底边不与安全区重合，天然 no-op）');
+
+  // 侧栏：连写条 offset 压底 + chipH 实测回填 + 章节让位 + 给文件树传簇下移量
+  const vs = read('components/VaultSidebar.ets');
+  assert.ok(vs.includes("@StorageProp('navIndicatorHeightPx')"),
+    "VaultSidebar 缺 @StorageProp('navIndicatorHeightPx')");
+  assert.ok(vs.includes('@State chipH: number = 0;'),
+    'VaultSidebar 缺 @State chipH（连写条实测高，章节/树让位与簇 offset 计算用）');
+  assert.ok(vs.includes('if (this.referenceOnly && !this.asDrawer)'),
+    'VaultSidebar referenceOnly 连写条必须留在流内（Agent 页维持 57.7 前现状）');
+  assert.ok(vs.includes('if (!this.referenceOnly && !this.asDrawer)'),
+    'VaultSidebar 工作区连写条必须走覆盖位分支');
+  assert.ok(vs.includes('.offset({ y: this.navClearanceVp() })'),
+    'VaultSidebar 工作区连写条必须 .offset({ y: this.navClearanceVp() }) 压进手势条条带');
+  assert.ok(vs.includes('this.chipH = newArea.height'),
+    'VaultSidebar 连写条高必须 onAreaChange 实测回填 chipH（禁止按 vp 估值）');
+  assert.ok(!/px2vp\([^)]*this\.chipH/.test(vs),
+    'VaultSidebar chipH 来自 onAreaChange 的 Area.height（单位 vp），再包 px2vp 即二次换算（2026-11-14 实测回归）');
+  assert.ok(vs.includes('this.navClearanceVp() - this.chipH - Space.s1'),
+    'VaultSidebar 嵌入簇 offset 必须是 避让高度 − 连写条高 − s1（连写条高于条带时为负上移；钳 0 会把回收站行压进连写条后面）');
+  assert.ok(vs.includes('.padding({ left: Space.s3, right: Space.s3 })'),
+    '覆盖位连写条 padding 不得带 bottom（卡片底必须贴物理下沿 2232，带 bottom 即悬空）');
+  assert.ok(vs.includes('clusterOffsetVp: this.fileTreeClusterOffsetVp(),'),
+    'VaultSidebar 必须给 FileTreeView 传 clusterOffsetVp（嵌入=避让高度−连写条高−s1，抽屉=全额避让高度）');
+  assert.ok(vs.includes('chaptersBottomClearanceVp()'),
+    'VaultSidebar 章节 List 必须按 chaptersBottomClearanceVp() 让位末条');
+  assert.ok(vs.includes('this.chipH - this.navClearanceVp() + Space.s1'),
+    'VaultSidebar 嵌入章节让位必须是 连写条高 − 避让高度 + s1（expandSafeArea 只延伸渲染边界，滚动内容底止于布局区下沿 2152；按 chipH 全量让位会多让一个条带高度）');
+  assert.ok(vs.includes(EXPAND),
+    'VaultSidebar 章节 List 缺 expandSafeArea(BOTTOM)（穿小白条）');
+
+  // 下移量一律取 navIndicatorHeightPx 动态值：三文件条带内 offset 禁止硬编码数值
+  for (const rel of ['pages/Index.ets', 'components/FileTreeView.ets', 'components/VaultSidebar.ets']) {
+    assert.ok(!/\.offset\(\{ y: \d/.test(read(rel)),
+      `${rel} 条带内 offset 禁止硬编码数值（各形态高度不同，须走 navIndicatorHeightPx 动态值）`);
   }
 });

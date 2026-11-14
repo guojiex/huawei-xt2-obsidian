@@ -28,8 +28,10 @@ test('the shared top menu keeps actions scoped to the active pane', () => {
   assert.match(noteGroup, /this\.toggleBacklinks\(this\.activeNotePane\(\)\)/);
   assert.match(noteGroup, /this\.previewActiveNoteInOtherPane\(this\.activeNotePane\(\)\)/);
   assert.match(noteGroup, /this\.setPreviewFollowEnabled\(!this\.followPreviewEnabled\)/);
-  assert.match(noteGroup, /this\.openBlockPropertyPanel\(this\.activeNotePane\(\)\)/);
   assert.match(noteGroup, /this\.toggleActivePane\(\)/);
+  // 2026-11-13 用户拍板：设计稿菜单没有「块操作」项，顶栏菜单入口已移除
+  //（见 docs/releases/v1.18/需求文档.md 验收记录）；面板仍可经复杂块点按 / 浮条「更多」打开。
+  assert.doesNotMatch(noteGroup, /openBlockPropertyPanel/);
 });
 
 test('the prototype also exposes one top-level menu entry', () => {

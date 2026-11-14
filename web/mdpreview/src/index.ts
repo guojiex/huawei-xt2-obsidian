@@ -33,7 +33,11 @@ import {
   selectedLockedBlocks,
   toolbarBlockForSelection
 } from './blockSelection.mjs'
-import { appendShareWatermark } from './shareWatermark.mjs'
+import {
+  appendShareWatermark,
+  prepareShareWatermarkForPdfCapture,
+  setShareWatermarkVisibleAtScroll
+} from './shareWatermark.mjs'
 import { computePdfPageTops, mergeHeadingUnits, pdfBottomPadding } from './pdfPagination.mjs'
 import { COMMON_CODE_LANGUAGES, inspectCodeFence, prepareCodeBodyEdit } from './codeBlock.mjs'
 import {
@@ -740,6 +744,12 @@ function resetShareCaptureSpacer(): HTMLElement {
   spacer.style.height = '0px'
   return spacer
 }
+
+/** 53.13：PDF 捕获期的水印徽标与末页顶。水印转为 fixed 徽标后脱离文档流、
+ * 不参与分页 bounds，仅 setShareCaptureScrollTop 滚到末页（tops[last]）时显示；
+ * 长图分享（prepareShareCapturePages）置空以保持流内水印行为不变。 */
+let pdfWatermarkBadge: HTMLElement | null = null
+let pdfWatermarkLastTop: number = 0
 
 async function waitForLocalImages(root: HTMLElement): Promise<void> {
   const missingImages = root.querySelectorAll<HTMLImageElement>('img[data-share-missing="true"]')
@@ -2830,6 +2840,8 @@ const api: MdPreviewApi = {
     try {
       const content = document.getElementById('content') as HTMLElement
       const spacer = resetShareCaptureSpacer()
+      // 53.13：长图分页不复用 PDF 水印徽标状态（appendShareWatermark 已恢复流内水印）
+      pdfWatermarkBadge = null
       const metrics = shareCaptureMetrics()
       if (!Number.isInteger(pageCount) || pageCount < 1 || metrics.viewportHeight <= 0) {
         throw new Error('分享图片分页参数无效')
@@ -2855,6 +2867,10 @@ const api: MdPreviewApi = {
         throw new Error('分享图片滚动位置无效')
       }
       content.scrollTop = top
+      // 53.13：PDF 捕获时水印徽标仅末页显示（长图捕获无徽标状态，保持原行为）
+      if (pdfWatermarkBadge) {
+        setShareWatermarkVisibleAtScroll(pdfWatermarkBadge, top, pdfWatermarkLastTop)
+      }
       await nextRenderedFrame()
       // 53.10：双 rAF 后再等一拍，给渲染服务留出合成时间——
       // XT2 实测仅双 rAF 时组件快照可能取到滚动前的旧表面（「两页重复」根因）。
@@ -2882,6 +2898,9 @@ const api: MdPreviewApi = {
       if (!body) {
         throw new Error('分享预览内容不可用')
       }
+      // 53.13：水印先转 fixed 徽标并隐藏——脱离文档流、不占分页 bounds，
+      // 杜绝内容接近满页时水印被单独分到一页（预览与 PDF 多一页整页空白）。
+      pdfWatermarkBadge = prepareShareWatermarkForPdfCapture(body)
       const spacer = resetShareCaptureSpacer()
       const metrics = shareCaptureMetrics()
       if (metrics.viewportHeight <= 0) {
@@ -2892,6 +2911,10 @@ const api: MdPreviewApi = {
       const children = body.children
       for (let i = 0; i < children.length; i++) {
         const child = children[i] as HTMLElement
+        // 53.13：水印徽标不参与分页（display:none 高度为 0 已被跳过；此处显式排除防回归）
+        if (child.classList.contains('share-watermark')) {
+          continue
+        }
         const childRect = child.getBoundingClientRect()
         if (childRect.height <= 0) {
           continue
@@ -2902,6 +2925,7 @@ const api: MdPreviewApi = {
       // 53.7：标题与下一块合并为一个分页单元，标题不孤悬页尾（与 v2 原型同一规则）。
       const units = mergeHeadingUnits(bounds)
       const tops = computePdfPageTops(units, pageHeightVp)
+      pdfWatermarkLastTop = tops[tops.length - 1]
       spacer.style.height = `${pdfBottomPadding(tops, pageHeightVp, metrics.scrollHeight)}px`
       content.scrollTop = 0
       await nextRenderedFrame()

@@ -67,6 +67,10 @@ export struct VaultSidebar {
   @State menuW: number = Size.sidebarW;
   /** v1.58 58.2：侧栏实测宽（<280vp 时连写条隐藏本周圆点）。 */
   @State sidebarW: number = 0;
+  /** 57.7：导航条避让高度（px，EntryAbility 发布）；连写条 offset 进条带用。 */
+  @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
+  /** 57.7：连写条实测高（onAreaChange 的 Area.height，单位 vp）；簇相接与末条让位计算用。 */
+  @State chipH: number = 0;
   /** 「收起 «」回调（嵌入形态：父级收起侧栏） */
   onCollapse: () => void = () => {};
   /** 切库回调（点下拉菜单中的库项） */
@@ -81,6 +85,8 @@ export struct VaultSidebar {
   @Prop statsScanning: boolean = false;
   @Prop statsWeekFlags: boolean[] = [];
   @Prop statsTodayIndex: number = -1;
+  /** v1.58 总开关：关闭时不渲染连写条（入口与后台重算由 Index 统一门控）。 */
+  @Prop statsEnabled: boolean = true;
   /** note / agent 两侧栏不会同时显示，但可能同时挂树；用不同 id 保证焦点归还命中。 */
   @Prop statsChipId: string = 'vault-stats-streak-chip';
   /** 打开当前库快切与全文搜索。 */
@@ -475,393 +481,464 @@ export struct VaultSidebar {
     return '本地库';
   }
 
+  /** 57.7：导航条避让高度（vp）；布局区不进安全区（AE4），固定内容压条带靠 offset。 */
+  private navClearanceVp(): number {
+    return px2vp(Math.max(0, this.navIndicatorHeightPx));
+  }
+
+  /**
+   * 57.7：传给 FileTreeView 的钉底簇下移量（vp）。嵌入形态连写条 offset 压底后，
+   * 簇底与连写条顶相接（s1 缝）——连写条比避让条带高（两行卡 49vp > 28vp）时
+   * 差值为负，簇要上移，**不得钳 0**（首版钳 0 实测把回收站行压进连写条后面）。
+   * 抽屉形态无连写条，簇全额下移贴物理下沿；referenceOnly（Agent 页）保持现状。
+   */
+  private fileTreeClusterOffsetVp(): number {
+    if (this.referenceOnly) {
+      return 0;
+    }
+    if (this.asDrawer) {
+      return this.navClearanceVp();
+    }
+    return this.navClearanceVp() - this.chipH - Space.s1;
+  }
+
+  /**
+   * 57.7：章节末条让位（vp）。expandSafeArea 只延伸渲染边界，滚动内容底仍止于
+   * 布局区下沿（2152px，2026-11-14 实测），因此让位量是「遮挡物底 − 2152」而非
+   * 全高：嵌入形态末条让到覆盖位连写条顶上方一格（chipH − 避让高度 + s1，连写条
+   * 不比条带高时退化为 s1）；抽屉形态无遮挡物，仅留一格呼吸。referenceOnly
+   * （Agent 页）章节隐藏，不让位。
+   */
+  private chaptersBottomClearanceVp(): number {
+    if (this.referenceOnly) {
+      return 0;
+    }
+    if (this.asDrawer) {
+      return Space.s1;
+    }
+    return Math.max(Space.s1,
+      this.chipH - this.navClearanceVp() + Space.s1);
+  }
+
   build() {
-    Column() {
-      Row({ space: Space.s3 }) {
-        Image($r('app.media.app_icon_1024'))
-        .width(Space.s10)
-        .height(Space.s10)
-        .objectFit(ImageFit.Contain)
-        .borderRadius(Radius.control)
-
-        Text('曜石笔记')
-          .fontSize(FontSize.body1)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('app.color.text_primary'))
-          .layoutWeight(1)
-
-        if (this.asDrawer) {
-          Text('×')
-            .fontSize(FontSize.s1)
-            .fontColor($r('app.color.text_secondary'))
-            .width(Size.touch)
-            .height(Size.touch)
-            .textAlign(TextAlign.Center)
-            .onClick((): void => { this.onCollapse(); })
-        }
-      }
-      .width('100%')
-      .padding({
-        left: this.compact ? Space.s2 : Space.s6,
-        right: this.compact ? Space.s2 : Space.s6,
-        top: this.compact ? Space.s2 : Space.s6,
-        bottom: this.compact ? 0 : Space.s2
-      })
-      .margin({ bottom: this.compact ? Space.s1 : Space.s6 })
-
-      // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset（原型 --sp-3 = 12）。
-      // ⚠️ inset 不能写在卡片自己的 margin 上再配 width('100%')：ArkUI 的百分比取父级
-      // 内容盒的 100%，margin 加在盒外 → 卡片实际占宽 = 侧栏宽 + 2×margin，右缘越过
-      // 栏间分隔线伸进编辑区（2026-10-18 用户实测）。外包层 padding 在盒内，天然不溢出。
+    // 57.7：根改 Bottom Stack——主流列铺满布局区（底=安全区下沿），连写条移到覆盖位
+    // offset 压进底部手势条条带（布局不进安全区 AE4，offset 渲染+命中同步位移）。
+    Stack({ alignContent: Alignment.Bottom }) {
       Column() {
-        // 库切换器卡片（点击弹出库列表，见 VaultMenu）——照原型 .vault-switch：
-        // padding --sp-3 / 圆角 --r-card / 边框 line / --elev-1 / gap --sp-3。
         Row({ space: Space.s3 }) {
-          // 原型 .vs-icon：32×32 圆角块（--r-icon），brand_bg 底 + brand 色图标
-          Row() {
-            Icon('folder', 18, $r('app.color.brand'))
-          }
-          .width(Space.s8)
-          .height(Space.s8)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .backgroundColor($r('app.color.brand_bg'))
+          Image($r('app.media.app_icon_1024'))
+          .width(Space.s10)
+          .height(Space.s10)
+          .objectFit(ImageFit.Contain)
+          .borderRadius(Radius.control)
 
-          Column({ space: 2 }) {
-            Text(this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）')
-              .fontSize(FontSize.body1)
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(this.vaultTypeLabel() + ' · ' + this.noteCount + ' 篇')
-              .fontSize(FontSize.caption)
-              .fontColor($r('app.color.text_tertiary'))
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .alignItems(HorizontalAlign.Start)
-          .layoutWeight(1)
+          Text('曜石笔记')
+            .fontSize(FontSize.body1)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .layoutWeight(1)
 
-          // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名必须走 if 分支，不能写成三元实参
-          if (this.menuOpen) {
-            Icon('chevronUp', 16, $r('app.color.text_tertiary'))
-          } else {
-            Icon('chevronDown', 16, $r('app.color.text_tertiary'))
+          if (this.asDrawer) {
+            Text('×')
+              .fontSize(FontSize.s1)
+              .fontColor($r('app.color.text_secondary'))
+              .width(Size.touch)
+              .height(Size.touch)
+              .textAlign(TextAlign.Center)
+              .onClick((): void => { this.onCollapse(); })
           }
         }
-        // 此时 100% = 外包层的 content 盒 → 刚好放下，不再溢出侧栏
         .width('100%')
         .padding({
-          top: this.compact ? Space.s2 : Space.s3,
-          bottom: this.compact ? Space.s2 : Space.s3,
-          left: Space.s3,
-          right: Space.s3
+          left: this.compact ? Space.s2 : Space.s6,
+          right: this.compact ? Space.s2 : Space.s6,
+          top: this.compact ? Space.s2 : Space.s6,
+          bottom: this.compact ? 0 : Space.s2
         })
-        .margin({
-          top: this.compact ? Space.s1 : Space.s3,
-          bottom: this.compact ? Space.s1 : Space.s2
-        })
-        .borderRadius(Radius.card)
-        .backgroundColor($r('app.color.bg_card'))
-        .border({ width: 1, color: $r('app.color.line') })
-        // 原型 --elev-1 的单层近似
-        .shadow({ radius: 8, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 2 })
-        .alignItems(VerticalAlign.Center)
-        .focusable(true)
-        .id('vault-switcher-trigger')
-        .onClick(() => {
-          this.menuOpen = !this.menuOpen;
-        })
-        // v1.10 读屏：卡片是纯图标 + 文本的切换入口，补名称与展开状态
-        .accessibilityText('切换知识库，当前 ' +
-          (this.currentVaultId.length > 0 ? this.currentVaultId : '无'))
-        .accessibilityTextHint(this.menuOpen ? '收起知识库列表' : '展开知识库列表')
-        // 实测卡片宽回填弹层宽（原型 vault-menu 与卡片同宽，见 menuW 注释）
-        .onAreaChange((oldArea: Area, newArea: Area) => {
-          if (typeof newArea.width === 'number') {
-            this.menuW = newArea.width;
-          }
-        })
-        // 下拉菜单：弹层挂窗口覆盖层（高于文件树），列全部库（当前高亮）+ 分隔线 + 「管理库…」+「导入 Git 仓库…」
-        .bindPopup(this.menuOpen, {
-          builder: this.VaultMenu(),
-          placement: Placement.BottomLeft,
-          // 关掉弹层自带小箭头（默认 true）：原型 vault-menu 没有气泡箭头
-          enableArrow: false,
-          // 弹层贴卡片左缘 → offset 只补下间距（原型 margin-top --sp-2）
-          offset: { x: 0, y: Space.s2 },
-          mask: false,
-          autoCancel: true,
-          popupColor: Color.Transparent,
-          onWillDismiss: (action: DismissPopupAction): void => {
-            // 点菜单外 / 返回键收起：框架先回调这里，必须显式 dismiss() 才真正消失；
-            // 同时把 menuOpen 置回 false，chevron 图标才不会停在「已展开」
-            action.dismiss();
-            this.menuOpen = false;
-          }
-        })
-      }
-      .width('100%')
-      .padding({ left: Space.s3, right: Space.s3 })
+        .margin({ bottom: this.compact ? Space.s1 : Space.s6 })
 
-      if (!this.referenceOnly) {
-        // 目录头：文件数、搜索与根目录新建；宽屏收起由顶栏汉堡统一控制。
-        Row() {
-          Text(this.noteCount.toString() + ' 篇笔记')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
+        // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset（原型 --sp-3 = 12）。
+        // ⚠️ inset 不能写在卡片自己的 margin 上再配 width('100%')：ArkUI 的百分比取父级
+        // 内容盒的 100%，margin 加在盒外 → 卡片实际占宽 = 侧栏宽 + 2×margin，右缘越过
+        // 栏间分隔线伸进编辑区（2026-10-18 用户实测）。外包层 padding 在盒内，天然不溢出。
+        Column() {
+          // 库切换器卡片（点击弹出库列表，见 VaultMenu）——照原型 .vault-switch：
+          // padding --sp-3 / 圆角 --r-card / 边框 line / --elev-1 / gap --sp-3。
+          Row({ space: Space.s3 }) {
+            // 原型 .vs-icon：32×32 圆角块（--r-icon），brand_bg 底 + brand 色图标
+            Row() {
+              Icon('folder', 18, $r('app.color.brand'))
+            }
+            .width(Space.s8)
+            .height(Space.s8)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .borderRadius(Radius.icon)
+            .backgroundColor($r('app.color.brand_bg'))
+
+            Column({ space: 2 }) {
+              Text(this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）')
+                .fontSize(FontSize.body1)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('app.color.text_primary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Text(this.vaultTypeLabel() + ' · ' + this.noteCount + ' 篇')
+                .fontSize(FontSize.caption)
+                .fontColor($r('app.color.text_tertiary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+            .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .onHover((isHover: boolean): void => {
-              this.noteCountHintOpen = isHover;
-            })
-            .accessibilityText('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
-            .bindPopup(this.noteCountHintOpen, {
-              builder: this.NoteCountHint(),
-              placement: Placement.Top,
-              enableArrow: false,
-              mask: false,
-              autoCancel: false,
-              popupColor: Color.Transparent
-            })
-          // v1.49：排序切换入口（sort 图标 + 弹层菜单，与库切换菜单同款 bindPopup 模式）。
-          Row() {
-            Icon('sort', 18, $r('app.color.text_secondary'))
+
+            // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名必须走 if 分支，不能写成三元实参
+            if (this.menuOpen) {
+              Icon('chevronUp', 16, $r('app.color.text_tertiary'))
+            } else {
+              Icon('chevronDown', 16, $r('app.color.text_tertiary'))
+            }
           }
-          .height(Size.touch)
-          .width(Size.touch)
-          .justifyContent(FlexAlign.Center)
+          // 此时 100% = 外包层的 content 盒 → 刚好放下，不再溢出侧栏
+          .width('100%')
+          .padding({
+            top: this.compact ? Space.s2 : Space.s3,
+            bottom: this.compact ? Space.s2 : Space.s3,
+            left: Space.s3,
+            right: Space.s3
+          })
+          .margin({
+            top: this.compact ? Space.s1 : Space.s3,
+            bottom: this.compact ? Space.s1 : Space.s2
+          })
+          .borderRadius(Radius.card)
+          .backgroundColor($r('app.color.bg_card'))
+          .border({ width: 1, color: $r('app.color.line') })
+          // 原型 --elev-1 的单层近似
+          .shadow({ radius: 8, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 2 })
           .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .id('vault-sidebar-sort')
-          .onClick((): void => { this.sortMenuOpen = !this.sortMenuOpen; })
-          .accessibilityText('排序方式，当前' + this.sortModeLabel())
-          .bindPopup(this.sortMenuOpen, {
-            builder: this.SortMenu(),
+          .focusable(true)
+          .id('vault-switcher-trigger')
+          .onClick(() => {
+            this.menuOpen = !this.menuOpen;
+          })
+          // v1.10 读屏：卡片是纯图标 + 文本的切换入口，补名称与展开状态
+          .accessibilityText('切换知识库，当前 ' +
+            (this.currentVaultId.length > 0 ? this.currentVaultId : '无'))
+          .accessibilityTextHint(this.menuOpen ? '收起知识库列表' : '展开知识库列表')
+          // 实测卡片宽回填弹层宽（原型 vault-menu 与卡片同宽，见 menuW 注释）
+          .onAreaChange((oldArea: Area, newArea: Area) => {
+            if (typeof newArea.width === 'number') {
+              this.menuW = newArea.width;
+            }
+          })
+          // 下拉菜单：弹层挂窗口覆盖层（高于文件树），列全部库（当前高亮）+ 分隔线 + 「管理库…」+「导入 Git 仓库…」
+          .bindPopup(this.menuOpen, {
+            builder: this.VaultMenu(),
             placement: Placement.BottomLeft,
+            // 关掉弹层自带小箭头（默认 true）：原型 vault-menu 没有气泡箭头
             enableArrow: false,
-            offset: { x: 0, y: Space.s1 },
+            // 弹层贴卡片左缘 → offset 只补下间距（原型 margin-top --sp-2）
+            offset: { x: 0, y: Space.s2 },
             mask: false,
             autoCancel: true,
             popupColor: Color.Transparent,
             onWillDismiss: (action: DismissPopupAction): void => {
+              // 点菜单外 / 返回键收起：框架先回调这里，必须显式 dismiss() 才真正消失；
+              // 同时把 menuOpen 置回 false，chevron 图标才不会停在「已展开」
               action.dismiss();
-              this.sortMenuOpen = false;
+              this.menuOpen = false;
             }
           })
-          Row() {
-            Icon('search', 18, $r('app.color.text_secondary'))
-          }
-          .height(Size.touch)
-          .width(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .id('vault-sidebar-search')
-          .onClick((): void => { this.onOpenSearch(); })
-          .accessibilityText('搜索笔记')
-          Row() {
-            Icon('plus', 16, $r('app.color.text_tertiary'))
-          }
-          .height(Size.touch)
-          .width(Size.touch)
-          .justifyContent(FlexAlign.Center)
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(Radius.icon)
-          .id('vault-sidebar-new-note')
-          .onClick(() => {
-            this.onCreateNote();
-          })
-          .accessibilityText('新建笔记')
         }
         .width('100%')
-        .padding({ left: Space.s4, right: Space.s2 })
-      }
+        .padding({ left: Space.s3, right: Space.s3 })
 
-      if (!this.referenceOnly) {
-        Row({ space: Space.s2 }) {
-          Column() {
+        if (!this.referenceOnly) {
+          // 目录头：文件数、搜索与根目录新建；宽屏收起由顶栏汉堡统一控制。
+          Row() {
+            Text(this.noteCount.toString() + ' 篇笔记')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .layoutWeight(1)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .onHover((isHover: boolean): void => {
+                this.noteCountHintOpen = isHover;
+              })
+              .accessibilityText('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
+              .bindPopup(this.noteCountHintOpen, {
+                builder: this.NoteCountHint(),
+                placement: Placement.Top,
+                enableArrow: false,
+                mask: false,
+                autoCancel: false,
+                popupColor: Color.Transparent
+              })
+            // v1.49：排序切换入口（sort 图标 + 弹层菜单，与库切换菜单同款 bindPopup 模式）。
             Row() {
-              Text('文件')
-                .fontSize(FontSize.body2)
-                .fontWeight(this.sidebarTab === 'files' ? 600 : FontWeight.Normal)
-                .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-                .textAlign(TextAlign.Center)
+              Icon('sort', 18, $r('app.color.text_secondary'))
             }
-            .layoutWeight(1)
-            .width('100%')
+            .height(Size.touch)
+            .width(Size.touch)
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
-            Row()
-              .width(Space.s5)
-              .height(Space.s1 / 2)
-              .borderRadius(Radius.full)
-              .backgroundColor(this.sidebarTab === 'files'
-                ? $r('app.color.brand') : Color.Transparent)
-          }
-          .height(Size.touch)
-          .width('50%')
-          .justifyContent(FlexAlign.End)
-          .alignItems(HorizontalAlign.Center)
-          .padding({ left: Space.s3, right: Space.s3 })
-          .focusable(true)
-          .onClick((): void => { this.onSidebarTabChange('files'); })
-
-          Column() {
+            .borderRadius(Radius.icon)
+            .id('vault-sidebar-sort')
+            .onClick((): void => { this.sortMenuOpen = !this.sortMenuOpen; })
+            .accessibilityText('排序方式，当前' + this.sortModeLabel())
+            .bindPopup(this.sortMenuOpen, {
+              builder: this.SortMenu(),
+              placement: Placement.BottomLeft,
+              enableArrow: false,
+              offset: { x: 0, y: Space.s1 },
+              mask: false,
+              autoCancel: true,
+              popupColor: Color.Transparent,
+              onWillDismiss: (action: DismissPopupAction): void => {
+                action.dismiss();
+                this.sortMenuOpen = false;
+              }
+            })
             Row() {
-              Text('章节')
-                .fontSize(FontSize.body2)
-                .fontWeight(this.sidebarTab === 'chapters' ? 600 : FontWeight.Normal)
-                .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-                .textAlign(TextAlign.Center)
+              Icon('search', 18, $r('app.color.text_secondary'))
             }
-            .layoutWeight(1)
-            .width('100%')
+            .height(Size.touch)
+            .width(Size.touch)
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
-            Row()
-              .width(Space.s5)
-              .height(Space.s1 / 2)
-              .borderRadius(Radius.full)
-              .backgroundColor(this.sidebarTab === 'chapters'
-                ? $r('app.color.brand') : Color.Transparent)
+            .borderRadius(Radius.icon)
+            .id('vault-sidebar-search')
+            .onClick((): void => { this.onOpenSearch(); })
+            .accessibilityText('搜索笔记')
+            Row() {
+              Icon('plus', 16, $r('app.color.text_tertiary'))
+            }
+            .height(Size.touch)
+            .width(Size.touch)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .borderRadius(Radius.icon)
+            .id('vault-sidebar-new-note')
+            .onClick(() => {
+              this.onCreateNote();
+            })
+            .accessibilityText('新建笔记')
           }
-          .height(Size.touch)
-          .width('50%')
-          .justifyContent(FlexAlign.End)
-          .alignItems(HorizontalAlign.Center)
-          .padding({ left: Space.s3, right: Space.s3 })
-          .focusable(true)
-          .onClick((): void => { this.onSidebarTabChange('chapters'); })
-        }
-        .width('100%')
-        .padding({ left: Space.s2, right: Space.s2 })
-        .border({ width: { bottom: 1 }, color: $r('app.color.line') })
-      }
-
-      Stack() {
-        // 保持树常驻，切换章节时不丢失折叠和滚动位置。
-        FileTreeView({
-          vaultId: this.currentVaultId,
-          currentFilePath: this.currentFilePath,
-          refreshSeq: this.refreshSeq,
-          sortMode: this.sortMode,
-          trashRefreshSeq: this.trashRefreshSeq,
-          revealPath: this.revealPath,
-          referenceOnly: this.referenceOnly,
-          hideOtherPane: this.asDrawer || this.compact,
-          onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
-          onOpenOtherPane: (relPath: string): void => { this.onOpenOtherPane(relPath); },
-          onReferenceNote: (relPath: string, vaultId: string): void => {
-            this.onReferenceNote(relPath, vaultId);
-          },
-          onCreateInDir: (dirRelPath: string): void => { this.onCreateInDir(dirRelPath); },
-          onRenamePath: (relPath: string, isDir: boolean): void => { this.onRenamePath(relPath, isDir); },
-          onMovePath: (relPath: string, isDir: boolean): void => { this.onMovePath(relPath, isDir); },
-          onDeletePath: (relPath: string, isDir: boolean): void => { this.onDeletePath(relPath, isDir); },
-          onSharePath: (relPath: string, isDir: boolean): void => { this.onSharePath(relPath, isDir); },
-          onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); },
-          onRestoreTrash: (relPath: string): void => { this.onRestoreTrash(relPath); },
-          onPurgeTrash: (relPath: string): void => { this.onPurgeTrash(relPath); }
-        })
           .width('100%')
-          .height('100%')
-          .visibility(this.referenceOnly || this.sidebarTab === 'files' ? Visibility.Visible : Visibility.Hidden)
+          .padding({ left: Space.s4, right: Space.s2 })
+        }
 
-        Column() {
-          Text(this.chapterTitleText())
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_primary'))
+        if (!this.referenceOnly) {
+          Row({ space: Space.s2 }) {
+            Column() {
+              Row() {
+                Text('文件')
+                  .fontSize(FontSize.body2)
+                  .fontWeight(this.sidebarTab === 'files' ? 600 : FontWeight.Normal)
+                  .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                  .textAlign(TextAlign.Center)
+              }
+              .layoutWeight(1)
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              Row()
+                .width(Space.s5)
+                .height(Space.s1 / 2)
+                .borderRadius(Radius.full)
+                .backgroundColor(this.sidebarTab === 'files'
+                  ? $r('app.color.brand') : Color.Transparent)
+            }
+            .height(Size.touch)
+            .width('50%')
+            .justifyContent(FlexAlign.End)
+            .alignItems(HorizontalAlign.Center)
+            .padding({ left: Space.s3, right: Space.s3 })
+            .focusable(true)
+            .onClick((): void => { this.onSidebarTabChange('files'); })
+
+            Column() {
+              Row() {
+                Text('章节')
+                  .fontSize(FontSize.body2)
+                  .fontWeight(this.sidebarTab === 'chapters' ? 600 : FontWeight.Normal)
+                  .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                  .textAlign(TextAlign.Center)
+              }
+              .layoutWeight(1)
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              Row()
+                .width(Space.s5)
+                .height(Space.s1 / 2)
+                .borderRadius(Radius.full)
+                .backgroundColor(this.sidebarTab === 'chapters'
+                  ? $r('app.color.brand') : Color.Transparent)
+            }
+            .height(Size.touch)
+            .width('50%')
+            .justifyContent(FlexAlign.End)
+            .alignItems(HorizontalAlign.Center)
+            .padding({ left: Space.s3, right: Space.s3 })
+            .focusable(true)
+            .onClick((): void => { this.onSidebarTabChange('chapters'); })
+          }
+          .width('100%')
+          .padding({ left: Space.s2, right: Space.s2 })
+          .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+        }
+
+        Stack() {
+          // 保持树常驻，切换章节时不丢失折叠和滚动位置。
+          FileTreeView({
+            vaultId: this.currentVaultId,
+            currentFilePath: this.currentFilePath,
+            refreshSeq: this.refreshSeq,
+            sortMode: this.sortMode,
+            trashRefreshSeq: this.trashRefreshSeq,
+            revealPath: this.revealPath,
+            referenceOnly: this.referenceOnly,
+            hideOtherPane: this.asDrawer || this.compact,
+            clusterOffsetVp: this.fileTreeClusterOffsetVp(),
+            onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
+            onOpenOtherPane: (relPath: string): void => { this.onOpenOtherPane(relPath); },
+            onReferenceNote: (relPath: string, vaultId: string): void => {
+              this.onReferenceNote(relPath, vaultId);
+            },
+            onCreateInDir: (dirRelPath: string): void => { this.onCreateInDir(dirRelPath); },
+            onRenamePath: (relPath: string, isDir: boolean): void => { this.onRenamePath(relPath, isDir); },
+            onMovePath: (relPath: string, isDir: boolean): void => { this.onMovePath(relPath, isDir); },
+            onDeletePath: (relPath: string, isDir: boolean): void => { this.onDeletePath(relPath, isDir); },
+            onSharePath: (relPath: string, isDir: boolean): void => { this.onSharePath(relPath, isDir); },
+            onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); },
+            onRestoreTrash: (relPath: string): void => { this.onRestoreTrash(relPath); },
+            onPurgeTrash: (relPath: string): void => { this.onPurgeTrash(relPath); }
+          })
             .width('100%')
-            .padding({ left: Space.s3, right: Space.s3, top: Space.s4, bottom: Space.s2 })
-          if (this.chapters.length > 0) {
-            List() {
-              ForEach(this.visibleChapterEntries(), (chapter: ChapterEntry) => {
-                ListItem() {
-                  Row({ space: Space.s1 }) {
-                    if (this.hasChapterChildren(chapter.index)) {
-                      Row() {
-                        Icon(this.isChapterCollapsed(chapter) ? 'chevronRight' : 'chevronDown',
-                          Space.s4, $r('app.color.text_secondary'))
-                      }
-                      .width(Space.s8)
-                      .height(Size.touch)
-                      .justifyContent(FlexAlign.Center)
-                      .alignItems(VerticalAlign.Center)
-                      .focusable(true)
-                      .onClick((): void => { this.toggleChapter(chapter); })
-                      .accessibilityText((this.isChapterCollapsed(chapter) ? '展开' : '折叠') +
-                        '章节：' + chapter.title)
-                    } else {
-                      Column()
+            .height('100%')
+            .visibility(this.referenceOnly || this.sidebarTab === 'files' ? Visibility.Visible : Visibility.Hidden)
+
+          Column() {
+            Text(this.chapterTitleText())
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .padding({ left: Space.s3, right: Space.s3, top: Space.s4, bottom: Space.s2 })
+            if (this.chapters.length > 0) {
+              List() {
+                ForEach(this.visibleChapterEntries(), (chapter: ChapterEntry) => {
+                  ListItem() {
+                    Row({ space: Space.s1 }) {
+                      if (this.hasChapterChildren(chapter.index)) {
+                        Row() {
+                          Icon(this.isChapterCollapsed(chapter) ? 'chevronRight' : 'chevronDown',
+                            Space.s4, $r('app.color.text_secondary'))
+                        }
                         .width(Space.s8)
                         .height(Size.touch)
+                        .justifyContent(FlexAlign.Center)
+                        .alignItems(VerticalAlign.Center)
+                        .focusable(true)
+                        .onClick((): void => { this.toggleChapter(chapter); })
+                        .accessibilityText((this.isChapterCollapsed(chapter) ? '展开' : '折叠') +
+                          '章节：' + chapter.title)
+                      } else {
+                        Column()
+                          .width(Space.s8)
+                          .height(Size.touch)
+                      }
+                      Text(chapter.title)
+                        .fontSize(chapter.level === 1 ? FontSize.s2 :
+                          chapter.level === 2 ? FontSize.body1 :
+                          chapter.level <= 4 ? FontSize.body2 : FontSize.caption)
+                        .fontWeight(chapter.level <= 3 || chapter.level === 5
+                          ? FontWeight.Bold : FontWeight.Normal)
+                        .fontColor(chapter.index === this.selectedChapterIndex
+                          ? $r('app.color.brand') : $r('app.color.text_primary'))
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .padding({ left: Space.s2, right: Space.s2 })
+                        .layoutWeight(1)
+                        .height(Size.touch)
+                        .focusable(true)
+                        .id(this.chapterFocusId(chapter))
+                        .onKeyEvent((event: KeyEvent): boolean => {
+                          return this.onChapterKey(chapter, event);
+                        })
+                        .onClick((): void => { this.onSelectChapter(chapter.index); })
                     }
-                    Text(chapter.title)
-                      .fontSize(chapter.level === 1 ? FontSize.s2 :
-                        chapter.level === 2 ? FontSize.body1 :
-                        chapter.level <= 4 ? FontSize.body2 : FontSize.caption)
-                      .fontWeight(chapter.level <= 3 || chapter.level === 5
-                        ? FontWeight.Bold : FontWeight.Normal)
-                      .fontColor(chapter.index === this.selectedChapterIndex
-                        ? $r('app.color.brand') : $r('app.color.text_primary'))
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .padding({ left: Space.s2, right: Space.s2 })
-                      .layoutWeight(1)
-                      .height(Size.touch)
-                      .focusable(true)
-                      .id(this.chapterFocusId(chapter))
-                      .onKeyEvent((event: KeyEvent): boolean => {
-                        return this.onChapterKey(chapter, event);
-                      })
-                      .onClick((): void => { this.onSelectChapter(chapter.index); })
+                    .width('100%')
+                    .padding({ left: this.chapterDepth(chapter.index) * Space.s4,
+                      right: Space.s2 })
+                    .backgroundColor(chapter.index === this.selectedChapterIndex
+                      ? $r('app.color.brand_bg') : Color.Transparent)
+                    .borderRadius(Radius.icon)
                   }
                   .width('100%')
-                  .padding({ left: this.chapterDepth(chapter.index) * Space.s4,
-                    right: Space.s2 })
-                  .backgroundColor(chapter.index === this.selectedChapterIndex
-                    ? $r('app.color.brand_bg') : Color.Transparent)
-                  .borderRadius(Radius.icon)
-                }
-                .width('100%')
-              }, (chapter: ChapterEntry): string => {
-                const foldState: string = this.hasChapterChildren(chapter.index)
-                  ? (this.isChapterCollapsed(chapter) ? 'collapsed' : 'expanded') : 'leaf';
-                const selectedState: string = chapter.index === this.selectedChapterIndex
-                  ? 'selected' : 'normal';
-                return this.chapterKey(chapter) + ':' + foldState + ':' + selectedState;
-              })
-            }
-            .layoutWeight(1)
-            .width('100%')
-          } else {
-            Column() {
-              Text(this.currentFilePath.length > 0
-                ? '这篇笔记还没有标题。编辑时插入标题，即可在这里导航。'
-                : '先打开一篇笔记')
-                .fontSize(FontSize.body2)
-                .fontColor($r('app.color.text_secondary'))
-                .width('100%')
-                .padding(Space.s3)
-            }
-              .width('100%')
+                }, (chapter: ChapterEntry): string => {
+                  const foldState: string = this.hasChapterChildren(chapter.index)
+                    ? (this.isChapterCollapsed(chapter) ? 'collapsed' : 'expanded') : 'leaf';
+                  const selectedState: string = chapter.index === this.selectedChapterIndex
+                    ? 'selected' : 'normal';
+                  return this.chapterKey(chapter) + ':' + foldState + ':' + selectedState;
+                })
+              }
               .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
+              .width('100%')
+              .padding({ bottom: this.chaptersBottomClearanceVp() })
+              .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+            } else {
+              Column() {
+                Text(this.currentFilePath.length > 0
+                  ? '这篇笔记还没有标题。编辑时插入标题，即可在这里导航。'
+                  : '先打开一篇笔记')
+                  .fontSize(FontSize.body2)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                  .padding(Space.s3)
+              }
+                .width('100%')
+                .layoutWeight(1)
+                .alignItems(HorizontalAlign.Start)
+            }
           }
+          .width('100%')
+          .height('100%')
+          .visibility(!this.referenceOnly && this.sidebarTab === 'chapters' ? Visibility.Visible : Visibility.Hidden)
         }
+        .layoutWeight(1)
         .width('100%')
-        .height('100%')
-        .visibility(!this.referenceOnly && this.sidebarTab === 'chapters' ? Visibility.Visible : Visibility.Hidden)
-      }
-      .layoutWeight(1)
-      .width('100%')
 
-      // v1.58 58.2：文件列表下方、底部状态行之上常驻连写条；单屏侧栏是临时抽屉，不挂载。
-      if (!this.asDrawer) {
+        // 57.7：Agent 引用侧栏（referenceOnly）保持连写条在流内原位——文件树底边因此
+        // 不与安全区边界重合，expandSafeArea 天然 no-op，Agent 页维持 57.7 前现状。
+        if (this.statsEnabled && this.referenceOnly && !this.asDrawer) {
+          Column() {
+            VaultStatsStreakChip({
+              streakDays: this.statsStreakDays,
+              totalDays: this.statsTotalDays,
+              scanning: this.statsScanning,
+              weekFlags: this.statsWeekFlags,
+              todayIndex: this.statsTodayIndex,
+              showDots: this.sidebarW <= 0 || this.sidebarW >= Size.statsDotsMinSidebarW,
+              chipId: this.statsChipId,
+              onOpenStats: (): void => { this.onOpenStats(); }
+            })
+          }
+          .width('100%')
+          .padding({ left: Space.s3, right: Space.s3, bottom: Space.s2 })
+        }
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor($r('app.color.bg_navigation'))
+
+      // 57.7：工作区连写条移出主流、offset 压进底部手势条条带（布局不进安全区 AE4，
+      // offset 渲染+命中同步位移），卡片底贴物理下沿（覆盖位不再加底 padding）；
+      // bg_navigation 遮住穿小白条滚上来的章节/树行；chipH 实测回填（Area 单位 vp，
+      // 消费处禁止再 px2vp 二次换算）驱动簇相接与末条让位。
+      if (this.statsEnabled && !this.referenceOnly && !this.asDrawer) {
         Column() {
           VaultStatsStreakChip({
             streakDays: this.statsStreakDays,
@@ -875,12 +952,18 @@ export struct VaultSidebar {
           })
         }
         .width('100%')
-        .padding({ left: Space.s3, right: Space.s3, bottom: Space.s2 })
+        .padding({ left: Space.s3, right: Space.s3 })
+        .backgroundColor($r('app.color.bg_navigation'))
+        .offset({ y: this.navClearanceVp() })
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          if (typeof newArea.height === 'number') {
+            this.chipH = newArea.height;
+          }
+        })
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.bg_navigation'))
     .onAreaChange((oldArea: Area, newArea: Area) => {
       if (typeof newArea.width === 'number') {
         this.sidebarW = newArea.width;

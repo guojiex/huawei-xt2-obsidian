@@ -90,9 +90,11 @@ import { AgentWorkspace } from '../components/AgentWorkspace';
 import { StartupMask } from '../components/StartupMask';
 import { Icon } from '../common/Icons';
 import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
-import { FontSize, Motion, Radius, Shadow, Size, Space, Weight } from '../common/Tokens';
+import { FontSize, Motion, Radius, Shadow, ScreenSaver, Size, Space, Weight } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
+import { VaultStatsPreferenceStore } from '../model/VaultStatsPreferenceStore';
+import { ScreenSaverPreferenceStore } from '../model/ScreenSaverPreferenceStore';
 import { DEFAULT_EDITOR_EXPERIENCE, EditorExperienceMode } from '../model/EditorExperiencePolicy';
 import { EditorExperienceStore } from '../model/EditorExperienceStore';
 import { ShareImagePreferenceStore } from '../model/ShareImagePreferenceStore';
@@ -121,10 +123,10 @@ import { SplitHandle } from '../components/SplitHandle';
 import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from '../components/ShareNoteDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from '../components/ShareImagePreviewDialog';
 import { ShareFilePreviewDialog } from '../components/ShareFilePreviewDialog';
-import { SharePdfPreviewDialog } from '../components/SharePdfPreviewDialog';
 import { ShareTextPreviewDialog } from '../components/ShareTextPreviewDialog';
 import { SaveShareDialog } from '../components/SaveShareDialog';
 import { ShareIngestDraft, ShareIngestPayload, ShareIngestService } from '../model/ShareIngestService';
+import { SharePdfPreviewFlow, SharePdfPreviewRequest } from '../model/SharePdfPreviewFlow';
 import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
 import { NotePdfDocumentService } from '../model/NotePdfDocumentService';
@@ -272,6 +274,8 @@ struct Index {
    * @Watch 兜「晚到」，消费后清空键防重复弹层。
    */
   @StorageProp('incomingShare') @Watch('onIncomingShareChanged') incomingShareJson: string = '';
+  /** 57.7：底部导航条避让高度（px，EntryAbility 随 avoidAreaChange 动态发布）；状态条 offset 进条带用。 */
+  @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
   /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
   @State vaults: VaultEntry[] = [];
   @State vaultManagerShareSummaries: VaultManagerShareSummary[] = [];
@@ -298,7 +302,7 @@ struct Index {
   @State @Watch('onFormatContextChanged') sidebarCollapsed: boolean = false;
   /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
   @State @Watch('onFormatContextChanged') topView: string = 'note';
-  @State agentKitSlotBuilder: WrappedBuilder<[() => void]> | null = null;
+  @State agentKitSlotBuilder: WrappedBuilder<[() => void, string]> | null = null;
   @State vaultManagerReturnView: string = 'note';
   /** v1.58：统计缓存（侧栏连写条只读这里）；打开弹窗时重算并回写，不落盘。 */
   @State vaultStatsModel: VaultStatsModel = emptyStatsModel();
@@ -312,6 +316,8 @@ struct Index {
   @State agentHamburgerSeq: number = 0;
   @State agentRenameSeq: number = 0;
   @State moreMenuOpen: boolean = false;
+  /** v1.65 65.2：屏保 / 台历覆盖层开关；false 时不挂载，工作区状态完全不变。 */
+  @State screenSaverOpen: boolean = false;
   @State focusMoreMenuOnAppear: boolean = false;
   /** v1.31 31.2：单屏更多菜单当前悬停项（hover 高亮 --nav 底） */
   @State mobileMoreHoveredAction: string = '';
@@ -452,6 +458,8 @@ struct Index {
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
   private editorPreferenceStore: EditorPreferenceStore | null = null;
+  private vaultStatsPreferenceStore: VaultStatsPreferenceStore | null = null;
+  private screenSaverPreferenceStore: ScreenSaverPreferenceStore | null = null;
   private editorExperienceStore: EditorExperienceStore | null = null;
   private shareImagePreferenceStore: ShareImagePreferenceStore | null = null;
   private agentKitLoadStarted: boolean = false;
@@ -460,6 +468,15 @@ struct Index {
   private readonly xiaoyiDialogClosed = (): void => {
     void this.refreshWorkspaceAfterXiaoyi();
   };
+
+  /** 小艺入口提示文案：当前打开笔记的说明（未打开笔记时为空串）。 */
+  private xiaoyiNoteHint(): string {
+    const active: string = this.activeFilePath();
+    if (active.length === 0) {
+      return '';
+    }
+    return `关于当前打开的笔记「${this.paneNoteTitle(active)}」（${active}）：`;
+  }
   private workspaceSessionStore: WorkspaceSessionStore | null = null;
   private pendingWorkspaceSession: WorkspaceSession | null = null;
   private workspaceSessionRestoreStarted: boolean = false;
@@ -508,6 +525,10 @@ struct Index {
   @State rightPaneIntentionallyEmpty: boolean = false;
   @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
   @State showLineNumbers: boolean = false;
+  /** v1.58 开关：写作统计总开关（默认开）。关闭时隐藏入口、连写条并跳过后台重算。 */
+  @State statsEnabled: boolean = true;
+  /** v1.65 65.5：名言轮换间隔（应用级偏好，0 = 不轮换）。 */
+  @State screenSaverIntervalMs: number = ScreenSaver.defaultIntervalMs;
   @State followPreviewEnabled: boolean = true;
   @State experienceMode: EditorExperienceMode = DEFAULT_EDITOR_EXPERIENCE;
   private leftSimplePreviewCommit: Promise<void> = Promise.resolve();
@@ -658,11 +679,8 @@ struct Index {
   private shareTextPreviewCtl: CustomDialogController | null = null;
   /** v1.56 56.3：接收系统分享的保存确认层 controller（每次拉起重建） */
   private saveShareCtl: CustomDialogController | null = null;
-  /** 53.7：PDF 分页预览弹窗与页面捕获会话 */
-  private sharePdfPreviewCtl: CustomDialogController | null = null;
-  private sharePdfPreviewSessionId: string = '';
-  private sharePdfPreviewPages: string[] = [];
-  private sharePdfPreviewPageAspects: number[] = [];
+  /** 53.7：PDF 分页预览流程（会话状态与弹窗编排拆至 model/SharePdfPreviewFlow） */
+  private sharePdfPreviewFlow: SharePdfPreviewFlow = new SharePdfPreviewFlow();
   private shareCaptureBridge: PreviewBridge = new PreviewBridge();
   private readonly shareCaptureComponentId: string = 'note-image-share-capture';
   private shareCaptureReadyResolver: (() => void) | null = null;
@@ -724,6 +742,10 @@ struct Index {
     this.ensureEditorPreferenceStore();
     this.showLineNumbers = (this.editorPreferenceStore as EditorPreferenceStore).showLineNumbers();
     this.followPreviewEnabled = (this.editorPreferenceStore as EditorPreferenceStore).followPreview();
+    this.ensureVaultStatsPreferenceStore();
+    this.statsEnabled = (this.vaultStatsPreferenceStore as VaultStatsPreferenceStore).statsEnabled();
+    this.ensureScreenSaverPreferenceStore();
+    this.screenSaverIntervalMs = (this.screenSaverPreferenceStore as ScreenSaverPreferenceStore).intervalMs();
     this.ensureShareImagePreferenceStore();
     this.shareCaptureTheme = (this.shareImagePreferenceStore as ShareImagePreferenceStore).loadTheme();
     this.shareCaptureWidthId = (this.shareImagePreferenceStore as ShareImagePreferenceStore).loadWidth();
@@ -762,8 +784,8 @@ struct Index {
     this.agentKitLoadStarted = true;
     try {
       const agentModule: ESObject = await import('../components/AgentKitSlot');
-      const getAgentKitSlotBuilder: () => WrappedBuilder<[() => void]> =
-        agentModule.getAgentKitSlotBuilder as () => WrappedBuilder<[() => void]>;
+      const getAgentKitSlotBuilder: () => WrappedBuilder<[() => void, string]> =
+        agentModule.getAgentKitSlotBuilder as () => WrappedBuilder<[() => void, string]>;
       this.agentKitSlotBuilder = getAgentKitSlotBuilder();
     } catch (error) {
       this.agentKitLoadStarted = false;
@@ -781,6 +803,12 @@ struct Index {
   private ensureEditorPreferenceStore(): void {
     if (this.editorPreferenceStore === null) {
       this.editorPreferenceStore = new EditorPreferenceStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private ensureVaultStatsPreferenceStore(): void {
+    if (this.vaultStatsPreferenceStore === null) {
+      this.vaultStatsPreferenceStore = new VaultStatsPreferenceStore(VaultRegistry.get().abilityContext());
     }
   }
 
@@ -1082,6 +1110,44 @@ struct Index {
     this.showLineNumbers = show;
     this.ensureEditorPreferenceStore();
     (this.editorPreferenceStore as EditorPreferenceStore).saveShowLineNumbers(show);
+  }
+
+  private setStatsEnabled(enabled: boolean): void {
+    this.statsEnabled = enabled;
+    this.ensureVaultStatsPreferenceStore();
+    (this.vaultStatsPreferenceStore as VaultStatsPreferenceStore).saveStatsEnabled(enabled);
+    if (!enabled) {
+      // 关闭时丢弃进行中的连写数据，避免连写条/弹窗再引用过期结果。
+      this.vaultStatsModel = emptyStatsModel();
+      this.vaultStatsScanning = false;
+      this.vaultStatsFailed = false;
+    }
+  }
+
+  private ensureScreenSaverPreferenceStore(): void {
+    if (this.screenSaverPreferenceStore === null) {
+      this.screenSaverPreferenceStore = new ScreenSaverPreferenceStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  /** v1.65 65.1：右上角菜单进入屏保 / 台历；工作区保持挂载，只叠一层全屏覆盖。 */
+  private openScreenSaver(): void {
+    this.screenSaverOpen = true;
+  }
+
+  /** 组件淡出完成后回调：卸载覆盖层并回到笔记工作区。 */
+  private closeScreenSaver(): void {
+    this.screenSaverOpen = false;
+    this.topView = 'note';
+  }
+
+  private setScreenSaverInterval(ms: number): void {
+    if (!ScreenSaver.isValidInterval(ms)) {
+      return;
+    }
+    this.screenSaverIntervalMs = ms;
+    this.ensureScreenSaverPreferenceStore();
+    (this.screenSaverPreferenceStore as ScreenSaverPreferenceStore).saveIntervalMs(ms);
   }
 
   private currentPreviewFollowPair(): PreviewFollowPair | null {
@@ -2511,6 +2577,9 @@ struct Index {
    * 关闭按钮 / 遮罩 / Esc / 系统返回都把焦点还给触发入口。
    */
   private async openVaultStats(fromView: string, focusReturnId: string): Promise<void> {
+    if (!this.statsEnabled) {
+      return;
+    }
     if (fromView === 'note' && !await this.flushWorkspaceSaves()) {
       return;
     }
@@ -2577,6 +2646,9 @@ struct Index {
 
   /** v1.58 §5：冷启动 / 切库后把首次扫描排到空闲时机，不进首帧关键路径。 */
   private scheduleIdleStatsRefresh(): void {
+    if (!this.statsEnabled) {
+      return;
+    }
     if (this.statsIdleTimer >= 0) {
       clearTimeout(this.statsIdleTimer);
     }
@@ -3071,8 +3143,6 @@ struct Index {
       }
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
-      // v1.58 58.2：连写条按当前库显示，切库后空闲重算（旧库的过期结果按 vaultId 丢弃）。
-      this.scheduleIdleStatsRefresh();
     } catch (error) {
       this.toastRegistryError('切换库失败', error, 'vault', 'switch');
     }
@@ -8763,6 +8833,15 @@ struct Index {
       }
       // v1.41 启动页品牌遮罩：常驻挂载，ready 后组件内部 240ms 淡出并隐藏。
       StartupMask({ ready: this.workspaceInitialRenderReady })
+      // v1.65 65.2：屏保 / 台历覆盖层。条件渲染，退出即销毁并清理全部定时器 / 循环。
+      if (this.screenSaverOpen) {
+        StartupMask({
+          ready: false,
+          screenSaver: true,
+          quoteIntervalMs: this.screenSaverIntervalMs,
+          onExit: (): void => { this.closeScreenSaver(); }
+        })
+      }
     }
     .width('100%')
     .height('100%')
@@ -9468,77 +9547,33 @@ struct Index {
   }
 
   /**
-   * 53.7：PDF 分页预览弹窗。逐页 JPEG 已在会话目录，本弹窗展示缩略图；
-   * 「分享 PDF」确认后合成 PDF 并进入文件预览；返回则清理会话回到分享面板。
+   * 53.7：PDF 分页预览。会话与弹窗编排在 model/SharePdfPreviewFlow，
+   * 此处只补布局参数与「合成完成 → 文件预览」「取消 → 回分享面板」两条回调。
    */
   private openSharePdfPreview(itemName: string, notePath: string, sessionId: string,
     pageJpegs: string[], pageAspects: number[], vaultId: string): void {
     const registry: VaultRegistry = VaultRegistry.get();
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
-    this.sharePdfPreviewCtl?.close();
-    this.sharePdfPreviewSessionId = sessionId;
-    this.sharePdfPreviewPages = pageJpegs;
-    this.sharePdfPreviewPageAspects = pageAspects;
-    const pageUris: string[] = [];
-    for (let i: number = 0; i < pageJpegs.length; i++) {
-      pageUris.push(fileUri.getUriFromPath(pageJpegs[i]));
-    }
-    this.sharePdfPreviewCtl = new CustomDialogController({
-      builder: SharePdfPreviewDialog({
-        itemName: itemName,
-        fileName: this.pdfFileNameOf(itemName),
-        pageUris: pageUris,
-        pageAspects: pageAspects,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        singleScreen: shareSheet,
-        onConfirm: (): Promise<void> => {
-          const sid: string = this.sharePdfPreviewSessionId;
-          if (sid.length === 0) {
-            throw new Error('PDF 分页会话已失效，请返回重试');
-          }
-          const pages: string[] = this.sharePdfPreviewPages;
-          if (pages.length === 0) {
-            throw new Error('PDF 分页页面缺失，请返回重试');
-          }
-          const aspects: number[] = this.sharePdfPreviewPageAspects;
-          if (aspects.length !== pages.length) {
-            throw new Error('PDF 分页页面缺失，请返回重试');
-          }
-          const pdfPath: string = VaultRegistry.get().sharePath(sid + '/note.pdf');
-          NotePdfDocumentService.exportFromPageImages(pages, aspects, pdfPath);
-          this.sharePdfPreviewCtl?.close();
-          this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
-            itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
-            vaultId, -1, '', uniformTypeDescriptor.UniformDataType.PDF);
-          return Promise.resolve();
-        },
-        onCancel: (): void => {
-          this.cleanupSharePdfPreview();
-          this.openShareDialog('note', notePath);
-        }
-      }),
-      alignment: shareSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      autoCancel: false,
-      customStyle: true
-    });
-    this.sharePdfPreviewCtl.open();
-  }
-
-  private cleanupSharePdfPreview(): void {
-    const sessionId: string = this.sharePdfPreviewSessionId;
-    this.sharePdfPreviewSessionId = '';
-    this.sharePdfPreviewPages = [];
-    this.sharePdfPreviewPageAspects = [];
-    if (sessionId.length === 0) {
-      return;
-    }
-    try {
-      NoteShareService.removeTree(VaultRegistry.get(), sessionId);
-    } catch (error) {
-      hilog.warn(DOMAIN, TAG, 'PDF 分页预览临时文件清理失败');
-    }
+    const request: SharePdfPreviewRequest = {
+      itemName: itemName,
+      fileName: this.pdfFileNameOf(itemName),
+      sessionId: sessionId,
+      pageJpegs: pageJpegs,
+      pageAspects: pageAspects,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      singleScreen: shareSheet,
+      onComposed: (pdfPath: string): void => {
+        this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
+          itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
+          vaultId, -1, '', uniformTypeDescriptor.UniformDataType.PDF);
+      },
+      onCancelled: (): void => {
+        this.openShareDialog('note', notePath);
+      }
+    };
+    this.sharePdfPreviewFlow.open(request);
   }
 
   private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,
@@ -10224,15 +10259,28 @@ struct Index {
     .backgroundColor($r('app.color.bg_card'))
   }
 
+  /** 57.7：导航条避让高度（vp）；布局区不进安全区（AE4），固定内容压条带靠 offset。 */
+  private navClearanceVp(): number {
+    return px2vp(Math.max(0, this.navIndicatorHeightPx));
+  }
+
   @Builder
   NoteWorkspaceContent() {
-    Column() {
-      this.Appbar()
-      Stack({ alignContent: Alignment.BottomStart }) {
-        this.NoteBody()
+    // 57.7：根改 Bottom Stack——内容列（Appbar+正文）铺满布局区（底=安全区下沿 2152），
+    // 状态条整条 offset 压进底部手势条条带（AE4：offset 渲染+命中同步位移），
+    // 上边界线与文字落到物理下沿；NoteBody 相应多吃一个避让高度。
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column() {
+        this.Appbar()
+        Stack({ alignContent: Alignment.BottomStart }) {
+          this.NoteBody()
+        }
+        .layoutWeight(1)
+        .width('100%')
       }
-      .layoutWeight(1)
       .width('100%')
+      .height('100%')
+
       this.Statusbar()
     }
     .layoutWeight(1)
@@ -10669,7 +10717,7 @@ struct Index {
       if (this.topView === 'note') {
         if (XIAOYI_DIALOG_ENTRY_ENABLED && this.agentKitSlotBuilder !== null) {
           Row() {
-            this.agentKitSlotBuilder.builder(this.xiaoyiDialogClosed)
+            this.agentKitSlotBuilder.builder(this.xiaoyiDialogClosed, this.xiaoyiNoteHint())
           }
           .margin({ left: Space.s1, right: Space.s1 })
         }
@@ -10801,11 +10849,6 @@ struct Index {
             this.setPreviewFollowEnabled(!this.followPreviewEnabled);
           })
       }
-      if (this.hasBlockPropertyPanelForPane(this.activeNotePane())) {
-        this.MobileMoreMenuItem('block', 'settings', '块操作', true, (): void => {
-          this.openBlockPropertyPanel(this.activeNotePane());
-        })
-      }
       if (this.experienceMode === 'professional' && this.currentFilePath.length > 0 &&
         this.rightFilePath.length > 0 && this.currentFilePath !== this.rightFilePath) {
         this.MobileMoreMenuItem('switch', 'swap',
@@ -10854,7 +10897,13 @@ struct Index {
         this.MobileMoreGitSyncItem()
       }
       // v1.58 58.3：写作统计在「应用」组、设置与关于之前；行尾是连写缓存值。
-      this.MobileMoreStatsItem()
+      if (this.statsEnabled) {
+        this.MobileMoreStatsItem()
+      }
+      // v1.65 65.1：屏保 / 台历常驻入口；设置与关于仍保持组末位。
+      this.MobileMoreMenuItem('screenSaver', 'screenSaver', '屏保 / 台历', true, (): void => {
+        this.openScreenSaver();
+      })
       this.MobileMoreMenuItem('settings', 'settings', '设置与关于', true, (): void => {
         this.openSettings('note', 'general');
       })
@@ -11031,6 +11080,7 @@ struct Index {
       statsScanning: this.vaultStatsScanning || this.vaultStatsFailed,
       statsWeekFlags: this.statsWeekFlags(),
       statsTodayIndex: this.statsTodayIndex(),
+      statsEnabled: this.statsEnabled,
       onOpenSearch: (): void => {
         this.closeNoteNavigation();
         this.openQuickSwitcher();
@@ -13138,6 +13188,8 @@ struct Index {
       currentVaultNoteCount: this.currentVaultNoteCount,
       vaults: this.vaults,
       showLineNumbers: this.showLineNumbers,
+      statsEnabled: this.statsEnabled,
+      screenSaverIntervalMs: this.screenSaverIntervalMs,
       experienceMode: this.experienceMode,
       selectedCategory: this.settingsCategory,
       showCategoryList: this.isSingleScreenLayout() && !this.settingsDetail,
@@ -13159,6 +13211,8 @@ struct Index {
       },
       onResetSplit: (): void => { this.resetSplitLayout(); },
       onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); },
+      onStatsEnabledChange: (enabled: boolean): void => { this.setStatsEnabled(enabled); },
+      onScreenSaverIntervalChange: (ms: number): void => { this.setScreenSaverInterval(ms); },
       onExperienceModeChange: (mode: EditorExperienceMode): void => { void this.selectEditorExperience(mode); }
     })
   }
@@ -13191,6 +13245,7 @@ struct Index {
       statsScanning: this.vaultStatsScanning || this.vaultStatsFailed,
       statsWeekFlags: this.statsWeekFlags(),
       statsTodayIndex: this.statsTodayIndex(),
+      statsEnabled: this.statsEnabled,
       onImportVault: (): void => { void this.openImportVaultDialog('vault-switcher-trigger'); },
       onNavigationDragStart: (): void => { this.startNavigationDrag(true); },
       onNavigationDrag: (offsetX: number): void => { this.updateNavigationDrag(offsetX, true); },
@@ -13219,6 +13274,9 @@ struct Index {
     .alignItems(VerticalAlign.Center)
     .border({ width: { top: 1 }, color: $r('app.color.line') })
     .backgroundColor($r('app.color.bg_card'))
+    // 57.7：整条 offset 压进底部手势条条带——边界线到 2152、条底贴物理下沿（2232）。
+    // 键盘弹出时导航条避让高度动态归零（EntryAbility avoidAreaChange），offset 同步收回。
+    .offset({ y: this.navClearanceVp() })
   }
 
   @Builder

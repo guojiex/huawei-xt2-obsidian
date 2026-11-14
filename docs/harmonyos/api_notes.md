@@ -739,6 +739,8 @@ ohpm publish yourlib.har
 
 官方指南另要求先创建智能体、关联应用，并确保设备已登录华为账号且联网。`FunctionOptions.queryText` 可设置初始查询文本。满足版本范围不等于本机 Agent 可用，仍需支持查询及设备验证。
 
+2026-11-13 核实 + 实现：`FunctionOptions` **仅有 `queryText` 这一个文本注入字段**（官方 d.ts 与参考文档均确认，无 `variables`/`context`/`conversationVariables` 等运行时变量注入字段；且"所有参数仅在组件实例化时生效"）。小艺开放平台侧的"智能体变量"是平台配置项，不是 App 运行时→Agent 的注入通道——用户记忆的"变量注入"应指此处，对"当前打开笔记"这类运行时上下文无效。**已实现（第一项）**：`AgentKitSlot` 经 `AgentKitSlotBuilder(onDialogClosed, noteHint)` 接收当前笔记提示，`FunctionComponent.options.queryText` 预填 `关于当前打开的笔记「标题」（路径）：`（无打开笔记时传空串）。⚠️ 性质边界：`queryText` 仅是输入框初始文本，用户可改可删，小艺**不会**当作系统级上下文；且本沙箱缺完整 HarmonyOS SDK（仅 licenses/system-image），未做编译验证，需在 DevEco/真机复核。
+
 该组件用于拉起已上线的指定智能体面板。本文列出的控制器没有消息流、历史注入或工具调用回传接口，**不能据此认定已满足自有聊天工作区的 Provider 协议**；是否存在其他正式接口仍待核实。
 
 ~~无需人工审核（技能发布到自己的智能体即可；仅主入口需审核）~~ → ⚠️ 2026-10-26 撤回无依据的泛化：本次文档未证明该免审核规则，发布与调试须按具体模式核实；端 A2A 已有明确前置，见 F10。
@@ -887,9 +889,7 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 
 ### F18 自建智能体：个人开发者资格与审核边界（2026-11-02 官方答复）
 
-> ❌ **本节已停止追问（2026-11-02 用户决定）**：**意图框架不向个人开发者开放**，本项目不接入端侧意图 /
-> 小艺智能体，资格与审核细节不再核实。下面只作存档，避免后来者重新讨论；决策全文见 [open_questions 已定决策](../open_questions.md)
-> 。已落码的意图接线保留为本地实现，不登记平台意图、不绑定 Agent、不排期平台联调。
+> ❌ ~~**本节已停止追问（2026-11-02 用户决定）**：意图框架不向个人开发者开放，本项目不接入端侧意图 / 小艺智能体~~ → **已撤销（2026-11-13）**：用户确认小艺已接通（agentId 可解析、对话框正常拉起），故 v1.16「平台工具创建与绑定不在本版范围」的延期决定失效。当日已将 `SearchNotes` / `ListTree` / `GetLinks` 补登入 `insight_intent.json`（现共 11 项意图），撤销「不登记平台意图」。资格与审核细节仍按下方的 ❓ 项核实，本地登记**不等于**平台绑定已闭环；决策原文见 [open_questions 已定决策](../open_questions.md)。
 
 - ✅ **个人账号可创建智能体**：DevEco 侧「生成意图插件和创建小艺智能体」需登录个人账号并完成**实名认证**（可切团队账号）；小艺开放平台的创建流程为登录 → 创建智能体 → 名称/头像/描述/分类/**运行设备**。
 - ✅ **真机调试与端插件开发需 HarmonyOS 5.1.0 Release 及以上设备**（与既有 F10 的「API 24 及以上」前置并存，不冲突）。
@@ -1958,6 +1958,29 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - ✅ 本机 DevEco Studio 26.0.0.851 的 API 26 SDK `ets/component/gesture.d.ts` 声明 `PinchGestureInterface`、`onActionStart`、`onActionUpdate`、`onActionEnd` 与取消回调 `@since 7`；因此声明版本低于工程 API 24 兼容下限。源码位置与核对范围见[本机 SDK 记录](qa/2026-11-02_v1.12_预览缩放手势SDK核对_API24.md)。
 - ❓ SDK 声明未说明 ArkUI `PinchGesture` 与 ArkWeb 内部滚动、DOM 触摸 / 浏览器页面缩放之间的事件仲裁。API 26 SDK 类型存在不等于 API 24 / XT2 运行通过，也不构成此交互受支持的证据。
 - **当前实现只提供固定比例控件，不接入双指或 Ctrl+滚轮。** 需先在正常交互中确认滚动、缩放及系统默认缩放没有冲突；API24 / XT2 由用户手动验收。
+
+### U2 ✅ 启动页循环动效与氛围层 API 声明核对（2026-11-13，v1.63）
+
+- 本机 API26 SDK（`sdk/default/openharmony/ets/component/common.d.ts`、`enums.d.ts`、`canvas.d.ts`、`api/@ohos.arkui.UIContext.d.ts`）声明：`AnimateParam.iterations` 默认 1、`-1` 表示无限循环，`delay` 允许负值并从绝对时间点的状态起播（`@since 7`）；`UIContext.keyframeAnimateTo(param: KeyframeAnimateParam, keyframes: Array<KeyframeState>)` 与 `KeyframeState { duration, curve, event }` 自 API 11 起，`KeyframeAnimateParam.iterations:-1` 同样表示无限循环。均低于工程 API 24 兼容下限。
+- 通用属性：`CommonMethod.blur(value, options?)`（前景模糊，`@since 7`）、`hitTestBehavior(HitTestMode)` / `HitTestMode.None`（`@since 9`）、`blendMode(BlendMode, BlendApplyType?)`（`BlendMode.MULTIPLY = 25` / `SCREEN = 15`，`@since 11`）；`CanvasRenderingContext2D.fillStyle: string | number | CanvasGradient | CanvasPattern` 与 `fillRect`（`@since 8`）。`radialGradient` / `linearGradient` 的 options 接口自 API 18 起声明，方法本身自 API 7 起。
+- **v1.63 用法**：循环动效用 `keyframeAnimateTo({ iterations: -1 })` 的两 / 四段帧，终态回到起点，不用 `PlayMode.Alternate`（SDK 注释要求有限轮次奇偶匹配）；浮尘用负 `delay` 做初始相位；退出用 `animateTo({ duration: 0 })` 变更同一属性停止循环（AnimateParam 注释明载）；装饰层 `HitTestMode.None`。噪点用 Canvas 静态绘制 + 浅深两档半透明色，**未启用 `blendMode`**（浏览器 multiply / screen 的近似替代，避免离屏合成）；逐字 blur 按 [启动页设计 §6](../prototype/v2/启动页设计.md) 降级为 opacity / translate。
+- ⚠️ 以上仅为 SDK 声明与静态用法核对：**负 `delay` 在无限循环下的实际起播相位、`keyframeAnimateTo` 无限循环在 API 24 / XT2 的资源占用、Canvas 噪点观感与 blur 性能均待设备目视**；自动测试与 HAP 构建不构成运行证据。系统减少动态效果偏好仍按 U1 保持未核实，v1.63 只提供组件入参 `reduceMotion`。
+
+### U3 ✅ 启动页自定义衬线字体与去模糊浮现 API 声明核对（2026-11-13，v1.64）
+
+- 系统字体：J-3 已核实 HarmonyOS 默认字体为 HarmonyOS Sans，SDK 仅随附 `HarmonyOS_Sans.ttf` / `HarmonyOS_Sans_Condensed.ttf`（`previewer/common/bin/fonts/`）；ArkUI 通用 `serif` 族名无对应系统衬线体，回退默认无衬线。**结论**：启动页衬线体必须注册自定义字体，不能靠 `fontFamily('serif')`。
+- `UIContext.getFont(): Font`（`api/@ohos.arkui.UIContext.d.ts:4440`）→ `Font.registerFont(options: font.FontOptions)`（同文件 `:69`、`api/@ohos.font.d.ts:448`）；`FontOptions { familyName: string | Resource, familySrc: string | Resource }`，`@since 9`，`familySrc` 可传 `$rawfile(...)` 资源，`familyName` 即后续 `fontFamily` 使用的注册名。SDK 注释要求用 UIContext 版本以避免 ambiguous UI context。
+- `CommonMethod.blur(value: number, options?)`（`@since 7`）可用于图标 / 逐字去模糊，值随 `@State` 在 `animateTo` 闭包内变更；`CanvasRenderingContext2D.createImageData(sw, sh)` / `putImageData(...)` 与 `ImageData.data: Uint8ClampedArray`（`@since 8`）；`markAnchor(Position)` 支持百分比锚点。`blendMode(BlendMode, BlendApplyType?)`（`@since 11`）可用但需离屏合成，启动首帧未启用。
+- **v1.64 用法**：`StartupMask.aboutToAppear` 注册两档静态子集（wght 400 / 600，`OS/2.usWeightClass` 同步、内部族名改写、版权与 OFL name 记录保留）；品牌名用 Semibold family + `fontWeight(600)`，名言 / 出处 / 页脚 / 大引号用 Regular family；图标与逐字用 `.blur()` 从 6 / 8 / 6vp 消融到 0；噪点用 `ImageData` 逐 2px 块随机 alpha（浅 7% / 深 5%）；紫色极光用 `markAnchor(100%)` + `position(96%,98%)` 等效 CSS `right:4%;bottom:2%`。
+- ⚠️ 仅为 SDK 声明与静态核对：**自定义字体在 API 24 / XT2 的实际加载与字形、逐字 blur 合成开销、全屏 `ImageData` 噪点的首帧耗时、`markAnchor` 百分比定位**均待设备目视；自动测试与 HAP 构建不构成运行证据。授权与再分发规则见 [v1.64 §2](../releases/v1.64/需求文档.md)。
+
+### U4 ✅ 显式动画起播时机：`aboutToAppear` 中动画不生效（2026-11-13，v1.64 修订）
+
+- **官方规范（非本机推测）**：华为《显式动画 animateTo》与《易错 API 使用规范》明确「不推荐在 `aboutToAppear()` / `aboutToDisappear()` 中调用动画」——`aboutToAppear` 时自定义组件的 `build()` 尚未执行、内部组件未创建，**动画属性没有初值，无法对组件产生动画**；点名禁止 `animateTo()`、`animateToImmediately()`、`keyframeAnimateTo()`。官方给出的起播位置是组件 **`onAppear`**（示例 1 的无限循环动画即写在 `.onAppear()` 内）或 `onDidBuild`。
+- 本机 API26 SDK `CommonMethod.onAppear(event: () => void): T`（`component/common.d.ts:19988`，`@since 7`）注释：「This callback may be called after the component layout and rendering process.」——即布局与渲染完成后触发，动画属性已有初值。项目内 `Index.ets` / `SettingsView.ets` / `FileTreeView.ets` 等已有 11 处 `.onAppear()` 用法，非新 API。
+- **v1.63 缺陷**：`StartupAmbience.aboutToAppear()` 里直接起播极光 1.6s 淡入（`animateTo`）、三团无限漂移与 16 粒浮尘上浮（`keyframeAnimateTo`）；状态变量会被直接置为终值，但过渡 / 循环不生效 → 浅蓝极光团静止、浮尘不可见。品牌层因走 `setTimeout` 异步调度（`build()` 之后）而正常，故表现为「只有文字浮现」。自动测试只查源码存在性、HAP 构建只验编译，均无法发现运行期不生效。
+- **现行口径**：氛围层所有动画 API 统一由根节点 `.onAppear()` 起播；`aboutToAppear()` 只做数据准备与 `reduceMotion` 静态终态；`ambienceStarted` / `moteStarted` 一次性守卫防止 `onAppear` 重复触发叠加无限循环。`test_startup_mask_design.mjs` 断言 `aboutToAppear` 体内不得出现动画 API（对 `StartupMask.ets` / `StartupAmbience.ets` 同时生效）。
+- ⚠️ 仍需设备目视：`onAppear` 后极光淡入 / 漂移 / 浮尘是否按 22 / 27 / 31s 与 16–30s 正常播放、负 `delay` 在无限循环下的起播相位、循环动画资源占用。自动测试与构建不构成运行证据。
 
 ## V 组：应用内检测更新（AppGallery Kit `updateManager`，2026-11-02）
 

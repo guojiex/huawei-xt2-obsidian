@@ -42,6 +42,8 @@ export struct AgentWorkspace {
   @Prop statsScanning: boolean = false;
   @Prop statsWeekFlags: boolean[] = [];
   @Prop statsTodayIndex: number = -1;
+  /** v1.58 总开关：关闭时连写条不渲染（由 Index 统一传入）。 */
+  @Prop statsEnabled: boolean = true;
   onImportVault: () => void = () => {};
   onNavigationDragStart: () => void = () => {};
   onNavigationDrag: (offsetX: number) => void = (offsetX: number) => {};
@@ -718,6 +720,7 @@ export struct AgentWorkspace {
         statsWeekFlags: this.statsWeekFlags,
         statsTodayIndex: this.statsTodayIndex,
         statsChipId: 'agent-stats-streak-chip',
+        statsEnabled: this.statsEnabled,
         onImportVault: (): void => { this.onImportVault(); },
         onReferenceNote: (path: string, sourceVaultId: string): void => {
           this.addReference(path, sourceVaultId);

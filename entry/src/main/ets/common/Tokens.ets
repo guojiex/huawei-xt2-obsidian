@@ -180,11 +180,16 @@ export class Motion {
 export const LINE_HEIGHT_BODY: number = 1.85; // v2 --leading
 
 /**
- * 启动页品牌遮罩（v1.41）—— 数值真源：v2 原型 `.startup-*`
- * （docs/prototype/v2/启动页设计.md）；颜色仍走 `$r('app.color.*')`。
- * 入场为分组错峰浮现（本版拍板：不逐字、不做持续氛围动画，见 v1.41 §2）。
+ * 启动页品牌遮罩 —— 数值真源：v2 原型 `.startup-*`（docs/prototype/v2/index.html 914–969）；
+ * 颜色仍走 `$r('app.color.*')`。按设计稿 §4 1:1 还原：氛围层、循环动效、逐字去模糊浮现、
+ * 装饰引号、衬线字体子集。
  */
 export class Startup {
+  // —— 衬线字体（原型 --serif；系统只有 HarmonyOS Sans，故注册静态子集）——
+  /** registerFont 的注册名；$rawfile 路径是编译期字面量，必须写在 StartupMask.ets。 */
+  static readonly serifFamily: string = 'StartupSerif';
+  static readonly serifSemiboldFamily: string = 'StartupSerifSemibold';
+
   /** 应用图标尺寸：原型 `.startup-emblem` 96px */
   static readonly iconSize: number = 96;
   /** 图标圆角：原型 `calc(var(--r) + var(--s2))` = 16 + 8 */
@@ -199,16 +204,28 @@ export class Startup {
   static readonly nameTrackingRatio: number = 0.32;
   /** 眉题字距（em）：原型 `.42em` */
   static readonly eyebrowTrackingRatio: number = 0.42;
-  /** 名言字号：原型 `clamp(17px, 1.2vw + 9px, 23px)`，本版拍板取 `--large`（20） */
+  /** 名言字号：原型 `clamp(17px, 1.2vw + 9px, 23px)`；按窗口宽自适应，无窗口尺寸时回退 20 */
   static readonly quoteSize: number = FontSize.s3;
+  static readonly quoteSizeMin: number = 17;
+  static readonly quoteSizeMax: number = 23;
+  static readonly quoteSizeVwRatio: number = 0.012;
+  static readonly quoteSizeBase: number = 9;
   /** 名言行高：原型 `line-height: 1.9` */
   static readonly quoteLeading: number = 1.9;
   /** 名言字距（em）：原型 `.1em` */
   static readonly quoteTrackingRatio: number = 0.1;
   /** 行尾中文标点悬挂在正文之外，居中时向右补偿半字。 */
   static readonly quotePunctuationOffsetRatio: number = 0.5;
-  /** 名言最大宽：原型 `max-width: 32em`（按名言字号折算） */
-  static readonly quoteMaxW: number = FontSize.s3 * 32;
+  /** 名言最大宽：原型 `max-width: 32em`（组件内按自适应字号折算） */
+  static readonly quoteMaxEm: number = 32;
+  static readonly quoteMaxW: number = FontSize.s3 * Startup.quoteMaxEm;
+  /** 出处字距（em）：原型 `figcaption{letter-spacing:.12em}` */
+  static readonly sourceTrackingRatio: number = 0.12;
+  /** 装饰引号（原型 `.startup-quote::before`）：--heading × 2、blue 14%、-.55em / -.42em */
+  static readonly quoteMarkSizeRatio: number = 2;
+  static readonly quoteMarkLeftRatio: number = 0.55;
+  static readonly quoteMarkTopRatio: number = 0.42;
+  static readonly quoteMarkOpacity: number = 0.14;
   /** 出处字号：原型 `--small`（14） */
   static readonly sourceSize: number = FontSize.body2;
   /** 发丝线宽：原型 `.startup-rule` `width: var(--s16)` */
@@ -219,25 +236,137 @@ export class Startup {
   static readonly footBottom: number = Space.s10;
   /** 页脚字距（em）：原型 `.24em` */
   static readonly footTrackingRatio: number = 0.24;
-  /** 入场错峰时刻（ms）：图标 → 品牌名 → 眉题 → 发丝线 → 名言 → 出处 → 页脚 */
+  /** 入场错峰时刻（ms）：图标 → 光晕 → 眉题 / 发丝线 → 名言 → 页脚；品牌名逐字起点见 nameCharStart，出处按名言末字动态计算 */
   static readonly enterIconDelay: number = 0;
-  static readonly enterNameDelay: number = 350;
+  static readonly enterHaloDelay: number = 300;
   static readonly enterEyebrowDelay: number = 1000;
   static readonly enterRuleDelay: number = 1100;
   static readonly enterQuoteDelay: number = 1400;
-  static readonly enterSourceDelay: number = 1750;
   static readonly enterFootDelay: number = 2200;
   /** 入场单组时长（ms）：原型 `startup-in` 0.7–0.9s 的轻量档 */
   static readonly enterDur: number = 800;
-  /** 最短驻留（ms）：就绪也不提前淡出，等入场编排播完（末组 2200 + 时长 800）——2026-11-08 拍板：动画要看完整段 */
+  /** 最短驻留（ms）：就绪也不提前淡出，等入场编排播完；逐字名言较长时由组件按末字完成时刻顺延 */
   static readonly minHold: number = Startup.enterFootDelay + Startup.enterDur;
   /** 入场上浮行程（vp）：原型图标 14px / 文字 6–8px */
   static readonly iconEnterFromY: number = 14;
   static readonly nameEnterFromY: number = 8;
   static readonly quoteEnterFromY: number = 6;
-  /** 入场起始缩放：原型图标 `scale(.9)` */
+  /** 入场起始缩放：原型图标 `scale(.9)`；发丝线自中向两侧展开 `scaleX(0)` */
   static readonly iconEnterFromScale: number = 0.9;
+  static readonly ruleScaleFrom: number = 0;
+  /** 入场去模糊（vp）：原型图标 6px / 品牌名逐字 8px / 名言逐字 6px，`startup-in` 到 `filter:none` */
+  static readonly iconEnterFromBlur: number = 6;
+  static readonly nameCharBlur: number = 8;
+  static readonly quoteCharBlur: number = 6;
   /** 退出淡出时长与放大终值：原型 `--nav-duration`（240ms）+ `scale(1.03)` */
   static readonly exitDur: number = Motion.durNav;
   static readonly exitScaleTo: number = 1.03;
+
+  // —— 氛围层：极光（设计稿 §4 / 原型 `.startup-aura`）——
+  static readonly auraBlur: number = 48;
+  static readonly auraLargeSizeRatio: number = 0.48;
+  static readonly auraSmallSizeRatio: number = 0.30;
+  static readonly auraDurA: number = 22000;
+  static readonly auraDurB: number = 27000;
+  static readonly auraDurC: number = 31000;
+  static readonly auraFadeDur: number = 1600;
+  static readonly auraOpacityBlue: number = 0.26;
+  static readonly auraOpacityPurple: number = 0.16;
+  static readonly auraOpacityGreen: number = 0.12;
+  static readonly auraDriftXRatio: number = 0.1875;
+  static readonly auraDriftYRatio: number = 0.125;
+  static readonly auraScaleDelta: number = 0.15;
+  /** 第二团原型 `scale(.9)`（1 → 0.9），与第一 / 三团的 1.15 不同。 */
+  static readonly auraScaleDeltaB: number = 0.10;
+  /** 原型 `.startup-aura{inset:-20%}`：容器外扩 20%，三团按容器百分比定位。 */
+  static readonly auraContainerSize: string = '140%';
+  static readonly auraContainerInset: string = '-20%';
+  static readonly auraFallbackVmax: number = 800;
+  static readonly auraPosAX: string = '8%';
+  static readonly auraPosAY: string = '4%';
+  /** 第二团原型 `right:4%;bottom:2%`：以自身右下角为锚点对齐容器 96% / 98%。 */
+  static readonly auraPosBX: string = '96%';
+  static readonly auraPosBY: string = '98%';
+  static readonly auraPosCX: string = '36%';
+  static readonly auraPosCY: string = '42%';
+
+  // —— 氛围层：纸感颗粒（原型 SVG feTurbulence + multiply / screen）——
+  /** Canvas ImageData 逐块随机灰度，近似连续噪声；步长 2px 控制首帧开销。 */
+  static readonly grainNoiseStep: number = 2;
+  static readonly grainLightRGB: number[] = [124, 131, 144];
+  static readonly grainDarkRGB: number[] = [255, 255, 255];
+  /** 浅色 multiply 7% / 深色 screen 5%；不启用离屏混合模式，用低 alpha 半透明叠加近似。 */
+  static readonly grainLightAlpha: number = 0.07;
+  static readonly grainDarkAlpha: number = 0.05;
+
+  // —— 氛围层：浮尘（原型 `.startup-dust`）——
+  static readonly dustCount: number = 16;
+  static readonly dustMinSize: number = 1.5;
+  static readonly dustMaxSize: number = 4;
+  static readonly dustMinDur: number = 16000;
+  static readonly dustMaxDur: number = 30000;
+  static readonly dustMinOpacity: number = 0.25;
+  static readonly dustMaxOpacity: number = 0.70;
+  static readonly dustSway: number = 80;
+  static readonly dustGlowRadius: number = 6;
+  static readonly dustBottomOffset: number = 12;
+  static readonly dustTravelRatio: number = 1.10;
+  static readonly dustMidwayRatio: number = 0.50;
+  static readonly dustMidTravelRatio: number = 0.50;
+  static readonly dustFadeInRatio: number = 0.12;
+  static readonly dustFadeOutRatio: number = 0.85;
+  /** 原型中程摆动到 `sway` 后终态回 0（X 归位），不留残余位移。 */
+  static readonly dustSwayReturnRatio: number = 0;
+  static readonly dustFallbackHeight: number = 800;
+
+  // —— 品牌层循环动效（原型 startup-float / breathe / sheen）——
+  static readonly floatDur: number = 6000;
+  static readonly floatAmplitude: number = 5;
+  static readonly haloBreathDur: number = 5000;
+  static readonly haloBreathMinOpacity: number = 0.65;
+  static readonly haloBreathMinScale: number = 0.92;
+  static readonly haloBreathMaxScale: number = 1.08;
+  static readonly sheenDur: number = 6000;
+  static readonly sheenSweepRatio: number = 0.26;
+  static readonly sheenTravelRatio: number = 1.3;
+  static readonly sheenAngle: number = 115;
+  static readonly sheenColor: string = 'rgba(255, 255, 255, 0.72)';
+  /** 入场结束后才启动循环，避免与入场动画争同一属性（循环层与入场层是不同节点）。 */
+  static readonly loopIconDelay: number = 1200;
+  static readonly loopHaloDelay: number = 1300;
+  static readonly loopSheenDelay: number = 1000;
+
+  // —— 逐字浮现（原型 `.startup-name span` / `.startup-quote blockquote span`）——
+  static readonly nameCharStart: number = 450;
+  static readonly nameCharInterval: number = 120;
+  static readonly quoteCharInterval: number = 45;
+  static readonly charEnterDur: number = 700;
+  static readonly charEnterFromY: number = 8;
+  /** 末字后出处淡入间隔（原型 `--q1` = 首字时刻 + 字数 × 45ms + 0.35s）。 */
+  static readonly sourceAfterLastChar: number = 350;
+}
+
+/**
+ * 屏保 / 台历（v1.65）—— 可配置轮换的真源。
+ * 冷启动与屏保共用同一套 Startup 视觉；这里只放「屏保专属」的档位、时机与文案。
+ */
+export class ScreenSaver {
+  /** 默认轮换间隔：30 秒（用户反馈 1 分钟太慢，见 v1.65 修订）。 */
+  static readonly defaultIntervalMs: number = 30000;
+  /** 可选档位（ms），0 = 不轮换；扩档只改这里与下方两个标签数组。 */
+  static readonly intervalOptions: number[] = [0, 15000, 30000, 60000, 180000, 300000];
+  static readonly intervalLabels: string[] = ['不轮换', '15 秒', '30 秒', '1 分钟', '3 分钟', '5 分钟'];
+  static readonly intervalShortLabels: string[] = ['不换', '15 秒', '30 秒', '1 分钟', '3 分钟', '5 分钟'];
+  /** 首次轮换必须等入场编排播完（页脚组结束 + 单组时长），不打断逐字浮现。 */
+  static readonly firstRotateDelay: number = Startup.minHold + Startup.enterDur;
+  /** 换句淡出 / 淡入时长，复用启动页退出档 240ms。 */
+  static readonly rotateFadeDur: number = Startup.exitDur;
+  /** 台历感：中文数字日期放大到 --large。 */
+  static readonly dateSize: number = FontSize.s3;
+  static readonly hintText: string = '轻触任意处返回笔记';
+  static readonly hintOpacity: number = 0.7;
+
+  static isValidInterval(ms: number): boolean {
+    return ScreenSaver.intervalOptions.indexOf(ms) >= 0;
+  }
 }

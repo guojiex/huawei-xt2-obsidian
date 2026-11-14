@@ -15,6 +15,8 @@ export struct SharePdfPreviewDialog {
   itemName: string = '';
   fileName: string = '';
   @Prop pageUris: string[] = [];
+  /** 53.12：非末页裁到切片高后逐页宽高比与 A4 不同，缩略图按真实比例展示。 */
+  @Prop pageAspects: number[] = [];
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
   @Prop singleScreen: boolean = false;
@@ -53,12 +55,21 @@ export struct SharePdfPreviewDialog {
       .backgroundColor($r('app.color.bg_secondary'))
   }
 
+  /** 缩略图宽高比：优先取该页真实比例（裁剪后），缺失或非法时回退 A4 比例。 */
+  private thumbAspectOf(index: number): number {
+    const aspect: number = this.pageAspects[index];
+    if (aspect > 0) {
+      return aspect;
+    }
+    return 595 / 842;
+  }
+
   @Builder
   PageThumb(uri: string, index: number) {
     Column({ space: Space.s1 }) {
       Image(uri)
         .width(Size.pdfThumbW)
-        .aspectRatio(595 / 842)
+        .aspectRatio(this.thumbAspectOf(index))
         .objectFit(ImageFit.Cover)
         .borderRadius(Radius.control)
         .backgroundColor($r('app.color.bg_secondary'))

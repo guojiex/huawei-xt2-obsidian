@@ -41,6 +41,8 @@ const chip = readSourceFile(
   new URL('../../entry/src/main/ets/components/VaultStatsStreakChip.ets', import.meta.url));
 const sidebar = readSourceFile(
   new URL('../../entry/src/main/ets/components/VaultSidebar.ets', import.meta.url));
+const settings = readSourceFile(
+  new URL('../../entry/src/main/ets/components/SettingsView.ets', import.meta.url));
 
 /* --------------------- 58.5 / 58.8 展示层纯函数 --------------------- */
 
@@ -142,8 +144,8 @@ test('58.2 / 58.3 原生：连写条与单屏菜单入口', () => {
   assert.match(chip, /写作统计：/);
   assert.match(chip, /'今天还没写'/);
   assert.match(chip, /\.id\(this\.chipId\)/);
-  assert.match(sidebar, /if \(!this\.referenceOnly && !this\.asDrawer\) \{/,
-    '57.7 起工作区连写条移到覆盖位分支 offset 压底（referenceOnly 留流内、抽屉不挂载语义不变）');
+  assert.match(sidebar, /if \(this\.statsEnabled && !this\.referenceOnly && !this\.asDrawer\) \{/,
+    '57.7 起工作区连写条移到覆盖位分支 offset 压底（referenceOnly 留流内、抽屉不挂载语义不变）；v1.58 总开关关闭时连写条不渲染');
   assert.match(sidebar, /showDots: this\.sidebarW <= 0 \|\| this\.sidebarW >= Size\.statsDotsMinSidebarW/);
   assert.match(index, /MobileMoreStatsItem\(\)/);
   assert.match(index, /'连写 '/);
@@ -165,4 +167,17 @@ test('58.11 原生：冷启动扫描排到空闲时机，红线不变', () => {
     assert.ok(!src.includes('hiAppEvent') && !src.includes('hilog') &&
       !src.includes('PerformanceAnalysisKit'), '统计源出现埋点 / 日志 Kit');
   }
+});
+
+test('58.12 原生：总开关门控入口 / 连写条 / 后台重算 / 设置项', () => {
+  // 关闭时直接拦截弹窗打开，不再进首帧关键路径。
+  assert.match(index, /if \(!this\.statsEnabled\) \{\s*return;\s*\}/);
+  // 空闲重算整体被开关短路，避免后台扫描。
+  assert.match(index, /private scheduleIdleStatsRefresh\(\): void \{\s*if \(!this\.statsEnabled\) \{\s*return;\s*\}/);
+  // 单屏「⋯」菜单项仅在开关开启时挂载。
+  assert.match(index, /if \(this\.statsEnabled\) \{\s*this\.MobileMoreStatsItem\(\)/);
+  // 设置页提供开关（默认开）。
+  assert.match(settings, /@Prop statsEnabled: boolean = true;/);
+  assert.match(settings, /Toggle\(\{ type: ToggleType\.Switch, isOn: this\.statsEnabled \}\)/);
+  assert.match(settings, /onStatsEnabledChange: \(enabled: boolean\) => void = /);
 });

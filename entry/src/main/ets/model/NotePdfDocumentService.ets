@@ -21,14 +21,19 @@ export class NotePdfDocumentService {
 
   /**
    * 逐页 JPEG 合成 A4 竖版 PDF。
+   * pageAspects 为逐页真实宽高比（53.12 非末页裁到切片高后不再是 A4 比例）：
+   * 图片按真实比例等比缩放宽贴 A4 宽、顶部对齐，下方留白即自然分页留白。
    * 任一步失败：清理半成品 PDF 后抛错；releaseDocument 兜底释放。
    */
-  static exportFromPageImages(pageJpegs: string[], pdfPath: string): void {
+  static exportFromPageImages(pageJpegs: string[], pageAspects: number[], pdfPath: string): void {
     if (pageJpegs.length === 0) {
       throw new Error('没有可导出的 PDF 页面');
     }
     if (pageJpegs.length > NotePdfDocumentService.MAX_PAGES) {
       throw new Error('笔记超过单文件 PDF 页数上限；请改用 Markdown / ZIP');
+    }
+    if (pageAspects.length !== pageJpegs.length) {
+      throw new Error('PDF 分页结果无效，请重试');
     }
     NotePdfDocumentService.removeIfPresent(pdfPath);
     const document: pdfService.PdfDocument = new pdfService.PdfDocument();
@@ -38,10 +43,15 @@ export class NotePdfDocumentService {
         throw new Error('PDF 文档创建失败，请重试');
       }
       for (let i: number = 0; i < pageJpegs.length; i++) {
+        const aspect: number = pageAspects[i];
+        if (!(aspect > 0)) {
+          throw new Error('PDF 分页结果无效，请重试');
+        }
+        const drawWidth: number = Math.min(NotePdfDocumentService.A4_WIDTH_PT,
+          NotePdfDocumentService.A4_HEIGHT_PT * aspect);
         const page: pdfService.PdfPage = document.insertBlankPage(i,
           NotePdfDocumentService.A4_WIDTH_PT, NotePdfDocumentService.A4_HEIGHT_PT);
-        page.addImageObject(pageJpegs[i], 0, 0,
-          NotePdfDocumentService.A4_WIDTH_PT, NotePdfDocumentService.A4_HEIGHT_PT);
+        page.addImageObject(pageJpegs[i], 0, 0, drawWidth, drawWidth / aspect);
         page.release();
       }
       // createDocument 实测（模拟器 PDF-1.7）自带一张初始空白页：逐图 insertBlankPage 后

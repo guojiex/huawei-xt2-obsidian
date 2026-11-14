@@ -65,6 +65,27 @@
       "intentVersion": "0.1.0",
       "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
       "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "SearchNotes",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "ListTree",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
+    },
+    {
+      "intentName": "GetLinks",
+      "domain": "",
+      "intentVersion": "0.1.0",
+      "srcEntry": "./ets/entryability/InsightIntentExecutorImpl.ets",
+      "uiAbility": { "ability": "EntryAbility", "executeMode": ["background"] }
     }
   ]
 }

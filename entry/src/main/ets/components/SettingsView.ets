@@ -21,7 +21,7 @@ import { buildCommitCopyPayload, buildCommitLabel, isBuildCommitKnown } from '..
 import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { Space, Radius, FontSize, ScreenSaver, Size } from '../common/Tokens';
 import { FocusRequest } from '../common/FocusRequest';
 import { AppDataResetService } from '../model/AppDataResetService';
 import { ChangelogEntry, RECENT_CHANGELOG } from '../model/ChangelogData';
@@ -54,6 +54,10 @@ export struct SettingsView {
   /** 当前库笔记数（统一库访问层计数，Index 维护，不在设置页另行遍历；空库时备份行禁用，37.3） */
   @Prop currentVaultNoteCount: number = 0;
   @Prop showLineNumbers: boolean = false;
+  /** v1.58 开关：写作统计总开关（默认开）。关闭时隐藏入口、连写条并跳过后台重算。 */
+  @Prop statsEnabled: boolean = true;
+  /** v1.65 65.5：屏保名言轮换间隔（ms），0 = 不轮换。 */
+  @Prop screenSaverIntervalMs: number = ScreenSaver.defaultIntervalMs;
   @Prop experienceMode: EditorExperienceMode = 'simple';
   @StorageProp('appTheme') appTheme: string = 'light';
   // v1.57 57.2：导航条避让高度 px（EntryAbility avoidAreaChange 发布，页面侧换算）
@@ -70,6 +74,8 @@ export struct SettingsView {
   onExportCurrentVault: (focusId: string) => void = (_focusId: string) => {};
   onResetSplit: () => void = () => {};
   onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
+  onStatsEnabledChange: (enabled: boolean) => void = (_enabled: boolean) => {};
+  onScreenSaverIntervalChange: (ms: number) => void = (_ms: number) => {};
   onExperienceModeChange: (mode: EditorExperienceMode) => void = (_mode: EditorExperienceMode) => {};
 
   @State versionName: string = '—';
@@ -572,6 +578,28 @@ export struct SettingsView {
     .border(showDivider ? { width: { bottom: 1 }, color: $r('app.color.line') } : { width: 0 })
   }
 
+  /** v1.65 65.5：轮换档位分段按钮；档位与标签真源在 ScreenSaver token，单屏四档均可点。 */
+  @Builder
+  ScreenSaverIntervalRow() {
+    Row({ space: Space.s1 }) {
+      ForEach(ScreenSaver.intervalOptions, (ms: number, index: number) => {
+        Text(ScreenSaver.intervalShortLabels[index])
+          .fontSize(FontSize.body2)
+          .fontColor(this.screenSaverIntervalMs === ms
+            ? $r('app.color.bg_card') : $r('app.color.text_primary'))
+          .textAlign(TextAlign.Center)
+          .layoutWeight(1)
+          .constraintSize({ minHeight: Size.touch })
+          .borderRadius(Radius.full)
+          .backgroundColor(this.screenSaverIntervalMs === ms
+            ? $r('app.color.brand') : $r('app.color.bg_secondary'))
+          .accessibilityText(ScreenSaver.intervalLabels[index])
+          .onClick((): void => { this.onScreenSaverIntervalChange(ms); })
+      }, (ms: number): string => 'screensaver-interval-' + ms)
+    }
+    .width('100%')
+  }
+
   build() {
     Column() {
       if (this.singleScreenLayout && this.showCategoryList) {
@@ -739,6 +767,30 @@ export struct SettingsView {
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
+      this.GroupTitle('屏保 / 台历')
+      Column() {
+        Row() {
+          Column({ space: Space.s1 }) {
+            Text('名言轮换间隔')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_primary'))
+            Text('从右上角「…」进入屏保 / 台历；点击页面任意处返回笔记。')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+        }
+        .width('100%')
+        .padding({ top: Space.s2, bottom: Space.s2 })
+        this.ScreenSaverIntervalRow()
+      }
+      .width('100%')
+      .padding(Space.s5)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
       // 编辑模式标题保留键盘焦点进入（v0.7 7.x 的焦点恢复），样式与其余分组标题一致
       Text('编辑模式')
         .fontSize(FontSize.caption)
@@ -783,6 +835,33 @@ export struct SettingsView {
         }
         .width('100%')
         // v2 .hs-row：min-height 56 + 上下 s2 内边距，标题/说明行整体不矮于设计稿
+        .constraintSize({ minHeight: Size.hsRowMinH })
+        .padding({ top: Space.s2, bottom: Space.s2 })
+      }
+      .width('100%')
+      .padding(Space.s5)
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      .margin({ bottom: Space.s4 })
+      this.GroupTitle('写作统计')
+      Column() {
+        Row() {
+          Column({ space: Space.s1 }) {
+            Text('启用写作统计')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_primary'))
+            Text('关闭后隐藏入口与侧栏连写条，并停止后台连写数据扫描')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Toggle({ type: ToggleType.Switch, isOn: this.statsEnabled })
+            .accessibilityText('启用写作统计')
+            .onChange((enabled: boolean): void => { this.onStatsEnabledChange(enabled); })
+        }
+        .width('100%')
         .constraintSize({ minHeight: Size.hsRowMinH })
         .padding({ top: Space.s2, bottom: Space.s2 })
       }

@@ -66,7 +66,7 @@ assert.equal(WorkspaceEditGuard.isUnsaved('vault-b', 'note.md'), true);
 const profile = JSON.parse(fs.readFileSync(new URL('../../entry/src/main/resources/base/profile/insight_intent.json',
   import.meta.url), 'utf8'));
 const expected = ['ListVaults', 'CreateVault', 'QueryNotes', 'ReadNote', 'CreateNote', 'AppendNote', 'EditNote',
-  'UndoLastEdit'];
+  'UndoLastEdit', 'SearchNotes', 'ListTree', 'GetLinks'];
 const actual = profile.insightIntents.map((intent) => intent.intentName);
 assert.deepEqual([...actual].sort(), [...expected].sort());
 assert.equal(new Set(actual).size, expected.length, 'intent names must be unique');

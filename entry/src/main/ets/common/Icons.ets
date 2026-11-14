@@ -79,6 +79,9 @@ const P_KEYBOARD_DONE: string = 'M5 4H19C20.1 4 21 4.9 21 6V13C21 14.1 20.1 15 1
   'M7 8h.01M11 8h.01M15 8h.01M7 11h10M9 19L12 21L15 19';
 
 /** 徽章（奖牌）：圆用四段三次贝塞尔近似 + 两条缎带直线（无弧线 flag，可整表缩放）。 */
+const P_MEDAL: string = 'M17 10C17 12.76 14.76 15 12 15C9.24 15 7 12.76 7 10C7 7.24 9.24 5 12 5C14.76 5 17 7.24 17 10' +
+  'M9.5 14.6L7.5 21L12 18.6L16.5 21L14.5 14.6';
+
 /**
  * 火焰（v1.58 写作统计）：设计稿 .streak-flame / .stats-badge-head 的实心轮廓改写为
  * 绝对三次贝塞尔（C），坐标全部带前导数字，避免 scalePath 把 "-.3" 这类小数拆坏；
@@ -88,8 +91,8 @@ const P_FLAME: string = 'M12 21C8.1 21 5 18.2 5 14.4C5 11.4 7 9.3 8.6 7.6C9 9.1 
   + 'C11 7 12.8 4.6 15 3C14.7 5.6 15.8 7.4 17.2 9C18.3 10.3 19 11.9 19 13.8'
   + 'C19 18 15.9 21 12 21Z';
 
-const P_MEDAL: string = 'M17 10C17 12.76 14.76 15 12 15C9.24 15 7 12.76 7 10C7 7.24 9.24 5 12 5C14.76 5 17 7.24 17 10' +
-  'M9.5 14.6L7.5 21L12 18.6L16.5 21L14.5 14.6';
+/** 屏保 / 台历（v1.65）：显示器外框 + 星芒 + 底座，纯直线命令可整表缩放。 */
+const P_SCREEN_SAVER: string = 'M3 4h18v14H3zM9 21h6M12 18v3M12 7v6M9 10h6';
 
 /** 名字 → 路径；未知名字返回空串（画不出东西，但不会崩） */
 function pathOf(name: string): string {
@@ -175,6 +178,8 @@ function pathOf(name: string): string {
     return P_MEDAL;
   } else if (name === 'flame') {
     return P_FLAME;
+  } else if (name === 'screenSaver') {
+    return P_SCREEN_SAVER;
   }
   return '';
 }
