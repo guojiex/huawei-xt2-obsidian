@@ -1068,7 +1068,7 @@ static int clone_check_remote_branch(clone_work_t *work,
     out_branches[0] = '\0';
   }
   git_remote *remote = NULL;
-  if (git_remote_create_anonymous(&remote, work->url) < 0) {
+  if (git_remote_create_detached(&remote, work->url) < 0) {
     return -1;
   }
   git_remote_connect_options connect_options;
