@@ -26,8 +26,8 @@ export class XiaoyiEntryPreferenceStore {
       return false;
     }
     try {
-      const value: Object = this.store.getSync(XiaoyiEntryPreferenceStore.SHOW_ENTRY_KEY, false) as Object;
-      return typeof value === 'boolean' ? value : false;
+      const value: boolean = this.store.getSync(XiaoyiEntryPreferenceStore.SHOW_ENTRY_KEY, false) as boolean;
+      return value === true;
     } catch (error) {
       const err = error as BusinessError;
       hilog.error(DOMAIN, TAG, '读取小艺入口设置失败 code=%{public}d', err.code);
