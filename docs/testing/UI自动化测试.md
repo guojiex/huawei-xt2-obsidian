@@ -206,3 +206,47 @@ diff 0.008%）。注意 Aa 按钮本身是开关：面板开着再点 Aa 会触�
   （0 过 / -1 错 / -2 败 / 1 起），无 `code=` 内联形式。
 - **数据路径澄清**：模块级 `context.filesDir` 是 `haps/entry/files/`（vaults 与 trash 都在
   这）；bundle 级 `files/` 只有 `__arkweb/`、`hiappevent/`，别再当 vault 根。
+
+## 实测结论补遗（2026-11-14，x86_64 模拟器：Index.ets 三阶段拆分回归，43/43 全绿收口）
+
+背景：Index.ets 拆分提交后跑全量回归，首轮 37/0/6（`20261114_205005`），经三类测试侧
+修复后全量 **43/43**（`20261114_233140`；中途全量 41/43 见 `20261114_211814`）。
+**主工程零改动，全部为测试侧修复**——三类失败均为测试资产陈旧或测试假设错误，不是拆分回归：
+
+- **UiPanels 4 例级联（设置页长高）**：近期功能提交让设置「通用」页长高，`编辑模式` 行
+  （`.id` 动态拼接）被挤出首屏——**off-screen 组件不入 a11y 树**，`settings-editor-mode-toggle`
+  必败；且该套件无 `afterEach` 遏制，败后留在设置页连坐后续 3 例。修复：该用例以
+  `settings-heading-general` 为锚上滑一屏再断言；套件加 `afterEach ensureNoteView` 级联
+  遏制。验证：`20261114_211644` 单套件 6/6，两轮全量保持全绿。
+- **UiShare 还原切库竞态（下轮库污染）**：`share_empty_vault_entry_disabled` 结尾还原
+  教程库走 `void this.switchVault(id)` fire-and-forget 异步链（Index.ets:5711），
+  `waitByText('00_开始')` 只证明「切过去」，续段失败会走 catch 回滚 `setCurrent(前库)`
+  并持久化——静默把下轮冷启动落在「我的笔记」，UiNoteFlow 整套
+  `树中未找到行…（锚点 00_开始 也不可见）`（`20261114_213005` 2/7；2026-11-11 那轮
+  7 ERROR 同因）。库持久化本身正常（手动切库→force-stop→重启仍保持；4 次单用例复跑
+  落盘全对）——竞态仅全量负载下偶发，产品回滚是既定失败路径，不改产品。修复：测试侧
+  还原链「切库→沉淀 3s→`00_开始` 复核→不稳重切」最多 3 次，末尾显式断言，宁可本用例
+  报错不静默污染（残余风险：回滚 >4.5s 仍可能污染，复发再加 `beforeAll` 自愈）。
+- **UiNoteFlow 2 例 3 连败（钉底簇盖行，本轮最大发现）**：`delete_note_dialog_cancel_keeps`
+  / `trash_section_visible_after_delete` 同签名 `半滑 3 次未拉出「删除」操作条` 3 连败
+  （`20261114_221617`/`230939`）。根因链（uinput 同坐标 A/B 实锤）：
+  `FileTreeView` 根是 Bottom Stack，钉底簇（`左滑操作 · 拖图标到任一栏` 提示 + 回收站，
+  不透明 `bg_navigation` 背景，簇顶 y≈2148）**有意盖住树尾行**（源码注释「遮住穿小白条
+  滚上来的树行」）。`findTreeRow` 在行进 LazyForEach 渲染区即命中（a11y 有、能
+  getBounds），但行中心 y 落进簇区时**滑动触摸被簇吃掉**：贴簇行（底边贴屏底 2232）
+  中心 y2184/y2160 慢滑 3 连败，同行上滚抬到 y1722 后同速滑动立即拉出操作条——
+  速度不是根因（见下条，但 300px/s 显式慢滑仍保留）。重试 3 次都在同一位置 →
+  确定性失败。修复：`swipeTreeRow` 探钉底簇顶（`ON.text` 找提示条），行中心入簇区时
+  把滑动 y 收进行顶露出段（`rect.top + 12px`）；`revealRowDelete` 每滑前
+  `ensureRowAboveCluster`（整行被盖则手指上滑滚树抬行，最多 4 次；树尾行行高 138px
+  > 簇盖区 ~84px，最大滚动处顶段必然露出）。
+- **driver.swipe 默认速度处于 swipeAction 识别间歇边界**：SDK 默认 600px/s（范围
+  [200,40000]），uinput 同坐标 A/B：100ms 快滑（≈4460px/s）不拉出、300ms（≈1487px/s）
+  与 1000ms（≈446px/s）均拉出。`swipeTreeRow` 显式传 300px/s 深入慢拖稳定区，与簇
+  修复双保险。**注入速度敏感性**是 2026-11-12 #13 0.7 全滑抖动的合理解释，后续新写
+  滑动注入一律显式传速。
+- **uinput 手动注入语法**（取证利器，比 dumpLayout 更早介入定位）：`uinput -T -m
+  x1 y1 x2 y2`（默认 smooth 1000ms）；快滑显式 `-k 1 300`（keep=0 非法，第 5 位置参
+  是 keep、尾参 smooth）。与 `Driver.swipe(x1,y1,x2,y2,speed)`（px/s）量纲不同，换算
+  对比时注意。
+

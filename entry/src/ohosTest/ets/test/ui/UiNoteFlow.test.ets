@@ -16,13 +16,17 @@
  *   bar 存活期点击空命中（215112 run A/B 实测，详见 trash_purge 用例内注释）。
  * - trash 行右缘 x≥1009 落进导航分隔条 responseRegion（splitTouchHitW=36vp 向左扩 ~29px），
  *   坐标点击被其吞掉；清除按钮一律按组件点击（231431 run 实测复现，详见 trash_purge 注释）。
+ * - FileTreeView 钉底簇（左滑提示+回收站，不透明背景）有意盖住树尾行（FileTreeView.ets
+ *   「遮住穿小白条滚上来的树行」）：被盖行 a11y 能命中、能 getBounds，但滑动触摸被簇吃掉
+ *   （230939 run uinput 实锤：贴簇行中心 y2184/2160 慢滑 3 连败，上滚抬行后同速立即拉出）。
+ *   滑动 y 收进行顶露出段；整行被盖先上滚抬行（ensureRowAboveCluster）。
  * - uitest* 残留由 tools/uitest.ps1 在 aa test 前宿主侧清理（本进程够不到 entry 模块沙箱：
  *   getAppContext().filesDir 是 bundle 级目录，vault 在 haps/entry/files）。残留不清会把新建行
  *   挤到折叠线以下、控件树里查无（183046 run 实测，文件在盘上但行不可见）。
  */
 
 import { beforeAll, describe, expect, it } from '@ohos/hypium';
-import { Component, Driver, Rect } from '@ohos.UiTest';
+import { Component, Driver, ON, Rect } from '@ohos.UiTest';
 import {
   clickById,
   clickByText,
@@ -73,13 +77,41 @@ async function createNoteByName(driver: Driver, name: string): Promise<void> {
   await waitById(driver, 'pane-title-left');
 }
 
-/** 在树行上注入左滑。distanceRatio 为行宽比例：0.45 拉出操作条；0.7 越过三档阈值直接删除 */
+/**
+ * 在树行上注入左滑。distanceRatio 为行宽比例：0.45 拉出操作条；0.7 越过三档阈值直接删除。
+ * ⚠️ 必须显式传慢速 300px/s：driver.swipe 默认 600px/s 的注入档案处于 swipeAction pan
+ * 识别的间歇边界——uinput 同坐标 A/B 实测：100ms 快滑（4460px/s）不拉出、300ms（1487px/s）
+ * 与 1000ms（446px/s）均拉出——慢拖深入稳定区。SDK 速度范围 [200,40000]。
+ * ⚠️ 滑动 y 避开钉底簇（头注 230939 run 实锤）：行中心落入簇区时收进行顶露出段
+ * （rect.top + 边距）；整行被簇盖住的场景由 ensureRowAboveCluster 先抬行，本函数不滚屏。
+ */
+const ROW_EDGE_MARGIN_PX: number = 12;
+
 async function swipeTreeRow(driver: Driver, row: Component, distanceRatio: number): Promise<void> {
   const rect: Rect = await row.getBounds();
-  const y: number = Math.round((rect.top + rect.bottom) / 2);
+  let y: number = Math.round((rect.top + rect.bottom) / 2);
+  const clusterTop: number = await pinnedClusterTopPx(driver);
+  if (clusterTop > 0 && y > clusterTop - ROW_EDGE_MARGIN_PX) {
+    y = rect.top + ROW_EDGE_MARGIN_PX;
+  }
   const startX: number = rect.right - 30;
   const distance: number = Math.round((rect.right - rect.left) * distanceRatio);
-  await driver.swipe(startX, y, startX - distance, y);
+  await driver.swipe(startX, y, startX - distance, y, 300);
+}
+
+/**
+ * 钉底簇顶 y（px）：以「左滑操作 · 拖图标到任一栏」提示条上沿为准（FileTreeView Bottom
+ * Stack 钉底簇；230939 run dumpLayout 实测簇顶 y≈2148，簇内触摸吃掉树行滑动）。
+ * 找不到提示条（布局变体 / referenceOnly 侧栏）返回 -1，调用方按「无簇」处理不收 y。
+ */
+async function pinnedClusterTopPx(driver: Driver): Promise<number> {
+  const hint: Component | null =
+    await driver.waitForComponent(ON.text('左滑操作 · 拖图标到任一栏'), 3000);
+  if (hint === null) {
+    return -1;
+  }
+  const rect: Rect = await hint.getBounds();
+  return rect.top;
 }
 
 /**
@@ -105,14 +137,15 @@ async function swipeDeleteNote(driver: Driver, row: Component, rowId: string): P
 }
 
 /**
- * 半滑拉出操作条并确认「删除」已入树：0.45 半滑间歇不触发 swipeAction（20261114 两轮
- * 全量同签名 2 连错——delete_note_dialog_cancel_keeps / trash_section_visible_after_delete
- * 均 30s 等不到 text=删除，单独复跑转绿；与 2026-11-12 #13 trash_purge 的 0.7 抖动同源，
- * swipeAction 注入手势不稳），套「滑动→短窗探针→重找行重滑」兜底，最多 3 次。
+ * 半滑拉出操作条并确认「删除」已入树。根因链（2026-11-14 实锤，221617/230939 两轮同签名
+ * 3 连败）：FileTreeView 钉底簇不透明背景盖住树尾行——findTreeRow 在行进 LazyForEach 渲染区
+ * 即命中（a11y 有、可 getBounds），行中心 y 落进簇区时滑动被簇吃掉、swipeAction 不触发，
+ * 重试都在同一位置 → 确定性失败；速度不是根因（300px/s 慢滑同败，抬行后同速即过）。
+ * 修复：每滑前 ensureRowAboveCluster 把行抬出簇区，swipeTreeRow 再把 y 收进露出段，双保险。
  */
 async function revealRowDelete(driver: Driver, rowId: string): Promise<void> {
   for (let i: number = 0; i < 3; i++) {
-    const row: Component = await findTreeRow(driver, rowId);
+    const row: Component = await ensureRowAboveCluster(driver, rowId);
     await swipeTreeRow(driver, row, 0.45);
     await driver.delayMs(1000);
     if (await existsByText(driver, '删除')) {
@@ -120,6 +153,25 @@ async function revealRowDelete(driver: Driver, rowId: string): Promise<void> {
     }
   }
   throw new Error('半滑 3 次未拉出「删除」操作条: ' + rowId);
+}
+
+/**
+ * 确保目标行可滑：行顶露出段（rect.top 到钉底簇顶之间）容得下一条滑动带；整行被簇盖住时
+ * 手指上滑滚树抬行（内容上移 = 行上移，与 findTreeRow 翻页同向同坐标），最多 4 次。
+ * 树尾行在最大滚动处底边贴物理下沿、行高 138px > 簇盖区 ~84px，顶段必然露出，4 次足够。
+ */
+async function ensureRowAboveCluster(driver: Driver, rowId: string): Promise<Component> {
+  for (let i: number = 0; i < 4; i++) {
+    const row: Component = await findTreeRow(driver, rowId);
+    const rect: Rect = await row.getBounds();
+    const clusterTop: number = await pinnedClusterTopPx(driver);
+    if (clusterTop < 0 || rect.top + ROW_EDGE_MARGIN_PX <= clusterTop - ROW_EDGE_MARGIN_PX) {
+      return row;
+    }
+    await driver.swipe(700, 1600, 700, 1000, 300);
+    await driver.delayMs(800);
+  }
+  throw new Error('行被钉底簇遮挡，4 次上滚仍未露出: ' + rowId);
 }
 
 /** 可见性探针窗口：x86 模拟器一次成功匹配可花 2~12s（UiTestHelpers 头注），

@@ -370,9 +370,26 @@ export default function uiShareTest() {
       // 删除当前库后应用会回落到列表里的另一个库（实测回落到「我的笔记」）——
       // 套件必须把当前库还原成教程库，否则污染后续全量回归的 UiLaunch/UiNoteFlow/UiSmDrawer
       // （2026-11-11 全量回归 UiNoteFlow 7 ERROR 即此因）。用 00_开始 目录可见判定切库成功。
-      await clickById(driver, 'vault-switcher-trigger');
-      await clickByText(driver, '曜石笔记教程');
-      await waitByText(driver, '00_开始', 15000);
+      // ⚠️ 切库是 fire-and-forget 异步链（Index.switchVault）：UI 先切到目标库（00_开始 出现，
+      // 本行旧实现就此判过），异步续段若失败会**回滚**回原库并落盘（catch → setCurrent(前库)）。
+      // 2026-11-14 全量 41/43 后下轮 7 ERROR 即此竞态：本用例 PASS 时 UI 短暂在教程库，
+      // 续段随后回滚，落盘变成「我的笔记」，静默污染下一次回归。等待 00_开始 只能证明
+      // 「切过去」，不能证明「切得稳」——沉淀后再复核，被回滚就重切；3 次仍不稳则显式失败
+      // （宁可本用例报错，不静默污染下轮）。独立复跑 4 次均稳（20261114_221042），竞态仅
+      // 全量负载时序下偶发，复核窗口 3s+1.5s 覆盖实测回滚时长。
+      let restoredStable: boolean = false;
+      for (let attempt: number = 0; attempt < 3 && !restoredStable; attempt++) {
+        await clickById(driver, 'vault-switcher-trigger');
+        await clickByText(driver, '曜石笔记教程');
+        await waitByText(driver, '00_开始', 15000);
+        await driver.delayMs(3000);
+        restoredStable = await existsByText(driver, '00_开始');
+        if (!restoredStable) {
+          await driver.delayMs(1500);
+          restoredStable = await existsByText(driver, '00_开始');
+        }
+      }
+      expect(restoredStable).assertTrue();
     });
   });
 }
