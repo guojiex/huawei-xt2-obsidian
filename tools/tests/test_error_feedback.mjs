@@ -10,6 +10,8 @@ const userErrorSource = readSourceFile(
   new URL('../../entry/src/main/ets/model/UserErrorMessages.ets', import.meta.url));
 const sourceFiles = {
   index: readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url)),
+  blockPanel: readSourceFile(
+    new URL('../../entry/src/main/ets/components/BlockPropertyPanel.ets', import.meta.url)),
   sync: readSourceFile(new URL('../../entry/src/main/ets/pages/SyncPage.ets', import.meta.url)),
   settings: readSourceFile(new URL('../../entry/src/main/ets/components/SettingsView.ets', import.meta.url)),
   switcher: readSourceFile(new URL('../../entry/src/main/ets/components/QuickSwitcher.ets', import.meta.url)),
@@ -134,7 +136,8 @@ test('critical failure surfaces keep their guarded error paths', () => {
   assert.match(sourceFiles.index, /recordFailure\(operation, phase, category, outcome, nextStep, code, message\)/);
   assert.match(sourceFiles.index, /private toastRegistryError\([\s\S]*RecentErrorOperation[\s\S]*RecentErrorPhase/);
   assert.equal(
-    (sourceFiles.index.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length,
+    (sourceFiles.index.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length +
+    (sourceFiles.blockPanel.match(/recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/g) ?? []).length,
     3
   );
   assert.match(sourceFiles.agentRuntime, /event\.result = AgentRuntime\.failureMessage\(event\.errorCode\)/);

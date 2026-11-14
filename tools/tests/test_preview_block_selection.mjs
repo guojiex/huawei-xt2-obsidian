@@ -16,6 +16,9 @@ const editorComponentSource = readSourceFile(
   new URL('entry/src/main/ets/components/EditorWebView.ets', root)
 )
 const indexSource = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', root))
+const blockPanelSource = readSourceFile(
+  new URL('entry/src/main/ets/components/BlockPropertyPanel.ets', root)
+)
 const buildSource = readSourceFile(new URL('web/mdpreview/build.mjs', root))
 const generatedPreview = readSourceFile(
   new URL('entry/src/main/resources/rawfile/mdpreview/index.html', root)
@@ -139,11 +142,11 @@ test('preview anchor bridge accepts exact inline identities and rejects invalid 
 })
 
 test('HTML, directive, and mixed-syntax blocks explain read-only mode and retain the source action', () => {
-  assert.match(indexSource, /this\.blockPanelAnchor\.type === 'html' \|\| this\.blockPanelAnchor\.type === 'directive'/)
-  assert.match(indexSource, /this\.blockPanelAnchor\.type === 'mixed'/)
-  assert.match(indexSource, /this\.blockPanelAnchor\.type === 'paragraph' && !this\.blockPanelAnchor\.inlineSafe/)
-  assert.match(indexSource, /Text\('此内容请在专业模式编辑'\)/)
-  assert.match(indexSource, /Text\(this\.blockSourceActionLabel\(\)\)[\s\S]*?this\.openBlockSourceDrawer\(\)/)
+  assert.match(blockPanelSource, /this\.blockPanelAnchor\.type === 'html' \|\| this\.blockPanelAnchor\.type === 'directive'/)
+  assert.match(blockPanelSource, /this\.blockPanelAnchor\.type === 'mixed'/)
+  assert.match(blockPanelSource, /this\.blockPanelAnchor\.type === 'paragraph' && !this\.blockPanelAnchor\.inlineSafe/)
+  assert.match(blockPanelSource, /Text\('此内容请在专业模式编辑'\)/)
+  assert.match(blockPanelSource, /Text\(this\.blockSourceActionLabel\(\)\)[\s\S]*?this\.openBlockSourceDrawer\(\)/)
 })
 
 test('rendered inline nodes receive metadata only after every item maps', () => {

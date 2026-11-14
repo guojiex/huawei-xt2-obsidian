@@ -11,6 +11,8 @@ const source = readSourceFile(new URL(
   import.meta.url
 ));
 const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const panelSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/BlockPropertyPanel.ets', import.meta.url));
 const implStart = source.indexOf('class PreviewImpl {');
 const componentStart = source.indexOf('/**\n * 可见的预览 Web 组件', implStart);
 assert.ok(implStart >= 0 && componentStart > implStart, 'could not find PreviewImpl and PreviewBridge');
@@ -143,5 +145,5 @@ test('formula preview bridge failures are reported once and recover after a succ
   preview.onFormulaChanged();
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.deepEqual(failures, ['formula preview failure', 'formula preview failure']);
-  assert.match(indexSource, /FormulaPreviewWeb\(\{[\s\S]*?recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/);
+  assert.match(panelSource, /FormulaPreviewWeb\(\{[\s\S]*?recordBackgroundFailure\('editor_preview', 'bridge', 'unknown', 'status_unknown', 'retry'\)/);
 });

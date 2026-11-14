@@ -8,28 +8,33 @@ const require = createRequire(new URL('../../web/mdpreview/package.json', import
 const { transformSync } = require('esbuild')
 const vm = require('node:vm')
 const source = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', root))
+const panelSource = readSourceFile(new URL('entry/src/main/ets/components/BlockPropertyPanel.ets', root))
 const previewSource = readSourceFile(new URL('entry/src/main/ets/components/PreviewWebView.ets', root))
 const mdpreviewSource = readSourceFile(new URL('web/mdpreview/src/index.ts', root))
 const anchorChangeStart = source.indexOf('  private onBlockAnchorChange(pane: string, anchor: PreviewBlockAnchor | null): void {')
 const anchorChangeEnd = source.indexOf('\n  private recordBlockToolbarPaneArea(', anchorChangeStart)
 const panelStart = source.indexOf('  private hasBlockPropertyPanelForPane(')
 const panelEnd = source.indexOf('\n  private calculateAnchoredPopupLayout(', panelStart)
-const blockIdBuilderStart = source.indexOf('  BlockPanelBlockIdAction() {')
-const blockIdBuilderEnd = source.indexOf('\n  @Builder\n  BlockPropertyPanel()', blockIdBuilderStart)
-const panelBuilderStart = source.indexOf('  BlockPropertyPanel() {')
-const panelBuilderEnd = source.indexOf('\n  @Builder\n  PreviewBlockPanel(', panelBuilderStart)
-const linkFieldBuilderStart = source.indexOf('  BlockPanelLinkField(')
-const linkFieldBuilderEnd = source.indexOf('\n  @Builder\n  PreviewBlockPanel(', linkFieldBuilderStart)
-const linkMethodsStart = source.indexOf('  private async loadBlockPanelLink()')
-const linkMethodsEnd = source.indexOf('\n  private async convertInlineCodeToPlainText()', linkMethodsStart)
-const frontmatterMethodsStart = source.indexOf('  private async loadBlockPanelFrontmatter()')
-const frontmatterMethodsEnd = source.indexOf('\n  private blockPanelCalloutTypeOptions()', frontmatterMethodsStart)
-const sourceTargetMethodsStart = source.indexOf('  private isCurrentBlockSourceTarget(')
-const sourceTargetMethodsEnd = source.indexOf('\n  private async openBlockSourceDrawer()', sourceTargetMethodsStart)
+// 2026-11-14 拆分：面板 builder 与逻辑方法迁移到 components/BlockPropertyPanel.ets，
+// 以下切片改读子组件文件；子组件里调用父回调的同名委托与 @Builder 不进 harness 类。
+const blockIdBuilderStart = panelSource.indexOf('  BlockPanelBlockIdAction() {')
+const blockIdBuilderEnd = panelSource.indexOf('\n  build() {', blockIdBuilderStart)
+const panelBuilderStart = panelSource.indexOf('  build() {')
+const panelBuilderEnd = panelSource.indexOf('\n  }\n\n}', panelBuilderStart)
+const linkFieldBuilderStart = panelSource.indexOf('  BlockPanelLinkField(')
+const linkFieldBuilderEnd = panelSource.indexOf('\n  }\n\n}', linkFieldBuilderStart)
+const linkMethodsStart = panelSource.indexOf('  private async loadBlockPanelLink()')
+const linkMethodsEnd = panelSource.indexOf('\n  private async convertInlineCodeToPlainText()', linkMethodsStart)
+const frontmatterMethodsStart = panelSource.indexOf('  private async loadBlockPanelFrontmatter()')
+const frontmatterMethodsEnd = panelSource.indexOf('\n  private blockPanelCalloutTypeOptions()', frontmatterMethodsStart)
+const movedMethodsStart = panelSource.indexOf('  private blockPanelTitleFor(anchor: PreviewBlockAnchor): string {')
+const movedMethodsEnd = panelSource.indexOf('\n  @Builder', movedMethodsStart)
 const imagePickerStart = source.indexOf('  private async pickImageForCurrentNote(')
 const imagePickerEnd = source.indexOf('\n  /** 状态栏右侧读数', imagePickerStart)
-const copyMethodsStart = source.indexOf('  private async copyTextToPasteboard(')
-const copyMethodsEnd = source.indexOf('\n  private async changeBlockCodeLanguage(', copyMethodsStart)
+const copyMethodsStart = panelSource.indexOf('  private async copyTextToPasteboard(')
+const copyMethodsEnd = panelSource.indexOf('\n  private async changeBlockCodeLanguage(', copyMethodsStart)
+const copyCodeMethodStart = source.indexOf('  private async copyCodeTextToPasteboard(')
+const copyCodeMethodEnd = source.indexOf('\n  private isCurrentBlockSourceTarget(', copyCodeMethodStart)
 assert.ok(anchorChangeStart >= 0 && anchorChangeEnd > anchorChangeStart)
 assert.ok(panelStart >= 0 && panelEnd > panelStart)
 assert.ok(blockIdBuilderStart >= 0 && blockIdBuilderEnd > blockIdBuilderStart)
@@ -37,9 +42,10 @@ assert.ok(panelBuilderStart >= 0 && panelBuilderEnd > panelBuilderStart)
 assert.ok(linkFieldBuilderStart >= 0 && linkFieldBuilderEnd > linkFieldBuilderStart)
 assert.ok(linkMethodsStart >= 0 && linkMethodsEnd > linkMethodsStart)
 assert.ok(frontmatterMethodsStart >= 0 && frontmatterMethodsEnd > frontmatterMethodsStart)
-assert.ok(sourceTargetMethodsStart >= 0 && sourceTargetMethodsEnd > sourceTargetMethodsStart)
+assert.ok(movedMethodsStart >= 0 && movedMethodsEnd > movedMethodsStart)
 assert.ok(imagePickerStart >= 0 && imagePickerEnd > imagePickerStart)
 assert.ok(copyMethodsStart >= 0 && copyMethodsEnd > copyMethodsStart)
+assert.ok(copyCodeMethodStart >= 0 && copyCodeMethodEnd > copyCodeMethodStart)
 
 const inlineParserSource = readSourceFile(
   new URL('entry/src/main/ets/model/MarkdownInlineParser.ets', root)
@@ -88,20 +94,43 @@ vm.runInNewContext(
     require: () => ({ BridgeCodec: { encode: (value) => value } })
   }
 )
+const blockPanelTitleForStart = panelSource.indexOf('export function blockPanelTitleFor(anchor: PreviewBlockAnchor): string {')
+const blockPanelTitleForEnd = panelSource.indexOf('\n}', blockPanelTitleForStart) + 2
+const blockPanelTitleForModule = { exports: {} }
+vm.runInNewContext(
+  transformSync(
+    panelSource.slice(blockPanelTitleForStart, blockPanelTitleForEnd).replace('export function', 'function') +
+    '\nmodule.exports = { blockPanelTitleFor };',
+    { loader: 'ts', format: 'cjs' }
+  ).code,
+  { module: blockPanelTitleForModule }
+)
+const isSameBlockPanelTargetStart = previewSource.indexOf('export function isSameBlockPanelTarget(')
+const isSameBlockPanelTargetEnd = previewSource.indexOf('\n}', isSameBlockPanelTargetStart) + 2
+const isSameBlockPanelTargetModule = { exports: {} }
+vm.runInNewContext(
+  transformSync(
+    previewSource.slice(isSameBlockPanelTargetStart, isSameBlockPanelTargetEnd).replace('export function', 'function') +
+    '\nmodule.exports = { isSameBlockPanelTarget };',
+    { loader: 'ts', format: 'cjs' }
+  ).code,
+  { module: isSameBlockPanelTargetModule }
+)
 const code = transformSync(
   `class BlockPanelHarness {
     ${source.slice(anchorChangeStart, anchorChangeEnd).trim()}
     ${source.slice(panelStart, panelEnd).trim()}
-    ${source.slice(linkMethodsStart, linkMethodsEnd).trim()}
-    ${source.slice(frontmatterMethodsStart, frontmatterMethodsEnd).trim()}
-    ${source.slice(sourceTargetMethodsStart, sourceTargetMethodsEnd).trim()}
+    ${panelSource.slice(linkMethodsStart, linkMethodsEnd).trim()}
+    ${panelSource.slice(frontmatterMethodsStart, frontmatterMethodsEnd).trim()}
+    ${panelSource.slice(movedMethodsStart, movedMethodsEnd).trim()}
     ${source.slice(imagePickerStart, imagePickerEnd).trim()}
   }; module.exports = BlockPanelHarness;`,
   { loader: 'ts', format: 'cjs' }
 ).code
 const copyMethodsCode = transformSync(
   `class CodeCopyHarness {
-    ${source.slice(copyMethodsStart, copyMethodsEnd).trim()}
+    ${panelSource.slice(copyMethodsStart, copyMethodsEnd).trim()}
+    ${source.slice(copyCodeMethodStart, copyCodeMethodEnd).trim()}
   }; module.exports = CodeCopyHarness;`,
   { loader: 'ts', format: 'cjs' }
 ).code
@@ -121,6 +150,8 @@ function makeApp() {
     MarkdownInlineParser: inlineParserModule.exports,
     MarkdownComplexBlockEdit: complexEditModule.exports,
     WikiLinkParser: wikiParserModule.exports,
+    blockPanelTitleFor: blockPanelTitleForModule.exports.blockPanelTitleFor,
+    isSameBlockPanelTarget: isSameBlockPanelTargetModule.exports.isSameBlockPanelTarget,
     WikiLinkService: {
       files: () => wikiFiles,
       resolve: (target, sourcePath, files) =>
@@ -204,7 +235,17 @@ function makeApp() {
     calculateAnchoredPopupLayout(_pane, _paneArea, _anchorArea, width) {
       return { placement: 'top-left', offsetX: -120, offsetY: -8, width, maxHeight: 240 }
     },
-    previewBridgeForPane() { return this.previewBridge }
+    previewBridgeForPane() { return this.previewBridge },
+    onTitleChange(title) { this.blockPanelTitle = title },
+    onSourceEditingChange(editing) { this.blockSourceEditing = editing },
+    onDirtyChange(pane, dirty) {
+      if (pane === 'right') {
+        this.rightEditorDirty = dirty
+      } else {
+        this.editorDirty = dirty
+      }
+    },
+    isDirty(pane) { return pane === 'right' ? this.rightEditorDirty : this.editorDirty }
   })
   app.previewBridge = { focused: [], activated: [], focusBlock(from, to) {
     this.focused.push([from, to])
@@ -492,9 +533,9 @@ test('21.2 unknown callout types keep their type and expose no type or fold cont
 
   assert.equal(content(), '> [!vendor_kind]- New title\n> body\n')
   assert.equal(writes.length, 1)
-  assert.match(source.slice(panelBuilderStart, panelBuilderEnd),
+  assert.match(panelSource.slice(panelBuilderStart, panelBuilderEnd),
     /blockPanelCalloutModel\.knownType[\s\S]*?Select\(this\.blockPanelCalloutTypeOptions\(\)\)[\s\S]*?if \(this\.blockPanelCalloutModel\.knownType\)/)
-  assert.match(source.slice(panelBuilderStart, panelBuilderEnd), /类型 · 保留：\$\{this\.blockPanelCalloutModel\.type\}/)
+  assert.match(panelSource.slice(panelBuilderStart, panelBuilderEnd), /类型 · 保留：\$\{this\.blockPanelCalloutModel\.type\}/)
 })
 
 test('21.3 loads and edits only frontmatter, preserving outside source and undo', async () => {
@@ -783,7 +824,7 @@ test('selection refresh preserves the chosen repeated inline target through acti
 })
 
 test('plain-text action unwraps only the selected inline code in either pane', async () => {
-  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  const builder = panelSource.slice(panelBuilderStart, panelBuilderEnd)
   assert.match(builder, /\.onClick\(\(\): void => \{ void this\.performBlockPanelAction\(\); \}\)/)
 
   for (const pane of ['left', 'right']) {
@@ -982,13 +1023,13 @@ test('single-screen uses a bottom sheet and wide screens use an anchored popup',
 })
 
 test('20.1 link panel shows the open action, address, editable fields and unlink action', () => {
-  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  const builder = panelSource.slice(panelBuilderStart, panelBuilderEnd)
   assert.match(builder, /tapType === 'link'/)
   assert.match(builder, /this\.blockPanelLinkParts\.destination/)
   assert.match(builder, /BlockPanelLinkField\('显示文字', 'label'/)
   assert.match(builder, /BlockPanelLinkField\('地址', 'destination'/)
   assert.match(builder, /this\.unlinkBlockPanelLink\(\)/)
-  assert.match(source.slice(linkFieldBuilderStart, linkFieldBuilderEnd),
+  assert.match(panelSource.slice(linkFieldBuilderStart, linkFieldBuilderEnd),
     /BlockPanelLinkField\(label: string, field: string, value: string, placeholder: string\)[\s\S]*不自动补全协议/)
 })
 
@@ -1031,13 +1072,13 @@ test('20.2 opens the wiki-link panel and loads the current-vault target and alia
 })
 
 test('20.2 property panel binds target selection, alias editing, and unlinking', () => {
-  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  const builder = panelSource.slice(panelBuilderStart, panelBuilderEnd)
   assert.match(builder, /tapType === 'wikilink'/)
   assert.match(builder, /Select\(this\.blockPanelWikiSelectOptions\(\)\)/)
   assert.match(builder, /saveBlockPanelWikiField\('target', value\)/)
   assert.match(builder, /this\.BlockPanelWikiAliasField\(\)/)
   assert.match(builder, /this\.unlinkBlockPanelWiki\(\)/)
-  assert.match(source, /标题锚点暂不支持跳转/)
+  assert.match(panelSource, /标题锚点暂不支持跳转/)
 })
 
 test('20.2 missing targets remain editable and changing the alias preserves the target', async () => {
@@ -1154,8 +1195,8 @@ test('20.3 image width and deletion touch only the selected image range and undo
   await app.deleteBlockPanelImage()
   assert.equal(content(), '前文  后文')
   assert.equal(history.length, 1)
-  assert.doesNotMatch(source.slice(source.indexOf('private async deleteBlockPanelImage()'),
-    source.indexOf('\n  private openBlockPanelWikiTarget()', source.indexOf('private async deleteBlockPanelImage()'))),
+  assert.doesNotMatch(panelSource.slice(panelSource.indexOf('private async deleteBlockPanelImage()'),
+    panelSource.indexOf('\n  private openBlockPanelWikiTarget()', panelSource.indexOf('private async deleteBlockPanelImage()'))),
   /NoteImageService/)
 })
 
@@ -1197,7 +1238,7 @@ test('20.3 replacing a local image preserves its alt text and width in one sourc
   }
   await app.loadBlockPanelImage()
 
-  await app.pickImageForCurrentNote('left', true)
+  await app.pickImageForCurrentNote('left', true, app.imageReplaceContext())
 
   assert.deepEqual(writes[0].slice(0, 2), [
     '![本地图片|360](attachments/old.png)',
@@ -1224,7 +1265,7 @@ test('20.3 removes only the new attachment when the selected image changes durin
   })
   await app.loadBlockPanelImage()
 
-  await app.pickImageForCurrentNote('left', true)
+  await app.pickImageForCurrentNote('left', true, app.imageReplaceContext())
 
   assert.equal(content(), original)
   assert.equal(writes.length, 0)
@@ -1235,7 +1276,7 @@ test('20.3 removes only the new attachment when the selected image changes durin
 })
 
 test('20.3 image panel only offers address editing for external images', () => {
-  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  const builder = panelSource.slice(panelBuilderStart, panelBuilderEnd)
   assert.match(builder, /tapType === 'image'/)
   assert.match(builder, /blockPanelImageRemote\(\)/)
   assert.match(builder, /BlockPanelImageField\(\s*'destination', '图片地址'/)
@@ -1441,14 +1482,14 @@ test('21.5 paragraph block link refuses a stale source range', async () => {
 })
 
 test('code language badge opens the existing property panel and unknown values are retained', () => {
-  const blockIdBuilder = source.slice(blockIdBuilderStart, blockIdBuilderEnd)
-  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  const blockIdBuilder = panelSource.slice(blockIdBuilderStart, blockIdBuilderEnd)
+  const builder = panelSource.slice(panelBuilderStart, panelBuilderEnd)
 
   assert.match(blockIdBuilder, /复制块链接/)
   assert.match(blockIdBuilder, /复制指向本段的链接/)
   assert.match(blockIdBuilder, /本操作不会自动生成/)
-  assert.match(source, /loadBlockPanelBlockId\(\)/)
-  assert.match(source, /MarkdownComplexBlockEdit\.parseBlockId\(raw\)/)
+  assert.match(panelSource, /loadBlockPanelBlockId\(\)/)
+  assert.match(panelSource, /MarkdownComplexBlockEdit\.parseBlockId\(raw\)/)
   assert.match(builder, /复制代码/)
   assert.match(builder, /copyCodeBlockFromPanel/)
   assert.match(builder, /this\.blockPanelAnchor\.codeLanguageSelectable/)
@@ -1463,7 +1504,7 @@ test('code language badge opens the existing property panel and unknown values a
 })
 
 test('both preview panes bind the panel and block taps provide the source anchor', () => {
-  const builder = source.slice(panelBuilderStart, panelBuilderEnd)
+  const builder = panelSource.slice(panelBuilderStart, panelBuilderEnd)
   assert.match(builder, /this\.blockPanelActionLabel\(\)/)
   assert.match(source, /this\.PreviewBlockPanel\('left'\)/)
   assert.match(source, /this\.PreviewBlockPanel\('right'\)/)
