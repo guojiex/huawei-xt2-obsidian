@@ -3,7 +3,7 @@
  *
  * 1. 新增展示层纯函数：下一个成就唯一、提示文案、本周圆点（口径函数本身不变，
  *    仍由 test_vault_stats.mjs 锁住）。
- * 2. 原型设计稿定向核对：库菜单无入口、连写条 / 单屏菜单打开弹窗、关闭焦点返还、
+ * 2. 原型设计稿定向核对：库菜单无入口、各屏更多菜单打开弹窗、关闭焦点返还、
  *    热力图 7 行 × 12 列、下一个成就唯一、view=stats URL 复现打开弹窗。
  * 3. 原生形态源级断言：弹窗外壳、连写条、7×12 转置、空闲扫描与红线。
  */
@@ -86,13 +86,14 @@ test('58.2 / 58.5 本周圆点：最后一周 7 天、未来日一律 false', ()
 test('58.1 / 58.10 原型：库菜单无统计入口，全屏统计页已删', () => {
   assert.doesNotMatch(html, /id="vaultStatsPage"/);
   assert.doesNotMatch(html, /统计与成就…/);
-  assert.match(html, /<button class="streak-chip" id="vaultStatsEntry"/);
-  assert.match(html, /id="vaultStatsEntry"[^>]*aria-controls="statsDialog"/);
+  assert.doesNotMatch(html, /id="vaultStatsEntry"|class="streak-chip"/);
+  assert.match(html, /id="mobileStats"[^>]*aria-controls="statsDialog"/);
+  assert.match(html, /\.topbar>\.mobile-top-more\{display:block\}/);
 });
 
-test('58.2 / 58.3 / 58.4 原型：连写条与单屏菜单打开弹窗，关闭返还焦点', () => {
-  assert.match(html, /\$\('vaultStatsEntry'\)\.onclick=\(\)=>openVaultStats\(\);/);
-  assert.match(html, /\$\('mobileStats'\)\.onclick=\(\)=>mobileAction\(\(\)=>openVaultStats\(\)\);/);
+test('58.2 / 58.3 / 58.4 原型：各屏菜单打开弹窗（v1.67），关闭返还更多按钮，关闭返还焦点', () => {
+
+  assert.match(html, /\$\('mobileStats'\)\.onclick=\(\)=>\{\$\('mobileMoreTrigger'\)\.focus\(\);mobileAction\(\(\)=>openVaultStats\(\)\);\};/);
   assert.match(html, /<dialog[^>]*class="utility-dialog import-dialog stats-dialog" id="statsDialog"/);
   assert.match(html, /function openVaultStats\(push=true\)\{[\s\S]{0,300}\$\('statsDialog'\)\.showModal\(\);/);
   assert.match(html, /function closeVaultStats\(updateUrl=true\)\{[\s\S]{0,320}statsReturnFocus\.focus\(\);/);

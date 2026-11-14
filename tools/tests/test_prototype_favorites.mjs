@@ -63,8 +63,8 @@ test('favorites rows are single-line nav rows aligned with tree file titles', ()
 });
 
 test('favorites re-render joins the render() pipeline and stays per-vault isolated', () => {
-  // v1.62 同框：置顶区刷新插在收藏区之前（renderStreakChip 为 v1.59 并入）。
-  assert.match(html, /renderVaultPicker\(\);renderTree\(\);renderTrash\(\);renderPins\(\);renderFavorites\(\);renderStreakChip\(\);renderReference\(\);/);
+  // v1.62 同框：置顶区刷新插在收藏区之前（renderStatsMenu 为 v1.59 并入）。
+  assert.match(html, /renderVaultPicker\(\);renderTree\(\);renderTrash\(\);renderPins\(\);renderFavorites\(\);renderStatsMenu\(\);renderReference\(\);/);
   assert.match(html, /function visibleFavorites\(\)\{return favoriteIds\(\)\.map\(id=>notes\.find\(n=>n\.id===id&&n\.vault===activeVault&&!n\.deleted\)\)\.filter\(Boolean\);\}/);
   assert.match(html, /const favoritesByVault=\{local:\['tob','stream','reading_journal','idea','inbox'\],reading:\['reading_stream','reading_reading_journal'\]\};const favoritesFolderState=\{local:true,reading:true\};/);
   assert.match(html, /\$\('favoritesFolder'\)\.classList\.toggle\('hidden',items\.length===0\)/);

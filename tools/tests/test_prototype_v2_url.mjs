@@ -900,9 +900,9 @@ test('v1.58 58.10: view=stats URL 复现打开写作统计弹窗，热力图 7×
  const medals=f.get('statsBadges').innerHTML;
  assert.equal((medals.match(/<div class="stats-medal/g)||[]).length,8);
  assert.equal((medals.match(/--p:/g)||[]).length,1,'只有一枚「下一个」显示圆环');
- f.run("document.contains=()=>true;statsReturnFocus=$('vaultStatsEntry')");
+ f.run("document.contains=()=>true;statsReturnFocus=$('mobileMoreTrigger')");
  f.get('closeVaultStats').onclick();
  assert.equal(f.get('statsDialog').open,false);
  assert.equal(f.run('vaultStatsOpen'),false);
- assert.equal(f.get('vaultStatsEntry').focused,true,'关闭后焦点回到连写条');
+ assert.equal(f.get('mobileMoreTrigger').focused,true,'关闭后焦点回到更多按钮');
 });
