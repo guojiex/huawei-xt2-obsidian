@@ -34,8 +34,14 @@ export struct AgentWorkspace {
   onNotesChanged: () => void = () => {};
   onSwitchVault: (id: string) => void = (id: string) => {};
   onManageVaults: () => void = () => {};
-  /** 「统计与成就」透传（v1.52；Agent 侧栏库菜单同入口）。 */
+  /** v1.58 58.2：Agent 侧栏底部连写条入口透传（库菜单入口已移除）。 */
   onOpenStats: () => void = () => {};
+  /** v1.58 58.2：连写条只读缓存值，与 note 侧栏共用 Index 的统计结果。 */
+  @Prop statsStreakDays: number = 0;
+  @Prop statsTotalDays: number = 0;
+  @Prop statsScanning: boolean = false;
+  @Prop statsWeekFlags: boolean[] = [];
+  @Prop statsTodayIndex: number = -1;
   onImportVault: () => void = () => {};
   onNavigationDragStart: () => void = () => {};
   onNavigationDrag: (offsetX: number) => void = (offsetX: number) => {};
@@ -706,6 +712,12 @@ export struct AgentWorkspace {
         onSwitchVault: (id: string): void => { this.onSwitchVault(id); },
         onManageVaults: (): void => { this.onManageVaults(); },
         onOpenStats: (): void => { this.onOpenStats(); },
+        statsStreakDays: this.statsStreakDays,
+        statsTotalDays: this.statsTotalDays,
+        statsScanning: this.statsScanning,
+        statsWeekFlags: this.statsWeekFlags,
+        statsTodayIndex: this.statsTodayIndex,
+        statsChipId: 'agent-stats-streak-chip',
         onImportVault: (): void => { this.onImportVault(); },
         onReferenceNote: (path: string, sourceVaultId: string): void => {
           this.addReference(path, sourceVaultId);

@@ -152,6 +152,8 @@ test('switching libraries persists the new empty workspace even when the switch 
     calls.push({ force, enabled: index.workspaceSessionSavingEnabled });
     return true;
   };
+  // v1.58 58.2：switchVault 成功尾部会安排连写条空闲重算（原生弹窗数据源）
+  index.scheduleIdleStatsRefresh = () => {};
   index.toastRegistryError = (title, error) => { throw new Error(`${title}: ${error.message}`); };
 
   await index.switchVault('local');

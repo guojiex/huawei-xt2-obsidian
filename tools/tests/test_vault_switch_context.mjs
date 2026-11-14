@@ -94,6 +94,8 @@ function createHarness(options = {}) {
       return true;
     },
     flushWorkspaceSessionSave(force) { calls.push(`save-session:${force}`); return true; },
+    // v1.58 58.2：switchVault 成功尾部安排连写条空闲重算；harness 只需空实现
+    scheduleIdleStatsRefresh() {},
     toastRegistryError(prefix) { calls.push(`toast:${prefix}`); },
     showFailureFeedback(operation, phase, category, outcome, nextStep, detail) {
       calls.push(`failure:${operation}:${phase}:${category}:${outcome}:${nextStep}:${detail}`);

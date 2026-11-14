@@ -44,8 +44,9 @@ import {
 } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerShareSummary, VaultManagerView } from '../components/VaultManagerView';
-import { VaultStatsModel, VaultStatsService, emptyStatsModel } from '../model/VaultStatsService';
-import { VaultStatsView } from '../components/VaultStatsView';
+import { VaultStatsModel, VaultStatsScanOutcome, VaultStatsService,
+  currentWeekFlagsOf, emptyStatsModel } from '../model/VaultStatsService';
+import { VaultStatsDialog } from '../components/VaultStatsDialog';
 import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
@@ -299,11 +300,10 @@ struct Index {
   @State @Watch('onFormatContextChanged') topView: string = 'note';
   @State agentKitSlotBuilder: WrappedBuilder<[() => void]> | null = null;
   @State vaultManagerReturnView: string = 'note';
-  /** v1.52 统计页：结果 / 扫描中 / 失败三态 + 返回视图（进页即重算，不落盘缓存）。 */
+  /** v1.58：统计缓存（侧栏连写条只读这里）；打开弹窗时重算并回写，不落盘。 */
   @State vaultStatsModel: VaultStatsModel = emptyStatsModel();
-  @State vaultStatsScanning: boolean = false;
+  @State vaultStatsScanning: boolean = true;
   @State vaultStatsFailed: boolean = false;
-  @State vaultStatsReturnView: string = 'note';
   @State settingsReturnView: string = 'note';
   @State settingsCategory: string = 'general';
   @State settingsDetail: boolean = false;
@@ -628,6 +628,11 @@ struct Index {
 
   /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
+  /** v1.58 58.4：写作统计弹窗 controller（每次拉起重建，避免参数过期）。 */
+  private statsDialogCtl: CustomDialogController | null = null;
+  private statsDialogOpen: boolean = false;
+  /** 冷启动 / 切库后的空闲扫描定时器：统计不进首帧关键路径。 */
+  private statsIdleTimer: number = -1;
   private importVaultCtl: CustomDialogController | null = null;
   private restoreImportTriggerFocus: () => void = () => {};
   @State private importVaultDialogBusy: boolean = false;
@@ -746,6 +751,8 @@ struct Index {
         this.consumeIncomingShare();
       }, 0);
     }
+    // v1.58 §5：连写条缓存的首次扫描排到空闲时机，不进入启动页首帧关键路径。
+    this.scheduleIdleStatsRefresh();
   }
 
   private async loadAgentKitSlot(): Promise<void> {
@@ -2404,6 +2411,12 @@ struct Index {
    * 都不是则返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
+    // v1.58 58.4：统计弹窗优先于次级视图消费系统返回；cancel 回调负责焦点返还。
+    if (this.statsDialogOpen) {
+      this.statsDialogCtl?.close();
+      this.statsDialogOpen = false;
+      return true;
+    }
     if (this.moreMenuOpen) {
       this.moreMenuOpen = false;
       return true;
@@ -2469,8 +2482,6 @@ struct Index {
       this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     } else if (this.topView === 'vaults') {
       this.topView = this.vaultManagerReturnView;
-    } else if (this.topView === 'stats') {
-      this.topView = this.vaultStatsReturnView;
     } else {
       this.topView = 'note';
     }
@@ -2495,45 +2506,97 @@ struct Index {
   }
 
   /**
-   * 打开统计与成就页（v1.52）：进页即重算——先重置三态再切视图，
-   * 扫描异步回填；'note' 入口先落盘（与 openVaultManager 同款前置）。
+   * v1.58 58.4：打开「写作统计」弹窗（宽屏居中 / 单屏半模态），不再替换内容区。
+   * 弹窗自己在 aboutToAppear 重算；同一份结果由 scanVaultStats 回写侧栏连写条。
+   * 关闭按钮 / 遮罩 / Esc / 系统返回都把焦点还给触发入口。
    */
-  private async openVaultStats(fromView: string): Promise<void> {
+  private async openVaultStats(fromView: string, focusReturnId: string): Promise<void> {
     if (fromView === 'note' && !await this.flushWorkspaceSaves()) {
       return;
     }
-    this.vaultStatsReturnView = fromView;
-    this.vaultStatsModel = emptyStatsModel();
-    this.vaultStatsFailed = false;
-    this.vaultStatsScanning = true;
-    this.topView = 'stats';
-    void this.refreshVaultStats();
+    this.moreMenuOpen = false;
+    this.statsDialogCtl?.close();
+    const sheet: boolean = this.isSingleScreenLayout();
+    let focusRestored: boolean = false;
+    const restoreFocus = (): void => {
+      if (focusRestored || focusReturnId.length === 0) {
+        return;
+      }
+      focusRestored = true;
+      FocusRequest.safely(this.getUIContext(), focusReturnId);
+    };
+    this.statsDialogCtl = new CustomDialogController({
+      builder: VaultStatsDialog({
+        vaultName: this.currentVaultName(),
+        singleScreen: sheet,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onRequestScan: (): Promise<VaultStatsScanOutcome> => {
+          return this.scanVaultStats(this.currentVaultId);
+        },
+        onDismiss: restoreFocus
+      }),
+      cancel: restoreFocus,
+      autoCancel: true,
+      alignment: sheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      customStyle: true,
+      onWillDismiss: (action: DismissDialogAction): void => {
+        action.dismiss();
+        this.statsDialogOpen = false;
+        restoreFocus();
+      }
+    });
+    this.statsDialogOpen = true;
+    this.statsDialogCtl.open();
   }
 
   /**
-   * 扫描当前库并回填统计模型（52.1：分块读取不阻塞 UI）。
-   * 过期结果丢弃：扫描期间离开统计页或切库（防御），回填前校验。
+   * 扫描当前库并回填统计缓存（52.1：分块读取不阻塞 UI）。
+   * 弹窗与空闲刷新共用这一次扫描；切库后的过期结果按 vaultId 丢弃。
    */
-  private async refreshVaultStats(): Promise<void> {
-    const vaultId: string = this.currentVaultId;
+  private async scanVaultStats(vaultId: string): Promise<VaultStatsScanOutcome> {
     try {
       const access = VaultRegistry.get().accessFor(vaultId);
-      const outcome = await VaultStatsService.scanAccess(access, Date.now());
-      if (this.topView !== 'stats' || this.currentVaultId !== vaultId) {
-        return;
-      }
-      this.vaultStatsFailed = outcome.failed;
-      this.vaultStatsModel = outcome.model !== null ? outcome.model : emptyStatsModel();
-    } catch (_error) {
-      if (this.topView === 'stats' && this.currentVaultId === vaultId) {
-        this.vaultStatsFailed = true;
-        this.vaultStatsModel = emptyStatsModel();
-      }
-    } finally {
-      if (this.topView === 'stats' && this.currentVaultId === vaultId) {
+      const outcome: VaultStatsScanOutcome = await VaultStatsService.scanAccess(access, Date.now());
+      if (this.currentVaultId === vaultId) {
+        this.vaultStatsFailed = outcome.failed;
+        this.vaultStatsModel = outcome.model !== null ? outcome.model : emptyStatsModel();
         this.vaultStatsScanning = false;
       }
+      return outcome;
+    } catch (_error) {
+      if (this.currentVaultId === vaultId) {
+        this.vaultStatsFailed = true;
+        this.vaultStatsModel = emptyStatsModel();
+        this.vaultStatsScanning = false;
+      }
+      const failed: VaultStatsScanOutcome = { model: null, failed: true };
+      return failed;
     }
+  }
+
+  /** v1.58 §5：冷启动 / 切库后把首次扫描排到空闲时机，不进首帧关键路径。 */
+  private scheduleIdleStatsRefresh(): void {
+    if (this.statsIdleTimer >= 0) {
+      clearTimeout(this.statsIdleTimer);
+    }
+    this.vaultStatsModel = emptyStatsModel();
+    this.vaultStatsFailed = false;
+    this.vaultStatsScanning = true;
+    this.statsIdleTimer = setTimeout((): void => {
+      this.statsIdleTimer = -1;
+      void this.scanVaultStats(this.currentVaultId);
+    }, 0);
+  }
+
+  /** 侧栏连写条本周圆点（最后一周 7 天；未来日为 false）。 */
+  private statsWeekFlags(): boolean[] {
+    return currentWeekFlagsOf(this.vaultStatsModel.weeks);
+  }
+
+  /** 今天的星期索引（周一 0 … 周日 6），用于圆点外圈与热力图 today 描边。 */
+  private statsTodayIndex(): number {
+    return (new Date().getDay() + 6) % 7;
   }
 
   private currentVaultIsGit(): boolean {
@@ -3008,6 +3071,8 @@ struct Index {
       }
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
+      // v1.58 58.2：连写条按当前库显示，切库后空闲重算（旧库的过期结果按 vaultId 丢弃）。
+      this.scheduleIdleStatsRefresh();
     } catch (error) {
       this.toastRegistryError('切换库失败', error, 'vault', 'switch');
     }
@@ -6371,9 +6436,6 @@ struct Index {
     if (this.topView === 'agent') {
       return this.agentTitle;
     }
-    if (this.topView === 'stats') {
-      return '统计与成就';
-    }
     return '设置与关于';
   }
 
@@ -7895,6 +7957,8 @@ struct Index {
       }
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
+      // v1.58 58.2：连写条按当前库显示，切库后空闲重算（旧库的过期结果按 vaultId 丢弃）。
+      this.scheduleIdleStatsRefresh();
     } catch (error) {
       const registry: VaultRegistry = VaultRegistry.get();
       let registryCurrentId: string = registry.currentId();
@@ -8653,8 +8717,6 @@ struct Index {
               this.SettingsPane()
             } else if (this.topView === 'agent') {
               this.AgentPane()
-            } else if (this.topView === 'stats') {
-              this.StatsView()
             }
             if (this.undoVisible) {
               this.UndoBar()
@@ -10791,6 +10853,8 @@ struct Index {
       if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
         this.MobileMoreGitSyncItem()
       }
+      // v1.58 58.3：写作统计在「应用」组、设置与关于之前；行尾是连写缓存值。
+      this.MobileMoreStatsItem()
       this.MobileMoreMenuItem('settings', 'settings', '设置与关于', true, (): void => {
         this.openSettings('note', 'general');
       })
@@ -10829,6 +10893,40 @@ struct Index {
       onTap();
     })
     .accessibilityText(label)
+  }
+
+  /** v1.58 58.3：单屏「⋯」应用组的「写作统计」行，行尾 muted 小字显示连写天数。 */
+  @Builder
+  MobileMoreStatsItem() {
+    Row({ space: Space.s3 }) {
+      Icon('flame', Space.s5, $r('app.color.text_secondary'))
+      Text('写作统计')
+        .fontSize(FontSize.body1)
+        .fontColor($r('app.color.text_primary'))
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(this.vaultStatsScanning || this.vaultStatsFailed
+        ? '…' : '连写 ' + this.vaultStatsModel.streakDays.toString() + ' 天')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .maxLines(1)
+    }
+    .width('100%')
+    .height(Size.touch)
+    .padding({ left: Space.s3, right: Space.s3 })
+    .borderRadius(Radius.control)
+    .backgroundColor(this.mobileMoreHoveredAction === 'stats'
+      ? $r('app.color.bg_secondary') : Color.Transparent)
+    .focusable(true)
+    .onHover((isHover: boolean): void => {
+      this.mobileMoreHoveredAction = isHover ? 'stats' : '';
+    })
+    .onClick((): void => {
+      this.moreMenuOpen = false;
+      void this.openVaultStats('note', 'workspace-more-button');
+    })
+    .accessibilityText('写作统计')
   }
 
   /** v1.31 31.3：分段按钮——选择后立即生效并关闭菜单（沿用 v1.7 行为） */
@@ -10926,8 +11024,13 @@ struct Index {
       },
       onOpenStats: (): void => {
         this.closeNoteNavigation();
-        void this.openVaultStats('note');
+        void this.openVaultStats('note', 'vault-stats-streak-chip');
       },
+      statsStreakDays: this.vaultStatsModel.streakDays,
+      statsTotalDays: this.vaultStatsModel.totalDays,
+      statsScanning: this.vaultStatsScanning || this.vaultStatsFailed,
+      statsWeekFlags: this.statsWeekFlags(),
+      statsTodayIndex: this.statsTodayIndex(),
       onOpenSearch: (): void => {
         this.closeNoteNavigation();
         this.openQuickSwitcher();
@@ -13022,17 +13125,6 @@ struct Index {
     })
   }
 
-  /** 统计与成就视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级，v1.52） */
-  @Builder
-  StatsView() {
-    VaultStatsView({
-      vaultName: this.currentVaultName(),
-      model: this.vaultStatsModel,
-      scanFailed: this.vaultStatsFailed,
-      scanning: this.vaultStatsScanning
-    })
-  }
-
   /** 设置与关于视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级） */
   @Builder
   SettingsPane() {
@@ -13091,7 +13183,14 @@ struct Index {
       onOpenNote: (path: string): void => { this.openAgentNote(path); },
       onSwitchVault: (id: string): void => { this.doSwitchVault(id); },
       onManageVaults: (): void => { void this.openVaultManager('agent'); },
-      onOpenStats: (): void => { void this.openVaultStats('agent'); },
+      onOpenStats: (): void => {
+        void this.openVaultStats('agent', 'agent-stats-streak-chip');
+      },
+      statsStreakDays: this.vaultStatsModel.streakDays,
+      statsTotalDays: this.vaultStatsModel.totalDays,
+      statsScanning: this.vaultStatsScanning || this.vaultStatsFailed,
+      statsWeekFlags: this.statsWeekFlags(),
+      statsTodayIndex: this.statsTodayIndex(),
       onImportVault: (): void => { void this.openImportVaultDialog('vault-switcher-trigger'); },
       onNavigationDragStart: (): void => { this.startNavigationDrag(true); },
       onNavigationDrag: (offsetX: number): void => { this.updateNavigationDrag(offsetX, true); },

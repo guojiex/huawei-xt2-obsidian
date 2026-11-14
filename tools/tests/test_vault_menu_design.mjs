@@ -33,9 +33,10 @@ assert.match(menu, /app\.color\.brand_bg/, 'the current vault keeps the blue-sof
 assert.match(menu, /Divider\(\)[\s\S]{0,120}margin\(\{ top: Space\.s2 \}\)/,
   'the actions divider spans the full width with only an --s2 top gap');
 const blueText = (menu.match(/fontColor\(\$r\('app\.color\.brand'\)\)/g) ?? []).length;
-// v1.52 起动作区三行：管理库… / 统计与成就… / ＋ 导入库…（§52.3，均蓝色文字）
-assert.equal(blueText, 3,
-  `the three action rows must use the blue text of .vault-menu-actions button (found ${blueText})`);
+// v1.58 58.1 撤销 v1.52 52.3：动作区恢复两行——管理库… / ＋ 导入库…，统计入口移到侧栏连写条。
+assert.equal(blueText, 2,
+  `the two action rows must use the blue text of .vault-menu-actions button (found ${blueText})`);
+assert.ok(!menu.includes('统计与成就'), 'the vault menu must not contain the stats action');
 assert.match(menu, /\? \$r\('app\.color\.brand'\) : \$r\('app\.color\.text_primary'\)/,
   'the selected vault row keeps the blue text of .vault-option[aria-current=true]');
 assert.match(menu, /Scroll\(\)/, 'a long vault list must scroll instead of overflowing');

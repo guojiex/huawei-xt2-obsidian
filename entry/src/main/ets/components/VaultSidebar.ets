@@ -14,6 +14,7 @@ import { VaultEntry } from '../model/Vault';
 import { FileListSortMode, FileListSortStore } from '../model/FileTree';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { FileTreeView } from './FileTreeView';
+import { VaultStatsStreakChip } from './VaultStatsStreakChip';
 import { Icon } from '../common/Icons';
 import { noteDisplayNameOfPath } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
@@ -64,14 +65,24 @@ export struct VaultSidebar {
    * 不是固定值。侧栏宽随断点等分变化，故在卡片上 onAreaChange 实测回填。
    */
   @State menuW: number = Size.sidebarW;
+  /** v1.58 58.2：侧栏实测宽（<280vp 时连写条隐藏本周圆点）。 */
+  @State sidebarW: number = 0;
   /** 「收起 «」回调（嵌入形态：父级收起侧栏） */
   onCollapse: () => void = () => {};
   /** 切库回调（点下拉菜单中的库项） */
   onSwitchVault: (id: string) => void = (id: string) => {};
   /** 「管理库」回调（父级切换到库管理视图） */
   onManageVaults: () => void = () => {};
-  /** 「统计与成就」回调（父级切换到统计页，v1.52；「管理库…」之后与导入库之前）。 */
+  /** v1.58 58.2：侧栏底部连写条回调（打开写作统计弹窗，不再挂库菜单）。 */
   onOpenStats: () => void = () => {};
+  /** v1.58 58.2：连写条只读父级缓存值，扫描未完成显示「…」，组件自身不扫描。 */
+  @Prop statsStreakDays: number = 0;
+  @Prop statsTotalDays: number = 0;
+  @Prop statsScanning: boolean = false;
+  @Prop statsWeekFlags: boolean[] = [];
+  @Prop statsTodayIndex: number = -1;
+  /** note / agent 两侧栏不会同时显示，但可能同时挂树；用不同 id 保证焦点归还命中。 */
+  @Prop statsChipId: string = 'vault-stats-streak-chip';
   /** 打开当前库快切与全文搜索。 */
   onOpenSearch: () => void = () => {};
   /** 统一导入库入口：本地目录或 Git 仓库。 */
@@ -370,21 +381,6 @@ export struct VaultSidebar {
           .onClick(() => {
             this.menuOpen = false;
             this.onManageVaults();
-          })
-
-          Row() {
-            Text('统计与成就…')
-              .fontSize(FontSize.body2)
-              .fontColor($r('app.color.brand'))
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .height(Size.touch)
-          .padding(Space.s2)
-          .borderRadius(Radius.control)
-          .onClick(() => {
-            this.menuOpen = false;
-            this.onOpenStats();
           })
 
           Row() {
@@ -864,9 +860,31 @@ export struct VaultSidebar {
       .layoutWeight(1)
       .width('100%')
 
+      // v1.58 58.2：文件列表下方、底部状态行之上常驻连写条；单屏侧栏是临时抽屉，不挂载。
+      if (!this.asDrawer) {
+        Column() {
+          VaultStatsStreakChip({
+            streakDays: this.statsStreakDays,
+            totalDays: this.statsTotalDays,
+            scanning: this.statsScanning,
+            weekFlags: this.statsWeekFlags,
+            todayIndex: this.statsTodayIndex,
+            showDots: this.sidebarW <= 0 || this.sidebarW >= Size.statsDotsMinSidebarW,
+            chipId: this.statsChipId,
+            onOpenStats: (): void => { this.onOpenStats(); }
+          })
+        }
+        .width('100%')
+        .padding({ left: Space.s3, right: Space.s3, bottom: Space.s2 })
+      }
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_navigation'))
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      if (typeof newArea.width === 'number') {
+        this.sidebarW = newArea.width;
+      }
+    })
   }
 }

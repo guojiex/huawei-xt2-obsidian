@@ -28,6 +28,13 @@ test('menu renders three groups in order: note / experience / app', () => {
     'switch follows backlinks');
   assert.ok(menu.indexOf('MobileMoreGitSyncItem()') <
     menu.indexOf("'settings', 'settings', '设置与关于'"), 'git sync precedes settings');
+  // v1.58 58.3：写作统计在「应用」组、设置与关于之前，行尾显示连写天数。
+  assert.ok(menu.indexOf('MobileMoreStatsItem()') > 0 &&
+    menu.indexOf('MobileMoreStatsItem()') < menu.indexOf("'settings', 'settings', '设置与关于'"),
+    'writing stats precedes settings');
+  assert.match(menu, /Icon\('flame', Space\.s5,/);
+  assert.match(menu, /'连写 '/);
+  assert.match(icons, /name === 'flame'/);
   // 切换仅两栏为不同笔记时
   assert.match(menu, /experienceMode === 'professional'[\s\S]*?currentFilePath !== this\.rightFilePath/);
   // 切换到笔记：标题去 .md（31.1 不显示带扩展名的文件名）

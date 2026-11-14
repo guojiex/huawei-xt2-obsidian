@@ -335,7 +335,7 @@ test('phone more menu groups actions and updates labels without replacing icons'
  const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];
  assert(menu.indexOf('aria-label="当前笔记"')<menu.indexOf('aria-label="快捷编辑模式"'));
  assert(menu.indexOf('aria-label="快捷编辑模式"')<menu.indexOf('aria-label="应用"'));
-  assert.equal((menu.match(/class="menu-icon"/g)||[]).length,9);
+  assert.equal((menu.match(/class="menu-icon"/g)||[]).length,10);
  assert.match(menu,/class="git-sync-count"/);
  const f=fixture();f.run("setViewport('phone');backlinksPane=activePane;updatePaneChrome()");
  assert.equal(f.get('mobileBacklinksLabel').textContent,'隐藏反链');
@@ -889,4 +889,20 @@ test('update-check prototype covers outcomes, disables repeat checks, and leaves
   assert.equal(layout.run('viewportPreset'),preset);
   assert.equal(layout.get('updateCheckGroup').dataset.state,'available');
  }
+});
+
+test('v1.58 58.10: view=stats URL 复现打开写作统计弹窗，热力图 7×12、下一个成就唯一、关闭返还焦点',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&vault=reading&left=reading_stream&right=reading_reading_journal&view=stats');
+ assert.equal(f.get('statsDialog').open,true,'restoreUrl 的 view=stats 必须打开统计弹窗');
+ assert.equal(f.run('vaultStatsOpen'),true);
+ assert.equal((f.get('statsHeat').innerHTML.match(/<i class=/g)||[]).length,84,'热力图 84 格');
+ assert.match(f.get('statsHeat').innerHTML,/grid-column:13/,'第 12 周落在最后一列');
+ const medals=f.get('statsBadges').innerHTML;
+ assert.equal((medals.match(/<div class="stats-medal/g)||[]).length,8);
+ assert.equal((medals.match(/--p:/g)||[]).length,1,'只有一枚「下一个」显示圆环');
+ f.run("document.contains=()=>true;statsReturnFocus=$('vaultStatsEntry')");
+ f.get('closeVaultStats').onclick();
+ assert.equal(f.get('statsDialog').open,false);
+ assert.equal(f.run('vaultStatsOpen'),false);
+ assert.equal(f.get('vaultStatsEntry').focused,true,'关闭后焦点回到连写条');
 });

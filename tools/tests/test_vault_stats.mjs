@@ -6,9 +6,11 @@
  *     连写三分支（今天有 / 今天无昨天有 / 断档）、累计去重、热力图分档与未来日 /
  *     月份刻度、徽章达成与进度边界（value == goal）、computeStatsModel 聚合、
  *     扫描分块与失败语义（快照失败 / 单篇读失败记 0 不中断）。
- *  2. 源级断言：Index 接线（topView 'stats' 分支 / openVaultStats / 返回 / 标题 /
- *     双侧栏入口）、VaultSidebar 菜单项与顺序、AgentWorkspace 透传、Icons medal、
+ *  2. 源级断言（v1.58 58.11 更新）：Index 弹窗接线 / 扫描回写 / 焦点返还、
+ *     侧栏连写条与单屏菜单入口、库菜单无统计入口、弹窗内容形态、Icons flame / medal、
  *     红线（统计源文件无 hiAppEvent / hilog / PerformanceAnalysisKit）。
+ *  注：58.11 要求口径用例不变且通过；v1.58 新增纯函数与原型定向测试另见
+ *      test_v1_58_stats_redesign.mjs。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -315,58 +317,81 @@ const agentWorkspaceSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/AgentWorkspace.ets', import.meta.url));
 const statsViewSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/VaultStatsView.ets', import.meta.url));
+const statsDialogSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/VaultStatsDialog.ets', import.meta.url));
+const streakChipSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/VaultStatsStreakChip.ets', import.meta.url));
 const iconsSource = readSourceFile(
   new URL('../../entry/src/main/ets/common/Icons.ets', import.meta.url));
 
-test('源级：Index 接线 stats 视图（topView 分支 / 打开 / 返回 / 标题）', () => {
+test('源级：Index 写作统计弹窗接线（58.4 / 58.11：不再是全屏次级页）', () => {
   assert.match(indexSource, /@State vaultStatsModel: VaultStatsModel = emptyStatsModel\(\);/);
-  assert.match(indexSource, /private async openVaultStats\(fromView: string\): Promise<void>/);
-  assert.match(indexSource, /this\.topView = 'stats';/);
-  assert.match(indexSource, /\} else if \(this\.topView === 'stats'\) \{\s*this\.StatsView\(\)/);
-  assert.match(indexSource, /\} else if \(this\.topView === 'stats'\) \{\s*this\.topView = this\.vaultStatsReturnView;/);
-  assert.match(indexSource, /if \(this\.topView === 'stats'\) \{\s*return '统计与成就';/);
-  assert.match(indexSource, /void this\.refreshVaultStats\(\);/);
-});
-
-test('源级：过期结果丢弃（回填前校验 topView 与当前库）', () => {
-  assert.match(indexSource, /if \(this\.topView !== 'stats' \|\| this\.currentVaultId !== vaultId\) \{/);
-  assert.match(indexSource, /this\.vaultStatsFailed = outcome\.failed;/);
-});
-
-test('源级：双侧栏入口接线（note 侧栏 + Agent 侧栏）', () => {
   assert.match(indexSource,
-    /onOpenStats: \(\): void => \{\s*this\.closeNoteNavigation\(\);\s*void this\.openVaultStats\('note'\);/);
-  assert.match(indexSource, /void this\.openVaultStats\('agent'\);/);
-  assert.match(sidebarSource, /onOpenStats: \(\) => void = \(\) => \{\};/);
-  assert.match(agentWorkspaceSource, /onOpenStats: \(\) => void = \(\) => \{\};/);
+    /private async openVaultStats\(fromView: string, focusReturnId: string\): Promise<void>/);
+  assert.match(indexSource, /builder: VaultStatsDialog\(\{/);
+  assert.match(indexSource, /alignment: sheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
+  assert.match(indexSource, /private async scanVaultStats\(vaultId: string\): Promise<VaultStatsScanOutcome>/);
+  assert.match(indexSource, /private scheduleIdleStatsRefresh\(\): void/);
+  assert.match(indexSource, /if \(this\.statsDialogOpen\) \{/);
+  assert.doesNotMatch(indexSource, /this\.topView = 'stats';/);
+  assert.doesNotMatch(indexSource, /this\.StatsView\(\)/);
+  assert.doesNotMatch(indexSource, /return '统计与成就';/);
+});
+
+test('源级：过期结果丢弃（回填前校验当前库）', () => {
+  assert.match(indexSource, /if \(this\.currentVaultId === vaultId\) \{/);
+  assert.match(indexSource, /this\.vaultStatsFailed = outcome\.failed;/);
+  assert.match(indexSource, /void this\.scanVaultStats\(this\.currentVaultId\);/);
+});
+
+test('源级：双侧栏连写条 + 单屏菜单入口（58.2 / 58.3）', () => {
+  assert.match(indexSource,
+    /void this\.openVaultStats\('note', 'vault-stats-streak-chip'\);/);
+  assert.match(indexSource, /void this\.openVaultStats\('agent', 'agent-stats-streak-chip'\);/);
+  assert.match(indexSource, /void this\.openVaultStats\('note', 'workspace-more-button'\);/);
+  assert.match(indexSource, /MobileMoreStatsItem\(\)/);
+  assert.match(sidebarSource, /VaultStatsStreakChip\(\{/);
+  assert.match(sidebarSource, /statsStreakDays: number = 0;/);
+  assert.match(sidebarSource, /showDots: this\.sidebarW <= 0 \|\| this\.sidebarW >= Size\.statsDotsMinSidebarW/);
+  assert.match(agentWorkspaceSource, /statsChipId: 'agent-stats-streak-chip'/);
   assert.match(agentWorkspaceSource, /onOpenStats: \(\): void => \{ this\.onOpenStats\(\); \},/);
 });
 
-test('源级：库菜单项「统计与成就…」位于管理库之后、导入库之前', () => {
-  const stats = sidebarSource.indexOf('统计与成就…');
-  const manage = sidebarSource.indexOf('管理库…');
-  const importVault = sidebarSource.indexOf('＋ 导入库…');
-  assert.ok(manage >= 0 && stats > manage && importVault > stats,
-    `菜单顺序不符：manage=${manage} stats=${stats} import=${importVault}`);
-  assert.match(sidebarSource, /this\.menuOpen = false;\s*this\.onOpenStats\(\);/);
+test('源级：库菜单无统计入口（58.1，恢复「管理库 / 导入库」两行动作）', () => {
+  assert.ok(!sidebarSource.includes('统计与成就…'), '库菜单不得再有统计入口');
+  assert.ok(sidebarSource.indexOf('管理库…') >= 0 && sidebarSource.indexOf('＋ 导入库…') >= 0);
+  assert.doesNotMatch(sidebarSource, /this\.menuOpen = false;\s*this\.onOpenStats\(\);/);
 });
 
-test('源级：Icons 注册 medal（防线：不编造图标名）', () => {
+test('源级：Icons 注册 flame / medal（防线：不编造图标名）', () => {
   assert.match(iconsSource, /const P_MEDAL: string =/);
   assert.match(iconsSource, /name === 'medal'/);
+  assert.match(iconsSource, /const P_FLAME: string =/);
+  assert.match(iconsSource, /name === 'flame'/);
 });
 
-test('源级：统计页形态（限宽居中 / 占位 / 失败文案 / 截断提示）', () => {
-  assert.match(statsViewSource, /constraintSize\(\{ maxWidth: Size\.contentMaxW \}\)/);
+test('源级：弹窗外壳与内容形态（58.4–58.9 / 58.11）', () => {
+  assert.match(statsDialogSource, /@CustomDialog/);
+  assert.match(statsDialogSource, /UtilityDialogShell\(\{/);
+  assert.match(statsDialogSource, /preferredWidthVp: Size\.statsDialogW/);
+  assert.match(statsDialogSource, /aboutToAppear\(\): void \{\s*void this\.loadStats\(\);/);
+  assert.match(statsDialogSource, /onRequestScan/);
+  assert.match(statsViewSource, /this\.HeroSection\(\)/);
+  assert.match(statsViewSource, /this\.NumberRow\(\)/);
+  assert.match(statsViewSource, /7 行 12 列共 84 格/);
+  assert.match(statsViewSource, /nextBadgeIndexOf\(this\.model\.badges\)/);
+  assert.match(statsViewSource, /ProgressType\.Ring/);
   assert.match(statsViewSource, /'统计暂不可用'/);
   assert.match(statsViewSource, /'读取当前知识库失败，请稍后重试。'/);
   assert.match(statsViewSource, /正在统计…/);
   assert.match(statsViewSource, /本次统计基于已扫描的部分/);
-  assert.match(statsViewSource, /统计与成就只在本地计算，不用于埋点或上报。/);
+  assert.match(statsViewSource, /统计只按当前知识库、只在本机计算，不用于埋点或上报。/);
+  assert.match(streakChipSource, /'vault-stats-streak-chip'/);
+  assert.match(streakChipSource, /'今天还没写'/);
 });
 
 test('源级：红线——统计源文件不埋点、不打日志（51.6 / 52.4）', () => {
-  for (const src of [source, statsViewSource]) {
+  for (const src of [source, statsViewSource, statsDialogSource, streakChipSource]) {
     assert.ok(!src.includes('hiAppEvent'), '统计源出现 hiAppEvent');
     assert.ok(!src.includes('hilog'), '统计源出现 hilog');
     assert.ok(!src.includes('PerformanceAnalysisKit'), '统计源出现 PerformanceAnalysisKit');

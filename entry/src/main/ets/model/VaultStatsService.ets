@@ -46,6 +46,11 @@ export interface VaultStatsBadge {
   /** 达成态「已达成 · desc」；进度态「min(value,goal) / goal · desc」。 */
   progressLabel: string;
   earned: boolean;
+  /** v1.58 58.5 / 58.8：选择「下一个成就」与画圆环只扩展展示字段，口径不变。 */
+  value: number;
+  goal: number;
+  /** 'count' 笔记 / 'words' 字数 / 'streak' 连写 / 'days' 累计活跃日。 */
+  kind: string;
 }
 
 export interface VaultStatsModel {
@@ -222,25 +227,26 @@ export function badgesOf(noteCount: number, wordCount: number, streakDays: numbe
     const name: string = goal === 1 ? '初稿' : (goal === 10 ? '十篇' : '百篇');
     const desc: string = goal === 1 ? '写下第一篇笔记'
       : ('累计 ' + goal.toString() + ' 篇笔记');
-    out.push(buildBadge(name, desc, noteCount, goal));
+    out.push(buildBadge(name, desc, noteCount, goal, 'count'));
   }
   const wordGoals: number[] = [10000, 100000];
   const wordNames: string[] = ['万字', '十万字'];
   const wordDescs: string[] = ['累计 10,000 字', '累计 100,000 字'];
   for (let i: number = 0; i < wordGoals.length; i++) {
-    out.push(buildBadge(wordNames[i], wordDescs[i], wordCount, wordGoals[i]));
+    out.push(buildBadge(wordNames[i], wordDescs[i], wordCount, wordGoals[i], 'words'));
   }
   const streakGoals: number[] = [7, 30];
   const streakNames: string[] = ['七日连写', '三十日连写'];
   for (let i: number = 0; i < streakGoals.length; i++) {
     const desc: string = '连续 ' + streakGoals[i].toString() + ' 天有修改';
-    out.push(buildBadge(streakNames[i], desc, streakDays, streakGoals[i]));
+    out.push(buildBadge(streakNames[i], desc, streakDays, streakGoals[i], 'streak'));
   }
-  out.push(buildBadge('百日坚持', '累计 100 个活跃日', totalDays, 100));
+  out.push(buildBadge('百日坚持', '累计 100 个活跃日', totalDays, 100, 'days'));
   return out;
 }
 
-function buildBadge(name: string, desc: string, value: number, goal: number): VaultStatsBadge {
+function buildBadge(name: string, desc: string, value: number, goal: number,
+  kind: string): VaultStatsBadge {
   const earned: boolean = value >= goal;
   const progressLabel: string = earned
     ? '已达成 · ' + desc
@@ -249,9 +255,59 @@ function buildBadge(name: string, desc: string, value: number, goal: number): Va
     name: name,
     desc: desc,
     progressLabel: progressLabel,
-    earned: earned
+    earned: earned,
+    value: value,
+    goal: goal,
+    kind: kind
   };
   return badge;
+}
+
+/**
+ * v1.58 58.8：「下一个成就」= 未获得徽章里进度比例最高的一枚（并列取靠前）。
+ * 全部达成返回 -1；只挑选展示位，不改变任何徽章的达成口径。
+ */
+export function nextBadgeIndexOf(badges: VaultStatsBadge[]): number {
+  let best: number = -1;
+  let bestRatio: number = -1;
+  for (let i: number = 0; i < badges.length; i++) {
+    const badge: VaultStatsBadge = badges[i];
+    if (badge.earned || badge.goal <= 0) {
+      continue;
+    }
+    const ratio: number = Math.min(1, badge.value / badge.goal);
+    if (ratio > bestRatio) {
+      bestRatio = ratio;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/** v1.58 58.5：主视觉「下一步」提示，与 58.8 选出的「下一个」保持同一枚。 */
+export function nextAchievementHint(badges: VaultStatsBadge[], streakDays: number): string {
+  const index: number = nextBadgeIndexOf(badges);
+  if (index < 0) {
+    return '所有成就都已获得';
+  }
+  const badge: VaultStatsBadge = badges[index];
+  if (badge.kind === 'streak' && badge.goal - streakDays <= 3) {
+    return '再写 ' + (badge.goal - streakDays).toString() + ' 天，解锁「' + badge.name + '」';
+  }
+  return '下一个成就「' + badge.name + '」：' + badge.desc;
+}
+
+/**
+ * v1.58 58.2 / 58.5：本周（最末一周）周一至周日是否有写作；未来日一律 false。
+ * 热图 weeks 仍是 12 行 × 7 列（口径不变），这里只取最后一行给连写条 / 主视觉圆点。
+ */
+export function currentWeekFlagsOf(weeks: VaultStatsWeek[]): boolean[] {
+  const flags: boolean[] = [];
+  const cells: VaultStatsHeatCell[] = weeks.length > 0 ? weeks[weeks.length - 1].cells : [];
+  for (let d: number = 0; d < 7; d++) {
+    flags.push(d < cells.length && !cells[d].future && cells[d].count > 0);
+  }
+  return flags;
 }
 
 /** 由扫描输入聚合出完整统计模型（纯计算入口；today 传当前时间）。 */

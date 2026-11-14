@@ -112,6 +112,23 @@ export class Size {
   static readonly skillPromptAreaH: number = 128;
   /** 内容页限宽（4.9）：三屏 1061vp 下不把设置项拉成一整行 */
   static readonly contentMaxW: number = 760;
+  /** v1.58 写作统计弹窗宽：原型 min(--import-width * 1.25, 窗口宽 - s8*2) 的宽屏基准。 */
+  static readonly statsDialogW: number = 600;
+  /** v1.58 58.7：热图小方格边长下限 / 上限与间距（原型 --hc clamp(14, …, 26) / gap 5px）。 */
+  static readonly statsHeatCellMin: number = 14;
+  static readonly statsHeatCellMax: number = 26;
+  static readonly statsHeatGap: number = 5;
+  /** 星期标签列 + 月份刻度行的占位宽（原型 (100cqw - 28px)/12 中的 28px）。 */
+  static readonly statsHeatLabelW: number = Space.s6 + Space.s1;
+  /** 今天描边 / 未来日空心边框（原型 outline 1.5px 的整档近似）。 */
+  static readonly statsHeatOutline: number = 2;
+  /** 侧栏低于此宽度时连写条隐藏本周圆点（原型 @container(max-width:280px)）。 */
+  static readonly statsDotsMinSidebarW: number = 280;
+  /** 主视觉超大数字（原型 calc(--heading * 1.75)）与本周圆点直径。 */
+  static readonly statsHeroNum: number = FontSize.heading * 1.75;
+  static readonly statsHeroDot: number = Space.s5;
+  /** 成就徽章圆形标记直径（原型 calc(--s12 + --s1)）。 */
+  static readonly statsMedalSize: number = Space.s12 + Space.s1;
   /** 分栏把手胶囊高度：映射 v2 `--split-height`（宽度用 `Space.s1`，命中区用 `Space.s4` = `--split-hit`） */
   static readonly splitHandleH: number = 40;
   static readonly splitGripW: number = 12;

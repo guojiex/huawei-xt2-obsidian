@@ -7,8 +7,9 @@
  * 留白 = 既有间距 + 导航条避让高度（`navIndicatorHeightPx` 动态值，禁止硬编码）。
  *
  * 规则：
- *  1. 五个次级滚动容器（设置分类列表 / 设置内容 / 版本记录 / 库管理 / 统计）
+ *  1. 四个次级滚动容器（设置分类列表 / 设置内容 / 版本记录 / 库管理）
  *     必须带 `expandSafeArea(... SafeAreaEdge.BOTTOM)`——被误删即本测试失败；
+ *     （v1.58 58.1 起统计改弹窗，退出次级页清单）
  *  2. EntryAbility 必须监听 TYPE_NAVIGATION_INDICATOR 并发布
  *     `navIndicatorHeightPx`（初始 + avoidAreaChange 两处）；
  *  3. 消费该值的视图必须同时有 `@StorageProp('navIndicatorHeightPx')` 与
@@ -33,7 +34,7 @@ test('次级页面滚动容器带底部 expandSafeArea', () => {
     ['components/SettingsView.ets', 3], // 单屏分类列表 / 多屏侧栏 / 内容区
     ['components/ReleaseHistoryView.ets', 1],
     ['components/VaultManagerView.ets', 1],
-    ['components/VaultStatsView.ets', 1],
+    // v1.58 58.1 起统计改为 UtilityDialogShell 弹窗（非次级页），不再要求 expandSafeArea
   ];
   for (const [rel, minCount] of targets) {
     const src = read(rel);
