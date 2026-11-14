@@ -123,6 +123,9 @@ struct SyncPage {
 
   /** 把 git 的裸错误翻译成人话，省得在手机上对着 401 发呆 */
   private explainError(message: string): string {
+    if (message.includes('remote auth required but no callback set')) {
+      return '远端要求登录，但 Git 认证回调没有提供可用凭据。请检查仓库是否为私有库、当前账号是否有读取权限，以及用户名和访问令牌是否按该平台要求填写';
+    }
     if (message.includes('401') || message.includes('Unauthorized') ||
       message.toLowerCase().includes('authentication')) {
       const remote: string = this.syncMode ? this.syncRemote : this.repoUrl;
