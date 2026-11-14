@@ -10,7 +10,7 @@ import { Git2ActionOptions, Git2CloneOptions, Git2Progress, Git2RepositoryState 
 import { GIT_IMPORTING_SUFFIX, VaultRegistry } from '../model/VaultRegistry';
 import { sanitizeVaultName, VaultEntry } from '../model/Vault';
 import { GitImportDraft, GitImportDraftStore } from '../model/GitImportDraftStore';
-import { FontSize, Space } from '../common/Tokens';
+import { FontSize, Radius, Space } from '../common/Tokens';
 
 /** 旧版把令牌明文存在这个 preferences store（v0.3 起令牌只进 Asset Store Kit，进页一次性清除） */
 const LEGACY_STORE_NAME: string = 'git_sync';
@@ -52,6 +52,7 @@ struct SyncPage {
   @State busy: boolean = false;
   @State progressText: string = '';
   @State logText: string = '';
+  @State importFailureText: string = '';
   @State syncMode: boolean = false;
   @State syncVaultId: string = '';
   @State syncRemote: string = '';
@@ -143,6 +144,11 @@ struct SyncPage {
     return '原因未确定，请检查网络、仓库地址和当前库状态后重试';
   }
 
+  /** 导入错误仅展示在用户界面；令牌始终脱敏。 */
+  private redactImportDetail(message: string, token: string): string {
+    return token.length > 0 ? message.split(token).join('[令牌已隐藏]') : message;
+  }
+
   /** 将导入到的库 id（随地址输入实时推导，UI 预览用） */
   private previewVaultId(): string {
     return VaultRegistry.get().uniqueVaultId(repoNameFromUrl(this.repoUrl), '');
@@ -152,6 +158,7 @@ struct SyncPage {
     if (this.busy) {
       return;
     }
+    this.importFailureText = '';
     if (this.repoUrl.trim().length === 0) {
       promptAction.showToast({ message: '请先填写仓库地址' });
       return;
@@ -200,11 +207,7 @@ struct SyncPage {
       this.onCloneDone(true, 'Native clone 与磁盘状态校验完成');
     } catch (error) {
       const err = error as BusinessError;
-      let message: string = err.message ?? String(error);
-      if (token.length > 0) {
-        message = message.split(token).join('[令牌已隐藏]');
-      }
-      this.onCloneDone(false, message);
+      this.onCloneDone(false, this.redactImportDetail(err.message ?? String(error), token));
     }
   }
 
@@ -370,8 +373,10 @@ struct SyncPage {
     this.busy = false;
     if (!ok) {
       this.progressText = '失败';
+      const guidance: string = this.explainError(message);
+      this.importFailureText = guidance + '\n底层错误：' + message;
       this.appendLog('Git 导入失败；当前库未登记，临时目录清理已尝试。' +
-        this.explainError(message) + '。底层错误：' + message + '。');
+        guidance + '。底层错误：' + message + '。');
       this.cleanupTempDir();
       return;
     }
@@ -392,7 +397,8 @@ struct SyncPage {
           GitCredentialStore.saveToken(entry.id, this.token);
         } catch (credError) {
           const ce = credError as BusinessError;
-          this.appendLog('警告：令牌安全存储失败（code=' + ce.code + '），下次同步需重新填写');
+          const detail: string = this.redactImportDetail(ce.message ?? String(credError), this.token);
+          this.appendLog('警告：令牌安全存储失败（code=' + ce.code + '），下次同步需重新填写。底层错误：' + detail);
         }
       }
       reg.setCurrent(entry.id);
@@ -404,11 +410,9 @@ struct SyncPage {
       router.back();
     } catch (error) {
       const err = error as BusinessError;
-      let detail: string = err.message ?? String(error);
-      if (this.token.length > 0) {
-        detail = detail.split(this.token).join('[令牌已隐藏]');
-      }
+      const detail: string = this.redactImportDetail(err.message ?? String(error), this.token);
       this.progressText = '失败';
+      this.importFailureText = '仓库克隆完成，但登记为本地知识库失败。\n底层错误：' + detail;
       this.appendLog('Git 导入登记失败；当前库和导入目录状态未确认。底层错误：' + detail +
         '。请返回主页检查库列表。');
       this.cleanupTempDir();
@@ -424,7 +428,11 @@ struct SyncPage {
       VaultRegistry.get().cleanupGitImport(this.pendingFinalId, this.pendingTempId);
       this.appendLog('已清理本次导入目录');
     } catch (error) {
-      this.appendLog('导入目录清理未完成；恢复标记保留，应用下次启动会重试。');
+      const err = error as BusinessError;
+      const detail: string = this.redactImportDetail(err.message ?? String(error), this.token);
+      const message: string = '导入目录清理未完成；恢复标记保留，应用下次启动会重试。底层错误：' + detail;
+      this.importFailureText += '\n' + message;
+      this.appendLog(message);
     }
     this.pendingTempId = '';
     this.pendingFinalId = '';
@@ -451,6 +459,24 @@ struct SyncPage {
       }
       .width('100%')
       .margin({ bottom: Space.s4 })
+
+      if (!this.syncMode && this.importFailureText.length > 0) {
+        Column({ space: Space.s1 }) {
+          Text('Git 导入失败')
+            .fontSize(FontSize.body2)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.danger'))
+          Text(this.importFailureText)
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+        }
+        .width('100%')
+        .padding(Space.s3)
+        .borderRadius(Radius.card)
+        .backgroundColor($r('app.color.danger_bg'))
+        .margin({ bottom: Space.s2 })
+      }
 
       // v1.5 前置核实的临时入口（2026-10-31）：真机上跑一遍「选目录 → 持久化 →
       // 递归列出 → 读写」，把 api_notes T1–T4 的 ❓ 换成实测值。正式实现落地后移除。
@@ -524,6 +550,7 @@ struct SyncPage {
       TextInput({ placeholder: 'https://github.com/owner/repo.git', text: this.repoUrl })
         .onChange((value: string) => {
           this.repoUrl = value;
+          this.importFailureText = '';
         })
         .margin({ bottom: Space.s2 })
 
@@ -535,6 +562,7 @@ struct SyncPage {
       TextInput({ placeholder: '分支（main / master）', text: this.branch })
         .onChange((value: string) => {
           this.branch = value;
+          this.importFailureText = '';
         })
         .margin({ bottom: Space.s2 })
 
@@ -542,12 +570,14 @@ struct SyncPage {
         .type(InputType.Password)
         .onChange((value: string) => {
           this.token = value;
+          this.importFailureText = '';
         })
         .margin({ bottom: Space.s2 })
 
       TextInput({ placeholder: '用户名（仅 Gitee / 自建 GitLab 私有库需要）', text: this.username })
         .onChange((value: string) => {
           this.username = value;
+          this.importFailureText = '';
         })
         .margin({ bottom: Space.s3 })
 
