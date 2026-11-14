@@ -268,4 +268,5 @@
 | --- | --- | --- | --- | --- |
 | 本轮 2026-11-08 v1.46 46.7（U-01，用户报告） | 长图分享主按钮文案固化「正在排版…」——`UtilityDialogAction` 的 label 同为按值参数（EM-B2 只修了 enabled） | 状态管理 | test_utility_dialog_shell.mjs, test_share_image_preview.mjs | 已修复（XT2 真机待验收） |
 | 本轮 2026-11-08 v1.46 46.9（V-01，用户裁定） | 失败提示不携带底层错误（自设规则撤销）：Git 导入 / 同步与 ZIP 导入失败的用户可见文案补底层错误原文，令牌仍脱敏；另修 `test_import_vault_dialog_design.mjs` 一条 f140b44 起过期的 `requestFocus(focusReturnId)` 源级断言 | 观测性 / 测试防线 | test_sync_page_git_auth.mjs, test_import_vault_dialog_design.mjs, test_zip_import.mjs, test_error_feedback.mjs | 已修复（XT2 真机待验收） |
+| 本轮 2026-11-14 v1.46 46.9 追加（用户裁定） | Git 认证错误无法从 hilog 诊断 | 缺少本地错误日志与回调上下文 | clone 日志含 libgit2 类别、allowed_types 和凭据有无；令牌脱敏，不上报 | unsigned arm64-v8a HAP 构建通过；设备侧 hilog、API24 / XT2 失败链路待验 |
 | 本轮 2026-11-14 v1.53 53.13（用户报告，LAP-AL10 复现） | PDF 分享多出一张只有水印的「空白」尾页——流内水印 footer 被 `preparePdfPages` 当分页内容块，内容恰好填满页时水印 margin 顶过页底单独成页；修复为分页前转固定右下徽标（不参与 bounds）、仅末页滚动位置显示，长图水印不变 | 分页 / 文档流 | web/mdpreview/test/share_watermark.test.mjs, test_pdf_pagination.mjs | 已修复（XT2 真机待验收） |

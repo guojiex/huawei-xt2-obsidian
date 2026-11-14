@@ -509,11 +509,11 @@ M-02 与 M-01 的边界：M-01 评估把外部目录直接作为知识库正式�
 
 ## V. 失败信息携带底层错误（2026-11-08，已分配 v1.46）
 
-背景：用户 2026-11-08 裁定——「失败提示不携带底层错误」是无出处的自设规则，排查失败时盲区过大，予以撤销：Git 导入与 ZIP 导入失败的用户可见日志 / 文案一律携带底层错误原文。令牌脱敏（EM-K3）与「文件名、路径、笔记内容不进 hilog / 埋点」红线（[v1.36 §5](releases/v1.36/需求文档.md)）不变——底层错误只进用户可见 UI 文案，不加 hilog。
+背景：用户 2026-11-08 裁定——Git 导入与 ZIP 导入失败的用户可见文案携带底层错误。用户 2026-11-14 再次裁定：Git clone / status / fetch / push 的底层错误同时写入本地 hilog 与 UI，附 Native 认证回调诊断；只脱敏令牌值，不把日志送入 hiAppEvent、埋点或远程上报。相关边界见 [v1.36 §5](releases/v1.36/需求文档.md)。
 
 | 编号 | 需求 | 分配 |
 | --- | --- | --- |
-| V-01 | 同步页全链（`refreshSyncStatus` / `performGitAction` / `onCloneDone` / 三个元数据警告 catch）与 ZIP 导入链（`ZipChooseOutcome` / `ZipImportOutcome` 增加 `detail` 字段、`ImportVaultDialog.zipFailureMessage` 追加 `（detail）`、Index 编排 catch 填 `err.message`）失败文案携带底层错误；令牌经 `split(token).join('[令牌已隐藏]')` 脱敏后展示 | [v1.46](releases/v1.46/需求文档.md) |
+| V-01 | 同步页全链与 ZIP 导入链失败文案携带底层错误；Git clone / status / fetch / push 另将令牌脱敏后的错误写入本地 hilog，clone 附 libgit2 错误类别、认证回调次数、允许凭据类型及凭据有无（不记凭据值），不接入任何上报 | [v1.46](releases/v1.46/需求文档.md) |
 
 ## W. 图标全局 @Builder 按值实参冻结（2026-11-09）
 

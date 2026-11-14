@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -89,6 +90,28 @@ typedef enum {
 static pthread_mutex_t g_clone_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t g_init_once = PTHREAD_ONCE_INIT;
 static int g_init_result = -1;
+
+static char *format_text(const char *format, ...) {
+  va_list args;
+  va_start(args, format);
+  const int required = vsnprintf(NULL, 0, format, args);
+  va_end(args);
+  if (required < 0) {
+    return NULL;
+  }
+  char *text = (char *)malloc((size_t)required + 1);
+  if (text == NULL) {
+    return NULL;
+  }
+  va_start(args, format);
+  const int written = vsnprintf(text, (size_t)required + 1, format, args);
+  va_end(args);
+  if (written != required) {
+    free(text);
+    return NULL;
+  }
+  return text;
+}
 
 static bool url_has_embedded_credentials(const char *url);
 static napi_value throw_type_error(napi_env env, const char *message);
@@ -612,17 +635,18 @@ static void complete_git_operation(napi_env env, napi_status status, void *data)
              napi_create_string_utf8(env, "ok", NAPI_AUTO_LENGTH, &value) == napi_ok) {
     napi_resolve_deferred(env, work->deferred, value);
   } else {
-    char text[1024];
-    (void)snprintf(text, sizeof(text), "libgit2 %s failed (code %d): %s",
-                   work->operation != NULL ? work->operation : "operation",
-                   status == napi_ok ? work->result_code : -3,
-                   work->error_message != NULL ? work->error_message : "unknown error");
+    const char *operation = work->operation != NULL ? work->operation : "operation";
+    const char *detail = work->error_message != NULL ? work->error_message : "unknown error";
+    char *text = format_text("libgit2 %s failed (code %d): %s", operation,
+                             status == napi_ok ? work->result_code : -3, detail);
     napi_value message;
     napi_value error;
-    if (napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &message) == napi_ok &&
+    const char *message_text = text != NULL ? text : detail;
+    if (napi_create_string_utf8(env, message_text, NAPI_AUTO_LENGTH, &message) == napi_ok &&
         napi_create_error(env, NULL, message, &error) == napi_ok) {
       napi_reject_deferred(env, work->deferred, error);
     }
+    free(text);
   }
   if (work->progress_function != NULL) {
     (void)napi_release_threadsafe_function(work->progress_function, napi_tsfn_release);
@@ -895,8 +919,9 @@ static void capture_clone_error(clone_work_t *work, int result_code) {
     char diagnostic[320];
     const int diagnostic_length = snprintf(
         diagnostic, sizeof(diagnostic),
-        " [libgit2_error_class=%d; auth_callback=%s; calls=%u; allowed_types=0x%X; "
+        " [libgit2_result_code=%d; libgit2_error_class=%d; auth_callback=%s; calls=%u; allowed_types=0x%X; "
         "userpass_allowed=%s; username=%s; password=%s; bearer=%s]",
+        result_code,
         error != NULL ? error->klass : -1,
         work->auth_callback_invoked ? "called" : "not_called",
         work->auth_callback_calls,
@@ -927,15 +952,17 @@ static napi_value throw_git_error(napi_env env, const char *operation) {
   const char *detail = git_error != NULL && git_error->message != NULL
                            ? git_error->message
                            : "unknown libgit2 error";
-  char text[1024];
+  char *text = format_text("%s: %s", operation, detail);
   napi_value message;
   napi_value error;
-  (void)snprintf(text, sizeof(text), "%s: %s", operation, detail);
-  if (napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &message) == napi_ok &&
+  const char *message_text = text != NULL ? text : detail;
+  if (napi_create_string_utf8(env, message_text, NAPI_AUTO_LENGTH, &message) == napi_ok &&
       napi_create_error(env, NULL, message, &error) == napi_ok) {
+    free(text);
     (void)napi_throw(env, error);
     return NULL;
   }
+  free(text);
   return throw_type_error(env, operation);
 }
 
@@ -1141,14 +1168,15 @@ static void complete_clone(napi_env env, napi_status status, void *data) {
   } else {
     napi_value message;
     napi_value error;
-    char text[1024];
-    (void)snprintf(text, sizeof(text), "libgit2 clone failed (code %d): %s",
-                   status == napi_ok ? work->result_code : -3,
-                   work->error_message != NULL ? work->error_message : "unknown error");
-    if (napi_create_string_utf8(env, text, NAPI_AUTO_LENGTH, &message) == napi_ok &&
+    const char *detail = work->error_message != NULL ? work->error_message : "unknown error";
+    char *text = format_text("libgit2 clone failed (code %d): %s",
+                             status == napi_ok ? work->result_code : -3, detail);
+    const char *message_text = text != NULL ? text : detail;
+    if (napi_create_string_utf8(env, message_text, NAPI_AUTO_LENGTH, &message) == napi_ok &&
         napi_create_error(env, NULL, message, &error) == napi_ok) {
       napi_reject_deferred(env, work->deferred, error);
     }
+    free(text);
   }
   release_progress_function(work);
   napi_delete_async_work(env, work->async_work);
