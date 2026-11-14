@@ -135,7 +135,8 @@ test('the icon-only controls this version labelled are still wired', () => {
     ['pages/Index.ets', 'Git 同步'],
     // v1.44 统一双栏更多菜单入口：每栏「更多操作」按钮已整体移除，统一入口是顶栏「更多菜单」
     ['pages/Index.ets', '更多菜单'],
-    ['pages/Index.ets', '插入图片'],
+    // v1.30 插入图片按钮视图已从 Index 拆到 FormatDockPanel（Phase 3 重构），读屏名称随视图迁移
+    ['components/FormatDockPanel.ets', '插入图片'],
     ['components/AgentWorkspace.ets', '归档对话']
   ];
   for (const [relativePath, ...needles] of expected) {
