@@ -4,12 +4,22 @@
  * 映射见 docs/testing/UI自动化测试.md。
  */
 
-import { describe, beforeAll, it, expect } from '@ohos/hypium';
-import { Driver } from '@ohos.UiTest';
-import { getDriver, launchMainApp, waitById, waitByText,
-  clickById, clickByText, existsById, waitGoneById, clickUntilTextAppear,
-  existsByText, waitByIdSoft, ensureSidebarVisible, ensureNoteView,
-  clickByTextUntilTextAppear } from './UiTestHelpers';
+import { afterEach, beforeAll, describe, expect, it } from '@ohos/hypium';
+import { Component, Driver, Rect } from '@ohos.UiTest';
+import {
+  clickById,
+  clickByText,
+  clickByTextUntilTextAppear,
+  clickUntilTextAppear,
+  ensureNoteView,
+  ensureSidebarVisible,
+  existsById,
+  existsByText,
+  getDriver,
+  launchMainApp,
+  waitById,
+  waitByIdSoft
+} from './UiTestHelpers';
 
 /** 从次级视图返回笔记视图：onBackPress 已覆盖（Index 2.7c） */
 async function backToNoteView(driver: Driver): Promise<void> {
@@ -22,6 +32,14 @@ export default function uiPanelsTest() {
     beforeAll(async (): Promise<void> => {
       await launchMainApp();
       // 级联遏制：上个套件留在次级视图时先回笔记视图（ensureNoteView 注释）
+      await ensureNoteView(await getDriver());
+    });
+
+    afterEach(async (): Promise<void> => {
+      // 级联遏制（套件内）：用例在次级视图里抛错时会把残留视图漏给后续用例——
+      // 20261114_205005 / _210134 两轮实测：settings_editor_mode_toggle 在设置页超时后，
+      // vault_manager / share_panel / import_dialog 连坐（在设置视图等汉堡 30s 必超时）。
+      // 每例收尾确保回笔记视图；正常路径 more-button 在则直接返回不耗窗口。
       await ensureNoteView(await getDriver());
     });
 
@@ -44,6 +62,15 @@ export default function uiPanelsTest() {
       await clickUntilTextAppear(driver, 'workspace-more-button', '设置与关于', 3, 15000);
       await clickByText(driver, '设置与关于');
       await waitById(driver, 'settings-heading-general');
+      // 「通用」页随版本增高（小艺入口 / 屏保台历 / 写作统计等分组把编辑模式行挤出首屏）：
+      // 窗口外的组件不入 a11y 树（20261114 两轮同签名 30s 超时，dumpLayout 实证
+      // simple 行贴屏底被裁 [961,2150][2914,2232]、professional 整行缺失）——
+      // 以通用标题为锚把右栏内容上滑一屏，编辑模式两行入窗后再等
+      const heading: Component = await waitById(driver, 'settings-heading-general');
+      const hr: Rect = await heading.getBounds();
+      const cx: number = Math.round((hr.left + hr.right) / 2);
+      await driver.swipe(cx, hr.top + 800, cx, hr.top - 200);
+      await driver.delayMs(600);
       await clickById(driver, 'settings-editor-mode-professional');
       await driver.delayMs(500);
       await clickById(driver, 'settings-editor-mode-simple');
