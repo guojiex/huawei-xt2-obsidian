@@ -36,8 +36,8 @@ test('v2 pin section sits above favorites with per-vault collapse state and demo
   // 种子与收藏重叠（tob / idea / reading_stream 同时被收藏），演示置顶 + 收藏同框。
   assert.ok(html.includes("const pinnedByVault={local:['tob','idea'],reading:['reading_stream']};"));
   assert.ok(html.includes('const pinFolderState={local:true,reading:true};'));
-  // render() 全链路刷新：置顶区在收藏区之前（renderStreakChip 为 v1.59 并入）。
-  assert.match(html, /renderVaultPicker\(\);renderTree\(\);renderTrash\(\);renderPins\(\);renderFavorites\(\);renderStreakChip\(\);renderReference\(\);/);
+  // render() 全链路刷新：置顶区在收藏区之前（renderStatsMenu 为 v1.59 并入）。
+  assert.match(html, /renderVaultPicker\(\);renderTree\(\);renderTrash\(\);renderPins\(\);renderFavorites\(\);renderStatsMenu\(\);renderReference\(\);/);
   // 折叠态随 details toggle 持久化（与收藏区同款绑定）。
   assert.ok(html.includes("$('pinFolder').addEventListener('toggle',()=>{pinFolderState[activeVault]=$('pinFolder').open;scheduleUrl('push');});"));
 });
