@@ -44,8 +44,13 @@ import {
 } from '../model/MarkdownComplexBlockEdit';
 import { ChapterEntry, VaultSidebar } from '../components/VaultSidebar';
 import { VaultManagerShareSummary, VaultManagerView } from '../components/VaultManagerView';
-import { VaultStatsModel, VaultStatsScanOutcome, VaultStatsService,
-  currentWeekFlagsOf, emptyStatsModel } from '../model/VaultStatsService';
+import {
+  currentWeekFlagsOf,
+  emptyStatsModel,
+  VaultStatsModel,
+  VaultStatsScanOutcome,
+  VaultStatsService
+} from '../model/VaultStatsService';
 import { VaultStatsDialog } from '../components/VaultStatsDialog';
 import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
@@ -90,7 +95,7 @@ import { AgentWorkspace } from '../components/AgentWorkspace';
 import { StartupMask } from '../components/StartupMask';
 import { Icon } from '../common/Icons';
 import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
-import { FontSize, Motion, Radius, Shadow, ScreenSaver, Size, Space, Weight } from '../common/Tokens';
+import { FontSize, Motion, Radius, ScreenSaver, Shadow, Size, Space, Weight } from '../common/Tokens';
 import { SplitLayoutStore } from '../model/SplitLayoutStore';
 import { EditorPreferenceStore } from '../model/EditorPreferenceStore';
 import { VaultStatsPreferenceStore } from '../model/VaultStatsPreferenceStore';
@@ -526,7 +531,7 @@ struct Index {
   @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
   @State showLineNumbers: boolean = false;
   /** v1.58 开关：写作统计总开关（默认开）。关闭时隐藏入口、连写条并跳过后台重算。 */
-  @State statsEnabled: boolean = true;
+  @State statsEnabled: boolean = false;
   /** v1.65 65.5：名言轮换间隔（应用级偏好，0 = 不轮换）。 */
   @State screenSaverIntervalMs: number = ScreenSaver.defaultIntervalMs;
   @State followPreviewEnabled: boolean = true;
@@ -1121,6 +1126,9 @@ struct Index {
       this.vaultStatsModel = emptyStatsModel();
       this.vaultStatsScanning = false;
       this.vaultStatsFailed = false;
+    } else {
+      // 开启时立即排一次空闲扫描，连写条/弹窗无需等冷启动或切库即有数。
+      this.scheduleIdleStatsRefresh();
     }
   }
 

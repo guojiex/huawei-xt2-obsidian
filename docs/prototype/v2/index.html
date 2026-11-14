@@ -2371,6 +2371,7 @@ function annotateComplexBlocks(pane){
   event.preventDefault();event.stopPropagation();
   openComplexFor(hit.matches('.md-callout-head')?hit.parentElement:hit);
  },true);
+ root.addEventListener('mousedown',event=>{if(experience!=='simple'||!event.target.closest)return;const box=event.target.closest('input[data-simple-task]');if(!box||box.disabled||!root.contains(box))return;event.preventDefault();},true);
  root.addEventListener('change',event=>{if(experience!=='simple')return;const box=event.target.closest&&event.target.closest('input[data-simple-task]');if(!box||box.disabled||!root.contains(box))return;syncSimpleTaskBox(box,root);});
  root.addEventListener('keydown',event=>{
   if(experience!=='simple')return;const tgt=event.target;
@@ -2503,7 +2504,9 @@ $('leftCloseNote').onclick=()=>closePaneNote('left');$('rightCloseNote').onclick
 $('navScrim').addEventListener('pointerdown',e=>{e.preventDefault();});$('navScrim').addEventListener('click',e=>{e.preventDefault();e.stopPropagation();if($('window').classList.contains('phone')&&$('window').classList.contains('nav-open')){$('closeNav').onclick();$('menu').focus({preventScroll:true});syncUrl('replace');}});
 
 // v1.30: track editing focus per pane (text inside the rendered note, or the pane's own format bar / Aa panel).
-function paneHasTextFocus(pane){const a=document.activeElement,root=$(pane==='right'?'referencePane':'leftPane');if(!a||!root.contains(a))return false;if(a.closest('[contenteditable=true]'))return true;return !!a.closest('#'+(pane==='right'?'simpleToolsRight':'simpleTools'))||!!a.closest('.simple-format-menu');}
+// 任务复选框只做切换，不算「正在编辑文字」：若让它带上 text-focus，格式栏会插入正文流把内容
+// 顶下去，mouseup 落到别处，click 被派发到共同祖先（ARTICLE），复选框永远收不到激活事件。
+function paneHasTextFocus(pane){const a=document.activeElement,root=$(pane==='right'?'referencePane':'leftPane');if(!a||!root.contains(a))return false;if(a.matches&&a.matches('input[data-simple-task]'))return false;if(a.closest('[contenteditable=true]'))return true;return !!a.closest('#'+(pane==='right'?'simpleToolsRight':'simpleTools'))||!!a.closest('.simple-format-menu');}
 function refreshSimpleTextFocus(){const next={left:paneHasTextFocus('left'),right:paneHasTextFocus('right')};if(next.left===simpleTextFocus.left&&next.right===simpleTextFocus.right)return;simpleTextFocus.left=next.left;simpleTextFocus.right=next.right;syncSimpleToolsVisibility();}
 document.addEventListener('focusin',()=>refreshSimpleTextFocus());document.addEventListener('focusout',()=>setTimeout(refreshSimpleTextFocus,0));
 for(const [id,pane] of [['simpleDone','left'],['simpleDoneRight','right']]){$(id).addEventListener('pointerdown',e=>e.preventDefault());$(id).onclick=()=>{const a=document.activeElement;if(a&&a.blur)a.blur();simpleTextFocus[pane]=false;syncExperience();$(pane==='right'?'referenceTitle':'leftTitle').focus({preventScroll:true});};}

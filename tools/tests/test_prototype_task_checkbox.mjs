@@ -83,6 +83,39 @@ test('v2 原型把任务复选框渲染成带源码偏移的可交互控件，�
   assert.match(html, /addEventListener\('change',event=>\{[^}]*syncSimpleTaskBox/, 'a change listener must persist the toggle after native activation');
 });
 
+test('复选框焦点不算「编辑文字」：否则格式栏插入正文流把框顶走，点击永远丢失', () => {
+  // 真浏览器（CDP 真实鼠标）验证过的失效链：
+  // mousedown 命中 INPUT → focusin → leftPane 加 text-focus → 格式栏占位把正文下移 57px
+  // → mouseup 落到 ARTICLE → click 派发给共同祖先 → 复选框收不到 click，源码与勾选都不变。
+  // 而抬手点在空白处又让 input 失焦、布局弹回，下次点击重演 —— 所以必须有两道守卫。
+  assert.match(
+    html,
+    /if\(a\.matches&&a\.matches\('input\[data-simple-task\]'\)\)return false;/,
+    'paneHasTextFocus must not treat a task checkbox as text editing focus'
+  );
+  const mousedownLine = html.split('\n').find((line) => line.includes("root.addEventListener('mousedown'")) ?? '';
+  assert.match(mousedownLine, /event\.target\.closest\('input\[data-simple-task\]'\)/);
+  assert.match(mousedownLine, /event\.preventDefault\(\)/, 'task checkbox must not take focus on mousedown');
+
+  // 行为级：祖先 <li contenteditable=true> 时旧实现返回 true（正是布局位移的来源）。
+  const paneRoot = { contains: () => true };
+  const context = { document: { activeElement: null }, $: () => paneRoot };
+  vm.createContext(context);
+  vm.runInContext(extractFunction('paneHasTextFocus'), context);
+  context.document.activeElement = {
+    matches: (selector) => selector === 'input[data-simple-task]',
+    closest: (selector) => (selector === '[contenteditable=true]' ? {} : null)
+  };
+  assert.equal(context.paneHasTextFocus('left'), false, 'task checkbox focus must not enable the text-focus layout');
+  context.document.activeElement = {
+    matches: () => false,
+    closest: (selector) => (selector === '[contenteditable=true]' ? {} : null)
+  };
+  assert.equal(context.paneHasTextFocus('left'), true, 'real text editing still shows the format bar');
+  context.document.activeElement = { matches: () => false, closest: () => null };
+  assert.equal(context.paneHasTextFocus('left'), false, 'focus outside the pane is not text focus');
+});
+
 test('渲染偏移命中 sample_vault 任务清单的真实源码（防止三方区间口径漂移）', () => {
   const { context } = createHarness();
   let count = 0;

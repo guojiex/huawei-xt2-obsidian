@@ -15,13 +15,13 @@
  * 视觉：token 化 + 内容页限宽 760vp 居中（需求 4.9）。
  */
 import { bundleManager, common, Want } from '@kit.AbilityKit';
-import { pasteboard, BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, pasteboard } from '@kit.BasicServicesKit';
 import { ColorMetrics, LengthMetrics, promptAction } from '@kit.ArkUI';
 import { buildCommitCopyPayload, buildCommitLabel, isBuildCommitKnown } from '../common/BuildCommitInfo';
 import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { Space, Radius, FontSize, ScreenSaver, Size } from '../common/Tokens';
+import { FontSize, Radius, ScreenSaver, Size, Space } from '../common/Tokens';
 import { FocusRequest } from '../common/FocusRequest';
 import { AppDataResetService } from '../model/AppDataResetService';
 import { ChangelogEntry, RECENT_CHANGELOG } from '../model/ChangelogData';
@@ -33,13 +33,23 @@ import { AgentRuntime } from '../model/AgentRuntime';
 import { BUILTIN_AGENT_PROMPT } from '../model/AgentDefaults';
 import { AgentSession, AgentSkillDefault } from '../model/AgentModels';
 import { VaultEntry } from '../model/Vault';
-import { formatRecentError, formatRecentErrorsForCopy, RecentErrorRecord, RecentErrorStore } from '../model/RecentErrorStore';
+import {
+  formatRecentError,
+  formatRecentErrorsForCopy,
+  RecentErrorRecord,
+  RecentErrorStore
+} from '../model/RecentErrorStore';
 import { Icon } from '../common/Icons';
 import { DeleteAgentSessionDialog } from './AgentSessionDialogs';
 import { FEEDBACK_EMAIL } from '../model/AppConfig';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { EditorExperienceMode } from '../model/EditorExperiencePolicy';
-import { AppUpdateCheckOutcome, AppUpdateCheckStore, AppUpdateUiPhase, runAppUpdateCheck } from '../model/AppUpdateCheck';
+import {
+  AppUpdateCheckOutcome,
+  AppUpdateCheckStore,
+  AppUpdateUiPhase,
+  runAppUpdateCheck
+} from '../model/AppUpdateCheck';
 
 @Component
 export struct SettingsView {
@@ -55,7 +65,7 @@ export struct SettingsView {
   @Prop currentVaultNoteCount: number = 0;
   @Prop showLineNumbers: boolean = false;
   /** v1.58 开关：写作统计总开关（默认开）。关闭时隐藏入口、连写条并跳过后台重算。 */
-  @Prop statsEnabled: boolean = true;
+  @Prop statsEnabled: boolean = false;
   /** v1.65 65.5：屏保名言轮换间隔（ms），0 = 不轮换。 */
   @Prop screenSaverIntervalMs: number = ScreenSaver.defaultIntervalMs;
   @Prop experienceMode: EditorExperienceMode = 'simple';

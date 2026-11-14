@@ -1881,6 +1881,13 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     element.removeAttribute('data-table-column')
     element.removeAttribute('tabindex')
   }
+  // 任务复选框（2026-11-14）：marked 默认把任务项渲染成 disabled 的 input，手指点上去浏览器
+  // 直接忽略（不派发事件、不给焦点），所以简单模式里点框「完全没反应」；格式栏「任务」按钮走
+  // checked 程序赋值，才看起来能用。这里先全部复位成 disabled，只有可编辑块内的才解除。
+  const allTaskBoxes = root.querySelectorAll('input[type="checkbox"]')
+  for (let index = 0; index < allTaskBoxes.length; index++) {
+    (allTaskBoxes[index] as HTMLInputElement).disabled = true
+  }
   const blocks = root.querySelectorAll('.preview-source-block')
   for (let index = 0; index < blocks.length; index++) {
     const block = blocks[index] as HTMLElement
@@ -1975,6 +1982,12 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
       block.setAttribute('contenteditable', 'true')
       block.setAttribute('data-simple-editable', 'true')
       block.setAttribute('aria-label', '可编辑正文')
+      const taskBoxes = block.querySelectorAll('input[type="checkbox"]')
+      for (let boxIndex = 0; boxIndex < taskBoxes.length; boxIndex++) {
+        const taskBox = taskBoxes[boxIndex] as HTMLInputElement
+        taskBox.disabled = false
+        taskBox.setAttribute('aria-label', taskBox.checked ? '已完成待办' : '未完成待办')
+      }
     }
   }
 
@@ -2231,6 +2244,41 @@ document.addEventListener('selectionchange', (): void => {
   publishLockedBlockAnchor(toolbarBlockForSelection(sourceBlocks, selection, sourceBlockForNode))
 })
 
+/** v1.30 30.4：任务复选框直达切换 —— 点框即翻转，不再只能靠格式栏「任务」按钮。
+ *  原生 checkbox 处在 contenteditable 块内，靠原生激活会被可编辑容器抢走 mousedown；
+ *  而且聚焦可编辑块会让原生停靠格式栏出现、WebView 高度变化把点击位置挪走（click 丢失）。
+ *  所以在捕获阶段接管 pointerdown：preventDefault 拿走焦点与原生激活，自己翻 checked
+ *  并把该块按 DOM 重新序列化回源码，行为与格式栏按钮完全一致。 */
+function handleTaskCheckboxPointerDown(event: PointerEvent): void {
+  if (!editable || event.button !== 0) {
+    return
+  }
+  const target = event.target
+  if (!(target instanceof HTMLInputElement) || target.type !== 'checkbox') {
+    return
+  }
+  const block = sourceBlockForNode(target)
+  if (!block || block.dataset.simpleEditable !== 'true') {
+    return
+  }
+  event.preventDefault()
+  event.stopPropagation()
+  target.checked = !target.checked
+  target.setAttribute('aria-label', target.checked ? '已完成待办' : '未完成待办')
+  replaceSourceBlock(block)
+}
+
+contentElement.addEventListener('pointerdown', handleTaskCheckboxPointerDown, true)
+// 兜底：若平台仍派发了原生 click 激活（会把刚刚翻好的状态再翻回去），撤销它的默认行为。
+contentElement.addEventListener('click', (event: MouseEvent): void => {
+  if (!editable || !(event.target instanceof HTMLInputElement)) {
+    return
+  }
+  if (event.target.type !== 'checkbox') {
+    return
+  }
+  event.preventDefault()
+}, true)
 contentElement.addEventListener('click', (event: MouseEvent): void => {
   if (!editable || !(event.target instanceof HTMLElement)) return
   if (replayingLockedTap) return
@@ -2528,10 +2576,13 @@ const api: MdPreviewApi = {
         if (!checkbox) {
           checkbox = document.createElement('input')
           checkbox.type = 'checkbox'
-          checkbox.disabled = true
+          // 可编辑态新建的任务框必须可点（disabled 的框连事件都收不到）。
+          checkbox.disabled = !editable
+          checkbox.setAttribute('aria-label', '未完成待办')
           item.insertBefore(checkbox, item.firstChild)
         } else {
           checkbox.checked = !checkbox.checked
+          checkbox.setAttribute('aria-label', checkbox.checked ? '已完成待办' : '未完成待办')
         }
       }
     } else if (kind === 'bold') document.execCommand('bold')

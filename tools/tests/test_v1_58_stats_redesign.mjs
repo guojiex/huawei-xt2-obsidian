@@ -43,6 +43,8 @@ const sidebar = readSourceFile(
   new URL('../../entry/src/main/ets/components/VaultSidebar.ets', import.meta.url));
 const settings = readSourceFile(
   new URL('../../entry/src/main/ets/components/SettingsView.ets', import.meta.url));
+const statsStore = readSourceFile(
+  new URL('../../entry/src/main/ets/model/VaultStatsPreferenceStore.ets', import.meta.url));
 
 /* --------------------- 58.5 / 58.8 展示层纯函数 --------------------- */
 
@@ -176,8 +178,14 @@ test('58.12 原生：总开关门控入口 / 连写条 / 后台重算 / 设置�
   assert.match(index, /private scheduleIdleStatsRefresh\(\): void \{\s*if \(!this\.statsEnabled\) \{\s*return;\s*\}/);
   // 单屏「⋯」菜单项仅在开关开启时挂载。
   assert.match(index, /if \(this\.statsEnabled\) \{\s*this\.MobileMoreStatsItem\(\)/);
-  // 设置页提供开关（默认开）。
-  assert.match(settings, /@Prop statsEnabled: boolean = true;/);
+  // 设置页提供开关（默认关）。
+  assert.match(settings, /@Prop statsEnabled: boolean = false;/);
   assert.match(settings, /Toggle\(\{ type: ToggleType\.Switch, isOn: this\.statsEnabled \}\)/);
   assert.match(settings, /onStatsEnabledChange: \(enabled: boolean\) => void = /);
+  // 持久化默认值为关闭，未设置 / 读取失败均回退为关。
+  assert.match(statsStore, /private static readonly DEFAULT_STATS_ENABLED: boolean = false;/);
+  assert.match(statsStore, /return VaultStatsPreferenceStore\.DEFAULT_STATS_ENABLED;/);
+  // 开启后立即排一次扫描，避免开启后连写条/弹窗需等冷启动才有数。
+  assert.match(index, /private setStatsEnabled\(enabled: boolean\): void \{\s*this\.statsEnabled = enabled;/);
+  assert.match(index, /} else \{\s*\/\/.*\n\s*this\.scheduleIdleStatsRefresh\(\);/);
 });
