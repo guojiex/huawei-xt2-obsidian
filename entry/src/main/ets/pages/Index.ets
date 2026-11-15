@@ -149,7 +149,7 @@ import {
   TempVaultZipWriter,
   ZlibRawInflate
 } from '../model/ZipImportDevice';
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { blockPanelTitleFor, BlockPropertyPanel, PanelImageReplaceContext } from '../components/BlockPropertyPanel';
@@ -1263,18 +1263,25 @@ struct Index {
   }
 
   private async waitForInitialWorkspaceSurfaces(): Promise<void> {
-    const waits: Array<Promise<void>> = [];
-    if (this.notePaneVisible('left')) {
-      waits.push(this.experienceMode === 'simple'
+    // 2026-11-15 冷启动优化（trace：双 WebView 拖住启动遮罩 ready）：只等
+    // active pane 的 surface；active pane 不可见时回退到 left→right，两个
+    // pane 都不可见则立即放行。
+    let pane: string = this.activePane;
+    if (!this.notePaneVisible(pane)) {
+      pane = this.notePaneVisible('left') ? 'left' : 'right';
+      if (!this.notePaneVisible(pane)) {
+        return;
+      }
+    }
+    if (pane === 'left') {
+      await (this.experienceMode === 'simple'
         ? this.previewBridge.waitUntilReady()
         : this.smMode === 'edit' ? this.editorBridge.waitUntilReady() : this.previewBridge.waitUntilReady());
-    }
-    if (this.notePaneVisible('right')) {
-      waits.push(this.experienceMode === 'simple'
+    } else {
+      await (this.experienceMode === 'simple'
         ? this.rightPreviewBridge.waitUntilReady()
         : this.rightEditing ? this.rightEditorBridge.waitUntilReady() : this.rightPreviewBridge.waitUntilReady());
     }
-    await Promise.all(waits);
   }
 
   private handleInitialWorkspaceSurfaceError(pane: string, surface: string): void {
@@ -1913,7 +1920,7 @@ struct Index {
     }
     this.currentVaultId = reg.currentId();
     this.refreshCurrentVaultNoteCount();
-    this.refreshGitAheadCommitCount();
+    void this.refreshGitAheadCommitCount();
     if (this.topView === 'vaults') {
       this.refreshVaultManagerShareSummaries();
     }
@@ -2595,8 +2602,9 @@ struct Index {
     return entry !== null && entry.type === 'git';
   }
 
-  /** 首页角标仅查询本地 Git 状态；失败或非 Git 库时清掉旧数值，不做后台同步。 */
-  private refreshGitAheadCommitCount(): void {
+  /** 首页角标仅查询本地 Git 状态；失败或非 Git 库时清掉旧数值，不做后台同步。
+   *  2026-11-15 起 GitNativeService 动态加载 libgit2_napi.so（冷启动优化），本方法随之异步化。 */
+  private async refreshGitAheadCommitCount(): Promise<void> {
     const entry: VaultEntry | null = VaultRegistry.get().currentEntry();
     if (entry === null || entry.type !== 'git') {
       this.gitAheadCommitCount = 0;
@@ -2604,7 +2612,7 @@ struct Index {
     }
     try {
       const repositoryPath: string = VaultRegistry.get().vaultDirOf(entry.id);
-      const state = GitNativeService.repositoryState(repositoryPath, entry.pushBranch ?? 'xt2');
+      const state = await GitNativeService.repositoryState(repositoryPath, entry.pushBranch ?? 'xt2');
       this.gitAheadCommitCount = state.trackingKnown && state.aheadCount > 0 ? state.aheadCount : 0;
     } catch (_error) {
       this.gitAheadCommitCount = 0;
@@ -3165,7 +3173,7 @@ struct Index {
       void this.adoptExternalVaultSwitch();
       return;
     }
-    this.refreshGitAheadCommitCount();
+    void this.refreshGitAheadCommitCount();
   }
 
   /** 外部入口切换了当前库：落盘旧库编辑后按 switchVault 的恢复序列对齐本页状态。 */
