@@ -33,6 +33,18 @@ test('encodes and decodes Chinese text', () => {
 })
 
 test('round-trips mixed Unicode and newlines', () => {
-  const text = '标题 😀\n第二行 é'
+  const text = '标题 😀\n第二行 é'
+  assert.equal(codec.decodeBase64ToUtf8(codec.encodeUtf8ToBase64(text)), text)
+})
+
+// 2026-11-15 BOM 误报修复：解码必须无损保留开头 U+FEFF（ignoreBOM:true）。
+// 回归背景：模拟器真实笔记带 UTF-8 BOM（Windows 工具产物），默认 TextDecoder
+// 吞掉 BOM 后编辑器比基线少 1 字符且无脏标，误触发「内容不一致」恢复弹窗。
+test('keeps a leading UTF-8 BOM when decoding (EF BB BF 23)', () => {
+  assert.equal(codec.decodeBase64ToUtf8('77u/Iw=='), '\uFEFF#')
+})
+
+test('round-trips a BOM-prefixed note', () => {
+  const text = '\uFEFF# 带签名的笔记\n正文'
   assert.equal(codec.decodeBase64ToUtf8(codec.encodeUtf8ToBase64(text)), text)
 })

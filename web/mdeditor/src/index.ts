@@ -172,7 +172,11 @@ function b64decode(b64: string): string {
   for (let i = 0; i < bin.length; i++) {
     bytes[i] = bin.charCodeAt(i)
   }
-  return new TextDecoder().decode(bytes)
+  // ignoreBOM:true —— 无损解码（2026-11-15 BOM 误报修复）：
+  // WHATWG TextDecoder 默认吞掉开头 U+FEFF，导致编辑器内容比基线少 1 字符、
+  // 无脏标时误触发「内容不一致」恢复弹窗。这里保留 BOM，等价性由 ArkTS 侧
+  // isEditorTextEquivalent 统一豁免（BOM + CRLF）。
+  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
 }
 
 /**

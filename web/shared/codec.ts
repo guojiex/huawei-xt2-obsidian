@@ -15,5 +15,7 @@ export function decodeBase64ToUtf8(base64: string): string {
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
   }
-  return new TextDecoder().decode(bytes)
+  // ignoreBOM:true —— 无损解码（2026-11-15 BOM 误报修复）：保留开头 U+FEFF，
+  // 桥接内容与 ArkTS 侧字节完全一致；等价性豁免由上层统一处理。
+  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
 }

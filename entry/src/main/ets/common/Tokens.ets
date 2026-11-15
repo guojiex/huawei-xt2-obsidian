@@ -72,6 +72,7 @@ export class Size {
   static readonly sidebarW: number = 240;  // 侧栏最小宽（宽屏按等分，见 Index）
   static readonly drawerW: number = 300;
   static readonly utilityDialogW: number = 560; // v2 --panel-width
+  static readonly mismatchDialogW: number = 720; // v2 --mismatch-width（编辑不一致双栏对照，2026-11-15）
   static readonly importDialogW: number = 480; // v2 --import-width
   static readonly shareW: number = 520;
   static readonly paneMinW: number = 240;

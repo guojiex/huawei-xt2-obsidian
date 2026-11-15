@@ -47,6 +47,8 @@ import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
 import { ImportVaultDialog } from '../components/ImportVaultDialog';
 import { GitSyncDialog } from '../components/GitSyncDialog';
+import { EditorMismatchDialog } from '../components/EditorMismatchDialog';
+import { buildEditorMismatchDiffRows } from '../model/EditorMismatchDiff';
 import {
   CreateNoteDialog,
   DeletePathDialog,
@@ -211,47 +213,22 @@ function editorMismatchApprovalKeyOf(pane: string, vaultId: string, path: string
 }
 
 /**
- * 弹窗差异窗口的转义（v1.70 AC-01）：控制字符转可读转义（\n \r \t \uXXXX），
- * 其余字符含中文原样保留（面向设备上的用户本人，保持可读）；窗口截断时加省略号。
- * 与 TrashService.escapeAround（日志口径，非 ASCII 全转义）不同是有意为之。
+ * 编辑器内容与基线的等价归一（2026-11-15 BOM 误报修复）：
+ * 剥掉开头 U+FEFF + CRLF→LF 后比较。Web 侧 TextDecoder 已改 ignoreBOM:true 无损解码，
+ * 这里再兜一层 ArkTS 侧豁免（Web 修复未覆盖的存量窗口 / 竞态同样安全）。
+ * 原 CRLF-only 内联比较（v1.60）被本函数取代。
  */
-function escapeEditorWindow(text: string, index: number, radius: number = 16): string {
-  const start: number = Math.max(0, index - radius);
-  const end: number = Math.min(text.length, index + radius + 1);
-  let out: string = start > 0 ? '…' : '';
-  for (let i: number = start; i < end; i++) {
-    const code: number = text.charCodeAt(i);
-    if (code === 0x0a) {
-      out += '\\n';
-    } else if (code === 0x0d) {
-      out += '\\r';
-    } else if (code === 0x09) {
-      out += '\\t';
-    } else if (code < 0x20) {
-      out += '\\u' + code.toString(16);
-    } else {
-      out += text.charAt(i);
-    }
+function normalizeForEditorCompare(text: string): string {
+  let normalized: string = text;
+  if (normalized.length > 0 && normalized.charCodeAt(0) === 0xfeff) {
+    normalized = normalized.substring(1);
   }
-  return out + (end < text.length ? '…' : '');
+  return normalized.replace(/\r\n/g, '\n');
 }
 
-/**
- * 弹窗用的差异描述（v1.70 AC-01）：结构化摘要 + 首个差异附近的转义内容窗口。
- * 只进弹窗 message，不进日志 / 埋点；日志侧仍用 describeEditorTextMismatch
- * 只出结构化信息（隐私红线，仓库手册硬约束 16）。
- */
-function describeEditorMismatchForDialog(baseline: string, editor: string): string {
-  const index: number = firstEditorMismatchIndex(baseline, editor);
-  if (index === baseline.length && index === editor.length) {
-    return '内容一致';
-  }
-  // 一方是另一方前缀时窗口落在结尾（较短一侧已到头），其余落在首个差异位。
-  const baseIndex: number = Math.min(index, baseline.length - 1);
-  const editorIndex: number = Math.min(index, editor.length - 1);
-  return describeEditorTextMismatch(baseline, editor) +
-    '\n笔记版本：' + escapeEditorWindow(baseline, baseIndex) +
-    '\n编辑区版本：' + escapeEditorWindow(editor, editorIndex);
+/** 保存前校验的等价判断（v1.70 AC-01）：BOM / CRLF 口径差不构成「内容不一致」。 */
+function isEditorTextEquivalent(baseline: string, editor: string): boolean {
+  return normalizeForEditorCompare(baseline) === normalizeForEditorCompare(editor);
 }
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
@@ -618,6 +595,8 @@ struct Index {
   private externalVaultNoteReadErrorKeys: string[] = [];
   private staleSaveNoticeKeys: string[] = [];
   private editorMismatchDialogOpen: boolean = false;
+  /** 编辑不一致双栏对照弹窗控制器（v1.70 70.1）：每次触发重建，关闭即置空。 */
+  private editorMismatchDiffCtl: CustomDialogController | null = null;
   /** 「以编辑区为准」一次性放行键（v1.70 AC-01）：仅下一次对应栏保存尝试有效，保存结束即清除。 */
   private editorMismatchApprovalKey: string = '';
   private lastDraftRecoveryNoticeKey: string = '';
@@ -2283,6 +2262,11 @@ struct Index {
     }
   }
 
+  /**
+   * 「编辑内容与笔记不一致」恢复弹窗（v1.70 70.1 双栏 diff 升级，2026-11-15）：
+   * git diff 式左右对照大弹窗替代旧 promptAction 纯文本小窗；
+   * 差异行构建见 model/EditorMismatchDiff，壳见 components/EditorMismatchDialog。
+   */
   private showEditorMismatchRecovery(vaultId: string, path: string, pane: string,
     baseline: string, editor: string): void {
     if (this.editorMismatchDialogOpen) {
@@ -2290,31 +2274,49 @@ struct Index {
       return;
     }
     this.editorMismatchDialogOpen = true;
-    void this.getUIContext().getPromptAction().showDialog({
-      title: '编辑内容与笔记不一致',
-      message: '为避免覆盖笔记，当前编辑区内容未保存。两版差异：\n\n' +
-        describeEditorMismatchForDialog(baseline, editor) +
-        '\n\n以笔记文件为准：丢弃编辑区差异并重新载入；以编辑区为准：把当前编辑区内容保存到笔记；留在当前页面：暂不处理。',
-      buttons: [
-        { text: '留在当前页面', color: $r('app.color.text_secondary') },
-        { text: '以笔记文件为准', color: $r('app.color.text_secondary') },
-        { text: '以编辑区为准', color: $r('app.color.brand') }
-      ]
-    }).then((result): void => {
-      this.editorMismatchDialogOpen = false;
-      if (result.index === 1) {
-        void this.reloadStaleVaultNote(vaultId, path);
-        return;
+    const sheet: boolean = this.isSingleScreenLayout();
+    this.editorMismatchDiffCtl = new CustomDialogController({
+      builder: EditorMismatchDialog({
+        summary: describeEditorTextMismatch(baseline, editor),
+        rows: buildEditorMismatchDiffRows(baseline, editor),
+        leftHead: '笔记版本 · ' + baseline.split('\n').length + ' 行',
+        rightHead: '编辑区版本 · ' + editor.split('\n').length + ' 行',
+        singleScreen: sheet,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onKeepPage: (): void => {
+          this.closeEditorMismatchDialog();
+        },
+        onUseNote: (): void => {
+          this.closeEditorMismatchDialog();
+          void this.reloadStaleVaultNote(vaultId, path);
+        },
+        onUseEditor: (): void => {
+          this.closeEditorMismatchDialog();
+          this.saveEditorMismatchFromEditor(vaultId, path, pane);
+        }
+      }),
+      cancel: (): void => {
+        this.editorMismatchDialogOpen = false;
+      },
+      autoCancel: true,
+      alignment: sheet ? DialogAlignment.Bottom : DialogAlignment.Center,
+      customStyle: true,
+      onWillDismiss: (action: DismissDialogAction): void => {
+        action.dismiss();
+        this.editorMismatchDialogOpen = false;
       }
-      if (result.index === 2) {
-        this.saveEditorMismatchFromEditor(vaultId, path, pane);
-      }
-    }).catch((error: BusinessError): void => {
-      this.editorMismatchDialogOpen = false;
-      hilog.error(DOMAIN, TAG, '编辑恢复弹窗打开失败：%{public}s',
-        error.message ?? 'unknown');
-      promptAction.showToast({ message: '无法打开恢复提示，请稍后重试' });
     });
+    this.editorMismatchDiffCtl.open();
+  }
+
+  /** 关闭编辑不一致弹窗并复位防重入标记（三出口与遮罩/关闭按钮共用）。 */
+  private closeEditorMismatchDialog(): void {
+    if (this.editorMismatchDiffCtl !== null) {
+      this.editorMismatchDiffCtl.close();
+      this.editorMismatchDiffCtl = null;
+    }
+    this.editorMismatchDialogOpen = false;
   }
 
   /**
@@ -5211,7 +5213,7 @@ struct Index {
       return false;
     }
     if (text !== savedText && !this.rightEditorDirty) {
-      if (text.replace(/\r\n/g, '\n') === savedText.replace(/\r\n/g, '\n')) {
+      if (isEditorTextEquivalent(savedText, text)) {
         return true;
       }
       // 「以编辑区为准」一次性放行（v1.70 AC-01）：跳过弹窗拒写，落进下方正常保存路径；
@@ -5582,7 +5584,7 @@ struct Index {
       (this.editorDirty || this.rightEditorDirty);
     const pane: string = sourceIsRight ? 'right' : 'left';
     if (text !== expectedText && !sourceDirty && !sharedNoteDirty) {
-      if (text.replace(/\r\n/g, '\n') === expectedText.replace(/\r\n/g, '\n')) {
+      if (isEditorTextEquivalent(expectedText, text)) {
         return true;
       }
       // 「以编辑区为准」一次性放行（v1.70 AC-01）：跳过弹窗拒写，落进下方正常保存路径；

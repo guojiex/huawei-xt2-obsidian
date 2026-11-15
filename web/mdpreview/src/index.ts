@@ -139,7 +139,10 @@ function b64decode(b64: string): string {
   for (let i = 0; i < bin.length; i++) {
     bytes[i] = bin.charCodeAt(i)
   }
-  return new TextDecoder().decode(bytes)
+  // ignoreBOM:true —— 无损解码（2026-11-15 BOM 误报修复，与 mdeditor 同步）：
+  // WHATWG TextDecoder 默认吞掉开头 U+FEFF；预览侧同样下发 b64 → 必须与编辑器
+  // 口径一致，否则预览与编辑内容出现幽灵差异。
+  return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes)
 }
 
 /** 当前笔记所在目录（库内相对，'' = 根目录）—— 相对图片引用的解析基准 */

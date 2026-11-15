@@ -2477,6 +2477,27 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
   顺序隐患、`copyFileSync` 无校验直拷——落码按本仓库约定重写（v1.56 已按本仓库约定实现）。
 - 全链路（浏览器/相册分享 → 存入笔记）待模拟器 + XT2 实测后回填 ✅。
 
+## AG 组：TextDecoder 的 BOM 语义（2026-11-15，v1.70 BOM 误报修复核实）
+
+### AG1 ⚠️ WHATWG 与 OHOS 文档对 `ignoreBOM` 默认行为的解释相反；用等价豁免兜底，不依赖任何一边
+
+- 现象（模拟器 hilog 实证，2026-11-15）：带 UTF-8 BOM（U+FEFF，Windows 记事本等工具产物）的
+  笔记经 ArkTS `BridgeCodec.encode` b64 下发到 Web，Web 侧 `new TextDecoder().decode(bytes)`
+  按 WHATWG 默认**剥掉开头 BOM** → 编辑器内容比基线少 1 字符且无脏标，`flushSave` 误判
+  「内容不一致」弹恢复窗（基线 716 字符 / 编辑器 715 字符，首个差异 U+FEFF vs U+23）。
+- WHATWG / Node / Chromium 口径：`TextDecoder` 默认 `ignoreBOM:false` = **解码结果丢弃开头
+  U+FEFF**；`{ignoreBOM:true}` 才保留。Node 22 实测：`new TextDecoder().decode(EF BB BF 23)`
+  → `"#"`；`{ignoreBOM:true}` → `"\uFEFF#"`。
+- OHOS `util.TextDecoder`（API 7+；`TextDecoderOptions` 自 API 11）官方文档两处自洽但与
+  WHATWG 相反：属性表「ignoreBOM 为 false 表示**解码结果包含 BOM 标记**」+ 构造说明
+  「默认为 false」→ 按 OHOS 文档，默认**保留** BOM。未上机验证（⚠️）。
+- 落码决策：Web 侧三处解码改 `new TextDecoder('utf-8', { ignoreBOM: true })` 无损解码
+  （`web/mdeditor/src/index.ts` / `web/mdpreview/src/index.ts` / `web/shared/codec.ts`）；
+  ArkTS 侧 `BridgeCodec.decode` **不动**（OHOS 语义存疑），`Index.ets` 两处保存前校验改
+  `isEditorTextEquivalent`（剥前导 U+FEFF + CRLF→LF）统一豁免——两种解释下带 BOM 笔记都
+  不会误弹窗。已定决策见 [v1.70 需求文档](../releases/v1.70/需求文档.md) 70.5。
+- 附带结论：`TextEncoder`（两侧）把字符串里的 U+FEFF 原样编码，不剥离；桥接下发侧无此问题。
+
 
 
 

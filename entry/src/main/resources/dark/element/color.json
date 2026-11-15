@@ -15,6 +15,8 @@
     { "name": "danger", "value": "#FF6B6B" },
     { "name": "danger_press", "value": "#FF8A8A" },
     { "name": "danger_bg", "value": "#24FF6B6B" },
+    { "name": "diff_del_bg", "value": "#33CF4048" },
+    { "name": "diff_add_bg", "value": "#2E35916D" },
     { "name": "hl_code", "value": "#4EC5A5" },
 
     { "name": "cb_note", "value": "#5AA4FF" },
