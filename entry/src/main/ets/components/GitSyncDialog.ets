@@ -14,6 +14,7 @@ import { FocusRequest } from '../common/FocusRequest';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 type GitSyncResult = 'none' | 'success' | 'stale' | 'auth' | 'network' | 'local';
+type GitSyncRetryAction = 'sync' | 'remoteStatus';
 
 @CustomDialog
 export struct GitSyncDialog {
@@ -31,7 +32,10 @@ export struct GitSyncDialog {
   @State trackingBranch: string = '';
   @State authUsername: string = '';
   @State tokenInput: string = '';
+  @State tokenVisible: boolean = false;
   @State credentialEditorOpen: boolean = false;
+  @State retryAction: GitSyncRetryAction = 'sync';
+  @State requiresNewToken: boolean = false;
   @State hasStoredToken: boolean = false;
   @State statusReady: boolean = false;
   @State trackingKnown: boolean = false;
@@ -320,6 +324,8 @@ export struct GitSyncDialog {
         this.hasStoredToken = true;
         this.credentialEditorOpen = false;
         this.tokenInput = '';
+        this.tokenVisible = false;
+        this.requiresNewToken = false;
       } catch (_error) {
         this.statusMessage = '令牌未能安全保存；下次同步时需要重新填写。';
       }
@@ -335,6 +341,8 @@ export struct GitSyncDialog {
       this.result = 'auth';
       this.resultTitle = '需要用户名';
       this.resultBody = '请填写此 Git 服务对应的用户名后重试。';
+      this.retryAction = 'remoteStatus';
+      this.requiresNewToken = false;
       this.credentialEditorOpen = true;
       return;
     }
@@ -375,6 +383,8 @@ export struct GitSyncDialog {
       this.result = 'auth';
       this.resultTitle = '需要用户名';
       this.resultBody = '请填写此 Git 服务对应的用户名后重试。';
+      this.retryAction = 'sync';
+      this.requiresNewToken = false;
       this.credentialEditorOpen = true;
       return;
     }
@@ -451,6 +461,9 @@ export struct GitSyncDialog {
     this.checkingRemoteOnly = false;
     this.currentStep = -1;
     this.onBusyChange(false);
+    if (this.result === 'auth') {
+      FocusRequest.safely(this.getUIContext(), 'git-sync-token-input');
+    }
   }
 
   private setStep(step: number, label: string): void {
@@ -466,16 +479,25 @@ export struct GitSyncDialog {
       lower.includes('forbidden') || lower.includes('authentication') ? 'auth' :
       message.includes('已前进') || lower.includes('non-fast-forward') ? 'stale' :
       this.checkingRemoteOnly || this.currentStep >= this.remoteStepIndex() ? 'network' : 'local';
+    this.retryAction = this.checkingRemoteOnly ? 'remoteStatus' : 'sync';
+    this.requiresNewToken = this.result === 'auth';
     if (this.result === 'stale') {
       this.resultTitle = '远端已前进';
       this.resultBody = '本次未推送，本地提交已保留。可改推到其他分支，再在电脑上合并。';
     } else if (this.result === 'auth') {
-      this.resultTitle = '令牌无效或没有写权限';
-      this.resultBody = '本次未推送，本地提交已保留。请更换令牌或检查仓库写权限。';
+      if (this.retryAction === 'remoteStatus') {
+        this.resultTitle = '拉取远端状态时认证失败';
+        this.resultBody = '令牌可能已失效或缺少读取权限；未读取到远端新状态，本地库内容未变。输入新令牌后验证并重试拉取。';
+      } else {
+        this.resultTitle = '令牌无效或没有写权限';
+        this.resultBody = '本次未推送，本地提交已保留。请更换具有仓库写权限的令牌后重试。';
+      }
       this.credentialEditorOpen = true;
     } else if (this.result === 'network') {
       this.resultTitle = '网络连接失败';
-      this.resultBody = '本次未推送，本地提交已保留；检查网络后可以重试。';
+      this.resultBody = this.retryAction === 'remoteStatus'
+        ? '无法读取远端状态；本地库内容未变，检查网络后可重试拉取。'
+        : '本次未推送，本地提交已保留；检查网络后可以重试。';
     } else {
       this.resultTitle = operation + '未完成';
       this.resultBody = '当前状态未确认；请刷新 Git 状态后再决定是否重试。';
@@ -516,7 +538,50 @@ export struct GitSyncDialog {
     }
     this.hasDismissed = true;
     this.tokenInput = '';
+    this.tokenVisible = false;
     this.onDismiss();
+  }
+
+  private cancelCredentialEdit(): void {
+    this.tokenInput = '';
+    this.tokenVisible = false;
+    this.credentialEditorOpen = false;
+  }
+
+  private retryActionLabel(): string {
+    if (this.retryAction === 'remoteStatus') {
+      return this.result === 'auth' ? '验证并重试拉取' : '重试拉取';
+    }
+    return this.result === 'auth' ? '验证并重试推送' : '重试';
+  }
+
+  private retryActionEnabled(): boolean {
+    if (this.busy) {
+      return false;
+    }
+    if (this.result !== 'auth') {
+      return true;
+    }
+    if (this.requiresNewToken && this.tokenInput.trim().length === 0) {
+      return false;
+    }
+    if (!this.hasStoredToken && this.tokenInput.trim().length === 0) {
+      return false;
+    }
+    return this.isGitHubRemote() || this.authUsername.trim().length > 0;
+  }
+
+  private retryFailedOperation(): void {
+    if (this.busy) {
+      return;
+    }
+    const action: GitSyncRetryAction = this.retryAction;
+    this.dismissResult();
+    if (action === 'remoteStatus') {
+      void this.refreshRemoteStatus();
+      return;
+    }
+    void this.runPrimaryAction();
   }
 
   private dismissResult(): void {
@@ -719,8 +784,8 @@ export struct GitSyncDialog {
               this.branchEditing = true;
             })
         }
-        if (this.result === 'auth') {
-          Text('更换令牌')
+        if (this.result === 'auth' && !this.credentialEditorOpen) {
+          Text('更新此仓库令牌')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.brand'))
             .onClick((): void => { this.credentialEditorOpen = true; })
@@ -739,18 +804,67 @@ export struct GitSyncDialog {
   private CredentialEditor() {
     if (this.credentialEditorOpen) {
       Column({ space: Space.s2 }) {
+        if (this.result === 'auth') {
+          Text(this.hasStoredToken ? '更新此仓库的访问令牌' : '填写此仓库的访问令牌')
+            .fontSize(FontSize.body3)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+            .width('100%')
+        }
         if (!this.isGitHubRemote()) {
           TextInput({ placeholder: '用户名（Gitee / GitLab）', text: this.authUsername })
             .fontSize(FontSize.body3)
+            .enabled(!this.busy)
             .onChange((value: string): void => { this.authUsername = value; })
             .accessibilityText('Git 用户名')
         }
-        TextInput({ placeholder: this.hasStoredToken ? '输入新令牌以替换' : '访问令牌',
-          text: this.tokenInput })
-          .type(InputType.Password)
-          .fontSize(FontSize.body3)
-          .onChange((value: string): void => { this.tokenInput = value; })
-          .accessibilityText('Git 访问令牌')
+        Column({ space: Space.s1 }) {
+          Text('访问令牌')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+          Row({ space: Space.s1 }) {
+            TextInput({ placeholder: this.hasStoredToken ? '输入新令牌以替换' : '访问令牌',
+              text: this.tokenInput })
+              .type(this.tokenVisible ? InputType.Normal : InputType.Password)
+              .enabled(!this.busy)
+              .focusable(true)
+              .layoutWeight(1)
+              .height(Size.buttonH)
+              .fontSize(FontSize.body3)
+              .fontColor($r('app.color.text_primary'))
+              .placeholderColor($r('app.color.text_tertiary'))
+              .padding({ left: Space.s3, right: Space.s2 })
+              .backgroundColor(Color.Transparent)
+              .id('git-sync-token-input')
+              .onChange((value: string): void => { this.tokenInput = value; })
+              .accessibilityText('Git 访问令牌')
+            Text(this.tokenVisible ? '隐藏' : '显示')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.brand'))
+              .height(Size.touch)
+              .enabled(!this.busy)
+              .padding({ left: Space.s3, right: Space.s3 })
+              .textAlign(TextAlign.Center)
+              .accessibilityText(this.tokenVisible ? '隐藏访问令牌' : '显示访问令牌')
+              .onClick((): void => { this.tokenVisible = !this.tokenVisible; })
+          }
+          .width('100%')
+          .borderRadius(Radius.control)
+          .backgroundColor($r('app.color.bg_secondary'))
+        }
+        .width('100%')
+        if (this.result === 'auth') {
+          Text('仅在远端认证成功后替换本机安全存储中的当前库令牌。')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .width('100%')
+          Text('取消')
+            .fontSize(FontSize.body3)
+            .fontColor($r('app.color.text_secondary'))
+            .padding({ top: Space.s1, bottom: Space.s1 })
+            .enabled(!this.busy)
+            .onClick((): void => { this.cancelCredentialEdit(); })
+        }
       }
       .width('100%')
     } else {
@@ -903,10 +1017,10 @@ export struct GitSyncDialog {
           this.dismiss();
         })
       } else if (this.result !== 'none') {
-        UtilityDialogAction(UIUtils.makeBinding<string>(() => '重试'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => {
-          this.dismissResult();
-          void this.runPrimaryAction();
-        })
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.retryActionLabel()), 'primary', this.singleScreen,
+          UIUtils.makeBinding<boolean>(() => this.retryActionEnabled()), (): void => {
+            this.retryFailedOperation();
+          })
       } else {
         UtilityDialogAction(UIUtils.makeBinding<string>(() => this.primaryActionLabel()),
           'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.primaryActionEnabled()),
