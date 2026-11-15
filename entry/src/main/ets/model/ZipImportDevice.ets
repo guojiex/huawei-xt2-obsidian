@@ -22,15 +22,17 @@ const NO_SPACE_ERROR_CODE: number = 13900025;
 /** 系统 .zip 选择器；用户取消时 pick() 返回 null。 */
 export class DeviceZipPicker {
   private context: common.UIAbilityContext;
+  private filterDescription: string;
 
-  constructor(context: common.UIAbilityContext) {
+  constructor(context: common.UIAbilityContext, filterDescription: string = '笔记库备份') {
     this.context = context;
+    this.filterDescription = filterDescription;
   }
 
   async pick(): Promise<ZipPickResult | null> {
     const options: picker.DocumentSelectOptions = {
       maxSelectNumber: 1,
-      fileSuffixFilters: ['笔记库备份|.zip']
+      fileSuffixFilters: [this.filterDescription + '|.zip']
     };
     const documentPicker: picker.DocumentViewPicker = new picker.DocumentViewPicker(this.context);
     const uris: Array<string> = await documentPicker.select(options);

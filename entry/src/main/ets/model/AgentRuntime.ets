@@ -48,6 +48,19 @@ export class AgentRuntime {
     }
   }
 
+  /** Drop cached operations after a full app-data restore and bind to the reloaded registry. */
+  static reloadAfterBackupRestore(registry: VaultRegistry): void {
+    AgentRuntime.operations.clear();
+    AgentRuntime.operationOrderByVault.clear();
+    AgentRuntime.latestOperationByVault.clear();
+    AgentRuntime.operationsLoadedByVault.clear();
+    AgentRuntime.runningSessions.clear();
+    AgentRuntime.runningVaults.clear();
+    AgentRuntime.deletingVaults.clear();
+    AgentRuntime.registry = registry;
+    AgentRuntime.operationStorage = new AgentOperationStorage(registry);
+  }
+
   static isVaultRunning(vaultId: string): boolean {
     return AgentRuntime.runningVaults.has(vaultId);
   }

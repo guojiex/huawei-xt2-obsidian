@@ -256,6 +256,37 @@ export class AgentMemoryStore {
     }
   }
 
+  /** Flush and cancel debounced writes before the Agent data root is moved for app restore. */
+  static async prepareForBackupRestore(): Promise<void> {
+    await AgentMemoryStore.flushPending();
+    const timerKeys: string[] = [];
+    AgentMemoryStore.writeTimers.forEach((timerId: number, timerKey: string): void => {
+      clearTimeout(timerId);
+      timerKeys.push(timerKey);
+    });
+    for (let i: number = 0; i < timerKeys.length; i++) {
+      AgentMemoryStore.writeTimers.delete(timerKeys[i]);
+    }
+  }
+
+  /** Replace all in-memory conversations after the on-disk Agent root has been swapped. */
+  static reloadAfterBackupRestore(registry: VaultRegistry): void {
+    const timerKeys: string[] = [];
+    AgentMemoryStore.writeTimers.forEach((timerId: number, timerKey: string): void => {
+      clearTimeout(timerId);
+      timerKeys.push(timerKey);
+    });
+    for (let i: number = 0; i < timerKeys.length; i++) {
+      AgentMemoryStore.writeTimers.delete(timerKeys[i]);
+    }
+    AgentMemoryStore.sessionsByVault.clear();
+    AgentMemoryStore.activeByVault.clear();
+    AgentMemoryStore.panelStateByVault.clear();
+    AgentMemoryStore.loadedVaults.clear();
+    AgentMemoryStore.registry = registry;
+    AgentMemoryStore.storage = new AgentConversationStorage(registry);
+  }
+
   static async flushVault(vaultId: string): Promise<void> {
     const sessions: AgentSession[] | undefined = AgentMemoryStore.sessionsByVault.get(AgentMemoryStore.keyFor(vaultId));
     if (sessions === undefined) {

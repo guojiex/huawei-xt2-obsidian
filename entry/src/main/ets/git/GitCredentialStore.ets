@@ -60,17 +60,19 @@ export class GitCredentialStore {
   }
 
   /** 删除某库令牌（未存过视为成功，供删库 / 移除 Git 库时清理）。 */
-  static removeToken(vaultId: string): void {
+  static removeToken(vaultId: string): boolean {
     const query: asset.AssetMap = new Map();
     query.set(asset.Tag.ALIAS, GitCredentialStore.aliasBytesOf(vaultId));
     try {
       asset.removeSync(query);
+      return true;
     } catch (error) {
       const err = error as BusinessError;
       if (err.code === 24000002) {
-        return;
+        return true;
       }
       hilog.warn(CRED_DOMAIN, CRED_TAG, '删除令牌失败 code=%{public}d', err.code);
+      return false;
     }
   }
 

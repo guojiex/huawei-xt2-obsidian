@@ -65,6 +65,7 @@ export class FullTextSearchService {
   private static store: SearchStore | null = null;
   private static registry: SearchVaultRegistry | null = null;
   private static storeReady: Promise<void> | null = null;
+  private static backupRestorePaused: boolean = false;
   /** 已删除（或正在删除）的库：索引行清理中，相关任务一律取消。 */
   private static readonly discardedKeys: Set<string> = new Set<string>();
   /** 本进程内已完成对账的库（对账每库每进程一次）。 */
@@ -94,8 +95,58 @@ export class FullTextSearchService {
     });
   }
 
+  /** Stop new index work and let current builders/drainers finish before replacing vault files. */
+  static async prepareForBackupRestore(): Promise<void> {
+    FullTextSearchService.backupRestorePaused = true;
+    const pending: Promise<void>[] = [];
+    FullTextSearchService.buildInFlight.forEach((task: Promise<void>): void => { pending.push(task); });
+    FullTextSearchService.reconcileInFlight.forEach((task: Promise<void>): void => { pending.push(task); });
+    FullTextSearchService.drainInFlight.forEach((task: Promise<void>): void => { pending.push(task); });
+    for (let i: number = 0; i < pending.length; i++) {
+      try {
+        await pending[i];
+      } catch (error) {
+        // A failed background index task must not prevent the user from restoring their backup.
+      }
+    }
+  }
+
+  /** Clear the rebuildable database and all process-local index state after a committed restore. */
+  static async resetAfterBackupRestore(): Promise<void> {
+    const store: SearchStore | null = FullTextSearchService.store;
+    try {
+      if (store !== null && FullTextSearchService.storeReady !== null) {
+        await FullTextSearchService.storeReady;
+        const keys: string[] = await store.listVaultKeys();
+        for (let i: number = 0; i < keys.length; i++) {
+          await store.clearVault(keys[i]);
+        }
+      }
+    } catch (error) {
+      // Search data is disposable; the next hash reconciliation repairs it if the RDB is available.
+    } finally {
+      FullTextSearchService.discardedKeys.clear();
+      FullTextSearchService.reconciledKeys.clear();
+      FullTextSearchService.pendingDirty.clear();
+      FullTextSearchService.buildInFlight.clear();
+      FullTextSearchService.reconcileInFlight.clear();
+      FullTextSearchService.drainInFlight.clear();
+      FullTextSearchService.progressListeners.clear();
+      FullTextSearchService.progressState.clear();
+      FullTextSearchService.failureCounts.clear();
+      FullTextSearchService.backupRestorePaused = false;
+    }
+  }
+
+  static resumeAfterBackupRestoreFailure(): void {
+    FullTextSearchService.backupRestorePaused = false;
+  }
+
   /** 启动孤儿清理：索引里存在但注册表已没有的 vaultKey → 整库清索引（40.9）。 */
   static async cleanupOrphans(): Promise<void> {
+    if (FullTextSearchService.backupRestorePaused) {
+      return;
+    }
     const store: SearchStore | null = FullTextSearchService.store;
     const registry: SearchVaultRegistry | null = FullTextSearchService.registry;
     if (store === null || registry === null || FullTextSearchService.storeReady === null) {
@@ -137,6 +188,9 @@ export class FullTextSearchService {
   /** 正文搜索（40.2）：消化 pending → 确保建库/对账 → FTS 查询 → 现文件核对。 */
   static async searchDetailed(registry: SearchVaultRegistry, vaultId: string, query: string,
     onProgress: ProgressListener): Promise<SearchOutcome> {
+    if (FullTextSearchService.backupRestorePaused) {
+      return { results: [], indexState: 'error', indexComplete: false, reconciledAt: 0 };
+    }
     const store: SearchStore | null = FullTextSearchService.store;
     if (store === null || FullTextSearchService.storeReady === null) {
       return { results: [], indexState: 'error', indexComplete: false, reconciledAt: 0 };
@@ -225,6 +279,9 @@ export class FullTextSearchService {
   /* --------------------------------------------------------------------- */
 
   private static registerPending(vaultId: string, paths: string[]): void {
+    if (FullTextSearchService.backupRestorePaused) {
+      return;
+    }
     const store: SearchStore | null = FullTextSearchService.store;
     const registry: SearchVaultRegistry | null = FullTextSearchService.registry;
     if (store === null || registry === null) {

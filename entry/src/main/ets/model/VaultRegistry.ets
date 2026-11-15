@@ -204,6 +204,22 @@ export class VaultRegistry implements SearchVaultRegistry {
     return this.context;
   }
 
+  /** Reload the just-restored registry and discard accessors bound to the previous library set. */
+  reloadAfterBackupRestore(): void {
+    const store: preferences.Preferences = preferences.getPreferencesSync(this.context, { name: this.PREF_NAME });
+    const rawJson: string = store.getSync(this.PREF_KEY, '') as string;
+    const loaded: VaultRegistryState | null = this.parseState(rawJson);
+    if (loaded === null) {
+      throw new Error('恢复后的知识库注册信息无效；已保留恢复记录供下次启动修复。');
+    }
+    this.store = store;
+    this.state = loaded;
+    this.accessCache.clear();
+    this.ensureVaultDirs();
+    this.ensureCurrentValid();
+    this.persist();
+  }
+
   /** 当前库条目（不存在/列表空时返回 null）。 */
   currentEntry(): VaultEntry | null {
     return this.findEntry(this.state.currentVaultId);

@@ -95,7 +95,7 @@
 | 本地 zip 导出 / 导入 | 中 | 待评估 | 压缩 + 文件选择能力 | 内容导出已分配 v0.8；设置页导出入口分配 [v1.37](releases/v1.37/需求文档.md)，ZIP 新建库导入分配 [v1.36](releases/v1.36/需求文档.md)；完整应用备份分配 [v1.66](releases/v1.66/需求文档.md)（应用级备份与恢复，2026-11-14 用户拍板，`open_questions.md` Q2；同日补齐导出范围、恢复校验 / 预览 / 独立覆盖确认 / 失败重试的原型交互，66.5） |
 | 设置页导出当前知识库 | 中高 | S | v0.8 知识库 ZIP、v1.25 25.18 库级分享 | 设置 → 数据提供导出入口，重置前建议先导出；分配 [v1.37](releases/v1.37/需求文档.md)，不含导入和完整应用备份 |
 | 导出 PDF | 中高 | M | 预览渲染 | 2026-10-31 用户提出：笔记导出 PDF。API 核实完成（api_notes AD 组：HMS PDF Kit since 12、无权限；打印框架否决），分配 [v1.53](releases/v1.53/需求文档.md)（A4 竖版 / 逐页渲染 / 分享面板，2026-11-10 拍板） |
-| 系统备份（Backup Extension） | 中 | S | 工程已生成该能力 | [v1.66](releases/v1.66/需求文档.md) 66.4 仅出纳入 / 不纳入评估结论（不落码，2026-11-14），是否实现待该结论 |
+| 系统备份（Backup Extension） | 中 | S | BackupExtensionAbility / `backup_config.json` | [v1.66](releases/v1.66/需求文档.md) 66.4 结论（2026-11-15）：不作为主备份 / 唯一通道；系统迁移可条件性保留。配置可覆盖 files / preferences 等沙箱路径，但由系统调度，无应用侧公开主动触发；需要应用已安装，PC / 2in1 不支持、平板自由多窗不生效；`onRelease` 是 API20+ 生命周期收尾钩子（最多 5 秒），不是前台备份触发或 UI 成功回调。官方配置路径未记载 AssetStoreKit 覆盖，Git 令牌仍应排除并要求重填。继续以手动 ZIP 为可携带备份。[Huawei 指南](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/app-file-backup-extension/) |
 | 提交历史查看 / 单文件回滚 | 中 | M | 本地 git 历史 | 后置，isomorphic-git 已具备能力 |
 | **后台自动同步**（切到后台仍继续传输） | 中高 | M | 长时任务 + 两个权限 | ✗ **先不做**（2026-10-17 定），v2 再评估 |
 | 同步冲突提醒 / 未推送改动角标 | 中 | S | 本地 git 状态 | 建议纳入，替代后台同步的低配方案 |

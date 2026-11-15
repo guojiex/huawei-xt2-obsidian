@@ -64,6 +64,20 @@ export class AgentConfigStore {
     }
   }
 
+  /** Clear the in-memory snapshot and reread the restored Preferences document. */
+  static reloadAfterBackupRestore(context: common.UIAbilityContext): void {
+    AgentConfigStore.revision = 0;
+    AgentConfigStore.systemPrompt = BUILTIN_AGENT_PROMPT;
+    AgentConfigStore.promptRevision = BUILTIN_AGENT_PROMPT_REVISION;
+    AgentConfigStore.skillPrompts.clear();
+    AgentConfigStore.enabledTools.clear();
+    AgentConfigStore.store = null;
+    AgentConfigStore.initialized = false;
+    AgentConfigStore.invalidStoredValue = false;
+    AgentConfigStore.storageUnavailable = false;
+    AgentConfigStore.initialize(context);
+  }
+
   private static ensure(): void {
     for (let i = 0; i < BUILTIN_AGENT_SKILLS.length; i++) {
       const skill: string = BUILTIN_AGENT_SKILLS[i].id;

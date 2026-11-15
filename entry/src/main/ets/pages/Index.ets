@@ -118,6 +118,8 @@ import { NoteDraftRecovery, NoteDraftService } from '../model/NoteDraftService';
 import { shouldShowSaveFeedback } from '../model/SaveFeedbackPolicy';
 import { ShareArchiveService } from '../model/ShareArchiveService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
+import { ApplicationBackupOutcome, ApplicationBackupService } from '../model/ApplicationBackupService';
+import { AgentConfigStore } from '../model/AgentConfigStore';
 import { SearchOutcome } from '../model/SearchStore';
 import { CrossVaultSearchOutcome, CrossVaultSearchService } from '../model/CrossVaultSearchService';
 import {
@@ -585,6 +587,8 @@ struct Index {
   private movePathCtl: CustomDialogController | null = null;
   /** v1.68 拆分：分享域子组件 API（ShareFlowPanel 挂载后经 onApiReady 回传持有）。 */
   private shareFlowApi: ShareFlowApi | null = null;
+  private applicationBackupService: ApplicationBackupService | null = null;
+  private applicationDataSnapshotInProgress: boolean = false;
 
   aboutToAppear(): void {
     // v1.46 46.6 修复真机双重避让时固定了 RESIZE，但 RESIZE 把键盘起落变成一次
@@ -1370,7 +1374,8 @@ struct Index {
   }
 
   private scheduleWorkspaceSessionSave(): void {
-    if (!this.workspaceSessionSavingEnabled || this.workspaceSessionRestoring || this.topView !== 'note' ||
+    if (this.applicationDataSnapshotInProgress || !this.workspaceSessionSavingEnabled ||
+      this.workspaceSessionRestoring || this.topView !== 'note' ||
       this.workspaceOpenRequests > 0 || this.currentVaultId.length === 0) {
       return;
     }
@@ -1384,6 +1389,9 @@ struct Index {
   }
 
   private flushWorkspaceSessionSave(force: boolean = false): boolean {
+    if (this.applicationDataSnapshotInProgress) {
+      return false;
+    }
     if (this.workspaceSessionSaveTimer !== -1) {
       clearTimeout(this.workspaceSessionSaveTimer);
       this.workspaceSessionSaveTimer = -1;
@@ -1400,7 +1408,8 @@ struct Index {
   }
 
   private saveWorkspaceSessionNow(force: boolean = false): boolean {
-    if (!this.workspaceSessionSavingEnabled || this.workspaceSessionRestoring || (!force && this.topView !== 'note') ||
+    if (this.applicationDataSnapshotInProgress || !this.workspaceSessionSavingEnabled ||
+      this.workspaceSessionRestoring || (!force && this.topView !== 'note') ||
       this.workspaceOpenRequests > 0 || this.currentVaultId.length === 0) {
       return false;
     }
@@ -3012,6 +3021,115 @@ struct Index {
 
   private openAgentNote(path: string): void {
     void this.loadAgentNote(path);
+  }
+
+  private appBackupService(): ApplicationBackupService {
+    if (this.applicationBackupService === null) {
+      const registry: VaultRegistry = VaultRegistry.get();
+      this.applicationBackupService = new ApplicationBackupService(registry.abilityContext(), registry);
+    }
+    return this.applicationBackupService;
+  }
+
+  private async exportApplicationBackup(): Promise<ApplicationBackupOutcome> {
+    if (!await this.flushWorkspaceSaves()) {
+      return { status: 'failed', detail: '编辑中的笔记尚未安全保存，备份未生成。请重试。', preview: null };
+    }
+    this.flushWorkspaceSessionSave(true);
+    this.applicationDataSnapshotInProgress = true;
+    try {
+      return await this.appBackupService().exportToSystemSave();
+    } finally {
+      this.applicationDataSnapshotInProgress = false;
+      this.reschedulePendingNoteSaves();
+      this.scheduleWorkspaceSessionSave();
+    }
+  }
+
+  private async prepareForApplicationRestore(): Promise<boolean> {
+    this.cancelPendingNoteSaves();
+    if (!await this.flushWorkspaceSaves()) {
+      this.reschedulePendingNoteSaves();
+      return false;
+    }
+    this.flushWorkspaceSessionSave(true);
+    this.stopWorkspaceSessionSaving();
+    this.applicationDataSnapshotInProgress = true;
+    return true;
+  }
+
+  private applicationRestoreFailed(status: string): void {
+    if (status === 'recovery_required') {
+      return;
+    }
+    this.applicationDataSnapshotInProgress = false;
+    FullTextSearchService.resumeAfterBackupRestoreFailure();
+    this.workspaceSessionSavingEnabled = this.settingsReturnView === 'note';
+    this.reschedulePendingNoteSaves();
+    this.scheduleWorkspaceSessionSave();
+  }
+
+  private async applicationRestoreCompleted(): Promise<void> {
+    const registry: VaultRegistry = VaultRegistry.get();
+    registry.reloadAfterBackupRestore();
+    AgentConfigStore.reloadAfterBackupRestore(registry.abilityContext());
+    AgentMemoryStore.reloadAfterBackupRestore(registry);
+    AgentRuntime.reloadAfterBackupRestore(registry);
+    await FullTextSearchService.resetAfterBackupRestore();
+
+    this.splitLayoutStore = null;
+    this.editorPreferenceStore = null;
+    this.vaultStatsPreferenceStore = null;
+    this.screenSaverPreferenceStore = null;
+    this.xiaoyiEntryPreferenceStore = null;
+    this.editorExperienceStore = null;
+    this.recentOpenStore = null;
+    this.recentErrorStore = null;
+    this.workspaceSessionStore = null;
+    this.refreshFromRegistry();
+    const appContext = registry.abilityContext();
+    const xiaoyiStore: XiaoyiEntryPreferenceStore = new XiaoyiEntryPreferenceStore(appContext);
+    this.xiaoyiEntryPreferenceStore = xiaoyiStore;
+    this.showXiaoyiDialogEntry = xiaoyiStore.load();
+    const editorStore: EditorPreferenceStore = new EditorPreferenceStore(appContext);
+    this.editorPreferenceStore = editorStore;
+    this.showLineNumbers = editorStore.showLineNumbers();
+    this.followPreviewEnabled = editorStore.followPreview();
+    const statsStore: VaultStatsPreferenceStore = new VaultStatsPreferenceStore(appContext);
+    this.vaultStatsPreferenceStore = statsStore;
+    this.statsEnabled = statsStore.statsEnabled();
+    const screenSaverStore: ScreenSaverPreferenceStore = new ScreenSaverPreferenceStore(appContext);
+    this.screenSaverPreferenceStore = screenSaverStore;
+    this.screenSaverIntervalMs = screenSaverStore.intervalMs();
+    const experienceStore: EditorExperienceStore = new EditorExperienceStore(appContext);
+    this.editorExperienceStore = experienceStore;
+    this.experienceMode = experienceStore.load();
+    const splitStore: SplitLayoutStore = new SplitLayoutStore(appContext);
+    this.splitLayoutStore = splitStore;
+    const splitState = splitStore.load();
+    this.navigationRatio = splitState.navigationRatio;
+    this.contentRatio = splitState.contentRatio;
+    const sessionStore: WorkspaceSessionStore = new WorkspaceSessionStore(appContext);
+    this.workspaceSessionStore = sessionStore;
+    this.resetOpenNotesAfterVaultRemoval();
+    this.workspaceSessionRestoreStarted = true;
+    this.pendingWorkspaceSession = sessionStore.load();
+    this.ensureRecentOpenStore();
+    this.refreshRecentOpenPaths();
+    await this.readAndPush('', false);
+    await this.readRightAndPush('');
+    this.treeSeq++;
+    this.trashSeq++;
+    this.topView = 'vaults';
+    this.refreshVaultManagerShareSummaries();
+    this.applicationDataSnapshotInProgress = false;
+    if (this.showXiaoyiDialogEntry) {
+      void this.loadAgentKitSlot();
+    }
+    this.scheduleIdleStatsRefresh();
+    promptAction.showToast({
+      message: '应用备份已恢复。外部目录请重新检查授权，Git 库请重新填写令牌。'
+    });
   }
 
   private async loadAgentNote(path: string): Promise<void> {
@@ -4930,6 +5048,9 @@ struct Index {
 
   private async flushRightSave(targetPath: string = this.rightFilePath,
     targetVaultId: string = this.currentVaultId, showFeedback: boolean = true): Promise<boolean> {
+    if (this.applicationDataSnapshotInProgress) {
+      return true;
+    }
     if (this.rightSaveTimer !== -1) {
       clearTimeout(this.rightSaveTimer);
       this.rightSaveTimer = -1;
@@ -5030,6 +5151,9 @@ struct Index {
   }
 
   private scheduleRightSave(): void {
+    if (this.applicationDataSnapshotInProgress) {
+      return;
+    }
     if (this.rightFilePath.length === 0) {
       return;
     }
@@ -5266,6 +5390,9 @@ struct Index {
    */
   private async flushSave(targetPath: string | null = null, targetVaultId: string = '',
     sourceBridge: EditorBridge | null = null, showFeedback: boolean = true): Promise<boolean> {
+    if (this.applicationDataSnapshotInProgress) {
+      return true;
+    }
     if (this.saveTimer !== -1) {
       clearTimeout(this.saveTimer);
       this.saveTimer = -1;
@@ -5421,7 +5548,7 @@ struct Index {
 
   /** 编辑器有改动：防抖 800ms 后再落盘，避免每次击键都写盘 */
   private scheduleSave(): void {
-    if (this.currentFilePath.length === 0) {
+    if (this.applicationDataSnapshotInProgress || this.currentFilePath.length === 0) {
       return;
     }
     if (this.saveTimer !== -1) {
@@ -8887,6 +9014,19 @@ struct Index {
       onExportCurrentVault: (focusId: string): void => {
         this.shareFlowApi?.openShareVaultFromManager(this.currentVaultId, focusId);
       },
+      onExportApplicationBackup: (): Promise<ApplicationBackupOutcome> => {
+        return this.exportApplicationBackup();
+      },
+      onChooseApplicationBackup: (): Promise<ApplicationBackupOutcome> => {
+        return this.appBackupService().chooseBackup();
+      },
+      onPrepareApplicationRestore: (): Promise<boolean> => this.prepareForApplicationRestore(),
+      onRestoreApplicationBackup: (): Promise<ApplicationBackupOutcome> => {
+        return this.appBackupService().restoreBackup();
+      },
+      onApplicationRestoreCompleted: (): Promise<void> => this.applicationRestoreCompleted(),
+      onApplicationRestoreFailed: (status: string): void => this.applicationRestoreFailed(status),
+      onCancelApplicationBackup: (): void => this.applicationBackupService?.cancelPending(),
       onResetSplit: (): void => { this.resetSplitLayout(); },
       onShowLineNumbersChange: (show: boolean): void => { this.setShowLineNumbers(show); },
       onShowXiaoyiDialogEntryChange: (show: boolean): void => { this.setShowXiaoyiDialogEntry(show); },

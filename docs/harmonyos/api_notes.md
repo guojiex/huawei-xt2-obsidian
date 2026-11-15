@@ -641,6 +641,13 @@ let secret = asset.querySync(query)[0].get(asset.Tag.SECRET) as Uint8Array;
 
 来源：[2026-11-02 六组问答归档](qa/2026-11-02_子线程IO与意图后台与任务通知_API24.md) §二。
 
+#### 2026-11-15 官方指南复核
+
+- 官方指南列出的 `backup_config.json` 标准路径包含应用 `files`、`preferences` 与 `database` 等沙箱目录；系统框架仍负责调度备份 / 恢复。`BackupExtensionAbility.onRelease(scenario)` 自 API 20 起作为流程结束后的生命周期收尾钩子，系统随后可能释放进程，扩展最多约 5 秒完成收尾；这不是应用侧主动触发接口，也不能据此视为前台 UI 可用的明确成功 / 失败回调。
+- 指南的配置路径未记载 AssetStoreKit 凭据覆盖，故不推断其支持迁移。Git 令牌继续从应用 ZIP 与系统迁移说明中排除，恢复后重新填写。
+- **结论**：Backup Extension 可作为系统换机流程的条件性补充，但设备形态、安装状态、系统调度和 AssetStoreKit 未记载限制使它不能作为唯一保命通道。继续保留手动 ZIP 应用备份。
+- 官方来源：[应用接入数据备份恢复](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/app-file-backup-extension/)。
+
 ### C5 TaskPool 子线程文件 IO ✅（AtomicFile 部分 ⚠️）
 
 官方两篇最佳实践（I/O 密集型任务开发指导、多线程操作密集型文件读写）直接在 `@Concurrent` 函数内使用 `fileIo.open/write/close` 与 `fileIo.statSync/readSync` → **子线程做文件 IO 是官方推荐模式，无限制记载**。

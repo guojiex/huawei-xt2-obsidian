@@ -17,6 +17,8 @@ export class VaultPathResolver {
   private static readonly DRAFTS_SEG: string = 'drafts';
   private static readonly SHARE_SEG: string = 'share';
   private static readonly ZIP_IMPORT_SEG: string = 'zip-import';
+  private static readonly APP_BACKUP_EXPORT_SEG: string = 'app-backup-export';
+  private static readonly APP_BACKUP_RESTORE_SEG: string = 'app-backup-restore';
 
   private context: common.UIAbilityContext;
 
@@ -137,6 +139,27 @@ export class VaultPathResolver {
   /** App 私有 Agent 数据根；与用户知识库、草稿和分享缓存分开。 */
   agentRoot(): string {
     return this.context.filesDir + '/app/agent';
+  }
+
+  /** Whole-app backup workspaces stay outside vault roots and are never included in exports. */
+  appBackupExportRoot(): string {
+    return this.context.cacheDir + '/' + VaultPathResolver.APP_BACKUP_EXPORT_SEG;
+  }
+
+  appBackupExportDir(id: string): string {
+    return this.joinChecked(this.appBackupExportRoot(), this.requireSafeSegment(id));
+  }
+
+  appBackupRestoreRoot(): string {
+    return this.context.filesDir + '/' + VaultPathResolver.APP_BACKUP_RESTORE_SEG;
+  }
+
+  appBackupImportCacheRoot(): string {
+    return this.context.cacheDir + '/' + VaultPathResolver.APP_BACKUP_RESTORE_SEG;
+  }
+
+  appBackupRestoreJournal(): string {
+    return this.appBackupRestoreRoot() + '/transaction.json';
   }
 
   /** 稳定库身份目录：filesDir/app/agent/vaults/<vaultKey>。 */

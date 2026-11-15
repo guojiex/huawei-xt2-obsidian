@@ -26,6 +26,8 @@ export interface ZipParsedEntry {
   uncompressedSize: number;
   localHeaderOffset: number;
   crc32: number;
+  /** ZIP DOS local-time timestamp converted to Epoch milliseconds. */
+  modifiedAtMs: number;
 }
 
 /** parse() 的返回：预览摘要 + 待写入条目（kind !== 'skip' 的部分）。 */
@@ -57,6 +59,8 @@ export interface ZipReaderPort {
 /** 写入端口：设备侧落到临时库目录，负责逐级建父目录。 */
 export interface ZipWriterPort {
   writeFile(relativePath: string, data: Uint8Array): Promise<void>;
+  /** Optional restore hook; only application backup imports opt into timestamp recovery. */
+  setModifiedTime?(relativePath: string, modifiedAtMs: number): void;
 }
 
 /** raw deflate 解压端口：设备侧用 zlib Zip.inflateInit2(-15) 实现（api_notes Y4）。 */
@@ -68,6 +72,13 @@ export interface InflatePort {
 export interface ZipExtractHooks {
   isCancelled?: () => boolean;
   onProgress?: (done: number, total: number) => void;
+  preserveMtime?: boolean;
+}
+
+export interface ZipParseProfile {
+  allowHiddenEntries: boolean;
+  acceptAllFiles: boolean;
+  requireMarkdown: boolean;
 }
 
 /** 系统选择器选中结果；用户取消由调用方返回 null 表达。 */
@@ -150,7 +161,13 @@ export class ZipImportService {
    * 解析 ZIP 的 Central Directory 并完成解压前校验（36.5）。
    * 抛 ZipImportError：corrupt / not_vault / over_limit / unsafe / encrypted。
    */
-  static async parse(reader: ZipReaderPort, limits: ZipImportLimits): Promise<ZipParsed> {
+  static async parse(reader: ZipReaderPort, limits: ZipImportLimits,
+    profile?: ZipParseProfile): Promise<ZipParsed> {
+    const activeProfile: ZipParseProfile = profile ?? {
+      allowHiddenEntries: false,
+      acceptAllFiles: false,
+      requireMarkdown: true
+    };
     const totalSize: number = await reader.size();
     const eocdOffset: number = await ZipImportService.locateEocd(reader, totalSize);
     const eocd: Uint8Array = await reader.readAt(eocdOffset, ZipImportService.EOCD_MIN_SIZE);
@@ -188,6 +205,8 @@ export class ZipImportService {
       }
       const generalFlag: number = ZipImportService.u16(central, cursor + 8);
       const method: number = ZipImportService.u16(central, cursor + 10);
+      const dosTime: number = ZipImportService.u16(central, cursor + 12);
+      const dosDate: number = ZipImportService.u16(central, cursor + 14);
       const crc: number = ZipImportService.u32(central, cursor + 16);
       const compressedSize: number = ZipImportService.u32(central, cursor + 20);
       const uncompressedSize: number = ZipImportService.u32(central, cursor + 24);
@@ -253,19 +272,19 @@ export class ZipImportService {
         }
       }
       // 隐藏项与目录条目静默跳过（36.4），不计入 skippedCount。
-      if (hidden || isDirectory) {
+      if ((!activeProfile.allowHiddenEntries && hidden) || isDirectory) {
         cursor = recordEnd;
         continue;
       }
-      const kind: string = ZipImportService.classifyEntryName(decoded);
+      const kind: string = activeProfile.acceptAllFiles ? 'file' : ZipImportService.classifyEntryName(decoded);
       if (kind === 'skip') {
         skippedCount++;
         cursor = recordEnd;
         continue;
       }
-      if (kind === 'note') {
+      if (!activeProfile.acceptAllFiles && kind === 'note') {
         noteCount++;
-      } else {
+      } else if (!activeProfile.acceptAllFiles && kind === 'image') {
         imageCount++;
       }
       totalUncompressed += uncompressedSize;
@@ -283,7 +302,8 @@ export class ZipImportService {
         compressedSize: compressedSize,
         uncompressedSize: uncompressedSize,
         localHeaderOffset: localHeaderOffset,
-        crc32: crc
+        crc32: crc,
+        modifiedAtMs: ZipImportService.decodeDosTimestamp(dosDate, dosTime)
       };
       entries.push(entry);
       cursor = recordEnd;
@@ -291,7 +311,7 @@ export class ZipImportService {
     if (cursor !== central.length) {
       throw new ZipImportError('corrupt', 'ZIP 目录结构损坏');
     }
-    if (noteCount === 0) {
+    if (activeProfile.requireMarkdown && noteCount === 0) {
       throw new ZipImportError('not_vault', 'ZIP 中没有 Markdown 笔记');
     }
     const topFolder: string = topSegments.length === 1 && topSegments[0].length > 0 ? topSegments[0] : '';
@@ -354,12 +374,32 @@ export class ZipImportService {
         throw new ZipImportError('corrupt', 'ZIP 数据损坏');
       }
       await writer.writeFile(entry.name, content);
+      if (hooks.preserveMtime === true && entry.modifiedAtMs > 0 && writer.setModifiedTime !== undefined) {
+        writer.setModifiedTime(entry.name, entry.modifiedAtMs);
+      }
       done++;
       if (hooks.onProgress !== undefined) {
         hooks.onProgress(done, targets.length);
       }
     }
     return done;
+  }
+
+  private static decodeDosTimestamp(dateBits: number, timeBits: number): number {
+    const year: number = 1980 + ((dateBits >>> 9) & 0x7F);
+    const month: number = (dateBits >>> 5) & 0x0F;
+    const day: number = dateBits & 0x1F;
+    const hour: number = (timeBits >>> 11) & 0x1F;
+    const minute: number = (timeBits >>> 5) & 0x3F;
+    const second: number = (timeBits & 0x1F) * 2;
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 58) {
+      return 0;
+    }
+    const timestamp: Date = new Date(year, month - 1, day, hour, minute, second);
+    if (timestamp.getFullYear() !== year || timestamp.getMonth() !== month - 1 || timestamp.getDate() !== day) {
+      return 0;
+    }
+    return timestamp.getTime();
   }
 
   /** 文件扩展名分类（36.4）：note / image / skip。 */

@@ -19,6 +19,7 @@ import { FullTextSearchService } from '../model/FullTextSearchService';
 import { createSearchStore } from '../model/SearchStoreDevice';
 import { systemShare } from '@kit.ShareKit';
 import { ShareIngestPayload, ShareIngestService } from '../model/ShareIngestService';
+import { ApplicationBackupService } from '../model/ApplicationBackupService';
 
 const DOMAIN = 0x0000;
 const TAG = 'EntryAbility';
@@ -174,6 +175,21 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onWindowStageCreate');
+
+    // Interrupted whole-app restore must be rolled back before registry initialization can inspect or repair roots.
+    try {
+      ApplicationBackupService.recoverInterrupted(this.context);
+    } catch (error) {
+      const detail: string = error instanceof Error ? error.message : '应用备份恢复状态尚未确认。';
+      AppStorage.setOrCreate('applicationBackupRecoveryError', detail);
+      hilog.error(DOMAIN, TAG, '应用备份恢复检查失败，阻止打开数据：%{public}s', detail);
+      windowStage.loadContent('pages/ApplicationBackupRecoveryPage', (loadError) => {
+        if (loadError.code) {
+          hilog.error(DOMAIN, TAG, '恢复说明页面加载失败 code=%{public}d', loadError.code);
+        }
+      });
+      return;
+    }
 
     // 库注册表单例初始化：必须先于 loadContent，页面侧才能直接 VaultRegistry.get()
     const registry: VaultRegistry = VaultRegistry.initialize(this.context);

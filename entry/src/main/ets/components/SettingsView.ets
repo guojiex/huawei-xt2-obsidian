@@ -50,6 +50,8 @@ import {
   AppUpdateUiPhase,
   runAppUpdateCheck
 } from '../model/AppUpdateCheck';
+import { ApplicationBackupOutcome } from '../model/ApplicationBackupService';
+import { ApplicationBackupDialog } from './ApplicationBackupDialog';
 
 @Component
 export struct SettingsView {
@@ -83,6 +85,19 @@ export struct SettingsView {
   onOpenHistory: () => void = () => {};
   /** 数据页「导出当前知识库」：复用 25.18 库级分享（37.2）；focusId 为分享面板关闭后的焦点返还目标 */
   onExportCurrentVault: (focusId: string) => void = (_focusId: string) => {};
+  onExportApplicationBackup: () => Promise<ApplicationBackupOutcome> = async (): Promise<ApplicationBackupOutcome> => {
+    return { status: 'failed', detail: '应用备份导出暂不可用。', preview: null };
+  };
+  onChooseApplicationBackup: () => Promise<ApplicationBackupOutcome> = async (): Promise<ApplicationBackupOutcome> => {
+    return { status: 'cancelled', detail: '', preview: null };
+  };
+  onPrepareApplicationRestore: () => Promise<boolean> = async (): Promise<boolean> => true;
+  onRestoreApplicationBackup: () => Promise<ApplicationBackupOutcome> = async (): Promise<ApplicationBackupOutcome> => {
+    return { status: 'failed', detail: '应用备份恢复暂不可用。', preview: null };
+  };
+  onApplicationRestoreCompleted: () => Promise<void> = async (): Promise<void> => {};
+  onApplicationRestoreFailed: (status: string) => void = (_status: string) => {};
+  onCancelApplicationBackup: () => void = () => {};
   onResetSplit: () => void = () => {};
   onShowLineNumbersChange: (show: boolean) => void = (_show: boolean) => {};
   onShowXiaoyiDialogEntryChange: (show: boolean) => void = (_show: boolean) => {};
@@ -117,6 +132,8 @@ export struct SettingsView {
   /** v1.17：冷却 / 最近一次检查的时钟（HH:MM，D-3 跨会话持久化后的显示） */
   @State appUpdateClock: string = '';
   private deleteSessionDialog: CustomDialogController | null = null;
+  private applicationBackupDialog: CustomDialogController | null = null;
+  private applicationBackupFocusId: string = 'settings-app-backup-row';
   private recentErrorStore: RecentErrorStore | null = null;
   private appUpdateStore: AppUpdateCheckStore | null = null;
 
@@ -300,6 +317,37 @@ export struct SettingsView {
       return;
     }
     this.resetConfirmOpen = true;
+  }
+
+  private openApplicationBackup(focusId: string): void {
+    this.applicationBackupFocusId = focusId;
+    this.applicationBackupDialog = new CustomDialogController({
+      builder: ApplicationBackupDialog({
+        vaults: this.vaults,
+        singleScreen: this.singleScreenLayout,
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onExport: (): Promise<ApplicationBackupOutcome> => this.onExportApplicationBackup(),
+        onChoose: (): Promise<ApplicationBackupOutcome> => this.onChooseApplicationBackup(),
+        onPrepareRestore: (): Promise<boolean> => this.onPrepareApplicationRestore(),
+        onRestore: (): Promise<ApplicationBackupOutcome> => this.onRestoreApplicationBackup(),
+        onRestoreCompleted: (): Promise<void> => this.onApplicationRestoreCompleted(),
+        onRestoreFailed: (status: string): void => this.onApplicationRestoreFailed(status),
+        onCancel: (): void => this.onCancelApplicationBackup(),
+        onDismiss: (restored: boolean): void => {
+          this.applicationBackupDialog = null;
+          if (!restored) {
+            setTimeout((): void => {
+              FocusRequest.safely(this.getUIContext(), this.applicationBackupFocusId);
+            }, 0);
+          }
+        }
+      }),
+      alignment: this.singleScreenLayout ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: false,
+      customStyle: true
+    });
+    this.applicationBackupDialog.open();
   }
 
   private async resetData(): Promise<void> {
@@ -1380,8 +1428,65 @@ export struct SettingsView {
         })
         .id('settings-heading-data')
         .onAppear((): void => { this.focusCategoryHeading('data'); })
-      // 备份分组（v1.37 37.1，照原型 h4 备份 + .hs-group 行 + .hs-note 注脚）
-      this.GroupTitle('备份')
+      this.GroupTitle('应用备份')
+      Column() {
+        Row() {
+          Column() {
+            Text('导出应用备份')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .width('100%')
+            Text('打包全部沙箱库、回收站、草稿、Agent 记录和应用偏好')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+              .margin({ top: Space.s1 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Icon('chevronRight', 16, $r('app.color.text_tertiary'))
+        }
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+        .focusable(true)
+        .id('settings-app-backup-row')
+        .accessibilityText('导出应用备份，包含所有沙箱库和应用偏好')
+        .onClick((): void => { this.openApplicationBackup('settings-app-backup-row'); })
+        Divider().color($r('app.color.line'))
+        Row() {
+          Column() {
+            Text('从备份恢复')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+            Text('选择应用备份并全量替换当前数据')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+              .margin({ top: Space.s1 })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Icon('chevronRight', 16, $r('app.color.text_tertiary'))
+        }
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+        .focusable(true)
+        .id('settings-app-restore-row')
+        .accessibilityText('从应用备份恢复，会全量替换当前数据')
+        .onClick((): void => { this.openApplicationBackup('settings-app-restore-row'); })
+      }
+      .width('100%')
+      .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
+      Text('恢复不会合并数据；建议先保存一份当前应用备份。外部目录内容和 Git 令牌不随备份迁移。')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4 })
+        .margin({ top: Space.s2 })
+      this.GroupTitle('单个知识库')
       Column() {
         Row() {
           Column() {
@@ -1449,16 +1554,13 @@ export struct SettingsView {
             // v1.37 37.4：重置前建议先导出，行内链接复用 37.2 的分享入口；不改变重置步骤
             Text() {
               Span('建议先')
-              Span('导出当前知识库')
+              Span('导出应用备份')
                 .fontColor($r('app.color.brand'))
                 .onClick((): void => {
-                  if (this.exportBackupDisabled()) {
-                    return;
-                  }
                   this.resetConfirmOpen = false;
-                  this.onExportCurrentVault('settings-export-vault-row');
+                  this.openApplicationBackup('settings-app-backup-row');
                 })
-              Span('作为备份，之后可在『导入库 → ZIP 文件』恢复。')
+              Span('作为备份，之后可在「设置 → 数据 → 从备份恢复」中还原。')
             }
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))
