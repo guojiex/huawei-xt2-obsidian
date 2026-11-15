@@ -19,7 +19,12 @@ const start = source.indexOf('  private async flushSave(targetPath: string | nul
 const end = source.indexOf('\n  /** Persist visible workspace content', start);
 assert.ok(start >= 0 && end > start, 'could not find Index.flushSave');
 const flushSaveMethod = source.slice(start, end).trim();
-const code = transformSync(`class IndexHarness { ${resetSaveFeedbackMethod} ${draftHelperMethods} ${flushSaveMethod} }; module.exports = IndexHarness;`, {
+const helperStart = source.indexOf('function firstEditorMismatchIndex(');
+const helperEnd = source.indexOf('\n/** PaneHead 的按引用传参载体', helperStart);
+assert.ok(helperStart >= 0 && helperEnd > helperStart, 'could not find Index mismatch helpers');
+const mismatchHelpers = source.slice(helperStart, helperEnd).trim();
+const code = transformSync(`${mismatchHelpers}
+class IndexHarness { ${resetSaveFeedbackMethod} ${draftHelperMethods} ${flushSaveMethod} }; module.exports = IndexHarness;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;

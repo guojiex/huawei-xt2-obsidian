@@ -174,6 +174,86 @@ const GIT_ENTRY_UI_ENABLED: boolean = true;
  */
 const WORKSPACE_WEB_MOUNT_DELAY_MS: number = 1500;
 
+/** 两段文本首个不同字符的位置；一方是另一方前缀时返回较短一方的长度。 */
+function firstEditorMismatchIndex(expected: string, actual: string): number {
+  const limit: number = Math.min(expected.length, actual.length);
+  let index: number = 0;
+  while (index < limit && expected.charCodeAt(index) === actual.charCodeAt(index)) {
+    index++;
+  }
+  return index;
+}
+
+/**
+ * 保存前校验失败的结构化差异描述（2026-11-15 切笔记误弹「内容不一致」诊断引入）：
+ * 只输出长度、首个差异位与两侧码点数字，不输出笔记内容本身（隐私红线，仓库手册硬约束 16）。
+ * 口径与 TrashService.describeTextMismatch 一致（v1.34 回收站校验先例）。
+ */
+function describeEditorTextMismatch(baseline: string, editor: string): string {
+  const index: number = firstEditorMismatchIndex(baseline, editor);
+  if (index === baseline.length && index === editor.length) {
+    return '内容一致';
+  }
+  if (index === baseline.length || index === editor.length) {
+    return '基线 ' + baseline.length + ' 字符，编辑器 ' + editor.length + ' 字符（一方是另一方的前缀）';
+  }
+  return '基线 ' + baseline.length + ' 字符，编辑器 ' + editor.length + ' 字符，首个差异在第 ' + index +
+    ' 位（基线 U+' + baseline.charCodeAt(index).toString(16) +
+    '，编辑器 U+' + editor.charCodeAt(index).toString(16) + '）';
+}
+
+/**
+ * 「以编辑区为准」一次性放行键（v1.70 AC-01）：pane + 库 + 路径。
+ * 仅下一次对应栏的保存尝试有效，保存结束即清除（见 saveEditorMismatchFromEditor）。
+ */
+function editorMismatchApprovalKeyOf(pane: string, vaultId: string, path: string): string {
+  return pane + '\u0000' + vaultId + '\u0000' + path;
+}
+
+/**
+ * 弹窗差异窗口的转义（v1.70 AC-01）：控制字符转可读转义（\n \r \t \uXXXX），
+ * 其余字符含中文原样保留（面向设备上的用户本人，保持可读）；窗口截断时加省略号。
+ * 与 TrashService.escapeAround（日志口径，非 ASCII 全转义）不同是有意为之。
+ */
+function escapeEditorWindow(text: string, index: number, radius: number = 16): string {
+  const start: number = Math.max(0, index - radius);
+  const end: number = Math.min(text.length, index + radius + 1);
+  let out: string = start > 0 ? '…' : '';
+  for (let i: number = start; i < end; i++) {
+    const code: number = text.charCodeAt(i);
+    if (code === 0x0a) {
+      out += '\\n';
+    } else if (code === 0x0d) {
+      out += '\\r';
+    } else if (code === 0x09) {
+      out += '\\t';
+    } else if (code < 0x20) {
+      out += '\\u' + code.toString(16);
+    } else {
+      out += text.charAt(i);
+    }
+  }
+  return out + (end < text.length ? '…' : '');
+}
+
+/**
+ * 弹窗用的差异描述（v1.70 AC-01）：结构化摘要 + 首个差异附近的转义内容窗口。
+ * 只进弹窗 message，不进日志 / 埋点；日志侧仍用 describeEditorTextMismatch
+ * 只出结构化信息（隐私红线，仓库手册硬约束 16）。
+ */
+function describeEditorMismatchForDialog(baseline: string, editor: string): string {
+  const index: number = firstEditorMismatchIndex(baseline, editor);
+  if (index === baseline.length && index === editor.length) {
+    return '内容一致';
+  }
+  // 一方是另一方前缀时窗口落在结尾（较短一侧已到头），其余落在首个差异位。
+  const baseIndex: number = Math.min(index, baseline.length - 1);
+  const editorIndex: number = Math.min(index, editor.length - 1);
+  return describeEditorTextMismatch(baseline, editor) +
+    '\n笔记版本：' + escapeEditorWindow(baseline, baseIndex) +
+    '\n编辑区版本：' + escapeEditorWindow(editor, editorIndex);
+}
+
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
   pane: string;
@@ -538,6 +618,8 @@ struct Index {
   private externalVaultNoteReadErrorKeys: string[] = [];
   private staleSaveNoticeKeys: string[] = [];
   private editorMismatchDialogOpen: boolean = false;
+  /** 「以编辑区为准」一次性放行键（v1.70 AC-01）：仅下一次对应栏保存尝试有效，保存结束即清除。 */
+  private editorMismatchApprovalKey: string = '';
   private lastDraftRecoveryNoticeKey: string = '';
 
   /**
@@ -2201,7 +2283,8 @@ struct Index {
     }
   }
 
-  private showEditorMismatchRecovery(vaultId: string, path: string): void {
+  private showEditorMismatchRecovery(vaultId: string, path: string, pane: string,
+    baseline: string, editor: string): void {
     if (this.editorMismatchDialogOpen) {
       hilog.warn(DOMAIN, TAG, '编辑恢复弹窗已在展示，跳过重复触发');
       return;
@@ -2209,15 +2292,22 @@ struct Index {
     this.editorMismatchDialogOpen = true;
     void this.getUIContext().getPromptAction().showDialog({
       title: '编辑内容与笔记不一致',
-      message: '为避免覆盖笔记，当前编辑区内容未保存。你可以留在当前页面并先复制需要保留的内容，或放弃编辑区未保存内容，重新载入笔记后再切换。',
+      message: '为避免覆盖笔记，当前编辑区内容未保存。两版差异：\n\n' +
+        describeEditorMismatchForDialog(baseline, editor) +
+        '\n\n以笔记文件为准：丢弃编辑区差异并重新载入；以编辑区为准：把当前编辑区内容保存到笔记；留在当前页面：暂不处理。',
       buttons: [
         { text: '留在当前页面', color: $r('app.color.text_secondary') },
-        { text: '放弃并重新载入', color: $r('app.color.brand') }
+        { text: '以笔记文件为准', color: $r('app.color.text_secondary') },
+        { text: '以编辑区为准', color: $r('app.color.brand') }
       ]
     }).then((result): void => {
       this.editorMismatchDialogOpen = false;
       if (result.index === 1) {
         void this.reloadStaleVaultNote(vaultId, path);
+        return;
+      }
+      if (result.index === 2) {
+        this.saveEditorMismatchFromEditor(vaultId, path, pane);
       }
     }).catch((error: BusinessError): void => {
       this.editorMismatchDialogOpen = false;
@@ -2225,6 +2315,25 @@ struct Index {
         error.message ?? 'unknown');
       promptAction.showToast({ message: '无法打开恢复提示，请稍后重试' });
     });
+  }
+
+  /**
+   * 「以编辑区为准」出口（v1.70 AC-01）：置一次性放行键后重触发对应栏保存。
+   * 放行只跳过「不一致即弹窗拒写」这一层；会话身份、revision、恢复草稿快照与
+   * STALE_CONTENT 磁盘校验全部保持。保存结束（无论成败）即清除放行键。
+   */
+  private saveEditorMismatchFromEditor(vaultId: string, path: string, pane: string): void {
+    const approvalKey: string = editorMismatchApprovalKeyOf(pane, vaultId, path);
+    this.editorMismatchApprovalKey = approvalKey;
+    const retry: Promise<boolean> = pane === 'right'
+      ? this.flushRightSave(path, vaultId)
+      : this.flushSave(path, vaultId);
+    const clearApproval = (): void => {
+      if (this.editorMismatchApprovalKey === approvalKey) {
+        this.editorMismatchApprovalKey = '';
+      }
+    };
+    void retry.then(clearApproval, clearApproval);
   }
 
   private showStaleSaveConflict(vaultId: string, path: string, message: string): void {
@@ -5105,10 +5214,16 @@ struct Index {
       if (text.replace(/\r\n/g, '\n') === savedText.replace(/\r\n/g, '\n')) {
         return true;
       }
-      hilog.error(DOMAIN, TAG,
-        '右栏保存前校验失败：编辑器内容与最近保存版本不一致且无未保存标记，触发编辑恢复弹窗');
-      this.showEditorMismatchRecovery(targetVaultId, targetPath);
-      return false;
+      // 「以编辑区为准」一次性放行（v1.70 AC-01）：跳过弹窗拒写，落进下方正常保存路径；
+      // 放行键由 saveEditorMismatchFromEditor 在保存结束清除。
+      if (this.editorMismatchApprovalKey !==
+        editorMismatchApprovalKeyOf('right', targetVaultId, targetPath)) {
+        hilog.error(DOMAIN, TAG,
+          '右栏保存前校验失败：编辑器内容与最近保存版本不一致且无未保存标记，触发编辑恢复弹窗，差异：%{public}s',
+          describeEditorTextMismatch(savedText, text));
+        this.showEditorMismatchRecovery(targetVaultId, targetPath, 'right', savedText, text);
+        return false;
+      }
     }
     if (text === savedText) {
       if (targetPath === this.rightFilePath && targetVaultId === this.currentVaultId) {
@@ -5465,15 +5580,21 @@ struct Index {
     const sourceDirty: boolean = sourceIsRight ? this.rightEditorDirty : this.editorDirty;
     const sharedNoteDirty: boolean = path === this.currentFilePath && path === this.rightFilePath &&
       (this.editorDirty || this.rightEditorDirty);
+    const pane: string = sourceIsRight ? 'right' : 'left';
     if (text !== expectedText && !sourceDirty && !sharedNoteDirty) {
       if (text.replace(/\r\n/g, '\n') === expectedText.replace(/\r\n/g, '\n')) {
         return true;
       }
-      hilog.error(DOMAIN, TAG,
-        '保存前校验失败（pane=%{public}s）：编辑器内容与最近保存版本不一致且无未保存标记，触发编辑恢复弹窗',
-        sourceIsRight ? 'right' : 'left');
-      this.showEditorMismatchRecovery(vaultId, path);
-      return false;
+      // 「以编辑区为准」一次性放行（v1.70 AC-01）：跳过弹窗拒写，落进下方正常保存路径；
+      // 放行键由 saveEditorMismatchFromEditor 在保存结束清除。
+      if (this.editorMismatchApprovalKey !== editorMismatchApprovalKeyOf(pane, vaultId, path)) {
+        hilog.error(DOMAIN, TAG,
+          '保存前校验失败（pane=%{public}s）：编辑器内容与最近保存版本不一致且无未保存标记，触发编辑恢复弹窗，差异：%{public}s',
+          pane,
+          describeEditorTextMismatch(expectedText, text));
+        this.showEditorMismatchRecovery(vaultId, path, pane, expectedText, text);
+        return false;
+      }
     }
     if (text === expectedText) {
       WorkspaceEditGuard.clear('left', vaultId, path);
@@ -8555,6 +8676,10 @@ struct Index {
               return this.readVaultAssetFor(vaultId, relPath);
             },
             onChange: (len: number): void => {
+              // §3.2 2026-11-15 修订：编辑器内输入即激活所属栏，文件树当前笔记高亮跟随输入光标所在栏
+              if (this.activePane !== 'right') {
+                this.setActivePane('right', true);
+              }
               this.resetSaveFeedback();
               WorkspaceEditGuard.mark('right', this.currentVaultId, this.rightFilePath);
               this.rightEditorDirty = true;
@@ -8714,6 +8839,10 @@ struct Index {
           },
           onChange: (len: number): void => {
             // 编辑中：记长度（观察击键是否过桥正常）+ 触发防抖自动保存（M2 2.3）
+            // §3.2 2026-11-15 修订：编辑器内输入即激活所属栏，文件树当前笔记高亮跟随输入光标所在栏
+            if (this.activePane !== 'left') {
+              this.setActivePane('left', true);
+            }
             this.resetSaveFeedback();
             WorkspaceEditGuard.mark('left', this.currentVaultId, this.currentFilePath);
             this.editorDirty = true;

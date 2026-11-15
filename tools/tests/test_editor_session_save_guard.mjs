@@ -24,10 +24,14 @@ const methods = [
   extract('  private async flushRightSave(', '\n  private scheduleRightSave()'),
   extract('  private async flushSave(', '\n  /** Persist visible workspace content')
 ];
-const code = transformSync(`class IndexHarness {
+const mismatchHelpers = extract('function firstEditorMismatchIndex(', '\n/** PaneHead 的按引用传参载体');
+const code = transformSync(`${mismatchHelpers}
+class IndexHarness {
   ${methods.join('\n\n  ')}
   sharedNoteEditor() { return this.rightEditorBridge; }
-}; module.exports = IndexHarness;`, {
+}; module.exports = IndexHarness;
+module.exports.describeEditorTextMismatch = describeEditorTextMismatch;
+module.exports.editorMismatchApprovalKeyOf = editorMismatchApprovalKeyOf;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;
@@ -119,6 +123,18 @@ function createHarness(options = {}) {
 test('cross-note content with a foreign revision can never reach saveNote (372B regression)', async () => {
   const app = createHarness();
   // 事故形态：左栏会话指向 快速上手.md(rev5)，编辑器回包却是 任务清单 内容且 revision=6。
+  assert.equal(await app.flushSave(), false);
+  assert.deepEqual(app.calls, ['left-read']);
+  assert.deepEqual(app.writes, []);
+  assert.equal(app.leftSession.baseline, TUTORIAL_BASELINE);
+});
+
+test('an editor-side approval cannot bypass the revision identity guard (372B regression)', async () => {
+  const app = createHarness();
+  // v1.70 AC-01：即便用户在弹窗选择「以编辑区为准」，revision 身份校验仍在放行键之前拒绝串写。
+  app.editorMismatchApprovalKey =
+    app.context.module.exports.editorMismatchApprovalKeyOf('left', 'local', '00_开始/快速上手.md');
+
   assert.equal(await app.flushSave(), false);
   assert.deepEqual(app.calls, ['left-read']);
   assert.deepEqual(app.writes, []);

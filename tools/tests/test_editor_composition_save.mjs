@@ -20,10 +20,14 @@ const methods = [
   extract('  private async flushRightSave(', '\n  private scheduleRightSave()'),
   extract('  private async flushSave(', '\n  /** Persist visible workspace content')
 ];
-const code = transformSync(`class IndexHarness {
+const mismatchHelpers = extract('function firstEditorMismatchIndex(', '\n/** PaneHead 的按引用传参载体');
+const code = transformSync(`${mismatchHelpers}
+class IndexHarness {
   ${methods.join('\n\n  ')}
   sharedNoteEditor() { return this.rightEditorBridge; }
-}; module.exports = IndexHarness;`, {
+}; module.exports = IndexHarness;
+module.exports.describeEditorTextMismatch = describeEditorTextMismatch;
+module.exports.editorMismatchApprovalKeyOf = editorMismatchApprovalKeyOf;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;
@@ -274,6 +278,50 @@ test('an unmarked stale right editor value is rejected instead of overwriting th
   assert.equal(app.rightSession.baseline, 'saved-right');
 });
 
+test('an editor-side approval lets the once-rejected left value save through the normal path', async () => {
+  const app = createHarness();
+  app.editorDirty = false;
+  app.editorMismatchApprovalKey =
+    app.context.module.exports.editorMismatchApprovalKeyOf('left', 'local', 'left.md');
+
+  assert.equal(await app.flushSave(), true);
+  assert.deepEqual(app.calls, ['left-read']);
+  assert.equal(app.writes.length, 1);
+  assert.equal(app.writes[0][2], 'left.md');
+  assert.equal(app.writes[0][3], 'uncommitted candidate');
+  assert.equal(app.writes[0][4], 'saved-left');
+  assert.deepEqual(app.draftCalls.map((call) => call[0]), ['persist', 'clear']);
+  assert.equal(app.leftSession.baseline, 'uncommitted candidate');
+  assert.equal(app.editorDirty, false);
+});
+
+test('an editor-side approval lets the once-rejected right value save through the normal path', async () => {
+  const app = createHarness();
+  app.rightEditorDirty = false;
+  app.editorMismatchApprovalKey =
+    app.context.module.exports.editorMismatchApprovalKeyOf('right', 'local', 'right.md');
+
+  assert.equal(await app.flushRightSave(), true);
+  assert.deepEqual(app.calls, ['right-read']);
+  assert.equal(app.writes.length, 1);
+  assert.equal(app.writes[0][2], 'right.md');
+  assert.equal(app.writes[0][3], 'uncommitted candidate');
+  assert.equal(app.rightSession.baseline, 'uncommitted candidate');
+  assert.equal(app.rightEditorDirty, false);
+});
+
+test('an approval keyed to another pane does not authorize the save', async () => {
+  const app = createHarness();
+  app.editorDirty = false;
+  app.editorMismatchApprovalKey =
+    app.context.module.exports.editorMismatchApprovalKeyOf('right', 'local', 'left.md');
+
+  assert.equal(await app.flushSave(), false);
+  assert.deepEqual(app.calls, ['left-read', 'mismatch:left.md']);
+  assert.deepEqual(app.writes, []);
+  assert.equal(app.leftSession.baseline, 'saved-left');
+});
+
 test('a save read that becomes stale during a note switch cannot write or replace the new baseline', async () => {
   const app = createHarness();
   let resolveSnapshot;
@@ -326,4 +374,16 @@ test('a completed old-target write cannot replace shared editor state after a ne
   assert.equal(await saving, true);
   assert.equal(app.writes[0][2], 'left.md');
   assert.equal(app.leftSession.baseline, 'next baseline');
+});
+
+test('mismatch diagnostics report lengths, first differing offset and codepoints, never note content', () => {
+  const app = createHarness();
+  const describe = app.context.module.exports.describeEditorTextMismatch;
+  assert.equal(describe('abc', 'abc'), '内容一致');
+  assert.equal(describe('abcdef', 'abc'), '基线 6 字符，编辑器 3 字符（一方是另一方的前缀）');
+  assert.equal(describe('abc', 'abcdef'), '基线 3 字符，编辑器 6 字符（一方是另一方的前缀）');
+  assert.equal(
+    describe('first\nsecond', 'first\r\nsecond'),
+    '基线 12 字符，编辑器 13 字符，首个差异在第 5 位（基线 U+a，编辑器 U+d）');
+  assert.doesNotMatch(describe('机密正文内容', '完全不同的文本'), /机密|文本/);
 });
