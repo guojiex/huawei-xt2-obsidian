@@ -291,16 +291,10 @@ export class Startup {
   static readonly auraPosBY: string = '98%';
   static readonly auraPosCX: string = '36%';
   static readonly auraPosCY: string = '42%';
-  /** 漂移循环延后（ms）：首帧只保留 1.6s 淡入，错开入场编排与 WebView 首建（2026-11-15）。 */
-  static readonly ambienceLoopDeferMs: number = 240;
 
   // —— 氛围层：纸感颗粒（原型 SVG feTurbulence + multiply / screen）——
   /** Canvas ImageData 逐块随机灰度，近似连续噪声；步长 2px 控制首帧开销。 */
   static readonly grainNoiseStep: number = 2;
-  /** 颗粒瓦片边长（px）：只随机生成一块，再整块拷贝铺满画布（冷启动首帧优化，2026-11-15）。 */
-  static readonly grainTileSize: number = 128;
-  /** 颗粒绘制延后（ms）：让出首帧渲染窗口，约两帧后再补上（视觉不可感知）。 */
-  static readonly grainDeferMs: number = 32;
   static readonly grainLightRGB: number[] = [124, 131, 144];
   static readonly grainDarkRGB: number[] = [255, 255, 255];
   /** 浅色 multiply 7% / 深色 screen 5%；不启用离屏混合模式，用低 alpha 半透明叠加近似。 */
@@ -326,8 +320,6 @@ export class Startup {
   /** 原型中程摆动到 `sway` 后终态回 0（X 归位），不留残余位移。 */
   static readonly dustSwayReturnRatio: number = 0;
   static readonly dustFallbackHeight: number = 800;
-  /** 浮尘起播延后（ms）：与漂移循环同批错峰，减少首帧并发动画。 */
-  static readonly dustRiseDeferMs: number = 240;
 
   // —— 品牌层循环动效（原型 startup-float / breathe / sheen）——
   static readonly floatDur: number = 6000;

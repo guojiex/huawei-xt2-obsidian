@@ -232,9 +232,6 @@ export struct StartupMask {
                 Image($r('app.media.app_icon_1024'))
                   .width(Startup.iconSize)
                   .height(Startup.iconSize)
-                  // 限制解码尺寸（2026-11-15）：1024px 源图解码曾占 167ms（XT2 trace），
-                  // sourceSize 让解码按显示尺寸下采样；页面加载后缓存查询极快。
-                  .sourceSize({ width: Startup.iconSize, height: Startup.iconSize })
                   .objectFit(ImageFit.Cover)
                   .borderRadius(Startup.iconRadius)
                   .shadow({

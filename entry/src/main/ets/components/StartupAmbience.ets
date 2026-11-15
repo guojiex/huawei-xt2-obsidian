@@ -54,7 +54,6 @@ struct StartupDustMote {
   @State private moteY: number = Startup.dustBottomOffset;
   @State private moteAlpha: number = 0;
   private moteStarted: boolean = false;
-  private riseTimer: number = -1;
 
   /** 关键帧起播放在 onAppear：aboutToAppear 中动画属性无初值，keyframeAnimateTo 不会生效。 */
   private startRise(): void {
@@ -93,17 +92,7 @@ struct StartupDustMote {
         }
       }
     ];
-    // 起播延后（2026-11-15）：错开首帧入场编排，减少并发动画；组件卸载时清理定时器。
-    this.riseTimer = setTimeout((): void => {
-      this.getUIContext().keyframeAnimateTo({ iterations: -1, delay: this.delayMs }, frames);
-    }, Startup.dustRiseDeferMs);
-  }
-
-  aboutToDisappear(): void {
-    if (this.riseTimer >= 0) {
-      clearTimeout(this.riseTimer);
-      this.riseTimer = -1;
-    }
+    this.getUIContext().keyframeAnimateTo({ iterations: -1, delay: this.delayMs }, frames);
   }
 
   build() {
@@ -141,8 +130,6 @@ export struct StartupAmbience {
   @State private driftC: number = 0;
   private dustSpecs: DustSpec[] = [];
   private ambienceStarted: boolean = false;
-  private grainTimer: number = -1;
-  private loopTimer: number = -1;
   private grainContext: CanvasRenderingContext2D =
     new CanvasRenderingContext2D(new RenderingContextSettings(true));
 
@@ -151,17 +138,6 @@ export struct StartupAmbience {
     this.dustSpecs = makeDustSpecs(Startup.dustCount);
     if (this.reduceMotion) {
       this.auraFade = 1;
-    }
-  }
-
-  aboutToDisappear(): void {
-    if (this.grainTimer >= 0) {
-      clearTimeout(this.grainTimer);
-      this.grainTimer = -1;
-    }
-    if (this.loopTimer >= 0) {
-      clearTimeout(this.loopTimer);
-      this.loopTimer = -1;
     }
   }
 
@@ -174,18 +150,15 @@ export struct StartupAmbience {
     this.getUIContext().animateTo({ duration: Startup.auraFadeDur, curve: Motion.navCurve }, (): void => {
       this.auraFade = 1;
     });
-    // 漂移循环延后起播（2026-11-15）：首帧只留淡入，错开入场编排与 WebView 首建的渲染压力。
-    this.loopTimer = setTimeout((): void => {
-      this.playDrift(Startup.auraDurA, (value: number): void => {
-        this.driftA = value;
-      });
-      this.playDrift(Startup.auraDurB, (value: number): void => {
-        this.driftB = value;
-      });
-      this.playDrift(Startup.auraDurC, (value: number): void => {
-        this.driftC = value;
-      });
-    }, Startup.ambienceLoopDeferMs);
+    this.playDrift(Startup.auraDurA, (value: number): void => {
+      this.driftA = value;
+    });
+    this.playDrift(Startup.auraDurB, (value: number): void => {
+      this.driftB = value;
+    });
+    this.playDrift(Startup.auraDurC, (value: number): void => {
+      this.driftC = value;
+    });
   }
 
   build() {
@@ -338,23 +311,6 @@ export struct StartupAmbience {
 
   /** 原型 SVG feTurbulence + multiply / screen：ImageData 逐块随机灰度，低 alpha 半透明叠加近似（不启用离屏混合）。 */
   private drawGrain(): void {
-    // 延后绘制（2026-11-15）：完整颗粒重绘曾占首帧 163ms（XT2 trace），让出首帧渲染窗口，
-    // 两帧后再补颗粒（视觉不可感知）；主题切换等重复调用先撤销旧排程。
-    if (this.grainTimer >= 0) {
-      clearTimeout(this.grainTimer);
-    }
-    this.grainTimer = setTimeout((): void => {
-      this.grainTimer = -1;
-      this.paintGrain();
-    }, Startup.grainDeferMs);
-  }
-
-  /**
-   * 颗粒绘制本体（2026-11-15 优化）：只随机生成一块 grainTileSize 见方的瓦片，
-   * 再用 typed-array 原生拷贝整块铺满画布 —— 随机块数量缩小约两个数量级，
-   * JS 逐像素写改为 memmove；128px 瓦片重复在 5–7% alpha 噪点下不可感知。
-   */
-  private paintGrain(): void {
     const ctx: CanvasRenderingContext2D = this.grainContext;
     const w: number = ctx.width;
     const h: number = ctx.height;
@@ -366,35 +322,19 @@ export struct StartupAmbience {
     const rgb: number[] = dark ? Startup.grainDarkRGB : Startup.grainLightRGB;
     const maxAlpha: number = dark ? Startup.grainDarkAlpha : Startup.grainLightAlpha;
     const step: number = Startup.grainNoiseStep;
-    const tile: number = Startup.grainTileSize;
-    const tileImage: ImageData = ctx.createImageData(tile, tile);
-    const tileData: Uint8ClampedArray = tileImage.data;
-    for (let y = 0; y < tile; y += step) {
-      for (let x = 0; x < tile; x += step) {
-        const alpha: number = Math.round(Math.random() * maxAlpha * 255);
-        for (let dy = 0; dy < step && y + dy < tile; dy++) {
-          for (let dx = 0; dx < step && x + dx < tile; dx++) {
-            const at: number = ((y + dy) * tile + x + dx) * 4;
-            tileData[at] = rgb[0];
-            tileData[at + 1] = rgb[1];
-            tileData[at + 2] = rgb[2];
-            tileData[at + 3] = alpha;
-          }
-        }
-      }
-    }
     const image: ImageData = ctx.createImageData(w, h);
     const data: Uint8ClampedArray = image.data;
-    const tileRowBytes: number = tile * 4;
-    for (let ty = 0; ty < h; ty += tile) {
-      const rows: number = Math.min(tile, h - ty);
-      for (let tx = 0; tx < w; tx += tile) {
-        const cols: number = Math.min(tile, w - tx);
-        const copyBytes: number = cols * 4;
-        for (let row: number = 0; row < rows; row++) {
-          const srcStart: number = row * tileRowBytes;
-          const dstStart: number = ((ty + row) * w + tx) * 4;
-          data.set(tileData.subarray(srcStart, srcStart + copyBytes), dstStart);
+    for (let y = 0; y < h; y += step) {
+      for (let x = 0; x < w; x += step) {
+        const alpha: number = Math.round(Math.random() * maxAlpha * 255);
+        for (let dy = 0; dy < step && y + dy < h; dy++) {
+          for (let dx = 0; dx < step && x + dx < w; dx++) {
+            const at: number = ((y + dy) * w + x + dx) * 4;
+            data[at] = rgb[0];
+            data[at + 1] = rgb[1];
+            data[at + 2] = rgb[2];
+            data[at + 3] = alpha;
+          }
         }
       }
     }
