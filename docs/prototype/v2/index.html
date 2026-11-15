@@ -817,7 +817,9 @@ pre.simple-protected::after,table.simple-table.simple-protected::after{content:n
                         <path d="M8 11V8a4 4 0 0 1 8 0v3"/>
                     </svg>
                     <span>令牌只保存在本机安全存储，不写入日志、链接或普通设置；可在同步页更换。</span></p>
-                <p class="import-summary">移除库只删除手机副本，远端仓库保留。</p></section>
+                <p class="import-summary">移除库只删除手机副本，远端仓库保留。</p>
+                <div id="importGitProgress" class="import-summary hidden" role="status" aria-live="polite"><strong id="importGitProgressTitle"></strong><p id="importGitProgressDetail"></p></div>
+                <details class="backup-demo"><summary>演示导入结果</summary><label for="importGitScenario">仅影响本页演示</label><select id="importGitScenario"><option value="success">导入成功</option><option value="auth">认证失败</option><option value="network">网络失败</option></select></details></section>
         </div>
         <footer class="import-foot">
             <p class="import-demo"><span class="import-demo-tag">演示</span><span><span id="importVaultStatus"
@@ -2632,6 +2634,45 @@ $('chooseImportZip').onclick=()=>setImportZipState('selected');$('importZipVault
 {const openBase=openImportVault;openImportVault=function(){$('importZipVaultName').value='';setImportZipState('empty');openBase();};$('importVaultMenu').onclick=openImportVault;$('importVaultButton').onclick=openImportVault;}
 // v1.36 36.9: the initial restoreUrl() runs before this block, so re-apply ?importSource= once the ZIP tab exists.
 {const params=new URLSearchParams(window.location.search),source=params.get('importSource');if(params.get('ui')==='2'&&['local','git','zip'].includes(source)&&$('importVaultDialog').open){importVaultSource=source;updateImportVault();}}
+
+// Git 导入同页流程（2026-11-15）：仅演示状态，不读取令牌、不访问远端。
+let gitImportPhase='idle',gitImportTimer=0;
+function paintGitImport(){
+ const git=importVaultSource==='git',busy=gitImportPhase==='working';
+ $('importGitProgress').classList.toggle('hidden',!git||gitImportPhase==='idle');
+ for(const id of ['importLocalTab','importGitTab','importZipTab','closeImportVault','cancelImportVault','importGitUrl','importGitBranch','importGitUser','importGitToken','importGitTokenToggle','importGitScenario'])$(id).disabled=busy;
+ if(!git)return;
+ $('confirmImportVault').textContent=busy?'正在导入…':gitImportPhase==='failed'?'重试导入':'导入 Git 仓库';
+ if(busy)$('confirmImportVault').disabled=true;
+ $('importVaultDialog').setAttribute('aria-busy',String(busy));
+ $('importVaultStatus').textContent='在当前弹窗完成导入；本页仅演示，不连接远端、不读取或保存令牌。';
+}
+{const updateBase=updateImportVault;updateImportVault=function(){updateBase();paintGitImport();};}
+{const closeBase=closeImportVault;closeImportVault=function(){if(gitImportPhase==='working')return;closeBase();};$('closeImportVault').onclick=closeImportVault;$('cancelImportVault').onclick=closeImportVault;}
+$('importVaultDialog').addEventListener('close',()=>{clearTimeout(gitImportTimer);gitImportPhase='idle';$('importVaultDialog').setAttribute('aria-busy','false');paintGitImport();});
+{const confirmBase=$('confirmImportVault').onclick;$('confirmImportVault').onclick=e=>{
+ if(importVaultSource!=='git'){confirmBase(e);return;}
+ if(gitImportPhase==='working')return;
+ updateImportVault();if($('confirmImportVault').disabled)return;
+ gitImportPhase='working';
+ $('importGitProgressTitle').textContent='正在连接仓库…';
+ $('importGitProgressDetail').textContent='导入完成后自动打开知识库，请稍候。';
+ paintGitImport();
+ const scenario=$('importGitScenario').value;
+ gitImportTimer=setTimeout(()=>{
+  $('importGitProgressTitle').textContent='正在下载笔记…';
+  gitImportTimer=setTimeout(()=>{
+   if(scenario!=='success'){
+    gitImportPhase='failed';
+    $('importGitProgressTitle').textContent=scenario==='auth'?'认证失败':'网络连接失败';
+    $('importGitProgressDetail').textContent=scenario==='auth'?'请检查仓库地址、用户名与令牌权限后重试。没有添加知识库。':'请检查网络连接后重试。没有添加知识库。';
+    updateImportVault();(scenario==='auth'?$('importGitToken'):$('confirmImportVault')).focus();return;
+   }
+   gitImportPhase='idle';updateImportVault();confirmBase(e);
+  },700);
+ },700);
+};}
+paintGitImport();
 
 // v1.32 32.1: utility dialogs share the sheet shell on phone.
 for(const id of ['newEntryDialog','fileActionDialog','deleteFolderDialog','quickSearchDialog','trashDialog','trashDeleteDialog','vaultActionDialog']){const d=document.getElementById(id);if(!d)continue;new MutationObserver(()=>{if(d.open)positionSheetDialog(d);}).observe(d,{attributes:true,attributeFilter:['open']});}
