@@ -62,6 +62,7 @@ declare const nativeGit2: {
   getFeatures(): Git2Features;
   getRepositoryState(path: string, targetBranch?: string): Git2RepositoryState;
   clone(options: Git2CloneOptions): Promise<string>;
+  cancelClone(): void;
   gitAction(options: Git2ActionOptions): Promise<string>;
 };
 

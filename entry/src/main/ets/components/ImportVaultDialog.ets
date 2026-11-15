@@ -35,6 +35,8 @@ export struct ImportVaultDialog {
   @State gitProgressText: string = '';
   @State gitFailureText: string = '';
   @State gitRetryAvailable: boolean = false;
+  /** v1.69：已请求取消 clone，等待 native 中止生效（防重复点击）。 */
+  @State gitCancelling: boolean = false;
   @State zipState: string = 'unselected';
   @State zipFileName: string = '';
   @State zipSummary: string = '';
@@ -69,6 +71,8 @@ export struct ImportVaultDialog {
       return failed;
     };
   onPreviewGitVaultId: (remote: string) => string = (_remote: string): string => '';
+  /** v1.69：置位 native 取消标志，中止进行中的 clone。 */
+  onCancelGitImport: () => void = () => {};
   onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
   onCancel: () => void = () => {};
 
@@ -209,6 +213,16 @@ export struct ImportVaultDialog {
     }, 0);
   }
 
+  /** v1.69：clone 进行中由 footer「取消导入」触发；只置位一次，等待 Promise 终态。 */
+  private cancelGitImport(): void {
+    if (!this.working || this.source !== 'git' || this.gitCancelling) {
+      return;
+    }
+    this.gitCancelling = true;
+    this.gitProgressText = '正在取消导入…';
+    this.onCancelGitImport();
+  }
+
   private async importGit(): Promise<void> {
     if (this.gitRemote.trim().length === 0 || this.working) {
       return;
@@ -228,6 +242,7 @@ export struct ImportVaultDialog {
     };
     this.gitFailureText = '';
     this.gitRetryAvailable = false;
+    this.gitCancelling = false;
     this.gitProgressText = '正在准备导入…';
     this.setWorking(true);
     try {
@@ -240,6 +255,13 @@ export struct ImportVaultDialog {
         this.clearGitCredentials();
         this.controller?.close();
         this.onCancel();
+        return;
+      }
+      if (outcome.status === 'cancelled') {
+        this.gitProgressText = '已取消导入';
+        this.gitRetryAvailable = true;
+        this.setWorking(false);
+        this.focusGitFailure('retry');
         return;
       }
       this.gitFailureText = outcome.guidance + (outcome.detail.length > 0
@@ -257,6 +279,7 @@ export struct ImportVaultDialog {
       this.setWorking(false);
       this.focusGitFailure('retry');
     } finally {
+      this.gitCancelling = false;
       if (this.working) {
         this.setWorking(false);
       }
@@ -837,9 +860,18 @@ export struct ImportVaultDialog {
   @Builder
   DialogFooter() {
     Row({ space: Space.s2 }) {
-      UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.working), (): void => {
-        this.close();
-      }, true)
+      // v1.69：Git clone 进行中「取消」转为「取消导入」并可点（69.2），其余忙碌态保持锁定。
+      UtilityDialogAction(UIUtils.makeBinding<string>(() =>
+        this.working && this.source === 'git' && !this.gitCancelling ? '取消导入' : '取消'), 'secondary',
+        this.singleScreen,
+        UIUtils.makeBinding<boolean>(() => !this.working || (this.source === 'git' && !this.gitCancelling)),
+        (): void => {
+          if (this.working && this.source === 'git' && !this.gitCancelling) {
+            this.cancelGitImport();
+          } else {
+            this.close();
+          }
+        }, true)
       if (this.source === 'local') {
         UtilityDialogAction(UIUtils.makeBinding<string>(() => this.associating ? '正在关联…' : '关联此目录'), 'primary',
           this.singleScreen, UIUtils.makeBinding<boolean>(() => this.hasPicked() && !this.working), (): void => {

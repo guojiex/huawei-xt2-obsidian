@@ -8,9 +8,11 @@ const require = createRequire(new URL('../../web/mdpreview/package.json', import
 const { transformSync } = require('esbuild');
 const dialogSource = readSourceFile(new URL('../../entry/src/main/ets/components/ImportVaultDialog.ets', import.meta.url));
 const indexSource = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
-const syncSource = readSourceFile(new URL('../../entry/src/main/ets/pages/SyncPage.ets', import.meta.url));
 const vaultManagerSource = readSourceFile(new URL('../../entry/src/main/ets/components/VaultManagerView.ets', import.meta.url));
 const utilityShellSource = readSourceFile(new URL('../../entry/src/main/ets/components/UtilityDialogShell.ets', import.meta.url));
+const gitImportServiceSource = readSourceFile(new URL('../../entry/src/main/ets/model/GitImportService.ets', import.meta.url));
+const gitNativeServiceSource = readSourceFile(new URL('../../entry/src/main/ets/git/GitNativeService.ets', import.meta.url));
+const nativeSource = readSourceFile(new URL('../../native/git2_napi/src/libgit2_napi.c', import.meta.url));
 // 2026-11-13 起 Gitee/GitHub 判定收敛到 git/GitRemoteAuth.ets，harness 剥掉 import/export 内联。
 const gitAuthSource = readSourceFile(new URL('../../entry/src/main/ets/git/GitRemoteAuth.ets', import.meta.url))
   .replace(/^import .*;\n/gm, '')
@@ -32,8 +34,23 @@ class ImportVaultDialogHarness {
   ${extract('  aboutToDisappear(): void {', '\n  private chooseSource(')}
   ${extract('  private chooseSource(', '\n  private hasPicked(')}
   ${extract('  private hasPicked(', '\n  private directoryTitle(')}
-  ${extract('  private directoryTitle(', '\n  private continueGit(')}
-  ${extract('  private continueGit(', '\n  @Builder')}
+  ${extract('  private directoryTitle(', '\n  private directoryDescription(')}
+  ${extract('  private directoryDescription(', '\n  private directoryActionLabel(')}
+  ${extract('  private directoryActionLabel(', '\n  private directoryCardAccessibilityText(')}
+  ${extract('  private directoryCardAccessibilityText(', '\n  private async pickDirectory(')}
+  ${extract('  private async pickDirectory(', '\n  private async associateDirectory(')}
+  ${extract('  private async associateDirectory(', '\n  private redactGitDetail(')}
+  ${extract('  private redactGitDetail(', '\n  private focusGitFailure(')}
+  ${extract('  private focusGitFailure(', '\n  private cancelGitImport(')}
+  ${extract('  private cancelGitImport(', '\n  private async importGit(')}
+  ${extract('  private async importGit(', '\n  private zipCardTitle(')}
+  ${extract('  private zipCardTitle(', '\n  private zipCardDescription(')}
+  ${extract('  private zipCardDescription(', '\n  private zipCardActionLabel(')}
+  ${extract('  private zipCardActionLabel(', '\n  private zipCardAccessibilityText(')}
+  ${extract('  private zipCardAccessibilityText(', '\n  private zipFailureMessage(')}
+  ${extract('  private zipFailureMessage(', '\n  private async chooseZip(')}
+  ${extract('  private async chooseZip(', '\n  private async importZip(')}
+  ${extract('  private async importZip(', '\n  @Builder')}
   constructor() {
     this.source = 'local';
     this.working = false;
@@ -48,9 +65,14 @@ class ImportVaultDialogHarness {
     this.gitToken = '';
     this.showGitToken = false;
     this.gitAuthHint = '';
+    this.gitProgressText = '';
+    this.gitFailureText = '';
+    this.gitRetryAvailable = false;
+    this.gitCancelling = false;
     this.closed = 0;
-    this.drafts = [];
+    this.cancelled = false;
     this.calls = [];
+    this.cancelCalls = 0;
     this.pickResult = null;
     this.pickError = false;
     this.associateResult = false;
@@ -63,12 +85,21 @@ class ImportVaultDialogHarness {
     this.importingZip = false;
     this.chooseOutcome = { status: 'cancelled', kind: 'corrupt', fileName: '', summary: '', defaultVaultName: '' };
     this.importOutcome = { status: 'cancelled', kind: 'corrupt', result: null };
+    this.gitOutcome = { status: 'failed', vaultId: '', category: 'other', detail: '', guidance: 'Git 导入未完成。', focusTarget: 'retry', warning: '' };
     this.controller = { close: () => { this.closed++; } };
-    this.onContinueGit = draft => this.drafts.push(draft);
     this.onCancel = () => { this.cancelled = true; };
     this.onBusyChange = busy => this.busyChanges.push(busy);
     this.onChooseZip = async () => { this.calls.push('chooseZip'); return this.chooseOutcome; };
     this.onImportZip = async (name, onProgress) => { this.calls.push('importZip:' + name); return this.importOutcome; };
+    this.onImportGit = async (draft, onProgress) => {
+      this.calls.push('importGit:' + draft.remote);
+      this.gitImportDraft = draft;
+      onProgress('正在克隆…');
+      return this.gitOutcome;
+    };
+    this.onCancelGitImport = () => { this.cancelCalls++; };
+    this.onPreviewGitVaultId = remote => 'preview-of-' + remote;
+    this.getUIContext = () => ({});
     this.onChooseDirectory = async () => {
       this.calls.push('choose');
       if (this.pickError) {
@@ -84,7 +115,13 @@ module.exports = ImportVaultDialogHarness;
 
 function createHarness() {
   const module = { exports: {} };
-  vm.runInContext(harnessCode, vm.createContext({ module, exports: module.exports }));
+  // setTimeout 同步执行、FocusRequest 置空：focusGitFailure 的焦点恢复在 vm realm 内是纯桩。
+  vm.runInContext(harnessCode, vm.createContext({
+    module,
+    exports: module.exports,
+    setTimeout: (fn) => { fn(); },
+    FocusRequest: { safely: () => {} }
+  }));
   return new module.exports();
 }
 
@@ -105,7 +142,6 @@ test('import dialog exposes local and Git sources and defaults to local', () => 
   assert.match(content, /this\.SourceTab\('本地目录', 'local'\)/);
   assert.match(content, /this\.SourceTab\('Git 仓库', 'git'\)/);
   assert.match(dialogSource, /\.onClick\(\(\) => \{ this\.chooseSource\(value\); \}\)/);
-  assert.match(dialogSource, /\.scrollBar\(BarState\.Off\)\s*\.margin\(\{ top: Space\.s4 \}\)/);
 });
 
 test('source tabs ignore changes while the import dialog is busy', () => {
@@ -137,59 +173,153 @@ test('existing Git libraries stay listed and can still be selected locally', () 
   assert.doesNotMatch(vaultManagerSource, /各自独立同步/);
 });
 
-test('Git source collects provider credentials in the dialog and documents safe storage', () => {
+test('Git source collects provider credentials inside the dialog and documents safe storage', () => {
   assert.match(dialogSource, /Text\('连接远端 Git 仓库'\)/);
   assert.match(dialogSource, /Text\('仓库地址'\)/);
   assert.match(dialogSource, /placeholder: 'https:\/\/github\.com\/用户名\/仓库\.git'/);
   assert.match(dialogSource, /Text\('分支'\)/);
-  assert.match(dialogSource, /if \(isGiteeRemote\(this\.gitRemote\)\) \{[\s\S]*?Text\('用户名'\)/);
-  assert.match(dialogSource, /TextInput\(\{ placeholder: 'Gitee 用户名', text: this\.gitUsername \}\)/);
+  assert.match(dialogSource, /if \(this\.gitRemote\.trim\(\)\.length > 0 && !isGitHubRemote\(this\.gitRemote\)\) \{[\s\S]*?Text\('用户名'\)/);
+  assert.match(dialogSource, /TextInput\(\{ placeholder: 'Gitee \/ GitLab 用户名', text: this\.gitUsername \}\)/);
   assert.match(dialogSource, /TextInput\(\{ placeholder: '私有仓库访问令牌', text: this\.gitToken \}\)/);
   assert.match(dialogSource, /\.type\(this\.showGitToken \? InputType\.Normal : InputType\.Password\)/);
   assert.match(dialogSource, /accessibilityText\(this\.showGitToken \? '隐藏访问令牌' : '显示访问令牌'\)/);
-  assert.match(dialogSource, /GitHub 与 Gitee 均使用令牌（Basic 认证）/);
-  assert.match(dialogSource, /GitHub 使用令牌（Basic 认证）；私有仓库需要令牌/);
-  assert.match(dialogSource, /成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换/);
-  assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.working \? '处理中…' : '导入 Git 仓库'\), 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.gitRemote\.trim\(\)\.length > 0 && !this\.working\)/);
+  assert.match(dialogSource, /GitHub 与 Gitee 均使用令牌（Basic 认证）；移除库只删除手机副本，远端仓库保留。/);
+  assert.match(dialogSource, /成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在 Git 同步窗口更换。/);
+  assert.match(dialogSource, /目标知识库：vaults\/' \+ \(this\.gitRemote\.trim\(\)\.length > 0\s*\? this\.onPreviewGitVaultId\(this\.gitRemote\) : '填写地址后预览'\)/);
+  assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.working \? '正在导入…'\s*: this\.gitRetryAvailable \? '重试导入' : '导入 Git 仓库'\), 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.gitRemote\.trim\(\)\.length > 0 && !this\.working\)/);
   assert.match(dialogSource, /username: username,\s*token: this\.gitToken/);
-  assert.match(syncSource, /TextInput\(\{ placeholder: '私有库填 Access Token/);
-  assert.match(indexSource, /onContinueGit: \(draft: GitImportDraft\): void => \{\s*void this\.openGitSyncPage\(draft\);/);
-  assert.match(indexSource, /GitImportDraftStore\.set\(draft\);[\s\S]*?router\.pushUrl\(\{ url: 'pages\/SyncPage' \}\)/);
-  assert.match(indexSource, /cancel: \(\): void => \{\s*if \(!this\.importVaultDialogBusy\) \{\s*clearImportDraft\(\);/);
-  assert.match(indexSource, /onCancel: clearImportDraft/);
+  // v1.68 起导入不再经 SyncPage 交接：表单提交直接走同窗导入服务。
+  assert.doesNotMatch(indexSource, /onContinueGit|clearImportDraft|pages\/SyncPage/);
+  assert.match(indexSource, /onImportGit: \(draft: GitImportDraft, onProgress: \(stage: string\) => void\): Promise<GitImportOutcome> =>\s*this\.importGitAndSwitch\(draft, onProgress\)/);
+  assert.match(indexSource, /onPreviewGitVaultId: \(remote: string\): string => this\.previewGitImportVaultId\(remote\)/);
+  assert.match(indexSource, /onBusyChange: \(busy: boolean\): void => \{ this\.importVaultDialogBusy = busy; \}/);
+  assert.match(indexSource, /onWillDismiss: \(action: DismissDialogAction\): void => \{\s*if \(!this\.importVaultDialogBusy\) \{\s*action\.dismiss\(\);/);
 });
 
-test('Git handoff keeps credentials in memory and clears dialog state before navigation', () => {
+test('importGit validates inputs before starting the clone', async () => {
   const dialog = createHarness();
-  dialog.continueGit();
-  assert.equal(dialog.closed, 0);
-  assert.equal(dialog.drafts.length, 0);
+  await dialog.importGit();
+  assert.deepEqual(plain(dialog.calls), [], 'an empty remote must not start an import');
 
-  dialog.gitRemote = '  https://gitee.com/team/notes.git  ';
-  dialog.gitBranch = '  release  ';
+  dialog.gitRemote = 'https://gitee.com/team/notes.git';
   dialog.gitToken = 'synthetic-token';
-  dialog.continueGit();
-  assert.equal(dialog.closed, 0, 'Gitee token requires its username');
-  assert.equal(dialog.drafts.length, 0);
-  assert.match(dialog.gitAuthHint, /填写对应用户名/);
+  await dialog.importGit();
+  assert.deepEqual(plain(dialog.calls), [], 'a Gitee token without its username must not start an import');
+  assert.match(dialog.gitAuthHint, /需要填写对应用户名/);
 
-  dialog.gitUsername = ' synthetic-user ';
-  dialog.continueGit();
-  assert.equal(dialog.closed, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(dialog.drafts[0])), {
+  dialog.gitUsername = 'synthetic-user';
+  await dialog.importGit();
+  assert.deepEqual(plain(dialog.calls), ['importGit:https://gitee.com/team/notes.git']);
+  assert.deepEqual(plain(dialog.gitImportDraft), {
     remote: 'https://gitee.com/team/notes.git',
-    branch: 'release',
+    branch: 'main',
     username: 'synthetic-user',
     token: 'synthetic-token'
   });
-  assert.equal(dialog.gitUsername, '');
+});
+
+test('importGit success closes the dialog, clears credentials and reports completion', async () => {
+  const dialog = createHarness();
+  dialog.gitRemote = 'https://github.com/user/repo.git';
+  dialog.gitUsername = 'leftover-user';
+  dialog.gitToken = 'synthetic-token';
+  dialog.gitOutcome = { status: 'success', vaultId: 'repo', category: '', detail: '', guidance: '', focusTarget: '', warning: '' };
+  await dialog.importGit();
+  assert.equal(dialog.closed, 1);
+  assert.equal(dialog.cancelled, true);
   assert.equal(dialog.gitToken, '');
-  assert.equal(dialog.showGitToken, false);
+  assert.equal(dialog.gitUsername, '');
+  assert.equal(dialog.gitProgressText, '导入完成');
+  assert.equal(dialog.working, false);
+  assert.deepEqual(plain(dialog.busyChanges), [true, false]);
+});
+
+test('importGit failure keeps the dialog open with redacted detail and retry focus', async () => {
+  const dialog = createHarness();
+  dialog.gitRemote = 'https://gitee.com/team/notes.git';
+  dialog.gitUsername = 'synthetic-user';
+  dialog.gitToken = 'synthetic-token';
+  dialog.gitOutcome = {
+    status: 'failed', vaultId: '', category: 'auth',
+    detail: 'auth failed with synthetic-token', guidance: '认证失败，请检查仓库地址和访问令牌后重试。',
+    focusTarget: 'token', warning: ''
+  };
+  await dialog.importGit();
+  assert.equal(dialog.closed, 0, 'the dialog stays open for retry after a clone failure');
+  assert.equal(dialog.gitProgressText, '导入失败，可修改信息后重试');
+  assert.equal(dialog.gitRetryAvailable, true);
+  assert.match(dialog.gitFailureText, /认证失败，请检查仓库地址和访问令牌后重试。/);
+  assert.match(dialog.gitFailureText, /底层错误：/);
+  assert.match(dialog.gitFailureText, /\[令牌已隐藏\]/);
+  assert.equal(dialog.gitFailureText.includes('synthetic-token'), false);
+  assert.equal(dialog.working, false);
+});
+
+test('importGit maps a thrown service error to redacted failure copy', async () => {
+  const dialog = createHarness();
+  dialog.gitRemote = 'https://github.com/user/repo.git';
+  dialog.gitToken = 'synthetic-token';
+  dialog.onImportGit = async () => { throw new Error('boom synthetic-token'); };
+  await dialog.importGit();
+  assert.equal(dialog.closed, 0);
+  assert.match(dialog.gitFailureText, /Git 导入未完成；当前库未切换，可以修改信息后重试。/);
+  assert.match(dialog.gitFailureText, /\[令牌已隐藏\]/);
+  assert.equal(dialog.gitFailureText.includes('synthetic-token'), false);
+  assert.equal(dialog.gitRetryAvailable, true);
+  assert.equal(dialog.working, false);
+});
+
+test('a cancelled clone outcome becomes 已取消导入 with retry available and no failure copy (69.3)', async () => {
+  const dialog = createHarness();
+  dialog.gitRemote = 'https://github.com/user/repo.git';
+  dialog.gitOutcome = { status: 'cancelled', vaultId: '', category: '', detail: '', guidance: '', focusTarget: '', warning: '' };
+  await dialog.importGit();
+  assert.deepEqual(plain(dialog.calls), ['importGit:https://github.com/user/repo.git']);
+  assert.equal(dialog.gitProgressText, '已取消导入');
+  assert.equal(dialog.gitFailureText, '');
+  assert.equal(dialog.gitRetryAvailable, true);
+  assert.equal(dialog.closed, 0, 'a cancelled import keeps the dialog open with its inputs');
+  assert.equal(dialog.working, false);
+  assert.equal(dialog.gitCancelling, false, 'the cancelling latch is released in the terminal path');
+  assert.deepEqual(plain(dialog.busyChanges), [true, false]);
+});
+
+test('cancelGitImport requests native cancellation exactly once per clone (69.2)', () => {
+  const dialog = createHarness();
+  dialog.cancelGitImport();
+  assert.equal(dialog.cancelCalls, 0, 'not working → the cancel request is a plain close, not a native cancel');
 
   dialog.working = true;
-  dialog.continueGit();
-  assert.equal(dialog.closed, 1);
-  assert.equal(dialog.drafts.length, 1);
+  dialog.source = 'local';
+  dialog.cancelGitImport();
+  assert.equal(dialog.cancelCalls, 0, 'the local-directory flow has no clone to cancel');
+
+  dialog.source = 'git';
+  dialog.cancelGitImport();
+  assert.equal(dialog.cancelCalls, 1);
+  assert.equal(dialog.gitCancelling, true);
+  assert.equal(dialog.gitProgressText, '正在取消导入…');
+
+  dialog.cancelGitImport();
+  assert.equal(dialog.cancelCalls, 1, 'repeat taps while cancelling are ignored');
+});
+
+test('Git import cancellation is wired end to end (69.1–69.4 source wiring)', () => {
+  assert.match(dialogSource, /@State gitCancelling: boolean = false/);
+  assert.match(dialogSource, /onCancelGitImport: \(\) => void = \(\) => \{\}/);
+  assert.match(dialogSource, /this\.working && this\.source === 'git' && !this\.gitCancelling \? '取消导入' : '取消'/);
+  assert.match(dialogSource, /UIUtils\.makeBinding<boolean>\(\(\) => !this\.working \|\| \(this\.source === 'git' && !this\.gitCancelling\)\)/);
+  assert.match(dialogSource, /this\.cancelGitImport\(\);/);
+  assert.match(dialogSource, /this\.onCancelGitImport\(\);/);
+  assert.match(indexSource, /onCancelGitImport: \(\): void => \{ void this\.cancelGitImportClone\(\); \}/);
+  assert.match(indexSource, /await GitNativeService\.cancelClone\(\)/);
+  assert.match(gitNativeServiceSource, /static async cancelClone\(\): Promise<void>/);
+  assert.match(gitImportServiceSource, /clone cancelled by user/);
+  assert.match(gitImportServiceSource, /status: 'cancelled', vaultId: '', category: '', detail: '', guidance: '',\s*focusTarget: '', warning: ''/);
+  assert.match(nativeSource, /\{"cancelClone", NULL, cancel_clone, NULL, NULL, NULL, napi_default, NULL\}/);
+  assert.match(nativeSource, /clear_clone_cancel\(\);/);
+  assert.match(nativeSource, /return GIT_EUSER;/);
+  assert.match(nativeSource, /"clone cancelled by user"/);
 });
 
 test('closing or dismissing the import dialog clears credentials and visibility state', () => {
@@ -222,10 +352,6 @@ test('picked directory lives in dialog @State, not in a @Prop the parent cannot 
   assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => this\.associating \? '正在关联…' : '关联此目录'\), 'primary',\s*this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => this\.hasPicked\(\) && !this\.working\)/);
   assert.match(indexSource, /onChooseDirectory: \(\): Promise<string \| null> => this\.chooseExternalDirectory\(\)/);
   assert.match(indexSource, /onAssociateDirectory: \(\): Promise<boolean> => this\.associateExternalDirectory\(\)/);
-  assert.match(indexSource, /onBusyChange: \(busy: boolean\): void => \{ this\.importVaultDialogBusy = busy; \}/);
-  assert.match(indexSource, /onWillDismiss: \(action: DismissDialogAction\): void => \{\s*if \(!this\.importVaultDialogBusy\) \{\s*action\.dismiss\(\);/);
-  assert.match(indexSource, /this\.pendingExternalDirectory = null;\s*this\.showFailureFeedback\('authorization', 'permission', 'unknown', 'status_unknown'/);
-  assert.match(indexSource, /restoreImportFocus\(\);[\s\S]*?this\.importVaultDialogBusy = false;\s*this\.importVaultCtl\?\.close\(\)/);
   assert.match(indexSource, /vault-manager-import-button/);
   assert.match(vaultManagerSource, /\.focusable\(true\)\s*\.id\('vault-manager-import-button'\)/);
   assert.doesNotMatch(indexSource, /importHasDirectorySelection|importDirectoryName/);
@@ -311,13 +437,11 @@ test('associate runs only after a pick and stays open when the parent reports fa
   assert.equal(dialog.closed, 0, 'the dialog stays open; the parent owns closing on success');
 });
 
-test('narrow and short windows keep the dialog within bounds and scroll the content area', () => {
+test('narrow and short windows keep the shell scrolling and the footer pinned', () => {
   assert.match(dialogSource, /preferredWidthVp: Size\.importDialogW/);
   assert.match(dialogSource, /singleScreen: this\.singleScreen/);
-  assert.match(dialogSource, /\.constraintSize\(\{ maxHeight: Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 6\) \}\)/);
-  assert.match(dialogSource, /UtilityDialogShell\(\{[\s\S]*?scrollContent: false,[\s\S]*?content: \(\): void => \{ this\.DialogContent\(\); \},[\s\S]*?footer: \(\): void => \{ this\.DialogFooter\(\); \}/);
-  assert.match(dialogSource, /\.focusable\(!this\.working\)[\s\S]*?\.id\('import-directory-card'\)/);
-  assert.match(dialogSource, /UtilityDialogAction\(UIUtils\.makeBinding<string>\(\(\) => '取消'\), 'secondary', this\.singleScreen, UIUtils\.makeBinding<boolean>\(\(\) => !this\.working\)/);
+  assert.match(dialogSource, /scrollContent: true,/);
+  assert.match(dialogSource, /UtilityDialogShell\(\{[\s\S]*?content: \(\): void => \{ this\.DialogContent\(\); \},[\s\S]*?footer: \(\): void => \{ this\.DialogFooter\(\); \}/);
   assert.match(indexSource, /singleScreen: importSheet,[\s\S]*?windowWidthVp: this\.windowWidthVp,\s*windowHeightVp: this\.windowHeightVp/);
   assert.match(indexSource, /alignment: importSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
   assert.match(indexSource, /FocusRequest\.safely\(this\.getUIContext\(\), focusReturnId\)/);

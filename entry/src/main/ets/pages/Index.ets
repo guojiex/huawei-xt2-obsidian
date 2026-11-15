@@ -2620,6 +2620,15 @@ struct Index {
     return GitImportService.previewVaultId(remote);
   }
 
+  /** v1.69：导入弹窗「取消导入」——置位 native 取消标志中止进行中的 clone。
+   *  so 未加载或导出缺失时静默失败：clone 跑到自然终态，弹窗仍可重试。 */
+  private async cancelGitImportClone(): Promise<void> {
+    try {
+      await GitNativeService.cancelClone();
+    } catch (_error) {
+    }
+  }
+
   /** 导入成功后复用正式切库保护；克隆与失败清理由 GitImportService 统一处理。 */
   private async importGitAndSwitch(draft: GitImportDraft,
     onProgress: (stage: string) => void): Promise<GitImportOutcome> {
@@ -2736,6 +2745,7 @@ struct Index {
           this.importZipBackup(name, onProgress),
         onImportGit: (draft: GitImportDraft, onProgress: (stage: string) => void): Promise<GitImportOutcome> =>
           this.importGitAndSwitch(draft, onProgress),
+        onCancelGitImport: (): void => { void this.cancelGitImportClone(); },
         onPreviewGitVaultId: (remote: string): string => this.previewGitImportVaultId(remote),
         onBusyChange: (busy: boolean): void => { this.importVaultDialogBusy = busy; },
         onCancel: clearImportDialogState

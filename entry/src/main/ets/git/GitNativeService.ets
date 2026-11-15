@@ -21,6 +21,14 @@ export class GitNativeService {
     return fn(options);
   }
 
+  // v1.69：置位 native 取消标志中止进行中的 clone。native 侧在新 clone 排队前
+  // 复位标志，本方法只在 clone 运行期调用（见 ImportVaultDialog「取消导入」）。
+  static async cancelClone(): Promise<void> {
+    const native: ESObject = await GitNativeService.nativeModule();
+    const fn: () => void = native.cancelClone;
+    fn();
+  }
+
   static async repositoryState(path: string, targetBranch: string = 'xt2'): Promise<Git2RepositoryState> {
     const native: ESObject = await GitNativeService.nativeModule();
     const fn: (path: string, targetBranch: string) => Git2RepositoryState = native.getRepositoryState;

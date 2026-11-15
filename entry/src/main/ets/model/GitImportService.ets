@@ -100,9 +100,11 @@ export class GitImportService {
     } catch (error) {
       const err = error as BusinessError;
       let detail: string = GitImportService.redact(err.message ?? String(error), token);
+      // v1.69：native cancelClone 中止 clone 时错误 detail 固定含该标记。
+      const cancelled: boolean = detail.includes('clone cancelled by user');
       hilog.error(GIT_DIAGNOSTIC_DOMAIN, GIT_DIAGNOSTIC_TAG,
         'Git %{public}s failure host=%{public}s code=%{public}d detail=%{public}s',
-        'clone', gitRemoteHost(remote), err.code ?? -1, detail);
+        cancelled ? 'clone-cancel' : 'clone', gitRemoteHost(remote), err.code ?? -1, detail);
       if (markerCreated) {
         try {
           registry.cleanupGitImport(finalId, tempId);
@@ -111,6 +113,14 @@ export class GitImportService {
           detail += '\n导入目录清理未完成；恢复标记保留，应用下次启动会重试。底层错误：' +
             GitImportService.redact(cleanup.message ?? String(cleanupError), token);
         }
+      }
+      if (cancelled) {
+        onProgress('已取消导入');
+        const cancelledOutcome: GitImportOutcome = {
+          status: 'cancelled', vaultId: '', category: '', detail: '', guidance: '',
+          focusTarget: '', warning: ''
+        };
+        return cancelledOutcome;
       }
       const guidance: string = GitImportService.explainError(detail, remote);
       const focusTarget: string = GitImportService.focusTarget(detail);

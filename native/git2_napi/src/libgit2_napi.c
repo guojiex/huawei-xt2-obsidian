@@ -56,6 +56,7 @@ typedef struct {
   bool auth_username_present;
   bool auth_password_present;
   bool auth_bearer_present;
+  bool cancel_aborted;
 } clone_work_t;
 
 typedef struct {
@@ -90,6 +91,36 @@ typedef enum {
 static pthread_mutex_t g_clone_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_once_t g_init_once = PTHREAD_ONCE_INIT;
 static int g_init_result = -1;
+
+// 取消标志：JS 线程置位（cancelClone）、libgit2 工作线程检查（execute_clone /
+// transfer_progress / credentials 回调）。跨线程访问，用原子内建操作，
+// 不复用 g_clone_mutex——cancel 从 JS 线程调用时 clone 正持锁，加锁会死锁。
+static int g_clone_cancel_flag = 0;
+
+static const char *const CLONE_CANCELLED_DETAIL = "clone cancelled by user";
+
+static void request_clone_cancel(void) {
+  __atomic_store_n(&g_clone_cancel_flag, 1, __ATOMIC_SEQ_CST);
+}
+
+static void clear_clone_cancel(void) {
+  __atomic_store_n(&g_clone_cancel_flag, 0, __ATOMIC_SEQ_CST);
+}
+
+static bool clone_cancel_requested(void) {
+  return __atomic_load_n(&g_clone_cancel_flag, __ATOMIC_SEQ_CST) != 0;
+}
+
+// 统一写入「已取消」错误详情；strdup 失败时保留 capture_clone_error 的原始
+// 详情（error_message 为 NULL 时 complete_clone 回落 "unknown error"）。
+static void mark_clone_cancelled(clone_work_t *work, int result_code) {
+  char *detail = strdup(CLONE_CANCELLED_DETAIL);
+  if (detail != NULL) {
+    free(work->error_message);
+    work->error_message = detail;
+  }
+  work->result_code = result_code;
+}
 
 static char *format_text(const char *format, ...) {
   va_list args;
@@ -171,6 +202,12 @@ static void call_progress_on_js_thread(napi_env env, napi_value callback,
 
 static int report_transfer_progress(const git_indexer_progress *stats, void *payload) {
   clone_work_t *work = (clone_work_t *)payload;
+  if (clone_cancel_requested()) {
+    if (work != NULL) {
+      work->cancel_aborted = true;
+    }
+    return GIT_EUSER;
+  }
   if (work == NULL || work->progress_function == NULL || stats == NULL) {
     return 0;
   }
@@ -1064,6 +1101,12 @@ static int acquire_credentials(git_credential **out, const char *url,
   (void)url;
   (void)username_from_url;
   clone_work_t *work = (clone_work_t *)payload;
+  if (clone_cancel_requested()) {
+    if (work != NULL) {
+      work->cancel_aborted = true;
+    }
+    return GIT_EUSER;
+  }
   if (work != NULL) {
     work->auth_callback_invoked = true;
     work->auth_callback_calls++;
@@ -1159,6 +1202,11 @@ static void execute_clone(napi_env env, void *data) {
   }
 
   pthread_mutex_lock(&g_clone_mutex);
+  if (clone_cancel_requested()) {
+    mark_clone_cancelled(work, -17);
+    pthread_mutex_unlock(&g_clone_mutex);
+    return;
+  }
   const char *ca_file = work->ca_file != NULL
                             ? work->ca_file
                             : OPENHARMONY_SYSTEM_CA_FILE;
@@ -1234,6 +1282,9 @@ static void execute_clone(napi_env env, void *data) {
   work->result_code = git_clone(&repository, work->url, work->target_path, &options);
   if (work->result_code < 0) {
     capture_clone_error(work, work->result_code);
+    if (work->cancel_aborted || clone_cancel_requested()) {
+      mark_clone_cancelled(work, -17);
+    }
   }
   if (repository != NULL) {
     git_repository_free(repository);
@@ -1569,6 +1620,16 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static napi_value cancel_clone(napi_env env, napi_callback_info info) {
+  (void)info;
+  request_clone_cancel();
+  napi_value undefined;
+  if (napi_get_undefined(env, &undefined) != napi_ok) {
+    return NULL;
+  }
+  return undefined;
+}
+
 static napi_value clone_async(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
@@ -1684,6 +1745,8 @@ static napi_value clone_async(napi_env env, napi_callback_info info) {
     free_clone_work(work);
     return throw_type_error(env, "could not create async clone work");
   }
+  // 新 clone 排队前复位取消标志：上一次导入遗留的陈旧取消请求不得影响本次。
+  clear_clone_cancel();
   if (napi_queue_async_work(env, work->async_work) != napi_ok) {
     napi_delete_async_work(env, work->async_work);
     release_progress_function(work);
@@ -1699,6 +1762,7 @@ static napi_value register_module(napi_env env, napi_value exports) {
       {"getFeatures", NULL, get_features, NULL, NULL, NULL, napi_default, NULL},
       {"getRepositoryState", NULL, get_repository_state, NULL, NULL, NULL, napi_default, NULL},
       {"clone", NULL, clone_async, NULL, NULL, NULL, napi_default, NULL},
+      {"cancelClone", NULL, cancel_clone, NULL, NULL, NULL, napi_default, NULL},
       {"gitAction", NULL, git_action_async, NULL, NULL, NULL, napi_default, NULL},
   };
   if (napi_define_properties(env, exports,
