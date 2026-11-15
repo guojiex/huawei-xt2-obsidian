@@ -4,7 +4,8 @@
  */
 import { bundleManager, common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
-import { fileIo, picker } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
+import picker from '@ohos.file.picker';
 import { BusinessError, zlib } from '@kit.BasicServicesKit';
 import { atomicWriteText } from '../common/AtomicWrite';
 import { VaultEntry } from './Vault';

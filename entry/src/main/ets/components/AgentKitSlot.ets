@@ -10,8 +10,6 @@ const XIAOYI_AGENT_ID: string = 'agentb21117de704941b3ba497bd5de94f6ad';
 @Component
 struct AgentKitSlot {
   onDialogClosed: () => void = (): void => {};
-  /** 当前打开笔记的提示文本，作为 queryText 预填进小艺输入框（仅初始文本，非系统上下文）。 */
-  noteHint: string = '';
 
   private controller: FunctionController = new FunctionController();
   private readonly dialogClosedListener = (): void => {
@@ -31,11 +29,11 @@ struct AgentKitSlot {
     FunctionComponent({
       agentId: XIAOYI_AGENT_ID,
       controller: this.controller,
-      // queryText 仅在组件实例化时注入，作为输入框初始文本；用户可改可删，
-      // 小艺不会将其当作系统级上下文。FunctionComponent 层无 variables/context 注入字段。
+      // 刻意不设 queryText：它是用户可见的输入框初始文本，不是给模型的指令通道；
+      // 且只在组件实例化时生效，填运行时信息切换笔记后即过期。
+      // 能力引导由平台欢迎语 / 推荐问题承载，安全约束由平台角色指令承载。
       options: {
-        title: 'Agent 对话',
-        queryText: this.noteHint
+        title: 'Agent 对话'
       },
       onError: (error: BusinessError): void => {
         hilog.error(DOMAIN, TAG, '小艺 FunctionComponent 错误码 %{public}d', error.code);
@@ -46,10 +44,10 @@ struct AgentKitSlot {
 }
 
 @Builder
-export function AgentKitSlotBuilder(onDialogClosed: () => void, noteHint: string): void {
-  AgentKitSlot({ onDialogClosed: onDialogClosed, noteHint: noteHint })
+export function AgentKitSlotBuilder(onDialogClosed: () => void): void {
+  AgentKitSlot({ onDialogClosed: onDialogClosed })
 }
 
-export function getAgentKitSlotBuilder(): WrappedBuilder<[() => void, string]> {
+export function getAgentKitSlotBuilder(): WrappedBuilder<[() => void]> {
   return wrapBuilder(AgentKitSlotBuilder)
 }

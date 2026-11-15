@@ -1,4 +1,4 @@
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { image } from '@kit.ImageKit';
 import { NoteShareService } from './NoteShareService';
 import { VaultRegistry } from './VaultRegistry';

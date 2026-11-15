@@ -11,7 +11,7 @@
  */
 import { common } from '@kit.AbilityKit';
 import { preferences } from '@kit.ArkData';
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { DEFAULT_VAULT_ID, SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from './Vault';

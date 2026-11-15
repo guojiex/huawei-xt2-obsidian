@@ -11,7 +11,7 @@
  * ⚠️ 调用方只能拿到 VaultAccess 接口，不许按 kind 分叉 IO（一层解析器原则，
  *    AGENTS.md 硬约束 14 的延伸）：差异已经全部关在这两个实现里了。
  */
-import { fileIo, fileShare, picker } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { common } from '@kit.AbilityKit';
 import nativeVaultDir, {
   VaultDirListResult, VaultDirIoResult, VaultDirReadResult,

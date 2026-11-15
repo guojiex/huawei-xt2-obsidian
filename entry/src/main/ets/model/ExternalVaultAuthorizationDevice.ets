@@ -1,6 +1,8 @@
-/** ExternalVaultAuthorizationDevice.ets —— v1.5 15.1 系统 API 适配层。 */
+/** ExternalVaultAuthorizationDevice.ets —— v1.5 15.1 系统 API 适配层。
+ *  2026-11-15 冷启动优化（XT2 trace）：fileShare（@ohos.fileshare）改方法内动态 import，
+ *  只在真正走外部目录授权时才加载；picker 改直连子模块，不再拉起 CoreFileKit 全 barrel。 */
 import { common } from '@kit.AbilityKit';
-import { fileShare, picker } from '@kit.CoreFileKit';
+import picker from '@ohos.file.picker';
 import {
   ExternalDirectoryPickerPort, ExternalDirectoryPolicy, ExternalFileSharePort,
   ExternalVaultAuthorizationService, FOLDER_SELECTION_SYSCAP
@@ -24,20 +26,33 @@ export class DeviceExternalDirectoryPicker implements ExternalDirectoryPickerPor
 }
 
 export class DeviceExternalFileShare implements ExternalFileSharePort {
+  private async shareModule(): Promise<ESObject> {
+    const mod: ESObject = await import('@ohos.fileshare');
+    return mod.default;
+  }
+
   async persistPermission(policies: ExternalDirectoryPolicy[]): Promise<void> {
-    await fileShare.persistPermission(policies);
+    const fileShare: ESObject = await this.shareModule();
+    const fn: (policies: ExternalDirectoryPolicy[]) => Promise<void> = fileShare.persistPermission;
+    await fn(policies);
   }
 
   async activatePermission(policies: ExternalDirectoryPolicy[]): Promise<void> {
-    await fileShare.activatePermission(policies);
+    const fileShare: ESObject = await this.shareModule();
+    const fn: (policies: ExternalDirectoryPolicy[]) => Promise<void> = fileShare.activatePermission;
+    await fn(policies);
   }
 
   async checkPersistentPermission(policies: ExternalDirectoryPolicy[]): Promise<boolean[]> {
-    return await fileShare.checkPersistentPermission(policies);
+    const fileShare: ESObject = await this.shareModule();
+    const fn: (policies: ExternalDirectoryPolicy[]) => Promise<boolean[]> = fileShare.checkPersistentPermission;
+    return await fn(policies);
   }
 
   async revokePermission(policies: ExternalDirectoryPolicy[]): Promise<void> {
-    await fileShare.revokePermission(policies);
+    const fileShare: ESObject = await this.shareModule();
+    const fn: (policies: ExternalDirectoryPolicy[]) => Promise<void> = fileShare.revokePermission;
+    await fn(policies);
   }
 }
 

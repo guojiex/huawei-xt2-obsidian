@@ -11,7 +11,7 @@
  * - 超时兜底：写回调超时不触发时 `failWrite()` 回滚并拒绝，不让调用方永久挂起；
  * - 失败一律 `failWrite()` 回滚，不留 .tmp 残留；崩溃/中断时原文件完好。
  */
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { BusinessError } from '@kit.BasicServicesKit';
 
 /** 默认写回调超时（ms）。 */

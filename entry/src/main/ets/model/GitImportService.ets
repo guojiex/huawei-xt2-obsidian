@@ -1,5 +1,5 @@
 /** GitImportService.ets —— 导入弹窗使用的 Git 库安全编排入口。 */
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { GitCredentialStore } from '../git/GitCredentialStore';
@@ -75,7 +75,7 @@ export class GitImportService {
       }
 
       onProgress('正在校验仓库…');
-      const state: Git2RepositoryState = GitNativeService.repositoryState(tempDir);
+      const state: Git2RepositoryState = await GitNativeService.repositoryState(tempDir);
       if (!state.clean || (branch.length > 0 && state.branch !== branch)) {
         throw new Error('clone 后的仓库分支或工作区状态校验失败');
       }

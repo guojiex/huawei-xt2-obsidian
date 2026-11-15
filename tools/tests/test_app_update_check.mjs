@@ -10,22 +10,31 @@ import { readSourceFile } from './lib/source.mjs';
 // D-2：仅用户主动点击触发，进入关于页不自动请求。
 const read = (rel) => readSourceFile(new URL(rel, import.meta.url));
 const service = read('../../entry/src/main/ets/model/AppUpdateCheck.ets');
+// 2026-11-15 冷启动优化：updateManager 拆到设备层 AppUpdateCheckDevice，
+// 由 SettingsView 动态 import —— V 组接口断言改读设备层源码。
+const device = read('../../entry/src/main/ets/model/AppUpdateCheckDevice.ets');
 const settings = read('../../entry/src/main/ets/components/SettingsView.ets');
 const moduleJson = read('../../entry/src/main/module.json5');
 
 test('17.1 服务层：接口来自 @kit.AppGalleryKit，形参只有 context（V1，零新增权限）', () => {
-  assert.match(service, /import \{ updateManager \} from '@kit\.AppGalleryKit'/);
-  assert.match(service, /updateManager\.checkAppUpdate\(context\)/);
-  assert.match(service, /updateManager\.showUpdateDialog\(context\)/);
+  assert.match(device, /import \{ updateManager \} from '@kit\.AppGalleryKit'/);
+  assert.match(device, /updateManager\.checkAppUpdate\(context\)/);
+  assert.match(device, /updateManager\.showUpdateDialog\(context\)/);
+  // updateManager 只在设备层静态依赖；服务层与 SettingsView 均动态 import（启动期不加载）
+  assert.doesNotMatch(service, /^import .*@kit\.AppGalleryKit/m);
+  assert.doesNotMatch(service, /updateManager\./);
+  assert.doesNotMatch(settings, /^import .*runAppUpdateCheck/m);
+  assert.match(settings, /await import\('\.\.\/model\/AppUpdateCheckDevice'\)/);
   // 无权限要求（V1）：module.json5 不因本功能新增权限 ——
   // 既有集为 INTERNET + v1.5 已拍板例外 FILE_ACCESS_PERSIST（硬约束 13，见 api_notes T2）
   assert.doesNotMatch(moduleJson, /ohos\.permission\.(?!INTERNET|FILE_ACCESS_PERSIST)/);
 });
 
 test('17.2 隐私红线：不读市场版本号、不做客户端版本比较（V3）', () => {
-  assert.match(service, /result\.updateAvailable ===\s*\n?\s*updateManager\.UpdateAvailableCode\.LATER_VERSION_EXIST/);
-  assert.doesNotMatch(service, /result\.versionName/);
-  assert.doesNotMatch(service, /result\.versionCode/);
+  assert.match(device, /result\.updateAvailable ===\s*\n?\s*updateManager\.UpdateAvailableCode\.LATER_VERSION_EXIST/);
+  assert.doesNotMatch(device, /result\.versionName/);
+  assert.doesNotMatch(device, /result\.versionCode/);
+  assert.doesNotMatch(device, /versionNotAfter/);
   assert.doesNotMatch(service, /versionNotAfter/);
   // 界面不出现「发现 x.y.z 版本」类市场版本号文案
   assert.doesNotMatch(settings, /发现\s?\d+\.\d+/);
@@ -41,13 +50,13 @@ test('17.3 错误分类：V6 四类 + 通用（纯函数，检查分支专用）
 });
 
 test('17.4 检查与弹框分支分开：弹框 catch 不走 classifyCheckError、不含 1009400003（V6）', () => {
-  const dialogFn = service.slice(service.indexOf('async function showSystemUpdateDialog'));
+  const dialogFn = device.slice(device.indexOf('async function showSystemUpdateDialog'));
   assert.ok(dialogFn.length > 0, 'showSystemUpdateDialog exists');
   assert.doesNotMatch(dialogFn, /classifyCheckError/);
   assert.doesNotMatch(dialogFn, /1009400003/);
   // 检查分支的 catch 使用 classifyCheckError，与弹框分支不共用
-  const checkFn = service.slice(service.indexOf('export async function runAppUpdateCheck'),
-    service.indexOf('async function showSystemUpdateDialog'));
+  const checkFn = device.slice(device.indexOf('export async function runAppUpdateCheck'),
+    device.indexOf('async function showSystemUpdateDialog'));
   assert.match(checkFn, /classifyCheckError\(err\.code\)/);
 });
 
@@ -58,11 +67,11 @@ test('17.5 冷却：5 分钟工程选择、跨会话持久化、冷却期不联�
   assert.match(service, /PREF_NAME: string = 'app_update_check'/);
   assert.match(service, /KEY_LAST_CHECK_MS: string = 'lastCheckMs'/);
   // 冷却判定先于任何联网调用（不联网）
-  const flow = service.slice(service.indexOf('export async function runAppUpdateCheck'));
+  const flow = device.slice(device.indexOf('export async function runAppUpdateCheck'));
   assert.ok(flow.indexOf('cooldownActive') < flow.indexOf('updateManager.checkAppUpdate'),
     'cooldown gate runs before checkAppUpdate');
   // 冷却期内点按不联网：limited 直接返回
-  assert.match(service, /return \{ phase: 'limited', lastCheckClock: formatCheckClock\(lastCheckMs\) \};/);
+  assert.match(device, /return \{ phase: 'limited', lastCheckClock: formatCheckClock\(lastCheckMs\) \};/);
 });
 
 test('17.6 仅手动触发：进入关于页不自动请求（D-2 / V5）', () => {

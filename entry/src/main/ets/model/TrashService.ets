@@ -20,7 +20,7 @@
  * 路径铁律（硬约束 #14）：绝对路径一律经 `VaultRegistry.absoluteInTrash()`，
  * `trash/<vaultKey>` 段的拼接收口在 VaultPathResolver（本文件不拼沙箱路径）。
  */
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { atomicWriteText } from '../common/AtomicWrite';

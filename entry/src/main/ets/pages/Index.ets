@@ -281,7 +281,7 @@ struct Index {
   @State @Watch('onFormatContextChanged') sidebarCollapsed: boolean = false;
   /** 次级视图（库管理 / 设置与关于）整体替换内容区；'note' = 笔记主视图（原型 setView 模型） */
   @State @Watch('onFormatContextChanged') topView: string = 'note';
-  @State agentKitSlotBuilder: WrappedBuilder<[() => void, string]> | null = null;
+  @State agentKitSlotBuilder: WrappedBuilder<[() => void]> | null = null;
   @State showXiaoyiDialogEntry: boolean = false;
   @State vaultManagerReturnView: string = 'note';
   /** v1.58：统计缓存供应用菜单与 Agent 引用栏读取；打开弹窗时重算，不落盘。 */
@@ -381,14 +381,6 @@ struct Index {
     void this.refreshWorkspaceAfterXiaoyi();
   };
 
-  /** 小艺入口提示文案：当前打开笔记的说明（未打开笔记时为空串）。 */
-  private xiaoyiNoteHint(): string {
-    const active: string = this.activeFilePath();
-    if (active.length === 0) {
-      return '';
-    }
-    return `关于当前打开的笔记「${this.paneNoteTitle(active)}」（${active}）：`;
-  }
   private workspaceSessionStore: WorkspaceSessionStore | null = null;
   private pendingWorkspaceSession: WorkspaceSession | null = null;
   private workspaceSessionRestoreStarted: boolean = false;
@@ -669,8 +661,8 @@ struct Index {
     this.agentKitLoadStarted = true;
     try {
       const agentModule: ESObject = await import('../components/AgentKitSlot');
-      const getAgentKitSlotBuilder: () => WrappedBuilder<[() => void, string]> =
-        agentModule.getAgentKitSlotBuilder as () => WrappedBuilder<[() => void, string]>;
+      const getAgentKitSlotBuilder: () => WrappedBuilder<[() => void]> =
+        agentModule.getAgentKitSlotBuilder as () => WrappedBuilder<[() => void]>;
       this.agentKitSlotBuilder = getAgentKitSlotBuilder();
     } catch (error) {
       this.agentKitLoadStarted = false;
@@ -7817,7 +7809,7 @@ struct Index {
       if (this.topView === 'note') {
         if (this.showXiaoyiDialogEntry && this.agentKitSlotBuilder !== null) {
           Row() {
-            this.agentKitSlotBuilder.builder(this.xiaoyiDialogClosed, this.xiaoyiNoteHint())
+            this.agentKitSlotBuilder.builder(this.xiaoyiDialogClosed)
           }
           .margin({ left: Space.s1, right: Space.s1 })
         }

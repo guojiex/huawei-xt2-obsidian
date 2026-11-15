@@ -1,12 +1,13 @@
-import { fileIo } from '@kit.CoreFileKit';
-import { pdfService } from '@kit.PDFKit';
-
 /**
  * NotePdfDocumentService —— v1.53 导出 PDF：HMS PDF Kit 封装（需求 53.1）。
  *
  * 「图片→PDF」路线（api_notes AD1）：逐页 JPEG 经 addImageObject 全幅贴到 A4 页面。
  * 零权限（AD1 声明无 @permission）；设备支持未核实（AD4），调用方必须先 isSupported()。
  * 文字为图片态（不可选中 / 复制），页眉 / 页码不做（v1.53 §3）。
+ *
+ * 2026-11-15 冷启动优化（XT2 trace）：pdfService（@kit.PDFKit）从本文件静态依赖改为
+ * 设备层（NotePdfExportDevice）动态 import —— 首次导出 PDF 时才加载，启动图不再拉起。
+ * 入参校验仍在本层完成，超限 / 非法分页在拉起设备层之前就拒绝。
  */
 export class NotePdfDocumentService {
   static readonly A4_WIDTH_PT: number = 595;
@@ -19,13 +20,9 @@ export class NotePdfDocumentService {
     return canIUse('SystemCapability.OfficeService.PDFService.Core');
   }
 
-  /**
-   * 逐页 JPEG 合成 A4 竖版 PDF。
-   * pageAspects 为逐页真实宽高比（53.12 非末页裁到切片高后不再是 A4 比例）：
-   * 图片按真实比例等比缩放宽贴 A4 宽、顶部对齐，下方留白即自然分页留白。
-   * 任一步失败：清理半成品 PDF 后抛错；releaseDocument 兜底释放。
-   */
-  static exportFromPageImages(pageJpegs: string[], pageAspects: number[], pdfPath: string): void {
+  /** 逐页 JPEG 合成 A4 竖版 PDF；合成本体在设备层（失败清理半成品后抛错）。 */
+  static async exportFromPageImages(pageJpegs: string[], pageAspects: number[],
+    pdfPath: string): Promise<void> {
     if (pageJpegs.length === 0) {
       throw new Error('没有可导出的 PDF 页面');
     }
@@ -35,50 +32,8 @@ export class NotePdfDocumentService {
     if (pageAspects.length !== pageJpegs.length) {
       throw new Error('PDF 分页结果无效，请重试');
     }
-    NotePdfDocumentService.removeIfPresent(pdfPath);
-    const document: pdfService.PdfDocument = new pdfService.PdfDocument();
-    try {
-      if (!document.createDocument(NotePdfDocumentService.A4_WIDTH_PT,
-        NotePdfDocumentService.A4_HEIGHT_PT)) {
-        throw new Error('PDF 文档创建失败，请重试');
-      }
-      for (let i: number = 0; i < pageJpegs.length; i++) {
-        const aspect: number = pageAspects[i];
-        if (!(aspect > 0)) {
-          throw new Error('PDF 分页结果无效，请重试');
-        }
-        const drawWidth: number = Math.min(NotePdfDocumentService.A4_WIDTH_PT,
-          NotePdfDocumentService.A4_HEIGHT_PT * aspect);
-        const page: pdfService.PdfPage = document.insertBlankPage(i,
-          NotePdfDocumentService.A4_WIDTH_PT, NotePdfDocumentService.A4_HEIGHT_PT);
-        page.addImageObject(pageJpegs[i], 0, 0, drawWidth, drawWidth / aspect);
-        page.release();
-      }
-      // createDocument 实测（模拟器 PDF-1.7）自带一张初始空白页：逐图 insertBlankPage 后
-      // 该页悬在文档末尾，导出的 PDF 会多一张空白尾页。删除富余页；
-      // 若实现不建初始页（getPageCount 恰等于图片数）则无需删除。
-      const surplus: number = document.getPageCount() - pageJpegs.length;
-      if (surplus > 0) {
-        document.deletePage(pageJpegs.length, surplus);
-      }
-      if (!document.saveDocument(pdfPath)) {
-        throw new Error('PDF 保存失败，请重试');
-      }
-    } catch (error) {
-      NotePdfDocumentService.removeIfPresent(pdfPath);
-      throw new Error((error as Error).message);
-    } finally {
-      document.releaseDocument();
-    }
-  }
-
-  private static removeIfPresent(path: string): void {
-    try {
-      if (fileIo.accessSync(path)) {
-        fileIo.unlinkSync(path);
-      }
-    } catch (_error) {
-      // 清理半成品失败不掩盖原错误；目标文件由会话目录 24h 过期机制兜底。
-    }
+    const deviceModule: ESObject = await import('./NotePdfExportDevice');
+    const device: ESObject = deviceModule.NotePdfExportDevice;
+    device.exportFromPageImages(pageJpegs, pageAspects, pdfPath);
   }
 }

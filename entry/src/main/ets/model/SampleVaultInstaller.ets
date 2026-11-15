@@ -1,5 +1,5 @@
 /** Copy shared samples only into the newly created, empty tutorial vault. */
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { VaultRegistry } from './VaultRegistry';
 import { NoteService } from './NoteService';
 import { SAMPLE_VAULT_FILES, SampleVaultFile } from './SampleVaultData';

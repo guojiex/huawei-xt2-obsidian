@@ -746,7 +746,7 @@ ohpm publish yourlib.har
 
 官方指南另要求先创建智能体、关联应用，并确保设备已登录华为账号且联网。`FunctionOptions.queryText` 可设置初始查询文本。满足版本范围不等于本机 Agent 可用，仍需支持查询及设备验证。
 
-2026-11-13 核实 + 实现：`FunctionOptions` **仅有 `queryText` 这一个文本注入字段**（官方 d.ts 与参考文档均确认，无 `variables`/`context`/`conversationVariables` 等运行时变量注入字段；且"所有参数仅在组件实例化时生效"）。小艺开放平台侧的"智能体变量"是平台配置项，不是 App 运行时→Agent 的注入通道——用户记忆的"变量注入"应指此处，对"当前打开笔记"这类运行时上下文无效。**已实现（第一项）**：`AgentKitSlot` 经 `AgentKitSlotBuilder(onDialogClosed, noteHint)` 接收当前笔记提示，`FunctionComponent.options.queryText` 预填 `关于当前打开的笔记「标题」（路径）：`（无打开笔记时传空串）。⚠️ 性质边界：`queryText` 仅是输入框初始文本，用户可改可删，小艺**不会**当作系统级上下文；且本沙箱缺完整 HarmonyOS SDK（仅 licenses/system-image），未做编译验证，需在 DevEco/真机复核。
+2026-11-13 核实：`FunctionOptions` **仅有 `queryText` 这一个文本注入字段**（官方 d.ts 与参考文档均确认，无 `variables`/`context`/`conversationVariables` 等运行时变量注入字段；且"所有参数仅在组件实例化时生效"）。小艺开放平台侧的"智能体变量"是平台配置项，不是 App 运行时→Agent 的注入通道——对"当前打开笔记"这类运行时上下文无效。**当前工程约定（2026-11-15 定）**：App 侧**不设置 `queryText`**，`FunctionComponent.options` 只保留 `title`，运行时笔记上下文不注入。理由：① `queryText` 是用户可见的输入框初始文本，不是系统提示词 / 运行时变量通道，塞工作约束或笔记标识，普通用户看到的是看不懂的行话或自己的笔记名；② 所有参数仅在组件实例化时生效，填运行时信息切换笔记后即为过期信息。能力引导改由平台 Agent 的欢迎语 / 推荐问题承载，安全约束放在平台角色指令（见 `docs/prompts/小艺_LLM_Wiki_提示词与测试工作流.md`）。⚠️ 性质边界：`queryText` 仅是输入框初始文本，用户可改可删，小艺**不会**当作系统级上下文；平台是否自动提交预填属平台行为，未在 XT2 实测。编译构建已通过；XT2 真机上的组件渲染、对话框拉起仍须设备复核。
 
 该组件用于拉起已上线的指定智能体面板。本文列出的控制器没有消息流、历史注入或工具调用回传接口，**不能据此认定已满足自有聊天工作区的 Provider 协议**；是否存在其他正式接口仍待核实。
 

@@ -20,8 +20,10 @@ function method(startMarker, endMarker) {
 
 const methodCode = transformSync(`
 class GitSyncBadgeHarness {
-  ${method('  private refreshGitAheadCommitCount(): void {', '\n  private gitAheadBadgeLabel()')}
-  ${method('  private gitAheadBadgeLabel(): string {', '\n  private async openGitSyncPage(')}
+  ${method('  private async refreshGitAheadCommitCount(): Promise<void> {', '\n  private gitAheadBadgeLabel()')}
+  // 006d22e 拆出 ShareFlowPanel 后 Index 已无 openGitSyncPage，方法切片改用
+  // 后继方法 previewGitImportVaultId 作结束标记。
+  ${method('  private gitAheadBadgeLabel(): string {', '\n  private previewGitImportVaultId(')}
 }
 module.exports = GitSyncBadgeHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
@@ -56,32 +58,32 @@ function createHarness({
   return { app, calls };
 }
 
-test('Git home badge reflects local commits ahead of its configured branch without network work', () => {
+test('Git home badge reflects local commits ahead of its configured branch without network work', async () => {
   const { app, calls } = createHarness({ aheadCount: 3 });
-  app.refreshGitAheadCommitCount();
+  await app.refreshGitAheadCommitCount();
   assert.equal(app.gitAheadCommitCount, 3);
   assert.equal(app.gitAheadBadgeLabel(), '3');
   assert.deepEqual(calls, ['path:repo', 'state:/isolated/repo']);
-  assert.doesNotMatch(method('  private refreshGitAheadCommitCount(): void {', '\n  private gitAheadBadgeLabel()'), /GitNativeService\.action/);
+  assert.doesNotMatch(method('  private async refreshGitAheadCommitCount(): Promise<void> {', '\n  private gitAheadBadgeLabel()'), /GitNativeService\.action/);
 });
 
-test('non-Git vaults clear the badge without reading the Native repository state', () => {
+test('non-Git vaults clear the badge without reading the Native repository state', async () => {
   const { app, calls } = createHarness({ gitVault: false, aheadCount: 12 });
-  app.refreshGitAheadCommitCount();
+  await app.refreshGitAheadCommitCount();
   assert.equal(app.gitAheadCommitCount, 0);
   assert.deepEqual(calls, []);
 });
 
-test('missing configured tracking references never produce a push badge', () => {
+test('missing configured tracking references never produce a push badge', async () => {
   const { app, calls } = createHarness({ aheadCount: 5, trackingKnown: false });
-  app.refreshGitAheadCommitCount();
+  await app.refreshGitAheadCommitCount();
   assert.equal(app.gitAheadCommitCount, 0);
   assert.deepEqual(calls, ['path:repo', 'state:/isolated/repo']);
 });
 
-test('repository errors clear stale badge state instead of showing a false count', () => {
+test('repository errors clear stale badge state instead of showing a false count', async () => {
   const { app } = createHarness({ fail: true });
-  app.refreshGitAheadCommitCount();
+  await app.refreshGitAheadCommitCount();
   assert.equal(app.gitAheadCommitCount, 0);
 });
 

@@ -15,11 +15,13 @@
  * | 读文本 | `fileIo.readText(filePath, options?)` → `Promise<string>` | 同上 | since 9 |
  * | 原子写 | `fileIo.AtomicFile` + `startWrite()` / `finishWrite()` / `failWrite()` | 同上 | since 15 |
  *
- * 三个类均由 `@kit.CoreFileKit` 导入（该 kit 已确认导出 fileIo / fileShare / picker）。
+ * 三个类原先经 `@kit.CoreFileKit` 导入；2026-11-15 冷启动优化后 fileIo / picker 直连
+ * 子模块，fileShare（@ohos.fileshare）改方法内动态 import，不再拉起整个 CoreFileKit barrel。
  * `DocumentViewPicker` 推荐用带 UIAbilityContext 的构造函数（since 12），
  * 无参构造（since 12）官方注释写着有失败风险，这里不用。
  */
-import { fileIo, fileShare, picker } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
+import picker from '@ohos.file.picker';
 import { common } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { atomicWriteText } from '../common/AtomicWrite';
@@ -62,16 +64,27 @@ export class DeviceDirPicker implements ExternalDirPickerLike {
 
 /** fileshare 侧：持久授权三件套（全部要求 FILE_ACCESS_PERSIST，已声明且实测已授予）。 */
 export class DeviceFileShare implements FileShareLike {
+  private async shareModule(): Promise<ESObject> {
+    const mod: ESObject = await import('@ohos.fileshare');
+    return mod.default;
+  }
+
   async persistPermission(policies: ProbePolicy[]): Promise<void> {
-    await fileShare.persistPermission(policies);
+    const fileShare: ESObject = await this.shareModule();
+    const fn: (policies: ProbePolicy[]) => Promise<void> = fileShare.persistPermission;
+    await fn(policies);
   }
 
   async activatePermission(policies: ProbePolicy[]): Promise<void> {
-    await fileShare.activatePermission(policies);
+    const fileShare: ESObject = await this.shareModule();
+    const fn: (policies: ProbePolicy[]) => Promise<void> = fileShare.activatePermission;
+    await fn(policies);
   }
 
   async checkPersistentPermission(policies: ProbePolicy[]): Promise<boolean[]> {
-    return await fileShare.checkPersistentPermission(policies);
+    const fileShare: ESObject = await this.shareModule();
+    const fn: (policies: ProbePolicy[]) => Promise<boolean[]> = fileShare.checkPersistentPermission;
+    return await fn(policies);
   }
 }
 

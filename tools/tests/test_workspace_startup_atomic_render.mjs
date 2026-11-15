@@ -66,10 +66,11 @@ vm.runInContext(editorBridgeCode, vm.createContext({
 }));
 const { EditorImpl, EditorBridge } = editorBridgeModule.exports;
 
-test('cold-start waits only for visible pane Web surfaces', async () => {
+test('cold-start waits only for the active pane Web surface', async () => {
   const calls = [];
   const app = new StartupSurfaceHarness();
   Object.assign(app, {
+    activePane: 'left',
     visiblePanes: ['left', 'right'],
     smMode: 'edit',
     rightEditing: false,
@@ -79,14 +80,29 @@ test('cold-start waits only for visible pane Web surfaces', async () => {
     rightPreviewBridge: { waitUntilReady: async () => calls.push('right-preview') }
   });
 
+  // 2026-11-15 冷启动优化（trace：双 WebView 拖住启动遮罩 ready）：双 pane 可见时
+  // 也只等 active pane 的 surface，另一 pane 由正常门控自行 resolve。
   await app.waitForInitialWorkspaceSurfaces();
-  assert.deepEqual(calls, ['left-editor', 'right-preview']);
+  assert.deepEqual(calls, ['left-editor']);
 
   calls.length = 0;
-  app.visiblePanes = ['right'];
+  app.activePane = 'right';
   app.rightEditing = true;
   await app.waitForInitialWorkspaceSurfaces();
   assert.deepEqual(calls, ['right-editor']);
+
+  // active pane 不可见时回退另一可见 pane。
+  calls.length = 0;
+  app.activePane = 'left';
+  app.visiblePanes = ['right'];
+  await app.waitForInitialWorkspaceSurfaces();
+  assert.deepEqual(calls, ['right-editor']);
+
+  // 两个 pane 都不可见则立即放行，不挂起启动遮罩。
+  calls.length = 0;
+  app.visiblePanes = [];
+  await app.waitForInitialWorkspaceSurfaces();
+  assert.deepEqual(calls, []);
 });
 
 test('a hidden Web error cannot reveal the startup cover or bypass visible-pane restoration', () => {

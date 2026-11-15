@@ -47,8 +47,7 @@ import { EditorExperienceMode } from '../model/EditorExperiencePolicy';
 import {
   AppUpdateCheckOutcome,
   AppUpdateCheckStore,
-  AppUpdateUiPhase,
-  runAppUpdateCheck
+  AppUpdateUiPhase
 } from '../model/AppUpdateCheck';
 import { ApplicationBackupOutcome } from '../model/ApplicationBackupService';
 import { ApplicationBackupDialog } from './ApplicationBackupDialog';
@@ -1155,13 +1154,26 @@ export struct SettingsView {
     }
     this.appUpdatePhase = 'checking';
     const store: AppUpdateCheckStore = this.appUpdateStore;
-    runAppUpdateCheck(context, store).then((outcome: AppUpdateCheckOutcome) => {
+    void this.runAppUpdateCheckFromDevice(context, store);
+  }
+
+  /**
+   * 2026-11-15 冷启动优化：updateManager（@kit.AppGalleryKit）改走设备层
+   * AppUpdateCheckDevice 动态 import —— 用户点「检查更新」时才加载该 kit。
+   */
+  private async runAppUpdateCheckFromDevice(context: common.UIAbilityContext,
+    store: AppUpdateCheckStore): Promise<void> {
+    try {
+      const deviceModule: ESObject = await import('../model/AppUpdateCheckDevice');
+      const runCheck: (context: common.UIAbilityContext, store: AppUpdateCheckStore) =>
+        Promise<AppUpdateCheckOutcome> = deviceModule.runAppUpdateCheck;
+      const outcome: AppUpdateCheckOutcome = await runCheck(context, store);
       this.appUpdatePhase = outcome.phase;
       this.appUpdateClock = outcome.lastCheckClock;
-    }).catch((_error: BusinessError) => {
-      // 理论不可达（runAppUpdateCheck 内部已全捕获）；兜底防止界面停留在「检查中」。
+    } catch (_error) {
+      // 理论不可达（设备层内部已全捕获）；兜底防止界面停留在「检查中」。
       this.appUpdatePhase = 'generic';
-    });
+    }
   }
 
   /** v1.17：检查更新的状态文案（原型 updateDemoStates 八态 + 弹框失败兜底；不显示市场版本号，V3）。 */

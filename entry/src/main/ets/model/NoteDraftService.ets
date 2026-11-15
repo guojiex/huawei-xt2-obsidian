@@ -5,7 +5,7 @@
  * 每条草稿保留正式内容基线；只有正式文件仍与该基线逐字相同才允许恢复，
  * 避免较旧草稿覆盖已经更新的正式笔记。
  */
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { atomicWriteText } from '../common/AtomicWrite';
 import { VaultRegistry } from './VaultRegistry';

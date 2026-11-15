@@ -120,6 +120,9 @@ test('56.5 零新增权限：requestPermissions 白名单不变', () => {
 })
 
 const entryAbility = readSourceFile(new URL('entry/src/main/ets/entryability/EntryAbility.ets', root))
+// 2026-11-15 冷启动优化：systemShare 拆到 model/ShareIngestDevice 动态 import，
+// getSharedData / 选记录 / errorPayload 断言需覆盖 EntryAbility + 设备层两份源码。
+const shareIngestDeviceSource = readSourceFile(new URL('entry/src/main/ets/model/ShareIngestDevice.ets', root))
 const indexSource = readSourceFile(new URL('entry/src/main/ets/pages/Index.ets', root))
 const shareFlowSource = readSourceFile(new URL('entry/src/main/ets/components/ShareFlowPanel.ets', root))
 const dialogSource = readSourceFile(new URL('entry/src/main/ets/components/SaveShareDialog.ets', root))
@@ -127,19 +130,22 @@ const dialogSource = readSourceFile(new URL('entry/src/main/ets/components/SaveS
 test('56.2 onCreate / onNewWant 双路径都接线 handleSharedWant + getSharedData', () => {
   assert.match(entryAbility, /onCreate\(want: Want[\s\S]*?this\.handleSharedWant\(want\)/)
   assert.match(entryAbility, /onNewWant\(want: Want[\s\S]*?this\.handleSharedWant\(want\)/)
-  assert.match(entryAbility, /systemShare\.getSharedData\(want\)/)
+  assert.match(entryAbility, /await import\('\.\.\/model\/ShareIngestDevice'\)/)
+  assert.match(shareIngestDeviceSource, /systemShare\.getSharedData\(want\)/)
   assert.match(entryAbility, /want\.action !== ShareIngestService\.ACTION_SEND_DATA/)
 })
 
 test('56.2 解析失败 / 无有效记录 → 错误载荷「无法读取分享内容」，不崩溃', () => {
   assert.match(entryAbility, /errorPayload\('无法读取分享内容'/)
-  const catches = entryAbility.match(/errorPayload\('无法读取分享内容'/g) || []
-  assert.ok(catches.length >= 2, '无记录与抛错两条兜底都要有')
+  const catches = (entryAbility.match(/errorPayload\('无法读取分享内容'/g) || [])
+    .concat(shareIngestDeviceSource.match(/errorPayload\('无法读取分享内容'/g) || [])
+  assert.ok(catches.length >= 3, '设备层无记录 + 抛错两条兜底，EntryAbility 动态 import 失败一条兜底')
 })
 
-test('56.5 分享内容与标题不进 EntryAbility 日志', () => {
+test('56.5 分享内容与标题不进 EntryAbility 与设备层日志', () => {
   // 日志只允许记录数与错误码，禁止把 title/content 写进 hilog。
-  const hilogLines = entryAbility.split('\n').filter((l) => /hilog\.(info|warn|error|debug)/.test(l))
+  const hilogLines = [entryAbility, shareIngestDeviceSource]
+    .flatMap((src) => src.split('\n').filter((l) => /hilog\.(info|warn|error|debug)/.test(l)))
   assert.ok(hilogLines.length > 0)
   for (const line of hilogLines) {
     assert.ok(!/payload\.title|payload\.content|chosen\.title|chosen\.content/.test(line),

@@ -1,4 +1,4 @@
-import { fileUri } from '@kit.CoreFileKit';
+import fileUri from '@ohos.file.fileuri';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { SharePdfPreviewDialog } from '../components/SharePdfPreviewDialog';
 import { NotePdfDocumentService } from './NotePdfDocumentService';
@@ -54,7 +54,7 @@ export class SharePdfPreviewFlow {
         windowWidthVp: request.windowWidthVp,
         windowHeightVp: request.windowHeightVp,
         singleScreen: request.singleScreen,
-        onConfirm: (): Promise<void> => {
+        onConfirm: async (): Promise<void> => {
           const sid: string = this.sessionId;
           if (sid.length === 0) {
             throw new Error('PDF 分页会话已失效，请返回重试');
@@ -68,10 +68,11 @@ export class SharePdfPreviewFlow {
             throw new Error('PDF 分页页面缺失，请返回重试');
           }
           const pdfPath: string = VaultRegistry.get().sharePath(sid + '/note.pdf');
-          NotePdfDocumentService.exportFromPageImages(pages, aspects, pdfPath);
+          // 2026-11-15 冷启动优化：NotePdfDocumentService.exportFromPageImages 随
+          // pdfService 动态化改为 async，此处 await 落盘完成后再进文件预览。
+          await NotePdfDocumentService.exportFromPageImages(pages, aspects, pdfPath);
           this.ctl?.close();
           request.onComposed(pdfPath);
-          return Promise.resolve();
         },
         onCancel: (): void => {
           this.cleanup();

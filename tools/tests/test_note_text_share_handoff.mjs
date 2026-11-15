@@ -29,24 +29,32 @@ const serviceContext = vm.createContext({
 });
 vm.runInContext(serviceCode, serviceContext);
 const NoteTextShareService = serviceContext.module.exports;
+// 2026-11-15 冷启动优化：systemShare 从 ShareFlowPanel 拆到 model/SystemShareDevice，
+// 面板改为动态 import —— 此处加载真实设备模块（独立 VM），harness 的 require 把
+// '../model/SystemShareDevice' 映射过去，共用同一个 @kit.ShareKit mock 与 calls。
+const deviceSource = fs.readFileSync(new URL('../../entry/src/main/ets/model/SystemShareDevice.ets', import.meta.url), 'utf8');
+const deviceCode = transformSync(deviceSource, {
+  loader: 'ts',
+  format: 'cjs'
+}).code;
 const source = fs.readFileSync(new URL('../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url), 'utf8');
 const start = source.indexOf('  private async shareTextContent(title: string, content: string): Promise<void> {');
 const end = source.indexOf('\n  private waitForShareCaptureReady()', start);
 assert.ok(start >= 0 && end > start, 'could not find ShareFlowPanel.shareTextContent');
 const method = source.slice(start, end).trim();
-const code = transformSync(`class ShareHarness { ${method} }; module.exports = ShareHarness;`, {
+// esbuild transform 模式不会把 import() 降级成 require（VM 里也没有动态 import
+// 回调），此处手动模拟打包产物形态：await import('…') → require('…')，语义等价。
+const harnessMethod = method.replace("await import('../model/SystemShareDevice')",
+  "require('../model/SystemShareDevice')");
+assert.notEqual(harnessMethod, method, 'expected ShareFlowPanel.shareTextContent to dynamic-import SystemShareDevice');
+const code = transformSync(`class ShareHarness { ${harnessMethod} }; module.exports = ShareHarness;`, {
   loader: 'ts',
   format: 'cjs'
 }).code;
 
 function createHarness(showFails = false) {
   const calls = [];
-  const context = vm.createContext({
-    module: { exports: {} },
-    $r: (resource) => resource,
-    NoteTextShareService,
-    uniformTypeDescriptor: { UniformDataType: { TEXT: 'text/plain' } },
-    VaultRegistry: { get: () => ({ abilityContext: () => 'ability-context' }) },
+  const shareKitRuntime = {
     systemShare: {
       SharedData: class {
         constructor(record) { this.record = record; calls.push(['data', record]); }
@@ -58,6 +66,23 @@ function createHarness(showFails = false) {
           if (showFails) throw new Error('target rejected the text');
         }
       }
+    }
+  };
+  const deviceModule = { exports: {} };
+  const deviceContext = vm.createContext({
+    module: deviceModule,
+    exports: deviceModule.exports,
+    require: (name) => name === '@kit.ShareKit' ? shareKitRuntime :
+      name === '@kit.ArkData' ? arkDataRuntime : {}
+  });
+  vm.runInContext(deviceCode, deviceContext);
+  const context = vm.createContext({
+    module: { exports: {} },
+    NoteTextShareService,
+    VaultRegistry: { get: () => ({ abilityContext: () => 'ability-context' }) },
+    require: (name) => {
+      assert.equal(name, '../model/SystemShareDevice');
+      return deviceModule.exports;
     }
   });
   vm.runInContext(code, context);

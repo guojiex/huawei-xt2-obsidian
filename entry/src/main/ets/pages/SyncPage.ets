@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { preferences } from '@kit.ArkData';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction, router } from '@kit.ArkUI';
@@ -98,7 +98,7 @@ struct SyncPage {
       } catch {
         this.syncToken = '';
       }
-      this.refreshSyncStatus();
+      void this.refreshSyncStatus();
     }
   }
 
@@ -206,7 +206,7 @@ struct SyncPage {
       if (clonedPath !== tempDir) {
         throw new Error('Native clone 返回的目录与隔离目标不一致');
       }
-      const state: Git2RepositoryState = GitNativeService.repositoryState(tempDir);
+      const state: Git2RepositoryState = await GitNativeService.repositoryState(tempDir);
       if (!state.clean || (this.branch.trim().length > 0 && state.branch !== this.branch.trim())) {
         throw new Error('clone 后的仓库分支或工作区状态校验失败');
       }
@@ -248,7 +248,7 @@ struct SyncPage {
     return false;
   }
 
-  private refreshSyncStatus(): void {
+  private async refreshSyncStatus(): Promise<void> {
     if (!this.syncMode || this.syncVaultId.length === 0) {
       return;
     }
@@ -258,7 +258,7 @@ struct SyncPage {
       return;
     }
     try {
-      const state: Git2RepositoryState = GitNativeService.repositoryState(reg.vaultDirOf(this.syncVaultId));
+      const state: Git2RepositoryState = await GitNativeService.repositoryState(reg.vaultDirOf(this.syncVaultId));
       const lines: string[] = ['当前分支：' + state.branch, '推送目标：xt2'];
       if (state.statusEntryCount > 0) {
         lines.push('有 ' + state.statusEntryCount.toString() + ' 项未提交更改');
@@ -371,7 +371,7 @@ struct SyncPage {
         this.appendLog('已暂存工作区更改（.trash 已排除）');
       }
       this.progressText = operation === 'push' ? '推送完成' : '完成';
-      this.refreshSyncStatus();
+      await this.refreshSyncStatus();
     } catch (error) {
       const err = error as BusinessError;
       this.progressText = '失败';
@@ -537,7 +537,7 @@ struct SyncPage {
         Row({ space: Space.s2 }) {
           Button('刷新状态')
             .enabled(!this.busy)
-            .onClick(() => { this.refreshSyncStatus(); })
+            .onClick(() => { void this.refreshSyncStatus(); })
           Button('暂存')
             .enabled(!this.busy)
             .onClick(() => { void this.performGitAction('stage'); })

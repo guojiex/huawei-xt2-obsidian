@@ -1,4 +1,4 @@
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { atomicWriteText } from '../common/AtomicWrite';
 import { AgentRunConfig, AgentNoteSnapshot } from './AgentModels';

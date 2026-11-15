@@ -207,27 +207,31 @@ test('源级：PreviewWebView 协议含 preparePdfPages 与 pageTops 解析', ()
 
 test('源级：NotePdfDocumentService 走 PDF Kit 图片→PDF 路线且 syscap 检测', () => {
   const service = readRepoFile('entry/src/main/ets/model/NotePdfDocumentService.ets');
+  // 2026-11-15 冷启动优化：pdfService（@kit.PDFKit）拆到设备层动态 import，首次导出才加载。
+  const device = readRepoFile('entry/src/main/ets/model/NotePdfExportDevice.ets');
   assert.match(service, /canIUse\('SystemCapability\.OfficeService\.PDFService\.Core'\)/);
-  assert.match(service, /createDocument\(/);
-  assert.match(service, /insertBlankPage\(/);
-  assert.match(service, /addImageObject\(/);
-  assert.match(service, /saveDocument\(/);
-  assert.match(service, /releaseDocument\(\)/);
+  assert.match(service, /await import\('\.\/NotePdfExportDevice'\)/);
+  assert.match(device, /createDocument\(/);
+  assert.match(device, /insertBlankPage\(/);
+  assert.match(device, /addImageObject\(/);
+  assert.match(device, /saveDocument\(/);
+  assert.match(device, /releaseDocument\(\)/);
+  assert.equal(device.includes('ohos.permission.PRINT'), false);
   assert.equal(service.includes('ohos.permission.PRINT'), false);
 });
 
 test('源级：exportFromPageImages 删除 createDocument 自带的富余空白页（2026-11-11 实测）', () => {
-  const service = readRepoFile('entry/src/main/ets/model/NotePdfDocumentService.ets');
+  const device = readRepoFile('entry/src/main/ets/model/NotePdfExportDevice.ets');
   // 模拟器实测（PDF-1.7）：createDocument 自带一张初始空白页，逐图 insertBlankPage 后
   // 悬在文档末尾（末页 /Resources<<>> 全空白）→ 每本 PDF 多一张空白尾页。
   // 贴完图后按 getPageCount 富余量 deletePage；若实现不建初始页则 surplus 为 0 不删。
-  assert.match(service, /getPageCount\(\)/);
-  assert.match(service, /const surplus: number = document\.getPageCount\(\) - pageJpegs\.length;/);
-  assert.match(service, /if \(surplus > 0\) \{\s*\n\s*document\.deletePage\(pageJpegs\.length, surplus\);/);
+  assert.match(device, /getPageCount\(\)/);
+  assert.match(device, /const surplus: number = document\.getPageCount\(\) - pageJpegs\.length;/);
+  assert.match(device, /if \(surplus > 0\) \{\s*\n\s*document\.deletePage\(pageJpegs\.length, surplus\);/);
   // 删除动作必须发生在 saveDocument 之前。
-  const cleanup = service.indexOf('const surplus: number');
-  const del = service.indexOf('document.deletePage(');
-  const save = service.indexOf('document.saveDocument(');
+  const cleanup = device.indexOf('const surplus: number');
+  const del = device.indexOf('document.deletePage(');
+  const save = device.indexOf('document.saveDocument(');
   assert.ok(cleanup > 0 && del > cleanup && save > del, 'surplus 清理须在 saveDocument 之前');
 });
 

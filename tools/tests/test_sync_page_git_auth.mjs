@@ -27,7 +27,7 @@ const classCode = transformSync(
   gitAuthSource + '\n' +
   'class SyncPageGitAuthHarness {\n' +
   method('  private async doClone(): Promise<void> {', '\n  private urlHasInlineCredentials(') + '\n' +
-  method('  private urlHasInlineCredentials(', '\n  private refreshSyncStatus(') + '\n' +
+  method('  private urlHasInlineCredentials(', '\n  private async refreshSyncStatus(') + '\n' +
   method('  private logGitFailure(', '\n  private async performGitAction(') + '\n' +
   method('  private explainError(', '\n  private previewVaultId(): string {') + '\n' +
   `  previewVaultId() { return 'isolated-repo'; }

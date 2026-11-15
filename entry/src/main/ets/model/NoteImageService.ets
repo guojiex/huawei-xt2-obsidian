@@ -1,7 +1,7 @@
 /** Copy a user-selected Gallery image into the note's vault and create its Markdown reference. */
 import { common } from '@kit.AbilityKit';
 import { dataSharePredicates } from '@kit.ArkData';
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { VaultRegistry } from './VaultRegistry';
 import { VaultBinaryImportSource, VaultAccess } from './VaultAccess';

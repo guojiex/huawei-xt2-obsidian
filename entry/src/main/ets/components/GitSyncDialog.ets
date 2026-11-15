@@ -88,7 +88,7 @@ export struct GitSyncDialog {
       this.hasStoredToken = false;
       this.credentialEditorOpen = true;
     }
-    this.refreshLocalStatus();
+    void this.refreshLocalStatus();
   }
 
   private findVaultEntry(): VaultEntry | null {
@@ -123,7 +123,7 @@ export struct GitSyncDialog {
     return host + url.substring(authorityEnd, pathEnd);
   }
 
-  private refreshLocalStatus(): void {
+  private async refreshLocalStatus(): Promise<void> {
     if (VaultRegistry.get().currentId() !== this.vaultId) {
       this.statusReady = false;
       this.statusMessage = '当前库已切换，请返回主页重新打开同步页。';
@@ -132,7 +132,7 @@ export struct GitSyncDialog {
     try {
       const registry: VaultRegistry = VaultRegistry.get();
       const state: Git2RepositoryState =
-        GitNativeService.repositoryState(registry.vaultDirOf(this.vaultId), this.pushBranch);
+        await GitNativeService.repositoryState(registry.vaultDirOf(this.vaultId), this.pushBranch);
       this.statusReady = true;
       this.trackingKnown = state.trackingKnown;
       this.aheadCount = state.aheadCount;
@@ -228,7 +228,7 @@ export struct GitSyncDialog {
       this.branchEditing = false;
       this.branchError = '';
       this.result = 'none';
-      this.refreshLocalStatus();
+      void this.refreshLocalStatus();
       this.focusBranchChange();
       promptAction.showToast({ message: '当前库将推送到 ' + this.pushBranch });
     } catch (_error) {
@@ -352,7 +352,7 @@ export struct GitSyncDialog {
     try {
       const result: string = await GitNativeService.action(this.makeActionOptions('fetch', token));
       this.saveCredentialsAfterRemoteSuccess(token);
-      this.refreshLocalStatus();
+      await this.refreshLocalStatus();
       this.remoteBranchMissing = result === 'missing';
       this.result = 'none';
       this.statusMessage = result === 'missing'
@@ -426,10 +426,10 @@ export struct GitSyncDialog {
         this.trackingTargetLabel() + '。';
       this.completedStep = this.remoteStepIndex() + 1;
       this.progressText = '推送完成';
-      this.refreshLocalStatus();
+      await this.refreshLocalStatus();
     } catch (error) {
       this.showOperationFailure(error, 'Git 同步');
-      this.refreshLocalStatus();
+      await this.refreshLocalStatus();
     } finally {
       this.finishBusy();
     }

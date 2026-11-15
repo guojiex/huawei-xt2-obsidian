@@ -1,5 +1,5 @@
 import { zlib } from '@kit.BasicServicesKit';
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { NoteShareService } from './NoteShareService';
 import { VaultAccess } from './VaultAccess';
 import { VaultRegistry } from './VaultRegistry';

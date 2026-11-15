@@ -1,4 +1,4 @@
-import { fileIo } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
 import { atomicWriteText } from '../common/AtomicWrite';
 import { AgentMessage, AgentSession } from './AgentModels';
 import { VaultRegistry } from './VaultRegistry';

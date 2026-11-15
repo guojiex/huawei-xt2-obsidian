@@ -17,7 +17,6 @@ import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthoriz
 import { CrashGuard } from '../common/CrashGuard';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { createSearchStore } from '../model/SearchStoreDevice';
-import { systemShare } from '@kit.ShareKit';
 import { ShareIngestPayload, ShareIngestService } from '../model/ShareIngestService';
 import { ApplicationBackupService } from '../model/ApplicationBackupService';
 
@@ -103,44 +102,20 @@ export default class EntryAbility extends UIAbility {
 
   /**
    * 解析分享 want → 载荷 → AppStorage['incomingShare']。
-   * - 只取第一条 utd 为文本/链接且 content 非空的记录（批量不做，56.2）；
-   * - 无有效记录 / getSharedData 抛错（1003703001 等）→ 不崩溃，发错误载荷，
-   *   Index 侧 toast「无法读取分享内容」；
-   * - 红线（56.5）：标题与内容不进日志、不进埋点，日志只记记录数与错误码。
+   * 2026-11-15 冷启动优化（XT2 trace）：systemShare（@kit.ShareKit）拆到设备层
+   * ShareIngestDevice 动态 import —— 分享拉起才加载。getSharedData 仍须在
+   * onCreate / onNewWant 路径发起（官方 FAQ：不能在 onForeground 取数），
+   * 解析异步 IPC 完成后才写 AppStorage；Index 的 @Watch 兜晚到、aboutToAppear 兜早到。
    */
   private async resolveSharedWant(want: Want): Promise<void> {
     try {
-      const shared: systemShare.SharedData = await systemShare.getSharedData(want);
-      const records: Array<systemShare.SharedRecord> = shared.getRecords();
-      let chosen: systemShare.SharedRecord | null = null;
-      for (let i = 0; i < records.length; i++) {
-        const record: systemShare.SharedRecord = records[i];
-        if (!ShareIngestService.isTextLikeUtd(record.utd)) {
-          continue;
-        }
-        if ((record.content ?? '').trim().length === 0) {
-          continue;
-        }
-        chosen = record;
-        break;
-      }
-      hilog.info(DOMAIN, TAG, '分享记录数=%{public}d 有效=%{public}s',
-        records.length, chosen === null ? '否' : '是');
-      if (chosen === null) {
-        this.publishIncomingShare(ShareIngestService.errorPayload('无法读取分享内容', Date.now()));
-        return;
-      }
-      const payload: ShareIngestPayload = {
-        utd: chosen.utd,
-        title: chosen.title ?? '',
-        content: chosen.content ?? '',
-        message: '',
-        receivedAt: Date.now()
-      };
+      const deviceModule: ESObject = await import('../model/ShareIngestDevice');
+      const resolvePayload: (want: Want) => Promise<ShareIngestPayload> =
+        deviceModule.resolveSharedWantPayload;
+      const payload: ShareIngestPayload = await resolvePayload(want);
       this.publishIncomingShare(payload);
-    } catch (error) {
-      const err = error as BusinessError;
-      hilog.error(DOMAIN, TAG, '读取分享数据失败 code=%{public}d', err.code);
+    } catch (_error) {
+      // 设备层内部已全捕获；动态 import 失败等兜底也发错误载荷，Index 侧提示「无法读取分享内容」。
       this.publishIncomingShare(ShareIngestService.errorPayload('无法读取分享内容', Date.now()));
     }
   }

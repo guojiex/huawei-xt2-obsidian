@@ -1,4 +1,4 @@
-import { fileIo as fs } from '@kit.CoreFileKit';
+import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { atomicWriteText } from '../common/AtomicWrite';

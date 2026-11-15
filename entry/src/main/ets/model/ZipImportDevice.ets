@@ -11,7 +11,9 @@
  * - 沙箱内读写零权限（AGENTS.md 硬约束 13），暂存走 cacheDir（VaultPathResolver 拼路径）。
  */
 import { common } from '@kit.AbilityKit';
-import { fileIo, picker, statfs } from '@kit.CoreFileKit';
+import fileIo from '@ohos.file.fs';
+import picker from '@ohos.file.picker';
+import statfs from '@ohos.file.statvfs';
 import { BusinessError, zlib } from '@kit.BasicServicesKit';
 import {
   InflatePort, ZipImportError, ZipPickResult, ZipReaderPort, ZipWriterPort

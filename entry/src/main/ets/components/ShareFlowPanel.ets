@@ -10,10 +10,10 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
-import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
-import { fileUri } from '@kit.CoreFileKit';
+import fileUri from '@ohos.file.fileuri';
 import { EditorBridge } from './EditorWebView';
 import { PreviewBridge, PreviewCaptureResult, PreviewWebView } from './PreviewWebView';
 import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from './ShareNoteDialog';
@@ -311,12 +311,11 @@ export struct ShareFlowPanel {
   }
 
   private async shareFile(filePath: string, title: string, utd: string, registry: VaultRegistry): Promise<void> {
-    const shared = new systemShare.SharedData({
-      utd: utd,
-      uri: fileUri.getUriFromPath(filePath),
-      title: title
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+    // 2026-11-15 冷启动优化：systemShare 走 SystemShareDevice 动态 import，点分享才加载。
+    const deviceModule: ESObject = await import('../model/SystemShareDevice');
+    const showSheet: (filePath: string, title: string, utd: string,
+      context: common.UIAbilityContext) => Promise<void> = deviceModule.showFileShareSheet;
+    await showSheet(filePath, title, utd, registry.abilityContext());
   }
 
   private openShareFilePreview(filePath: string, fileName: string, format: string, entries: string[],
@@ -357,13 +356,11 @@ export struct ShareFlowPanel {
   }
 
   private async shareLink(url: string, title: string, registry: VaultRegistry): Promise<void> {
-    const shared = new systemShare.SharedData({
-      utd: uniformTypeDescriptor.UniformDataType.HYPERLINK,
-      content: url,
-      title: title,
-      label: 'HYPERLINK'
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+    // 2026-11-15 冷启动优化：systemShare 走 SystemShareDevice 动态 import，点分享才加载。
+    const deviceModule: ESObject = await import('../model/SystemShareDevice');
+    const showSheet: (url: string, title: string,
+      context: common.UIAbilityContext) => Promise<void> = deviceModule.showLinkShareSheet;
+    await showSheet(url, title, registry.abilityContext());
   }
 
   private openShareTextPreview(preview: NoteTextSharePreview, notePath: string, initialError: string = '',
@@ -396,13 +393,12 @@ export struct ShareFlowPanel {
     if (!NoteTextShareService.isWithinShareLimit(title, content)) {
       throw new Error('文本超过系统分享 200 KB 限制，请删减内容后重试或改用 Markdown / ZIP。');
     }
-    const shared = new systemShare.SharedData({
-      utd: uniformTypeDescriptor.UniformDataType.TEXT,
-      content: content,
-      title: title,
-      label: 'TEXT'
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+    // 2026-11-15 冷启动优化：超限校验先行（不加载模块即拒绝）；systemShare 走
+    // SystemShareDevice 动态 import，点分享才加载。
+    const deviceModule: ESObject = await import('../model/SystemShareDevice');
+    const showSheet: (content: string, title: string,
+      context: common.UIAbilityContext) => Promise<void> = deviceModule.showTextShareSheet;
+    await showSheet(content, title, registry.abilityContext());
   }
 
   /**
@@ -974,13 +970,11 @@ export struct ShareFlowPanel {
     if (previewImage.uri.length === 0) {
       throw new Error('长图文件无效，请重新生成');
     }
-    const shared = new systemShare.SharedData({
-      utd: uniformTypeDescriptor.UniformDataType.JPEG,
-      uri: previewImage.uri,
-      title: title,
-      label: 'IMAGE'
-    });
-    await new systemShare.ShareController(shared).show(registry.abilityContext(), {});
+    // 2026-11-15 冷启动优化：systemShare 走 SystemShareDevice 动态 import，点分享才加载。
+    const deviceModule: ESObject = await import('../model/SystemShareDevice');
+    const showSheet: (uri: string, title: string,
+      context: common.UIAbilityContext) => Promise<void> = deviceModule.showImageShareSheet;
+    await showSheet(previewImage.uri, title, registry.abilityContext());
   }
 
   private openShareDialog(scope: ShareLinkScope, path: string, targetVaultId: string = this.currentVaultId,
