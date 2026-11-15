@@ -282,7 +282,7 @@ struct Index {
   @State agentKitSlotBuilder: WrappedBuilder<[() => void, string]> | null = null;
   @State showXiaoyiDialogEntry: boolean = false;
   @State vaultManagerReturnView: string = 'note';
-  /** v1.58：统计缓存（侧栏连写条只读这里）；打开弹窗时重算并回写，不落盘。 */
+  /** v1.58：统计缓存供应用菜单与 Agent 引用栏读取；打开弹窗时重算，不落盘。 */
   @State vaultStatsModel: VaultStatsModel = emptyStatsModel();
   @State vaultStatsScanning: boolean = true;
   @State vaultStatsFailed: boolean = false;
@@ -435,7 +435,7 @@ struct Index {
   @State rightPaneIntentionallyEmpty: boolean = false;
   @State @Watch('onFormatContextChanged') rightEditing: boolean = false;
   @State showLineNumbers: boolean = false;
-  /** v1.58 开关：写作统计总开关（默认开）。关闭时隐藏入口、连写条并跳过后台重算。 */
+  /** v1.58 开关：写作统计总开关（默认开）。关闭时隐藏入口并跳过后台重算。 */
   @State statsEnabled: boolean = false;
   /** v1.65 65.5：名言轮换间隔（应用级偏好，0 = 不轮换）。 */
   @State screenSaverIntervalMs: number = ScreenSaver.defaultIntervalMs;
@@ -647,7 +647,7 @@ struct Index {
     }, WORKSPACE_WEB_MOUNT_DELAY_MS);
     this.startExternalVaultPolling();
     this.cleanupZipImportStaging();
-    // v1.58 §5：连写条缓存的首次扫描排到空闲时机，不进入启动页首帧关键路径。
+    // v1.58 §5：统计缓存的首次扫描排到空闲时机，不进入启动页首帧关键路径。
     this.scheduleIdleStatsRefresh();
   }
 
@@ -992,12 +992,12 @@ struct Index {
     this.ensureVaultStatsPreferenceStore();
     (this.vaultStatsPreferenceStore as VaultStatsPreferenceStore).saveStatsEnabled(enabled);
     if (!enabled) {
-      // 关闭时丢弃进行中的连写数据，避免连写条/弹窗再引用过期结果。
+      // 关闭时丢弃进行中的统计数据，避免菜单、Agent 引用栏或弹窗引用过期结果。
       this.vaultStatsModel = emptyStatsModel();
       this.vaultStatsScanning = false;
       this.vaultStatsFailed = false;
     } else {
-      // 开启时立即排一次空闲扫描，连写条/弹窗无需等冷启动或切库即有数。
+      // 开启时立即排一次空闲扫描，菜单与 Agent 引用栏无需等冷启动或切库即有数。
       this.scheduleIdleStatsRefresh();
     }
   }
@@ -2491,7 +2491,7 @@ struct Index {
 
   /**
    * v1.58 58.4：打开「写作统计」弹窗（宽屏居中 / 单屏半模态），不再替换内容区。
-   * 弹窗自己在 aboutToAppear 重算；同一份结果由 scanVaultStats 回写侧栏连写条。
+   * 弹窗自己在 aboutToAppear 重算；扫描结果同时更新菜单缓存与 Agent 引用栏。
    * 关闭按钮 / 遮罩 / Esc / 系统返回都把焦点还给触发入口。
    */
   private async openVaultStats(fromView: string, focusReturnId: string): Promise<void> {
@@ -2579,7 +2579,7 @@ struct Index {
     }, 0);
   }
 
-  /** 侧栏连写条本周圆点（最后一周 7 天；未来日为 false）。 */
+  /** Agent 引用栏连写条本周圆点（最后一周 7 天；未来日为 false）。 */
   private statsWeekFlags(): boolean[] {
     return currentWeekFlagsOf(this.vaultStatsModel.weeks);
   }
@@ -4300,11 +4300,12 @@ struct Index {
 
   private appBarTitle(): string {
     if (this.topView === 'note') {
-      if (this.breakpoint === Breakpoint.SM && this.drawerOpen) {
-        return '';
+      if (this.breakpoint === Breakpoint.SM) {
+        return this.drawerOpen ? '' : this.currentVaultName();
       }
-      return this.breakpoint === Breakpoint.SM || this.sidebarCollapsed || this.focused
-        ? this.currentVaultName() : '';
+      const navigationVisible: boolean = this.focused
+        ? this.focusNavigationOpen : !this.sidebarCollapsed;
+      return navigationVisible ? '' : this.currentVaultName();
     }
     if (this.topView === 'vaults') {
       return '笔记库';
@@ -5832,7 +5833,7 @@ struct Index {
       }
       this.workspaceSessionSavingEnabled = true;
       this.flushWorkspaceSessionSave(true);
-      // v1.58 58.2：连写条按当前库显示，切库后空闲重算（旧库的过期结果按 vaultId 丢弃）。
+      // 统计按当前库显示，切库后空闲重算（旧库的过期结果按 vaultId 丢弃）。
       this.scheduleIdleStatsRefresh();
     } catch (error) {
       const registry: VaultRegistry = VaultRegistry.get();
@@ -7861,14 +7862,14 @@ struct Index {
     .border({ width: { top: 1 }, color: $r('app.color.line') })
   }
 
-  /** v1.31 31.1：组三「应用」——同步到 Git（仅 Git 库）→ 设置与关于（设置始终在末尾） */
+  /** v1.31 / v1.67：组三「应用」——统计、屏保与设置；设置始终在末尾。 */
   @Builder
   MobileMoreMenuAppGroup() {
     Column() {
       if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
         this.MobileMoreGitSyncItem()
       }
-      // v1.58 58.3：写作统计在「应用」组、设置与关于之前；行尾是连写缓存值。
+      // v1.67：写作统计统一放在「应用」组的设置与关于之前；行尾是连写缓存值。
       if (this.statsEnabled) {
         this.MobileMoreStatsItem()
       }
@@ -7916,7 +7917,7 @@ struct Index {
     .accessibilityText(label)
   }
 
-  /** v1.58 58.3：单屏「⋯」应用组的「写作统计」行，行尾 muted 小字显示连写天数。 */
+  /** v1.58 / v1.67：「⋯」应用组的写作统计行，行尾显示连写天数。 */
   @Builder
   MobileMoreStatsItem() {
     Row({ space: Space.s3 }) {
@@ -8029,13 +8030,6 @@ struct Index {
       refreshSeq: this.treeSeq,
       trashRefreshSeq: this.trashSeq,
       revealPath: this.revealPath,
-      onCollapse: (): void => {
-        if (asDrawer) {
-          this.setDrawerOpen(false);
-        } else {
-          this.setSidebarCollapsed(true);
-        }
-      },
       onSwitchVault: (id: string): void => {
         this.switchVaultFromNavigation(id);
       },
@@ -8043,16 +8037,6 @@ struct Index {
         this.closeNoteNavigation();
         void this.openVaultManager('note');
       },
-      onOpenStats: (): void => {
-        this.closeNoteNavigation();
-        void this.openVaultStats('note', 'vault-stats-streak-chip');
-      },
-      statsStreakDays: this.vaultStatsModel.streakDays,
-      statsTotalDays: this.vaultStatsModel.totalDays,
-      statsScanning: this.vaultStatsScanning || this.vaultStatsFailed,
-      statsWeekFlags: this.statsWeekFlags(),
-      statsTodayIndex: this.statsTodayIndex(),
-      statsEnabled: this.statsEnabled,
       onOpenSearch: (): void => {
         this.closeNoteNavigation();
         this.openQuickSwitcher();

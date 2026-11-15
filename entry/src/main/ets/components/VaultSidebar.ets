@@ -4,8 +4,8 @@
  * 两种挂载形态：
  *  - 嵌入（md/lg）：作为 Index Row 子项随断点等分宽（layoutWeight 由父级控制）；
  *  - 抽屉（sm）：Stack 覆盖层，显隐与遮罩由 Index 控制（asDrawer = true）。
- * 结构照原型 sidebar：库切换器卡片（下拉列库，当前项高亮）→ 目录头（「收起 «」入口）
- * → 树区占位（v0.2 M1 接入）→ 底部「管理库 / 新建」。
+ * 结构照原型 sidebar：当前库标题 → 搜索入口 → 文件 / 章节与操作 → 树区。
+ * 库类型与管理动作放在库切换菜单中；导航开合由工作区顶栏汉堡控制。
  *
  * 视觉全部走 token（需求 4.1）：颜色 `$r('app.color.*')`、数值 `Space/Radius/FontSize/Size`。
  * 图标用统一描边 `Icon()`（见 common/Icons.ets 的 J-2 兜底说明）。
@@ -30,7 +30,7 @@ export interface ChapterEntry {
 
 @Component
 export struct VaultSidebar {
-  /** 抽屉形态（sm 覆盖层）：不显示「收起 «」——抽屉关掉即可，无收起语义 */
+  /** 抽屉形态（sm 覆盖层）：仍由顶栏汉堡和正文遮罩控制开合。 */
   asDrawer: boolean = false;
   /** 矮窗口压缩库选择器留白并隐藏操作提示，给文件树保留可见高度。 */
   @Prop compact: boolean = false;
@@ -58,36 +58,31 @@ export struct VaultSidebar {
   @Prop revealPath: string = '';
   /** 下拉菜单开关（瞬态） */
   @State menuOpen: boolean = false;
-  @State noteCountHintOpen: boolean = false;
   @State collapsedChapterKeys: string[] = [];
   /**
-   * 弹层宽（vp）：原型 .vault-menu 是 left:0; right:0 于 .vault-switch —— **与卡片同宽**，
+   * 弹层宽（vp）：原型 .vault-menu 是 left:0; right:0 于 .vault-switch —— **与标题同宽**，
    * 不是固定值。侧栏宽随断点等分变化，故在卡片上 onAreaChange 实测回填。
    */
   @State menuW: number = Size.sidebarW;
-  /** v1.58 58.2：侧栏实测宽（<280vp 时连写条隐藏本周圆点）。 */
+  /** Agent 引用栏的侧栏实测宽（<280vp 时连写条隐藏本周圆点）。 */
   @State sidebarW: number = 0;
-  /** 57.7：导航条避让高度（px，EntryAbility 发布）；连写条 offset 进条带用。 */
+  /** 57.7：导航条避让高度（px，EntryAbility 发布）；底部固定内容 offset 进条带用。 */
   @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
-  /** 57.7：连写条实测高（onAreaChange 的 Area.height，单位 vp）；簇相接与末条让位计算用。 */
-  @State chipH: number = 0;
-  /** 「收起 «」回调（嵌入形态：父级收起侧栏） */
-  onCollapse: () => void = () => {};
   /** 切库回调（点下拉菜单中的库项） */
   onSwitchVault: (id: string) => void = (id: string) => {};
   /** 「管理库」回调（父级切换到库管理视图） */
   onManageVaults: () => void = () => {};
-  /** v1.58 58.2：侧栏底部连写条回调（打开写作统计弹窗，不再挂库菜单）。 */
+  /** Agent 引用栏的写作统计回调。 */
   onOpenStats: () => void = () => {};
-  /** v1.58 58.2：连写条只读父级缓存值，扫描未完成显示「…」，组件自身不扫描。 */
+  /** 连写条只读父级缓存值，扫描未完成显示「…」，组件自身不扫描。 */
   @Prop statsStreakDays: number = 0;
   @Prop statsTotalDays: number = 0;
   @Prop statsScanning: boolean = false;
   @Prop statsWeekFlags: boolean[] = [];
   @Prop statsTodayIndex: number = -1;
-  /** v1.58 总开关：关闭时不渲染连写条（入口与后台重算由 Index 统一门控）。 */
+  /** v1.58 总开关：关闭时不渲染 Agent 引用栏连写条。 */
   @Prop statsEnabled: boolean = true;
-  /** note / agent 两侧栏不会同时显示，但可能同时挂树；用不同 id 保证焦点归还命中。 */
+  /** Agent 引用栏的焦点归还目标。 */
   @Prop statsChipId: string = 'vault-stats-streak-chip';
   /** 打开当前库快切与全文搜索。 */
   onOpenSearch: () => void = () => {};
@@ -294,24 +289,13 @@ export struct VaultSidebar {
    * 容器 padding --s2 / 圆角 --r / 1px line / --float-shadow / max-height --window-min（超出内部滚动）；
    * 行高 --touch、padding --s2、圆角 --small-r、字号继承 --small(=body2)；
    * 选中 = --blue-soft 底 + --blue 字与图标；动作区通栏分隔线 + --blue 文字。
-   * 库类型不在这里重复：卡片副标题已有「本地 / Git 库 / 外部目录库 · N 篇」。
+   * 库类型随各菜单项显示；主侧栏只显示库名与笔记数。
    *
    * ⚠️ 为什么走 bindPopup 而不是「Stack 内 offset 溢出的普通 Column」：
    * 后者是页面内普通子节点，而侧栏里文件树在它之后声明 —— ArkUI 同级组件
    * 后声明的绘制在上层，于是菜单会被文件树盖住（2026-10-18 实测复现）。
    * 弹层挂在窗口覆盖层上，层级高于页面内所有组件，天然不会被遮挡。
    */
-  @Builder
-  NoteCountHint() {
-    Text('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
-      .fontSize(FontSize.caption)
-      .fontColor($r('app.color.text_primary'))
-      .padding(Space.s2)
-      .backgroundColor($r('app.color.bg_card'))
-      .borderRadius(Radius.control)
-      .border({ width: 1, color: $r('app.color.line') })
-  }
-
   @Builder
   VaultMenu() {
     Column() {
@@ -349,6 +333,11 @@ export struct VaultSidebar {
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
+              Text(this.vaultTypeLabel(v))
+                .fontSize(FontSize.caption)
+                .fontColor($r('app.color.text_tertiary'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
               if (v.id === this.currentVaultId) {
                 // 原型仅当前库带尾部对勾
                 Icon('check', 18, $r('app.color.brand'))
@@ -365,8 +354,8 @@ export struct VaultSidebar {
               this.onSwitchVault(v.id);
             })
             // v1.10 读屏：菜单项自带文字，补「当前 / 切换」状态，否则读屏只念库名
-            .accessibilityText(v.id === this.currentVaultId
-              ? v.id + '，当前知识库' : v.id + '，切换到此知识库')
+            .accessibilityText(v.id + '，' + this.vaultTypeLabel(v) +
+              (v.id === this.currentVaultId ? '，当前知识库' : '，切换到此知识库'))
           }, (v: VaultEntry) => v.id)
 
           // 原型 .vault-menu-actions：通栏分隔线（原型 border-top 不带左右内缩）
@@ -471,14 +460,9 @@ export struct VaultSidebar {
     .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
   }
 
-  private vaultTypeLabel(): string {
-    for (let i: number = 0; i < this.vaults.length; i++) {
-      if (this.vaults[i].id === this.currentVaultId) {
-        return this.vaults[i].rootKind === 'external'
-          ? '外部目录库' : (this.vaults[i].type === 'git' ? 'Git 库' : '本地库');
-      }
-    }
-    return '本地库';
+  private vaultTypeLabel(vault: VaultEntry): string {
+    return vault.rootKind === 'external'
+      ? '外部目录库' : (vault.type === 'git' ? 'Git 库' : '本地库');
   }
 
   /** 57.7：导航条避让高度（vp）；布局区不进安全区（AE4），固定内容压条带靠 offset。 */
@@ -486,263 +470,118 @@ export struct VaultSidebar {
     return px2vp(Math.max(0, this.navIndicatorHeightPx));
   }
 
-  /**
-   * 57.7：传给 FileTreeView 的钉底簇下移量（vp）。嵌入形态连写条 offset 压底后，
-   * 簇底与连写条顶相接（s1 缝）——连写条比避让条带高（两行卡 49vp > 28vp）时
-   * 差值为负，簇要上移，**不得钳 0**（首版钳 0 实测把回收站行压进连写条后面）。
-   * 抽屉形态无连写条，簇全额下移贴物理下沿；referenceOnly（Agent 页）保持现状。
-   */
+  /** 57.7：传给 FileTreeView 的钉底簇下移量（vp）；笔记侧栏不再有覆盖底部的连写条。 */
   private fileTreeClusterOffsetVp(): number {
     if (this.referenceOnly) {
       return 0;
     }
-    if (this.asDrawer) {
-      return this.navClearanceVp();
-    }
-    return this.navClearanceVp() - this.chipH - Space.s1;
+    return this.navClearanceVp();
   }
 
-  /**
-   * 57.7：章节末条让位（vp）。expandSafeArea 只延伸渲染边界，滚动内容底仍止于
-   * 布局区下沿（2152px，2026-11-14 实测），因此让位量是「遮挡物底 − 2152」而非
-   * 全高：嵌入形态末条让到覆盖位连写条顶上方一格（chipH − 避让高度 + s1，连写条
-   * 不比条带高时退化为 s1）；抽屉形态无遮挡物，仅留一格呼吸。referenceOnly
-   * （Agent 页）章节隐藏，不让位。
-   */
+  /** 章节末条只留一格呼吸；笔记侧栏底部不再覆盖连写卡片。 */
   private chaptersBottomClearanceVp(): number {
     if (this.referenceOnly) {
       return 0;
     }
-    if (this.asDrawer) {
-      return Space.s1;
-    }
-    return Math.max(Space.s1,
-      this.chipH - this.navClearanceVp() + Space.s1);
+    return Space.s1;
   }
 
   build() {
-    // 57.7：根改 Bottom Stack——主流列铺满布局区（底=安全区下沿），连写条移到覆盖位
-    // offset 压进底部手势条条带（布局不进安全区 AE4，offset 渲染+命中同步位移）。
+    // 主列铺满布局区；Agent 引用栏的连写条仍留在主流内。
     Stack({ alignContent: Alignment.Bottom }) {
       Column() {
-        Row({ space: Space.s3 }) {
-          Image($r('app.media.app_icon_1024'))
-          .width(Space.s10)
-          .height(Space.s10)
-          .objectFit(ImageFit.Contain)
-          .borderRadius(Radius.control)
-
-          Text('曜石笔记')
-            .fontSize(FontSize.body1)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
-
-          if (this.asDrawer) {
-            Text('×')
-              .fontSize(FontSize.s1)
-              .fontColor($r('app.color.text_secondary'))
-              .width(Size.touch)
-              .height(Size.touch)
-              .textAlign(TextAlign.Center)
-              .onClick((): void => { this.onCollapse(); })
-          }
-        }
-        .width('100%')
-        .padding({
-          left: this.compact ? Space.s2 : Space.s6,
-          right: this.compact ? Space.s2 : Space.s6,
-          top: this.compact ? Space.s2 : Space.s6,
-          bottom: this.compact ? 0 : Space.s2
-        })
-        .margin({ bottom: this.compact ? Space.s1 : Space.s6 })
-
-        // 头部区外包一层：水平 padding 做「卡片离侧栏边缘」的视觉 inset（原型 --sp-3 = 12）。
-        // ⚠️ inset 不能写在卡片自己的 margin 上再配 width('100%')：ArkUI 的百分比取父级
-        // 内容盒的 100%，margin 加在盒外 → 卡片实际占宽 = 侧栏宽 + 2×margin，右缘越过
-        // 栏间分隔线伸进编辑区（2026-10-18 用户实测）。外包层 padding 在盒内，天然不溢出。
         Column() {
-          // 库切换器卡片（点击弹出库列表，见 VaultMenu）——照原型 .vault-switch：
-          // padding --sp-3 / 圆角 --r-card / 边框 line / --elev-1 / gap --sp-3。
-          Row({ space: Space.s3 }) {
-            // 原型 .vs-icon：32×32 圆角块（--r-icon），brand_bg 底 + brand 色图标
-            Row() {
-              Icon('folder', 18, $r('app.color.brand'))
-            }
-            .width(Space.s8)
-            .height(Space.s8)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(VerticalAlign.Center)
-            .borderRadius(Radius.icon)
-            .backgroundColor($r('app.color.brand_bg'))
-
-            Column({ space: 2 }) {
+          // 当前库名是侧栏主标题；数量只在此处显示，库类型收进切库菜单。
+          Row({ space: Space.s2 }) {
+            Column({ space: Space.s1 }) {
               Text(this.currentVaultId.length > 0 ? this.currentVaultId : '（无库）')
-                .fontSize(FontSize.body1)
+                .fontSize(FontSize.s3)
                 .fontWeight(FontWeight.Medium)
                 .fontColor($r('app.color.text_primary'))
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text(this.vaultTypeLabel() + ' · ' + this.noteCount + ' 篇')
+              Text(this.noteCount.toString() + ' 篇笔记')
                 .fontSize(FontSize.caption)
                 .fontColor($r('app.color.text_tertiary'))
                 .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
 
-            // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名必须走 if 分支，不能写成三元实参
-            if (this.menuOpen) {
-              Icon('chevronUp', 16, $r('app.color.text_tertiary'))
-            } else {
-              Icon('chevronDown', 16, $r('app.color.text_tertiary'))
-            }
+          if (this.menuOpen) {
+            Icon('chevronUp', 16, $r('app.color.text_tertiary'))
+          } else {
+            Icon('chevronDown', 16, $r('app.color.text_tertiary'))
           }
-          // 此时 100% = 外包层的 content 盒 → 刚好放下，不再溢出侧栏
-          .width('100%')
-          .padding({
-            top: this.compact ? Space.s2 : Space.s3,
-            bottom: this.compact ? Space.s2 : Space.s3,
-            left: Space.s3,
-            right: Space.s3
-          })
-          .margin({
-            top: this.compact ? Space.s1 : Space.s3,
-            bottom: this.compact ? Space.s1 : Space.s2
-          })
-          .borderRadius(Radius.card)
-          .backgroundColor($r('app.color.bg_card'))
-          .border({ width: 1, color: $r('app.color.line') })
-          // 原型 --elev-1 的单层近似
-          .shadow({ radius: 8, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 2 })
-          .alignItems(VerticalAlign.Center)
-          .focusable(true)
-          .id('vault-switcher-trigger')
-          .onClick(() => {
-            this.menuOpen = !this.menuOpen;
-          })
-          // v1.10 读屏：卡片是纯图标 + 文本的切换入口，补名称与展开状态
-          .accessibilityText('切换知识库，当前 ' +
-            (this.currentVaultId.length > 0 ? this.currentVaultId : '无'))
-          .accessibilityTextHint(this.menuOpen ? '收起知识库列表' : '展开知识库列表')
-          // 实测卡片宽回填弹层宽（原型 vault-menu 与卡片同宽，见 menuW 注释）
-          .onAreaChange((oldArea: Area, newArea: Area) => {
-            if (typeof newArea.width === 'number') {
-              this.menuW = newArea.width;
-            }
-          })
-          // 下拉菜单：弹层挂窗口覆盖层（高于文件树），列全部库（当前高亮）+ 分隔线 + 「管理库…」+「导入 Git 仓库…」
-          .bindPopup(this.menuOpen, {
-            builder: this.VaultMenu(),
-            placement: Placement.BottomLeft,
-            // 关掉弹层自带小箭头（默认 true）：原型 vault-menu 没有气泡箭头
-            enableArrow: false,
-            // 弹层贴卡片左缘 → offset 只补下间距（原型 margin-top --sp-2）
-            offset: { x: 0, y: Space.s2 },
-            mask: false,
-            autoCancel: true,
-            popupColor: Color.Transparent,
-            onWillDismiss: (action: DismissPopupAction): void => {
-              // 点菜单外 / 返回键收起：框架先回调这里，必须显式 dismiss() 才真正消失；
-              // 同时把 menuOpen 置回 false，chevron 图标才不会停在「已展开」
-              action.dismiss();
-              this.menuOpen = false;
-            }
-          })
         }
         .width('100%')
-        .padding({ left: Space.s3, right: Space.s3 })
+        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+        .margin({
+          top: this.compact ? Space.s2 : Space.s3,
+          bottom: Space.s2
+        })
+        .borderRadius(Radius.control)
+        .focusable(true)
+        .id('vault-switcher-trigger')
+        .onClick((): void => { this.menuOpen = !this.menuOpen; })
+        .accessibilityText('切换知识库，当前 ' +
+          (this.currentVaultId.length > 0 ? this.currentVaultId : '无库') +
+          '，' + this.noteCount.toString() + ' 篇笔记')
+        .accessibilityTextHint(this.menuOpen ? '收起知识库列表' : '展开知识库列表')
+        .onAreaChange((oldArea: Area, newArea: Area) => {
+          if (typeof newArea.width === 'number') {
+            this.menuW = newArea.width;
+          }
+        })
+        .bindPopup(this.menuOpen, {
+          builder: this.VaultMenu(),
+          placement: Placement.BottomLeft,
+          enableArrow: false,
+          offset: { x: 0, y: Space.s2 },
+          mask: false,
+          autoCancel: true,
+          popupColor: Color.Transparent,
+          onWillDismiss: (action: DismissPopupAction): void => {
+            action.dismiss();
+            this.menuOpen = false;
+          }
+        })
 
         if (!this.referenceOnly) {
-          // 目录头：文件数、搜索与根目录新建；宽屏收起由顶栏汉堡统一控制。
-          Row() {
-            Text(this.noteCount.toString() + ' 篇笔记')
-              .fontSize(FontSize.caption)
+          Row({ space: Space.s2 }) {
+            Icon('search', Size.treeIcon, $r('app.color.text_tertiary'))
+            Text('搜索笔记…')
+              .fontSize(FontSize.body2)
               .fontColor($r('app.color.text_tertiary'))
               .layoutWeight(1)
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .onHover((isHover: boolean): void => {
-                this.noteCountHintOpen = isHover;
-              })
-              .accessibilityText('文件目录 · ' + this.noteCount.toString() + ' 篇笔记')
-              .bindPopup(this.noteCountHintOpen, {
-                builder: this.NoteCountHint(),
-                placement: Placement.Top,
-                enableArrow: false,
-                mask: false,
-                autoCancel: false,
-                popupColor: Color.Transparent
-              })
-            // v1.49：排序切换入口（sort 图标 + 弹层菜单，与库切换菜单同款 bindPopup 模式）。
-            Row() {
-              Icon('sort', 18, $r('app.color.text_secondary'))
-            }
-            .height(Size.touch)
-            .width(Size.touch)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(VerticalAlign.Center)
-            .borderRadius(Radius.icon)
-            .id('vault-sidebar-sort')
-            .onClick((): void => { this.sortMenuOpen = !this.sortMenuOpen; })
-            .accessibilityText('排序方式，当前' + this.sortModeLabel())
-            .bindPopup(this.sortMenuOpen, {
-              builder: this.SortMenu(),
-              placement: Placement.BottomLeft,
-              enableArrow: false,
-              offset: { x: 0, y: Space.s1 },
-              mask: false,
-              autoCancel: true,
-              popupColor: Color.Transparent,
-              onWillDismiss: (action: DismissPopupAction): void => {
-                action.dismiss();
-                this.sortMenuOpen = false;
-              }
-            })
-            Row() {
-              Icon('search', 18, $r('app.color.text_secondary'))
-            }
-            .height(Size.touch)
-            .width(Size.touch)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(VerticalAlign.Center)
-            .borderRadius(Radius.icon)
-            .id('vault-sidebar-search')
-            .onClick((): void => { this.onOpenSearch(); })
-            .accessibilityText('搜索笔记')
-            Row() {
-              Icon('plus', 16, $r('app.color.text_tertiary'))
-            }
-            .height(Size.touch)
-            .width(Size.touch)
-            .justifyContent(FlexAlign.Center)
-            .alignItems(VerticalAlign.Center)
-            .borderRadius(Radius.icon)
-            .id('vault-sidebar-new-note')
-            .onClick(() => {
-              this.onCreateNote();
-            })
-            .accessibilityText('新建笔记')
           }
           .width('100%')
-          .padding({ left: Space.s4, right: Space.s2 })
-        }
+          .height(Size.touch)
+          .padding({ left: Space.s3, right: Space.s3 })
+          .margin({ bottom: Space.s2 })
+          .borderRadius(Radius.control)
+          .backgroundColor($r('app.color.bg_card'))
+          .border({ width: 1, color: $r('app.color.line') })
+          .focusable(true)
+          .enabled(this.currentVaultId.length > 0)
+          .opacity(this.currentVaultId.length > 0 ? 1 : 0.45)
+          .id('vault-sidebar-search')
+          .onClick((): void => { this.onOpenSearch(); })
+          .accessibilityText('搜索笔记')
+          .accessibilityTextHint(this.currentVaultId.length > 0
+            ? '打开当前知识库快切与全文搜索' : '暂无知识库')
 
-        if (!this.referenceOnly) {
-          Row({ space: Space.s2 }) {
+          // 文件 / 章节与当前文件视图操作共用一行；目录栏最窄时每个入口仍保留 48vp 热区。
+          Row() {
             Column() {
-              Row() {
-                Text('文件')
-                  .fontSize(FontSize.body2)
-                  .fontWeight(this.sidebarTab === 'files' ? 600 : FontWeight.Normal)
-                  .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-                  .textAlign(TextAlign.Center)
-              }
-              .layoutWeight(1)
-              .width('100%')
-              .justifyContent(FlexAlign.Center)
-              .alignItems(VerticalAlign.Center)
+              Text('文件')
+                .fontSize(FontSize.body2)
+                .fontWeight(this.sidebarTab === 'files' ? 600 : FontWeight.Normal)
+                .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                .textAlign(TextAlign.Center)
+                .maxLines(1)
               Row()
                 .width(Space.s5)
                 .height(Space.s1 / 2)
@@ -750,26 +589,21 @@ export struct VaultSidebar {
                 .backgroundColor(this.sidebarTab === 'files'
                   ? $r('app.color.brand') : Color.Transparent)
             }
+            .layoutWeight(1)
             .height(Size.touch)
-            .width('50%')
             .justifyContent(FlexAlign.End)
             .alignItems(HorizontalAlign.Center)
-            .padding({ left: Space.s3, right: Space.s3 })
+            .padding({ left: Space.s1, right: Space.s1 })
             .focusable(true)
             .onClick((): void => { this.onSidebarTabChange('files'); })
 
             Column() {
-              Row() {
-                Text('章节')
-                  .fontSize(FontSize.body2)
-                  .fontWeight(this.sidebarTab === 'chapters' ? 600 : FontWeight.Normal)
-                  .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-                  .textAlign(TextAlign.Center)
-              }
-              .layoutWeight(1)
-              .width('100%')
-              .justifyContent(FlexAlign.Center)
-              .alignItems(VerticalAlign.Center)
+              Text('章节')
+                .fontSize(FontSize.body2)
+                .fontWeight(this.sidebarTab === 'chapters' ? 600 : FontWeight.Normal)
+                .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                .textAlign(TextAlign.Center)
+                .maxLines(1)
               Row()
                 .width(Space.s5)
                 .height(Space.s1 / 2)
@@ -777,18 +611,62 @@ export struct VaultSidebar {
                 .backgroundColor(this.sidebarTab === 'chapters'
                   ? $r('app.color.brand') : Color.Transparent)
             }
+            .layoutWeight(1)
             .height(Size.touch)
-            .width('50%')
             .justifyContent(FlexAlign.End)
             .alignItems(HorizontalAlign.Center)
-            .padding({ left: Space.s3, right: Space.s3 })
+            .padding({ left: Space.s1, right: Space.s1 })
             .focusable(true)
             .onClick((): void => { this.onSidebarTabChange('chapters'); })
+
+            if (this.sidebarTab === 'files') {
+              // v1.49：排序切换入口保留在文件操作区。
+              Row() {
+                Icon('sort', 18, $r('app.color.text_secondary'))
+              }
+              .height(Size.touch)
+              .width(Size.touch)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(Radius.icon)
+              .id('vault-sidebar-sort')
+              .onClick((): void => { this.sortMenuOpen = !this.sortMenuOpen; })
+              .accessibilityText('排序方式，当前' + this.sortModeLabel())
+              .bindPopup(this.sortMenuOpen, {
+                builder: this.SortMenu(),
+                placement: Placement.BottomLeft,
+                enableArrow: false,
+                offset: { x: 0, y: Space.s1 },
+                mask: false,
+                autoCancel: true,
+                popupColor: Color.Transparent,
+                onWillDismiss: (action: DismissPopupAction): void => {
+                  action.dismiss();
+                  this.sortMenuOpen = false;
+                }
+              })
+              Row() {
+                Icon('plus', 16, $r('app.color.text_tertiary'))
+              }
+              .height(Size.touch)
+              .width(Size.touch)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(Radius.icon)
+              .id('vault-sidebar-new-note')
+              .onClick(() => {
+                this.onCreateNote();
+              })
+              .accessibilityText('新建笔记')
+            }
           }
           .width('100%')
-          .padding({ left: Space.s2, right: Space.s2 })
+          .padding({ left: Space.s1, right: Space.s1 })
           .border({ width: { bottom: 1 }, color: $r('app.color.line') })
         }
+        }
+        .width('100%')
+        .padding({ left: Space.s1, right: Space.s1 })
 
         Stack() {
           // 保持树常驻，切换章节时不丢失折叠和滚动位置。
@@ -934,33 +812,6 @@ export struct VaultSidebar {
       .height('100%')
       .backgroundColor($r('app.color.bg_navigation'))
 
-      // 57.7：工作区连写条移出主流、offset 压进底部手势条条带（布局不进安全区 AE4，
-      // offset 渲染+命中同步位移），卡片底贴物理下沿（覆盖位不再加底 padding）；
-      // bg_navigation 遮住穿小白条滚上来的章节/树行；chipH 实测回填（Area 单位 vp，
-      // 消费处禁止再 px2vp 二次换算）驱动簇相接与末条让位。
-      if (this.statsEnabled && !this.referenceOnly && !this.asDrawer) {
-        Column() {
-          VaultStatsStreakChip({
-            streakDays: this.statsStreakDays,
-            totalDays: this.statsTotalDays,
-            scanning: this.statsScanning,
-            weekFlags: this.statsWeekFlags,
-            todayIndex: this.statsTodayIndex,
-            showDots: this.sidebarW <= 0 || this.sidebarW >= Size.statsDotsMinSidebarW,
-            chipId: this.statsChipId,
-            onOpenStats: (): void => { this.onOpenStats(); }
-          })
-        }
-        .width('100%')
-        .padding({ left: Space.s3, right: Space.s3 })
-        .backgroundColor($r('app.color.bg_navigation'))
-        .offset({ y: this.navClearanceVp() })
-        .onAreaChange((oldArea: Area, newArea: Area) => {
-          if (typeof newArea.height === 'number') {
-            this.chipH = newArea.height;
-          }
-        })
-      }
     }
     .width('100%')
     .height('100%')
