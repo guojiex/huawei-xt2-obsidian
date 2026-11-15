@@ -109,7 +109,8 @@ export struct StartupMask {
   private quote: QuoteEntry = QUOTES[Math.floor(Math.random() * QUOTES.length)];
   private quoteLines: string[] = [];
   private nameChars: string[] = [];
-  private quoteLineChars: string[][] = [];
+  /** 必须是 @State：ForEach 对非状态数据源只渲染一次、不感知换句重赋值（2026-11-15 修复）。 */
+  @State private quoteLineChars: string[][] = [];
   private quoteLineOffsets: number[] = [];
   private quoteCharCount: number = 0;
   private footDate: string = '';
@@ -133,13 +134,15 @@ export struct StartupMask {
     this.footDate = formatCnDate(new Date());
     this.nameChars = '曜石笔记'.split('');
     this.quoteLines = splitQuoteLines(this.quote.text);
+    const enterLineChars: string[][] = [];
     let total: number = 0;
     for (let i = 0; i < this.quoteLines.length; i++) {
       this.quoteLineOffsets.push(total);
       const chars: string[] = this.quoteLines[i].split('');
-      this.quoteLineChars.push(chars);
+      enterLineChars.push(chars);
       total += chars.length;
     }
+    this.quoteLineChars = enterLineChars;
     this.quoteCharCount = total;
     this.nameCharOpacity = this.zeros(this.nameChars.length);
     this.quoteCharOpacity = this.zeros(total);
@@ -149,7 +152,8 @@ export struct StartupMask {
       Startup.enterQuoteDelay + (total - 1) * Startup.quoteCharInterval + Startup.charEnterDur);
     if (this.reduceMotion) {
       this.showFinalState();
-      this.scheduleRotate(ScreenSaver.firstRotateDelay);
+      // 减动效无入场编排：首次换句直接等一个完整轮换间隔（2026-11-15 修复）。
+      this.scheduleRotate(this.quoteIntervalMs);
       return;
     }
     this.scheduleEnter(Startup.enterIconDelay, (): void => {
@@ -189,8 +193,9 @@ export struct StartupMask {
     this.scheduleEnter(Startup.loopHaloDelay, (): void => {
       this.playHaloBreath();
     });
-    // 屏保：入场编排播完后再起算第一次轮换，不打断逐字浮现（65.3）。
-    this.scheduleRotate(ScreenSaver.firstRotateDelay);
+    // 屏保：入场编排播完（holdMs）后再等一个完整轮换间隔才首次换句——
+    // 不打断逐字浮现，也不把第一段间隔吃掉（65.3，2026-11-15 修复）。
+    this.scheduleRotate(this.holdMs + this.quoteIntervalMs);
   }
 
   aboutToDisappear(): void {
@@ -322,6 +327,9 @@ export struct StartupMask {
 
             Column() {
               Column({ space: Space.s1 }) {
+                // 两层 ForEach 的 key 都必须含 quoteIndex：换句后 key 不变会被按位置复用
+                // 旧 Text、不重跑 itemGenerator，正文冻在上一句而出处正常轮换
+                //（2026-11-15 真机报告、API26 模拟器实锤的轮换不刷新缺陷）。
                 ForEach(this.quoteLineChars, (line: string[], lineIndex: number) => {
                   // 行尾中文标点悬挂在正文之外，按正文居中。
                   Row() {
@@ -335,10 +343,10 @@ export struct StartupMask {
                         .opacity(this.quoteCharOpacity[this.quoteLineOffsets[lineIndex] + charIndex])
                         .translate({ y: (1 - this.quoteCharOpacity[this.quoteLineOffsets[lineIndex] + charIndex]) * Startup.charEnterFromY })
                         .blur((1 - this.quoteCharOpacity[this.quoteLineOffsets[lineIndex] + charIndex]) * Startup.quoteCharBlur)
-                    }, (ch: string, index: number): string => 'startup-quote-' + lineIndex + '-' + index)
+                    }, (ch: string, index: number): string => 'startup-quote-' + this.quoteIndex + '-' + lineIndex + '-' + index)
                   }
                   .offset({ x: this.quoteFontSize() * Startup.quotePunctuationOffsetRatio })
-                }, (line: string[], index: number): string => 'startup-quote-line-' + index)
+                }, (line: string[], index: number): string => 'startup-quote-line-' + this.quoteIndex + '-' + index)
               }
               .alignItems(HorizontalAlign.Center)
 
@@ -604,15 +612,18 @@ export struct StartupMask {
     this.quoteIndex = index;
     this.quote = QUOTES[index];
     this.quoteLines = splitQuoteLines(this.quote.text);
-    this.quoteLineChars = [];
-    this.quoteLineOffsets = [];
+    // 先在局部拼完再一次性赋给 @State：赋半截数组会触发多次 ForEach diff 抖动。
+    const lineChars: string[][] = [];
+    const lineOffsets: number[] = [];
     let total: number = 0;
     for (let i = 0; i < this.quoteLines.length; i++) {
-      this.quoteLineOffsets.push(total);
+      lineOffsets.push(total);
       const chars: string[] = this.quoteLines[i].split('');
-      this.quoteLineChars.push(chars);
+      lineChars.push(chars);
       total += chars.length;
     }
+    this.quoteLineChars = lineChars;
+    this.quoteLineOffsets = lineOffsets;
     this.quoteCharCount = total;
     this.quoteCharOpacity = this.zeros(total);
     this.sourceOpacity = 0;

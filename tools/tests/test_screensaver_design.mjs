@@ -59,7 +59,7 @@ test('65.3 StartupMask gains a guarded screen-saver mode with recursive quote ro
     'clearRotateTimer', 'clearRotateTimers', 'exitScreenSaver']) {
     assert.match(mask, new RegExp(`private ${method}\\(`), `missing ${method}`);
   }
-  assert.match(mask, /this\.scheduleRotate\(ScreenSaver\.firstRotateDelay\);/);
+  assert.match(mask, /this\.scheduleRotate\(this\.holdMs \+ this\.quoteIntervalMs\);/);
   assert.match(mask, /if \(!this\.screenSaver \|\| this\.saverExiting \|\| this\.quoteIntervalMs <= 0\) \{/);
   assert.match(mask, /const next: number = \(this\.quoteIndex \+ 1\) % QUOTES\.length;/);
   assert.match(mask, /this\.revealRotatedQuote\(\);/);
@@ -96,7 +96,6 @@ test('65.5 quote interval is a persisted app-level preference with a token sourc
   assert.match(tokens, /static readonly intervalOptions: number\[\] = \[0, 15000, 30000, 60000, 180000, 300000\];/);
   assert.match(tokens, /static readonly intervalLabels: string\[\] = \['不轮换', '15 秒', '30 秒', '1 分钟', '3 分钟', '5 分钟'\];/);
   assert.match(tokens, /static isValidInterval\(ms: number\): boolean \{/);
-  assert.match(tokens, /static readonly firstRotateDelay: number = Startup\.minHold \+ Startup\.enterDur;/);
 
   assert.match(store, /export class ScreenSaverPreferenceStore \{/);
   assert.match(store, /private static readonly PREF_NAME: string = 'screensaver_preferences';/);
@@ -140,4 +139,26 @@ test('65.6 red lines: no new permission, no tracking/network, no prototype chang
   assert.match(mask, /this\.holdMs = Math\.max\(Startup\.minHold, this\.sourceAt \+ Startup\.enterDur/);
   assert.match(mask, /Math\.floor\(Math\.random\(\) \* QUOTES\.length\)/);
   assert.equal((mask.match(/const QUOTES: QuoteEntry\[\]/g) ?? []).length, 1);
+});
+
+test('65.7 修复（2026-11-15）：轮换必须重建名言逐字节点，首次换句等待完整间隔', () => {
+  // 名言逐字数据源必须是 @State：ForEach 对非状态数据源只渲染一次、
+  // 不感知换句重赋值（第一次只改 key 无效，正文仍冻在入场句、出处正常轮换）。
+  assert.match(mask, /@State private quoteLineChars: string\[\]\[\] = \[\];/);
+  assert.doesNotMatch(mask, /^\s*private quoteLineChars/m);
+  // ForEach 位置 key 在换句后按位置复用旧 Text、不重跑 itemGenerator：正文冻在上一句、
+  // 出处却正常轮换（正文与出处张冠李戴，真机报告 + API26 模拟器实锤）；
+  // key 必须含 quoteIndex，换句强制重建正文节点。
+  assert.match(mask, /'startup-quote-' \+ this\.quoteIndex \+ '-' \+ lineIndex \+ '-' \+ index/);
+  assert.match(mask, /'startup-quote-line-' \+ this\.quoteIndex \+ '-' \+ index/);
+  assert.doesNotMatch(mask, /'startup-quote-' \+ lineIndex \+ /);
+  assert.doesNotMatch(mask, /'startup-quote-line-' \+ index\)/);
+  // applyQuote 局部拼完一次性赋值，避免赋半截数组触发多次 diff 抖动。
+  assert.doesNotMatch(mask, /this\.quoteLineChars = \[\];/);
+  assert.match(mask, /this\.quoteLineChars = lineChars;/);
+  // 首次换句 = 入场编排播完（holdMs）后再等一个完整轮换间隔；固定 3800ms 的
+  // firstRotateDelay 会在入场刚结束时立刻换句，把第一段间隔吃掉。
+  assert.match(mask, /this\.scheduleRotate\(this\.holdMs \+ this\.quoteIntervalMs\);/);
+  assert.match(mask, /this\.scheduleRotate\(this\.quoteIntervalMs\);/);
+  assert.doesNotMatch(tokens, /firstRotateDelay/);
 });

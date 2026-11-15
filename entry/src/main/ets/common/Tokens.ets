@@ -359,8 +359,6 @@ export class ScreenSaver {
   static readonly intervalOptions: number[] = [0, 15000, 30000, 60000, 180000, 300000];
   static readonly intervalLabels: string[] = ['不轮换', '15 秒', '30 秒', '1 分钟', '3 分钟', '5 分钟'];
   static readonly intervalShortLabels: string[] = ['不换', '15 秒', '30 秒', '1 分钟', '3 分钟', '5 分钟'];
-  /** 首次轮换必须等入场编排播完（页脚组结束 + 单组时长），不打断逐字浮现。 */
-  static readonly firstRotateDelay: number = Startup.minHold + Startup.enterDur;
   /** 换句淡出 / 淡入时长，复用启动页退出档 240ms。 */
   static readonly rotateFadeDur: number = Startup.exitDur;
   /** 台历感：中文数字日期放大到 --large。 */
