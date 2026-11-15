@@ -48,7 +48,7 @@ function fixture() {
   };
   for (const id of ['navSplitter', 'contentSplitter', 'window']) {
     const markup = id === 'window' ? '' :
-      html.match(new RegExp(`<div id="${id}"[^>]*>([\\s\\S]*?)</div>`))?.[1] ?? '';
+      html.match(new RegExp(`<div[^>]*id="${id}"[^>]*>([\\s\\S]*?)</div>`))?.[1] ?? '';
     const node = {
       id,
       attrs: {},
@@ -145,8 +145,9 @@ test('split handles expose a visible grip, pointer hit areas and assistive value
   assert.match(html, /\.window\.phone \.split-control,\.window\.focus \.split-control\{display:none\}/);
   assert.match(script, /const splitKey='xt2-prototype-v2-widths'/);
   assert.match(design, /分栏调节条设计\.md/);
-  assert.match(html, /role="separator" aria-orientation="vertical" aria-label="调整目录栏宽度"/);
-  assert.match(html, /role="separator" aria-orientation="vertical" aria-label="调整正文与参考栏比例"/);
+  // 属性顺序无关：navSplitter 开标签的属性被重排过（id 不在首位），只校验 a11y 属性齐备。
+  assert.match(html, /<div(?=[^>]*id="navSplitter")(?=[^>]*role="separator")(?=[^>]*aria-orientation="vertical")(?=[^>]*aria-label="调整目录栏宽度")[^>]*>/);
+  assert.match(html, /<div(?=[^>]*id="contentSplitter")(?=[^>]*role="separator")(?=[^>]*aria-orientation="vertical")(?=[^>]*aria-label="调整正文与参考栏比例")[^>]*>/);
   const f = fixture();
   assert.match(f.nodes.get('navSplitter').innerHTML, /split-grip/);
   assert.equal(f.nodes.get('navSplitter').attrs['aria-valuetext'], '目录 33% · 正文 67%，默认比例');

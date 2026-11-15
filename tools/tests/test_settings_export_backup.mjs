@@ -82,9 +82,9 @@ test('reset confirm suggests exporting first via inline link (37.4)', () => {
   assert.match(confirm, /if \(this\.exportBackupDisabled\(\)\) \{\s*\n\s*return;\s*\n\s*\}/);
   assert.match(confirm, /this\.resetConfirmOpen = false;/);
   assert.match(confirm, /this\.onExportCurrentVault\('settings-export-vault-row'\);/);
-  // 原型文案与行为一致：建议先导出当前知识库作为备份（v1.36 36.8 补恢复入口句）
+  // 原型文案与行为一致：v1.66 66.5 把重置前建议从单库 ZIP 换成应用备份
   assert.ok(prototype.includes('建议先') &&
-    prototype.includes('导出当前知识库</button>作为备份，之后可在『导入库 → ZIP 文件』恢复。'));
+    prototype.includes('导出应用备份</button>，之后可在「数据 → 从备份恢复」找回全部本地库与设置。'));
   // 不改变重置步骤：确认标题、说明与两个按钮保持
   assert.ok(detailStart > 0, 'reset detail copy unchanged');
   assert.match(dataTab, /'重置并恢复样例'/);

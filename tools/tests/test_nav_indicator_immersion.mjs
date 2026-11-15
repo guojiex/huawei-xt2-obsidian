@@ -142,9 +142,9 @@ test('工作区可见文字压到物理下沿（57.7，Y-03）', () => {
     "VaultSidebar 缺 @StorageProp('navIndicatorHeightPx')");
   assert.ok(vs.includes('@State chipH: number = 0;'),
     'VaultSidebar 缺 @State chipH（连写条实测高，章节/树让位与簇 offset 计算用）');
-  assert.ok(vs.includes('if (this.referenceOnly && !this.asDrawer)'),
-    'VaultSidebar referenceOnly 连写条必须留在流内（Agent 页维持 57.7 前现状）');
-  assert.ok(vs.includes('if (!this.referenceOnly && !this.asDrawer)'),
+  assert.ok(vs.includes('if (this.statsEnabled && this.referenceOnly && !this.asDrawer)'),
+    'VaultSidebar referenceOnly 连写条必须留在流内（Agent 页维持 57.7 前现状；统计开关关闭时整支不渲染）');
+  assert.ok(vs.includes('if (this.statsEnabled && !this.referenceOnly && !this.asDrawer)'),
     'VaultSidebar 工作区连写条必须走覆盖位分支');
   assert.ok(vs.includes('.offset({ y: this.navClearanceVp() })'),
     'VaultSidebar 工作区连写条必须 .offset({ y: this.navClearanceVp() }) 压进手势条条带');
