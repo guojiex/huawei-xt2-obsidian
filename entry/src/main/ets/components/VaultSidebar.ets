@@ -576,12 +576,16 @@ export struct VaultSidebar {
           // 文件 / 章节与当前文件视图操作共用一行；目录栏最窄时每个入口仍保留 48vp 热区。
           Row() {
             Column() {
-              Text('文件')
-                .fontSize(FontSize.body2)
-                .fontWeight(this.sidebarTab === 'files' ? 600 : FontWeight.Normal)
-                .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-                .textAlign(TextAlign.Center)
-                .maxLines(1)
+              Column() {
+                Text('文件')
+                  .fontSize(FontSize.body2)
+                  .fontWeight(this.sidebarTab === 'files' ? 600 : FontWeight.Normal)
+                  .fontColor(this.sidebarTab === 'files' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                  .textAlign(TextAlign.Center)
+                  .maxLines(1)
+              }
+              .layoutWeight(1)
+              .justifyContent(FlexAlign.Center)
               Row()
                 .width(Space.s5)
                 .height(Space.s1 / 2)
@@ -591,19 +595,22 @@ export struct VaultSidebar {
             }
             .layoutWeight(1)
             .height(Size.touch)
-            .justifyContent(FlexAlign.End)
             .alignItems(HorizontalAlign.Center)
             .padding({ left: Space.s1, right: Space.s1 })
             .focusable(true)
             .onClick((): void => { this.onSidebarTabChange('files'); })
 
             Column() {
-              Text('章节')
-                .fontSize(FontSize.body2)
-                .fontWeight(this.sidebarTab === 'chapters' ? 600 : FontWeight.Normal)
-                .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
-                .textAlign(TextAlign.Center)
-                .maxLines(1)
+              Column() {
+                Text('章节')
+                  .fontSize(FontSize.body2)
+                  .fontWeight(this.sidebarTab === 'chapters' ? 600 : FontWeight.Normal)
+                  .fontColor(this.sidebarTab === 'chapters' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                  .textAlign(TextAlign.Center)
+                  .maxLines(1)
+              }
+              .layoutWeight(1)
+              .justifyContent(FlexAlign.Center)
               Row()
                 .width(Space.s5)
                 .height(Space.s1 / 2)
@@ -613,7 +620,6 @@ export struct VaultSidebar {
             }
             .layoutWeight(1)
             .height(Size.touch)
-            .justifyContent(FlexAlign.End)
             .alignItems(HorizontalAlign.Center)
             .padding({ left: Space.s1, right: Space.s1 })
             .focusable(true)
@@ -622,7 +628,7 @@ export struct VaultSidebar {
             if (this.sidebarTab === 'files') {
               // v1.49：排序切换入口保留在文件操作区。
               Row() {
-                Icon('sort', 18, $r('app.color.text_secondary'))
+                Icon('sort', Size.treeIcon, $r('app.color.text_secondary'))
               }
               .height(Size.touch)
               .width(Size.touch)
@@ -646,7 +652,7 @@ export struct VaultSidebar {
                 }
               })
               Row() {
-                Icon('plus', 16, $r('app.color.text_tertiary'))
+                Icon('plus', Size.treeIcon, $r('app.color.text_secondary'))
               }
               .height(Size.touch)
               .width(Size.touch)
