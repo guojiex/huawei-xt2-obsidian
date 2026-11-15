@@ -68,6 +68,7 @@ import {
 } from '../model/RecentErrorStore';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitNativeService } from '../git/GitNativeService';
+import { GitImportService } from '../model/GitImportService';
 import { EditorBridge, EditorSnapshot, EditorWebView } from '../components/EditorWebView';
 import { EditorNoteSession } from '../model/EditorNoteSession';
 import {
@@ -125,7 +126,7 @@ import {
   ExternalVaultAuthorizationService
 } from '../model/ExternalVaultAuthorization';
 import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
-import { GitImportDraft, GitImportDraftStore } from '../model/GitImportDraftStore';
+import { GitImportDraft, GitImportOutcome } from '../model/GitImportDraftStore';
 import { VaultPathResolver } from '../model/VaultPathResolver';
 import {
   ZipChooseOutcome,
@@ -2585,19 +2586,42 @@ struct Index {
     return this.gitAheadCommitCount > 99 ? '99+' : this.gitAheadCommitCount.toString();
   }
 
-  private async openGitSyncPage(draft: GitImportDraft | null = null): Promise<void> {
+  /** 与导入服务共用正式 ID 规则，避免预览名称与实际登记名称漂移。 */
+  private previewGitImportVaultId(remote: string): string {
+    return GitImportService.previewVaultId(remote);
+  }
+
+  /** 导入成功后复用正式切库保护；克隆与失败清理由 GitImportService 统一处理。 */
+  private async importGitAndSwitch(draft: GitImportDraft,
+    onProgress: (stage: string) => void): Promise<GitImportOutcome> {
+    const outcome: GitImportOutcome = await GitImportService.run(draft, onProgress);
+    if (outcome.status !== 'success') {
+      return outcome;
+    }
+    onProgress('正在切换知识库…');
+    await this.switchVault(outcome.vaultId);
+    const switched: boolean = this.currentVaultId === outcome.vaultId;
+    if (switched) {
+      this.topView = 'note';
+    }
+    onProgress('导入完成');
+    const toastMessage: string = switched ? '已导入 ' + outcome.vaultId
+      : '已导入 ' + outcome.vaultId + '，切换未完成，可从知识库列表进入';
+    try {
+      promptAction.showToast({ message: outcome.warning.length > 0
+        ? toastMessage + '；' + outcome.warning : toastMessage });
+    } catch (_toastError) {
+      // 提示组件异常不能把已完成登记 / 切库误报成 Git 导入失败。
+    }
+    return outcome;
+  }
+
+  private async openGitSyncDialog(): Promise<void> {
     if (!await this.flushWorkspaceSaves()) {
       promptAction.showToast({ message: '当前笔记未保存，暂不能打开 Git 同步' });
       return;
     }
     this.moreMenuOpen = false;
-    if (draft !== null) {
-      // 令牌只在进程内交接，不进路由参数、日志或 preferences。
-      GitImportDraftStore.set(draft);
-      router.pushUrl({ url: 'pages/SyncPage' });
-      return;
-    }
-    GitImportDraftStore.clear();
     const entry: VaultEntry | null = VaultRegistry.get().currentEntry();
     if (entry === null || entry.type !== 'git') {
       promptAction.showToast({ message: '当前库不是 Git 库' });
@@ -2651,6 +2675,7 @@ struct Index {
     }
     this.pendingExternalDirectory = null;
     this.importVaultDialogBusy = false;
+    const importOpenedVaultId: string = this.currentVaultId;
     const importSheet: boolean = this.isSingleScreenLayout();
     let focusRestored: boolean = false;
     const restoreImportFocus = (): void => {
@@ -2659,12 +2684,13 @@ struct Index {
       }
       focusRestored = true;
       setTimeout((): void => {
-        FocusRequest.safely(this.getUIContext(), focusReturnId);
+        const targetId: string = this.currentVaultId !== importOpenedVaultId
+          ? 'workspace-navigation-button' : focusReturnId;
+        FocusRequest.safely(this.getUIContext(), targetId);
       }, 0);
     };
     this.restoreImportTriggerFocus = restoreImportFocus;
-    const clearImportDraft = (): void => {
-      GitImportDraftStore.clear();
+    const clearImportDialogState = (): void => {
       this.pendingExternalDirectory = null;
       this.cleanupZipImportState();
       restoreImportFocus();
@@ -2679,15 +2705,15 @@ struct Index {
         onChooseZip: (): Promise<ZipChooseOutcome> => this.chooseZipBackup(),
         onImportZip: (name: string, onProgress: (done: number, total: number) => void): Promise<ZipImportOutcome> =>
           this.importZipBackup(name, onProgress),
+        onImportGit: (draft: GitImportDraft, onProgress: (stage: string) => void): Promise<GitImportOutcome> =>
+          this.importGitAndSwitch(draft, onProgress),
+        onPreviewGitVaultId: (remote: string): string => this.previewGitImportVaultId(remote),
         onBusyChange: (busy: boolean): void => { this.importVaultDialogBusy = busy; },
-        onContinueGit: (draft: GitImportDraft): void => {
-          void this.openGitSyncPage(draft);
-        },
-        onCancel: clearImportDraft
+        onCancel: clearImportDialogState
       }),
       cancel: (): void => {
         if (!this.importVaultDialogBusy) {
-          clearImportDraft();
+          clearImportDialogState();
         }
       },
       autoCancel: true,
@@ -7019,13 +7045,13 @@ struct Index {
     .width(Size.touch)
     .height(Size.touch)
     .onClick((): void => {
-      void this.openGitSyncPage();
+      void this.openGitSyncDialog();
     })
     .id('git-sync-button')
     // v1.10 读屏：纯图标按钮补名称与待推送状态
     .accessibilityText('Git 同步')
     .accessibilityTextHint(this.gitAheadCommitCount > 0
-      ? '有 ' + this.gitAheadCommitCount.toString() + ' 个提交待推送' : '打开同步页')
+      ? '有 ' + this.gitAheadCommitCount.toString() + ' 个提交待推送' : '打开同步窗口')
   }
 
   private isPaneModeSelected(pane: string, label: string): boolean {
@@ -7953,11 +7979,11 @@ struct Index {
     })
     .onClick((): void => {
       this.moreMenuOpen = false;
-      void this.openGitSyncPage();
+      void this.openGitSyncDialog();
     })
     .accessibilityText('同步到 Git')
     .accessibilityTextHint(this.gitAheadCommitCount > 0
-      ? '有 ' + this.gitAheadCommitCount.toString() + ' 个提交待推送' : '打开 Git 同步页')
+      ? '有 ' + this.gitAheadCommitCount.toString() + ' 个提交待推送' : '打开 Git 同步窗口')
   }
 
   @Builder

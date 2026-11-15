@@ -171,28 +171,55 @@ export function UtilityDialogAction(
   // 改按回调传递（UIUtils.makeBinding，API 20+）——官方文档指定的多参全局 @Builder 状态刷新方式。
   enabled: Binding<boolean>,
   onClick: () => void,
-  keyboardFocusable: boolean = false
+  keyboardFocusable: boolean = false,
+  focusId: string = ''
 ) {
-  Text(label.value)
-    .fontSize(FontSize.body1)
-    .fontWeight(FontWeight.Medium)
-    // v1.32 32.12：主 / 危险操作禁用态中性化——--line 底、--muted 字、不透明
-    //（半透明蓝在深色下像可点）；次要操作禁用沿用 45% 不透明度（原型 utility-actions 规则）
-    .fontColor(!enabled.value && tone !== 'secondary'
-      ? $r('app.color.text_tertiary')
-      : tone === 'secondary' ? $r('app.color.text_primary') : $r('app.color.on_brand'))
-    .height(Size.touch)
-    .layoutWeight(singleScreen ? 1 : 0)
-    .padding({ left: Space.s5, right: Space.s5 })
-    .textAlign(TextAlign.Center)
-    .borderRadius(Radius.full)
-    .backgroundColor(!enabled.value && tone !== 'secondary'
-      ? $r('app.color.line')
-      : tone === 'secondary'
-        ? $r('app.color.bg_secondary')
-        : tone === 'danger' ? $r('app.color.danger') : $r('app.color.brand'))
-    .enabled(enabled.value)
-    .opacity(!enabled.value && tone === 'secondary' ? 0.45 : 1)
-    .onClick(onClick)
-    .focusable(keyboardFocusable && enabled.value)
+  if (focusId.length > 0) {
+    Text(label.value)
+      .fontSize(FontSize.body1)
+      .fontWeight(FontWeight.Medium)
+      // v1.32 32.12：主 / 危险操作禁用态中性化——--line 底、--muted 字、不透明
+      //（半透明蓝在深色下像可点）；次要操作禁用沿用 45% 不透明度（原型 utility-actions 规则）
+      .fontColor(!enabled.value && tone !== 'secondary'
+        ? $r('app.color.text_tertiary')
+        : tone === 'secondary' ? $r('app.color.text_primary') : $r('app.color.on_brand'))
+      .height(Size.touch)
+      .layoutWeight(singleScreen ? 1 : 0)
+      .padding({ left: Space.s5, right: Space.s5 })
+      .textAlign(TextAlign.Center)
+      .borderRadius(Radius.full)
+      .backgroundColor(!enabled.value && tone !== 'secondary'
+        ? $r('app.color.line')
+        : tone === 'secondary'
+          ? $r('app.color.bg_secondary')
+          : tone === 'danger' ? $r('app.color.danger') : $r('app.color.brand'))
+      .enabled(enabled.value)
+      .opacity(!enabled.value && tone === 'secondary' ? 0.45 : 1)
+      .onClick(onClick)
+      .focusable(keyboardFocusable && enabled.value)
+      .id(focusId)
+  } else {
+    Text(label.value)
+      .fontSize(FontSize.body1)
+      .fontWeight(FontWeight.Medium)
+      // v1.32 32.12：主 / 危险操作禁用态中性化——--line 底、--muted 字、不透明
+      //（半透明蓝在深色下像可点）；次要操作禁用沿用 45% 不透明度（原型 utility-actions 规则）
+      .fontColor(!enabled.value && tone !== 'secondary'
+        ? $r('app.color.text_tertiary')
+        : tone === 'secondary' ? $r('app.color.text_primary') : $r('app.color.on_brand'))
+      .height(Size.touch)
+      .layoutWeight(singleScreen ? 1 : 0)
+      .padding({ left: Space.s5, right: Space.s5 })
+      .textAlign(TextAlign.Center)
+      .borderRadius(Radius.full)
+      .backgroundColor(!enabled.value && tone !== 'secondary'
+        ? $r('app.color.line')
+        : tone === 'secondary'
+          ? $r('app.color.bg_secondary')
+          : tone === 'danger' ? $r('app.color.danger') : $r('app.color.brand'))
+      .enabled(enabled.value)
+      .opacity(!enabled.value && tone === 'secondary' ? 0.45 : 1)
+      .onClick(onClick)
+      .focusable(keyboardFocusable && enabled.value)
+  }
 }

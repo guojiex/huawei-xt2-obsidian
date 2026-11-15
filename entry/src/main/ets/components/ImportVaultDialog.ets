@@ -1,8 +1,8 @@
 /** ImportVaultDialog.ets —— v1.5 统一知识库导入入口（原型 v2 importVaultDialog）。 */
 import { UIUtils } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { GitImportDraft } from '../model/GitImportDraftStore';
-import { isGiteeRemote, isGitHubRemote } from '../git/GitRemoteAuth';
+import { GitImportDraft, GitImportOutcome } from '../model/GitImportDraftStore';
+import { isGitHubRemote } from '../git/GitRemoteAuth';
 import { Icon } from '../common/Icons';
 import { FocusRequest } from '../common/FocusRequest';
 import { ZipChooseOutcome, ZipImportOutcome } from '../model/ZipImportService';
@@ -32,6 +32,9 @@ export struct ImportVaultDialog {
   @State gitToken: string = '';
   @State showGitToken: boolean = false;
   @State gitAuthHint: string = '';
+  @State gitProgressText: string = '';
+  @State gitFailureText: string = '';
+  @State gitRetryAvailable: boolean = false;
   @State zipState: string = 'unselected';
   @State zipFileName: string = '';
   @State zipSummary: string = '';
@@ -56,8 +59,17 @@ export struct ImportVaultDialog {
       const cancelled: ZipImportOutcome = { status: 'cancelled', kind: 'corrupt', detail: '', result: null };
       return cancelled;
     };
+  /** 在当前弹窗内执行 Native Git clone，并回报真实阶段文字。 */
+  onImportGit: (draft: GitImportDraft, onProgress: (stage: string) => void) => Promise<GitImportOutcome> =
+    async (_draft: GitImportDraft, _onProgress: (stage: string) => void): Promise<GitImportOutcome> => {
+      const failed: GitImportOutcome = {
+        status: 'failed', vaultId: '', category: 'other', detail: 'Git 导入暂不可用',
+        guidance: '没有启动导入；请稍后重试。', focusTarget: 'retry', warning: ''
+      };
+      return failed;
+    };
+  onPreviewGitVaultId: (remote: string) => string = (_remote: string): string => '';
   onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
-  onContinueGit: (draft: GitImportDraft) => void = (_draft: GitImportDraft) => {};
   onCancel: () => void = () => {};
 
   private setWorking(working: boolean): void {
@@ -92,6 +104,10 @@ export struct ImportVaultDialog {
   private chooseSource(source: string): void {
     if (!this.working) {
       this.source = source;
+      this.gitFailureText = '';
+      this.gitProgressText = '';
+      this.gitRetryAvailable = false;
+      this.gitAuthHint = '';
     }
   }
 
@@ -180,13 +196,28 @@ export struct ImportVaultDialog {
     }
   }
 
-  private continueGit(): void {
+  private redactGitDetail(detail: string): string {
+    return this.gitToken.length > 0 ? detail.split(this.gitToken).join('[令牌已隐藏]') : detail;
+  }
+
+  private focusGitFailure(target: string): void {
+    const focusId: string = target === 'token' ? 'import-git-token'
+      : target === 'username' ? 'import-git-username'
+        : target === 'remote' ? 'import-git-remote' : 'import-git-submit';
+    setTimeout((): void => {
+      FocusRequest.safely(this.getUIContext(), focusId);
+    }, 0);
+  }
+
+  private async importGit(): Promise<void> {
     if (this.gitRemote.trim().length === 0 || this.working) {
       return;
     }
     const username: string = this.gitUsername.trim();
-    if (isGiteeRemote(this.gitRemote) && this.gitToken.length > 0 && username.length === 0) {
-      this.gitAuthHint = '使用 Gitee 私人令牌时，请填写对应用户名。';
+    if (this.gitRemote.trim().length > 0 && !isGitHubRemote(this.gitRemote) &&
+      this.gitToken.length > 0 && username.length === 0) {
+      this.gitAuthHint = '此 Git 服务使用令牌时需要填写对应用户名。';
+      this.focusGitFailure('username');
       return;
     }
     const draft: GitImportDraft = {
@@ -195,9 +226,41 @@ export struct ImportVaultDialog {
       username: username,
       token: this.gitToken
     };
-    this.clearGitCredentials();
-    this.controller?.close();
-    this.onContinueGit(draft);
+    this.gitFailureText = '';
+    this.gitRetryAvailable = false;
+    this.gitProgressText = '正在准备导入…';
+    this.setWorking(true);
+    try {
+      const outcome: GitImportOutcome = await this.onImportGit(draft, (stage: string): void => {
+        this.gitProgressText = stage;
+      });
+      if (outcome.status === 'success') {
+        this.setWorking(false);
+        this.gitProgressText = '导入完成';
+        this.clearGitCredentials();
+        this.controller?.close();
+        this.onCancel();
+        return;
+      }
+      this.gitFailureText = outcome.guidance + (outcome.detail.length > 0
+        ? '\n底层错误：' + this.redactGitDetail(outcome.detail) : '');
+      this.gitProgressText = '导入失败，可修改信息后重试';
+      this.gitRetryAvailable = true;
+      this.setWorking(false);
+      this.focusGitFailure(outcome.focusTarget);
+    } catch (error) {
+      const err = error as BusinessError;
+      this.gitFailureText = 'Git 导入未完成；当前库未切换，可以修改信息后重试。\n底层错误：' +
+        this.redactGitDetail(err.message ?? String(error));
+      this.gitProgressText = '导入失败，可修改信息后重试';
+      this.gitRetryAvailable = true;
+      this.setWorking(false);
+      this.focusGitFailure('retry');
+    } finally {
+      if (this.working) {
+        this.setWorking(false);
+      }
+    }
   }
 
   private zipCardTitle(): string {
@@ -335,6 +398,7 @@ export struct ImportVaultDialog {
       .textAlign(TextAlign.Center)
       .borderRadius(Radius.full)
       .backgroundColor(this.source === value ? $r('app.color.bg_card') : Color.Transparent)
+      .enabled(!this.working)
       .onClick(() => { this.chooseSource(value); })
   }
 
@@ -470,6 +534,7 @@ export struct ImportVaultDialog {
                 placeholder: 'https://github.com/用户名/仓库.git',
                 text: this.gitRemote
               })
+                .enabled(!this.working)
                 .height(Size.buttonH)
                 .fontSize(FontSize.body3)
                 .fontColor($r('app.color.text_primary'))
@@ -477,7 +542,11 @@ export struct ImportVaultDialog {
                 .padding({ left: Space.s3, right: Space.s3 })
                 .backgroundColor($r('app.color.bg_secondary'))
                 .borderRadius(Radius.control)
-                .onChange((value: string) => { this.gitRemote = value; })
+                .id('import-git-remote')
+                .onChange((value: string) => {
+                  this.gitRemote = value;
+                  this.gitAuthHint = '';
+                })
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
@@ -486,6 +555,7 @@ export struct ImportVaultDialog {
                 .fontSize(FontSize.body3)
                 .fontColor($r('app.color.text_primary'))
               TextInput({ placeholder: 'main', text: this.gitBranch })
+                .enabled(!this.working)
                 .height(Size.buttonH)
                 .fontSize(FontSize.body3)
                 .fontColor($r('app.color.text_primary'))
@@ -497,12 +567,13 @@ export struct ImportVaultDialog {
             }
             .width('100%')
             .alignItems(HorizontalAlign.Start)
-            if (isGiteeRemote(this.gitRemote)) {
+            if (this.gitRemote.trim().length > 0 && !isGitHubRemote(this.gitRemote)) {
               Column({ space: Space.s1 }) {
                 Text('用户名')
                   .fontSize(FontSize.body3)
                   .fontColor($r('app.color.text_primary'))
-                TextInput({ placeholder: 'Gitee 用户名', text: this.gitUsername })
+                TextInput({ placeholder: 'Gitee / GitLab 用户名', text: this.gitUsername })
+                  .enabled(!this.working)
                   .height(Size.buttonH)
                   .fontSize(FontSize.body3)
                   .fontColor($r('app.color.text_primary'))
@@ -510,6 +581,7 @@ export struct ImportVaultDialog {
                   .padding({ left: Space.s3, right: Space.s3 })
                   .backgroundColor($r('app.color.bg_secondary'))
                   .borderRadius(Radius.control)
+                  .id('import-git-username')
                   .onChange((value: string) => {
                     this.gitUsername = value;
                     this.gitAuthHint = '';
@@ -525,6 +597,7 @@ export struct ImportVaultDialog {
               Row() {
                 TextInput({ placeholder: '私有仓库访问令牌', text: this.gitToken })
                   .type(this.showGitToken ? InputType.Normal : InputType.Password)
+                  .enabled(!this.working)
                   .layoutWeight(1)
                   .height(Size.buttonH)
                   .fontSize(FontSize.body3)
@@ -532,6 +605,7 @@ export struct ImportVaultDialog {
                   .placeholderColor($r('app.color.text_tertiary'))
                   .padding({ left: Space.s3, right: Space.s2 })
                   .backgroundColor(Color.Transparent)
+                  .id('import-git-token')
                   .onChange((value: string) => {
                     this.gitToken = value;
                     this.gitAuthHint = '';
@@ -540,10 +614,15 @@ export struct ImportVaultDialog {
                   .fontSize(FontSize.caption)
                   .fontColor($r('app.color.brand'))
                   .height(Size.touch)
+                  .enabled(!this.working)
                   .padding({ left: Space.s3, right: Space.s3 })
                   .textAlign(TextAlign.Center)
                   .accessibilityText(this.showGitToken ? '隐藏访问令牌' : '显示访问令牌')
-                  .onClick(() => { this.toggleGitTokenVisibility(); })
+                  .onClick(() => {
+                    if (!this.working) {
+                      this.toggleGitTokenVisibility();
+                    }
+                  })
               }
               .width('100%')
               .borderRadius(Radius.control)
@@ -561,7 +640,7 @@ export struct ImportVaultDialog {
                 ? $r('app.color.brand')
                 : $r('app.color.text_secondary'))
               .width('100%')
-            Text('令牌用于本次克隆；成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在同步页更换。')
+            Text('令牌用于本次克隆；成功后存入本机安全存储，关闭弹窗会清空输入。不会写入地址、日志或普通设置，可在 Git 同步窗口更换。')
               .fontSize(FontSize.body3)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
@@ -575,6 +654,35 @@ export struct ImportVaultDialog {
               .padding(Space.s3)
               .borderRadius(Radius.control)
               .backgroundColor($r('app.color.bg_secondary'))
+            Text('目标知识库：vaults/' + (this.gitRemote.trim().length > 0
+              ? this.onPreviewGitVaultId(this.gitRemote) : '填写地址后预览'))
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+            if (this.gitProgressText.length > 0) {
+              Text(this.gitProgressText)
+                .fontSize(FontSize.caption)
+                .fontColor(this.gitFailureText.length > 0
+                  ? $r('app.color.danger') : $r('app.color.text_secondary'))
+                .width('100%')
+                .accessibilityText(this.gitProgressText)
+            }
+            if (this.gitFailureText.length > 0) {
+              Column({ space: Space.s1 }) {
+                Text('Git 导入失败')
+                  .fontSize(FontSize.body3)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('app.color.danger'))
+                Text(this.gitFailureText)
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_primary'))
+                  .width('100%')
+              }
+              .width('100%')
+              .padding(Space.s3)
+              .borderRadius(Radius.control)
+              .backgroundColor($r('app.color.danger_bg'))
+            }
           } else {
             Text('从 ZIP 备份新建知识库')
               .fontSize(FontSize.body2)
@@ -749,10 +857,11 @@ export struct ImportVaultDialog {
             void this.importZip();
           }, true)
       } else {
-        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.working ? '处理中…' : '导入 Git 仓库'), 'primary',
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.working ? '正在导入…'
+          : this.gitRetryAvailable ? '重试导入' : '导入 Git 仓库'), 'primary',
           this.singleScreen, UIUtils.makeBinding<boolean>(() => this.gitRemote.trim().length > 0 && !this.working), (): void => {
-            this.continueGit();
-          }, true)
+            void this.importGit();
+          }, true, 'import-git-submit')
       }
     }
     .width('100%')
