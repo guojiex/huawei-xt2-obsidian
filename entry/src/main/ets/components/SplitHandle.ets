@@ -18,7 +18,7 @@ export struct SplitHandle {
   @Prop readoutPrimary: string = '';
   @Prop readoutWidths: string = '';
   @Prop readoutStatus: string = '';
-  /** 胶囊相对容器垂直中心的偏移（vp）：导航把手用它把胶囊对齐到正文区中心（Appbar/Statusbar 不在其容器内） */
+  /** 胶囊相对容器垂直中心的偏移（vp）：导航把手容器含 Appbar，传 appbarH/2 下移到正文区中心，与容器即正文区的正文把手对齐 */
   @Prop gripCenterOffsetY: number = 0;
   /** v1.38 38.3 单拖门控：返回 false 时本次手势不进入拖动（另一条分隔条拖动中）。 */
   dragAllowed: () => boolean = () => true;

@@ -117,3 +117,14 @@ test('v1.38 38.1/38.3: content handle hides on single-screen layouts and when th
   assert.match(tokens, /paneMinW: number = 240/);
   assert.match(tokens, /paneMinNavW: number = 200/);
 });
+
+test('nav grip aligns with content grip at the body-area vertical center', () => {
+  // 导航把手容器 = Appbar + 正文（高 H），正文把手容器 = 正文（高 H - appbarH）。
+  // 两处胶囊要落在同一水平线，导航容器中心必须下移 appbarH/2；
+  // 旧公式 (appbarH - statusbarH)/2 会让导航把手比正文把手高 statusbarH/2（14vp）。
+  assert.match(index, /gripCenterOffsetY: this\.appbarHeightVp\(\) \/ 2,/);
+  assert.doesNotMatch(index, /gripCenterOffsetY: \(this\.appbarHeightVp\(\) - Size\.statusbarH\) \/ 2/);
+  // 正文把手容器本身就是正文区，保持 0 偏移：只有导航把手传该 prop。
+  assert.equal((index.match(/gripCenterOffsetY:/g) ?? []).length, 1);
+  assert.match(splitHandle, /@Prop gripCenterOffsetY: number = 0;/);
+});

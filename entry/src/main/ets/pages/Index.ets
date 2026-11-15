@@ -7747,7 +7747,7 @@ struct Index {
 
           SplitHandle({
             enhanced: true,
-            gripCenterOffsetY: (this.appbarHeightVp() - Size.statusbarH) / 2,
+            gripCenterOffsetY: this.appbarHeightVp() / 2,
             readoutPrimary: this.splitHandlePrimary('nav'),
             readoutWidths: this.splitHandleWidths('nav'),
             readoutStatus: this.splitHandleStatus('nav'),
