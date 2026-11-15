@@ -16,10 +16,10 @@
 | 状态 | 计数 |
 | --- | --- |
 | 已有防线 | 123 |
-| 已补防线 | 7 |
+| 已补防线 | 8 |
 | 不可自动化 | 1 |
 | 根因已消除 | 20 |
-| **合计** | 151 |
+| **合计** | 152 |
 
 > **注**：
 > - T004–T009 新增的 6 个 Node 防回归测试文件是对「已有防线」条目的**加固**（源码级断言防模式退化），
@@ -62,6 +62,7 @@
 | 36feeb3 | 分栏把手右半被右栏背景遮盖——zIndex 移到 SplitHandle 调用处生效 | ArkUI 布局与弹层 | — | test_split_handle.mjs | 已有防线 |
 | 7f1667c | 导航把手胶囊对齐正文区垂直中心——把手容器不含 Appbar/Statusbar | ArkUI 布局与弹层 | — | test_split_handle.mjs | 已有防线 |
 | 600ab9f | hs-row 行框对齐 v2 设计稿——min-height 56 随内容撑开，不再压 48 固定高 | ArkUI 布局与弹层 | — | test_settings_group_layout.mjs | 已有防线 |
+| 208458f | 侧栏工具行对齐设计稿——tab 标签贴底改 48vp 行内垂直居中，新建图标 16 改 Size.treeIcon(18)，排序图标字面量改 token | ArkUI 布局与弹层 | — | test_sidebar_compact_text.mjs | 已补防线 |
 | 1f5b74a | 快切卡片外点击关闭——弹层点击外部未关闭 | ArkUI 布局与弹层 | — | test_quick_switcher_logic.mjs | 已有防线 |
 | eba2b3d | 按原型调整快切弹层布局 | ArkUI 布局与弹层 | — | test_quick_switcher_logic.mjs | 已有防线 |
 | b6e795c | 使用放大镜图标打开快速切换 | ArkUI 布局与弹层 | — | test_vault_sidebar_keyboard.mjs | 已有防线 |
