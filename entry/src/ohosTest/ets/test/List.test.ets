@@ -9,6 +9,8 @@ import uiQuickSwitchTest from './ui/UiQuickSwitch.test';
 import uiSmDrawerTest from './ui/UiSmDrawer.test';
 import uiTrashTest from './ui/UiTrash.test';
 import uiSettingsExtTest from './ui/UiSettingsExt.test';
+import uiStatsTest from './ui/UiStats.test';
+import uiScreensaverTest from './ui/UiScreensaver.test';
 import uiShareTest from './ui/UiShare.test';
 
 export default function testsuite() {
@@ -25,5 +27,7 @@ export default function testsuite() {
   uiSmDrawerTest();
   uiTrashTest();
   uiSettingsExtTest();
+  uiStatsTest();
+  uiScreensaverTest();
   uiShareTest();
 }
