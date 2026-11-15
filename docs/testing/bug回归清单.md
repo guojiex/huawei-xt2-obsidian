@@ -16,10 +16,10 @@
 | 状态 | 计数 |
 | --- | --- |
 | 已有防线 | 123 |
-| 已补防线 | 6 |
+| 已补防线 | 7 |
 | 不可自动化 | 1 |
 | 根因已消除 | 20 |
-| **合计** | 150 |
+| **合计** | 151 |
 
 > **注**：
 > - T004–T009 新增的 6 个 Node 防回归测试文件是对「已有防线」条目的**加固**（源码级断言防模式退化），
@@ -164,6 +164,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 7d755b4 | 编辑器失配/重载/开栏静默失败路径补齐错误日志 | Web 编辑器 | v1.7 | test_editor_mismatch_recovery.mjs | 已有防线 |
 | c12a851 | 修复切换笔记时内容校验误判 | Web 编辑器 | — | test_editor_mismatch_recovery.mjs | 已有防线 |
+| a93dad4 | 带 BOM 笔记切换误弹「编辑内容与笔记不一致」——Web 侧 TextDecoder 按 WHATWG 默认剥 BOM，编辑器比基线少首字符且无脏标；解码改 `ignoreBOM:true` 无损化 + ArkTS 保存前校验等价豁免（剥前导 U+FEFF + CRLF→LF，两种 ignoreBOM 语义都兜底）；恢复弹窗升级双栏 diff 对照 | Web 编辑器 | v1.70 | test_editor_mismatch_diff.mjs, test_editor_mismatch_recovery.mjs, codec.test.mjs；EM-C12 | 已补防线 |
 | 6b44988 | 修复模式切换期间旧预览回写 | Web 编辑器 | — | test_editor_experience_transition.mjs | 已有防线 |
 | ecbbd86 | 修复简单模式段距装饰边界 | Web 编辑器 | — | test_simple_format_history_ui.mjs | 已有防线 |
 | 8436215 | 预览未就绪/未回内容不再拦住模式切换，失败 toast 带原因 | Web 编辑器 | — | test_editor_experience_transition.mjs | 已有防线 |

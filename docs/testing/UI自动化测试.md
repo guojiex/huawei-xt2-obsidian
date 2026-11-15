@@ -21,6 +21,9 @@
   - 深色模式 —— 系统级切换，宿主 Emulator.exe 侧控制，设备内切不了（同折叠形态）。
   - 屏保覆盖层内容断言 —— StartupMask 根 `accessibilityLevel('no')`，uitest 读不到覆盖层；
     屏保套件只做入口冒烟 + 点击退出 + 设置组可见。
+  - BOM 夹具注入（EM-C12 依赖项）—— debug HAP 沙箱 SELinux 禁 shell / hdcd 创建文件
+    （`touch` / `hdc file send` 均 denied，读取与 `rm` 放行，[api_notes](../harmonyos/api_notes.md) L-22），
+    测试进程也够不到 `haps/entry` 沙箱；自动化与人工一律用沙箱内既有 BOM 笔记作夹具。
 - 树行 MENU 键路径**作废**：UiTest 的 touch click 不给树行键盘焦点，`triggerKey(KEYCODE_MENU)`
   打不开行内菜单；行内操作一律走 swipeAction 注入（半滑 0.45 出操作条、全滑 0.7 触发删除）。
 

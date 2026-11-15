@@ -1646,6 +1646,12 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - ⚠️ 待真机验收：API 24 / XT2 上 OFFSET_WITH_CARET 实际效果——键盘起落无全页重排、dock 贴键盘、Web 内末行光标可见、avoidArea 报值、上抬动画平滑度。
 
 
+### L-22 ⚠️ EM 夹具注入：debug HAP 沙箱对 shell「可读可删、不可建/写」（SELinux Enforcing，2026-11-15 x86_64 实测）
+
+- 实测（API26 x86_64 模拟器，目标为 debug 签名应用 `com.jxg.huaweiobsidian`）：`hdc shell`（uid 2000，context `u:r:sh:s0`）对 `haps/entry/files/vaults/...`（标签 `o:object_r:debug_hap_data_file:s0:...`，目录 DAC `drwxrwxrwx`）——`od` / `cat` / `ls` 读取 ✅、`rm`（unlink）✅；`touch` 新建 ❌ `Permission denied`、`hdc file send` 写入 ❌ `Error opening file: permission denied`；`su` 不存在，无提权通道。`getenforce` = Enforcing——拦截在 SELinux 而非 DAC。
+- 影响：EM 用例不能靠 shell 往库里「注入」新笔记夹具（如带 BOM 的 md）；夹具只能走应用自身链路（新建 / 导入 / Git clone）或使用沙箱内既有文件。[UI 自动化测试](../testing/UI自动化测试.md)记载的 harness 宿主侧 `rm -rf uitest*` 残留清理仍成立（unlink 放行，实测 RM_OK）。
+- 依据：EM-C12（BOM 回归用例）补建时实测（2026-11-15）；BOM 误报修复见 [v1.70 需求文档](../releases/v1.70/需求文档.md) 70.5 与 AG1。
+
 ---
 
 ## 落地决策表
