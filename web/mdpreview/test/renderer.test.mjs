@@ -278,3 +278,36 @@ test('keeps multi-line, nested and CRLF callout content intact', () => {
   assert.match(list, /<ul>[\s\S]*?<li>甲<\/li>[\s\S]*?<li>乙<\/li>/)
   assert.match(list, /<pre><code class="language-ts">const a = 1/)
 })
+
+test('21.5 hides a trailing block ID from the visible paragraph and exposes data-block-id', () => {
+  const html = renderMarkdown('正文可以包含 **粗体**、*斜体*、~~删除线~~和 `行内代码`。 ^demo-paragraph')
+
+  assert.match(html, /<p data-block-id="demo-paragraph">/)
+  assert.doesNotMatch(html, /\^demo-paragraph/)
+  assert.match(html, /<strong>粗体<\/strong>/)
+  assert.match(html, /<em>斜体<\/em>/)
+  assert.match(html, /<del>删除线<\/del>/)
+  assert.match(html, /<code>行内代码<\/code>/)
+  // 标记前的句子末尾不应留下多余空白
+  assert.match(html, /<code>行内代码<\/code>。<\/p>/)
+})
+
+test('21.5 keeps escaped, mid-paragraph and invalid block IDs as literal text', () => {
+  assert.match(renderMarkdown(String.raw`正文 \^escaped`), /<p>正文 \^escaped<\/p>/)
+  assert.match(renderMarkdown('段中 ^inline 后还有字'), /<p>段中 \^inline 后还有字<\/p>/)
+  assert.match(renderMarkdown('正文 ^bad/id'), /<p>正文 \^bad\/id<\/p>/)
+  assert.doesNotMatch(renderMarkdown('正文 ^bad/id'), /data-block-id/)
+})
+
+test('21.5 hides trailing block IDs across multi-line and CRLF paragraphs', () => {
+  assert.match(renderMarkdown('第一行\n第二行 ^note_1'), /<p data-block-id="note_1">第一行\n第二行<\/p>/)
+  assert.match(renderMarkdown('第一行\r\n第二行 ^crlf_id\r\n'), /<p data-block-id="crlf_id">第一行\n第二行<\/p>/)
+})
+
+test('21.5 hides a block ID inside a callout paragraph without touching the callout shell', () => {
+  const html = renderMarkdown('> [!note] 标题\r\n> 引文里的块 ID ^inside_callout')
+
+  assert.match(html, /data-callout="note"/)
+  assert.match(html, /<p data-block-id="inside_callout">引文里的块 ID<\/p>/)
+  assert.doesNotMatch(html, /\^inside_callout/)
+})

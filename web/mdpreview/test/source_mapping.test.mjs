@@ -208,6 +208,35 @@ test('20.4 keeps escaped parentheses and encoded spaces eligible for exact mappi
   ])
 })
 
+test('21.5 hides the trailing block ID in HTML but keeps the full source range for copy-block-link', () => {
+  const source = '# 基础排版\n\n正文可以包含 **粗体** 和 `行内代码`。 ^demo-paragraph\n\n后文'
+  const result = renderMarkdownWithSourceBlocks(source, 3)
+  const paragraph = result.blocks.find((block) => block.type === 'paragraph')
+
+  assert.match(result.html, /<p data-block-id="demo-paragraph">/)
+  assert.doesNotMatch(result.html, /\^demo-paragraph/)
+  assert.equal(source.slice(paragraph.sourceStart, paragraph.sourceEnd),
+    '正文可以包含 **粗体** 和 `行内代码`。 ^demo-paragraph')
+  assert.deepEqual([paragraph.startLine, paragraph.endLine], [6, 6])
+  // 带块 ID 的段落沿用现有只读保护，不产生可点选的内联项
+  assert.equal(paragraph.inlineSafe, false)
+  assert.deepEqual(paragraph.inlineItems, [])
+  // 其余段落的渲染完全不变
+  assert.match(result.html, /<p>后文<\/p>/)
+})
+
+test('21.5 source mapping keeps CRLF source and line ranges intact while hiding the block ID', () => {
+  const source = '标题\r\n\r\n正文 ^note_1\r\n\r\n末行'
+  const result = renderMarkdownWithSourceBlocks(source)
+  const paragraph = result.blocks.find((block) => source.slice(block.sourceStart, block.sourceEnd) === '正文 ^note_1')
+
+  assert.ok(paragraph)
+  assert.match(result.html, /<p data-block-id="note_1">正文<\/p>/)
+  assert.doesNotMatch(result.html, /\^note_1/)
+  assert.equal(source.slice(paragraph.sourceStart, paragraph.sourceEnd), '正文 ^note_1')
+  assert.deepEqual([paragraph.startLine, paragraph.endLine], [3, 3])
+})
+
 test('source line lookup disambiguates repeated headings and chooses the nearest block for blank lines', () => {
   const blocks = [
     { startLine: 2, endLine: 2 },

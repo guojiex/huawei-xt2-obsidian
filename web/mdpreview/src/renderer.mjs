@@ -29,6 +29,27 @@ function escapeHtml(value) {
   })
 }
 
+/**
+ * Obsidian 段尾块 ID（v1.21 21.5）。规则与 v2 原型 `cbBlockId` 及端侧
+ * `MarkdownComplexBlockEdit.parseBlockId` 一致：只看最后一行，允许尾部空白，
+ * 反斜杠转义的 `\^id` 不算块 ID。
+ * @param {string} raw 段落原始 Markdown
+ * @returns {{ id: string, from: number } | null} from 是标记连同前导空白在 raw 中的起点
+ */
+function trailingBlockId(raw) {
+  const content = raw.replace(/(?:\r?\n)+$/, '')
+  const lineStart = content.lastIndexOf('\n') + 1
+  const line = content.slice(lineStart)
+  const match = /\^([A-Za-z0-9][A-Za-z0-9_-]*)[ \t]*$/.exec(line)
+  if (match === null) return null
+  let escapes = 0
+  for (let index = match.index - 1; index >= 0 && line[index] === '\\'; index--) escapes++
+  if (escapes % 2 === 1) return null
+  let from = match.index
+  while (from > 0 && /[ \t]/.test(line[from - 1])) from--
+  return { id: match[1], from: lineStart + from }
+}
+
 export function applyImageMarkdownAttributes(image) {
   const width = image.dataset.markdownWidth ?? ''
   if (/^\d{2,4}$/.test(width) && Number(width) > 0) {
@@ -169,6 +190,38 @@ marked.use({
     }
   ],
   renderer: {
+    /**
+     * 段尾块 ID 是引用锚点而非正文：从可见 HTML 移除，保留 `<p data-block-id>`。
+     * 只裁剪 token 副本 —— sourceMapping 仍用原 token.raw / token.tokens 计算
+     * 源码区间与内联项，因此源码、块定位、复制块链接都不受影响。
+     */
+    paragraph(token) {
+      const block = trailingBlockId(token.raw)
+      if (block === null) return false
+
+      const tokens = (token.tokens ?? []).map((item) => ({ ...item }))
+      let remove = token.raw.replace(/(?:\r?\n)+$/, '').length - block.from
+      for (let index = tokens.length - 1; index >= 0 && remove > 0; index--) {
+        const item = tokens[index]
+        const rawLength = (item.raw ?? '').length
+        if (rawLength === 0) continue
+        if (rawLength <= remove) {
+          tokens.splice(index, 1)
+          remove -= rawLength
+          continue
+        }
+        const keep = rawLength - remove
+        if (typeof item.text === 'string') {
+          if (item.text.slice(-remove) !== item.raw.slice(-remove)) return false
+          item.text = item.text.slice(0, item.text.length - remove)
+        }
+        item.raw = item.raw.slice(0, keep)
+        remove = 0
+      }
+      // 裁剪不干净时退回默认渲染，宁可显示标记也不要丢正文
+      if (remove > 0) return false
+      return `<p data-block-id="${escapeHtml(block.id)}">${this.parser.parseInline(tokens)}</p>\n`
+    },
     image(token) {
       const width = imageWidthFromRaw(token.raw)
       if (!width) return false
