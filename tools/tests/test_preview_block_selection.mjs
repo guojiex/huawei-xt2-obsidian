@@ -308,7 +308,9 @@ test('changing preview content or leaving simple mode clears stale block outline
 
 test('clearing the browser selection removes stale block outlines', () => {
   const handlerStart = previewSource.indexOf("document.addEventListener('selectionchange', (): void => {")
-  const handlerEnd = previewSource.indexOf("\n\ncontentElement.addEventListener('click'", handlerStart)
+  // v1.30 任务复选框直达切换（pointerdown + click 兜底）插到了 selectionchange 与
+  // contentElement click 之间，结束标记改用其后首个文档注释。
+  const handlerEnd = previewSource.indexOf('\n\n/**', handlerStart)
   assert.ok(handlerStart >= 0 && handlerEnd > handlerStart)
   const handler = previewSource.slice(handlerStart, handlerEnd)
 

@@ -15,6 +15,14 @@ const anchorChangeStart = source.indexOf('  private onBlockAnchorChange(pane: st
 const anchorChangeEnd = source.indexOf('\n  private recordBlockToolbarPaneArea(', anchorChangeStart)
 const panelStart = source.indexOf('  private hasBlockPropertyPanelForPane(')
 const panelEnd = source.indexOf('\n  private calculateAnchoredPopupLayout(', panelStart)
+// 2026-11-14 拆分后续：openBlockPropertyPanel 移到 PreviewBlockPanel / ProfFormatDock
+// 之间的独立方法段，单独切片进 harness。
+const openPanelStart = source.indexOf('  private openBlockPropertyPanel(pane: string, tappedAnchor: PreviewBlockAnchor | null = null): void {')
+const openPanelEnd = source.indexOf('\n  @Builder\n  ProfFormatDock(', openPanelStart)
+// 子组件推送消费段：handleAnchorPush → applyOpenPush / applyMergePush
+// （真实链路是 @Watch(pushedAnchorSeq)，harness 里由 makeApp 的包装同步触发）。
+const pushMethodsStart = panelSource.indexOf('  private handleAnchorPush(): void {')
+const pushMethodsEnd = panelSource.indexOf('  // ---- 父组件方法同名委托', pushMethodsStart)
 // 2026-11-14 拆分：面板 builder 与逻辑方法迁移到 components/BlockPropertyPanel.ets，
 // 以下切片改读子组件文件；子组件里调用父回调的同名委托与 @Builder 不进 harness 类。
 const blockIdBuilderStart = panelSource.indexOf('  BlockPanelBlockIdAction() {')
@@ -37,6 +45,8 @@ const copyCodeMethodStart = source.indexOf('  private async copyCodeTextToPasteb
 const copyCodeMethodEnd = source.indexOf('\n  private isCurrentBlockSourceTarget(', copyCodeMethodStart)
 assert.ok(anchorChangeStart >= 0 && anchorChangeEnd > anchorChangeStart)
 assert.ok(panelStart >= 0 && panelEnd > panelStart)
+assert.ok(openPanelStart >= 0 && openPanelEnd > openPanelStart)
+assert.ok(pushMethodsStart >= 0 && pushMethodsEnd > pushMethodsStart)
 assert.ok(blockIdBuilderStart >= 0 && blockIdBuilderEnd > blockIdBuilderStart)
 assert.ok(panelBuilderStart >= 0 && panelBuilderEnd > panelBuilderStart)
 assert.ok(linkFieldBuilderStart >= 0 && linkFieldBuilderEnd > linkFieldBuilderStart)
@@ -120,6 +130,8 @@ const code = transformSync(
   `class BlockPanelHarness {
     ${source.slice(anchorChangeStart, anchorChangeEnd).trim()}
     ${source.slice(panelStart, panelEnd).trim()}
+    ${source.slice(openPanelStart, openPanelEnd).trim()}
+    ${panelSource.slice(pushMethodsStart, pushMethodsEnd).trim()}
     ${panelSource.slice(linkMethodsStart, linkMethodsEnd).trim()}
     ${panelSource.slice(frontmatterMethodsStart, frontmatterMethodsEnd).trim()}
     ${panelSource.slice(movedMethodsStart, movedMethodsEnd).trim()}
@@ -193,6 +205,14 @@ function makeApp() {
   })
   vm.runInContext(code, context)
   const app = new context.module.exports()
+  // 真实链路：Index.openBlockPropertyPanel 只置 pushedAnchor/Seq，子组件由
+  // @Watch(pushedAnchorSeq) + sheetSide 匹配消费推送；harness 在这里同步走这一跳。
+  const openPanelFromIndex = app.openBlockPropertyPanel.bind(app)
+  app.openBlockPropertyPanel = (pane, tappedAnchor) => {
+    app.sheetSide = pane
+    openPanelFromIndex(pane, tappedAnchor)
+    app.handleAnchorPush()
+  }
   Object.assign(app, {
     notices,
     removedImageAssets,

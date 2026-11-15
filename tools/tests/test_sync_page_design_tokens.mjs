@@ -16,7 +16,7 @@ test('SyncPage fixed typography and spacing use shared tokens', () => {
 });
 
 test('SyncPage uses the repository font and spacing token modules', () => {
-  assert.match(source, /import\s*\{\s*FontSize\s*,\s*Space\s*\}\s*from\s*'\.\.\/common\/Tokens';/);
+  assert.match(source, /import\s*\{\s*FontSize\s*,\s*Radius\s*,\s*Space\s*\}\s*from\s*'\.\.\/common\/Tokens';/);
   assert.match(buildSource, /\.fontSize\(FontSize\.(?:body1|caption|s2)\)/);
   assert.match(buildSource, /\.padding\(Space\.s4\)/);
   assert.match(buildSource, /\.margin\(\{\s*bottom:\s*Space\.s[234]\s*\}\)/);

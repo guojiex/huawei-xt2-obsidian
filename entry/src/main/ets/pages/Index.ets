@@ -160,6 +160,17 @@ const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
 /** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
 const GIT_ENTRY_UI_ENABLED: boolean = true;
+/**
+ * 工作区 Web 延迟挂载（性能修复 2026-11-15）：冷启动实测（模拟器）ArkWeb 初始化 +
+ * 渲染进程 fork 占 ~1.5s，且 WMS 首帧会等可见 Web surface 的首帧，把 4 个工作区 Web
+ * （左右栏编辑器 / 预览）全拖进冷启动关键路径。延后挂载让首帧只渲染启动遮罩；
+ * 恢复期下发的内容在桥接指令队列里不丢（EditorWebView markReady 按序补发），
+ * v0.9 9.12 的遮罩语义（等可见内容就绪再一帧展示）不变。
+ * 取值依据（x86 模拟器）：aboutToAppear→首帧提交实测 577–931ms，delay=1000 时
+ * 定时器与首帧最薄仅差 15ms，1500 可保住余量（最薄 ~515ms）；首帧 2.59s→1.74s，
+ * 内容就绪约 +0.5s（遮罩内，不可交互期不变）。XT2 真机数值待用户实测后再调。
+ */
+const WORKSPACE_WEB_MOUNT_DELAY_MS: number = 1500;
 
 /** PaneHead 的按引用传参载体（@Builder 按值传参不随状态刷新，实测标题停在初始值） */
 interface PaneHeadParam {
@@ -351,6 +362,9 @@ struct Index {
   @State navigationAnimationsEnabled: boolean = false;
   /** 冷启动恢复期间先遮住默认工作区，待会话与当前可见内容就绪后一帧展示。 */
   @State workspaceInitialRenderReady: boolean = false;
+  /** 工作区 4 个 Web 是否已挂载：延后 WORKSPACE_WEB_MOUNT_DELAY_MS 触发，见常量注释。 */
+  @State workspaceWebsMounted: boolean = false;
+  private workspaceWebMountTimer: number = -1;
   private layoutBreakpoint: string = '';
   private splitLayoutStore: SplitLayoutStore | null = null;
   private editorPreferenceStore: EditorPreferenceStore | null = null;
@@ -624,10 +638,24 @@ struct Index {
     // Restore the session and read note files while ArkWeb initializes; bridges
     // retain the initial content in memory until their first page is ready.
     void this.initializeWorkspaceSession();
+    // 性能修复（2026-11-15）：工作区 Web 延后到首帧提交之后再挂载，
+    // 见 WORKSPACE_WEB_MOUNT_DELAY_MS 注释。
+    this.workspaceWebMountTimer = setTimeout((): void => {
+      this.workspaceWebMountTimer = -1;
+      this.workspaceWebsMounted = true;
+      hilog.info(DOMAIN, TAG, '工作区 Web 完成延迟挂载');
+    }, WORKSPACE_WEB_MOUNT_DELAY_MS);
     this.startExternalVaultPolling();
     this.cleanupZipImportStaging();
     // v1.58 §5：连写条缓存的首次扫描排到空闲时机，不进入启动页首帧关键路径。
     this.scheduleIdleStatsRefresh();
+  }
+
+  aboutToDisappear(): void {
+    if (this.workspaceWebMountTimer >= 0) {
+      clearTimeout(this.workspaceWebMountTimer);
+      this.workspaceWebMountTimer = -1;
+    }
   }
 
   private async loadAgentKitSlot(): Promise<void> {
@@ -8397,6 +8425,7 @@ struct Index {
       }
       Stack({ alignContent: Alignment.Bottom }) {
         Stack() {
+          if (this.workspaceWebsMounted) {
           EditorWebView({
             bridge: this.rightEditorBridge,
             showLineNumbers: this.showLineNumbers,
@@ -8446,6 +8475,8 @@ struct Index {
             .height('100%')
             .visibility(this.experienceMode === 'professional' && this.rightEditing
               ? Visibility.Visible : Visibility.Hidden)
+          }
+          if (this.workspaceWebsMounted) {
           PreviewWebView({
             bridge: this.rightPreviewBridge,
             editable: this.simplePreviewEditable('right'),
@@ -8503,6 +8534,7 @@ struct Index {
             .height('100%')
             .visibility(this.experienceMode === 'simple' || !this.rightEditing
               ? Visibility.Visible : Visibility.Hidden)
+          }
         this.PreviewBlockPanel('right')
         this.PreviewBlockToolbar('right')
           if (this.rightFilePath.length === 0) {
@@ -8551,6 +8583,7 @@ struct Index {
         Stack() {
         // M0.5 spike：CodeMirror 6 跑在 Web 组件里（web/mdeditor → rawfile/mdeditor/index.html）。
         // 内容由本页在「选中文件 / 切库」时读好下发；组件本身不碰文件 IO（硬约束 14）。
+        if (this.workspaceWebsMounted) {
         EditorWebView({
           bridge: this.editorBridge,
           showLineNumbers: this.showLineNumbers,
@@ -8609,6 +8642,7 @@ struct Index {
           .height('100%')
           .visibility(this.experienceMode === 'professional' && this.smMode === 'edit'
             ? Visibility.Visible : Visibility.Hidden)
+        }
 
         if (showHingeWarning) {
           // 被内容横跨的折痕：红色虚线竖标（零宽 Column + 左边框）
@@ -8662,6 +8696,7 @@ struct Index {
         this.SimpleFormatDock('left')
       }
       Stack() {
+        if (this.workspaceWebsMounted) {
         PreviewWebView({
           bridge: this.previewBridge,
           editable: this.simplePreviewEditable('left'),
@@ -8721,6 +8756,7 @@ struct Index {
         })
           .width('100%')
           .height('100%')
+        }
         this.PreviewBlockPanel('left')
         this.PreviewBlockToolbar('left')
         if (this.currentFilePath.length === 0) {

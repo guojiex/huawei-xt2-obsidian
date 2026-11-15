@@ -22,10 +22,13 @@ function method(startMarker, endMarker) {
 
 const classCode = transformSync(
   'const GIT_IMPORTING_SUFFIX = \'__importing\';\n' +
+  'const GIT_DIAGNOSTIC_DOMAIN: number = 0x0000;\n' +
+  'const GIT_DIAGNOSTIC_TAG: string = \'GitSync\';\n' +
   gitAuthSource + '\n' +
   'class SyncPageGitAuthHarness {\n' +
   method('  private async doClone(): Promise<void> {', '\n  private urlHasInlineCredentials(') + '\n' +
   method('  private urlHasInlineCredentials(', '\n  private refreshSyncStatus(') + '\n' +
+  method('  private logGitFailure(', '\n  private async performGitAction(') + '\n' +
   method('  private explainError(', '\n  private previewVaultId(): string {') + '\n' +
   `  previewVaultId() { return 'isolated-repo'; }
   appendLog(line) { this.logs.push(line); }
@@ -36,6 +39,8 @@ module.exports = SyncPageGitAuthHarness;
 `, { loader: 'ts', format: 'cjs' }).code;
 
 const actionCode = transformSync(
+  'const GIT_DIAGNOSTIC_DOMAIN: number = 0x0000;\n' +
+  'const GIT_DIAGNOSTIC_TAG: string = \'GitSync\';\n' +
   gitAuthSource + '\n' +
   'class SyncPageActionHarness {\n' +
   method('  private syncFailureDetail(', '\n  private async performGitAction(') + '\n' +
@@ -82,7 +87,8 @@ function harness({
       repositoryState() { return state; },
       progressLabel() { return 'progress'; }
     },
-    promptAction: { showToast: (toast) => toasts.push(toast.message) }
+    promptAction: { showToast: (toast) => toasts.push(toast.message) },
+    hilog: { error() {} }
   }));
   const page = new module.exports();
   Object.assign(page, {
@@ -142,7 +148,8 @@ function actionHarness(metadataFailures = [], failFirstAction = true) {
         if (metadataFailures.includes('token')) throw new Error('private token metadata failure');
       }
     },
-    promptAction: { showToast() {} }
+    promptAction: { showToast() {} },
+    hilog: { error() {} }
   }));
   const page = new module.exports();
   Object.assign(page, {
@@ -218,10 +225,11 @@ test('remote success remains success when sync metadata persistence fails', asyn
 test('failure copy carries the underlying error with token redaction (46.9)', () => {
   // performGitAction catch：分类结论 + 底层错误 + 重试提示
   assert.match(source, /'。底层错误：' \+ detail \+ '。请刷新 Git 状态后再决定是否重试。'/);
-  // onCloneDone 失败分支：explainError 之后追加底层错误原文
-  assert.match(source, /this\.explainError\(message\) \+ '。底层错误：' \+ message/);
-  // onCloneDone 登记失败分支：先按 this.token 脱敏再携带
-  assert.match(source, /detail\.split\(this\.token\)\.join\('\[令牌已隐藏\]'\)/);
+  // onCloneDone 失败分支：explainError 之后追加底层错误原文（2026-11-14 起两步 guidance 形态）
+  assert.match(source, /const guidance: string = this\.explainError\(message\);/);
+  assert.match(source, /guidance \+ '\\n底层错误：' \+ message/);
+  // onCloneDone 登记失败分支：先按 this.token 脱敏（redactImportDetail）再携带
+  assert.match(source, /this\.redactImportDetail\(err\.message \?\? String\(error\), this\.token\)/);
   assert.match(source, /'Git 导入登记失败；当前库和导入目录状态未确认。底层错误：' \+ detail/);
   // refreshSyncStatus 失败分支携带底层错误
   assert.match(source, /'无法读取 Git 状态：' \+ \(err\.message \?\? String\(error\)\)/);
