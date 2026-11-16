@@ -50,12 +50,39 @@ test('v1.76 git sync is a full-screen page (not a dialog), with left changes + r
   assert.match(html, /\$\('gitSyncDiffPane'\)\.innerHTML=gitSyncDiffPaneHtml\(s,changes\)/);
   // 选中文件在左侧高亮。
   assert.match(html, /class="sync-file-item'\+\(open\?' selected':''\)\+'"\>/);
-  // URL 直达全屏页。
-  assert.match(html, /params\.get\('view'\)==='sync'/);
+  // URL 直达全屏页（v1.77 修复：跨 script 块必须先捕获，并在 openGitSync 定义后调用）。
+  assert.match(html, /window\.__initialViewSync=true/);
+  assert.match(html, /if\(window\.__initialViewSync\)openGitSync\(\)/);
+  assert.match(html, /view:\['notes','settings','vaults','sync'\]/);
+});
+
+test('v1.77 sync page opens with first diff selected and card-based hierarchy', () => {
+  const start = html.indexOf('/* v1.77 Git sync page');
+  const block = html.slice(start, html.indexOf('</style>', start));
+  // 打开即选中首个有 diff 的文件，右栏直接有内容。
+  assert.match(html, /s\.openFile=\(gitSyncChanges\.find\(\(\[k,p\]\)=>!!gitSyncFileDiff\[p\]\)\|\|\[\]\)\[1\]\|\|''/);
+  // 左栏两张分组卡 + 加宽 + 标签列不换行。
+  assert.match(html, /<section class="sync-block" aria-label="推送概览">/);
+  assert.match(html, /<section class="sync-block" aria-label="本地改动">/);
+  assert.match(block, /\.sync-side\{width:calc\(var\(--nav-width\) \* 1\.65\)/);
+  assert.match(block, /\.sync-side \.sync-row>span:first-child\{width:var\(--s16\)\}/);
+  // 选中态除底色外还有品牌色左边轨。
+  assert.match(block, /\.sync-file-item\.selected>\.sync-file-toggle\{background:var\(--blue-soft\);color:var\(--blue\);border-left-color:var\(--blue\)\}/);
+  // 提交者字段标注必填；主按钮禁用给出原因。
+  assert.match(html, /提交者名称 <em>必填<\/em>/);
+  assert.match(html, /提交者邮箱 <em>必填<\/em>/);
+  assert.match(html, /id="gitSyncFootNote"/);
+  assert.match(html, /missingAuthor\?'填写提交者名称与邮箱后可提交并推送':''/);
+  // diff 卡头带徽章 + 统计，行号列有独立底色，卡内不再限高。
+  assert.match(html, /class="sync-diff-title"/);
+  assert.match(html, /\+'\+added\+' \\u2212'\+removed\+'/);
+  assert.match(block, /\.sync-diff-line \.dl-no\{[^}]*background:var\(--nav\)/);
+  assert.match(block, /\.sync-diff-lines\{max-height:none/);
 });
 
 test('diff rows reuse diff-* color tokens, no scattered hex colors in new CSS', () => {
-  const block = html.slice(html.indexOf('/* Git sync note diff'), html.indexOf('/* Git sync note diff') + 2200);
+  const start = html.indexOf('/* v1.77 Git sync page');
+  const block = html.slice(start, html.indexOf('</style>', start));
   assert.match(block, /\.sync-diff-line\.del\{background:var\(--diff-del-bg\)\}/);
   assert.match(block, /\.sync-diff-line\.add\{background:var\(--diff-add-bg\)\}/);
   assert.match(block, /\.del \.dl-mark,\.sync-diff-line\.del \.dl-text\{color:var\(--danger\)\}/);

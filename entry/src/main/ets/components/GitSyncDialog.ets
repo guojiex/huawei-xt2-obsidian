@@ -178,6 +178,22 @@ export struct GitSyncDialog {
       // 逐行差异不可用时保留清单本身；展开会给出「无法读取」提示。
     }
     this.diffVersion++;
+    this.autoSelectFirstDiff();
+  }
+
+  /** v1.77：进入同步页即选中首个有差异的文件，右栏不再是一大片空白占位。 */
+  private autoSelectFirstDiff(): void {
+    if (this.expandedDiffPath.length > 0 || this.changes.length === 0) {
+      return;
+    }
+    for (const change of this.changes) {
+      const cached: Git2FileDiff | null | undefined = this.diffCache.get(change.path);
+      if (cached !== undefined && cached !== null) {
+        this.expandedDiffPath = change.path;
+        this.activeFileDiff = cached;
+        return;
+      }
+    }
   }
 
   private diffStatOf(path: string): string {
@@ -874,10 +890,10 @@ export struct GitSyncDialog {
     Column({ space: Space.s2 }) {
       Column() {
         Text('逐行差异')
-          .fontSize(FontSize.s3)
-          .fontWeight(FontWeight.Bold)
+          .fontSize(FontSize.body2)
+          .fontWeight(FontWeight.Medium)
           .fontColor($r('app.color.text_primary'))
-        Text('当前工作区与上次提交的对比；只显示这次要一并提交、推送的未提交改动。')
+        Text('当前工作区 ↔ 上次提交 · 仅本次要提交的改动')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.text_secondary'))
           .margin({ top: Space.s1 })
@@ -927,16 +943,38 @@ export struct GitSyncDialog {
           .fontColor($r('app.color.text_secondary'))
           .padding(Space.s3)
       } else {
-        Row() {
+        Column({ space: Space.s1 }) {
+          Row({ space: Space.s2 }) {
+            Text(change.status)
+              .width(Space.s5)
+              .height(Space.s5)
+              .fontSize(FontSize.caption)
+              .fontFamily('monospace')
+              .fontWeight(FontWeight.Bold)
+              .textAlign(TextAlign.Center)
+              .fontColor(change.status === 'A' ? $r('app.color.success')
+                : change.status === 'D' ? $r('app.color.danger') : $r('app.color.brand'))
+              .backgroundColor(change.status === 'A' ? $r('app.color.success_bg')
+                : change.status === 'D' ? $r('app.color.danger_bg') : $r('app.color.brand_bg'))
+              .borderRadius(Radius.control)
+            Text(change.path)
+              .layoutWeight(1)
+              .fontSize(FontSize.body3)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(this.diffStatOf(change.path))
+              .fontSize(FontSize.caption)
+              .fontFamily('monospace')
+              .fontColor($r('app.color.text_secondary'))
+          }
+          .width('100%')
           Text(change.status === 'A' ? '新文件（本次新增）'
             : change.status === 'D' ? '本次删除' : '修改：上次提交 → 当前工作区')
             .fontSize(FontSize.caption)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-          Blank()
-          Text(this.activeFileDiff.lines.length.toString() + ' 行')
-            .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_secondary'))
+            .width('100%')
         }
         .width('100%')
         .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
@@ -980,12 +1018,14 @@ export struct GitSyncDialog {
         .fontSize(FontSize.caption)
         .fontFamily('monospace')
         .fontColor($r('app.color.text_tertiary'))
+        .backgroundColor($r('app.color.bg_secondary'))
       Text(line.newLine > 0 ? line.newLine.toString() : '')
         .width(Space.s8)
         .textAlign(TextAlign.End)
         .fontSize(FontSize.caption)
         .fontFamily('monospace')
         .fontColor($r('app.color.text_tertiary'))
+        .backgroundColor($r('app.color.bg_secondary'))
       Text(line.origin)
         .width(Space.s5)
         .textAlign(TextAlign.Center)
@@ -1217,78 +1257,143 @@ export struct GitSyncDialog {
   @Builder
   private DialogContent() {
     Column({ space: Space.s3 }) {
-      Column() {
-        this.StatusRow('远端', this.remoteLabel, this.transportLabel + ' · ' +
-          (this.hasStoredToken ? '令牌已保存在本机' : '令牌未保存'))
-        Divider().color($r('app.color.line'))
-        this.StatusRow('推送分支', this.pushBranch,
-          (this.pushBranch === 'xt2' ? '默认分支' : '自定义分支') + '；在电脑上合并到 ' +
-          this.trackingTargetLabel())
-        Divider().color($r('app.color.line'))
-        this.StatusRow('待推送', this.waitingStatusText(), '上次推送：' + this.formatLastPush())
+      // v1.77：概览与改动各自成卡，信息层级从「一堆灰条」变成两组明确区块。
+      Column({ space: Space.s1 }) {
+        Row() {
+          Text('推送概览')
+            .fontSize(FontSize.body2)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+          Blank()
+          Text('上次推送：' + this.formatLastPush())
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s3 })
+        Column() {
+          this.StatusRow('远端', this.remoteLabel, this.transportLabel + ' · ' +
+            (this.hasStoredToken ? '令牌已保存在本机' : '令牌未保存'))
+          Divider().color($r('app.color.line'))
+          this.StatusRow('推送分支', this.pushBranch,
+            (this.pushBranch === 'xt2' ? '默认分支' : '自定义分支') + '；在电脑上合并到 ' +
+            this.trackingTargetLabel())
+          Divider().color($r('app.color.line'))
+          this.StatusRow('待推送', this.waitingStatusText(), '点文件在右侧核对正文')
+        }
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4, bottom: Space.s2 })
+        Column() {
+          this.CredentialEditor()
+        }
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4, bottom: Space.s2 })
       }
       .width('100%')
-      .padding({ left: Space.s4, right: Space.s4 })
-      .border({ width: 1, color: $r('app.color.line') })
       .borderRadius(Radius.card)
+      .backgroundColor($r('app.color.bg_card'))
 
       if (this.branchEditing) {
         this.BranchEditor()
       }
 
-      this.CredentialEditor()
-
       if (this.statusEntryCount > 0) {
-        Row() {
-          Text('本地改动')
-            .fontSize(FontSize.body3)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-          Blank()
-          Text(this.shouldCommitChanges() ? '推送时一并提交' : '本次不会提交')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
-        }
-        .width('100%')
-        Scroll() {
-          Column() {
-            ForEach(this.changes, (change: Git2FileChange): void => {
-              this.ChangeRow(change)
-            }, (change: Git2FileChange): string => change.path)
+        Column({ space: Space.s2 }) {
+          Row() {
+            Text('本地改动')
+              .fontSize(FontSize.body2)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+            Blank()
+            Text(this.statusEntryCount.toString() + ' 个文件 · ' +
+              (this.shouldCommitChanges() ? '推送时一并提交' : '本次不会提交'))
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
           }
           .width('100%')
+          .padding({ left: Space.s4, right: Space.s4, top: Space.s3 })
+          Scroll() {
+            Column({ space: Space.s1 }) {
+              ForEach(this.changes, (change: Git2FileChange): void => {
+                this.ChangeRow(change)
+              }, (change: Git2FileChange): string => change.path)
+            }
+            .width('100%')
+            .padding({ left: Space.s3, right: Space.s3 })
+          }
+          .width('100%')
+          // v1.76：差异在右栏独立显示，清单维持原限高，不再因展开而放高。
+          .height(Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
+          .scrollBar(BarState.Auto)
+          // 2026-11-16 键盘避让配套：内层清单默认 SELF_ONLY，滑到头不传外层正文，
+          // 键盘弹出后外层可滚时手势要能链出去（SELF_FIRST：先滚自己，到边再传父）。
+          .nestedScroll({
+            scrollForward: NestedScrollMode.SELF_FIRST,
+            scrollBackward: NestedScrollMode.SELF_FIRST
+          })
+
+          if (this.shouldCommitChanges()) {
+            Column({ space: Space.s2 }) {
+              Column({ space: Space.s1 }) {
+                Text('提交说明')
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                TextInput({ placeholder: this.defaultCommitMessage(), text: this.commitMessage })
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.bg_secondary'))
+                  .borderRadius(Radius.control)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .onChange((value: string): void => { this.commitMessage = value; })
+                  .accessibilityText('提交说明')
+              }
+              .width('100%')
+              Column({ space: Space.s1 }) {
+                Text('提交者名称 · 必填')
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                TextInput({ placeholder: '用于本次提交的署名', text: this.authorName })
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.bg_secondary'))
+                  .borderRadius(Radius.control)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .onChange((value: string): void => { this.authorName = value; })
+                  .accessibilityText('提交者名称，必填')
+              }
+              .width('100%')
+              Column({ space: Space.s1 }) {
+                Text('提交者邮箱 · 必填')
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_secondary'))
+                  .width('100%')
+                TextInput({ placeholder: '用于本次提交的署名', text: this.authorEmail })
+                  .fontSize(FontSize.body3)
+                  .fontColor($r('app.color.text_primary'))
+                  .backgroundColor($r('app.color.bg_secondary'))
+                  .borderRadius(Radius.control)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .onChange((value: string): void => { this.authorEmail = value; })
+                  .accessibilityText('提交者邮箱，必填')
+              }
+              .width('100%')
+            }
+            .width('100%')
+            .padding({ left: Space.s4, right: Space.s4, bottom: Space.s4 })
+          } else {
+            Text('本次只推送已创建的本地提交；这些未提交改动会保留。')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_secondary'))
+              .width('100%')
+              .padding({ left: Space.s4, right: Space.s4, bottom: Space.s4 })
+          }
         }
         .width('100%')
-        // v1.76：差异在右栏独立显示，清单维持原限高，不再因展开而放高。
-        .height(Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
-        .scrollBar(BarState.Auto)
-        // 2026-11-16 键盘避让配套：内层清单默认 SELF_ONLY，滑到头不传外层正文，
-        // 键盘弹出后外层可滚时手势要能链出去（SELF_FIRST：先滚自己，到边再传父）。
-        .nestedScroll({
-          scrollForward: NestedScrollMode.SELF_FIRST,
-          scrollBackward: NestedScrollMode.SELF_FIRST
-        })
-
-        if (this.shouldCommitChanges()) {
-          TextInput({ placeholder: this.defaultCommitMessage(), text: this.commitMessage })
-            .fontSize(FontSize.body3)
-            .fontColor($r('app.color.text_primary'))
-            .onChange((value: string): void => { this.commitMessage = value; })
-            .accessibilityText('提交说明')
-          TextInput({ placeholder: '提交者名称', text: this.authorName })
-            .fontSize(FontSize.body3)
-            .onChange((value: string): void => { this.authorName = value; })
-            .accessibilityText('提交者名称')
-          TextInput({ placeholder: '提交者邮箱', text: this.authorEmail })
-            .fontSize(FontSize.body3)
-            .onChange((value: string): void => { this.authorEmail = value; })
-            .accessibilityText('提交者邮箱')
-        } else {
-          Text('本次只推送已创建的本地提交；这些未提交改动会保留。')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
-            .width('100%')
-        }
+        .borderRadius(Radius.card)
+        .backgroundColor($r('app.color.bg_card'))
+        .padding({ bottom: Space.s2 })
       } else if (this.remoteBranchMissing) {
         Text('已确认远端尚无该分支；可以首次推送当前提交。')
           .fontSize(FontSize.body3)
@@ -1363,7 +1468,16 @@ export struct GitSyncDialog {
 
   @Builder
   private DialogFooter() {
-    Row({ space: Space.s2 }) {
+    Column({ space: Space.s2 }) {
+      // v1.77：主按钮禁用必须给出原因，否则灰色按钮看起来像页面坏了。
+      if (this.shouldCommitChanges() && !this.busy && this.result === 'none' &&
+        (this.authorName.trim().length === 0 || this.authorEmail.trim().length === 0)) {
+        Text('填写提交者名称与邮箱后可提交并推送')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+      }
+      Row({ space: Space.s2 }) {
       UtilityDialogAction(UIUtils.makeBinding<string>(() => this.busy ? '取消' : '关闭'), 'secondary',
         this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => { this.dismiss(); })
       if (this.result === 'success') {
@@ -1380,9 +1494,11 @@ export struct GitSyncDialog {
           'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => this.primaryActionEnabled()),
           (): void => { void this.runPrimaryAction(); })
       }
+      }
+      .width('100%')
+      .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
     }
     .width('100%')
-    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
   }
 
   build() {

@@ -108,6 +108,27 @@ test('GitSyncDialog is a full-screen @Component, no CustomDialog shell', () => {
   assert.ok(!/controller\?\.close\(\)/.test(dialog));
 });
 
+test('v1.77 native sync page defaults to first diff and groups left pane into cards', () => {
+  // 打开页面即选中首个缓存命中的差异文件，右栏不再是空白占位。
+  assert.match(dialog, /private autoSelectFirstDiff\(\): void/);
+  assert.match(dialog, /this\.diffVersion\+\+;\s*this\.autoSelectFirstDiff\(\);/);
+  assert.match(dialog, /this\.expandedDiffPath = change\.path;\s*this\.activeFileDiff = cached;/);
+  // 左栏两张白卡分组 + 提交者字段标注必填 + 主按钮禁用原因。
+  assert.match(dialog, /Text\('推送概览'\)/);
+  assert.match(dialog, /Text\('本地改动'\)/);
+  assert.match(dialog, /Text\('提交者名称 · 必填'\)/);
+  assert.match(dialog, /Text\('提交者邮箱 · 必填'\)/);
+  assert.match(dialog, /Text\('填写提交者名称与邮箱后可提交并推送'\)/);
+  // diff 卡头有状态徽章与增删统计；行号两列有独立底色，形成代码栏。
+  const diffPanel = dialog.slice(dialog.indexOf('  private DiffPanel'),
+    dialog.indexOf('  @Builder\n  private DiffLineRow'));
+  assert.match(diffPanel, /Text\(change\.status\)/);
+  assert.match(diffPanel, /this\.diffStatOf\(change\.path\)/);
+  const lineRow = dialog.slice(dialog.indexOf('  private DiffLineRow'),
+    dialog.indexOf('  @Builder\n  private BranchEditor'));
+  assert.equal((lineRow.match(/\.backgroundColor\(\$r\('app\.color\.bg_secondary'\)\)/g) || []).length, 2);
+});
+
 test('Index routes gitsync as a full-screen topView with appbar back + focus restore', () => {
   assert.match(indexEts, /@State gitsyncReturnView: string = 'note';/);
   assert.match(indexEts, /this\.topView = 'gitsync';/);
