@@ -1,4 +1,5 @@
 import { unifiedDataChannel } from '@kit.ArkData';
+import { util } from '@kit.ArkTS';
 import { AgentConfigStore } from '../model/AgentConfigStore';
 import { AgentMemoryStore } from '../model/AgentMemoryStore';
 import { AgentRuntime } from '../model/AgentRuntime';
@@ -13,7 +14,7 @@ import { Icon } from '../common/Icons';
 import { FontSize, Motion, Radius, Size, Space } from '../common/Tokens';
 import { SplitHandle } from './SplitHandle';
 
-const NOTE_REF_MIME: string = 'application/x-yaoshi-note-ref';
+const NOTE_REF_MIME: string = 'ApplicationDefinedType';
 
 @Component
 export struct AgentWorkspace {
@@ -333,19 +334,39 @@ export struct AgentWorkspace {
     this.dropActive = false;
     try {
       const records: unifiedDataChannel.UnifiedRecord[] = event.getData().getRecords();
-      for (let i = 0; i < records.length; i++) {
-        if (records[i].getType() !== NOTE_REF_MIME) {
-          continue;
-        }
-        const raw: string = records[i].getValue() as string;
-        const payload: Record<string, string> = JSON.parse(raw) as Record<string, string>;
-        this.addReference(payload['path'], payload['vaultId']);
+      // v1.71 修复：拖拽数据改为 ApplicationDefinedRecord（rawData 承载 JSON），
+      // 读取端同步解码；详见 FileTreeView.onDragStart 与 readNoteRefText 注释。
+      const raw: string = this.readNoteRefText(records);
+      if (raw.length === 0) {
+        this.statusText = '只接受从当前知识库文件树拖入的笔记引用。';
         return;
       }
-      this.statusText = '只接受从当前知识库文件树拖入的笔记引用。';
+      const payload: Record<string, string> = JSON.parse(raw) as Record<string, string>;
+      this.addReference(payload['path'], payload['vaultId']);
     } catch (error) {
       this.statusText = '读取拖入笔记失败；可点击文件行插入引用。';
     }
+  }
+
+  /**
+   * v1.71 修复：按 ApplicationDefinedRecord（instanceof 分派 + applicationDefinedType
+   * 匹配 + rawData 解码）读取拖拽 JSON；保留旧 UnifiedRecord(type, value) 形态回退，
+   * 防御同屏混入旧形态数据。找不到目标记录时返回空串。
+   */
+  private readNoteRefText(records: unifiedDataChannel.UnifiedRecord[]): string {
+    for (let i = 0; i < records.length; i++) {
+      const record: unifiedDataChannel.UnifiedRecord = records[i];
+      if (record instanceof unifiedDataChannel.ApplicationDefinedRecord) {
+        if (record.applicationDefinedType === NOTE_REF_MIME) {
+          return new util.TextDecoder().decodeToString(record.rawData);
+        }
+        continue;
+      }
+      if (record.getType() === NOTE_REF_MIME) {
+        return record.getValue() as string;
+      }
+    }
+    return '';
   }
 
   private startNewSession(): void {

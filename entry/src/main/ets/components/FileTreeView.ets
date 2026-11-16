@@ -20,6 +20,7 @@
  */
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction } from '@kit.ArkUI';
+import { util } from '@kit.ArkTS';
 import { FileTree, ExpandStore, PinStore, TreeNode, PinnedNote } from '../model/FileTree';
 import { VaultAccess, VaultDirChild, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
@@ -33,7 +34,16 @@ import { TrashView } from './TrashView';
 
 const TREE_DOMAIN: number = 0x0002;
 const TREE_TAG: string = 'FileTreeView';
-const NOTE_REF_MIME: string = 'application/x-yaoshi-note-ref';
+// v1.71 修复（API26 模拟器实测 2026-11-16）：UDMF 应用自定义拖拽类型的匹配事实——
+// 1) ApplicationDefinedRecord 的 summary 键恒为 'ApplicationDefinedType'（实测
+//    "require summary: ApplicationDefinedType-<size>"，applicationDefinedType 写什么
+//    都不改变它），框架 allowDrop 按 summary 键比对，所以 allowDrop 必须写
+//    'ApplicationDefinedType'（= UDMF 文档 ApplicationDefinedRecord 示例的赋值）；
+// 2) 任意「私有 MIME 串」allowDrop（旧 'application/x-yaoshi-note-ref'）永不匹配，
+//    实测 "DragDropManager onDragEnd, target data is not allowed to fall into"。
+// 细分过滤不放类型层：树内 / 栏落点靠拖拽会话状态（dragSourcePath / treeDragPath，
+// 外来拖拽为空串自然被拒），Agent 靠 payload JSON 的 vaultId 校验。
+const NOTE_REF_MIME: string = 'ApplicationDefinedType';
 
 /**
  * LazyForEach 数据源（v1.0 需求 2「大目录懒加载」）。
@@ -169,6 +179,20 @@ export struct FileTreeView {
   /** 从内嵌回收站恢复笔记，由父级复用现有 TrashService 处理。 */
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
   onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
+  /**
+   * v1.71 树内拖拽移动（71.1 / 71.3）：drop 到目录行 / 树根空白时请求父级执行
+   * 既有移动全链（Index.doMovePath：flush → movePath → retarget → reveal → 刷新树）。
+   * destDir 为空串 = 库根，与「移动」对话框的「库根目录」语义一致。
+   */
+  onDragMovePath: (relPath: string, isDir: boolean, destDir: string) => void =
+    (relPath: string, isDir: boolean, destDir: string) => {};
+  /**
+   * v1.71 拖拽会话开始 / 结束（71.2）：父级（Index）据此启用正文栏「拖进打开」落点。
+   * 会话源存父级本地状态而非 event.getData()——onDragEnter 阶段读数据可能抛
+   * 「Data not found」（拖拽框架只在 drop 前保证数据可见），高亮判断不能依赖它。
+   */
+  onTreeDragStart: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onTreeDragEnd: () => void = () => {};
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
@@ -185,11 +209,24 @@ export struct FileTreeView {
   @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
   /** 57.7：钉底簇（左滑提示 + 回收站）实测高（onAreaChange 的 Area.height，单位 vp），用于文件树末条让位。 */
   @State clusterH: number = 0;
+  /** v1.71：目录行拖拽悬停高亮路径（必须进 LazyForEach 键，见树行键值踩坑注释）。 */
+  @State dropOverDir: string = '';
   private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
   private pinStore: PinStore | null = null;
   private treeSource: TreeRowDataSource = new TreeRowDataSource();
   private pinSource: PinRowDataSource = new PinRowDataSource();
+  /** v1.71 拖拽会话源：onDragStart 记录、onDragEnd 清空；只在事件回调里读，不进渲染绑定。 */
+  private dragSourcePath: string = '';
+  private dragSourceIsDir: boolean = false;
+  /**
+   * v1.71 同一次 drop 的多个 onDrop 合并（行 → List 的触发顺序与冒泡不可知，以实测为准
+   * 不押注）：目录行(3) > 笔记行拦截(2) > 树根空白(1)，rank 高者胜；setTimeout(0)
+   * 等全部 onDrop 到齐后只执行一次移动。
+   */
+  private pendingMoveDest: string = '';
+  private pendingMoveRank: number = 0;
+  private pendingMoveTimer: number = -1;
 
   /** 57.7：导航条避让高度（vp）；布局区不进安全区（AE4），固定内容压条带靠 offset。 */
   private navClearanceVp(): number {
@@ -440,6 +477,49 @@ export struct FileTreeView {
     this.rescan();
   }
 
+  /** v1.71 目录行能否作为移动落点：拖到自身 / 子孙行不允许（与 NoteService.movePath 兜底同口径）。 */
+  private canDropIntoDir(node: TreeNode): boolean {
+    if (this.referenceOnly || !node.isDir || this.dragSourcePath.length === 0) {
+      return false;
+    }
+    if (this.dragSourcePath === node.relPath) {
+      return false;
+    }
+    if (this.dragSourceIsDir && node.relPath.startsWith(this.dragSourcePath + '/')) {
+      return false;
+    }
+    return true;
+  }
+
+  /** v1.71 记录一次 drop 的候选落点（rank 高者胜），合并后一次执行，见 pendingMoveRank 注释。 */
+  private requestDragMove(destDir: string, rank: number): void {
+    if (rank >= this.pendingMoveRank) {
+      this.pendingMoveRank = rank;
+      this.pendingMoveDest = destDir;
+    }
+    if (this.pendingMoveTimer < 0) {
+      this.pendingMoveTimer = setTimeout((): void => { this.flushPendingDragMove(); }, 0);
+    }
+  }
+
+  private flushPendingDragMove(): void {
+    this.pendingMoveTimer = -1;
+    const destDir: string = this.pendingMoveDest;
+    const rank: number = this.pendingMoveRank;
+    this.pendingMoveRank = 0;
+    this.pendingMoveDest = '';
+    if (this.dragSourcePath.length === 0) {
+      return;
+    }
+    if (rank === 3) {
+      this.onDragMovePath(this.dragSourcePath, this.dragSourceIsDir, destDir);
+    } else if (rank === 1) {
+      // 树根空白 = 移到库根（对齐移动对话框「库根目录」）。
+      this.onDragMovePath(this.dragSourcePath, this.dragSourceIsDir, '');
+    }
+    // rank === 2：笔记行上的 drop 只做拦截（无操作），防止被 List 兜底解释成「移到库根」。
+  }
+
   /** 缩进格子数 = 层级数（depth=0 的行不长缩进、也没有引导线） */
   private levelsOf(depth: number): number[] {
     const out: number[] = [];
@@ -577,7 +657,7 @@ export struct FileTreeView {
 
       if (!this.referenceOnly) {
         Column() {
-          Text('左滑操作 · 拖图标到任一栏')
+          Text('左滑操作 · 拖动移动或打开')
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_tertiary'))
             .width('100%')
@@ -587,7 +667,7 @@ export struct FileTreeView {
             .onHover((isHover: boolean): void => {
               this.helpHintOpen = isHover;
             })
-            .accessibilityText('左滑文件可操作；拖动行尾图标到任一栏打开')
+            .accessibilityText('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开')
             .bindPopup(this.helpHintOpen, {
               builder: this.HelpHint(),
               placement: Placement.Top,
@@ -814,7 +894,7 @@ export struct FileTreeView {
 
   @Builder
   HelpHint() {
-    Text('左滑文件可操作；拖动行尾图标到任一栏打开')
+    Text('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开')
       .fontSize(FontSize.caption)
       .fontColor($r('app.color.text_primary'))
       .padding(Space.s2)
@@ -1086,8 +1166,9 @@ export struct FileTreeView {
           .height(this.referenceOnly && !n.isDir ? Size.itemH + Space.s2 : Size.itemH)
           .alignItems(VerticalAlign.Center)
           .borderRadius(Radius.control)
-          .backgroundColor(!n.isDir && n.relPath === this.currentFilePath
-            ? $r('app.color.brand_bg_solid') : Color.Transparent)
+          .backgroundColor(this.dropOverDir === n.relPath ? $r('app.color.brand_bg')
+            : !n.isDir && n.relPath === this.currentFilePath
+              ? $r('app.color.brand_bg_solid') : Color.Transparent)
           // ⚠️ 踩坑（模拟器实测 2026-10-18）：行内子控件（图标 / 文件名 Text）会**吃掉点击**，
           // 点文件名「点不动」，只有点行的空白处才响应 —— 而目录行因为箭头图标在左侧、
           // 早期测试点到了图标附近才看起来正常。修法是给行内的缩进格与内容 Row 都设
@@ -1117,13 +1198,67 @@ export struct FileTreeView {
         }
         .width('100%')
         .padding({ right: Space.s2 })
-        .draggable(this.referenceOnly && !n.isDir)
+        // v1.71（71.1）：主树笔记 / 文件夹整行可拖；referenceOnly（Agent 引用树）
+        // 保持仅笔记行可拖，Agent 对话区拖放零回归。
+        .draggable(!this.referenceOnly || !n.isDir)
         .onDragStart((event: DragEvent): DragItemInfo => {
-          const payload: string = JSON.stringify({ vaultId: this.vaultId, path: n.relPath });
-          const record: unifiedDataChannel.UnifiedRecord =
-            new unifiedDataChannel.UnifiedRecord(NOTE_REF_MIME, payload);
+          this.dragSourcePath = n.relPath;
+          this.dragSourceIsDir = n.isDir;
+          this.onTreeDragStart(n.relPath, n.isDir);
+          // payload 加 isDir：语义由落点决定（目录行 = 移动，正文栏 = 打开）；
+          // Agent 侧解析只读 vaultId / path，新增字段不影响旧解析。
+          const payload: string = JSON.stringify({ vaultId: this.vaultId, path: n.relPath, isDir: n.isDir });
+          // v1.71 修复：官方构造形态（UDMF 文档 ApplicationDefinedRecord 示例）——
+          // 类型走 applicationDefinedType（带强制前缀），JSON 走 rawData（Uint8Array）。
+          // Agent 侧读取同步改为 rawData 解码，见 AgentWorkspace.readNoteRefText。
+          const record: unifiedDataChannel.ApplicationDefinedRecord =
+            new unifiedDataChannel.ApplicationDefinedRecord();
+          record.applicationDefinedType = NOTE_REF_MIME;
+          record.rawData = new util.TextEncoder().encodeInto(payload);
           event.setData(new unifiedDataChannel.UnifiedData(record));
-          return { extraInfo: '当前知识库笔记引用' };
+          return { extraInfo: this.referenceOnly ? '当前知识库笔记引用' : '拖动移动或打开' };
+        })
+        .onDragEnd((event: DragEvent): void => {
+          this.dragSourcePath = '';
+          this.dragSourceIsDir = false;
+          this.dropOverDir = '';
+          this.onTreeDragEnd();
+        })
+        // v1.71 树内移动落点（71.1 / 71.3）：行级 allowDrop + 事件回调里按 canDropIntoDir
+        // 过滤。allowDrop 是渲染绑定，LazyForEach 键不变时不会重算（faqs-arkui-219 同机理），
+        // 所以这里保持常量接收、把「自身 / 子孙行不允许」放到事件回调（读取实时字段）里拦。
+        // referenceOnly 树不接受任何行内落点（Agent 行为零回归）。
+        .allowDrop(this.referenceOnly ? null : [NOTE_REF_MIME])
+        .onDragEnter((event: DragEvent): void => {
+          if (this.canDropIntoDir(n)) {
+            this.dropOverDir = n.relPath;
+          }
+        })
+        .onDragLeave((event: DragEvent): void => {
+          if (this.dropOverDir === n.relPath) {
+            this.dropOverDir = '';
+          }
+        })
+        .onDrop((event: DragEvent): void => {
+          const wasOver: boolean = this.dropOverDir === n.relPath;
+          if (wasOver) {
+            this.dropOverDir = '';
+          }
+          if (this.referenceOnly || this.dragSourcePath.length === 0) {
+            return;
+          }
+          if (n.isDir) {
+            if (this.canDropIntoDir(n)) {
+              this.requestDragMove(n.relPath, 3);
+            } else if (wasOver || this.dragSourcePath === n.relPath ||
+              (this.dragSourceIsDir && n.relPath.startsWith(this.dragSourcePath + '/'))) {
+              // 自身 / 子孙行上的 drop = 无操作拦截，避免被 List 兜底解释成「移到库根」。
+              this.requestDragMove('', 2);
+            }
+          } else {
+            // 笔记行 drop = 拦截为无操作（71.3：落点语义只在目录行 / 树根 / 正文栏三种）。
+            this.requestDragMove('', 2);
+          }
         })
         // 左滑三档（1.6）：ListItem.swipeAction（API 24，list_item.d.ts:563 已核实）。
         // - 轻扫拖出操作条（SwipeBar：重命名 / 移动 / 删除）；
@@ -1153,7 +1288,10 @@ export struct FileTreeView {
         // 折叠/展开后 chevron 方向停在旧值（子行消失是因为键被移除，父行键没变）。
         // 选中高亮同机理：不进键值的话，点新文件旧高亮不掉、新高亮不上。
         if (n.isDir) {
-          return n.relPath + (this.isExpanded(n.relPath) ? '|e' : '|c');
+          // v1.71：拖拽悬停高亮进键值——不进的话复用行子树背景不刷新（faqs-arkui-219 同机理，
+          // 与折叠箭头 / 选中高亮同坑）。drop 结束键回落，行恢复复用。
+          return n.relPath + (this.isExpanded(n.relPath) ? '|e' : '|c') +
+            (this.dropOverDir === n.relPath ? '|drop' : '');
         }
         // v1.50：置顶态进键值——不进的话切换置顶后行顺序变了、行内 pin 标记不刷新
         // （faqs-arkui-219 官方键值复用规则，与选中高亮同机理）。
@@ -1167,6 +1305,14 @@ export struct FileTreeView {
     .scrollBar(BarState.Auto)
     .cachedCount(10)
     .backgroundColor($r('app.color.bg_navigation'))
+    // v1.71 树根空白兜底（71.1）：drop 到行外空白（左侧缩进区 / 末条让位区）= 移到库根，
+    // 对齐「移动」对话框的「库根目录」语义；rank 1 会被任何行级 drop（rank 2/3）覆盖。
+    .allowDrop(this.referenceOnly ? null : [NOTE_REF_MIME])
+    .onDrop((event: DragEvent): void => {
+      if (!this.referenceOnly) {
+        this.requestDragMove('', 1);
+      }
+    })
     // 57.7：树 List 底边与安全区边界重合，extend 视口到物理下沿（api_notes AE3），
     // 穿小白条；末条按 treeBottomClearanceVp 让位钉底簇。referenceOnly（Agent 页）
     // 连写条仍在流内 → 底边不与安全区重合 → 天然 no-op，Agent 页零变化。

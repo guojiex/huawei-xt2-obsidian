@@ -408,6 +408,112 @@ export default function git2NativeTest() {
         }
       });
 
+    it('pulls fast-forward from the tracking branch and rejects dirty worktrees or unpushed commits',
+      0, async (): Promise<void> => {
+        const source = newTarget('pull_source');
+        const target = newTarget('pull_target');
+        const noteRelPath: string = '笔记/中文.md';
+        const sourceNotePath: string = registry.absoluteIn(source.id, noteRelPath);
+        const targetNotePath: string = registry.absoluteIn(target.id, noteRelPath);
+        try {
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: source.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: target.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+
+          writeText(sourceNotePath, '# 拉取验证\n远端新增的内容。\n');
+          const sourceHash: string = await sha256(sourceNotePath);
+          await nativeGit2.gitAction({ operation: 'stage', repositoryPath: source.path });
+          const committedOid: string = await nativeGit2.gitAction({
+            operation: 'commit',
+            repositoryPath: source.path,
+            message: 'test: pull source update',
+            authorName: 'Isolated Fixture',
+            authorEmail: 'fixture@example.invalid',
+          });
+          await nativeGit2.gitAction({
+            operation: 'push',
+            repositoryPath: source.path,
+            bearerToken: FIXTURE_BEARER_TOKEN,
+          });
+
+          expect(await nativeGit2.gitAction({
+            operation: 'pull',
+            repositoryPath: target.path,
+            targetBranch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          })).assertEqual('fast-forwarded');
+          expect(await sha256(targetNotePath)).assertEqual(sourceHash);
+          const pulledState: Git2RepositoryState = nativeGit2.getRepositoryState(target.path);
+          expect(pulledState.head).assertEqual(committedOid);
+          expect(pulledState.clean).assertTrue();
+          expect(pulledState.behindCount).assertEqual(0);
+
+          expect(await nativeGit2.gitAction({
+            operation: 'pull',
+            repositoryPath: target.path,
+            targetBranch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          })).assertEqual('up-to-date');
+
+          writeText(registry.absoluteIn(target.id, '未提交草稿.md'), '# 本地草稿\n');
+          let dirtyRejected: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'pull',
+              repositoryPath: target.path,
+              targetBranch: 'xt2',
+              username: FIXTURE_USERNAME,
+              password: FIXTURE_PASSWORD,
+            });
+          } catch (error) {
+            dirtyRejected = String(error).indexOf('未提交更改') >= 0;
+          }
+          expect(dirtyRejected).assertTrue();
+          fileIo.unlinkSync(registry.absoluteIn(target.id, '未提交草稿.md'));
+
+          writeText(targetNotePath, '# 本地新提交\n未推送，拉取必须拒绝。\n');
+          const localHash: string = await sha256(targetNotePath);
+          await nativeGit2.gitAction({ operation: 'stage', repositoryPath: target.path });
+          await nativeGit2.gitAction({
+            operation: 'commit',
+            repositoryPath: target.path,
+            message: 'test: unpushed local commit',
+            authorName: 'Isolated Fixture',
+            authorEmail: 'fixture@example.invalid',
+          });
+          let aheadRejected: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'pull',
+              repositoryPath: target.path,
+              targetBranch: 'xt2',
+              username: FIXTURE_USERNAME,
+              password: FIXTURE_PASSWORD,
+            });
+          } catch (error) {
+            aheadRejected = String(error).indexOf('未推送提交') >= 0;
+          }
+          expect(aheadRejected).assertTrue();
+          expect(await sha256(targetNotePath)).assertEqual(localHash);
+        } finally {
+          removeTree(source.path);
+          removeTree(target.path);
+        }
+      });
+
     it('lists modified, added, and deleted worktree files', 0,
       async (): Promise<void> => {
         const target = newTarget('status_changes');

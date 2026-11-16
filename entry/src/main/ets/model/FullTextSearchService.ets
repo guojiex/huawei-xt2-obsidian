@@ -274,6 +274,27 @@ export class FullTextSearchService {
     });
   }
 
+  /**
+   * 外部整库变更（Git 拉取快进合并等）后调用：清除该库的对账完成标记，
+   * 下次搜索重跑 hash 对账自愈（改动的文件重索引、消失的删行、新增的补行）。
+   */
+  static invalidateReconcile(vaultId: string): void {
+    const registry: SearchVaultRegistry | null = FullTextSearchService.registry;
+    if (registry === null || vaultId.length === 0) {
+      return;
+    }
+    let vaultKey: string = '';
+    try {
+      vaultKey = registry.vaultKeyOf(vaultId);
+    } catch (error) {
+      vaultKey = '';
+    }
+    if (vaultKey === '') {
+      return;
+    }
+    FullTextSearchService.reconciledKeys.delete(vaultKey);
+  }
+
   /* --------------------------------------------------------------------- */
   /* pending 消化                                                           */
   /* --------------------------------------------------------------------- */

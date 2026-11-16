@@ -14,7 +14,7 @@ import { FocusRequest } from '../common/FocusRequest';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 type GitSyncResult = 'none' | 'success' | 'stale' | 'auth' | 'network' | 'local';
-type GitSyncRetryAction = 'sync' | 'remoteStatus';
+type GitSyncRetryAction = 'sync' | 'remoteStatus' | 'pull';
 
 @CustomDialog
 export struct GitSyncDialog {
@@ -59,8 +59,10 @@ export struct GitSyncDialog {
   @State result: GitSyncResult = 'none';
   @State resultTitle: string = '';
   @State resultBody: string = '';
+  @State pulling: boolean = false;
   onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
   onDismiss: () => void = () => {};
+  onPulled: () => void = () => {};
 
   private hasDismissed: boolean = false;
 
@@ -210,6 +212,9 @@ export struct GitSyncDialog {
 
   private primaryActionLabel(): string {
     if (this.busy) {
+      if (this.pulling) {
+        return '正在拉取…';
+      }
       return this.checkingRemoteOnly ? '正在检查远端…' : '正在推送…';
     }
     return this.shouldCommitChanges() ? '提交并推送' : '推送';
@@ -365,6 +370,92 @@ export struct GitSyncDialog {
     }
   }
 
+  private makePullOptions(token: string): Git2ActionOptions {
+    const options: Git2ActionOptions = {
+      operation: 'pull',
+      repositoryPath: VaultRegistry.get().vaultDirOf(this.vaultId),
+      targetBranch: this.trackingBranch,
+      onProgress: (progress: Git2Progress): void => {
+        this.progressText = GitNativeService.progressLabel(progress);
+      }
+    };
+    applyRemoteAuth(options, this.remoteLabel, this.authUsername.trim(), token);
+    return options;
+  }
+
+  private canPull(): boolean {
+    return this.trackingBranch.length > 0 && this.statusReady && this.statusEntryCount === 0;
+  }
+
+  private async runPullAction(): Promise<void> {
+    if (this.busy || !this.canPull() || VaultRegistry.get().currentId() !== this.vaultId) {
+      return;
+    }
+    const token: string = this.effectiveToken();
+    if (token.length > 0 && !this.isGitHubRemote() && this.authUsername.trim().length === 0) {
+      this.result = 'auth';
+      this.resultTitle = '需要用户名';
+      this.resultBody = '请填写此 Git 服务对应的用户名后重试。';
+      this.retryAction = 'pull';
+      this.requiresNewToken = false;
+      this.credentialEditorOpen = true;
+      return;
+    }
+    this.pulling = true;
+    this.startBusy();
+    this.progressText = '正在拉取 ' + this.trackingBranch + '…';
+    try {
+      const pullResult: string = await GitNativeService.action(this.makePullOptions(token));
+      this.saveCredentialsAfterRemoteSuccess(token);
+      if (pullResult === 'fast-forwarded') {
+        this.onPulled();
+        this.result = 'success';
+        this.resultTitle = '已拉取远端更新';
+        this.resultBody = '本地已快进合并远端 ' + this.trackingBranch + ' 的新提交。';
+      } else {
+        this.result = 'none';
+        this.statusMessage = '远端 ' + this.trackingBranch + ' 没有新提交，本地已是最新。';
+      }
+      this.progressText = '拉取完成';
+      await this.refreshLocalStatus();
+    } catch (error) {
+      this.showPullFailure(error);
+      await this.refreshLocalStatus();
+    } finally {
+      this.pulling = false;
+      this.finishBusy();
+    }
+  }
+
+  private showPullFailure(error: Error | Object): void {
+    const message: string = (error as BusinessError).message ?? String(error);
+    const lower: string = message.toLowerCase();
+    this.retryAction = 'pull';
+    this.requiresNewToken = false;
+    if (message.includes('未提交更改')) {
+      this.result = 'local';
+      this.resultTitle = '本地有未提交更改';
+      this.resultBody = '拉取未开始。请先提交并推送本地改动，再拉取远端更新。';
+    } else if (message.includes('未推送提交') || message.includes('拒绝合并')) {
+      this.result = 'stale';
+      this.resultTitle = '本地有未推送提交';
+      this.resultBody = '为避免合并冲突，拉取已取消。请先推送到远端，或在电脑上处理后再拉取。';
+    } else if (lower.includes('401') || lower.includes('403') ||
+      lower.includes('unauthorized') || lower.includes('forbidden') ||
+      lower.includes('authentication')) {
+      this.result = 'auth';
+      this.requiresNewToken = true;
+      this.resultTitle = '拉取远端更新时认证失败';
+      this.resultBody = '令牌可能已失效或缺少读取权限；本地库内容未变。输入新令牌后重试拉取。';
+      this.credentialEditorOpen = true;
+    } else {
+      this.result = 'network';
+      this.resultTitle = '拉取远端更新失败';
+      this.resultBody = '本地库内容未变；检查网络后可重试拉取。';
+    }
+    this.progressText = '失败';
+  }
+
   private async runPrimaryAction(): Promise<void> {
     if (this.busy || !this.canPush()) {
       return;
@@ -487,7 +578,7 @@ export struct GitSyncDialog {
     } else if (this.result === 'auth') {
       if (this.retryAction === 'remoteStatus') {
         this.resultTitle = '拉取远端状态时认证失败';
-        this.resultBody = '令牌可能已失效或缺少读取权限；未读取到远端新状态，本地库内容未变。输入新令牌后验证并重试拉取。';
+        this.resultBody = '令牌可能已失效或缺少读取权限；未读取到远端新状态，本地库内容未变。输入新令牌后验证并重试检查。';
       } else {
         this.resultTitle = '令牌无效或没有写权限';
         this.resultBody = '本次未推送，本地提交已保留。请更换具有仓库写权限的令牌后重试。';
@@ -495,9 +586,9 @@ export struct GitSyncDialog {
       this.credentialEditorOpen = true;
     } else if (this.result === 'network') {
       this.resultTitle = '网络连接失败';
-      this.resultBody = this.retryAction === 'remoteStatus'
-        ? '无法读取远端状态；本地库内容未变，检查网络后可重试拉取。'
-        : '本次未推送，本地提交已保留；检查网络后可以重试。';
+        this.resultBody = this.retryAction === 'remoteStatus'
+          ? '无法读取远端状态；本地库内容未变，检查网络后可重试检查。'
+          : '本次未推送，本地提交已保留；检查网络后可以重试。';
     } else {
       this.resultTitle = operation + '未完成';
       this.resultBody = '当前状态未确认；请刷新 Git 状态后再决定是否重试。';
@@ -550,6 +641,9 @@ export struct GitSyncDialog {
 
   private retryActionLabel(): string {
     if (this.retryAction === 'remoteStatus') {
+      return this.result === 'auth' ? '验证并重试检查' : '重试检查';
+    }
+    if (this.retryAction === 'pull') {
       return this.result === 'auth' ? '验证并重试拉取' : '重试拉取';
     }
     return this.result === 'auth' ? '验证并重试推送' : '重试';
@@ -579,6 +673,10 @@ export struct GitSyncDialog {
     this.dismissResult();
     if (action === 'remoteStatus') {
       void this.refreshRemoteStatus();
+      return;
+    }
+    if (action === 'pull') {
+      void this.runPullAction();
       return;
     }
     void this.runPrimaryAction();
@@ -774,7 +872,7 @@ export struct GitSyncDialog {
           .fontSize(FontSize.body3)
           .fontColor($r('app.color.text_secondary'))
           .width('100%')
-        if (this.result === 'stale') {
+        if (this.result === 'stale' && this.retryAction === 'sync') {
           Text('改推到其他分支')
             .fontSize(FontSize.body3)
             .fontColor($r('app.color.brand'))
@@ -972,7 +1070,8 @@ export struct GitSyncDialog {
       }
 
       if (!this.remoteBranchMissing && this.behindCount > 0) {
-        Text('远端已前进 ' + this.behindCount.toString() + ' 个提交；手机端不合并。')
+        Text('远端 ' + this.pushBranch + ' 已前进 ' + this.behindCount.toString() +
+          ' 个提交；推送会被拒绝，请在电脑上处理。')
           .fontSize(FontSize.caption)
           .fontColor($r('app.color.danger'))
           .width('100%')
@@ -1012,6 +1111,12 @@ export struct GitSyncDialog {
     Row({ space: Space.s2 }) {
       UtilityDialogAction(UIUtils.makeBinding<string>(() => this.busy ? '取消' : '关闭'), 'secondary',
         this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => { this.dismiss(); })
+      if (this.canPull()) {
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.pulling ? '正在拉取…' : '拉取'),
+          'secondary', this.singleScreen,
+          UIUtils.makeBinding<boolean>(() => !this.busy && this.canPull()),
+          (): void => { void this.runPullAction(); })
+      }
       if (this.result === 'success') {
         UtilityDialogAction(UIUtils.makeBinding<string>(() => '完成'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.dismiss();

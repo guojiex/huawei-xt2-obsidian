@@ -1526,6 +1526,16 @@ this.PaneHead({ title: ... })   // @Builder PaneHead($$: PaneHeadParam)
 - `waitForComponent` 超时**返回 null 不抛错**（文档未记载，实测）；x86 整树一次匹配可花 ~12s。
 - 证据：`docs/testing/UI自动化测试.md`「实测结论与坑」、`.local/uitest/20261107_*`（gitignore）。
 
+**2026-11-16 修正（v1.71 拖拽修复实测，API26 arm64 模拟器，Mac 宿主）**：
+
+- **拖拽注入实测可用**：`uitest uiInput drag <x1> <y1> <x2> <y2> [velocity]`（velocity 200-40000，
+  默认 600）能注入真实系统拖拽（ArkUI `onDragStart/onDrop` 全链路触发，AceDrag/msdp 日志齐全，
+  树内移动 + 栏落点双场景验证通过）——此前「拖拽未验」状态**解除**（2026-11-07 修正中
+  「仅对拖拽成立（未验）」一句作废）。注意两点：① 刚 `install -r` + 冷启动后的首次注入可能
+  整条拖拽不触发（无任何 DragManager 日志），等应用稳定（约 1 分钟）再注入即可复现；
+  ② `uitest dumpLayout -p` 拿 px 坐标定位拖拽起终点最稳。
+- 证据：`.local/uitest/20261116_*`、`docs/releases/v1.71/需求文档.md` §6。
+
 ### L-9 `ListItem.swipeAction` 三档手势落地（2026-10-21，SDK 核实 + 构建通过）✅ 签名 / ⚠️ 运行时待验
 
 API 24 SDK 签名（`sdk/default/openharmony/ets/component/list_item.d.ts:563`）：
@@ -1698,7 +1708,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 | **CodeMirror state 重建剥 listener** | ✅ updateListener 进 `extensionsFor()` 内部 + ArkTS 侧 ready 去重（双 ready 重建会永久丢 change 事件，**L-6 实测**） | 已落地（mdeditor） |
 | **@Builder 传参刷新** | ✅ 需随状态刷新的参数用 `$$: 命名 interface` 按引用传；按值传参是调用时快照（**L-7 实测**） | 已落地（PaneHead） |
 | **子组件普通成员冻结** | ✅ 子 @Component 未装饰普通成员只在首帧求值，父重渲染只重跑 @BuilderParam、不刷新它——随父刷新的 UI 改 `@BuilderParam` 交给调用方渲染（**Z4 实测三版**：普通成员冻结首帧；`@Prop` 方案 rerender 时值为 undefined 崩；`Binding<string>` 因宿主片段不重跑仍冻结；终案 headerTexts @BuilderParam） | 已落地（UtilityDialogShell headerTexts） |
-| **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ ArkWeb 渲染在模拟器全不可用；文本注入仅 IME×Web 废（原生 TextInput 可用）；触摸点击/滑动注入实测可用、拖拽未验（**L-8** 2026-11-07 修正）；编辑器/输入法验证一律真机 | 已定案 |
+| **模拟器能力边界** | ⚠️ IME×Web（errcode=80）/ ArkWeb 渲染在模拟器全不可用；文本注入仅 IME×Web 废（原生 TextInput 可用）；触摸点击/滑动注入实测可用、拖拽注入实测可用（**L-8** 2026-11-16 实测解除未验状态）；编辑器/输入法验证一律真机 | 已定案 |
 | **列表项三档左滑** | ✅ `ListItem.swipeAction` + `SwipeActionItem.actionAreaDistance/onAction`（`edgeEffect: Spring`），签名 API 24 已核实（**L-9**）；文件夹不注册 onAction 即无第三档；运行时已 x86 模拟器手势注入验证（2026-11-07） | 已落地（FileTreeView，手感待真机） |
 | **回收站位置** | ✅ `vaults/<库>/.trash/` 镜像原相对路径：FileTree 天然过滤点前缀、库 rename/delete 自动带着走、恢复目标=镜像路径无需元数据；**v0.3 Git 同步须给 `.trash` 配 .gitignore** | 已落地（TrashService） |
 
@@ -2631,6 +2641,73 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
   `isEditorTextEquivalent`（剥前导 U+FEFF + CRLF→LF）统一豁免——两种解释下带 BOM 笔记都
   不会误弹窗。已定决策见 [v1.70 需求文档](../releases/v1.70/需求文档.md) 70.5。
 - 附带结论：`TextEncoder`（两侧）把字符串里的 U+FEFF 原样编码，不剥离；桥接下发侧无此问题。
+
+## AH 组：统一拖放（drag & drop，2026-11-16，v1.71 落码核实）
+
+### AH1 ✅ `allowDrop` / `onDragEnd` 的 SDK 签名（API 24，本机 SDK 声明核对）
+
+- `common.d.ts`（`/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/ets/component/common.d.ts`）
+  `DragEvent` 区（约 20727 / 20757 行）：
+  - `onDragEnd(event: DragEvent, extraParams?: string)`——**拖拽源侧**收尾回调（成功 / 取消均触发），
+    第二参数为 JSON 字符串；
+  - `allowDrop(value: Array<UniformDataType> | null | Array<string>)`——**落点侧**声明可接收的数据类型，
+    传 `null` 表示不接受任何落点（v1.71 用它关掉 Agent 引用树的落点能力，行为与未挂属性一致）。
+- ~~自定义 MIME 字符串可直接作为 `allowDrop` 数组元素（`Array<string>` 分支），不必注册
+  `UniformDataType`；本仓库 `application/x-yaoshi-note-ref`（v1.58 Agent 引用树先例）与
+  `application/x-xt2-note`（原型）同此口径。~~
+  **（2026-11-16 API26 模拟器实测推翻——签名上确实收 `Array<string>`，但自定义串永不匹配：
+  拖拽 summary 恒归一为 `ApplicationDefinedType` 桶键，`allowDrop('application/x-yaoshi-note-ref')`
+  落点必被拒，实测日志 `DragDropManager onDragEnd, target data is not allowed to fall into`。
+  正确口径见 AH2。）**
+- ⚠️ **`allowDrop` 是渲染绑定，不是事件回调**：值依赖状态时必须让该状态参与组件重渲染
+  （LazyForEach 行必须把该状态编进键值，见 L 组 faqs-arkui-219 同坑）。v1.71 因此采用
+  「常量接收 + 事件回调内过滤」策略：`allowDrop` 恒为常量数组，「自身 / 子孙不允许」等
+  动态规则放 `onDrop` / `onDragEnter` 里判断——代价是系统落点徽标可能仍显示（外观小瑕疵），
+  换取拦截逻辑一定生效。
+- ⚠️ **同一次 drop 的多个 `onDrop` 触发顺序未记载**（行 → 容器是否都触发、先后、是否冒泡均无
+  文档）：v1.71 不押注顺序，按 rank（目标优先级）合并 + `setTimeout(0)` 等全部到齐后执行一次。
+- ⚠️ **`onDragEnter` 阶段读 `event.getData()` 可能抛「Data not found」**（拖拽框架只在 drop 前
+  保证数据可见，官方 FAQ 口径）：会话源（拖的什么）应由拖拽源 `onDragStart` / `onDragEnd`
+  回调自行记录传递，落点高亮判断不得依赖 drop 前读数据。
+
+### AH2 ✅ UDMF 应用自定义拖拽类型的匹配机制（2026-11-16，API26 模拟器实测，v1.71 修复依据）
+
+- **`ApplicationDefinedRecord` 的 summary 键恒为 `'ApplicationDefinedType'`，与
+  `applicationDefinedType` 写什么无关**：实测两次（`'ApplicationDefined.yaoshi-note-ref'` 与
+  官方示例值）日志均报 `require summary: ApplicationDefinedType-<字节数>`（字节数 = rawData
+  的 byte 长度，129/160 分别对应两份 JSON payload）——类型串只影响 record 自身字段，
+  不改变框架匹配用的 summary 桶键。
+- **`allowDrop` 匹配按 summary 桶键比对**：`allowDrop(['ApplicationDefinedType'])` 即匹配
+  应用自定义拖拽（官方 UDMF 文档 `ApplicationDefinedRecord` 示例同值）；写任意私有 MIME 串
+  必然 `target data is not allowed to fall into`。v1.71 修复：三处 `NOTE_REF_MIME` 常量值
+  统一改 `'ApplicationDefinedType'`，实测树内移动 / 栏落点 / 日志 0 条拒收。
+- **细分过滤不放类型层**（桶键无区分度）：树内 / 栏落点靠拖拽会话状态（`dragSourcePath` /
+  `treeDragPath`，外来拖拽为空串自然被拒——`canDropIntoDir` / `flushPendingDragMove` 已有
+  空串守卫）；Agent 落点靠 `readNoteRefText` 解 `rawData` JSON 后的 `vaultId` 校验
+  （`addReference:302` 拒不同库）。`applicationDefinedType` 仍按文档要求写
+  `'ApplicationDefined.'` 前缀或官方示例值（setter 对非法值行为未记载，别传裸私有串）。
+- SDK 依据：`unifiedDataChannel.d.ts:1206-1228`（`applicationDefinedType` 必须
+  `ApplicationDefined.` 前缀、`rawData: Uint8Array`）；UTD 枚举
+  （`uniformTypeDescriptor.d.ts`，177 项全 `general.*` / `openharmony.*`）**无**
+  ApplicationDefined 成员——桶键 `'ApplicationDefinedType'` 不在 UTD 枚举里，只能以字符串
+  形式进 `allowDrop`。
+- 编解码：`util.TextEncoder().encodeInto(str)` → `Uint8Array`、
+  `util.TextDecoder().decodeToString(u8)` → `string`（SDK 签名核对）。
+
+### AH3 ✅ ArkWeb 原生接管 Web 区域拖放（2026-11-16，API26 模拟器实测，v1.71 修复依据）
+
+- 拖拽悬停 / 落点到 Web 组件上方时，ArkWeb 原生接管拖放事件：AceDrag 日志落点
+  `TargetNode is Web`，chromium 侧 `DragDrop event DRAG_ENTER SendDragEvent enter, send
+  dragdata to chromium webId:1` + `allow_op = -1` 全拒——**栏根容器的 `onDrop` 收不到
+  Web 区域的 drop**，v1.71 用户实测「拖笔记进栏打开」失效的第二个根因（悬停期间目标在
+  Web depth24 / Column depth16 间翻转）。
+- **修复模式「拖拽会话护盾」**：拖拽源 `onDragStart` 置位状态（`@State treeDragActive`），
+  栏容器 `Stack` **末位**（z 序最高）条件挂载全尺寸透明 `Column`
+  （`backgroundColor(Color.Transparent)` + `allowDrop` + `onDragEnter/Leave/Drop`），
+  把 Web 区域的落点抢回来；`onDragEnd` 复位撤盾。实测落点 `TargetNode is Column`（不再是
+  Web），右栏标题按拖入笔记切换。
+- 不适用范围：护盾只为抢 Web 落点；纯原生落点（树行、Agent 落点 TextArea）不需要。
+  Agent 落点无 Web 组件，无此问题。
 
 
 

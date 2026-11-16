@@ -44,7 +44,7 @@ export interface Git2FileChange {
 }
 
 export interface Git2ActionOptions {
-  operation: 'stage' | 'commit' | 'fetch' | 'push';
+  operation: 'stage' | 'commit' | 'fetch' | 'push' | 'pull';
   repositoryPath: string;
   targetBranch?: string;
   username?: string;

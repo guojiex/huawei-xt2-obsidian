@@ -9,23 +9,24 @@ const fileTree = fs.readFileSync(
 const prototype = fs.readFileSync(
   new URL('../../docs/prototype/v2/index.html', import.meta.url), 'utf8');
 
-test('file tab count shows only the compact note count and exposes its full label', () => {
+test('file tab count shows only the compact note count; vault switcher reads it aloud', () => {
+  // v1.67 精简信息层级：数量只在当前库标题下出现一次，悬停弹层（NoteCountHint）已随
+  // 「文件目录 · N 篇笔记」提示一并移除；读屏完整文案落在库切换触发器上。
   assert.match(vaultSidebar, /Text\(this\.noteCount\.toString\(\) \+ ' 篇笔记'\)/);
-  assert.match(vaultSidebar, /\.maxLines\(1\)\s*\.textOverflow\(\{ overflow: TextOverflow\.Ellipsis \}\)/);
-  assert.match(vaultSidebar, /\.onHover\(\(isHover: boolean\): void => \{\s*this\.noteCountHintOpen = isHover;/);
-  assert.match(vaultSidebar, /\.accessibilityText\('文件目录 · ' \+ this\.noteCount\.toString\(\) \+ ' 篇笔记'\)/);
-  assert.match(vaultSidebar, /\.bindPopup\(this\.noteCountHintOpen,[\s\S]*?builder: this\.NoteCountHint\(\)/);
-  assert.match(vaultSidebar, /NoteCountHint\(\) \{[\s\S]*Text\('文件目录 · ' \+ this\.noteCount\.toString\(\) \+ ' 篇笔记'\)/);
+  assert.match(vaultSidebar, /Text\(this\.noteCount\.toString\(\) \+ ' 篇笔记'\)[\s\S]*?\.maxLines\(1\)/);
+  assert.doesNotMatch(vaultSidebar, /noteCountHintOpen|NoteCountHint/);
+  assert.match(vaultSidebar,
+    /\.accessibilityText\('切换知识库，当前 ' \+[\s\S]*?'，' \+ this\.noteCount\.toString\(\) \+ ' 篇笔记'\)/);
 });
 
 test('tree help shows one compact line with the complete hover and screen-reader hint', () => {
-  assert.match(fileTree, /Text\('左滑操作 · 拖图标到任一栏'\)/);
-  assert.match(fileTree, /Text\('左滑操作 · 拖图标到任一栏'\)[\s\S]*?\.maxLines\(1\)[\s\S]*?\.textOverflow\(\{ overflow: TextOverflow\.Ellipsis \}\)/);
+  assert.match(fileTree, /Text\('左滑操作 · 拖动移动或打开'\)/);
+  assert.match(fileTree, /Text\('左滑操作 · 拖动移动或打开'\)[\s\S]*?\.maxLines\(1\)[\s\S]*?\.textOverflow\(\{ overflow: TextOverflow\.Ellipsis \}\)/);
   assert.match(fileTree, /\.onHover\(\(isHover: boolean\): void => \{\s*this\.helpHintOpen = isHover;/);
-  assert.match(fileTree, /\.accessibilityText\('左滑文件可操作；拖动行尾图标到任一栏打开'\)/);
+  assert.match(fileTree, /\.accessibilityText\('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开'\)/);
   assert.match(fileTree, /\.bindPopup\(this\.helpHintOpen,[\s\S]*?builder: this\.HelpHint\(\)/);
-  assert.match(fileTree, /HelpHint\(\) \{[\s\S]*Text\('左滑文件可操作；拖动行尾图标到任一栏打开'\)/);
-  assert.match(prototype, /<div class="tree-help" title="左滑文件可操作；拖动行尾图标到任一栏打开">左滑操作 · 拖图标到任一栏<\/div>/);
+  assert.match(fileTree, /HelpHint\(\) \{[\s\S]*Text\('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开'\)/);
+  assert.match(prototype, /<div class="tree-help" title="左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开">左滑操作 · 拖动移动或打开<\/div>/);
 });
 
 test('sidebar toolbar centers tab labels and sizes nav icons per the v2 prototype', () => {

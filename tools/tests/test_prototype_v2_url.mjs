@@ -136,12 +136,12 @@ test('Git demo restores import, sync entry and remote share previews without net
  assert.match(html,/<label class="demo-toggle" title="仅展示 Git 库的同步入口、待推送角标和分享格式/);
  assert.match(html,/<div(?=[^>]*class="seg import-tabs")(?=[^>]*aria-label="导入来源")/);
  assert.doesNotMatch(html,/class="[^"]*import-tabs[^"]*hidden"|class="[^"]*hidden[^"]*import-tabs"/);
- assert.match(html,/<button class="icon git-sync-entry hidden" id="gitSyncBtn"/);
- assert.match(html,/id="mobileGitSync" class="hidden git-sync-menu"/);
+ assert.match(html,/<button[^>]*class="icon git-sync-entry hidden"[^>]*id="gitSyncBtn"/);
+ assert.match(html,/<button[^>]*class="hidden git-sync-menu"[^>]*id="mobileGitSync"/);
  assert.match(code,/gitShareDemo=new URLSearchParams\(window.location.search\)\.get\('gitShareDemo'\)==='1'/);
  assert.match(code,/if\(stage==='link'&&gitShareDemo\)previewShare\('link'\)/);
- const syncCode=html.match(/\/\/ v1\.27: Git sync page design[\s\S]*?(?=<\/script>)/)[0];
- assert.match(syncCode,/never touches git, remote or tokens/);
+ const syncCode=html.match(/\/\/ v1\.27 \/ AB-01 \/ v1\.73: Git sync[\s\S]*?(?=\n\$\('leftCloseNote'\))/)[0];
+ assert.match(syncCode,/never touches git, remote or saved tokens/);
  const local=fixture();
  assert(local.get('gitSyncBtn').classList.contains('hidden'));
  assert(local.get('mobileGitSync').classList.contains('hidden'));
@@ -167,7 +167,7 @@ test('Git demo restores import, sync entry and remote share previews without net
 });
 test('Git sync demo validates branches and renders progress and failure results locally',()=>{
  const f=fixture();
- const syncCode=html.match(/\/\/ v1\.27: Git sync page design[\s\S]*?(?=<\/script>)/)[0];
+ const syncCode=html.match(/\/\/ v1\.27 \/ AB-01 \/ v1\.73: Git sync[\s\S]*?(?=\n\$\('leftCloseNote'\))/)[0];
  f.run(syncCode);
  for(const branch of ['', 'bad name', 'a..b', 'HEAD', '-draft'])assert.notEqual(f.run(`validateGitBranch(${JSON.stringify(branch)})`),'');
  f.run("gitSyncState.editing=true;gitSyncState.draft='main';renderGitSync()");
@@ -178,7 +178,7 @@ test('Git sync demo validates branches and renders progress and failure results 
  f.run("gitSyncState.draft='phone-notes';renderGitSync()");
  f.get('gitSyncBranchSave').onclick();
  assert.equal(f.run('gitSyncState.branch'),'phone-notes');
- f.run("gitSyncState.stage='running';gitSyncState.step=1;renderGitSync()");
+ f.run("gitSyncState.stage='running';gitSyncState.step=2;renderGitSync()");
  assert.match(f.get('gitSyncBody').innerHTML,/<li data-state="done">暂存改动<\/li>/);
  assert.match(f.get('gitSyncBody').innerHTML,/<li data-state="active">提交<\/li>/);
  assert(f.get('gitSyncPush').disabled);
@@ -195,6 +195,39 @@ test('Git sync demo validates branches and renders progress and failure results 
   f.run(`gitSyncState.stage='done';gitSyncState.outcome=${JSON.stringify(outcome)};renderGitSync()`);
   assert(f.get('gitSyncBody').innerHTML.includes(expected));
  }
+ // v1.73：手动拉取——落后提示、快进合并、已是最新与失败结果都在本地渲染。
+ f.run("gitSyncState.stage='ready';gitSyncState.clean=true;gitSyncState.behind=2;renderGitSync()");
+ assert(f.get('gitSyncBody').innerHTML.includes('已前进 2 个提交；推送会被拒绝，请在电脑上处理。'));
+ assert(!f.get('gitSyncPull').classList.contains('hidden'));
+ f.get('gitSyncPull').onclick();
+ assert(f.get('gitSyncBody').innerHTML.includes('正在拉取 main…'));
+ assert.equal(f.get('gitSyncPush').textContent,'正在拉取…');
+ assert(f.get('gitSyncPull').disabled);
+ f.flush();
+ assert(f.get('gitSyncBody').innerHTML.includes('已拉取远端更新'));
+ assert(f.get('gitSyncBody').innerHTML.includes('本地已快进合并远端 main 的新提交。'));
+ assert.equal(f.run('gitSyncState.behind'),0);
+ assert.equal(f.get('gitSyncCancel').textContent,'完成');
+ f.run("gitSyncState.stage='ready';gitSyncState.behind=0");
+ f.get('gitSyncPull').onclick();
+ f.flush();
+ assert(f.get('gitSyncBody').innerHTML.includes('远端 main 没有新提交，本地已是最新。'));
+ assert.equal(f.run('gitSyncState.stage'),'ready');
+ for(const [outcome,expected] of [
+  ['local','本地有未提交更改'],
+  ['stale','本地有未推送提交'],
+  ['auth','拉取远端更新时认证失败'],
+  ['network','拉取远端更新失败']
+ ]){
+  f.run(`gitSyncState.stage='ready';gitSyncState.pullOutcome=${JSON.stringify(outcome)};runGitPull()`);
+  f.flush();
+  assert(f.get('gitSyncBody').innerHTML.includes(expected));
+ }
+ f.run("gitSyncState.pullOutcome='auth';renderGitSync()");
+ assert.equal(f.get('gitSyncPush').textContent,'验证并重试拉取');
+ f.get('gitSyncPush').onclick();
+ assert(f.get('gitSyncBody').innerHTML.includes('id="gitSyncTokenSave"'));
+ assert(f.get('gitSyncBody').innerHTML.includes('验证并重试拉取'));
 });
 test('no-note demo toggle grays out note-scoped controls and restores the selection',()=>{
  const f=fixture();const before=f.run('current');assert.equal(f.get('editTab').disabled,false);assert.equal(f.get('previewTab').disabled,false);assert.equal(f.get('shareBtn').disabled,false);
@@ -329,10 +362,10 @@ test('phone offers document switching only for different notes and labels the de
 });
 
 test('single-screen overflow contains no focus or dual-layout actions, including restored legacy links',()=>{
- const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];assert(!menu.includes('mobileFocus'));assert(!menu.includes('mobileDual'));assert(menu.includes('mobileShare'));assert(menu.includes('mobileSettings'));assert(menu.includes('switchPane'));const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&focus=1');assert.equal(f.run('focused'),false);assert(!f.get('window').classList.contains('focus'));const before=f.run('referenceEnabled');f.run('toggleFocus();toggleReference();previewSameNote()');assert.equal(f.run('focused'),false);assert.equal(f.run('referenceEnabled'),before);
+ const menu=html.match(/<details[^>]*id="mobileMore"[\s\S]*?<\/details>/)[0];assert(!menu.includes('mobileFocus'));assert(!menu.includes('mobileDual'));assert(menu.includes('mobileShare'));assert(menu.includes('mobileSettings'));assert(menu.includes('switchPane'));const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=phone&vault=reading&left=reading_stream&right=reading_reading_journal&active=left&focus=1');assert.equal(f.run('focused'),false);assert(!f.get('window').classList.contains('focus'));const before=f.run('referenceEnabled');f.run('toggleFocus();toggleReference();previewSameNote()');assert.equal(f.run('focused'),false);assert.equal(f.run('referenceEnabled'),before);
 });
 test('phone more menu groups actions and updates labels without replacing icons',()=>{
- const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];
+ const menu=html.match(/<details[^>]*id="mobileMore"[\s\S]*?<\/details>/)[0];
  assert(menu.indexOf('aria-label="当前笔记"')<menu.indexOf('aria-label="快捷编辑模式"'));
  assert(menu.indexOf('aria-label="快捷编辑模式"')<menu.indexOf('aria-label="应用"'));
   assert.equal((menu.match(/class="menu-icon"/g)||[]).length,10);
@@ -345,11 +378,11 @@ test('phone more menu groups actions and updates labels without replacing icons'
 });
 
 test('workspace more menu shares mode switching and settings across all breakpoints',()=>{
- const topbar=html.match(/<header class="topbar">([\s\S]*?)<\/header>/)[1];
- const menu=html.match(/<details id="mobileMore"[\s\S]*?<\/details>/)[0];
+ const topbar=html.match(/<header[^>]*class="topbar">([\s\S]*?)<\/header>/)[1];
+ const menu=html.match(/<details[^>]*id="mobileMore"[\s\S]*?<\/details>/)[0];
  assert(!topbar.includes('id="settingsBtn"'));
  assert.match(html,/\.topbar>\.mobile-top-more\{display:block\}/);
- assert.match(menu,/role="group" aria-label="快捷编辑模式"/);
+ assert.match(menu,/aria-label="快捷编辑模式"[^>]*role="group"/);
  assert(menu.includes('id="quickSimple"')&&menu.includes('id="quickProfessional"')&&menu.includes('id="mobileSettings"'));
  for(const preset of ['phone','double','wide']){
   const f=fixture();f.run(`setViewport('${preset}')`);f.get('mobileMore').open=true;f.get('quickProfessional').onclick();

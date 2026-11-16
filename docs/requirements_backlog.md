@@ -84,6 +84,7 @@
 | --- | --- | --- | --- | --- |
 | Git 同步页重做与可配置推送分支 | 高 | S–M | v1.26 Git 入口恢复；Native 推送目标参数化 | 2026-11-03 用户提出：v2 同步入口点开只有示意提示，需设计同步页（状态、改动清单、提交说明、分步过程、结果与异常）；推送分支按库可配置，默认 App 固定分支 `xt2`，用户在 PC 上合并解冲突；分配 [v1.27](releases/v1.27/需求文档.md) |
 | 恢复 Git 导入与同步 UI | 高 | S | 现有 v0.3 / v0.8 Git 能力与 v2 设计稿 | 2026-11-03 用户决定恢复 Git 仓库导入、同步 / 待推送角标；已有 Git 库的远端链接分享保持可用；沿用 Native libgit2 和现有 push-only 语义，不扩展 pull / checkout |
+| **手动拉取（fast-forward pull）** | 高 | S–M | libgit2 native；v1.27 同步弹窗 | 2026-11-16 用户提出并拍板：Git 同步弹窗新增「拉取」按钮，消费远端在跟踪分支上的新增提交。语义（[Q9 修订](open_questions.md#q9-v03-是否把已有-git-库的手机-pullcheckout-纳入本版验收---已决定2026-11-01)）：本地有提交一律拒绝合并；工作区干净且无本地提交（ahead=0）时快进合并到远端跟踪分支；**不做**合并提交 / 变基 / 冲突解决 / 后台自动拉取 / 强推。与「打开 App 自动后台拉取」条目正交（那条指自动 + 冲突合并）。分配 [v1.73](releases/v1.73/需求文档.md)（2026-11-16 用户指定实现） |
 | Git 导入中途可取消（取消 clone） | 中高 | S–M | git2_napi native 取消机制；v1.68 68.2 忙碌锁定的解锁 | 2026-11-15 用户提出：`ImportVaultDialog` 在 clone 进行中锁死取消 / 关闭等所有退出路径（[v1.68 68.2](releases/v1.68/需求文档.md) 的设计决策——当时 `libgit2_napi.so` 没有取消 API，clone 发起后必须跑到成功或失败为止）。native 封装 `git2_napi` 是本仓库自有代码（仅 libgit2 库本身第三方），方向：native 侧加取消标志（导出 `cancel` 类方法置位，在 `transfer_progress` / 认证等回调里检查并返回非 0 让 libgit2 中止），Promise 以「已取消」错误 reject；`GitImportService` 既有失败清理与启动恢复标记直接复用，取消后 `__importing` 目录清理干净、不登记不切库；弹窗侧忙碌中「取消」转为「取消导入」，Esc / 返回仍维持锁定。fetch / push 是否共用同一取消机制排期时定。分配 [v1.69](releases/v1.69/需求文档.md)（2026-11-15 用户指定实现） |
 | GitHub 单向拉取（zipball 导入） | 高 | S | 网络 + 解压 | ✗ 已放弃，改动会被覆盖 |
 | GitHub 双向同步（isomorphic-git） | 高 | M–L | Web 组件 + fs 桥接 | Native 经验证不可行时的备选；已有实现与验证保留 |

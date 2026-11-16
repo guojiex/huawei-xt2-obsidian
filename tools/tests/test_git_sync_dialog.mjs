@@ -28,7 +28,13 @@ class GitSyncDialogHarness {
   ${method('  private startBusy(', '\n  private finishBusy()')}
   ${method('  private finishBusy(): void {', '\n  private setStep(')}
   ${method('  private setStep(', '\n  private showOperationFailure(')}
+  ${method('  private makePullOptions(', '\n  private canPull()')}
+  ${method('  private canPull(): boolean {', '\n  private async runPullAction()')}
+  ${method('  private async runPullAction(): Promise<void> {', '\n  private showPullFailure(error')}
+  ${method('  private showPullFailure(error: Error | Object): void {', '\n  private async runPrimaryAction()')}
   ${method('  private async runPrimaryAction(): Promise<void> {', '\n  private canPush()')}
+  ${method('  private retryActionLabel(): string {', '\n  private retryActionEnabled()')}
+  ${method('  private retryFailedOperation(): void {', '\n  private dismissResult()')}
   ${method('  private dismissResult(): void {', '\n  @Builder')}
 }
 module.exports = GitSyncDialogHarness;
@@ -39,12 +45,14 @@ function createHarness(state = {}, action = async () => 'pushed') {
   const actionOptions = [];
   const registry = {
     currentId: () => 'repo',
+    vaultDirOf: () => '/vaults/repo',
     recordGitSync: () => {}
   };
   const module = { exports: {} };
   vm.runInNewContext(methodCode, {
     module,
     exports: module.exports,
+    applyRemoteAuth: () => {},
     VaultRegistry: { get: () => registry },
     GitNativeService: {
       action: async (options) => {
@@ -66,8 +74,11 @@ function createHarness(state = {}, action = async () => 'pushed') {
     syncIncludesCommit: false,
     pushBranch: 'phone/notes',
     trackingBranch: '',
+    remoteLabel: '',
+    authUsername: '',
     result: 'none',
     onBusyChange: () => {},
+    onPulled: () => {},
     findVaultEntry: () => ({ id: 'repo', type: 'git' }),
     effectiveToken: () => '',
     isGitHubRemote: () => true,
@@ -178,4 +189,101 @@ test('blank commit messages use the generated default', async () => {
   assert.deepEqual(calls, ['stage', 'commit', 'push']);
   const commit = actionOptions.find((options) => options.operation === 'commit');
   assert.equal(commit.message, '更新 1 个文件（曜石笔记）');
+});
+
+test('pull requires a tracking branch, ready status and a clean worktree', () => {
+  assert.equal(createHarness().dialog.canPull(), false);
+  assert.equal(createHarness({ trackingBranch: 'main' }).dialog.canPull(), true);
+  assert.equal(createHarness({
+    trackingBranch: 'main',
+    statusEntryCount: 1
+  }).dialog.canPull(), false);
+  assert.equal(createHarness({
+    trackingBranch: 'main',
+    statusReady: false
+  }).dialog.canPull(), false);
+});
+
+test('fast-forward pull fetches the tracking branch and refreshes the workspace', async () => {
+  const pulledEvents = [];
+  const { dialog, calls, actionOptions } = createHarness({
+    trackingBranch: 'main',
+    onPulled: () => { pulledEvents.push('pulled'); }
+  }, async (options) => {
+    assert.equal(options.operation, 'pull');
+    return 'fast-forwarded';
+  });
+
+  await dialog.runPullAction();
+  assert.deepEqual(calls, ['pull']);
+  assert.deepEqual(pulledEvents, ['pulled']);
+  const pullOptions = actionOptions.find((options) => options.operation === 'pull');
+  assert.equal(pullOptions.targetBranch, 'main');
+  assert.equal(dialog.result, 'success');
+  assert.equal(dialog.resultTitle, '已拉取远端更新');
+  assert.equal(dialog.pulling, false);
+  assert.equal(dialog.busy, false);
+});
+
+test('up-to-date pull keeps the dialog open without the pulled refresh', async () => {
+  const pulledEvents = [];
+  const { dialog, calls } = createHarness({
+    trackingBranch: 'main',
+    onPulled: () => { pulledEvents.push('pulled'); }
+  }, async () => 'up-to-date');
+
+  await dialog.runPullAction();
+  assert.deepEqual(calls, ['pull']);
+  assert.deepEqual(pulledEvents, []);
+  assert.equal(dialog.result, 'none');
+  assert.equal(dialog.statusMessage.includes('已是最新'), true);
+});
+
+test('pull with local changes never starts the native operation', async () => {
+  const { dialog, calls } = createHarness({
+    trackingBranch: 'main',
+    statusEntryCount: 2
+  });
+
+  await dialog.runPullAction();
+  assert.deepEqual(calls, []);
+});
+
+test('pull failures are classified by the native error keywords', () => {
+  const local = createHarness({ trackingBranch: 'main' }).dialog;
+  local.showPullFailure(new Error('libgit2 pull failed (code -1): 工作区还有未提交更改，请先暂存并提交'));
+  assert.equal(local.result, 'local');
+  assert.equal(local.retryAction, 'pull');
+  assert.equal(local.resultTitle, '本地有未提交更改');
+
+  const stale = createHarness({ trackingBranch: 'main' }).dialog;
+  stale.showPullFailure(new Error('libgit2 pull failed (code -1): 本地有未推送提交，拒绝合并；请先推送到远端或交由 PC 处理'));
+  assert.equal(stale.result, 'stale');
+  assert.equal(stale.retryAction, 'pull');
+  assert.equal(stale.resultTitle, '本地有未推送提交');
+
+  const auth = createHarness({ trackingBranch: 'main' }).dialog;
+  auth.showPullFailure(new Error('libgit2 pull failed (code -1): request failed with status code: 401'));
+  assert.equal(auth.result, 'auth');
+  assert.equal(auth.requiresNewToken, true);
+  assert.equal(auth.credentialEditorOpen, true);
+  assert.equal(auth.retryActionLabel(), '验证并重试拉取');
+
+  const network = createHarness({ trackingBranch: 'main' }).dialog;
+  network.showPullFailure(new Error('libgit2 pull failed (code -1): failed to connect to host'));
+  assert.equal(network.result, 'network');
+  assert.equal(network.retryActionLabel(), '重试拉取');
+});
+
+test('retrying a failed pull goes back to the pull flow', async () => {
+  const { dialog, calls } = createHarness({
+    trackingBranch: 'main',
+    result: 'network',
+    retryAction: 'pull'
+  }, async () => 'fast-forwarded');
+
+  dialog.retryFailedOperation();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(calls, ['pull']);
+  assert.equal(dialog.result, 'success');
 });

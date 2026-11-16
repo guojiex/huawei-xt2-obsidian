@@ -118,6 +118,12 @@ export struct VaultSidebar {
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
   /** 回收站永久删除回调（父级拉确认弹窗）。 */
   onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
+  /** v1.71 树内拖拽移动：drop 到目录行 / 树根空白时回调，移动全链执行在父级（Index）。 */
+  onDragMovePath: (relPath: string, isDir: boolean, destDir: string) => void =
+    (relPath: string, isDir: boolean, destDir: string) => {};
+  /** v1.71 拖拽会话开始 / 结束：父级据此启用正文栏「拖进打开」落点。侧栏只透传。 */
+  onTreeDragStart: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
+  onTreeDragEnd: () => void = () => {};
 
   /** 文件树排序模式（v1.49）：App 级偏好，本组件持有并下传 FileTreeView。 */
   @State sortMode: FileListSortMode = 'name';
@@ -699,7 +705,14 @@ export struct VaultSidebar {
             onSharePath: (relPath: string, isDir: boolean): void => { this.onSharePath(relPath, isDir); },
             onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); },
             onRestoreTrash: (relPath: string): void => { this.onRestoreTrash(relPath); },
-            onPurgeTrash: (relPath: string): void => { this.onPurgeTrash(relPath); }
+            onPurgeTrash: (relPath: string): void => { this.onPurgeTrash(relPath); },
+            onDragMovePath: (relPath: string, isDir: boolean, destDir: string): void => {
+              this.onDragMovePath(relPath, isDir, destDir);
+            },
+            onTreeDragStart: (relPath: string, isDir: boolean): void => {
+              this.onTreeDragStart(relPath, isDir);
+            },
+            onTreeDragEnd: (): void => { this.onTreeDragEnd(); }
           })
             .width('100%')
             .height('100%')

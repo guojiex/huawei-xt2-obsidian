@@ -153,6 +153,10 @@ static bool has_parent_segment(const char *path);
 static bool is_trash_path(const char *path);
 static int stage_all(git_repository *repository);
 static int create_commit(git_repository *repository, git_operation_work_t *work);
+static int check_workdir_clean(git_repository *repository,
+                               git_operation_work_t *work);
+static int pull_target_branch(git_repository *repository,
+                              git_operation_work_t *work);
 
 static void initialize_libgit2(void) { g_init_result = git_libgit2_init(); }
 
@@ -353,6 +357,40 @@ static int configure_remote_auth(git_operation_work_t *work, const char *url,
   return 0;
 }
 
+// 工作区干净检查（.trash 条目忽略）：返回 0 = 干净，1 = 有未提交更改（已写错误文本），-1 = 其他错误。
+static int check_workdir_clean(git_repository *repository,
+                               git_operation_work_t *work) {
+  git_status_options status_options;
+  git_status_list *status = NULL;
+  if (git_status_options_init(&status_options, GIT_STATUS_OPTIONS_VERSION) < 0 ||
+      git_status_list_new(&status, repository, &status_options) < 0) {
+    git_status_list_free(status);
+    return -1;
+  }
+  int state = 0;
+  for (size_t i = 0; i < git_status_list_entrycount(status); i++) {
+    const git_status_entry *entry = git_status_byindex(status, i);
+    const char *path = NULL;
+    if (entry != NULL && entry->index_to_workdir != NULL) {
+      path = entry->index_to_workdir->new_file.path != NULL
+                 ? entry->index_to_workdir->new_file.path
+                 : entry->index_to_workdir->old_file.path;
+    }
+    if (path == NULL && entry != NULL && entry->head_to_index != NULL) {
+      path = entry->head_to_index->new_file.path != NULL
+                 ? entry->head_to_index->new_file.path
+                 : entry->head_to_index->old_file.path;
+    }
+    if (!is_trash_path(path)) {
+      work->error_message = strdup("工作区还有未提交更改，请先暂存并提交");
+      state = 1;
+      break;
+    }
+  }
+  git_status_list_free(status);
+  return state;
+}
+
 static int fetch_target_branch(git_remote *remote, git_operation_work_t *work,
                                const git_remote_callbacks *callbacks,
                                const git_strarray *headers) {
@@ -447,35 +485,11 @@ static int push_target_branch(git_repository *repository, git_remote *remote,
   }
   local_refname = git_reference_name(head);
 
-  git_status_options status_options;
-  git_status_list *status = NULL;
-  if (git_status_options_init(&status_options, GIT_STATUS_OPTIONS_VERSION) < 0 ||
-      git_status_list_new(&status, repository, &status_options) < 0) {
-    git_status_list_free(status);
+  const int clean_state = check_workdir_clean(repository, work);
+  if (clean_state != 0) {
     result = -1;
     goto cleanup;
   }
-  for (size_t i = 0; i < git_status_list_entrycount(status); i++) {
-    const git_status_entry *entry = git_status_byindex(status, i);
-    const char *path = NULL;
-    if (entry != NULL && entry->index_to_workdir != NULL) {
-      path = entry->index_to_workdir->new_file.path != NULL
-                 ? entry->index_to_workdir->new_file.path
-                 : entry->index_to_workdir->old_file.path;
-    }
-    if (path == NULL && entry != NULL && entry->head_to_index != NULL) {
-      path = entry->head_to_index->new_file.path != NULL
-                 ? entry->head_to_index->new_file.path
-                 : entry->head_to_index->old_file.path;
-    }
-    if (!is_trash_path(path)) {
-      git_status_list_free(status);
-      work->error_message = strdup("工作区还有未提交更改，请先暂存并提交");
-      result = -1;
-      goto cleanup;
-    }
-  }
-  git_status_list_free(status);
 
   char tracking_name[MAX_ARGUMENT_BYTES + 24];
   char target_refname[MAX_ARGUMENT_BYTES + 12];
@@ -563,6 +577,98 @@ cleanup:
   return result;
 }
 
+static int pull_target_branch(git_repository *repository,
+                              git_operation_work_t *work) {
+  git_reference *head = NULL;
+  git_reference *local_branch = NULL;
+  git_reference *tracking = NULL;
+  git_object *target = NULL;
+  git_oid local_oid;
+  git_oid remote_oid;
+  size_t ahead = 0;
+  size_t behind = 0;
+  int result = -1;
+
+  char local_refname[MAX_ARGUMENT_BYTES + 12];
+  char tracking_name[MAX_ARGUMENT_BYTES + 24];
+  const int local_refname_length = snprintf(local_refname, sizeof(local_refname),
+                                            "refs/heads/%s", work->target_branch);
+  const int tracking_name_length = snprintf(tracking_name, sizeof(tracking_name),
+                                            "refs/remotes/origin/%s", work->target_branch);
+  if (local_refname_length < 0 || (size_t)local_refname_length >= sizeof(local_refname) ||
+      tracking_name_length < 0 || (size_t)tracking_name_length >= sizeof(tracking_name)) {
+    goto cleanup;
+  }
+
+  if (git_repository_head(&head, repository) < 0) {
+    goto cleanup;
+  }
+  if (git_reference_name(head) == NULL ||
+      strcmp(git_reference_name(head), local_refname) != 0) {
+    work->error_message = strdup("当前分支与目标分支不一致，请先切换到目标分支再拉取");
+    goto cleanup;
+  }
+  if (git_reference_name_to_id(&local_oid, repository, local_refname) < 0) {
+    goto cleanup;
+  }
+  if (!work->remote_branch_exists) {
+    work->error_message = strdup("远端没有目标分支，没有可拉取的内容");
+    goto cleanup;
+  }
+  if (git_reference_lookup(&tracking, repository, tracking_name) < 0 ||
+      git_reference_target(tracking) == NULL) {
+    goto cleanup;
+  }
+  remote_oid = *git_reference_target(tracking);
+
+  const int clean_state = check_workdir_clean(repository, work);
+  if (clean_state != 0) {
+    goto cleanup;
+  }
+
+  if (git_graph_ahead_behind(&ahead, &behind, repository, &local_oid,
+                             &remote_oid) < 0) {
+    goto cleanup;
+  }
+  if (ahead > 0) {
+    work->error_message = strdup("本地有未推送提交，拒绝合并；请先推送到远端或交由 PC 处理");
+    goto cleanup;
+  }
+  if (behind == 0) {
+    work->result_text = strdup("up-to-date");
+    result = work->result_text != NULL ? 0 : -1;
+    goto cleanup;
+  }
+
+  if (git_object_lookup(&target, repository, &remote_oid, GIT_OBJECT_ANY) < 0) {
+    goto cleanup;
+  }
+  git_checkout_options checkout_options;
+  if (git_checkout_options_init(&checkout_options, GIT_CHECKOUT_OPTIONS_VERSION) < 0) {
+    goto cleanup;
+  }
+  checkout_options.checkout_strategy = GIT_CHECKOUT_SAFE;
+  if (git_checkout_tree(repository, target, &checkout_options) < 0) {
+    goto cleanup;
+  }
+  if (git_reference_set_target(&local_branch, head, &remote_oid,
+                               "pull: fast-forward") < 0) {
+    goto cleanup;
+  }
+  work->result_text = strdup("fast-forwarded");
+  result = work->result_text != NULL ? 0 : -1;
+
+cleanup:
+  if (result < 0 && work->error_message == NULL) {
+    capture_operation_error(work, result);
+  }
+  git_reference_free(local_branch);
+  git_object_free(target);
+  git_reference_free(tracking);
+  git_reference_free(head);
+  return result;
+}
+
 static void free_git_operation(git_operation_work_t *work) {
   free(work->operation);
   free(work->repository_path);
@@ -605,7 +711,8 @@ static void execute_git_operation(napi_env env, void *data) {
   } else if (strcmp(work->operation, "commit") == 0) {
     result = create_commit(repository, work);
   } else if (strcmp(work->operation, "fetch") == 0 ||
-             strcmp(work->operation, "push") == 0) {
+             strcmp(work->operation, "push") == 0 ||
+             strcmp(work->operation, "pull") == 0) {
     if (git_remote_lookup(&remote, repository, "origin") < 0) {
       result = -1;
       goto operation_failed;
@@ -643,6 +750,10 @@ static void execute_git_operation(napi_env env, void *data) {
       work->progress_phase = PROGRESS_PHASE_PUSH;
       emit_operation_phase(work, PROGRESS_PHASE_PUSH);
       result = push_target_branch(repository, remote, work, &callbacks, &headers);
+    } else if (result == 0 && strcmp(work->operation, "pull") == 0) {
+      free(work->result_text);
+      work->result_text = NULL;
+      result = pull_target_branch(repository, work);
     }
   } else {
     work->error_message = strdup("unsupported Git operation");
@@ -772,7 +883,8 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
       (bearer_status == PROPERTY_PRESENT &&
        (work->bearer_token[0] == '\0' || username_status == PROPERTY_PRESENT)) ||
       (strcmp(work->operation, "stage") != 0 && strcmp(work->operation, "commit") != 0 &&
-       strcmp(work->operation, "fetch") != 0 && strcmp(work->operation, "push") != 0)) {
+       strcmp(work->operation, "fetch") != 0 && strcmp(work->operation, "push") != 0 &&
+       strcmp(work->operation, "pull") != 0)) {
     free_git_operation(work);
     return throw_type_error(env, "invalid Git operation options");
   }

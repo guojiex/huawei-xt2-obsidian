@@ -162,6 +162,8 @@ import { BlockToolbarAction, PreviewBlockToolbarAnchor } from '../components/Pre
 const DOMAIN: number = 0x0000;
 const TAG: string = 'Index';
 const EXTERNAL_VAULT_POLL_MS: number = 5000;
+/** v1.71：文件树拖拽 payload 的 MIME（与 FileTreeView / AgentWorkspace 同族定义，不跨文件 import）。 */
+const NOTE_REF_MIME: string = 'ApplicationDefinedType';
 /** 控制 Git 导入与同步入口；远端链接分享保持可用。 */
 const GIT_ENTRY_UI_ENABLED: boolean = true;
 /**
@@ -553,6 +555,20 @@ struct Index {
    * 需要树展开到可见的目标路径。建完笔记置位 → 树展开它的父目录 → 立刻看得见。
    */
   @State revealPath: string = '';
+  /** v1.71 正文栏拖拽悬停高亮（'left' / 'right' / ''，71.2 drop 前栏高亮）。 */
+  @State paneDropOver: string = '';
+  /** v1.71 主树拖拽会话源：onTreeDragStart 记录，onTreeDragEnd 清空；只供事件回调读取。 */
+  private treeDragPath: string = '';
+  private treeDragIsDir: boolean = false;
+  /**
+   * v1.71 修复（API26 模拟器实测 2026-11-16）：ArkWeb 原生接管栏内拖放（chromium
+   * allow_op=-1 全拒），栏根级 onDrop 收不到 Web 区域事件（AceDrag 实测日志：落点
+   * "TargetNode is Web"）。拖拽会话期间两栏挂全尺寸透明护盾层（容器 Stack 末位 =
+   * z 序最高，抢先命中测试），替栏根接管 Web 区域的 enter/leave/drop；会话外不挂载，
+   * Web 交互零影响。@State 驱动 onTreeDragStart/End 中途挂载（拖拽悬停目标按指针
+   * 移动动态重算，中途挂载可被后续悬停事件发现）。
+   */
+  @State treeDragActive: boolean = false;
   /** 回收站视图重扫信号（删除 / 恢复 / 撤销后 +1，TrashView 重 list） */
   @State trashSeq: number = 0;
   /**
@@ -2805,7 +2821,8 @@ struct Index {
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
         onBusyChange: (busy: boolean): void => { this.gitSyncBusy = busy; },
-        onDismiss: restoreFocus
+        onDismiss: restoreFocus,
+        onPulled: (): void => { void this.refreshWorkspaceAfterPull(); }
       }),
       cancel: (): void => {
         if (!this.gitSyncBusy) {
@@ -3827,6 +3844,20 @@ struct Index {
         await this.readRightAndPush(rightPath);
       }
     }
+  }
+
+  /**
+   * Git 拉取快进合并后刷新工作区（v1.73）：全文索引对账失效（下次搜索 hash 对账自愈）、
+   * 刷新文件树与双链、重读打开栏（复用 xiaoyi 外部变更链路，跳过未保存栏）。
+   */
+  private async refreshWorkspaceAfterPull(): Promise<void> {
+    const vaultId: string = this.currentVaultId;
+    if (vaultId.length === 0) {
+      return;
+    }
+    FullTextSearchService.invalidateReconcile(vaultId);
+    this.refreshFileTree();
+    await this.refreshWorkspaceAfterXiaoyi();
   }
 
   private resetSaveFeedback(): void {
@@ -6815,14 +6846,17 @@ struct Index {
     }
   }
 
-  /** 移动文件/目录到目标目录；revealPath 展开新位置的父目录，移完立刻看得见 */
-  private async doMovePath(relPath: string, isDir: boolean, destDir: string): Promise<void> {
+  /**
+   * 移动文件/目录到目标目录；revealPath 展开新位置的父目录，移完立刻看得见。
+   * v1.71 起返回实际落地路径：'' = 失败 / 前置拦截；等于原路径 = no-op（目标即当前位置）。
+   */
+  private async doMovePath(relPath: string, isDir: boolean, destDir: string): Promise<string> {
     if (this.currentVaultId.length === 0) {
-      return;
+      return '';
     }
     try {
       if (!await this.flushWorkspaceSaves()) {
-        return;
+        return '';
       }
       const previousCurrent: string = this.currentFilePath;
       const mutation: NotePathMutationResult = await NoteService.movePath(VaultRegistry.get(),
@@ -6843,8 +6877,70 @@ struct Index {
         await this.updatePreviewFromEditor(true);
       }
       this.showReferenceUpdateFailures(mutation.referenceUpdates);
+      return mutation.path;
     } catch (error) {
       this.toastRegistryError('移动失败', error, 'file', 'move');
+      return '';
+    }
+  }
+
+  /**
+   * v1.71 拖拽移动的完成反馈（71.3）：目标重名沿用加后缀不覆盖策略，toast 点名实际新路径；
+   * no-op（拖回原目录）与失败不提示。「移动」对话框路径保持原静默行为（reveal 已可见）。
+   */
+  private async doDragMovePath(relPath: string, isDir: boolean, destDir: string): Promise<void> {
+    const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
+    const expected: string = destDir.length > 0 ? destDir + '/' + name : name;
+    const actual: string = await this.doMovePath(relPath, isDir, destDir);
+    if (actual.length === 0 || actual === relPath) {
+      return;
+    }
+    promptAction.showToast({
+      message: actual === expected ? '已移动到「' + actual + '」' : '目标已有同名，已移动为「' + actual + '」'
+    });
+  }
+
+  /** v1.71 主树拖起时记录会话源（71.2）：仅笔记进栏打开，文件夹拖拽不启用栏落点。 */
+  private onTreeDragStart(relPath: string, isDir: boolean): void {
+    this.treeDragPath = relPath;
+    this.treeDragIsDir = isDir;
+    this.treeDragActive = true;
+  }
+
+  private onTreeDragEnd(): void {
+    this.treeDragPath = '';
+    this.treeDragIsDir = false;
+    this.paneDropOver = '';
+    this.treeDragActive = false;
+  }
+
+  /** v1.71 栏落点门槛（71.2 / 71.3）：拖的是笔记、双栏布局、目标栏可见才响应；单屏不响应栏落点。 */
+  private paneAcceptsTreeNoteDrag(pane: string): boolean {
+    if (this.treeDragPath.length === 0 || this.treeDragIsDir || this.isSingleScreenLayout()) {
+      return false;
+    }
+    return this.notePaneVisible(pane);
+  }
+
+  private onPaneDragEnter(pane: string): void {
+    if (this.paneAcceptsTreeNoteDrag(pane)) {
+      this.paneDropOver = pane;
+    }
+  }
+
+  private onPaneDragLeave(pane: string): void {
+    if (this.paneDropOver === pane) {
+      this.paneDropOver = '';
+    }
+  }
+
+  /** v1.71 drop 到正文栏 = 在该栏打开这篇笔记（71.2），复用既有栏打开链路并归还焦点。 */
+  private onPaneDrop(pane: string): void {
+    const relPath: string = this.treeDragPath;
+    const accept: boolean = this.paneAcceptsTreeNoteDrag(pane);
+    this.paneDropOver = '';
+    if (accept && relPath.length > 0) {
+      this.onSelectFile(relPath, pane, true);
     }
   }
 
@@ -8343,7 +8439,12 @@ struct Index {
       onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
       onSidebarTabChange: (tab: string): void => { this.setSidebarTab(tab); },
       onSelectChapter: (index: number): void => { this.selectChapter(index); },
-      onOpenOtherPane: (relPath: string): void => { this.openFileInOtherPane(relPath); }
+      onOpenOtherPane: (relPath: string): void => { this.openFileInOtherPane(relPath); },
+      onTreeDragStart: (relPath: string, isDir: boolean): void => { this.onTreeDragStart(relPath, isDir); },
+      onTreeDragEnd: (): void => { this.onTreeDragEnd(); },
+      onDragMovePath: (relPath: string, isDir: boolean, destDir: string): void => {
+        void this.doDragMovePath(relPath, isDir, destDir);
+      }
     })
   }
 
@@ -8372,11 +8473,31 @@ struct Index {
           .backgroundColor($r('app.color.brand'))
           .hitTestBehavior(HitTestMode.None)
       }
+
+      // v1.71 修复：左栏拖拽护盾（见 treeDragActive 声明处注释）——根 Stack 末位、
+      // 会话期间全尺寸透明，替栏根接管编辑器/预览 Web 区域的落点。
+      if (this.treeDragActive) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(Color.Transparent)
+          .allowDrop([NOTE_REF_MIME])
+          .onDragEnter((event: DragEvent): void => { this.onPaneDragEnter('left'); })
+          .onDragLeave((event: DragEvent): void => { this.onPaneDragLeave('left'); })
+          .onDrop((event: DragEvent): void => { this.onPaneDrop('left'); })
+      }
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('app.color.bg_card'))
     .onClick((): void => { this.setActivePane('left', true); })
+    // v1.71 拖笔记进栏打开（71.2）：左栏根作为 drop 目标，悬停高亮由 paneAcceptsTreeNoteDrag
+    // 门控（单屏 / 文件夹拖拽 / 会话外不响应）。边框常驻只换色，避免高亮出现时布局位移。
+    .allowDrop([NOTE_REF_MIME])
+    .onDragEnter((event: DragEvent): void => { this.onPaneDragEnter('left'); })
+    .onDragLeave((event: DragEvent): void => { this.onPaneDragLeave('left'); })
+    .onDrop((event: DragEvent): void => { this.onPaneDrop('left'); })
+    .border({ width: 1, color: this.paneDropOver === 'left' ? $r('app.color.brand') : Color.Transparent })
   }
 
   /**
@@ -8790,6 +8911,19 @@ struct Index {
           if (this.rightFilePath.length === 0) {
             this.EmptyPane('right')
           }
+
+          // v1.71 修复：右栏拖拽护盾（见 treeDragActive 声明处注释）——Web 容器
+          // Stack 末位、会话期间全尺寸透明，抢先接管 ArkWeb 的栏内落点。
+          if (this.treeDragActive) {
+            Column()
+              .width('100%')
+              .height('100%')
+              .backgroundColor(Color.Transparent)
+              .allowDrop([NOTE_REF_MIME])
+              .onDragEnter((event: DragEvent): void => { this.onPaneDragEnter('right'); })
+              .onDragLeave((event: DragEvent): void => { this.onPaneDragLeave('right'); })
+              .onDrop((event: DragEvent): void => { this.onPaneDrop('right'); })
+          }
         }
         .width('100%')
         .height('100%')
@@ -8808,6 +8942,12 @@ struct Index {
       this.recordFormatPaneArea('right', newArea);
     })
     .onClick((): void => { this.setActivePane('right', true); })
+    // v1.71 拖笔记进栏打开（71.2）：右栏根作为 drop 目标，与左栏同款门控与高亮。
+    .allowDrop([NOTE_REF_MIME])
+    .onDragEnter((event: DragEvent): void => { this.onPaneDragEnter('right'); })
+    .onDragLeave((event: DragEvent): void => { this.onPaneDragLeave('right'); })
+    .onDrop((event: DragEvent): void => { this.onPaneDrop('right'); })
+    .border({ width: 1, color: this.paneDropOver === 'right' ? $r('app.color.brand') : Color.Transparent })
   }
 
   /**
