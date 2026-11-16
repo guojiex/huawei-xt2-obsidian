@@ -88,6 +88,60 @@ export struct FormulaPreviewWeb {
   }
 }
 
+/**
+ * 回收站条目只读预览（v1.74 74.2）：弹窗内渲染已删笔记的 Markdown。
+ * 仿 FormulaPreviewWeb 的最小形态——不注册 __arkts 代理（图片附件不解析，
+ * 见 v1.74 §4「明确不做」）、只读 setContent、主题随 appTheme。
+ */
+@Component
+export struct TrashPreviewWeb {
+  @Prop @Watch('onPreviewSourceChanged') markdown: string = '';
+  @StorageProp('appTheme') @Watch('onPreviewSourceChanged') appTheme: string = 'light';
+  private controller: webview.WebviewController = new webview.WebviewController();
+  private pageReady: boolean = false;
+  private failureReported: boolean = false;
+
+  private onPreviewSourceChanged(): void {
+    this.updateTrashPreview();
+  }
+
+  private updateTrashPreview(): void {
+    if (!this.pageReady) {
+      return;
+    }
+    const payload: string = BridgeCodec.encode(this.markdown);
+    const theme: string = this.appTheme === 'dark' ? 'dark' : 'light';
+    const script: string = `window.__mdpreview.setTheme('${theme}');` +
+      'window.__mdpreview.setPreviewZoomControlsVisible(false);' +
+      `window.__mdpreview.setContent('${payload}','${payload}','');`;
+    void this.controller.runJavaScript(script).then((): void => {
+      this.failureReported = false;
+    }).catch((): void => {
+      if (!this.failureReported) {
+        this.failureReported = true;
+        hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '回收站预览更新失败');
+      }
+    });
+  }
+
+  build() {
+    Web({ src: $rawfile('mdpreview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+      .width('100%')
+      .height('100%')
+      .onPageEnd((): void => {
+        this.pageReady = true;
+        this.updateTrashPreview();
+      })
+      .onConsole((): boolean => true)
+      .onErrorReceive((): void => {
+        if (!this.failureReported) {
+          this.failureReported = true;
+          hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '回收站预览加载失败');
+        }
+      })
+  }
+}
+
 export interface PreviewBlockInlineItem {
   index: number;
   type: string;

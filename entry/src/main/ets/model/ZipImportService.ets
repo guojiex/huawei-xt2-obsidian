@@ -10,6 +10,9 @@
  *   非 0/8 压缩方法、symlink 模式位、ZIP64 标记、条目数与解压大小上限；
  * - 隐藏条目（任意路径段以 `.` 开头，含 `.git/`、`.trash/`）静默跳过不计数；
  *   非隐藏的未识别文件计入 skippedCount，完成后向用户报告（36.4）；
+ * - v1.72 方案 B：库导入默认捕获 yaoshi-mtime.json 时间表候选（不进 entries、
+ *   不计数）；extract 在 preserveMtime 开启时优先按表恢复 mtime，
+ *   表缺失 / 损坏逐条回落 central directory 的 DOS 时间；
  * - 写入只经注入的 writer 端口落到未登记的临时库目录，登记与清理由
  *   VaultRegistry / 调用方负责（36.6）；本类不做任何登记操作；
  * - 错误统一为 ZipImportError（kind 分类），失败文案映射放 ImportVaultDialog；
@@ -40,6 +43,8 @@ export interface ZipParsed {
   topFolder: string;
   /** 待写条目的解压后总字节数（空间预检用）。 */
   totalUncompressed: number;
+  /** v1.72 方案 B：yaoshi-mtime.json 候选条目（readMtimeManifest 开启且命中；否则 null）。不进 entries、不计数。 */
+  manifestCandidate?: ZipParsedEntry | null;
 }
 
 /** 安全上限（36.5：定值写入需求文档 §6）。 */
@@ -79,6 +84,8 @@ export interface ZipParseProfile {
   allowHiddenEntries: boolean;
   acceptAllFiles: boolean;
   requireMarkdown: boolean;
+  /** v1.72 方案 B：捕获 yaoshi-mtime.json 时间表候选；库导入默认开，应用备份恢复不开。 */
+  readMtimeManifest?: boolean;
 }
 
 /** 系统选择器选中结果；用户取消由调用方返回 null 表达。 */
@@ -137,6 +144,17 @@ export class ZipImportError extends Error {
   }
 }
 
+/** yaoshi-mtime.json 宽松解析模型：JSON.parse 一次性转换后逐字段验证（v1.72 方案 B）。 */
+interface MtimeManifestRaw {
+  version: number;
+  files: MtimeManifestFileRaw[];
+}
+
+interface MtimeManifestFileRaw {
+  path: string;
+  mtimeMs: number;
+}
+
 export class ZipImportService {
   /** 默认上限（512MB 总量 / 单文件 64MB / 5000 条目，v1.36 §6 定值）。 */
   static readonly DEFAULT_LIMITS: ZipImportLimits = {
@@ -145,6 +163,17 @@ export class ZipImportService {
     maxSingleUncompressed: 64 * 1024 * 1024,
     maxNameBytes: 1024
   };
+
+  /** v1.72 方案 B：随 ZIP 写入的 mtime 时间表文件（payload 根、普通文件名，确保 compressFile 收录）。 */
+  static readonly MTIME_MANIFEST_NAME: string = 'yaoshi-mtime.json';
+  /** 时间表格式版本；不匹配的整表忽略。 */
+  static readonly MTIME_MANIFEST_VERSION: number = 1;
+  /** 单表解压字节上限：超表忽略，回落 DOS 时间。 */
+  private static readonly MTIME_MANIFEST_MAX_BYTES: number = 8 * 1024 * 1024;
+  /** 单条 mtime 上限（2100-01-01，Epoch 毫秒），防御异常远未来值。 */
+  private static readonly MTIME_MANIFEST_MAX_MS: number = 4102444800000;
+  /** 单条路径字符上限，与 ZIP 条目名上限同量级。 */
+  private static readonly MTIME_MANIFEST_MAX_PATH: number = 1024;
 
   private static readonly EOCD_SIGNATURE: number = 0x06054b50;
   private static readonly CENTRAL_SIGNATURE: number = 0x02014b50;
@@ -166,7 +195,8 @@ export class ZipImportService {
     const activeProfile: ZipParseProfile = profile ?? {
       allowHiddenEntries: false,
       acceptAllFiles: false,
-      requireMarkdown: true
+      requireMarkdown: true,
+      readMtimeManifest: true
     };
     const totalSize: number = await reader.size();
     const eocdOffset: number = await ZipImportService.locateEocd(reader, totalSize);
@@ -195,6 +225,7 @@ export class ZipImportService {
     let imageCount: number = 0;
     let skippedCount: number = 0;
     let totalUncompressed: number = 0;
+    let manifestCandidate: ZipParsedEntry | null = null;
     let cursor: number = 0;
     for (let index: number = 0; index < entryCount; index++) {
       if (cursor + ZipImportService.CENTRAL_HEADER_SIZE > central.length) {
@@ -276,6 +307,26 @@ export class ZipImportService {
         cursor = recordEnd;
         continue;
       }
+      // v1.72 方案 B：时间表候选静默捕获——不进 entries、不计数、不参与 topFolder 统计。
+      if (activeProfile.readMtimeManifest === true &&
+        (decoded === ZipImportService.MTIME_MANIFEST_NAME ||
+          decoded.endsWith('/' + ZipImportService.MTIME_MANIFEST_NAME))) {
+        if (manifestCandidate === null) {
+          const candidate: ZipParsedEntry = {
+            name: decoded,
+            kind: 'skip',
+            method: method,
+            compressedSize: compressedSize,
+            uncompressedSize: uncompressedSize,
+            localHeaderOffset: localHeaderOffset,
+            crc32: crc,
+            modifiedAtMs: 0
+          };
+          manifestCandidate = candidate;
+        }
+        cursor = recordEnd;
+        continue;
+      }
       const kind: string = activeProfile.acceptAllFiles ? 'file' : ZipImportService.classifyEntryName(decoded);
       if (kind === 'skip') {
         skippedCount++;
@@ -321,7 +372,8 @@ export class ZipImportService {
       imageCount: imageCount,
       skippedCount: skippedCount,
       topFolder: topFolder,
-      totalUncompressed: totalUncompressed
+      totalUncompressed: totalUncompressed,
+      manifestCandidate: manifestCandidate
     };
     return parsed;
   }
@@ -340,6 +392,10 @@ export class ZipImportService {
       }
     }
     const totalSize: number = await reader.size();
+    // v1.72 方案 B：先读 yaoshi-mtime.json 时间表（尽力而为）；命中条目用其 mtime，否则回落 DOS。
+    const mtimeOverrides: Map<string, number> = hooks.preserveMtime === true
+      ? await ZipImportService.readMtimeOverrides(reader, inflate, parsed)
+      : new Map<string, number>();
     let done: number = 0;
     for (let index: number = 0; index < targets.length; index++) {
       const entry: ZipParsedEntry = targets[index];
@@ -374,8 +430,9 @@ export class ZipImportService {
         throw new ZipImportError('corrupt', 'ZIP 数据损坏');
       }
       await writer.writeFile(entry.name, content);
-      if (hooks.preserveMtime === true && entry.modifiedAtMs > 0 && writer.setModifiedTime !== undefined) {
-        writer.setModifiedTime(entry.name, entry.modifiedAtMs);
+      const restoredMtime: number = mtimeOverrides.get(entry.name) ?? entry.modifiedAtMs;
+      if (hooks.preserveMtime === true && restoredMtime > 0 && writer.setModifiedTime !== undefined) {
+        writer.setModifiedTime(entry.name, restoredMtime);
       }
       done++;
       if (hooks.onProgress !== undefined) {
@@ -383,6 +440,116 @@ export class ZipImportService {
       }
     }
     return done;
+  }
+
+  /**
+   * v1.72 方案 B（72.2）：读取 yaoshi-mtime.json 时间表为「条目名 → Epoch 毫秒」映射。
+   * 尽力而为：候选缺失 / 超大小 / 本地头不一致 / 长度 / CRC / 解析 / 校验任一失败
+   * 都返回空表，逐条目回落 DOS 时间；失败不抛错、不影响导入内容。
+   */
+  private static async readMtimeOverrides(reader: ZipReaderPort, inflate: InflatePort,
+    parsed: ZipParsed): Promise<Map<string, number>> {
+    const overrides: Map<string, number> = new Map<string, number>();
+    const candidate: ZipParsedEntry | null = parsed.manifestCandidate ?? null;
+    if (candidate === null) {
+      return overrides;
+    }
+    if (candidate.uncompressedSize === 0 ||
+      candidate.uncompressedSize > ZipImportService.MTIME_MANIFEST_MAX_BYTES) {
+      return overrides;
+    }
+    try {
+      const totalSize: number = await reader.size();
+      const header: Uint8Array = await reader.readAt(candidate.localHeaderOffset,
+        ZipImportService.LOCAL_HEADER_SIZE);
+      if (ZipImportService.u32(header, 0) !== ZipImportService.LOCAL_SIGNATURE) {
+        return overrides;
+      }
+      const localNameLength: number = ZipImportService.u16(header, 26);
+      const localExtraLength: number = ZipImportService.u16(header, 28);
+      const dataOffset: number = candidate.localHeaderOffset +
+        ZipImportService.LOCAL_HEADER_SIZE + localNameLength + localExtraLength;
+      if (dataOffset + candidate.compressedSize > totalSize) {
+        return overrides;
+      }
+      let compressed: Uint8Array = new Uint8Array(0);
+      if (candidate.compressedSize > 0) {
+        compressed = await reader.readAt(dataOffset, candidate.compressedSize);
+      }
+      let content: Uint8Array;
+      if (candidate.method === 8) {
+        content = await inflate.inflateRaw(compressed, candidate.uncompressedSize);
+      } else {
+        content = compressed;
+      }
+      if (content.length !== candidate.uncompressedSize) {
+        return overrides;
+      }
+      if (ZipImportService.crc32(content) !== candidate.crc32) {
+        return overrides;
+      }
+      ZipImportService.applyMtimeManifest(ZipImportService.decodeUtf8(content),
+        parsed.topFolder, overrides);
+    } catch (error) {
+      // 时间表是尽力而为的元数据：任何失败回落 DOS 时间。
+    }
+    return overrides;
+  }
+
+  /** 解析并登记时间表；version 不符 / 结构非法整表忽略，单条非法仅跳过该条。 */
+  private static applyMtimeManifest(manifestText: string, topFolder: string,
+    overrides: Map<string, number>): void {
+    const raw: MtimeManifestRaw = JSON.parse(manifestText) as MtimeManifestRaw;
+    if (raw === null || typeof raw !== 'object' ||
+      raw.version !== ZipImportService.MTIME_MANIFEST_VERSION || !Array.isArray(raw.files)) {
+      return;
+    }
+    for (let index: number = 0; index < raw.files.length; index++) {
+      const item: MtimeManifestFileRaw = raw.files[index];
+      if (item === null) {
+        continue;
+      }
+      const path: string = item.path;
+      const mtimeMs: number = item.mtimeMs;
+      if (typeof path !== 'string' || typeof mtimeMs !== 'number' ||
+        !ZipImportService.isSafeManifestPath(path) ||
+        !(mtimeMs > 0) || mtimeMs > ZipImportService.MTIME_MANIFEST_MAX_MS) {
+        continue;
+      }
+      overrides.set(path, mtimeMs);
+      if (topFolder.length > 0) {
+        // 导入 ZIP 可能整体套一层顶层目录（topFolder）：补注册带前缀形态；
+        // 反之 manifest 路径自带前缀时补注册剥离形态，双向兜底。
+        overrides.set(topFolder + '/' + path, mtimeMs);
+        if (path.startsWith(topFolder + '/')) {
+          overrides.set(path.slice(topFolder.length + 1), mtimeMs);
+        }
+      }
+    }
+  }
+
+  /** 时间表内路径的字符串级校验：与 ZIP 条目名同一安全基线（36.5）。 */
+  private static isSafeManifestPath(path: string): boolean {
+    if (path.length === 0 || path.length > ZipImportService.MTIME_MANIFEST_MAX_PATH) {
+      return false;
+    }
+    if (path.startsWith('/') || path.indexOf('\\') >= 0 || path.indexOf(':') >= 0) {
+      return false;
+    }
+    const segments: string[] = path.split('/');
+    for (let index: number = 0; index < segments.length; index++) {
+      const segment: string = segments[index];
+      if (segment.length === 0 || segment === '.' || segment === '..') {
+        return false;
+      }
+      for (let charIndex: number = 0; charIndex < segment.length; charIndex++) {
+        const code: number = segment.charCodeAt(charIndex);
+        if (code < 0x20 || code === 0x7F) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   private static decodeDosTimestamp(dateBits: number, timeBits: number): number {

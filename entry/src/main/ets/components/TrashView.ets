@@ -23,6 +23,8 @@ export struct TrashView {
   onRestore: (relPath: string) => void = (relPath: string) => {};
   /** 「永久删除」回调（父级拉确认弹窗；确认后 TrashService.purge，不进撤销） */
   onPurge: (relPath: string) => void = (relPath: string) => {};
+  /** 「预览」回调（74.3：点行主体弹只读预览；父级读取内容并打开 TrashPreviewDialog） */
+  onPreview: (relPath: string) => void = (relPath: string) => {};
 
   @State items: TrashItem[] = [];
   @State expandedVaultIds: string[] = [];
@@ -132,6 +134,9 @@ export struct TrashView {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+      .focusable(true)
+      .accessibilityText('预览 ' + this.displayName(item))
+      .onClick((): void => { this.onPreview(item.relPath); })
       Row() {
         Icon('restore', 20, $r('app.color.brand'))
       }

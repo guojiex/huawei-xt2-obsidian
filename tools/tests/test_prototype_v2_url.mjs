@@ -515,8 +515,39 @@ test('permanent delete removes a real deleted note from the list and later resto
   f.run("restoreFile('reading_stream')"); // 已清除：恢复为无操作，不复活条目
   assert.equal(f.run("notes.some(n=>n.id==='reading_stream')"),false);
   assert(f.get('trashList').innerHTML.includes('回收站为空'));
-  assert.match(code,/if\(\$\('shareDialog'\)\.open\|\|\$\('fileActionDialog'\)\.open\|\|\$\('trashDialog'\)\.open\|\|\$\('trashDeleteDialog'\)\.open\)return;/);
-  assert(code.includes("'trashDeleteDialog','vaultActionDialog'")); // sheetDialogIds 注册
+  assert.match(code,/if\(\$\('shareDialog'\)\.open\|\|\$\('fileActionDialog'\)\.open\|\|\$\('trashDialog'\)\.open\|\|\$\('trashDeleteDialog'\)\.open\|\|\$\('trashPreviewDialog'\)\.open\)return;/);
+  assert(code.includes("'trashDeleteDialog','trashPreviewDialog','vaultActionDialog'")); // sheetDialogIds / MutationObserver 注册
+});
+
+test('trash row body opens a read-only preview dialog that leaves entry state unchanged on close',()=>{
+  const f=fixture();f.get('trashDemo').checked=true;f.get('trashDemo').onchange();
+  for(const id of ['trashList','trashItems']){const body=f.get(id).innerHTML.match(/<span[^>]*data-preview="demo-trash"[^>]*>/)[0];assert(body.includes('class="trash-copy"'));assert(body.includes('role="button"'));assert(body.includes('tabindex="0"'));assert(body.includes('aria-label="预览 2026 年第四季度产品规划会议纪要与后续行动项（草稿）"'));}
+  f.run("openTrashPreview('demo-trash')");
+  assert.equal(f.get('trashPreviewDialog').open,true);
+  assert(f.get('trashPreviewTitle').textContent.includes('2026 年第四季度产品规划会议纪要与后续行动项（草稿）'));
+  assert(f.get('trashPreviewOrigin').textContent.includes('原位置：阅读笔记 / 10_写作/会议记录/2026 第四季度'));
+  assert(f.get('trashPreviewBody').innerHTML.includes('2026 年第四季度产品规划会议纪要'));
+  f.get('closeTrashPreview').onclick();
+  assert.equal(f.get('trashPreviewDialog').open,false);
+  assert.equal(f.run('trashDemo'),true); // 关闭后条目状态不变
+  assert(f.get('trashList').innerHTML.includes('data-preview="demo-trash"'));
+});
+
+test('trash preview restores in place and forwards permanent delete to the confirm dialog',()=>{
+  const f=fixture();f.get('trashDemo').checked=true;f.get('trashDemo').onchange();
+  f.run("openTrashPreview('demo-trash-2')");
+  assert.equal(f.get('trashPreviewDialog').open,true);
+  f.get('purgeFromTrashPreview').onclick();
+  assert.equal(f.get('trashPreviewDialog').open,false);
+  assert.equal(f.get('trashDeleteDialog').open,true); // 转入既有永久删除确认弹窗
+  assert(f.get('trashDeleteBody').textContent.includes('购物清单'));
+  f.get('cancelTrashDelete').onclick();
+  assert.equal(f.get('trashDeleteDialog').open,false);
+  assert.equal(f.run('trashDemo'),true); // 取消后条目仍在
+  f.run("openTrashPreview('demo-trash-2')");f.get('restoreFromTrashPreview').onclick();
+  assert.equal(f.get('trashPreviewDialog').open,false);
+  assert.equal(f.run('trashDemo'),false); // 恢复后回收站清空
+  assert(f.get('trashFolder').classList.contains('hidden'));
 });
 
 

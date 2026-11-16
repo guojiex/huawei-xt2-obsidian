@@ -179,6 +179,9 @@ export struct FileTreeView {
   /** 从内嵌回收站恢复笔记，由父级复用现有 TrashService 处理。 */
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
   onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
+
+  /** 回收站条目预览（74.3：点行主体弹只读预览） */
+  onPreviewTrash: (relPath: string) => void = (relPath: string) => {};
   /**
    * v1.71 树内拖拽移动（71.1 / 71.3）：drop 到目录行 / 树根空白时请求父级执行
    * 既有移动全链（Index.doMovePath：flush → movePath → retarget → reveal → 刷新树）。
@@ -681,7 +684,8 @@ export struct FileTreeView {
             vaultId: this.vaultId,
             refreshSeq: this.trashRefreshSeq,
             onRestore: (relPath: string): void => { this.onRestoreTrash(relPath); },
-            onPurge: (relPath: string): void => { this.onPurgeTrash(relPath); }
+            onPurge: (relPath: string): void => { this.onPurgeTrash(relPath); },
+            onPreview: (relPath: string): void => { this.onPreviewTrash(relPath); }
           })
         }
         .width('100%')

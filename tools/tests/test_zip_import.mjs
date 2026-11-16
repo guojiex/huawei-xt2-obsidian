@@ -435,7 +435,141 @@ test('v1.72 72.3 未开 preserveMtime 不调用 setModifiedTime；writer 未实�
   assert.equal(written, 1);
 });
 
-test('v1.72 72.1/72.2 导出侧 payload 回填与导入侧 preserveMtime 接线（源断言）', () => {
+// ---------------------- v1.72 方案 B：yaoshi-mtime.json ----------------------
+
+test('v1.72 方案 B parse 默认 profile 捕获时间表候选：不进 entries、不计 skippedCount', async () => {
+  const manifest = JSON.stringify({ version: 1, files: [{ path: 'a.md', mtimeMs: 1750000000000 }] });
+  const zip = buildZip([
+    { name: 'a.md', data: '1' },
+    { name: 'yaoshi-mtime.json', data: manifest }
+  ]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+  assert.equal(parsed.entries.length, 1);
+  assert.equal(parsed.entries[0].name, 'a.md');
+  assert.equal(parsed.skippedCount, 0);
+  assert.equal(parsed.noteCount, 1);
+  assert.equal(parsed.manifestCandidate.name, 'yaoshi-mtime.json');
+  assert.equal(parsed.manifestCandidate.kind, 'skip');
+});
+
+test('v1.72 方案 B parse 显式 profile 未开 readMtimeManifest：候选为 null，.json 回归 v1.36 skip 计数', async () => {
+  const manifest = JSON.stringify({ version: 1, files: [] });
+  const zip = buildZip([
+    { name: 'a.md', data: '1' },
+    { name: 'yaoshi-mtime.json', data: manifest }
+  ]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS, {
+    allowHiddenEntries: false,
+    acceptAllFiles: false,
+    requireMarkdown: true
+  });
+  assert.equal(parsed.manifestCandidate, null);
+  assert.equal(parsed.skippedCount, 1);
+});
+
+test('v1.72 方案 B extract 时间表优先于 DOS；未覆盖条目回落 DOS；stored 时间表也能读', async () => {
+  const goodTime = (9 << 11) | (0 << 5) | 0; // 09:00:00
+  const dosMtime = new Date(2026, 5, 15, 9, 0, 0).getTime();
+  const manifest = JSON.stringify({
+    version: 1,
+    files: [
+      { path: 'a.md', mtimeMs: 1750000000000 },
+      { path: 'sub/b.md', mtimeMs: 1740000000000 }
+    ]
+  });
+  const zip = buildZip([
+    { name: 'a.md', data: '1', dosDate: DOS_DATE_20260615, dosTime: goodTime },
+    { name: 'sub/b.md', data: '2', dosDate: DOS_DATE_20260615, dosTime: goodTime },
+    { name: 'c.md', data: '3', dosDate: DOS_DATE_20260615, dosTime: goodTime },
+    { name: 'yaoshi-mtime.json', data: manifest, method: 0 } // stored 条目
+  ]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+  assert.equal(parsed.topFolder, '');
+  const base = createMockWriter();
+  const restored = [];
+  const writer = {
+    writeFile: base.writeFile,
+    setModifiedTime: (relativePath, modifiedAtMs) => restored.push([relativePath, modifiedAtMs])
+  };
+  await ZipImportService.extract(createMockReader(zip), writer, nodeInflate, parsed,
+    { preserveMtime: true });
+  assert.equal(base.files.size, 3); // 时间表本身不落盘
+  assert.deepEqual(restored.sort(), [
+    ['a.md', 1750000000000],
+    ['c.md', dosMtime],
+    ['sub/b.md', 1740000000000]
+  ]);
+});
+
+test('v1.72 方案 B topFolder 前缀注册：ZIP 整体套一层目录时时间表仍命中', async () => {
+  const manifest = JSON.stringify({ version: 1, files: [{ path: 'a.md', mtimeMs: 1750000000000 }] });
+  const zip = buildZip([
+    { name: 'payload/a.md', data: '1', dosDate: DOS_DATE_20260615, dosTime: 0 },
+    { name: 'payload/yaoshi-mtime.json', data: manifest }
+  ]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+  assert.equal(parsed.topFolder, 'payload');
+  assert.equal(parsed.manifestCandidate.name, 'payload/yaoshi-mtime.json');
+  const base = createMockWriter();
+  const restored = [];
+  const writer = {
+    writeFile: base.writeFile,
+    setModifiedTime: (relativePath, modifiedAtMs) => restored.push([relativePath, modifiedAtMs])
+  };
+  await ZipImportService.extract(createMockReader(zip), writer, nodeInflate, parsed,
+    { preserveMtime: true });
+  // DOS 时间为 0，若无时间表命中则不会回填；此处证明前缀注册生效
+  assert.deepEqual(restored, [['payload/a.md', 1750000000000]]);
+});
+
+test('v1.72 方案 B 时间表非法（版本 / 坏 JSON / 不安全路径 / 非法 mtime / CRC）逐项回落 DOS', async () => {
+  const goodTime = (9 << 11) | (0 << 5) | 0; // 09:00:00
+  const dosMtime = new Date(2026, 5, 15, 9, 0, 0).getTime();
+  const cases = [
+    { label: 'version', data: JSON.stringify({ version: 2, files: [{ path: 'a.md', mtimeMs: 1750000000000 }] }) },
+    { label: 'badjson', data: '{"version":1,"files":[' },
+    { label: 'unsafe-path', data: JSON.stringify({ version: 1, files: [{ path: '../a.md', mtimeMs: 1750000000000 }] }) },
+    { label: 'null-mtime', data: JSON.stringify({ version: 1, files: [{ path: 'a.md', mtimeMs: null }] }) },
+    { label: 'zero-mtime', data: JSON.stringify({ version: 1, files: [{ path: 'a.md', mtimeMs: 0 }] }) },
+    { label: 'future-mtime', data: JSON.stringify({ version: 1, files: [{ path: 'a.md', mtimeMs: 99999999999999 }] }) },
+    { label: 'files-not-array', data: JSON.stringify({ version: 1, files: 'x' }) }
+  ];
+  for (const item of cases) {
+    const zip = buildZip([
+      { name: 'a.md', data: '1', dosDate: DOS_DATE_20260615, dosTime: goodTime },
+      { name: 'yaoshi-mtime.json', data: item.data }
+    ]);
+    const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+    const restored = [];
+    const writer = {
+      writeFile: createMockWriter().writeFile,
+      setModifiedTime: (relativePath, modifiedAtMs) => restored.push([relativePath, modifiedAtMs])
+    };
+    await ZipImportService.extract(createMockReader(zip), writer, nodeInflate, parsed,
+      { preserveMtime: true });
+    assert.deepEqual(restored, [['a.md', dosMtime]], `case ${item.label} 应回落 DOS 时间`);
+  }
+  // CRC 不一致：整表忽略
+  const crcZip = buildZip([
+    { name: 'a.md', data: '1', dosDate: DOS_DATE_20260615, dosTime: goodTime },
+    {
+      name: 'yaoshi-mtime.json',
+      data: JSON.stringify({ version: 1, files: [{ path: 'a.md', mtimeMs: 1750000000000 }] }),
+      crc: 12345
+    }
+  ]);
+  const crcParsed = await ZipImportService.parse(createMockReader(crcZip), ZipImportService.DEFAULT_LIMITS);
+  const crcRestored = [];
+  const crcWriter = {
+    writeFile: createMockWriter().writeFile,
+    setModifiedTime: (relativePath, modifiedAtMs) => crcRestored.push([relativePath, modifiedAtMs])
+  };
+  await ZipImportService.extract(createMockReader(crcZip), crcWriter, nodeInflate, crcParsed,
+    { preserveMtime: true });
+  assert.deepEqual(crcRestored, [['a.md', dosMtime]]);
+});
+
+test('v1.72 72.1/72.2 导出侧时间表写入与导入侧 manifest/DOS 接线（源断言）', () => {
   const deviceSource = readSourceFile(new URL('../../entry/src/main/ets/model/ZipImportDevice.ets', import.meta.url));
   const shareSource = readSourceFile(new URL('../../entry/src/main/ets/model/ShareArchiveService.ets', import.meta.url));
   // TempVaultZipWriter.setModifiedTime：纵深防御路径解析 + utimes + 失败仅 hilog 告警错误码（不记路径）
@@ -445,12 +579,28 @@ test('v1.72 72.1/72.2 导出侧 payload 回填与导入侧 preserveMtime 接线�
   assert.match(deviceSource, /hilog\.warn\(0x0000, 'ZipImportDevice', '导入回填文件时间失败 %\{public\}d', err\.code\);/);
   // importZipBackup 开启 preserveMtime
   assert.match(indexSource, /\{ preserveMtime: true, onProgress: onProgress \}/);
-  // ShareArchiveService：两类写入（收录文件 / 范围外图片）后都接回填；按源 mtimeSec（秒）转毫秒
-  assert.match(shareSource, /ShareArchiveService\.restorePayloadMtime\(vaultAccess, output, item\.path\);/);
-  assert.match(shareSource, /ShareArchiveService\.restorePayloadMtime\(vaultAccess, output, sourcePath\);/);
-  assert.match(shareSource, /const stat: VaultFileStat \| null = vaultAccess\.stat\(sourceRelPath\);/);
-  assert.match(shareSource, /if \(stat === null \|\| stat\.mtimeSec <= 0\) \{/);
-  assert.match(shareSource, /fileIo\.utimes\(payloadPath, stat\.mtimeSec \* 1000\);/);
+  // 方案 B：导出侧不再回填 payload mtime，改为收集源 mtime 写 yaoshi-mtime.json 时间表
+  assert.doesNotMatch(shareSource, /restorePayloadMtime/);
+  assert.doesNotMatch(shareSource, /fileIo\.utimes/);
+  assert.match(shareSource, /import \{ ZipImportService \} from '\.\/ZipImportService';/);
+  assert.match(shareSource, /const manifest: MtimeManifest = \{\r?\n\s*version: ZipImportService\.MTIME_MANIFEST_VERSION,\r?\n\s*files: entries\r?\n\s*\};/);
+  assert.match(shareSource,
+    /registry\.sharePath\(payloadRel \+ '\/' \+ ZipImportService\.MTIME_MANIFEST_NAME\),\r?\n\s*JSON\.stringify\(manifest\)\);/);
+  // 两类写入（收录文件 / 范围外图片）都收集源 mtime；时间表路径用 ZIP 内归档路径
+  assert.match(shareSource, /const sourceMtimeMs: number = ShareArchiveService\.statMtimeMs\(vaultAccess, item\.path\);/);
+  assert.match(shareSource, /manifestEntries\.push\(\{ path: item\.path, mtimeMs: sourceMtimeMs \}\);/);
+  assert.match(shareSource, /const sourceMtimeMs: number = ShareArchiveService\.statMtimeMs\(vaultAccess, sourcePath\);/);
+  assert.match(shareSource, /manifestEntries\.push\(\{ path: targetPath, mtimeMs: sourceMtimeMs \}\);/);
+  // 时间表在 compressFile 之前写进 payload
+  assert.match(shareSource,
+    /ShareArchiveService\.writeMtimeManifest\(registry, payloadRel, manifestEntries\);\r?\n\s*const name: string = ShareArchiveService\.archiveName\(vaultId, folderPath\);/);
+  // 导入侧：默认 profile 开 manifest 捕获；extract 读表优先、回落 DOS
+  assert.match(serviceSource, /readMtimeManifest: true/);
+  assert.match(serviceSource, /MTIME_MANIFEST_NAME: string = 'yaoshi-mtime\.json';/);
+  assert.match(serviceSource,
+    /decoded === ZipImportService\.MTIME_MANIFEST_NAME \|\|\r?\n\s*decoded\.endsWith\('\/' \+ ZipImportService\.MTIME_MANIFEST_NAME\)/);
+  assert.match(serviceSource, /const restoredMtime: number = mtimeOverrides\.get\(entry\.name\) \?\? entry\.modifiedAtMs;/);
+  assert.match(serviceSource, /!ZipImportService\.isSafeManifestPath\(path\) \|\|/);
 });
 
 // ---------------------------------------------------------------------------

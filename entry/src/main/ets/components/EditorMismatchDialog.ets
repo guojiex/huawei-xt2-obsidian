@@ -23,8 +23,8 @@ export struct EditorMismatchDialog {
   leftHead: string = '笔记版本';
   rightHead: string = '编辑区版本';
   singleScreen: boolean = false;
-  windowWidthVp: number = 0;
-  windowHeightVp: number = 0;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
   onKeepPage: () => void = () => {};
   onUseNote: () => void = () => {};
   onUseEditor: () => void = () => {};

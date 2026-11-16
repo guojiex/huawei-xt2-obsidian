@@ -10,6 +10,7 @@ import { VaultRegistry } from '../model/VaultRegistry';
 import { Space, Radius, Shadow, FontSize, Size } from '../common/Tokens';
 import { Icon } from '../common/Icons';
 import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
+import { TrashPreviewWeb } from './PreviewWebView';
 
 /**
  * 新建笔记 / 新建文件夹（2026-10-18 方案 A 改版：目录选择器 + 名称分开 + 类型切换）。
@@ -469,6 +470,85 @@ export struct PurgeTrashDialog {
       singleScreen: this.singleScreen,
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
+      onClose: (): void => { this.controller?.close(); },
+      content: (): void => { this.DialogContent(); },
+      footer: (): void => { this.DialogFooter(); }
+    })
+  }
+}
+
+/**
+ * 回收站条目只读预览（v1.74 74.2）。点回收站条目打开：只读渲染已删笔记内容，
+ * 给「恢复 / 永久删除」决策提供依据。预览只读不可编辑；两个操作各自走既有链——
+ * 恢复 → Index.doRestoreFromTrash；永久删除 → Index.openPurgeTrashDialog
+ * （v1.47 确认弹窗仍是唯一保护，预览弹窗不直接删）。图片附件不解析（版本边界）。
+ */
+@CustomDialog
+export struct TrashPreviewDialog {
+  controller?: CustomDialogController;
+  @Prop singleScreen: boolean = false;
+  @Prop windowWidthVp: number = 0;
+  @Prop windowHeightVp: number = 0;
+  /** 显示名（已去掉 .md / .markdown 后缀） */
+  noteName: string = '';
+  /** 原位置（库内文件夹路径；根目录显示「根目录」） */
+  origin: string = '';
+  /** 笔记 Markdown 原文（弹窗内只读渲染，不落盘不回写） */
+  markdown: string = '';
+  onRestore: () => void = () => {};
+  onPurge: () => void = () => {};
+
+  private restore(): void {
+    this.controller?.close();
+    this.onRestore();
+  }
+
+  private purge(): void {
+    this.controller?.close();
+    this.onPurge();
+  }
+
+  @Builder
+  DialogContent() {
+    Column() {
+      Text('原位置：' + this.origin)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .margin({ bottom: Space.s2 })
+      TrashPreviewWeb({ markdown: this.markdown })
+        .width('100%')
+        .layoutWeight(1)
+        .backgroundColor($r('app.color.bg_card'))
+        .accessibilityText('已删除笔记内容预览，只读')
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  DialogFooter() {
+    Row({ space: Space.s2 }) {
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '永久删除'), 'danger', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+        this.purge();
+      })
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => '恢复'), 'brand', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+        this.restore();
+      })
+    }
+    .width('100%')
+    .justifyContent(this.singleScreen ? FlexAlign.SpaceBetween : FlexAlign.End)
+  }
+
+  build() {
+    UtilityDialogShell({
+      title: this.noteName,
+      closeLabel: '关闭回收站预览',
+      singleScreen: this.singleScreen,
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      fillContentHeight: true,
       onClose: (): void => { this.controller?.close(); },
       content: (): void => { this.DialogContent(); },
       footer: (): void => { this.DialogFooter(); }
