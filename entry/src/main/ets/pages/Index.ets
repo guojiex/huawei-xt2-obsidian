@@ -7612,21 +7612,18 @@ struct Index {
   }
 
   @Builder
-  EmptyPaneAction(pane: string, action: string, label: string, icon: string, primary: boolean,
-    focusId: string = '') {
+  EmptyPaneAction(pane: string, focusId: string) {
     Row({ space: Space.s2 }) {
-      if (primary) {
-        Icon(icon, Space.s4, $r('app.color.on_brand'))
-      }
-      Text(label)
+      Icon('plus', Space.s4, $r('app.color.on_brand'))
+      Text('新建笔记')
         .fontSize(FontSize.body2)
-        .fontWeight(primary ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(primary ? $r('app.color.on_brand') : $r('app.color.text_secondary'))
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.on_brand'))
     }
     .height(Size.touch)
-    .padding({ left: primary ? Space.s6 : Space.s2, right: primary ? Space.s6 : Space.s2 })
+    .padding({ left: Space.s6, right: Space.s6 })
     .borderRadius(Radius.full)
-    .backgroundColor(primary ? $r('app.color.brand') : Color.Transparent)
+    .backgroundColor($r('app.color.brand'))
     .focusable(true)
     .id(focusId)
     .onAppear((): void => {
@@ -7636,15 +7633,9 @@ struct Index {
     })
     .onClick((): void => {
       this.setActivePane(pane, true);
-      if (action === 'new') {
-        this.openCreateNoteDialog('', pane);
-      } else if (action === 'search') {
-        this.openQuickSwitcher(pane);
-      } else {
-        this.openNoteNavigation();
-      }
+      this.openCreateNoteDialog('', pane);
     })
-    .accessibilityText(label)
+    .accessibilityText('新建笔记')
   }
 
   @Builder
@@ -7717,17 +7708,9 @@ struct Index {
               .textAlign(TextAlign.Center)
           }
           if (this.currentVaultNoteCount === 0) {
-            this.EmptyPaneAction(pane, 'new', '新建笔记', 'plus', true, 'pane-empty-new-' + pane)
+            this.EmptyPaneAction(pane, 'pane-empty-new-' + pane)
           } else {
-            this.EmptyPaneAction(pane, 'new', '新建笔记', 'plus', true, 'pane-empty-new-' + pane)
-            Row({ space: Space.s4 }) {
-              this.EmptyPaneAction(pane, 'search', '搜索笔记', 'search', false)
-              if (this.isSingleScreenLayout()) {
-                this.EmptyPaneAction(pane, 'files', '文件列表', 'menu', false)
-              }
-            }
-            .justifyContent(FlexAlign.Center)
-            .width('100%')
+            this.EmptyPaneAction(pane, 'pane-empty-new-' + pane)
             if (this.paneLastClosedPath(pane).length > 0) {
               Row({ space: Space.s2 }) {
                 Icon('restore', Space.s4, $r('app.color.text_tertiary'))

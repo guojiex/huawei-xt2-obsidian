@@ -423,7 +423,7 @@ test('focusEmptyPane is event-driven and both empty-pane rows carry the onAppear
   assert.match(reopenRow, /\.onAppear\(\(\): void => \{\s*this\.consumeEmptyPaneFocus\(pane, 'pane-empty-reopen-' \+ pane\);\s*\}\)/);
 
   // EmptyPaneAction 构建器：带 focusId 的动作挂树时消费待聚焦，无 id 的动作不参与
-  const actionStart = source.indexOf('  EmptyPaneAction(pane: string, action: string');
+  const actionStart = source.indexOf('  EmptyPaneAction(pane: string, focusId: string');
   const actionEnd = source.indexOf('\n  @Builder', actionStart);
   assert.ok(actionStart >= 0 && actionEnd > actionStart, 'could not find EmptyPaneAction builder');
   const actionBuilder = source.slice(actionStart, actionEnd);

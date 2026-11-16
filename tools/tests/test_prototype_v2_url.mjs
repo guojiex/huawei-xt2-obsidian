@@ -251,14 +251,16 @@ test('wide dialogs stay inside the application window and phone remains a sheet'
  assert(Number.parseInt(dialog.style.top)+240<=700);assert(!dialog.classList.contains('as-sheet'));
  f.run("setViewport('phone');positionSheetDialog($('importVaultDialog'))");assert(dialog.classList.contains('as-sheet'));
 });
-test('no-note empty state offers create and search actions',()=>{
+test('no-note empty state offers one create action without search or file-list actions',()=>{
  const f=fixture();
  f.get('noNoteDemo').checked=true;f.get('noNoteDemo').onchange();
  const empty=f.get('leftEmpty');
  assert(!empty.classList.contains('hidden'));
  assert(empty.innerHTML.replace(/<[^>]*>/g,'').includes('把空间，留给思考。'));
  assert(empty.innerHTML.includes('新建笔记'));
- assert(empty.innerHTML.includes('搜索笔记'));
+ assert(!empty.innerHTML.includes('data-empty-act="search"'));
+ assert(!empty.innerHTML.includes('data-empty-act="files"'));
+ assert.equal((empty.innerHTML.match(/data-empty-act=/g)||[]).length,1);
  assert(f.get('article').classList.contains('hidden'));
  assert(f.get('editor').classList.contains('hidden'));
  assert.equal(f.get('count').textContent,'');
@@ -267,9 +269,6 @@ test('no-note empty state offers create and search actions',()=>{
  assert(f.get('newEntryDialog').open);
  f.get('cancelNewEntry').onclick();
  assert(!f.get('newEntryDialog').open);
- f.get('emptySearch').onclick();
- assert(f.get('quickSearchDialog').open);
- f.get('closeQuickSearch').onclick();
  f.run("openInPane('reading_stream','left')");
  assert(empty.classList.contains('hidden'));
  assert(!f.get('article').classList.contains('hidden'));
