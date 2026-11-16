@@ -23,7 +23,7 @@ import { promptAction } from '@kit.ArkUI';
 import { FileTree, ExpandStore, PinStore, TreeNode, PinnedNote } from '../model/FileTree';
 import { VaultAccess, VaultDirChild, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { Icon } from '../common/Icons';
+import { Icon, iconCommands } from '../common/Icons';
 import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
 import { Space, Radius, FontSize, Size, Weight } from '../common/Tokens';
@@ -994,9 +994,18 @@ export struct FileTreeView {
                   .width(Size.treeChevron)
                   .height(Size.treeChevron)
               }
-              Icon(n.isDir ? 'folder' : 'note', Size.treeIcon,
-                n.isDir ? $r('app.color.brand') : n.relPath === this.currentFilePath
-                  ? $r('app.color.brand') : $r('app.color.text_secondary'), 1.7)
+              // 图标颜色不能经全局 @Builder 按值实参传递（api_notes L-7/Z2：首帧固化，
+              // 切换笔记后蓝图标停在旧笔记上）。内联 Path 让 .stroke 与行背景 / 标题色
+              // 一样直接绑定 currentFilePath，走同一条局部更新通道。
+              Path({ commands: iconCommands(n.isDir ? 'folder' : 'note', Size.treeIcon) })
+                .width(Size.treeIcon)
+                .height(Size.treeIcon)
+                .fillOpacity(0)
+                .stroke(n.isDir ? $r('app.color.brand') : n.relPath === this.currentFilePath
+                  ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                .strokeWidth(1.7)
+                .strokeLineCap(LineCapStyle.Round)
+                .strokeLineJoin(LineJoinStyle.Round)
             if (this.referenceOnly && !n.isDir) {
               Column() {
                 Text(this.displayName(n))

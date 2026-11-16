@@ -200,6 +200,16 @@ function scalePath(cmd: string, k: number): string {
 }
 
 /**
+ * 取缩放后的图标 Path commands（内联渲染用）。
+ * ⚠️ 全局 @Builder 按值实参会首帧固化（api_notes L-7 / Z2）：随状态变化的颜色
+ * 不能作为 Icon(color) 实参传递，调用方必须内联 Path 并把 .stroke() 直接绑到状态变量，
+ * 才能走局部更新（FileTreeView 树行图标，2026-11-15）。
+ */
+export function iconCommands(name: string, size: number): string {
+  return scalePath(pathOf(name), vp2px(size) / 24);
+}
+
+/**
  * 描边图标。
  * @param name 图标名（见上方 P_* 常量）
  * @param size 边长（vp）。**触控热区由外层容器负责 ≥48**（Size.touch）

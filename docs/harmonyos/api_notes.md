@@ -1494,6 +1494,12 @@ this.PaneHead({ title: ... })   // @Builder PaneHead($$: PaneHeadParam)
 ⚠️ `$$: { title: string }` 内联对象类型违反 `arkts-no-obj-literals-as-types`，**必须命名 interface**。
 **判别特征**：组件首帧渲染正确、状态变化后纹丝不动 → 查 `@Builder` 参数是不是按值快照。
 
+**2026-11-15 再犯（文件树笔记图标停在旧笔记，用户报障）**：树行 `Icon(color)` 按值传参，
+切换笔记后蓝色笔记图标不动、蓝框正常——行背景 / 标题色是直接属性绑定走局部更新，
+@Builder 实参是调用时快照。且切换笔记不触发树 reload，`|s/|u` 键值后缀也不会被重算，帮不上忙。
+修法：`Icons.ets` 导出 `iconCommands()`，`FileTreeView` 树行图标内联 `Path`，
+`.stroke()` 直接绑 `currentFilePath`。
+
 ### L-8 模拟器环境限制清单（2026-10-18 定案）⚠️
 
 模拟器（API 24 x86）上一批接口/能力**确定性不可用**，别再在模拟器上验证这些项：
