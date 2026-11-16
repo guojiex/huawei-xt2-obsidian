@@ -28,7 +28,8 @@ function extractArrow(name) {
 test('v2 git sync hosts expandable per-file rows with inline unified diff', () => {
   assert.ok(html.includes('<span class="vh">'), 'visually-hidden helper exists for screen readers');
   assert.match(html, /\.vh\{position:absolute!important/);
-  assert.match(html, /class="sync-file-toggle" data-sync-file="'\+esc\(path\)\+'" aria-expanded="'\+open\+'" aria-controls="'\+ctrl\+'"/);
+  // v1.79：宽屏保留 data-sync-file/aria-expanded/aria-controls；单屏(singleMode)下不输出展开语义。
+  assert.match(html, /singleMode\?'':' data-sync-file="'\+esc\(path\)\+'" aria-expanded="'\+open\+'" aria-controls="'\+ctrl\+'"/);
   assert.match(html, /class="sync-file-diff'\+\(open\?'':' hidden'\)\+'" id="'\+ctrl\+'" role="region"/);
   assert.match(html, /<div class="sync-diff-head">/);
   assert.match(html, /<div class="sync-diff-lines">/);
@@ -155,4 +156,16 @@ test('demo data covers all three change kinds and yields non-empty stats', () =>
   assert.match(dataSrc, /before:\['# 快速上手'/);
   assert.match(dataSrc, /after:\['# 周会 11-03'/);
   assert.match(dataSrc, /after:''\}/);
+});
+
+test('v1.79 single-screen sync page drops diff and shows a full scrolling change list', () => {
+  // 单屏隐藏右栏 diff，改动清单整页滚动、不限高。
+  assert.match(html, /\.window\.phone \.sync-detail\{display:none!important\}/);
+  assert.match(html, /\.window\.phone \.sync-side\{width:100%;max-height:none;flex:1;min-height:0/);
+  assert.match(html, /\.window\.phone \.sync-side \.sync-chevron\{display:none\}/);
+  // 文件行在单屏下不输出 data-sync-file / aria-expanded（不可展开）。
+  assert.match(html, /singleMode=typeof phone!=='undefined'&&phone/);
+  assert.match(html, /singleMode\?'':' data-sync-file="/);
+  // 副文案在单屏下改为「上报的本地改动」。
+  assert.match(html, /typeof phone!=='undefined'&&phone\?'上报的本地改动':'点左侧文件可在右侧核对正文'/);
 });

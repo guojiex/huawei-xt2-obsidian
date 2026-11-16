@@ -83,8 +83,9 @@ test('GitSyncDialog: diff UI reuses tokens, announces delete/add, and never logs
   assert.match(dialog, /origin === '\+' \? \$r\('app\.color\.success_bg'\)/);
   assert.match(dialog, /origin === '-' \? \$r\('app\.color\.danger_bg'\)/);
   assert.match(dialog, /−|'删除行 '|'新增行 '/);
-  // v1.76：点选改为右栏查看，读屏文案从「展开」改为「查看」。
-  assert.match(dialog, /\.accessibilityText\(\(this\.expandedDiffPath === change\.path \? '收起' : '查看'\)/);
+  // v1.76：点选改为右栏查看，读屏文案从「展开」改为「查看」。v1.79 单屏走纯信息文案，宽屏仍为查看/收起。
+  assert.match(dialog, /this\.singleScreen\s*\n?\s*\? \(change\.status === 'A'/);
+  assert.match(dialog, /: \(this\.expandedDiffPath === change\.path \? '收起' : '查看'\) \+ ' ' \+ change\.path/);
   // privacy: no logging of diff text/path anywhere in the dialog
   assert.ok(!/hilog\.[a-zA-Z]+\([^)]*line\.text/.test(dialog));
   assert.ok(!/console\.[a-zA-Z]+\([^)]*change\.path/.test(dialog));
@@ -102,7 +103,8 @@ test('GitSyncDialog is a full-screen @Component, no CustomDialog shell', () => {
   // right-pane diff, left list selection
   assert.match(dialog, /@Builder\s+private DiffPane\(\)/);
   assert.match(dialog, /private selectedChange\(\): Git2FileChange \| null/);
-  assert.match(dialog, /backgroundColor\(this\.expandedDiffPath === change\.path\s*\?\s*\$r\('app\.color\.brand_bg'\)/);
+  // v1.79：宽屏选中态保留品牌底色；单屏不选中（无右栏 diff）。
+  assert.match(dialog, /backgroundColor\(!this\.singleScreen && this\.expandedDiffPath === change\.path\s*\?\s*\$r\('app\.color\.brand_bg'\)/);
   // ESC still closes, via onDismiss callback (no controller.close)
   assert.match(dialog, /event\.keyCode === KeyCode\.KEYCODE_ESCAPE/);
   assert.ok(!/controller\?\.close\(\)/.test(dialog));
@@ -138,4 +140,22 @@ test('Index routes gitsync as a full-screen topView with appbar back + focus res
   assert.match(indexEts, /onDismiss: \(\): void => \{ this\.returnFromGitSync\(\); \}/);
   assert.match(indexEts, /private returnFromGitSync\(\): void/);
   assert.match(indexEts, /if \(this\.gitSyncBusy\)\s*\{\s*return;\s*\}/);
+});
+
+test('v1.79 single-screen sync page drops diff and scrolls the whole changes+commit flow', () => {
+  // 单屏分支只有一个整页 Scroll(DialogContent)，不再渲染 DiffPane。
+  const build = dialog.slice(dialog.indexOf('  build() {'));
+  const singleBranch = build.slice(build.indexOf('if (this.singleScreen)'),
+    build.indexOf('} else {'));
+  assert.ok(singleBranch.includes('Scroll() { this.DialogContent() }'));
+  assert.ok(!singleBranch.includes('this.DiffPane()'), 'no diff pane on single screen');
+  // 宽屏分支仍渲染 DiffPane（v1.78 铺满 diff 不变）。
+  const wideBranch = build.slice(build.indexOf('} else {'), build.indexOf('Column() {\n        this.DialogFooter'));
+  assert.ok(wideBranch.includes('this.DiffPane()'), 'wide screens keep the diff pane');
+  // 清单在单屏下不限高、内层滚动关闭、手势交父。
+  assert.match(dialog, /\.height\(this\.singleScreen \? undefined\s*: Math\.min\(Size\.touch \* 4/);
+  assert.match(dialog, /\.scrollBar\(this\.singleScreen \? BarState\.Off : BarState\.Auto\)/);
+  assert.match(dialog, /scrollForward: this\.singleScreen \? NestedScrollMode\.PARENT_FIRST/);
+  // 副文案在单屏下不再是「点文件在右侧核对正文」。
+  assert.match(dialog, /this\.singleScreen \? '上报的本地改动' : '点文件在右侧核对正文'/);
 });

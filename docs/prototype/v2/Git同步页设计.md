@@ -1,6 +1,6 @@
-# Git 同步页设计（v1.27 · v1.73 · v1.75 · v1.76 · v1.77 · v1.78）
+# Git 同步页设计（v1.27 · v1.73 · v1.75 · v1.76 · v1.77 · v1.78 · v1.79）
 
-> 现行设计规格，服务 [v1.27 推送](../../releases/v1.27/需求文档.md)、[v1.73 手动拉取](../../releases/v1.73/需求文档.md)、[v1.75 逐行差异](../../releases/v1.75/需求文档.md)、[v1.76 全屏页](../../releases/v1.76/需求文档.md)、[v1.77 视觉重构](../../releases/v1.77/需求文档.md)与 [v1.78 右栏铺满](../../releases/v1.78/需求文档.md)。原型入口：[v2 原型](index.html) → 打开演示开关「Git 库示意」→ 顶栏同步按钮（单屏：更多菜单 →「同步到 Git」），或用 `?ui=2&view=sync` 直达；底部演示脚注「查看结果 → 内容差异」直接展开一例。
+> 现行设计规格，服务 [v1.27 推送](../../releases/v1.27/需求文档.md)、[v1.73 手动拉取](../../releases/v1.73/需求文档.md)、[v1.75 逐行差异](../../releases/v1.75/需求文档.md)、[v1.76 全屏页](../../releases/v1.76/需求文档.md)、[v1.77 视觉重构](../../releases/v1.77/需求文档.md)、[v1.78 右栏铺满](../../releases/v1.78/需求文档.md)与 [v1.79 单屏简化](../../releases/v1.79/需求文档.md)。原型入口：[v2 原型](index.html) → 打开演示开关「Git 库示意」→ 顶栏同步按钮（单屏：更多菜单 →「同步到 Git」），或用 `?ui=2&view=sync` 直达；底部演示脚注「查看结果 → 内容差异」直接展开一例。
 > 同步语义（push-only、仅快进、手机不合并）见 [v0.3 §3.2](../../releases/v0.3/需求文档.md)；拉取语义（拒绝合并、仅快进）见 [v1.73 需求](../../releases/v1.73/需求文档.md)。v1.76 起同步是**占满内容区的独立全屏页**（与「设置与关于」同级），不再是浮窗 / 半模态，也不再与导入、分享共用弹窗外壳。
 
 ## 1. 思路
@@ -11,7 +11,7 @@
 
 ## 2. 结构
 
-全屏页占满应用内容区，工作区 / 侧栏隐藏（与设置页同范式）；顶部为返回栏，主体左右分栏，底部为操作栏。v1.77 起左栏信息按「推送概览 / 本地改动」两张卡分组，右栏**默认选中首个有差异的文件**，进入页面即看到逐行差异而不是空白占位：
+全屏页占满应用内容区，工作区 / 侧栏隐藏（与设置页同范式）；顶部为返回栏，主体左右分栏，底部为操作栏。v1.77 起左栏信息按「推送概览 / 本地改动」两张卡分组，右栏**默认选中首个有差异的文件**，进入页面即看到逐行差异而不是空白占位。下图是**宽屏 / 双屏**形态（右栏铺满 diff 见 v1.78）；**单屏形态完全不同**——不展示 diff、整页单一滚动流，见 §2B：
 
 ```
 ┌───────────────────────────────────────────────────────────────┐
@@ -49,6 +49,36 @@
 - **右栏铺满（v1.78）**：右栏容器 `.sync-detail` 是 flex 列、`padding:0`、`--paper` 底、`overflow:hidden`；标题行贴顶并带底部分隔线；`.sync-file-diff` 去边框 / 圆角 / 阴影 / 外边距，`flex:1;min-height:0` 从标题行一直铺到底部操作栏，文件头固定、`.sync-diff-lines` `flex:1` 占满剩余高度并内部滚动，空态占位卡同样 `flex:1`。不再有灰边、浮卡阴影与卡片下方空白。原生 `DiffPane()` 去 padding、`DiffPanel()` 去 `borderRadius` / `bg_secondary` / 上下 padding 改 `bg_page`，`layoutWeight(1)` 保留占满剩余高度。
 - **数据边界（原型）**：`gitSyncFileDiff` 存三个演示文件的前后文本，未提交改动清单本身仍来自 `gitSyncChanges`；`gitSyncUnifiedDiff` 复用 [编辑冲突对比](index.html) 的 `mismatchDiffRows`（LCS）算法产出增删/上下文行；`gitSyncDiffPaneHtml` 负责右栏渲染。原型不读取本地文件、不执行 Git、不访问远端，diff 文本随刷新恢复；底部「内容差异」演示按钮展开第一例。`openFile` 是唯一控制选中状态的字段，打开同步页即清空。
 - **视觉 token**：红底 `--diff-del-bg` + 文字 `--danger`，绿底 `--diff-add-bg` + 文字 `--green`，行号 `--muted`；沿用 §5 通用 token，不散写颜色值。
+
+## 2B. 单屏形态（v1.79 简化版，不展示 diff）
+
+手机竖屏空间不足以同时容下清单和 diff：v1.77 左栏已有「推送概览 + 本地改动（文件 + 提交说明 + 提交者字段）」两张卡，v1.76 定的「上 44% 清单 + 下 56% diff」两段式在 44% 里塞不下这些内容，导致文件列表与提交者字段被裁、两块各自滚动。用户拍板单屏做减法——**不展示逐行差异**，整页只保留一个滚动流：
+
+```
+┌───────────────────────────┐
+│ ‹  同步到 Git             │  返回栏
+│    本地笔记 · 推送到 xt2   │
+├───────────────────────────┤
+│ ┌ 推送概览 ─────────────┐ │  ↑
+│ │ 远端 / 分支 / 待推送   │ │  │
+│ └───────────────────────┘ │  │
+│ ┌ 本地改动 3 个文件 ────┐ │  │ 单一滚动流
+│ │ [M] 快速上手    +2−1  │ │  │（整页一个 Scroll）
+│ │ [A] 周会…       +8−0  │ │  │
+│ │ [D] 购物清单    +0−5  │ │  │
+│ │ 提交说明              │ │  │
+│ │ 提交者名称 · 必填      │ │  │
+│ │ 提交者邮箱 · 必填      │ │  ↓
+│ └───────────────────────┘ │
+├───────────────────────────┤
+│ 提示 + (取消)(提交并推送) │  页脚（固定）
+└───────────────────────────┘
+```
+
+- **无 diff**：单屏隐藏右栏 `.sync-detail`（原型 `display:none`）、原生 `build()` 单屏分支不渲染 `DiffPane()`。文件行是纯信息行：无展开箭头、点按不切换、`aria-expanded` / `aria-controls` 不输出；读屏只读「修改/新增/删除 + 路径 + 增删统计」。`+N −M` 统计仍显示（native diff 数据仍加载），但不提供逐行下钻。
+- **整页滚动**：原型 phone 下 `.sync-side` 取消 `max-height:44%`、改 `flex:1;min-height:0`；原生单屏清单 `Scroll` 不设固定高度、`BarState.Off`、`nestedScroll(PARENT_FIRST)` 把手势交给整页外层。所有字段滚动可达、不裁切。
+- **文案**：两处「点文件在右侧核对正文 / 点左侧文件可在右侧核对正文」在单屏改为「上报的本地改动」，避免指向不存在的右栏。
+- **不变**：宽屏 / 双屏仍是 §2 的左右分栏 + v1.78 铺满 diff；推送 / 拉取 / 分支编辑 / 令牌重试与安全边界完全沿用。
 
 ## 3. 推送分支编辑
 
@@ -111,6 +141,7 @@
 | 结果卡 | 成功 `--green` 12% 底，失败 `--danger` 9% 底；图标 `--s6`；操作为文字按钮 |
 | 落后提示 | `.sync-behind`：`--danger` 9% 底、`--danger` 文字；已是最新提示 `.sync-status-msg`：`--blue-soft` 底；均 `--small`、圆角 `--r` |
 | 拉取链接 | `.sync-pull-link`：`--blue` 文字、`--small` 加粗、左对齐，`min-height: var(--s10)`；App 侧对应正文 Text 链接（`FontSize.body3` + `app.color.brand`） |
+| 单屏形态（v1.79） | phone 下隐藏 `.sync-detail`、清单 `.sync-side` 占满整页（`flex:1;min-height:0`，无 `max-height`）；文件行纯信息（无 chevron / 展开语义 / 选中高亮），副文案「上报的本地改动」；原生单屏分支只渲染整页 `Scroll(DialogContent)`、清单 `BarState.Off` + `PARENT_FIRST`。逐行 diff 与手风琴仅宽屏 / 双屏保留。详见 §2B。 |
 
 ## 6. 无障碍
 
@@ -124,4 +155,4 @@
 
 - `#gitSyncDialog`（全屏 `section`）；脚本 `gitSyncState`（含 `openFile`、`authorName`、`authorEmail`）、`validateGitBranch`、`renderGitSync`、`runGitSync`、`runGitPull`；逐行差异相关 `gitSyncFileDiff`、`gitSyncUnifiedDiff`（复用 `mismatchDiffRows`）、`gitSyncFileItemHtml`、`gitSyncDiffPaneHtml`、`gitSyncFileId`；`openGitSync`/`closeGitSync` 通过 window 的 `sync-open` class 与页面 `hidden` 切换全屏页。底部演示脚注提供推送 4 个 + 拉取 6 个结果演示入口，另有「内容差异」入口（`data-sync-demo="diff"`）直接展开第一例。
 - **URL 直达（v1.77 修复）**：`?ui=2&view=sync` 曾在 `restoreUrl` 把 `view` 重写为 `notes` 且跨 `<script>` 块调用 `openGitSync` 报 ReferenceError 而失效。现在在第一个 script 块的 URL 捕获区（与 `startup` 同模式）提前记 `window.__initialViewSync`，第二个 script 块在 `openGitSync` 定义之后据此打开；`urlChoices.view` 也加入 `sync` 防止参数被洗掉。
-- 演示数据（远端、改动、时间、落后数、逐行 diff 前后文本）写在脚本内，仅演示；不执行 Git、不访问远端、不读取已保存令牌，刷新恢复。逐行差异契约测试见 `tools/tests/test_prototype_git_diff.mjs`（结构 + LCS 算法 + 三态行 + 默认选中 + 卡片分组）；视觉经真浏览器 CDP 渲染验证（全屏页打开 / 工作区隐藏 / 右栏默认显示差异 / 深浅色），截图存 `截图/Git同步逐行差异/`（`01_全屏页_浅色_修改文件差异.png`、`02_全屏页_深色_修改文件差异.png`）。
+- 演示数据（远端、改动、时间、落后数、逐行 diff 前后文本）写在脚本内，仅演示；不执行 Git、不访问远端、不读取已保存令牌，刷新恢复。逐行差异契约测试见 `tools/tests/test_prototype_git_diff.mjs`（结构 + LCS 算法 + 三态行 + 默认选中 + 卡片分组 + v1.79 单屏简化）；视觉经真浏览器 CDP 渲染验证（全屏页打开 / 工作区隐藏 / 右栏默认显示差异 / 深浅色），截图存 `截图/Git同步逐行差异/`：`01_全屏页_浅色_修改文件差异.png`、`02_全屏页_深色_修改文件差异.png`（宽屏铺满 diff），`03_单屏_简化版_浅色_首屏.png`、`04_单屏_简化版_浅色_提交字段.png`（单屏整页滚动，v1.79）。

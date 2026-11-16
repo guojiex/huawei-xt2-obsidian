@@ -856,19 +856,23 @@ export struct GitSyncDialog {
           .fontFamily('monospace')
           .fontColor($r('app.color.text_secondary'))
           .accessibilityText(this.diffStatOf(change.path))
-        Text(this.expandedDiffPath === change.path ? '▾' : '▸')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.text_secondary'))
+        // v1.79 单屏简化版：无右栏 diff，不显示展开箭头。
+        if (!this.singleScreen) {
+          Text(this.expandedDiffPath === change.path ? '▾' : '▸')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+        }
       }
       .width('100%')
       .height(Size.touch)
       .padding({ left: Space.s2, right: Space.s2 })
-      .backgroundColor(this.expandedDiffPath === change.path
+      .backgroundColor(!this.singleScreen && this.expandedDiffPath === change.path
         ? $r('app.color.brand_bg') : Color.Transparent)
       .borderRadius(Radius.control)
-      .onClick(() => { void this.toggleDiff(change.path); })
-      .accessibilityText((this.expandedDiffPath === change.path ? '收起' : '查看') +
-        ' ' + change.path + ' 的逐行差异（右侧显示）')
+      .onClick(() => { if (!this.singleScreen) { void this.toggleDiff(change.path); } })
+      .accessibilityText(this.singleScreen
+        ? (change.status === 'A' ? '新增：' : change.status === 'D' ? '删除：' : '修改：') + change.path + '，' + this.diffStatOf(change.path)
+        : (this.expandedDiffPath === change.path ? '收起' : '查看') + ' ' + change.path + ' 的逐行差异（右侧显示）')
       .accessibilityDescription(this.diffStatOf(change.path))
     }
     .width('100%')
@@ -1281,7 +1285,8 @@ export struct GitSyncDialog {
             (this.pushBranch === 'xt2' ? '默认分支' : '自定义分支') + '；在电脑上合并到 ' +
             this.trackingTargetLabel())
           Divider().color($r('app.color.line'))
-          this.StatusRow('待推送', this.waitingStatusText(), '点文件在右侧核对正文')
+          this.StatusRow('待推送', this.waitingStatusText(),
+            this.singleScreen ? '上报的本地改动' : '点文件在右侧核对正文')
         }
         .width('100%')
         .padding({ left: Space.s4, right: Space.s4, bottom: Space.s2 })
@@ -1324,14 +1329,16 @@ export struct GitSyncDialog {
             .padding({ left: Space.s3, right: Space.s3 })
           }
           .width('100%')
-          // v1.76：差异在右栏独立显示，清单维持原限高，不再因展开而放高。
-          .height(Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
-          .scrollBar(BarState.Auto)
-          // 2026-11-16 键盘避让配套：内层清单默认 SELF_ONLY，滑到头不传外层正文，
-          // 键盘弹出后外层可滚时手势要能链出去（SELF_FIRST：先滚自己，到边再传父）。
+          // v1.79 单屏：不展示 diff，清单自然展开、随整页滚动（不限高）。
+          // 宽屏 / 双屏：差异在右栏独立显示，清单维持原限高，不因展开而放高。
+          .height(this.singleScreen ? undefined
+            : Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
+          .scrollBar(this.singleScreen ? BarState.Off : BarState.Auto)
+          // 2026-11-16 键盘避让配套：宽屏内层清单 SELF_FIRST，滑到头把手势传给外层正文。
+          // 单屏整页只用一个 Scroll，内层清单不滚动，无需嵌套滚动。
           .nestedScroll({
-            scrollForward: NestedScrollMode.SELF_FIRST,
-            scrollBackward: NestedScrollMode.SELF_FIRST
+            scrollForward: this.singleScreen ? NestedScrollMode.PARENT_FIRST : NestedScrollMode.SELF_FIRST,
+            scrollBackward: this.singleScreen ? NestedScrollMode.PARENT_FIRST : NestedScrollMode.SELF_FIRST
           })
 
           if (this.shouldCommitChanges()) {
@@ -1513,17 +1520,13 @@ export struct GitSyncDialog {
         .width('100%')
         .padding({ left: Space.s4, right: Space.s4, top: Space.s2 })
 
-      // 主体：单屏上下（清单上/差异下），宽屏左右分栏。
+      // 主体：单屏简化版（v1.79）——只有一个整页滚动的清单 + 提交流程，不展示逐行差异；
+      // 宽屏 / 双屏保持左右分栏 + 右栏铺满 diff（v1.78）。
       if (this.singleScreen) {
-        Column() {
-          Scroll() { this.DialogContent() }
-            .width('100%')
-            .layoutWeight(1)
-            .scrollBar(BarState.Auto)
-          this.DiffPane()
-        }
-        .width('100%')
-        .layoutWeight(1)
+        Scroll() { this.DialogContent() }
+          .width('100%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
       } else {
         Row() {
           Scroll() { this.DialogContent() }
