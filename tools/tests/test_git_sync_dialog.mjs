@@ -287,3 +287,16 @@ test('retrying a failed pull goes back to the pull flow', async () => {
   assert.deepEqual(calls, ['pull']);
   assert.equal(dialog.result, 'success');
 });
+
+test('pull stays a body link and the footer keeps two buttons', () => {
+  const footer = method('private DialogFooter() {', '\n  build()');
+  assert.ok(!footer.includes('canPull'), '拉取动作不得出现在页脚（页脚只保留两按钮）');
+  assert.ok(!footer.includes('拉取'), '页脚不得出现拉取文案');
+  assert.equal(footer.split('UtilityDialogAction(').length - 1, 4,
+    '页脚只有 4 个调用点：取消/关闭 + 完成/重试/主按钮三选一');
+  const bodyLinkGate = "if (!this.busy && this.result === 'none' && this.canPull()) {";
+  assert.ok(source.includes(bodyLinkGate), '正文必须有 canPull 门控的拉取入口');
+  const gateIndex = source.indexOf(bodyLinkGate);
+  assert.ok(source.slice(gateIndex, gateIndex + 200).includes("Text('拉取远端更新')"),
+    'canPull 分支内必须是「拉取远端更新」正文链接');
+});

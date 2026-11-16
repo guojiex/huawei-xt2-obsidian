@@ -1083,6 +1083,13 @@ export struct GitSyncDialog {
           .width('100%')
           .accessibilityText(this.statusMessage)
       }
+      if (!this.busy && this.result === 'none' && this.canPull()) {
+        Text('拉取远端更新')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.brand'))
+          .padding({ top: Space.s1, bottom: Space.s1 })
+          .onClick((): void => { void this.runPullAction(); })
+      }
       if (this.busy && this.currentStep >= 0) {
         this.ProgressSteps()
       }
@@ -1111,12 +1118,6 @@ export struct GitSyncDialog {
     Row({ space: Space.s2 }) {
       UtilityDialogAction(UIUtils.makeBinding<string>(() => this.busy ? '取消' : '关闭'), 'secondary',
         this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy), (): void => { this.dismiss(); })
-      if (this.canPull()) {
-        UtilityDialogAction(UIUtils.makeBinding<string>(() => this.pulling ? '正在拉取…' : '拉取'),
-          'secondary', this.singleScreen,
-          UIUtils.makeBinding<boolean>(() => !this.busy && this.canPull()),
-          (): void => { void this.runPullAction(); })
-      }
       if (this.result === 'success') {
         UtilityDialogAction(UIUtils.makeBinding<string>(() => '完成'), 'primary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
           this.dismiss();

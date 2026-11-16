@@ -195,14 +195,18 @@ test('Git sync demo validates branches and renders progress and failure results 
   f.run(`gitSyncState.stage='done';gitSyncState.outcome=${JSON.stringify(outcome)};renderGitSync()`);
   assert(f.get('gitSyncBody').innerHTML.includes(expected));
  }
- // v1.73：手动拉取——落后提示、快进合并、已是最新与失败结果都在本地渲染。
+ // v1.73：手动拉取——正文「拉取远端更新」链接（有改动时不渲染）、落后提示、快进合并、
+ // 已是最新与失败结果都在本地渲染；页脚保持两按钮。
+ f.run("gitSyncState.stage='ready';gitSyncState.clean=false;gitSyncState.behind=0;renderGitSync()");
+ assert(!f.get('gitSyncBody').innerHTML.includes('id="gitSyncPull"'));
  f.run("gitSyncState.stage='ready';gitSyncState.clean=true;gitSyncState.behind=2;renderGitSync()");
  assert(f.get('gitSyncBody').innerHTML.includes('已前进 2 个提交；推送会被拒绝，请在电脑上处理。'));
- assert(!f.get('gitSyncPull').classList.contains('hidden'));
+ assert(f.get('gitSyncBody').innerHTML.includes('id="gitSyncPull"'));
+ assert(f.get('gitSyncBody').innerHTML.includes('拉取远端更新'));
  f.get('gitSyncPull').onclick();
  assert(f.get('gitSyncBody').innerHTML.includes('正在拉取 main…'));
  assert.equal(f.get('gitSyncPush').textContent,'正在拉取…');
- assert(f.get('gitSyncPull').disabled);
+ assert(!f.get('gitSyncBody').innerHTML.includes('id="gitSyncPull"'));
  f.flush();
  assert(f.get('gitSyncBody').innerHTML.includes('已拉取远端更新'));
  assert(f.get('gitSyncBody').innerHTML.includes('本地已快进合并远端 main 的新提交。'));
