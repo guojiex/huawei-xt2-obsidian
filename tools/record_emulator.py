@@ -14,6 +14,8 @@ from pathlib import Path
 
 FRAME_WIDTH = 1920
 FRAME_HEIGHT = 1344
+OUTPUT_WIDTH = 1920
+OUTPUT_HEIGHT = 1080
 OUTPUT_FPS = 30
 DEFAULT_TARGET = "127.0.0.1:5555"
 
@@ -117,6 +119,12 @@ def main():
                 f"正在合成 {OUTPUT_FPS}fps MP4。",
                 flush=True,
             )
+            video_filter = (
+                f"fps={OUTPUT_FPS},"
+                f"scale={OUTPUT_WIDTH}:{OUTPUT_HEIGHT}:"
+                "force_original_aspect_ratio=decrease:force_divisible_by=2,"
+                f"pad={OUTPUT_WIDTH}:{OUTPUT_HEIGHT}:(ow-iw)/2:(oh-ih)/2:white"
+            )
             run(
                 [
                     ffmpeg,
@@ -131,7 +139,7 @@ def main():
                     "-i",
                     str(frame_dir / "frame_%06d.jpeg"),
                     "-vf",
-                    f"fps={OUTPUT_FPS}",
+                    video_filter,
                     "-c:v",
                     "libx264",
                     "-preset",
