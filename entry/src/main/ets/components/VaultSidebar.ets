@@ -363,21 +363,7 @@ export struct VaultSidebar {
             .color($r('app.color.line'))
             .margin({ top: Space.s2 })
 
-          Row() {
-            Text('管理库…')
-              .fontSize(FontSize.body2)
-              .fontColor($r('app.color.brand'))
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .height(Size.touch)
-          .padding(Space.s2)
-          .borderRadius(Radius.control)
-          .onClick(() => {
-            this.menuOpen = false;
-            this.onManageVaults();
-          })
-
+          // 原型 .vault-menu-actions 顺序：＋ 导入库在前，管理库…在后
           Row() {
             Text('＋ 导入库…')
               .fontSize(FontSize.body2)
@@ -391,6 +377,21 @@ export struct VaultSidebar {
           .onClick(() => {
             this.menuOpen = false;
             this.onImportVault();
+          })
+
+          Row() {
+            Text('管理库…')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(Size.touch)
+          .padding(Space.s2)
+          .borderRadius(Radius.control)
+          .onClick(() => {
+            this.menuOpen = false;
+            this.onManageVaults();
           })
 
         }
