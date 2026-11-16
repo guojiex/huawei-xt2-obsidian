@@ -300,3 +300,12 @@ test('pull stays a body link and the footer keeps two buttons', () => {
   assert.ok(source.slice(gateIndex, gateIndex + 200).includes("Text('拉取远端更新')"),
     'canPull 分支内必须是「拉取远端更新」正文链接');
 });
+
+test('changes list forwards scroll gestures to the dialog body (keyboard avoidance)', () => {
+  // 2026-11-16 键盘避让配套：内层改动清单默认 SELF_ONLY，滑到头不传外层；
+  // 键盘弹出后外层正文可滚（壳限高扣 keyboardInsetPx），手势必须能链出去。
+  assert.ok(source.includes('scrollForward: NestedScrollMode.SELF_FIRST'),
+    '内层清单 scrollForward 必须 SELF_FIRST 链到外层');
+  assert.ok(source.includes('scrollBackward: NestedScrollMode.SELF_FIRST'),
+    '内层清单 scrollBackward 必须 SELF_FIRST 链到外层');
+});

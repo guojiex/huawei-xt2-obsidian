@@ -35,8 +35,13 @@ test('utility shell matches the wide dialog and single-screen sheet geometry', (
   assert.match(shellSource, /preferredWidthVp: number = Size\.utilityDialogW/);
   assert.match(shellSource, /Math\.max\(0, Math\.min\(this\.preferredWidthVp, this\.windowWidthVp - Space\.s8\)\)/);
   // v1.32 32.13：宽屏限高 = 窗口高 - 上下各 s8；单屏 0.86 不变
-  assert.match(shellSource, /return this\.windowHeightVp \* 0\.86;/);
-  assert.match(shellSource, /return Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 2\);/);
+  // 2026-11-16 键盘避让（v1.73 验收缺陷）：页面级 setKeyboardAvoidMode 对 CustomDialog 不生效
+  //（api_notes L-21），弹窗限高必须扣除 keyboardInsetPx，正文 Scroll 才有滚动空间。
+  assert.match(shellSource, /@StorageProp\('keyboardInsetPx'\) keyboardInsetPx: number = 0;/);
+  assert.match(shellSource, /px2vp\(Math\.max\(0, this\.keyboardInsetPx\)\)/);
+  assert.match(shellSource, /this\.windowHeightVp - this\.keyboardInsetVp\(\)/);
+  assert.match(shellSource, /return availHeightVp \* 0\.86;/);
+  assert.match(shellSource, /return Math\.max\(0, availHeightVp - Space\.s8 \* 2\);/);
   assert.match(shellSource, /Radius\.dialog \* 2/);
   assert.match(shellSource, /height\(Space\.s10\)/);
   // 2026-11-13 起字重不散写数值，走 Weight.semibold（=600）token。

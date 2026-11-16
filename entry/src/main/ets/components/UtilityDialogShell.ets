@@ -22,6 +22,11 @@ export struct UtilityDialogShell {
   preferredWidthVp: number = Size.utilityDialogW;
   windowWidthVp: number = 0;
   windowHeightVp: number = 0;
+  // 2026-11-16 键盘避让（v1.73 验收缺陷）：页面级 setKeyboardAvoidMode 对 CustomDialog 不生效
+  //（api_notes L-21「弹窗自成一系」），键盘弹出时壳的限高若仍按整窗高算，正文不溢出 →
+  // Scroll 无滚动空间，底部输入/页脚被 IME 盖住。按 EntryAbility 发布的 keyboardInsetPx
+  // 收紧限高（px2vp，同 navIndicatorHeightPx 口径），键盘收起值归零自动还原。
+  @StorageProp('keyboardInsetPx') keyboardInsetPx: number = 0;
   onClose: () => void = () => {};
   @BuilderParam content: () => void = this.EmptyContent;
   @BuilderParam footer: () => void = this.EmptyFooter;
@@ -61,15 +66,20 @@ export struct UtilityDialogShell {
       : this.preferredWidthVp;
   }
 
+  private keyboardInsetVp(): number {
+    return px2vp(Math.max(0, this.keyboardInsetPx));
+  }
+
   private dialogMaxHeight(): number {
     if (this.windowHeightVp <= 0) {
       return Size.menuMaxH;
     }
+    const availHeightVp: number = Math.max(0, this.windowHeightVp - this.keyboardInsetVp());
     if (this.singleScreen) {
-      return this.windowHeightVp * 0.86;
+      return availHeightVp * 0.86;
     }
     // 32.13：宽屏弹窗限定在应用窗口内 —— 上下边距各 ≥ s8，超出部分在弹窗内滚动。
-    return Math.max(0, this.windowHeightVp - Space.s8 * 2);
+    return Math.max(0, availHeightVp - Space.s8 * 2);
   }
 
   private contentMaxHeight(): number {

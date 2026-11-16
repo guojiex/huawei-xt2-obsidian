@@ -37,8 +37,11 @@ test('32.13 原型：宽屏弹窗上下边距 gap=--s8，超出滚动', () => {
 });
 
 test('32.13 原生：UtilityDialogShell 宽屏限高 = 窗口高 - 上下各 s8，单屏 0.86 不变', () => {
-  assert.match(shell, /private dialogMaxHeight\(\): number \{[\s\S]*?if \(this\.singleScreen\) \{\s*return this\.windowHeightVp \* 0\.86;\s*\}/);
-  assert.match(shell, /return Math\.max\(0, this\.windowHeightVp - Space\.s8 \* 2\);/);
+  // 2026-11-16 键盘避让（v1.73 验收缺陷）：限高先扣 keyboardInsetVp 再套 0.86 / s8*2
+  //（页面级 setKeyboardAvoidMode 对 CustomDialog 不生效，api_notes L-21）。
+  assert.match(shell, /private dialogMaxHeight\(\): number \{[\s\S]*?if \(this\.singleScreen\) \{\s*return availHeightVp \* 0\.86;\s*\}/);
+  assert.match(shell, /const availHeightVp: number = Math\.max\(0, this\.windowHeightVp - this\.keyboardInsetVp\(\)\);/);
+  assert.match(shell, /return Math\.max\(0, availHeightVp - Space\.s8 \* 2\);/);
   // 不再使用宽屏 0.8 比例（精确匹配，避免误伤单屏 0.86）
   assert.doesNotMatch(shell, /\? 0\.8 :/);
   // 超出部分弹窗内滚动：shell 内容区滚动约束仍在
@@ -69,5 +72,6 @@ test('32.13 原生：分享面板标题不跳（恒高法沿用 v1.25），宽�
 
 test('32.13 原生：单屏半模态不变（Bottom 贴底 + 0.86）', () => {
   assert.match(index, /alignment: syncSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
-  assert.match(shell, /return this\.windowHeightVp \* 0\.86;/);
+  // 2026-11-16：0.86 作用在扣除键盘避让后的可用高（availHeightVp），键盘弹出弹窗收紧可滚。
+  assert.match(shell, /return availHeightVp \* 0\.86;/);
 });

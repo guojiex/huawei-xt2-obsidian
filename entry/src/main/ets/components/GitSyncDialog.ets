@@ -1020,6 +1020,12 @@ export struct GitSyncDialog {
         .width('100%')
         .height(Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
         .scrollBar(BarState.Auto)
+        // 2026-11-16 键盘避让配套：内层清单默认 SELF_ONLY，滑到头不传外层正文，
+        // 键盘弹出后外层可滚时手势要能链出去（SELF_FIRST：先滚自己，到边再传父）。
+        .nestedScroll({
+          scrollForward: NestedScrollMode.SELF_FIRST,
+          scrollBackward: NestedScrollMode.SELF_FIRST
+        })
 
         if (this.shouldCommitChanges()) {
           TextInput({ placeholder: this.defaultCommitMessage(), text: this.commitMessage })
