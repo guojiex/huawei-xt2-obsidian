@@ -900,6 +900,8 @@ export struct GitSyncDialog {
       }
       .alignItems(HorizontalAlign.Start)
       .width('100%')
+      .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
+      .border({ width: { bottom: 1 }, color: $r('app.color.line') })
 
       if (this.selectedChange() === null) {
         Column() {
@@ -925,7 +927,8 @@ export struct GitSyncDialog {
     }
     .width(this.singleScreen ? '100%' : '60%')
     .height('100%')
-    .padding({ left: this.singleScreen ? Space.s4 : Space.s2, right: Space.s4, top: Space.s3 })
+    // v1.78：右栏铺满——去掉左右留边，标题行自己带内边距；背景由外层 bg_page 统一。
+    .padding(0)
     .layoutWeight(this.singleScreen ? 0 : 1)
   }
 
@@ -977,7 +980,7 @@ export struct GitSyncDialog {
             .width('100%')
         }
         .width('100%')
-        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
         if (this.activeFileDiff.truncated) {
           Text('此文件差异过大，仅显示前 ' + this.activeFileDiff.lines.length + ' 行')
             .fontSize(FontSize.caption)
@@ -1004,9 +1007,8 @@ export struct GitSyncDialog {
     }
     .width('100%')
     .layoutWeight(1)
-    .borderRadius(Radius.card)
-    .backgroundColor($r('app.color.bg_secondary'))
-    .padding({ top: Space.s2, bottom: Space.s2 })
+    // v1.78：铺满式查看器——去掉浮卡的圆角/二次底色/上下留边，融入页面底色。
+    .backgroundColor($r('app.color.bg_page'))
   }
 
   @Builder

@@ -582,7 +582,7 @@ pre.simple-protected::after,table.simple-table.simple-protected::after{content:n
 .sync-page-titles p{margin:var(--s1) 0 0;font-size:var(--caption);color:var(--muted)}
 .sync-layout{display:flex;flex:1;min-height:0}
 .sync-side{width:calc(var(--nav-width) * 1.65);flex:none;overflow:auto;padding:var(--s4);border-right:var(--stroke) solid var(--line);background:var(--nav)}.sync-side .sync-row>span:first-child{width:var(--s16)}.sync-side .sync-file-name{overflow-wrap:anywhere;word-break:break-word}.sync-side .sync-section-head{flex-wrap:wrap;gap:var(--s1)}.sync-side .sync-section-head small{flex-basis:100%}
-.sync-detail{flex:1;min-width:0;overflow:auto;padding:var(--s4) var(--s5);background:var(--nav)}
+.sync-detail{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;padding:0;background:var(--paper)}
 .sync-page-foot{flex:none;padding:var(--s3) var(--s5);border-top:var(--stroke) solid var(--line);background:var(--paper)}
 .sync-page-foot .import-actions{margin:0;gap:var(--s3)}
 .sync-page-foot .import-secondary{min-width:calc(var(--s16) * 2)}
@@ -627,16 +627,18 @@ pre.simple-protected::after,table.simple-table.simple-protected::after{content:n
 .sync-settings[open]>summary{border-bottom:var(--stroke) solid var(--line)}
 .sync-settings .sync-card{border:0;border-radius:0}
 /* Right pane: a focused code viewer with a file header card. */
-.sync-diff-pane-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s3);margin-bottom:var(--s3)}
+.sync-diff-pane-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--s3);padding:var(--s4) var(--s5);border-bottom:var(--stroke) solid var(--line);flex:none}
 .sync-diff-pane-head h3{margin:0;font-size:var(--small);font-weight:600}
 .sync-diff-pane-head p{margin:0;font-size:var(--caption);color:var(--muted)}
-.sync-file-diff{margin:0;border:var(--stroke) solid var(--line);border-radius:var(--r);background:var(--paper);overflow:hidden;box-shadow:var(--float-shadow)}
-.sync-file-diff+.sync-file-diff{margin-top:var(--s4)}
-.sync-file-diff>.sync-diff-head{padding:var(--s3) var(--s4);background:var(--paper);border-bottom:var(--stroke) solid var(--line);flex-wrap:wrap}
+.sync-detail>.sync-diff-pane-head+.sync-file-diff,.sync-detail>.sync-diff-pane-head+.sync-diff-placeholder{border-top:0}
+.sync-detail .sync-file-diff{border:0;border-radius:0;box-shadow:none;background:var(--paper);flex:1;min-height:0;margin:0;display:flex;flex-direction:column}
+.sync-detail .sync-file-diff+.sync-file-diff{margin-top:0}
+.sync-file-diff>.sync-diff-head{padding:var(--s3) var(--s5);background:var(--paper);border-bottom:var(--stroke) solid var(--line);flex-wrap:wrap;flex:none}
 .sync-file-diff>.sync-diff-head strong{font-size:var(--small);overflow-wrap:anywhere}
 .sync-diff-title{display:flex;align-items:center;gap:var(--s2);min-width:0}
 .sync-diff-title strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sync-diff-lines{max-height:none;overflow:auto;font:var(--caption)/1.8 var(--mono)}
+.sync-detail .sync-diff-lines{flex:1;min-height:0;max-height:none}
+.sync-diff-lines{overflow:auto;font:var(--caption)/1.8 var(--mono)}
 .sync-diff-line{display:flex;align-items:flex-start;min-height:calc(var(--s4) + var(--s1))}
 .sync-diff-line .dl-no{flex:none;width:calc(var(--s6) + var(--s2));padding:var(--s1) var(--s2);text-align:right;color:var(--muted);user-select:none;background:var(--nav);border-right:var(--stroke) solid var(--line)}
 .sync-diff-line .dl-mark{flex:none;width:var(--s5);padding:var(--s1) 0;text-align:center;font-weight:700;user-select:none}
@@ -647,6 +649,7 @@ pre.simple-protected::after,table.simple-table.simple-protected::after{content:n
 .sync-diff-line.add .dl-mark,.sync-diff-line.add .dl-text{color:var(--green)}
 .sync-diff-line.ctx .dl-text{color:var(--ink)}
 .sync-diff-line.ctx .dl-mark{color:var(--muted)}
+.sync-detail .sync-diff-placeholder{flex:1;min-height:0}
 .sync-diff-placeholder{display:grid;place-items:center;gap:var(--s2);min-height:calc(var(--s16) * 3);padding:var(--s6);border:var(--stroke) dashed var(--line);border-radius:var(--r);color:var(--muted);text-align:center;background:var(--paper)}
 .sync-diff-placeholder svg{width:var(--s10);height:var(--s10)}
 .sync-diff-placeholder p{margin:0;font-size:var(--small);line-height:1.6}

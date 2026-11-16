@@ -77,7 +77,10 @@ test('v1.77 sync page opens with first diff selected and card-based hierarchy', 
   assert.match(html, /class="sync-diff-title"/);
   assert.match(html, /\+'\+added\+' \\u2212'\+removed\+'/);
   assert.match(block, /\.sync-diff-line \.dl-no\{[^}]*background:var\(--nav\)/);
-  assert.match(block, /\.sync-diff-lines\{max-height:none/);
+  // v1.78：右栏铺满（flex 列、无留边），diff 卡贴边、行区 flex 撑满并内部滚动。
+  assert.match(block, /\.sync-detail\{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;padding:0;background:var\(--paper\)\}/);
+  assert.match(block, /\.sync-detail \.sync-file-diff\{[^}]*border:0;border-radius:0;box-shadow:none/);
+  assert.match(block, /\.sync-detail \.sync-diff-lines\{flex:1;min-height:0;max-height:none\}/);
 });
 
 test('diff rows reuse diff-* color tokens, no scattered hex colors in new CSS', () => {
