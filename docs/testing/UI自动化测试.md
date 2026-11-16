@@ -54,64 +54,66 @@
 > `quick-switcher-scope-current`/`quick-switcher-scope-all`、`quick-switcher-search-input`、
 > `quick-switcher-skip-hint`、`trash-section-header`、`trash-restore-button`、`trash-purge-button`、
 > `trash-row-<vaultId>:<relPath>`（回收站行，47.3）、
+> `trash-row-<vaultId>:<relPath>` 行主体 Column（74.3 预览入口，accessibilityText「预览 <名>」）、
 > `settings-diagnostics-row`、`settings-changelog-row`、`settings-reset-pane-widths`、
 > `utility-dialog-close`（弹窗外壳 × 关闭）、`vault-create-input`（新建库输入框）、
 > `vault-manager-delete-<vaultId>`（库管理删除/解除关联按钮）。
 
-| 套件 | 用例 | 覆盖要点 | EM 对应 |
-| --- | --- | --- | --- |
-| UiLaunch | `cold_launch_workspace_ready` | 冷启动后工作区骨架（汉堡 / 库切换 / 笔记计数）就位，无白屏 | EM-A1 |
-| UiLaunch | `file_tree_not_empty_fresh_install` | 首装教程库文件树非空（空树提示不出现） | EM-A1 |
-| UiLaunch | `split_handle_hidden_when_sidebar_collapsed` | 宽屏（≥600vp）下收起目录后 nav 分栏把手从控件树消失、展开复原（295bd23 回归防线；单屏直通） | EM-A3 增补 |
-| UiLaunch | `more_menu_opens_and_closes` | 宽屏更多菜单开合 | EM-H1（可达部分） |
-| UiLaunch | `quick_switcher_open_and_close` | 快切开合（入口 → Back 关闭） | EM-E1（可达部分） |
-| UiNoteFlow | `create_note_dialog_open_and_cancel` | 新建弹窗外壳 + 取消路径 | EM-B2 / EM-G1 |
-| UiNoteFlow | `create_note_empty_name_keeps_dialog` | 空名时「创建」不生效（禁用路径） | EM-B2 / EM-G3 |
-| UiNoteFlow | `create_note_with_name_full_flow` | 原生 TextInput 注入 + 创建全链路（树就位、栏就位）；兼作 inputText 可用性探针 | EM-B2 |
-| UiNoteFlow | `create_folder_flow` | 类型切「文件夹」→ 创建 → 树就位 | EM-B2 |
-| UiNoteFlow | `delete_note_confirm_and_undo` | 行菜单删除 → 确认 → 撤销条出现 → 撤销恢复 | EM-B3（按钮路径） |
-| UiNoteFlow | `delete_note_dialog_cancel_keeps` | 删除确认取消后文件保留 | EM-G1 |
-| UiNoteFlow | `trash_section_visible_after_delete` | 删除后侧栏回收站区块出现 | EM-B4（可达部分） |
-| UiNoteFlow | `trash_purge_confirm_and_cancel` | 回收站永久删除全链路：行内按钮 → 确认弹窗 → 取消保留 / 确认真删（行消失，无撤销条）；复用 UiNoteFlow 树操作 helpers，故不放 UiTrash | EM-B7 |
-| UiNoteFlow | `pin_note_moves_row_to_pin_section` | 行操作条「置顶」→ 置顶区行（pin-row）出现 + 树行消失（62.2 双向）；`clickByText('置顶')` 不可用（先命中区头），用 findComponents 按 y 重叠过滤 | v1.50 50.1–50.3 / v1.62 62.1/62.2 |
-| UiNoteFlow | `unpin_from_pin_section_restores_tree_row` | 置顶区行左滑「取消置顶」→ 置顶区行消失 + 树行恢复 | v1.50 50.2 / v1.62 62.3 |
-| UiNoteFlow | `pin_section_collapse_toggle` | 置顶区头点击折叠（行隐藏、头保留）/ 再点展开 | v1.62 62.4 |
-| UiNoteFlow | `backlinks_panel_opens_from_more_menu` | 更多菜单「查看反链」→ 空反链占位「暂无来源笔记」→ 「隐藏反链」收起 | v1.2 |
-| UiNoteFlow | `close_note_shows_empty_state` | 关闭当前笔记 → 空态（新建入口 id 就位） | EM-B5（可达部分） |
-| UiPanels | `settings_groups_visible_and_back` | 设置页分组标题就位 + 返回 | EM-F1（可达部分） |
-| UiPanels | `settings_editor_mode_toggle` | 设置内简单 / 专业模式切换与还原 | EM-C1 / EM-F1 |
-| UiPanels | `vault_manager_open_and_back` | 库下拉 → 管理库 → 返回 | EM-B1（可达部分） |
-| UiPanels | `git_entry_hidden_for_non_git_vault` | 非 Git 库（首装教程库）不显示同步入口 | EM-K1（反向断言） |
-| UiPanels | `share_panel_accessible_from_more_menu` | 更多菜单中分享入口可见 | EM-J2（可达部分） |
-| UiPanels | `import_dialog_accessible_from_vault_manager` | 库管理中导入按钮可达 | EM-M1（可达部分） |
-| UiQuickSwitch | `quick_switcher_opens_with_search_input` | 快切弹窗搜索输入框可见 | EM-E1 |
-| UiQuickSwitch | `scope_defaults_to_current_vault` | 范围分段「当前库」默认选中 | EM-E1 |
-| UiQuickSwitch | `scope_toggle_to_all_vaults` | 范围分段切换到「全部库」 | EM-E2（可达部分） |
-| UiQuickSwitch | `skip_hint_ui_skeleton_accessible` | 跳过提示 UI 骨架可达 | EM-E3（可达部分） |
-| UiQuickSwitch | `content_search_returns_matching_note` | 模式切「正文」→ inputText('曜石') → FTS5 全文命中显示名「快速上手」（样例库 快速上手.md） | v1.1 正文搜索 / v1.40 RDB |
-| UiSmDrawer | `folder_toggle_responds_in_navigation` | 文件列表目录行点按有翻转响应，导航异常时汉堡 toggle 自愈后重试（2026-11-08 抽屉失步回归防线） | —（回归新增） |
-| UiSmDrawer | `create_note_keeps_navigation_usable` | 抽屉头「+」新建笔记后导航仍可复用（doCreateNote 收抽屉走 setDrawerOpen 的链路） | EM-B2 增补 |
-| UiTrash | `trash_section_visibility` | 回收站区块可见性（空/非空两种正确状态） | EM-B4 |
-| UiTrash | `trash_restore_button_accessible_when_items_exist` | 回收站有内容时恢复按钮可达 | EM-B4（按钮路径） |
-| UiTrash | `trash_section_label_correct` | 回收站标题文案正确 | EM-B4 |
-| UiSettingsExt | `diagnostics_info_row_visible_and_expandable` | 诊断信息行可见且可展开（含构建提交行） | EM-F2 |
-| UiSettingsExt | `changelog_section_visible` | 更新日志区可见且有内容或占位 | EM-F5 |
-| UiSettingsExt | `reset_pane_widths_row_visible` | 恢复等分栏宽行可见 | EM-F6 |
-| UiStats | `streak_chip_visible_in_note_sidebar` | lg 笔记视图侧栏连写条（vault-stats-streak-chip）可见 | v1.58 58.2 |
-| UiStats | `stats_dialog_opens_from_more_menu` | 更多菜单「写作统计」→ 弹窗（独有锚点副标题「只在本机统计」）→ × 关闭；菜单项与弹窗标题同名，判定避开同名碰撞 | v1.58 58.3/58.4 |
-| UiScreensaver | `screensaver_entry_open_and_exit_smoke` | 菜单「屏保 / 台历」进入 → 覆盖层入场后点击退出 → 应用可交互；覆盖层 a11y 不可断言（accessibilityLevel('no')），仅冒烟 | v1.65 65.3/65.4 |
-| UiScreensaver | `screensaver_settings_group_visible` | 设置「屏保 / 台历」组 + 名言轮换间隔档位可见 | v1.65 65.5 |
-| UiShare | `share_panel_opens_from_more_menu` | 更多菜单「分享笔记」**点击穿透**：应用内分享面板真的打开（格式行/描述就位，标题与菜单项同名，判定用弹窗独有文本「长图」）；非 Git 库不显示「远端网页链接」行 | EM-J2 / EM-J4（反向） |
-| UiShare | `share_scope_segments_switch_formats` | 范围分段「笔记/文件夹/知识库」切换，各范围标题与格式列表正确 | EM-J2 25.12/25.13 |
-| UiShare | `share_note_text_preview_roundtrip` | 文本分享详情（可编辑说明 + 返回格式选择）可达并返回 | v0.9 9.14 |
-| UiShare | `share_text_system_handoff_cancel_keeps_dialog` | 分享文本调起系统分享：无交接失败文案；取消（pressBack）后应用内弹窗保留；系统面板标记（华为分享/复制/另存为/中转站）尽力探测不硬断言 | EM-J2（取消系统分享，可达部分） |
-| UiShare | `share_note_file_preview_roundtrip` | Markdown / ZIP 文件详情（标题按格式 / 分享文件 / 返回）可达并返回 | EM-J2 / v0.8 |
-| UiShare | `share_long_image_preview_roundtrip` | 长图详情（宽度/外观设置区 + 返回）可达并返回；不断言成图 | EM-J2 / v1.19 / v1.25 |
-| UiShare | `share_vault_zip_preview_roundtrip` | 知识库范围 ZIP 详情（1 个 ZIP / 分享文件）可达并返回 | EM-J2 / v0.8 |
-| UiShare | `share_vault_entry_from_manager` | 库管理「分享」→ 仅 ZIP 的「分享知识库」面板（无范围分段） | EM-J1 / v1.25 25.18 |
-| UiShare | `share_export_current_vault_from_settings` | 设置 → 数据 → 导出当前知识库复用同一分享面板，关闭后仍在设置数据页 | EM-J3 / v1.37 37.2 |
-| UiShare | `share_pdf_row_matches_capability` | 能力自适应：有「PDF 文档」行则点入断言详情弹窗；无则基础三行在（优雅降级）。x86 模拟器预期无 PDF 行（SystemCapability，AD 组） | v1.53 53.3（可达部分） |
-| UiShare | `share_empty_vault_entry_disabled` | 空库分享入口禁用（`uitest_share_empty_*` 新建空库探针 + isEnabled 断言 + 删除清理；doCreateVault 自动切库不影响探针） | EM-J1 空库 / EM-B6（可达部分） |
+| 套件            | 用例                                                 | 覆盖要点                                                                                                        | EM 对应                             |
+|---------------|----------------------------------------------------|-------------------------------------------------------------------------------------------------------------|-----------------------------------|
+| UiLaunch      | `cold_launch_workspace_ready`                      | 冷启动后工作区骨架（汉堡 / 库切换 / 笔记计数）就位，无白屏                                                                            | EM-A1                             |
+| UiLaunch      | `file_tree_not_empty_fresh_install`                | 首装教程库文件树非空（空树提示不出现）                                                                                         | EM-A1                             |
+| UiLaunch      | `split_handle_hidden_when_sidebar_collapsed`       | 宽屏（≥600vp）下收起目录后 nav 分栏把手从控件树消失、展开复原（295bd23 回归防线；单屏直通）                                                     | EM-A3 增补                          |
+| UiLaunch      | `more_menu_opens_and_closes`                       | 宽屏更多菜单开合                                                                                                    | EM-H1（可达部分）                       |
+| UiLaunch      | `quick_switcher_open_and_close`                    | 快切开合（入口 → Back 关闭）                                                                                          | EM-E1（可达部分）                       |
+| UiNoteFlow    | `create_note_dialog_open_and_cancel`               | 新建弹窗外壳 + 取消路径                                                                                               | EM-B2 / EM-G1                     |
+| UiNoteFlow    | `create_note_empty_name_keeps_dialog`              | 空名时「创建」不生效（禁用路径）                                                                                            | EM-B2 / EM-G3                     |
+| UiNoteFlow    | `create_note_with_name_full_flow`                  | 原生 TextInput 注入 + 创建全链路（树就位、栏就位）；兼作 inputText 可用性探针                                                         | EM-B2                             |
+| UiNoteFlow    | `create_folder_flow`                               | 类型切「文件夹」→ 创建 → 树就位                                                                                          | EM-B2                             |
+| UiNoteFlow    | `delete_note_confirm_and_undo`                     | 行菜单删除 → 确认 → 撤销条出现 → 撤销恢复                                                                                   | EM-B3（按钮路径）                       |
+| UiNoteFlow    | `delete_note_dialog_cancel_keeps`                  | 删除确认取消后文件保留                                                                                                 | EM-G1                             |
+| UiNoteFlow    | `trash_section_visible_after_delete`               | 删除后侧栏回收站区块出现                                                                                                | EM-B4（可达部分）                       |
+| UiNoteFlow    | `trash_purge_confirm_and_cancel`                   | 回收站永久删除全链路：行内按钮 → 确认弹窗 → 取消保留 / 确认真删（行消失，无撤销条）；复用 UiNoteFlow 树操作 helpers，故不放 UiTrash                        | EM-B7                             |
+| UiNoteFlow    | `pin_note_moves_row_to_pin_section`                | 行操作条「置顶」→ 置顶区行（pin-row）出现 + 树行消失（62.2 双向）；`clickByText('置顶')` 不可用（先命中区头），用 findComponents 按 y 重叠过滤          | v1.50 50.1–50.3 / v1.62 62.1/62.2 |
+| UiNoteFlow    | `unpin_from_pin_section_restores_tree_row`         | 置顶区行左滑「取消置顶」→ 置顶区行消失 + 树行恢复                                                                                 | v1.50 50.2 / v1.62 62.3           |
+| UiNoteFlow    | `pin_section_collapse_toggle`                      | 置顶区头点击折叠（行隐藏、头保留）/ 再点展开                                                                                     | v1.62 62.4                        |
+| UiNoteFlow    | `backlinks_panel_opens_from_more_menu`             | 更多菜单「查看反链」→ 空反链占位「暂无来源笔记」→ 「隐藏反链」收起                                                                         | v1.2                              |
+| UiNoteFlow    | `close_note_shows_empty_state`                     | 关闭当前笔记 → 空态（新建入口 id 就位）                                                                                     | EM-B5（可达部分）                       |
+| UiPanels      | `settings_groups_visible_and_back`                 | 设置页分组标题就位 + 返回                                                                                              | EM-F1（可达部分）                       |
+| UiPanels      | `settings_editor_mode_toggle`                      | 设置内简单 / 专业模式切换与还原                                                                                           | EM-C1 / EM-F1                     |
+| UiPanels      | `vault_manager_open_and_back`                      | 库下拉 → 管理库 → 返回                                                                                              | EM-B1（可达部分）                       |
+| UiPanels      | `git_entry_hidden_for_non_git_vault`               | 非 Git 库（首装教程库）不显示同步入口                                                                                       | EM-K1（反向断言）                       |
+| UiPanels      | `share_panel_accessible_from_more_menu`            | 更多菜单中分享入口可见                                                                                                 | EM-J2（可达部分）                       |
+| UiPanels      | `import_dialog_accessible_from_vault_manager`      | 库管理中导入按钮可达                                                                                                  | EM-M1（可达部分）                       |
+| UiQuickSwitch | `quick_switcher_opens_with_search_input`           | 快切弹窗搜索输入框可见                                                                                                 | EM-E1                             |
+| UiQuickSwitch | `scope_defaults_to_current_vault`                  | 范围分段「当前库」默认选中                                                                                               | EM-E1                             |
+| UiQuickSwitch | `scope_toggle_to_all_vaults`                       | 范围分段切换到「全部库」                                                                                                | EM-E2（可达部分）                       |
+| UiQuickSwitch | `skip_hint_ui_skeleton_accessible`                 | 跳过提示 UI 骨架可达                                                                                                | EM-E3（可达部分）                       |
+| UiQuickSwitch | `content_search_returns_matching_note`             | 模式切「正文」→ inputText('曜石') → FTS5 全文命中显示名「快速上手」（样例库 快速上手.md）                                                  | v1.1 正文搜索 / v1.40 RDB             |
+| UiSmDrawer    | `folder_toggle_responds_in_navigation`             | 文件列表目录行点按有翻转响应，导航异常时汉堡 toggle 自愈后重试（2026-11-08 抽屉失步回归防线）                                                    | —（回归新增）                           |
+| UiSmDrawer    | `create_note_keeps_navigation_usable`              | 抽屉头「+」新建笔记后导航仍可复用（doCreateNote 收抽屉走 setDrawerOpen 的链路）                                                      | EM-B2 增补                          |
+| UiTrash       | `trash_section_visibility`                         | 回收站区块可见性（空/非空两种正确状态）                                                                                        | EM-B4                             |
+| UiTrash       | `trash_restore_button_accessible_when_items_exist` | 回收站有内容时恢复按钮可达                                                                                               | EM-B4（按钮路径）                       |
+| UiTrash       | `trash_section_label_correct`                      | 回收站标题文案正确                                                                                                   | EM-B4                             |
+| UiTrash       | `trash_row_body_click_opens_readonly_preview`      | 点回收站行主体（文件名/原位置 Column）→ 半模态预览弹窗打开（标题 = 文件名、页脚「永久删除 / 恢复」就位）→ × 关闭后行仍在、计数不变；主体 accessibilityText「预览 <名>」可命中 | EM-B8（可达部分）/ v1.74 74.3           |
+| UiSettingsExt | `diagnostics_info_row_visible_and_expandable`      | 诊断信息行可见且可展开（含构建提交行）                                                                                         | EM-F2                             |
+| UiSettingsExt | `changelog_section_visible`                        | 更新日志区可见且有内容或占位                                                                                              | EM-F5                             |
+| UiSettingsExt | `reset_pane_widths_row_visible`                    | 恢复等分栏宽行可见                                                                                                   | EM-F6                             |
+| UiStats       | `streak_chip_visible_in_note_sidebar`              | lg 笔记视图侧栏连写条（vault-stats-streak-chip）可见                                                                     | v1.58 58.2                        |
+| UiStats       | `stats_dialog_opens_from_more_menu`                | 更多菜单「写作统计」→ 弹窗（独有锚点副标题「只在本机统计」）→ × 关闭；菜单项与弹窗标题同名，判定避开同名碰撞                                                   | v1.58 58.3/58.4                   |
+| UiScreensaver | `screensaver_entry_open_and_exit_smoke`            | 菜单「屏保 / 台历」进入 → 覆盖层入场后点击退出 → 应用可交互；覆盖层 a11y 不可断言（accessibilityLevel('no')），仅冒烟                              | v1.65 65.3/65.4                   |
+| UiScreensaver | `screensaver_settings_group_visible`               | 设置「屏保 / 台历」组 + 名言轮换间隔档位可见                                                                                   | v1.65 65.5                        |
+| UiShare       | `share_panel_opens_from_more_menu`                 | 更多菜单「分享笔记」**点击穿透**：应用内分享面板真的打开（格式行/描述就位，标题与菜单项同名，判定用弹窗独有文本「长图」）；非 Git 库不显示「远端网页链接」行                         | EM-J2 / EM-J4（反向）                 |
+| UiShare       | `share_scope_segments_switch_formats`              | 范围分段「笔记/文件夹/知识库」切换，各范围标题与格式列表正确                                                                             | EM-J2 25.12/25.13                 |
+| UiShare       | `share_note_text_preview_roundtrip`                | 文本分享详情（可编辑说明 + 返回格式选择）可达并返回                                                                                 | v0.9 9.14                         |
+| UiShare       | `share_text_system_handoff_cancel_keeps_dialog`    | 分享文本调起系统分享：无交接失败文案；取消（pressBack）后应用内弹窗保留；系统面板标记（华为分享/复制/另存为/中转站）尽力探测不硬断言                                    | EM-J2（取消系统分享，可达部分）                |
+| UiShare       | `share_note_file_preview_roundtrip`                | Markdown / ZIP 文件详情（标题按格式 / 分享文件 / 返回）可达并返回                                                                 | EM-J2 / v0.8                      |
+| UiShare       | `share_long_image_preview_roundtrip`               | 长图详情（宽度/外观设置区 + 返回）可达并返回；不断言成图                                                                              | EM-J2 / v1.19 / v1.25             |
+| UiShare       | `share_vault_zip_preview_roundtrip`                | 知识库范围 ZIP 详情（1 个 ZIP / 分享文件）可达并返回                                                                           | EM-J2 / v0.8                      |
+| UiShare       | `share_vault_entry_from_manager`                   | 库管理「分享」→ 仅 ZIP 的「分享知识库」面板（无范围分段）                                                                            | EM-J1 / v1.25 25.18               |
+| UiShare       | `share_export_current_vault_from_settings`         | 设置 → 数据 → 导出当前知识库复用同一分享面板，关闭后仍在设置数据页                                                                        | EM-J3 / v1.37 37.2                |
+| UiShare       | `share_pdf_row_matches_capability`                 | 能力自适应：有「PDF 文档」行则点入断言详情弹窗；无则基础三行在（优雅降级）。x86 模拟器预期无 PDF 行（SystemCapability，AD 组）                             | v1.53 53.3（可达部分）                  |
+| UiShare       | `share_empty_vault_entry_disabled`                 | 空库分享入口禁用（`uitest_share_empty_*` 新建空库探针 + isEnabled 断言 + 删除清理；doCreateVault 自动切库不影响探针）                       | EM-J1 空库 / EM-B6（可达部分）            |
 
 ## 约定
 

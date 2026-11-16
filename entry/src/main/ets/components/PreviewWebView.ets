@@ -14,6 +14,8 @@
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { common, Want } from '@kit.AbilityKit';
+import { BusinessError } from '@kit.BasicServicesKit';
 import { BridgeCodec } from '../common/BridgeCodec';
 import { FontSize } from '../common/Tokens';
 import { PreviewFollowAnchor } from '../model/PreviewFollowPolicy';
@@ -133,6 +135,14 @@ export struct TrashPreviewWeb {
         this.updateTrashPreview();
       })
       .onConsole((): boolean => true)
+      .onLoadIntercept((event: OnLoadInterceptEvent): boolean => {
+        const url: string = event.data.getRequestUrl();
+        if (isExternalHttpUrl(url)) {
+          openUrlExternally(getContext(this) as common.UIAbilityContext, url);
+          return true;
+        }
+        return false;
+      })
       .onErrorReceive((): void => {
         if (!this.failureReported) {
           this.failureReported = true;
@@ -330,6 +340,31 @@ const PREVIEW_DOMAIN = 0x0000;
 const PREVIEW_TAG = 'PreviewWebView';
 const PREVIEW_ZOOM_MIN: number = 50;
 const PREVIEW_ZOOM_MAX: number = 200;
+
+/**
+ * 笔记内的 http(s) 链接不留在预览 Web 里当网页加载（旧行为会把笔记页变成浏览器），
+ * 改为交系统按 viewData + browsable 弹应用选择 / 默认浏览器打开（官方 FAQ faqs-arkweb-143，
+ * api_notes L-23）。只拦顶层导航；rawfile / data / 页内锚点不匹配，照常放行。
+ */
+function isExternalHttpUrl(url: string): boolean {
+  return url.startsWith('http://') || url.startsWith('https://');
+}
+
+/** URL 属笔记内容，按埋点红线不进 hilog；只记错误码。 */
+function openUrlExternally(context: common.UIAbilityContext, url: string): void {
+  const want: Want = {
+    action: 'ohos.want.action.viewData',
+    entities: ['entity.system.browsable'],
+    uri: url
+  };
+  try {
+    void context.startAbility(want).catch((error: BusinessError): void => {
+      hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, `外链跳转失败 code:${error.code}`);
+    });
+  } catch (_error) {
+    hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '外链跳转异常');
+  }
+}
 
 function normalizePreviewZoomPercent(percent: number): number {
   if (!Number.isFinite(percent)) {
@@ -1301,6 +1336,14 @@ export struct PreviewWebView {
         .onConsole((_event): boolean => {
           // Rendered note text can appear in Web console messages; do not forward it to hilog.
           return true;
+        })
+        .onLoadIntercept((event: OnLoadInterceptEvent): boolean => {
+          const url: string = event.data.getRequestUrl();
+          if (isExternalHttpUrl(url)) {
+            openUrlExternally(getContext(this) as common.UIAbilityContext, url);
+            return true;
+          }
+          return false;
         })
         .onErrorReceive((event) => {
           this.loadFailed = true;

@@ -1668,6 +1668,23 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 影响：EM 用例不能靠 shell 往库里「注入」新笔记夹具（如带 BOM 的 md）；夹具只能走应用自身链路（新建 / 导入 / Git clone）或使用沙箱内既有文件。[UI 自动化测试](../testing/UI自动化测试.md)记载的 harness 宿主侧 `rm -rf uitest*` 残留清理仍成立（unlink 放行，实测 RM_OK）。
 - 依据：EM-C12（BOM 回归用例）补建时实测（2026-11-15）；BOM 误报修复见 [v1.70 需求文档](../releases/v1.70/需求文档.md) 70.5 与 AG1。
 
+### L-23 ⚠️ 预览 Web 内点 http(s) 外链默认**在 Web 里当网页加载**——须 `onLoadIntercept` 拦下交系统打开（官方 FAQ，未真机实测）
+
+- 现象：mdpreview 预览（阅读态 / 回收站只读预览）里点 `<a href="https://...">`，Web 组件直接顶层导航去加载该网页，笔记页变成浏览器（2026-11-16
+  用户报告）。
+- 官方方案（[FAQ faqs-arkweb-143](https://developer.huawei.com/consumer/cn/forum/)「Web组件如何实现拦截网络超链接后在浏览器中打开」，本地
+  `devecocli docs` 检索）：`Web.onLoadIntercept` 回调里 `event.data.getRequestUrl()` 拿 URL，http(s) 时
+  `startAbility(Want{ action:'ohos.want.action.viewData', entities:['entity.system.browsable'], uri })`
+  交给系统弹应用选择 / 默认浏览器，回调 `return true` 阻止 Web 内加载；其余 `return false` 放行。
+- 本机 SDK 复核（API24 组件 `web.d.ts`）：`onLoadIntercept(callback: Callback<OnLoadInterceptEvent, boolean>)`，
+  `OnLoadInterceptEvent{ data: WebResourceRequest }`，`getRequestUrl(): string`，since 10 —— 签名与 FAQ
+  示例一致。语义为「navigation 被拦截时触发」：**顶层导航**才走它，图片等子资源走 `onInterceptRequest`，rawfile / data /
+  页内锚点不受影响（本组件此前否决的是 `onInterceptRequest` 转发方案，见决策表，与本条无关）。
+- 落地：`PreviewWebView.ets` 主预览与 `TrashPreviewWeb` 两处 Web 挂 `onLoadIntercept`，模块级 `isExternalHttpUrl` /
+  `openUrlExternally` 共用；URL 属笔记内容，不进 hilog（硬约束 16）。
+- ⚠️ 待验：模拟器 / XT2 真机点外链应弹「选择打开方式」或拉起默认浏览器，而非在笔记页内加载网页；`entity.system.browsable`
+  在无默认浏览器时的表现待实测。
+
 ---
 
 ## 落地决策表

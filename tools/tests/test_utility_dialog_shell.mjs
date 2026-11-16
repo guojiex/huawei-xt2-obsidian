@@ -50,7 +50,7 @@ test('utility shell matches the wide dialog and single-screen sheet geometry', (
 });
 
 test('native note, vault, quick-switch, import, and share dialogs use the shared shell', () => {
-  assert.equal((noteDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 5);
+  assert.equal((noteDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 6);
   assert.equal((vaultDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 3);
   assert.equal((quickSwitcherSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 1);
   assert.equal((importDialogSource.match(/UtilityDialogShell\(\{/g) ?? []).length, 1);
@@ -84,7 +84,7 @@ test('shell consumers wrap content and footer builders in arrows to preserve thi
     import.meta.url
   ));
   const consumers = [
-    { name: 'NoteDialogs', source: noteDialogSource, shells: 5, footers: 5 },
+    { name: 'NoteDialogs', source: noteDialogSource, shells: 6, footers: 6 },
     { name: 'VaultDialogs', source: vaultDialogSource, shells: 3, footers: 3 },
     { name: 'QuickSwitcher', source: quickSwitcherSource, shells: 1, footers: 0 },
     { name: 'ImportVaultDialog', source: importDialogSource, shells: 1, footers: 1 },
@@ -185,7 +185,7 @@ test('every utility action passes label as a makeBinding<string> callback', () =
     import.meta.url
   ));
   const consumers = [
-    { name: 'NoteDialogs', source: noteDialogSource, calls: 10 },
+    { name: 'NoteDialogs', source: noteDialogSource, calls: 12 },
     { name: 'VaultDialogs', source: vaultDialogSource, calls: 6 },
     { name: 'GitSyncDialog', source: gitSyncSource, calls: 4 },
     { name: 'ImportVaultDialog', source: importDialogSource, calls: 4 },
@@ -234,7 +234,7 @@ test('utility shell title stays reactive via the headerTexts builder param', () 
   assert.match(shareDialogSource, /Text\(this\.currentOption\(\)\.title\)/);
   assert.doesNotMatch(shareDialogSource, /UIUtils/);
   const consumers = [
-    { name: 'NoteDialogs', source: noteDialogSource, shells: 5 },
+    { name: 'NoteDialogs', source: noteDialogSource, shells: 6 },
     { name: 'VaultDialogs', source: vaultDialogSource, shells: 3 },
     { name: 'QuickSwitcher', source: quickSwitcherSource, shells: 1 },
     { name: 'ImportVaultDialog', source: importDialogSource, shells: 1 },
