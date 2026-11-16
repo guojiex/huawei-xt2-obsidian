@@ -36,6 +36,24 @@ test('v2 git sync hosts expandable per-file rows with inline unified diff', () =
   assert.match(html, /data-sync-demo="diff"/, 'demo entry to open a diff example');
 });
 
+test('v1.76 git sync is a full-screen page (not a dialog), with left changes + right diff', () => {
+  // 参照设置页范式：section.settings-page + window sync-open class 隐藏工作区。
+  assert.match(html, /class="settings-page sync-page hidden"\s+id="gitSyncDialog"/);
+  assert.match(html, /\.window\.sync-open>\.sidebar,\.window\.sync-open>\.workspace,\.window\.sync-open>\.split-control\{display:none!important\}/);
+  assert.match(html, /class="sync-layout"><div class="sync-side" id="gitSyncBody"/);
+  assert.match(html, /<div aria-label="逐行差异" class="sync-detail" id="gitSyncDiffPane">/);
+  // 打开/关闭走 class 切换，不再 showModal/close dialog。
+  assert.match(html, /\$\('window'\)\.classList\.add\('sync-open'\)/);
+  assert.match(html, /\$\('window'\)\.classList\.remove\('sync-open'\)/);
+  assert.ok(!/gitSyncDialog'\)\.showModal\(\)/.test(html), 'no modal dialog');
+  assert.match(html, /function gitSyncDiffPaneHtml\(s,changes\)/);
+  assert.match(html, /\$\('gitSyncDiffPane'\)\.innerHTML=gitSyncDiffPaneHtml\(s,changes\)/);
+  // 选中文件在左侧高亮。
+  assert.match(html, /class="sync-file-item'\+\(open\?' selected':''\)\+'"\>/);
+  // URL 直达全屏页。
+  assert.match(html, /params\.get\('view'\)==='sync'/);
+});
+
 test('diff rows reuse diff-* color tokens, no scattered hex colors in new CSS', () => {
   const block = html.slice(html.indexOf('/* Git sync note diff'), html.indexOf('/* Git sync note diff') + 2200);
   assert.match(block, /\.sync-diff-line\.del\{background:var\(--diff-del-bg\)\}/);

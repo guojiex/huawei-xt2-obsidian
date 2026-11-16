@@ -348,6 +348,8 @@ struct Index {
   @State vaultStatsModel: VaultStatsModel = emptyStatsModel();
   @State vaultStatsScanning: boolean = true;
   @State vaultStatsFailed: boolean = false;
+  @State gitsyncReturnView: string = 'note';
+  @State gitsyncEntryId: string = '';
   @State settingsReturnView: string = 'note';
   @State settingsCategory: string = 'general';
   @State settingsDetail: boolean = false;
@@ -639,7 +641,6 @@ struct Index {
   private importVaultCtl: CustomDialogController | null = null;
   private restoreImportTriggerFocus: () => void = () => {};
   @State private importVaultDialogBusy: boolean = false;
-  private gitSyncCtl: CustomDialogController | null = null;
   private gitSyncBusy: boolean = false;
   private pendingExternalDirectory: ExternalDirectorySelection | null = null;
   /** v1.36 ZIP 导入：弹窗侧暂存的解析结果与暂存文件路径（关闭弹窗时清理，36.6）。 */
@@ -2604,6 +2605,8 @@ struct Index {
       this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     } else if (this.topView === 'vaults') {
       this.topView = this.vaultManagerReturnView;
+    } else if (this.topView === 'gitsync') {
+      this.returnFromGitSync();
     } else {
       this.topView = 'note';
     }
@@ -2803,45 +2806,25 @@ struct Index {
       promptAction.showToast({ message: '当前库不是 Git 库' });
       return;
     }
+    // v1.76：同步从 CustomDialog 浮窗改为全屏页（topView 切换，与设置页同范式）。
     this.gitSyncBusy = false;
-    let focusRestored: boolean = false;
-    const focusReturnId: string = this.isSingleScreenLayout()
+    this.gitsyncReturnView = this.topView === 'note' ? 'note' : this.topView;
+    this.gitsyncEntryId = entry.id;
+    this.topView = 'gitsync';
+    this.scheduleWorkspaceSessionSave();
+  }
+
+  /** v1.76：退出同步全屏页，回到进入前的视图并还原焦点。 */
+  private returnFromGitSync(): void {
+    if (this.gitSyncBusy) {
+      return;
+    }
+    this.topView = this.gitsyncReturnView;
+    this.focusMoreMenuOnAppear = this.gitsyncReturnView === 'note';
+    this.scheduleWorkspaceSessionSave();
+    const focusId: string = this.isSingleScreenLayout()
       ? 'workspace-more-button' : 'git-sync-button';
-    const restoreFocus = (): void => {
-      if (focusRestored) {
-        return;
-      }
-      focusRestored = true;
-      setTimeout((): void => {
-        FocusRequest.safely(this.getUIContext(), focusReturnId);
-      }, 0);
-    };
-    const syncSheet: boolean = this.isSingleScreenLayout();
-    this.gitSyncCtl = new CustomDialogController({
-      builder: GitSyncDialog({
-        vaultId: entry.id,
-        singleScreen: syncSheet,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        onBusyChange: (busy: boolean): void => { this.gitSyncBusy = busy; },
-        onDismiss: restoreFocus,
-        onPulled: (): void => { void this.refreshWorkspaceAfterPull(); }
-      }),
-      cancel: (): void => {
-        if (!this.gitSyncBusy) {
-          restoreFocus();
-        }
-      },
-      autoCancel: true,
-      alignment: syncSheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      customStyle: true,
-      onWillDismiss: (action: DismissDialogAction): void => {
-        if (!this.gitSyncBusy) {
-          action.dismiss();
-        }
-      }
-    });
-    this.gitSyncCtl.open();
+    setTimeout((): void => { FocusRequest.safely(this.getUIContext(), focusId); }, 0);
   }
 
   /** 统一导入入口：文件树选择器与库管理页共用。 */
@@ -4599,6 +4582,9 @@ struct Index {
     }
     if (this.topView === 'agent') {
       return this.agentTitle;
+    }
+    if (this.topView === 'gitsync') {
+      return '同步到 Git';
     }
     return '设置与关于';
   }
@@ -7126,6 +7112,8 @@ struct Index {
               this.SettingsPane()
             } else if (this.topView === 'agent') {
               this.AgentPane()
+            } else if (this.topView === 'gitsync') {
+              this.GitSyncPane()
             }
             if (this.undoVisible) {
               this.UndoBar()
@@ -9317,6 +9305,22 @@ struct Index {
         void this.openImportVaultDialog('vault-manager-import-button');
       }
     })
+  }
+
+  /** v1.76：Git 同步全屏页（顶栏由 Appbar 提供；组件内左状态/清单 + 右逐行差异 + 底部操作）。 */
+  @Builder
+  GitSyncPane() {
+    GitSyncDialog({
+      vaultId: this.gitsyncEntryId,
+      singleScreen: this.isSingleScreenLayout(),
+      windowWidthVp: this.windowWidthVp,
+      windowHeightVp: this.windowHeightVp,
+      onBusyChange: (busy: boolean): void => { this.gitSyncBusy = busy; },
+      onDismiss: (): void => { this.returnFromGitSync(); },
+      onPulled: (): void => { void this.refreshWorkspaceAfterPull(); }
+    })
+      .width('100%')
+      .height('100%')
   }
 
   /** 设置与关于视图：整体替换内容区；返回走顶栏 ‹ 与 onBackPress（2.7c 同级） */

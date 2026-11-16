@@ -113,7 +113,12 @@ test('badge refresh runs when Index appears and when its registry snapshot chang
   assert.match(source, /onPageShow\(\): void \{[\s\S]*?this\.refreshGitAheadCommitCount\(\);/);
 });
 
-test('sync dialog does not restore entry focus while a busy dismiss is blocked', () => {
-  assert.match(source, /cancel: \(\): void => \{\s*if \(!this\.gitSyncBusy\) \{\s*restoreFocus\(\);/);
-  assert.match(source, /onWillDismiss: \(action: DismissDialogAction\): void => \{\s*if \(!this\.gitSyncBusy\) \{\s*action\.dismiss\(\);/);
+test('v1.76: sync full-screen page blocks dismiss while busy and restores focus on return', () => {
+  // v1.76 同步从 CustomDialog 改为全屏页：无 cancel/onWillDismiss，
+  // 忙碌保护移到 returnFromGitSync 与组件 dismiss，退出后还原同步入口焦点。
+  assert.match(source, /private returnFromGitSync\(\): void \{\s*if \(this\.gitSyncBusy\) \{\s*return;\s*\}/);
+  assert.match(source, /onDismiss: \(\): void => \{ this\.returnFromGitSync\(\); \}/);
+  assert.match(source, /FocusRequest\.safely\(this\.getUIContext\(\), focusId\)/);
+  const dialogSrc = readSourceFile(new URL('../../entry/src/main/ets/components/GitSyncDialog.ets', import.meta.url));
+  assert.match(dialogSrc, /private dismiss\(\): void \{\s*if \(this\.busy\) \{\s*return;\s*\}/);
 });

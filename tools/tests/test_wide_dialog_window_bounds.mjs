@@ -70,8 +70,12 @@ test('32.13 原生：分享面板标题不跳（恒高法沿用 v1.25），宽�
   assert.doesNotMatch(shareFlow, /DialogAlignment\.Top/);
 });
 
-test('32.13 原生：单屏半模态不变（Bottom 贴底 + 0.86）', () => {
-  assert.match(index, /alignment: syncSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
-  // 2026-11-16：0.86 作用在扣除键盘避让后的可用高（availHeightVp），键盘弹出弹窗收紧可滚。
+test('v1.76 原生：同步改全屏页，不再使用单屏半模态（Bottom 贴底 + 0.86 仅留其它弹窗）', () => {
+  // v1.76 同步从 CustomDialog（syncSheet Bottom 半模态）改为 topView='gitsync' 全屏页。
+  assert.ok(!/alignment: syncSheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/.test(index),
+    'sync no longer uses a Bottom sheet DialogController');
+  assert.match(index, /this\.topView = 'gitsync';/);
+  assert.match(index, /else if \(this\.topView === 'gitsync'\)\s*\{\s*this\.GitSyncPane\(\)/);
+  // 0.86 系数仍服务于其它半模态弹窗（UtilityDialogShell），保留。
   assert.match(shell, /return availHeightVp \* 0\.86;/);
 });

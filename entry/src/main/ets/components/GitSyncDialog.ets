@@ -11,14 +11,14 @@ import { VaultRegistry } from '../model/VaultRegistry';
 import { FontSize, Radius, Size, Space } from '../common/Tokens';
 import { Icon } from '../common/Icons';
 import { FocusRequest } from '../common/FocusRequest';
-import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
+import { UtilityDialogAction } from './UtilityDialogShell';
 
 type GitSyncResult = 'none' | 'success' | 'stale' | 'auth' | 'network' | 'local';
 type GitSyncRetryAction = 'sync' | 'remoteStatus' | 'pull';
 
-@CustomDialog
+/** v1.76：同步从 CustomDialog 浮窗改为占满内容区的全屏页（与设置页同范式）。 */
+@Component
 export struct GitSyncDialog {
-  controller?: CustomDialogController;
   @Prop vaultId: string = '';
   @Prop singleScreen: boolean = false;
   @Prop windowWidthVp: number = 0;
@@ -68,6 +68,7 @@ export struct GitSyncDialog {
   @State resultBody: string = '';
   @State pulling: boolean = false;
   onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
+  /** v1.76：请求退出全屏页（Index 收到后把 topView 切回 note 并还原焦点）。 */
   onDismiss: () => void = () => {};
   onPulled: () => void = () => {};
 
@@ -690,7 +691,7 @@ export struct GitSyncDialog {
     if (this.busy) {
       return;
     }
-    this.controller?.close();
+    // v1.76：无 controller，改为回调通知 Index 退出全屏页。
     this.restoreFocus();
   }
 
@@ -846,15 +847,70 @@ export struct GitSyncDialog {
       .width('100%')
       .height(Size.touch)
       .padding({ left: Space.s2, right: Space.s2 })
+      .backgroundColor(this.expandedDiffPath === change.path
+        ? $r('app.color.brand_bg') : Color.Transparent)
+      .borderRadius(Radius.control)
       .onClick(() => { void this.toggleDiff(change.path); })
-      .accessibilityText((this.expandedDiffPath === change.path ? '收起' : '展开') +
-        ' ' + change.path + ' 的逐行差异')
+      .accessibilityText((this.expandedDiffPath === change.path ? '收起' : '查看') +
+        ' ' + change.path + ' 的逐行差异（右侧显示）')
       .accessibilityDescription(this.diffStatOf(change.path))
-      if (this.expandedDiffPath === change.path) {
-        this.DiffPanel(change)
-      }
     }
     .width('100%')
+  }
+
+  /** v1.76：右栏当前选中的改动文件（无选中返回 null）。 */
+  private selectedChange(): Git2FileChange | null {
+    for (const change of this.changes) {
+      if (change.path === this.expandedDiffPath) {
+        return change;
+      }
+    }
+    return null;
+  }
+
+  /** v1.76：右栏逐行差异面板，未选中显示占位引导。 */
+  @Builder
+  private DiffPane() {
+    Column({ space: Space.s2 }) {
+      Column() {
+        Text('逐行差异')
+          .fontSize(FontSize.s3)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('app.color.text_primary'))
+        Text('当前工作区与上次提交的对比；只显示这次要一并提交、推送的未提交改动。')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .margin({ top: Space.s1 })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .width('100%')
+
+      if (this.selectedChange() === null) {
+        Column() {
+          Icon('menu', Space.s16, $r('app.color.text_secondary'))
+          Text(this.changes.length > 0
+            ? '在左侧点选一个改动文件，这里会显示它的逐行差异。'
+            : '本地没有未提交的改动，暂无逐行差异可看。')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+            .textAlign(TextAlign.Center)
+            .margin({ top: Space.s3 })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .border({ width: 1, color: $r('app.color.line'), style: BorderStyle.Dashed })
+        .borderRadius(Radius.card)
+        .padding(Space.s6)
+      } else {
+        this.DiffPanel(this.selectedChange() as Git2FileChange)
+      }
+    }
+    .width(this.singleScreen ? '100%' : '60%')
+    .height('100%')
+    .padding({ left: this.singleScreen ? Space.s4 : Space.s2, right: Space.s4, top: Space.s3 })
+    .layoutWeight(this.singleScreen ? 0 : 1)
   }
 
   @Builder
@@ -900,7 +956,7 @@ export struct GitSyncDialog {
           .width('100%')
         }
         .width('100%')
-        .height(Math.min(Size.touch * 4, Math.max(Space.s4, this.activeFileDiff.lines.length * FontSize.caption * 1.7)))
+        .layoutWeight(1)
         .scrollBar(BarState.Auto)
         .nestedScroll({
           scrollForward: NestedScrollMode.SELF_FIRST,
@@ -909,10 +965,10 @@ export struct GitSyncDialog {
       }
     }
     .width('100%')
-    .margin({ left: Space.s5 + Space.s3, bottom: Space.s2 })
-    .borderRadius(Radius.control)
+    .layoutWeight(1)
+    .borderRadius(Radius.card)
     .backgroundColor($r('app.color.bg_secondary'))
-    .padding({ top: Space.s1, bottom: Space.s1 })
+    .padding({ top: Space.s2, bottom: Space.s2 })
   }
 
   @Builder
@@ -1203,11 +1259,8 @@ export struct GitSyncDialog {
           .width('100%')
         }
         .width('100%')
-        // 展开逐行差异时放高清单可视区，差异行内部再各自滚动；未展开时维持原限高。
-        .height(this.expandedDiffPath.length > 0
-          ? Math.min(Size.touch * 4 + Space.s6 + Size.touch * 3,
-            Size.touch * this.changes.length + Size.touch * 3)
-          : Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
+        // v1.76：差异在右栏独立显示，清单维持原限高，不再因展开而放高。
+        .height(Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
         .scrollBar(BarState.Auto)
         // 2026-11-16 键盘避让配套：内层清单默认 SELF_ONLY，滑到头不传外层正文，
         // 键盘弹出后外层可滚时手势要能链出去（SELF_FIRST：先滚自己，到边再传父）。
@@ -1333,17 +1386,53 @@ export struct GitSyncDialog {
   }
 
   build() {
-    UtilityDialogShell({
-      title: '同步到 Git',
-      subtitle: this.vaultId + ' · 推送到 ' + this.pushBranch,
-      headerIcon: 'sync',
-      closeLabel: '关闭同步页',
-      singleScreen: this.singleScreen,
-      windowWidthVp: this.windowWidthVp,
-      windowHeightVp: this.windowHeightVp,
-      onClose: (): void => { this.dismiss(); },
-      content: (): void => { this.DialogContent(); },
-      footer: (): void => { this.DialogFooter(); }
+    // v1.76 全屏页：顶栏返回由 Index Appbar 统一提供（与设置页同范式）；
+    // 组件负责副标题 + 主体（左状态/清单 + 右逐行差异）+ 底部操作栏。
+    Column() {
+      Text(this.vaultId + ' · 推送到 ' + this.pushBranch)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s2 })
+
+      // 主体：单屏上下（清单上/差异下），宽屏左右分栏。
+      if (this.singleScreen) {
+        Column() {
+          Scroll() { this.DialogContent() }
+            .width('100%')
+            .layoutWeight(1)
+            .scrollBar(BarState.Auto)
+          this.DiffPane()
+        }
+        .width('100%')
+        .layoutWeight(1)
+      } else {
+        Row() {
+          Scroll() { this.DialogContent() }
+            .width('40%')
+            .height('100%')
+            .padding({ right: Space.s2 })
+            .scrollBar(BarState.Auto)
+          this.DiffPane()
+        }
+        .width('100%')
+        .layoutWeight(1)
+      }
+
+      Column() {
+        this.DialogFooter()
+      }
+      .width('100%')
+      .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s3 })
+      .backgroundColor($r('app.color.bg_page'))
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor($r('app.color.bg_page'))
+    .onKeyEvent((event: KeyEvent): void => {
+      if (event.keyCode === KeyCode.KEYCODE_ESCAPE && event.type === KeyType.Down) {
+        this.dismiss();
+      }
     })
   }
 }
