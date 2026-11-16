@@ -15,6 +15,7 @@ import fileIo from '@ohos.file.fs';
 import picker from '@ohos.file.picker';
 import statfs from '@ohos.file.statvfs';
 import { BusinessError, zlib } from '@kit.BasicServicesKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import {
   InflatePort, ZipImportError, ZipPickResult, ZipReaderPort, ZipWriterPort
 } from './ZipImportService';
@@ -121,6 +122,21 @@ export class TempVaultZipWriter implements ZipWriterPort {
         throw new ZipImportError('no_space', '设备存储空间不足');
       }
       throw new ZipImportError('io', '写入导入文件失败');
+    }
+  }
+
+  /**
+   * v1.72 导入恢复 mtime（72.2）：解压写盘后按 ZIP central directory 的 DOS 时间
+   * 回填文件修改时间（fileIo.utimes，api_notes Y5：API 11+，Epoch 毫秒，限沙箱路径——
+   * tempDir 在 vaultsRoot 沙箱内）。尽力而为：失败仅 hilog 告警错误码（不记路径，
+   * 隐私红线），不失败导入——内容正确性已由长度 + CRC32 校验保证。
+   */
+  setModifiedTime(relativePath: string, modifiedAtMs: number): void {
+    try {
+      fileIo.utimes(TempVaultZipWriter.resolveUnderRoot(this.rootDir, relativePath), modifiedAtMs);
+    } catch (error) {
+      const err: BusinessError = error as BusinessError;
+      hilog.warn(0x0000, 'ZipImportDevice', '导入回填文件时间失败 %{public}d', err.code);
     }
   }
 

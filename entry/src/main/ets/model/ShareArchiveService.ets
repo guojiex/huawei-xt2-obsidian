@@ -1,7 +1,7 @@
 import { zlib } from '@kit.BasicServicesKit';
 import fileIo from '@ohos.file.fs';
 import { NoteShareService } from './NoteShareService';
-import { VaultAccess } from './VaultAccess';
+import { VaultAccess, VaultFileStat } from './VaultAccess';
 import { VaultRegistry } from './VaultRegistry';
 
 export interface ShareSnapshot {
@@ -119,13 +119,15 @@ export class ShareArchiveService {
         } else {
           NoteShareService.writeBinaryOutput(output, vaultAccess.readBytes(item.path));
         }
+        ShareArchiveService.restorePayloadMtime(vaultAccess, output, item.path);
       }
       for (let i = 0; i < externalImages.length; i++) {
         const sourcePath: string = externalImages[i];
         const targetPath: string = archiveImages.get(sourcePath) ?? '';
         ShareArchiveService.ensureParent(registry, payloadRel, targetPath, createdDirectories);
-        NoteShareService.writeBinaryOutput(registry.sharePath(payloadRel + '/' + targetPath),
-          vaultAccess.readBytes(sourcePath));
+        const output: string = registry.sharePath(payloadRel + '/' + targetPath);
+        NoteShareService.writeBinaryOutput(output, vaultAccess.readBytes(sourcePath));
+        ShareArchiveService.restorePayloadMtime(vaultAccess, output, sourcePath);
       }
       const name: string = ShareArchiveService.archiveName(vaultId, folderPath);
       const zipName: string = name + '.zip';
@@ -262,6 +264,27 @@ export class ShareArchiveService {
     const parent: string = NoteShareService.parentOf(relativePath);
     if (parent.length > 0) {
       ShareArchiveService.ensureDirectory(registry, payloadRel, parent, createdDirectories);
+    }
+  }
+
+  /**
+   * v1.72 导出 ZIP 保真（72.1）：payload 是新写的副本，mtime 默认为拷贝时刻；
+   * 写完按源文件 mtime 回填（fileIo.utimes，api_notes Y5：Epoch 毫秒，payload 在
+   * sharePath 沙箱内满足路径限制），让 zlib.compressFile 打进 ZIP DOS 字段的是真实
+   * 写作时间（v1.66 copyTree 同款做法）。源 mtime 只经 vaultAccess.stat 读取，
+   * 不按 rootKind 分叉；沙箱 / 外部两实现 mtimeSec 均为秒。尽力而为：
+   * 源 stat 拿不到或回填失败保留拷贝时刻，不失败分享。
+   */
+  private static restorePayloadMtime(vaultAccess: VaultAccess, payloadPath: string,
+    sourceRelPath: string): void {
+    try {
+      const stat: VaultFileStat | null = vaultAccess.stat(sourceRelPath);
+      if (stat === null || stat.mtimeSec <= 0) {
+        return;
+      }
+      fileIo.utimes(payloadPath, stat.mtimeSec * 1000);
+    } catch (error) {
+      // mtime 属统计 / 排序元数据，回填失败不影响分享内容正确性。
     }
   }
 

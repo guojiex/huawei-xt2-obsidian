@@ -3072,9 +3072,11 @@ struct Index {
       tempDirCreated = true;
       const reader: StagingZipReader = new StagingZipReader(stagingPath);
       try {
+        // v1.72 72.2：开启 preserveMtime，解压写盘后按 central directory DOS 时间回填，
+        // 保住统计热力图 / 连写 / mtime 排序的写作历史（TempVaultZipWriter.setModifiedTime）。
         const written: number = await ZipImportService.extract(reader,
           new TempVaultZipWriter(tempDir), new ZlibRawInflate(), parsed,
-          { onProgress: onProgress });
+          { preserveMtime: true, onProgress: onProgress });
         if (written !== parsed.entries.length) {
           throw new ZipImportError('corrupt', 'ZIP 数据损坏');
         }

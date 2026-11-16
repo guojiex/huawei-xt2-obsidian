@@ -70,6 +70,8 @@ function buildZip(entries, opts = {}) {
     centralHeader.writeUInt32LE(0x02014b50, 0);
     centralHeader.writeUInt16LE(flags, 8);
     centralHeader.writeUInt16LE(method, 10);
+    centralHeader.writeUInt16LE(entry.dosTime || 0, 12);
+    centralHeader.writeUInt16LE(entry.dosDate || 0, 14);
     centralHeader.writeUInt32LE(crc, 16);
     centralHeader.writeUInt32LE(stored.length, 20);
     centralHeader.writeUInt32LE(data.length, 24);
@@ -379,6 +381,78 @@ test('v1.36 36.2 分类覆盖 markdown 大小写与全部支持图片扩展名',
   assert.equal(ZipImportService.classifyEntryName('b.md/'), 'skip');
 });
 
+// ---------------------------- v1.72 mtime 保真 ----------------------------
+
+// 2026-06-15（DOS 日期位：年自 1980 起）
+const DOS_DATE_20260615 = ((2026 - 1980) << 9) | (6 << 5) | 15;
+
+test('v1.72 parse 读取 central directory DOS 时间并按本地时区解码为 Epoch 毫秒', async () => {
+  const dosTime = (14 << 11) | (30 << 5) | (20 >> 1); // 14:30:20（2 秒粒度）
+  const zip = buildZip([{ name: 'a.md', data: 'x', dosDate: DOS_DATE_20260615, dosTime }]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+  assert.equal(parsed.entries[0].modifiedAtMs, new Date(2026, 5, 15, 14, 30, 20).getTime());
+});
+
+test('v1.72 parse 非法 DOS 时间（13 月）回退为 0', async () => {
+  const badDate = ((2026 - 1980) << 9) | (13 << 5) | 1;
+  const zip = buildZip([{ name: 'a.md', data: 'x', dosDate: badDate, dosTime: 0 }]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+  assert.equal(parsed.entries[0].modifiedAtMs, 0);
+});
+
+test('v1.72 72.2 extract preserveMtime 逐条目回填；时间为 0 的条目跳过', async () => {
+  const goodTime = (9 << 11) | (0 << 5) | 0; // 09:00:00
+  const zip = buildZip([
+    { name: 'a.md', data: '1', dosDate: DOS_DATE_20260615, dosTime: goodTime },
+    { name: 'b.md', data: '2' } // DOS 时间为 0 → modifiedAtMs 0 → 不回填
+  ]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+  const base = createMockWriter();
+  const restored = [];
+  const writer = {
+    writeFile: base.writeFile,
+    setModifiedTime: (relativePath, modifiedAtMs) => restored.push([relativePath, modifiedAtMs])
+  };
+  const written = await ZipImportService.extract(createMockReader(zip), writer, nodeInflate, parsed,
+    { preserveMtime: true });
+  assert.equal(written, 2);
+  assert.deepEqual(restored, [['a.md', new Date(2026, 5, 15, 9, 0, 0).getTime()]]);
+});
+
+test('v1.72 72.3 未开 preserveMtime 不调用 setModifiedTime；writer 未实现该方法时不崩', async () => {
+  const zip = buildZip([{ name: 'a.md', data: '1', dosDate: DOS_DATE_20260615, dosTime: 0 }]);
+  const parsed = await ZipImportService.parse(createMockReader(zip), ZipImportService.DEFAULT_LIMITS);
+  let called = 0;
+  const countingWriter = {
+    writeFile: createMockWriter().writeFile,
+    setModifiedTime: () => { called++; }
+  };
+  await ZipImportService.extract(createMockReader(zip), countingWriter, nodeInflate, parsed, {});
+  assert.equal(called, 0);
+  // writer 未实现 setModifiedTime（可选方法）且开启 preserveMtime：不抛错，照常写文件
+  const written = await ZipImportService.extract(createMockReader(zip), createMockWriter(), nodeInflate,
+    parsed, { preserveMtime: true });
+  assert.equal(written, 1);
+});
+
+test('v1.72 72.1/72.2 导出侧 payload 回填与导入侧 preserveMtime 接线（源断言）', () => {
+  const deviceSource = readSourceFile(new URL('../../entry/src/main/ets/model/ZipImportDevice.ets', import.meta.url));
+  const shareSource = readSourceFile(new URL('../../entry/src/main/ets/model/ShareArchiveService.ets', import.meta.url));
+  // TempVaultZipWriter.setModifiedTime：纵深防御路径解析 + utimes + 失败仅 hilog 告警错误码（不记路径）
+  assert.match(deviceSource, /setModifiedTime\(relativePath: string, modifiedAtMs: number\): void \{/);
+  assert.match(deviceSource,
+    /fileIo\.utimes\(TempVaultZipWriter\.resolveUnderRoot\(this\.rootDir, relativePath\), modifiedAtMs\);/);
+  assert.match(deviceSource, /hilog\.warn\(0x0000, 'ZipImportDevice', '导入回填文件时间失败 %\{public\}d', err\.code\);/);
+  // importZipBackup 开启 preserveMtime
+  assert.match(indexSource, /\{ preserveMtime: true, onProgress: onProgress \}/);
+  // ShareArchiveService：两类写入（收录文件 / 范围外图片）后都接回填；按源 mtimeSec（秒）转毫秒
+  assert.match(shareSource, /ShareArchiveService\.restorePayloadMtime\(vaultAccess, output, item\.path\);/);
+  assert.match(shareSource, /ShareArchiveService\.restorePayloadMtime\(vaultAccess, output, sourcePath\);/);
+  assert.match(shareSource, /const stat: VaultFileStat \| null = vaultAccess\.stat\(sourceRelPath\);/);
+  assert.match(shareSource, /if \(stat === null \|\| stat\.mtimeSec <= 0\) \{/);
+  assert.match(shareSource, /fileIo\.utimes\(payloadPath, stat\.mtimeSec \* 1000\);/);
+});
+
 // ---------------------------------------------------------------------------
 // v1.36 Index.ets 编排与 VaultRegistry 复用（源断言：36.1–36.7 接线不回归）。
 // ---------------------------------------------------------------------------
@@ -391,8 +465,11 @@ test('v1.36 36.6 Index 清理暂存残留：启动清根、弹窗关闭清状态
   assert.match(indexSource, /import \{ GIT_IMPORTING_SUFFIX, VaultRegistry \} from '\.\.\/model\/VaultRegistry';/);
   // aboutToAppear 尾部：启动即清 staging 根，残留不跨启动累积
   assert.match(indexSource, /this\.startExternalVaultPolling\(\);\r?\n\s*this\.cleanupZipImportStaging\(\);/);
-  // 弹窗取消/关闭（clearImportDraft）同步清理 zip 解析与暂存
-  assert.match(indexSource, /const clearImportDraft = \(\): void => \{\r?\n\s*GitImportDraftStore\.clear\(\);\r?\n\s*this\.pendingExternalDirectory = null;\r?\n\s*this\.cleanupZipImportState\(\);/);
+  // 弹窗取消/关闭同步清理 zip 解析与暂存。
+  // v1.69（4fede1d 在导入弹窗内完成 Git 导入）起由 clearImportDraft 更名 clearImportDialogState，
+  // GitImportDraftStore.clear() 随弹窗内闭环移除；此处同步断言新形态。
+  assert.match(indexSource, /const clearImportDialogState = \(\): void => \{\r?\n\s*this\.pendingExternalDirectory = null;\r?\n\s*this\.cleanupZipImportState\(\);/);
+  assert.match(indexSource, /onCancel: clearImportDialogState/);
   assert.match(indexSource, /onChooseZip: \(\): Promise<ZipChooseOutcome> => this\.chooseZipBackup\(\)/);
   assert.match(indexSource, /onImportZip: \(name: string, onProgress: \(done: number, total: number\) => void\): Promise<ZipImportOutcome> =>/);
   assert.match(indexSource, /private cleanupZipImportStaging\(\): void \{/);
