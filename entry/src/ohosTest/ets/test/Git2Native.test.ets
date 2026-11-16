@@ -3,7 +3,7 @@ import { abilityDelegatorRegistry } from '@kit.TestKit';
 import { common } from '@kit.AbilityKit';
 import { http } from '@kit.NetworkKit';
 import { afterAll, beforeAll, describe, expect, it } from '@ohos/hypium';
-import nativeGit2, { Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
+import nativeGit2, { Git2FileDiffs, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
 import { VaultRegistry } from '../../../main/ets/model/VaultRegistry';
 
 interface Git2NativeTarget {
@@ -545,6 +545,54 @@ export default function git2NativeTest() {
           expect(foundModified).assertTrue();
           expect(foundAdded).assertTrue();
           expect(foundDeleted).assertTrue();
+        } finally {
+          removeTree(target.path);
+        }
+      });
+
+    it('reports per-file unified diff lines for modified, added and deleted notes', 0,
+      async (): Promise<void> => {
+        const target = newTarget('file_diffs');
+        const noteRelPath: string = '笔记/中文.md';
+        const addedRelPath: string = '新增笔记.md';
+        try {
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: target.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          // baseline: clean repo -> no diff
+          expect(nativeGit2.getFileDiffs(target.path).files.length).assertEqual(0);
+
+          writeText(registry.absoluteIn(target.id, noteRelPath), '# 已修改\n新增的一行\n');
+          writeText(registry.absoluteIn(target.id, addedRelPath), '# 新建\n第二行\n');
+          fileIo.unlinkSync(registry.absoluteIn(target.id, 'branch.txt'));
+
+          const diffs: Git2FileDiffs = nativeGit2.getFileDiffs(target.path);
+          expect(diffs.files.length).assertEqual(3);
+          let modified = false;
+          let added = false;
+          let deleted = false;
+          for (const file of diffs.files) {
+            let hasAdd = false;
+            let hasDel = false;
+            for (const line of file.lines) {
+              if (line.origin === '+') hasAdd = true;
+              if (line.origin === '-') hasDel = true;
+              // line text must be present and line numbers non-negative
+              expect(line.text.length >= 0).assertTrue();
+              expect(line.oldLine >= 0).assertTrue();
+              expect(line.newLine >= 0).assertTrue();
+            }
+            if (file.path === noteRelPath && file.status === 'M' && hasAdd && hasDel) modified = true;
+            if (file.path === addedRelPath && file.status === 'A' && hasAdd && !hasDel) added = true;
+            if (file.path === 'branch.txt' && file.status === 'D' && hasDel && !hasAdd) deleted = true;
+          }
+          expect(modified).assertTrue();
+          expect(added).assertTrue();
+          expect(deleted).assertTrue();
         } finally {
           removeTree(target.path);
         }

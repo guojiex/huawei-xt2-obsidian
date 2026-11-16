@@ -6,6 +6,7 @@ This module is wired into the production App HAP through `entry/src/main/cpp/` a
 
 - `getVersion()` / `getFeatures()` report the linked libgit2 build.
 - `getRepositoryState(path)` reads the current branch, HEAD, worktree/index status count, pack count, and ahead/behind counts against `origin/xt2`.
+- `getFileDiffs(path, options?)` returns each uncommitted file's line-level unified diff against HEAD (`{files:[{path,status,lines:[{origin,oldLine,newLine,text}],truncated}],truncatedFiles}`). Tracked files use `git_diff_tree_to_workdir_with_index`; untracked files are read whole as additions. `.trash` and binary files are skipped. Defaults: 50 files / 1MB per file / 2000 lines per file, overridable via `options.maxFiles/maxBytes/maxLines`; over-limit files are marked `truncated`. Read-only; file paths and text are never logged.
 - `clone(options)` clones an HTTP(S) repository into a new target directory, with optional branch, Basic credentials or Bearer token, CA override, and transfer progress callback.
 - `gitAction(options)` supports `stage`, `commit`, `fetch`, and `push` on an existing repository.
 

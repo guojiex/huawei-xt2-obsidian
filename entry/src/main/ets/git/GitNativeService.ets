@@ -1,4 +1,4 @@
-import { Git2ActionOptions, Git2CloneOptions, Git2Features, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
+import { Git2ActionOptions, Git2CloneOptions, Git2DiffOptions, Git2Features, Git2FileDiffs, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
 
 export class GitNativeService {
   // 冷启动优化（2026-11-15，XT2 trace）：libgit2_napi.so 随启动图静态加载但启动期无人调用，
@@ -33,6 +33,14 @@ export class GitNativeService {
     const native: ESObject = await GitNativeService.nativeModule();
     const fn: (path: string, targetBranch: string) => Git2RepositoryState = native.getRepositoryState;
     return fn(path, targetBranch);
+  }
+
+  // v1.75：读取未提交改动（HEAD vs 工作区）的逐行差异。同步导出，包在 async 中
+  // 与其余 native 调用一致，并让调用方 await 时不阻塞 UI 线程编排。
+  static async fileDiffs(path: string, options?: Git2DiffOptions): Promise<Git2FileDiffs> {
+    const native: ESObject = await GitNativeService.nativeModule();
+    const fn: (path: string, options?: Git2DiffOptions) => Git2FileDiffs = native.getFileDiffs;
+    return options === undefined ? fn(path) : fn(path, options);
   }
 
   static async version(): Promise<string> {

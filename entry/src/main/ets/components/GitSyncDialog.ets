@@ -4,7 +4,7 @@ import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitBranchNameValidation, validateGitBranchName } from '../git/GitBranchName';
 import { GitNativeService } from '../git/GitNativeService';
 import { applyRemoteAuth, isGitHubRemote } from '../git/GitRemoteAuth';
-import { Git2ActionOptions, Git2FileChange, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
+import { Git2ActionOptions, Git2DiffLine, Git2FileChange, Git2FileDiff, Git2FileDiffs, Git2Progress, Git2RepositoryState } from 'libgit2_napi.so';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
@@ -46,6 +46,13 @@ export struct GitSyncDialog {
   @State behindCount: number = 0;
   @State statusEntryCount: number = 0;
   @State changes: Git2FileChange[] = [];
+  // v1.75 逐行差异：手风琴单开路径 + 当前展示数据 + 展开中状态。
+  // diffCache 是普通字段（Map 变化不触发 V1 @State 刷新），用 diffVersion 递增驱动 UI 更新。
+  @State expandedDiffPath: string = '';
+  @State activeFileDiff: Git2FileDiff | null = null;
+  @State diffLoading: boolean = false;
+  @State diffVersion: number = 0;
+  private diffCache: Map<string, Git2FileDiff | null> = new Map<string, Git2FileDiff | null>();
   @State lastPushAt: number = 0;
   @State commitMessage: string = '';
   @State authorName: string = '';
@@ -67,6 +74,9 @@ export struct GitSyncDialog {
   private hasDismissed: boolean = false;
 
   aboutToAppear(): void {
+    this.expandedDiffPath = '';
+    this.activeFileDiff = null;
+    this.diffCache.clear();
     const entry: VaultEntry | null = this.findVaultEntry();
     if (entry === null) {
       this.showLocalFailure('当前 Git 库不可用，请返回主页重新打开同步页。');
@@ -146,10 +156,71 @@ export struct GitSyncDialog {
       }
       this.commitMessage = this.defaultCommitMessage();
       this.statusMessage = '';
+      void this.loadFileDiffs();
     } catch (_error) {
       this.statusReady = false;
       this.statusMessage = '无法读取本地 Git 状态；请刷新后再决定是否推送。';
     }
+  }
+
+  // v1.75：一次 native 调用取回全部未提交文件的逐行差异，缓存在 diffCache。
+  // 失败只影响行尾统计 / 展开视图，不阻断提交推送主流程。
+  private async loadFileDiffs(): Promise<void> {
+    this.diffCache.clear();
+    try {
+      const result: Git2FileDiffs = await GitNativeService.fileDiffs(
+        VaultRegistry.get().vaultDirOf(this.vaultId));
+      for (const file of result.files) {
+        this.diffCache.set(file.path, file);
+      }
+    } catch (_error) {
+      // 逐行差异不可用时保留清单本身；展开会给出「无法读取」提示。
+    }
+    this.diffVersion++;
+  }
+
+  private diffStatOf(path: string): string {
+    const file: Git2FileDiff | null | undefined = this.diffCache.get(path);
+    if (file === undefined || file === null) {
+      return '';
+    }
+    let added: number = 0;
+    let removed: number = 0;
+    for (const line of file.lines) {
+      if (line.origin === '+') added++;
+      else if (line.origin === '-') removed++;
+    }
+    return '+' + added.toString() + ' −' + removed.toString();
+  }
+
+  private async toggleDiff(path: string): Promise<void> {
+    if (this.expandedDiffPath === path) {
+      this.expandedDiffPath = '';
+      this.activeFileDiff = null;
+      return;
+    }
+    this.expandedDiffPath = path;
+    const cached: Git2FileDiff | null | undefined = this.diffCache.get(path);
+    if (cached !== undefined) {
+      this.activeFileDiff = cached;
+      return;
+    }
+    // 缓存未命中（如初次预取失败）：按需单独取一次。
+    this.diffLoading = true;
+    try {
+      const result: Git2FileDiffs = await GitNativeService.fileDiffs(
+        VaultRegistry.get().vaultDirOf(this.vaultId));
+      let found: Git2FileDiff | null = null;
+      for (const file of result.files) {
+        this.diffCache.set(file.path, file);
+        if (file.path === path) found = file;
+      }
+      this.activeFileDiff = found;
+    } catch (_error) {
+      this.activeFileDiff = null;
+    }
+    this.diffLoading = false;
+    this.diffVersion++;
   }
 
   private defaultCommitMessage(): string {
@@ -739,32 +810,146 @@ export struct GitSyncDialog {
 
   @Builder
   private ChangeRow(change: Git2FileChange) {
-    Row({ space: Space.s3 }) {
-      Text(change.status)
+    Column() {
+      Row({ space: Space.s3 }) {
+        Text(change.status)
+          .width(Space.s5)
+          .height(Space.s5)
+          .fontSize(FontSize.caption)
+          .fontFamily('monospace')
+          .fontWeight(FontWeight.Bold)
+          .textAlign(TextAlign.Center)
+          .fontColor(change.status === 'A' ? $r('app.color.success')
+            : change.status === 'D' ? $r('app.color.danger') : $r('app.color.brand'))
+          .backgroundColor(change.status === 'A' ? $r('app.color.success_bg')
+            : change.status === 'D' ? $r('app.color.danger_bg') : $r('app.color.brand_bg'))
+          .borderRadius(Radius.control)
+          .accessibilityText(change.status === 'A' ? '新增' : change.status === 'D' ? '删除' : '修改')
+        Text(change.path)
+          .layoutWeight(1)
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .accessibilityText((change.status === 'A' ? '新增：' :
+            change.status === 'D' ? '删除：' : '修改：') + change.path)
+        // 读 diffVersion 触发缓存回填后刷新统计（Map 本身不驱动 V1 @State）。
+        Text(this.diffVersion >= 0 ? this.diffStatOf(change.path) : '')
+          .fontSize(FontSize.caption)
+          .fontFamily('monospace')
+          .fontColor($r('app.color.text_secondary'))
+          .accessibilityText(this.diffStatOf(change.path))
+        Text(this.expandedDiffPath === change.path ? '▾' : '▸')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s2, right: Space.s2 })
+      .onClick(() => { void this.toggleDiff(change.path); })
+      .accessibilityText((this.expandedDiffPath === change.path ? '收起' : '展开') +
+        ' ' + change.path + ' 的逐行差异')
+      .accessibilityDescription(this.diffStatOf(change.path))
+      if (this.expandedDiffPath === change.path) {
+        this.DiffPanel(change)
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private DiffPanel(change: Git2FileChange) {
+    Column() {
+      if (this.diffLoading) {
+        Text('正在读取逐行差异…')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .padding(Space.s3)
+      } else if (this.activeFileDiff === null) {
+        Text('无法读取逐行差异')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .padding(Space.s3)
+      } else {
+        Row() {
+          Text(change.status === 'A' ? '新文件（本次新增）'
+            : change.status === 'D' ? '本次删除' : '修改：上次提交 → 当前工作区')
+            .fontSize(FontSize.caption)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.text_primary'))
+          Blank()
+          Text(this.activeFileDiff.lines.length.toString() + ' 行')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_secondary'))
+        }
+        .width('100%')
+        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+        if (this.activeFileDiff.truncated) {
+          Text('此文件差异过大，仅显示前 ' + this.activeFileDiff.lines.length + ' 行')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.warning'))
+            .width('100%')
+            .padding({ left: Space.s3, bottom: Space.s2 })
+        }
+        Scroll() {
+          Column() {
+            ForEach(this.activeFileDiff.lines, (line: Git2DiffLine, index: number): void => {
+              this.DiffLineRow(line, index)
+            }, (line: Git2DiffLine, index: number): string => index.toString())
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .height(Math.min(Size.touch * 4, Math.max(Space.s4, this.activeFileDiff.lines.length * FontSize.caption * 1.7)))
+        .scrollBar(BarState.Auto)
+        .nestedScroll({
+          scrollForward: NestedScrollMode.SELF_FIRST,
+          scrollBackward: NestedScrollMode.SELF_FIRST
+        })
+      }
+    }
+    .width('100%')
+    .margin({ left: Space.s5 + Space.s3, bottom: Space.s2 })
+    .borderRadius(Radius.control)
+    .backgroundColor($r('app.color.bg_secondary'))
+    .padding({ top: Space.s1, bottom: Space.s1 })
+  }
+
+  @Builder
+  private DiffLineRow(line: Git2DiffLine, index: number) {
+    Row({ space: 0 }) {
+      Text(line.oldLine > 0 ? line.oldLine.toString() : '')
+        .width(Space.s8)
+        .textAlign(TextAlign.End)
+        .fontSize(FontSize.caption)
+        .fontFamily('monospace')
+        .fontColor($r('app.color.text_tertiary'))
+      Text(line.newLine > 0 ? line.newLine.toString() : '')
+        .width(Space.s8)
+        .textAlign(TextAlign.End)
+        .fontSize(FontSize.caption)
+        .fontFamily('monospace')
+        .fontColor($r('app.color.text_tertiary'))
+      Text(line.origin)
         .width(Space.s5)
-        .height(Space.s5)
+        .textAlign(TextAlign.Center)
         .fontSize(FontSize.caption)
         .fontFamily('monospace')
         .fontWeight(FontWeight.Bold)
-        .textAlign(TextAlign.Center)
-        .fontColor(change.status === 'A' ? $r('app.color.success')
-          : change.status === 'D' ? $r('app.color.danger') : $r('app.color.brand'))
-        .backgroundColor(change.status === 'A' ? $r('app.color.success_bg')
-          : change.status === 'D' ? $r('app.color.danger_bg') : $r('app.color.brand_bg'))
-        .borderRadius(Radius.control)
-        .accessibilityText(change.status === 'A' ? '新增' : change.status === 'D' ? '删除' : '修改')
-      Text(change.path)
+        .fontColor(line.origin === '+' ? $r('app.color.success')
+          : line.origin === '-' ? $r('app.color.danger') : $r('app.color.text_secondary'))
+      Text(line.text)
         .layoutWeight(1)
-        .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_primary'))
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .accessibilityText((change.status === 'A' ? '新增：' :
-          change.status === 'D' ? '删除：' : '修改：') + change.path)
+        .fontSize(FontSize.caption)
+        .fontFamily('monospace')
+        .fontColor(line.origin === '+' ? $r('app.color.success')
+          : line.origin === '-' ? $r('app.color.danger') : $r('app.color.text_primary'))
     }
     .width('100%')
-    .height(Size.touch)
     .padding({ left: Space.s2, right: Space.s2 })
+    .backgroundColor(line.origin === '+' ? $r('app.color.success_bg')
+      : line.origin === '-' ? $r('app.color.danger_bg') : Color.Transparent)
+    .accessibilityText((line.origin === '+' ? '新增行 ' : line.origin === '-' ? '删除行 ' : '未改动 ') + line.text)
   }
 
   @Builder
@@ -1018,7 +1203,11 @@ export struct GitSyncDialog {
           .width('100%')
         }
         .width('100%')
-        .height(Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
+        // 展开逐行差异时放高清单可视区，差异行内部再各自滚动；未展开时维持原限高。
+        .height(this.expandedDiffPath.length > 0
+          ? Math.min(Size.touch * 4 + Space.s6 + Size.touch * 3,
+            Size.touch * this.changes.length + Size.touch * 3)
+          : Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
         .scrollBar(BarState.Auto)
         // 2026-11-16 键盘避让配套：内层清单默认 SELF_ONLY，滑到头不传外层正文，
         // 键盘弹出后外层可滚时手势要能链出去（SELF_FIRST：先滚自己，到边再传父）。

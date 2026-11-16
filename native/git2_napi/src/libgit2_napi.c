@@ -1732,6 +1732,351 @@ static napi_value get_repository_state(napi_env env, napi_callback_info info) {
   return result;
 }
 
+
+/* ---- v1.75: per-file unified diff (HEAD vs worktree incl. index) ---- */
+#define YAOSHI_DIFF_DEFAULT_MAX_FILES 50
+#define YAOSHI_DIFF_DEFAULT_MAX_BYTES (1024u * 1024u)
+#define YAOSHI_DIFF_DEFAULT_MAX_LINES 2000
+
+typedef struct {
+  char origin;         /* GIT_DIFF_LINE_* : '+', '-', ' ' */
+  int old_lineno;      /* 0 when absent */
+  int new_lineno;      /* 0 when absent */
+  char *text;          /* owned, NUL terminated */
+} yaoshi_diff_line_t;
+
+typedef struct {
+  char *path;          /* owned */
+  char status;         /* 'M' | 'A' | 'D' */
+  yaoshi_diff_line_t *lines;
+  size_t line_count;
+  size_t line_cap;
+  bool truncated;
+} yaoshi_diff_file_t;
+
+typedef struct {
+  yaoshi_diff_file_t *files;
+  size_t file_count;
+  size_t file_cap;
+  size_t max_files;
+  size_t max_bytes;
+  size_t max_lines;
+  yaoshi_diff_file_t *current;    /* file receiving lines from callbacks */
+  bool oom;
+} yaoshi_diff_collect_t;
+
+static void yaoshi_diff_free_collect(yaoshi_diff_collect_t *c) {
+  if (c == NULL) return;
+  for (size_t i = 0; i < c->file_count; i++) {
+    yaoshi_diff_file_t *f = &c->files[i];
+    free(f->path);
+    for (size_t j = 0; j < f->line_count; j++) free(f->lines[j].text);
+    free(f->lines);
+  }
+  free(c->files);
+}
+
+static yaoshi_diff_file_t *yaoshi_diff_get_or_create(yaoshi_diff_collect_t *c,
+                                                      const char *path, char status) {
+  if (path == NULL || c == NULL || c->oom) return NULL;
+  for (size_t i = 0; i < c->file_count; i++) {
+    if (c->files[i].path != NULL && strcmp(c->files[i].path, path) == 0)
+      return &c->files[i];
+  }
+  if (c->file_count >= c->max_files) return NULL;
+  if (c->file_count == c->file_cap) {
+    size_t cap = c->file_cap == 0 ? 8 : c->file_cap * 2;
+    yaoshi_diff_file_t *grown = (yaoshi_diff_file_t *)realloc(c->files, cap * sizeof(yaoshi_diff_file_t));
+    if (grown == NULL) { c->oom = true; return NULL; }
+    c->files = grown; c->file_cap = cap;
+  }
+  yaoshi_diff_file_t *f = &c->files[c->file_count++];
+  memset(f, 0, sizeof(*f));
+  f->path = strdup(path);
+  f->status = status;
+  if (f->path == NULL) { c->oom = true; return NULL; }
+  return f;
+}
+
+/* Append one diff line; content is not NUL-terminated, copy exactly content_len bytes. */
+static void yaoshi_diff_push_line(yaoshi_diff_collect_t *c, yaoshi_diff_file_t *f,
+                                  char origin, int old_lineno, int new_lineno,
+                                  const char *content, size_t content_len) {
+  if (c == NULL || f == NULL || c->oom) return;
+  if (f->line_count >= c->max_lines) { f->truncated = true; return; }
+  if (f->line_count == f->line_cap) {
+    size_t cap = f->line_cap == 0 ? 32 : f->line_cap * 2;
+    yaoshi_diff_line_t *grown = (yaoshi_diff_line_t *)realloc(f->lines, cap * sizeof(yaoshi_diff_line_t));
+    if (grown == NULL) { c->oom = true; return; }
+    f->lines = grown; f->line_cap = cap;
+  }
+  char *text = (char *)malloc(content_len + 1);
+  if (text == NULL) { c->oom = true; return; }
+  if (content_len > 0) memcpy(text, content, content_len);
+  text[content_len] = '\0';
+  yaoshi_diff_line_t *line = &f->lines[f->line_count++];
+  line->origin = origin;
+  line->old_lineno = old_lineno < 0 ? 0 : old_lineno;
+  line->new_lineno = new_lineno < 0 ? 0 : new_lineno;
+  line->text = text;
+}
+
+static int yaoshi_diff_file_cb(const git_diff_delta *delta, float progress, void *payload) {
+  (void)progress;
+  yaoshi_diff_collect_t *c = (yaoshi_diff_collect_t *)payload;
+  if (delta == NULL || c == NULL) return 0;
+  const char *path = delta->new_file.path != NULL ? delta->new_file.path : delta->old_file.path;
+  char status;
+  switch (delta->status) {
+    case GIT_DELTA_ADDED:    status = 'A'; break;
+    case GIT_DELTA_DELETED:  status = 'D'; break;
+    default:                 status = 'M'; break;
+  }
+  c->current = yaoshi_diff_get_or_create(c, path, status);
+  if (c->current != NULL &&
+      (delta->flags & GIT_DIFF_FLAG_BINARY) != 0) {
+    c->current->truncated = true; /* binary: no textual lines */
+  }
+  return 0;
+}
+
+static int yaoshi_diff_line_cb(const git_diff_delta *delta, const git_diff_hunk *hunk,
+                               const git_diff_line *line, void *payload) {
+  (void)delta; (void)hunk;
+  yaoshi_diff_collect_t *c = (yaoshi_diff_collect_t *)payload;
+  if (c == NULL || line == NULL || c->current == NULL) return 0;
+  char origin = line->origin;
+  if (origin != GIT_DIFF_LINE_ADDITION && origin != GIT_DIFF_LINE_DELETION &&
+      origin != GIT_DIFF_LINE_CONTEXT) {
+    return 0; /* skip FILE / HUNK / EOFLF meta lines */
+  }
+  yaoshi_diff_push_line(c, c->current, origin, line->old_lineno, line->new_lineno,
+                        line->content, line->content_len);
+  return 0;
+}
+
+/* Read an untracked/added file from disk as a blob, emit all lines as additions. */
+static void yaoshi_diff_add_whole_file(yaoshi_diff_collect_t *c, git_repository *repo,
+                                       const char *path) {
+  if (c == NULL || repo == NULL || path == NULL || is_trash_path(path)) return;
+  yaoshi_diff_file_t *f = yaoshi_diff_get_or_create(c, path, 'A');
+  if (f == NULL) return;
+  git_oid oid;
+  git_blob *blob = NULL;
+  if (git_blob_create_from_workdir(&oid, repo, path) < 0 ||
+      git_blob_lookup(&blob, repo, &oid) < 0) {
+    f->truncated = true;
+    git_blob_free(blob);
+    return;
+  }
+  git_object_size_t size = git_blob_rawsize(blob);
+  if ((git_object_size_t)c->max_bytes < size) {
+    f->truncated = true;
+    git_blob_free(blob);
+    return;
+  }
+  const char *raw = (const char *)git_blob_rawcontent(blob);
+  size_t remaining = (size_t)size;
+  size_t start = 0;
+  int lineno = 1;
+  for (size_t i = 0; i < remaining; i++) {
+    if (raw[i] == '\n') {
+      yaoshi_diff_push_line(c, f, GIT_DIFF_LINE_ADDITION, 0, lineno++, raw + start, i - start);
+      start = i + 1;
+    }
+  }
+  if (start < remaining)
+    yaoshi_diff_push_line(c, f, GIT_DIFF_LINE_ADDITION, 0, lineno++, raw + start, remaining - start);
+  git_blob_free(blob);
+}
+
+static void yaoshi_diff_collect_untracked(yaoshi_diff_collect_t *c, git_repository *repo) {
+  git_status_options opts;
+  git_status_list *status = NULL;
+  if (git_status_options_init(&opts, GIT_STATUS_OPTIONS_VERSION) < 0) return;
+  opts.show = GIT_STATUS_SHOW_WORKDIR_ONLY;
+  opts.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED | GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS;
+  if (git_status_list_new(&status, repo, &opts) < 0) { git_status_list_free(status); return; }
+  for (size_t i = 0; i < git_status_list_entrycount(status); i++) {
+    const git_status_entry *e = git_status_byindex(status, i);
+    if (e == NULL || e->index_to_workdir == NULL) continue;
+    if ((e->status & GIT_STATUS_WT_NEW) == 0) continue;
+    const char *path = e->index_to_workdir->new_file.path;
+    if (path != NULL && (e->index_to_workdir->flags & GIT_DIFF_FLAG_BINARY) == 0)
+      yaoshi_diff_add_whole_file(c, repo, path);
+  }
+  git_status_list_free(status);
+}
+
+static napi_value get_file_diffs(napi_env env, napi_callback_info info) {
+  size_t argc = 2;
+  napi_value argv[2];
+  napi_valuetype type;
+  size_t path_length = 0;
+  char *path = NULL;
+  git_repository *repository = NULL;
+  git_reference *head = NULL;
+  git_commit *commit = NULL;
+  git_tree *tree = NULL;
+  git_diff *diff = NULL;
+  yaoshi_diff_collect_t collect;
+  memset(&collect, 0, sizeof(collect));
+  collect.max_files = YAOSHI_DIFF_DEFAULT_MAX_FILES;
+  collect.max_bytes = YAOSHI_DIFF_DEFAULT_MAX_BYTES;
+  collect.max_lines = YAOSHI_DIFF_DEFAULT_MAX_LINES;
+
+  if (napi_get_cb_info(env, info, &argc, argv, NULL, NULL) != napi_ok || argc < 1 ||
+      napi_typeof(env, argv[0], &type) != napi_ok || type != napi_string ||
+      napi_get_value_string_utf8(env, argv[0], NULL, 0, &path_length) != napi_ok ||
+      path_length == 0 || path_length > MAX_ARGUMENT_BYTES) {
+    return throw_type_error(env, "getFileDiffs expects an absolute repository path");
+  }
+  path = (char *)malloc(path_length + 1);
+  if (path == NULL ||
+      napi_get_value_string_utf8(env, argv[0], path, path_length + 1, &path_length) != napi_ok ||
+      path[0] != '/') {
+    free(path);
+    return throw_type_error(env, "repository path must be absolute");
+  }
+
+  /* optional options: { maxFiles, maxBytes, maxLines } */
+  if (argc >= 2) {
+    napi_valuetype opt_type;
+    if (napi_typeof(env, argv[1], &opt_type) == napi_ok && opt_type == napi_object) {
+      napi_value v;
+      double d;
+      if (napi_get_named_property(env, argv[1], "maxFiles", &v) == napi_ok &&
+          napi_get_value_double(env, v, &d) == napi_ok && d >= 1 && d <= 1000)
+        collect.max_files = (size_t)d;
+      if (napi_get_named_property(env, argv[1], "maxBytes", &v) == napi_ok &&
+          napi_get_value_double(env, v, &d) == napi_ok && d >= 1024 && d <= 64u * 1024u * 1024u)
+        collect.max_bytes = (size_t)d;
+      if (napi_get_named_property(env, argv[1], "maxLines", &v) == napi_ok &&
+          napi_get_value_double(env, v, &d) == napi_ok && d >= 1 && d <= 20000)
+        collect.max_lines = (size_t)d;
+    }
+  }
+
+  if (!ensure_libgit2_initialized()) {
+    free(path);
+    return throw_type_error(env, "libgit2 initialization failed");
+  }
+  pthread_mutex_lock(&g_clone_mutex);
+  if (git_repository_open_ext(&repository, path, GIT_REPOSITORY_OPEN_NO_SEARCH, NULL) < 0) {
+    git_repository_free(repository);
+    pthread_mutex_unlock(&g_clone_mutex);
+    free(path);
+    return throw_git_error(env, "repository could not be opened");
+  }
+
+  /* HEAD tree (NULL for unborn HEAD -> diff against empty tree). */
+  if (git_repository_head(&head, repository) == 0 &&
+      git_reference_target(head) != NULL &&
+      git_commit_lookup(&commit, repository, git_reference_target(head)) == 0 &&
+      git_commit_tree(&tree, commit) == 0) {
+    /* tree ready */
+  }
+  git_diff_options diff_opts;
+  if (git_diff_options_init(&diff_opts, GIT_DIFF_OPTIONS_VERSION) < 0 ||
+      git_diff_tree_to_workdir_with_index(&diff, repository, tree, &diff_opts) < 0) {
+    git_diff_free(diff);
+    git_tree_free(tree);
+    git_commit_free(commit);
+    git_reference_free(head);
+    git_repository_free(repository);
+    pthread_mutex_unlock(&g_clone_mutex);
+    free(path);
+    return throw_git_error(env, "could not compute worktree diff");
+  }
+  if (git_diff_foreach(diff, yaoshi_diff_file_cb, NULL, NULL, yaoshi_diff_line_cb, &collect) != 0) {
+    git_diff_free(diff);
+    yaoshi_diff_free_collect(&collect);
+    git_tree_free(tree); git_commit_free(commit); git_reference_free(head);
+    git_repository_free(repository);
+    pthread_mutex_unlock(&g_clone_mutex);
+    free(path);
+    return throw_git_error(env, "could not read diff lines");
+  }
+  /* Untracked files are not in the tree diff; append them as all-addition. */
+  yaoshi_diff_collect_untracked(&collect, repository);
+  /* Drop files that ended with no lines (e.g. mode-only change) to keep UI clean,
+     but keep binary / truncated markers. */
+  {
+    size_t w = 0;
+    for (size_t i = 0; i < collect.file_count; i++) {
+      yaoshi_diff_file_t *f = &collect.files[i];
+      if (f->line_count == 0 && !f->truncated) {
+        free(f->path);
+        for (size_t j = 0; j < f->line_count; j++) free(f->lines[j].text);
+        free(f->lines);
+        continue;
+      }
+      collect.files[w++] = *f;
+    }
+    collect.file_count = w;
+  }
+
+  napi_value result, files_arr, value, file_obj, lines_arr, line_obj, tmp;
+  size_t truncated_files = 0;
+  if (napi_create_object(env, &result) != napi_ok ||
+      napi_create_array_with_length(env, collect.file_count, &files_arr) != napi_ok) {
+    goto build_fail;
+  }
+  for (size_t i = 0; i < collect.file_count; i++) {
+    yaoshi_diff_file_t *f = &collect.files[i];
+    if (f->truncated) truncated_files++;
+    if (napi_create_object(env, &file_obj) != napi_ok ||
+        napi_create_string_utf8(env, f->path, NAPI_AUTO_LENGTH, &tmp) != napi_ok ||
+        napi_set_named_property(env, file_obj, "path", tmp) != napi_ok ||
+        napi_create_string_utf8(env, &f->status, 1, &tmp) != napi_ok ||
+        napi_set_named_property(env, file_obj, "status", tmp) != napi_ok ||
+        napi_create_array_with_length(env, f->line_count, &lines_arr) != napi_ok ||
+        napi_set_named_property(env, file_obj, "lines", lines_arr) != napi_ok ||
+        napi_get_boolean(env, f->truncated, &value) != napi_ok ||
+        napi_set_named_property(env, file_obj, "truncated", value) != napi_ok) {
+      goto build_fail;
+    }
+    for (size_t j = 0; j < f->line_count; j++) {
+      yaoshi_diff_line_t *ln = &f->lines[j];
+      if (napi_create_object(env, &line_obj) != napi_ok ||
+          napi_create_string_utf8(env, &ln->origin, 1, &tmp) != napi_ok ||
+          napi_set_named_property(env, line_obj, "origin", tmp) != napi_ok ||
+          napi_create_int32(env, ln->old_lineno, &value) != napi_ok ||
+          napi_set_named_property(env, line_obj, "oldLine", value) != napi_ok ||
+          napi_create_int32(env, ln->new_lineno, &value) != napi_ok ||
+          napi_set_named_property(env, line_obj, "newLine", value) != napi_ok ||
+          napi_create_string_utf8(env, ln->text, NAPI_AUTO_LENGTH, &tmp) != napi_ok ||
+          napi_set_named_property(env, line_obj, "text", tmp) != napi_ok ||
+          napi_set_element(env, lines_arr, (uint32_t)j, line_obj) != napi_ok) {
+        goto build_fail;
+      }
+    }
+    if (napi_set_element(env, files_arr, (uint32_t)i, file_obj) != napi_ok) goto build_fail;
+  }
+  if (napi_set_named_property(env, result, "files", files_arr) != napi_ok ||
+      napi_create_double(env, (double)truncated_files, &value) != napi_ok ||
+      napi_set_named_property(env, result, "truncatedFiles", value) != napi_ok) {
+    goto build_fail;
+  }
+
+  git_diff_free(diff);
+  yaoshi_diff_free_collect(&collect);
+  git_tree_free(tree); git_commit_free(commit); git_reference_free(head);
+  git_repository_free(repository);
+  pthread_mutex_unlock(&g_clone_mutex);
+  free(path);
+  return result;
+
+build_fail:
+  git_diff_free(diff);
+  yaoshi_diff_free_collect(&collect);
+  git_tree_free(tree); git_commit_free(commit); git_reference_free(head);
+  git_repository_free(repository);
+  pthread_mutex_unlock(&g_clone_mutex);
+  free(path);
+  return throw_type_error(env, "could not build diff result");
+}
+
 static napi_value cancel_clone(napi_env env, napi_callback_info info) {
   (void)info;
   request_clone_cancel();
@@ -1873,6 +2218,7 @@ static napi_value register_module(napi_env env, napi_value exports) {
       {"getVersion", NULL, get_version, NULL, NULL, NULL, napi_default, NULL},
       {"getFeatures", NULL, get_features, NULL, NULL, NULL, napi_default, NULL},
       {"getRepositoryState", NULL, get_repository_state, NULL, NULL, NULL, napi_default, NULL},
+      {"getFileDiffs", NULL, get_file_diffs, NULL, NULL, NULL, napi_default, NULL},
       {"clone", NULL, clone_async, NULL, NULL, NULL, napi_default, NULL},
       {"cancelClone", NULL, cancel_clone, NULL, NULL, NULL, napi_default, NULL},
       {"gitAction", NULL, git_action_async, NULL, NULL, NULL, napi_default, NULL},

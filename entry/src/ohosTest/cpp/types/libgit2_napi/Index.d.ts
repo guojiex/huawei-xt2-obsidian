@@ -57,10 +57,36 @@ export interface Git2ActionOptions {
   onProgress?: (progress: Git2Progress) => void;
 }
 
+export interface Git2DiffLine {
+  origin: '+' | '-' | ' ';
+  oldLine: number;
+  newLine: number;
+  text: string;
+}
+
+export interface Git2FileDiff {
+  path: string;
+  status: 'M' | 'A' | 'D';
+  lines: Git2DiffLine[];
+  truncated: boolean;
+}
+
+export interface Git2FileDiffs {
+  files: Git2FileDiff[];
+  truncatedFiles: number;
+}
+
+export interface Git2DiffOptions {
+  maxFiles?: number;
+  maxBytes?: number;
+  maxLines?: number;
+}
+
 declare const nativeGit2: {
   getVersion(): string;
   getFeatures(): Git2Features;
   getRepositoryState(path: string, targetBranch?: string): Git2RepositoryState;
+  getFileDiffs(path: string, options?: Git2DiffOptions): Git2FileDiffs;
   clone(options: Git2CloneOptions): Promise<string>;
   cancelClone(): void;
   gitAction(options: Git2ActionOptions): Promise<string>;
