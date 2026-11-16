@@ -300,6 +300,24 @@ export class TrashService {
   }
 
   /**
+   * 只读读取回收站内单条笔记内容（74.1，回收站预览弹窗用）。
+   * 纯读不进变更串行：与 restore / purge 的写序互不干扰；条目在预览期间被
+   * 并发处理属正常竞态，后续操作各自校验并给出可读错误。
+   * 条目不存在 / 读取失败抛中文错误（文案即 toast 内容），不吞错。
+   */
+  static readTrashText(registry: VaultRegistry, vaultId: string, trashRel: string): string {
+    if (!TrashService.existsInTrash(registry, vaultId, trashRel)) {
+      throw new Error('回收站条目不存在，可能已被处理');
+    }
+    try {
+      return fileIo.readTextSync(registry.absoluteInTrash(vaultId, trashRel));
+    } catch (error) {
+      const err = error as BusinessError;
+      throw new Error('回收站条目读取失败：' + (err.message ?? '原因未确定'));
+    }
+  }
+
+  /**
    * 永久删除回收站内单条笔记（47.3）。与 restore 对称的出口，语义完全不同：
    * 直接 unlink 沙箱回收站内的文件，**不可恢复、不进撤销**——确认弹窗即唯一保护。
    * 条目不存在 / unlink 失败都抛错（文案即 toast 内容），回收站其余内容保持原样。

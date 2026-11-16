@@ -54,7 +54,8 @@ import {
   DeletePathDialog,
   MovePathDialog,
   PurgeTrashDialog,
-  RenamePathDialog
+  RenamePathDialog,
+  TrashPreviewDialog
 } from '../components/NoteDialogs';
 import { QuickSwitcher } from '../components/QuickSwitcher';
 import { TrashService, UndoSnap } from '../model/TrashService';
@@ -651,6 +652,8 @@ struct Index {
   private deletePathCtl: CustomDialogController | null = null;
   /** 回收站永久删除确认 controller（47.3） */
   private purgeTrashCtl: CustomDialogController | null = null;
+  /** 回收站条目只读预览 controller（74.2） */
+  private trashPreviewCtl: CustomDialogController | null = null;
   /** 重命名 / 移动对话框 controller（1.6 左滑操作条） */
   private renamePathCtl: CustomDialogController | null = null;
   private movePathCtl: CustomDialogController | null = null;
@@ -3089,7 +3092,8 @@ struct Index {
       tempDirCreated = true;
       const reader: StagingZipReader = new StagingZipReader(stagingPath);
       try {
-        // v1.72 72.2：开启 preserveMtime，解压写盘后按 central directory DOS 时间回填，
+        // v1.72 72.2：开启 preserveMtime，解压写盘后优先按 yaoshi-mtime.json 时间表回填，
+        // 表缺失 / 损坏逐条回落 central directory DOS 时间，
         // 保住统计热力图 / 连写 / mtime 排序的写作历史（TempVaultZipWriter.setModifiedTime）。
         const written: number = await ZipImportService.extract(reader,
           new TempVaultZipWriter(tempDir), new ZlibRawInflate(), parsed,
@@ -3615,8 +3619,16 @@ struct Index {
     }
     if (show && this.breakpoint === Breakpoint.SM) {
       this.setActivePane('right');
-    } else if (!show && this.activePane === 'right') {
-      this.setActivePane('left');
+    } else if (!show) {
+      // 关闭双栏时左栏为空、笔记只在右栏：把右栏笔记带到左栏再收起，
+      // 否则单栏全屏落在空白栏（用户走查反馈 2026-11-16）。
+      // loadFile 内部会先落盘右栏未保存内容再从磁盘读，内容不丢。
+      if (this.currentFilePath.length === 0 && this.rightFilePath.length > 0) {
+        void this.loadFile(this.rightFilePath);
+      }
+      if (this.activePane === 'right') {
+        this.setActivePane('left');
+      }
     }
   }
 
@@ -6768,9 +6780,51 @@ struct Index {
     }
   }
 
-  /** 回收站视图「永久删除」（47.3）：确认弹窗即唯一保护，确认后真删，不进撤销。 */
-  private openPurgeTrashDialog(relPath: string): void {
+  /**
+   * 回收站条目只读预览（74.2/74.3）：点行主体打开 TrashPreviewDialog。
+   * 读取失败（条目被并发处理 / IO 错误）不打开弹窗，toast 透出真实原因；
+   * 弹窗内「恢复 / 永久删除」各自走既有链，预览本身只读不落盘。
+   */
+  private openTrashPreviewDialog(relPath: string): void {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    let content: string = '';
+    try {
+      content = TrashService.readTrashText(VaultRegistry.get(), this.currentVaultId, relPath);
+    } catch (error) {
+      const err = error as BusinessError;
+      promptAction.showToast({ message: err.message ?? '回收站条目读取失败；原因未确定' });
+      this.trashSeq++;
+      return;
+    }
     const display: string = noteDisplayNameOfPath(relPath);
+    const slash: number = relPath.lastIndexOf('/');
+    const origin: string = slash >= 0 ? relPath.substring(0, slash) : '根目录';
+    this.trashPreviewCtl = new CustomDialogController({
+      builder: TrashPreviewDialog({
+        noteName: display,
+        origin: origin,
+        markdown: content,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onRestore: (): void => {
+          void this.doRestoreFromTrash(relPath);
+        },
+        onPurge: (): void => {
+          this.openPurgeTrashDialog(relPath);
+        }
+      }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: true,
+      customStyle: true
+    });
+    this.trashPreviewCtl.open();
+  }
+
+  /** 回收站视图「永久删除」（47.3）：确认弹窗即唯一保护，确认后真删，不进撤销。 */
+  private openPurgeTrashDialog(relPath: string): void {    const display: string = noteDisplayNameOfPath(relPath);
     const slash: number = relPath.lastIndexOf('/');
     const origin: string = slash >= 0 ? relPath.substring(0, slash) : '根目录';
     this.purgeTrashCtl = new CustomDialogController({
@@ -8435,6 +8489,9 @@ struct Index {
       },
       onPurgeTrash: (relPath: string): void => {
         this.openPurgeTrashDialog(relPath);
+      },
+      onPreviewTrash: (relPath: string): void => {
+        this.openTrashPreviewDialog(relPath);
       },
       onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
       onSidebarTabChange: (tab: string): void => { this.setSidebarTab(tab); },

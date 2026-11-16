@@ -3,6 +3,7 @@ import fileIo from '@ohos.file.fs';
 import { NoteShareService } from './NoteShareService';
 import { VaultAccess, VaultFileStat } from './VaultAccess';
 import { VaultRegistry } from './VaultRegistry';
+import { ZipImportService } from './ZipImportService';
 
 export interface ShareSnapshot {
   path: string;
@@ -26,6 +27,18 @@ export interface ShareScopeCount {
 interface VaultFile {
   path: string;
   isMarkdown: boolean;
+}
+
+/** v1.72 方案 B：yaoshi-mtime.json 单条条目（ZIP 内归档路径 + 源文件 mtime 毫秒）。 */
+interface MtimeManifestEntry {
+  path: string;
+  mtimeMs: number;
+}
+
+/** v1.72 方案 B：时间表整体（version 与 ZipImportService.MTIME_MANIFEST_VERSION 同源）。 */
+interface MtimeManifest {
+  version: number;
+  files: MtimeManifestEntry[];
 }
 
 /** 文件夹 / 知识库分享 ZIP；只遍历用户库内容，所有绝对路径仍经 VaultRegistry 解析。 */
@@ -110,6 +123,7 @@ export class ShareArchiveService {
       for (let i = 0; i < directories.length; i++) {
         ShareArchiveService.ensureDirectory(registry, payloadRel, directories[i], createdDirectories);
       }
+      const manifestEntries: MtimeManifestEntry[] = [];
       for (let i = 0; i < files.length; i++) {
         const item: VaultFile = files[i];
         ShareArchiveService.ensureParent(registry, payloadRel, item.path, createdDirectories);
@@ -119,7 +133,10 @@ export class ShareArchiveService {
         } else {
           NoteShareService.writeBinaryOutput(output, vaultAccess.readBytes(item.path));
         }
-        ShareArchiveService.restorePayloadMtime(vaultAccess, output, item.path);
+        const sourceMtimeMs: number = ShareArchiveService.statMtimeMs(vaultAccess, item.path);
+        if (sourceMtimeMs > 0) {
+          manifestEntries.push({ path: item.path, mtimeMs: sourceMtimeMs });
+        }
       }
       for (let i = 0; i < externalImages.length; i++) {
         const sourcePath: string = externalImages[i];
@@ -127,8 +144,12 @@ export class ShareArchiveService {
         ShareArchiveService.ensureParent(registry, payloadRel, targetPath, createdDirectories);
         const output: string = registry.sharePath(payloadRel + '/' + targetPath);
         NoteShareService.writeBinaryOutput(output, vaultAccess.readBytes(sourcePath));
-        ShareArchiveService.restorePayloadMtime(vaultAccess, output, sourcePath);
+        const sourceMtimeMs: number = ShareArchiveService.statMtimeMs(vaultAccess, sourcePath);
+        if (sourceMtimeMs > 0) {
+          manifestEntries.push({ path: targetPath, mtimeMs: sourceMtimeMs });
+        }
       }
+      ShareArchiveService.writeMtimeManifest(registry, payloadRel, manifestEntries);
       const name: string = ShareArchiveService.archiveName(vaultId, folderPath);
       const zipName: string = name + '.zip';
       const zipPath: string = registry.sharePath(shareId + '/' + zipName);
@@ -268,23 +289,44 @@ export class ShareArchiveService {
   }
 
   /**
-   * v1.72 导出 ZIP 保真（72.1）：payload 是新写的副本，mtime 默认为拷贝时刻；
-   * 写完按源文件 mtime 回填（fileIo.utimes，api_notes Y5：Epoch 毫秒，payload 在
-   * sharePath 沙箱内满足路径限制），让 zlib.compressFile 打进 ZIP DOS 字段的是真实
-   * 写作时间（v1.66 copyTree 同款做法）。源 mtime 只经 vaultAccess.stat 读取，
-   * 不按 rootKind 分叉；沙箱 / 外部两实现 mtimeSec 均为秒。尽力而为：
-   * 源 stat 拿不到或回填失败保留拷贝时刻，不失败分享。
+   * v1.72 方案 B（72.1）：源文件 mtime（Epoch 毫秒）；stat 拿不到或非法返回 0。
+   * mtime 只经 vaultAccess.stat 读取，不按 rootKind 分叉；
+   * 沙箱 / 外部两实现 mtimeSec 均为秒。
    */
-  private static restorePayloadMtime(vaultAccess: VaultAccess, payloadPath: string,
-    sourceRelPath: string): void {
+  private static statMtimeMs(vaultAccess: VaultAccess, relativePath: string): number {
     try {
-      const stat: VaultFileStat | null = vaultAccess.stat(sourceRelPath);
+      const stat: VaultFileStat | null = vaultAccess.stat(relativePath);
       if (stat === null || stat.mtimeSec <= 0) {
-        return;
+        return 0;
       }
-      fileIo.utimes(payloadPath, stat.mtimeSec * 1000);
+      return stat.mtimeSec * 1000;
     } catch (error) {
-      // mtime 属统计 / 排序元数据，回填失败不影响分享内容正确性。
+      return 0;
+    }
+  }
+
+  /**
+   * v1.72 方案 B（72.1）：把收集到的 mtime 时间表写为 payload 根的
+   * yaoshi-mtime.json（普通文件名，确保 zlib.compressFile 收录），随 ZIP 一起分发；
+   * 导入侧（72.2）读取时间表恢复真实写作时间——DOS 字段只有 2 秒精度且第三方
+   * 打包器不可控，不再作为自家环路的载重路径。尽力而为：空表不写；
+   * 写入失败静默继续——时间表缺失时导入侧回落 DOS 时间，不影响分享内容。
+   */
+  private static writeMtimeManifest(registry: VaultRegistry, payloadRel: string,
+    entries: MtimeManifestEntry[]): void {
+    if (entries.length === 0) {
+      return;
+    }
+    try {
+      const manifest: MtimeManifest = {
+        version: ZipImportService.MTIME_MANIFEST_VERSION,
+        files: entries
+      };
+      NoteShareService.writeAtomic(
+        registry.sharePath(payloadRel + '/' + ZipImportService.MTIME_MANIFEST_NAME),
+        JSON.stringify(manifest));
+    } catch (error) {
+      // mtime 属统计 / 排序元数据，时间表写失败不失败分享。
     }
   }
 
