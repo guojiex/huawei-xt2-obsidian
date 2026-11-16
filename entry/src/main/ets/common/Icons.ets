@@ -1,13 +1,15 @@
 /**
- * Icons.ets —— 统一描边图标（v0.2 §3.5 需求 4.7 的**兜底方案**）
+ * Icons.ets —— 统一图标（默认描边，业界标准填充图标见 FILLED_ICONS；v0.2 §3.5 需求 4.7 的**兜底方案**）
  *
- * ⚠️ 为什么不用 `SymbolGlyph` + `sys.symbol.*`（J-2 核实结论）：
- * 在本地 SDK 里**能核实到的 symbol id 只有 3 个**
- * （`sys.symbol.open_sidebar` / `chevron_down` / `chevron_forward`，见
- *  `sdk/default/openharmony/ets/component/*.d.ts` 的注释示例），
- * 覆盖不了文件树需要的 文件夹 / 文档 / 收起 等图标。
- * 按 AGENTS.md 铁律「禁止凭记忆编 sys.symbol.* 资源 id」，本版本**全部自绘**。
- * 4.7 的硬要求是「风格统一、不混两套」——自绘一套 24 viewBox 描边图标即可满足。
+ * ⚠️ 为什么不用 `SymbolGlyph` + `sys.symbol.*`（2026-11-15 复核）：
+ * 旧结论「只核到 3 个 symbol id」是只翻 `ets/component/*.d.ts` 注释示例得出的，**已过时**。
+ * 本机 SDK `sdk/default/openharmony/toolchains/id_defined.json` 是全量资源表，含 **4042 个
+ * `type: "symbol"`** 名称（如 `arrow_2_circlepath` / `arrow_clockwise` / `arrow_double_clockwise`），
+ * 官方图标库 developer.huawei.com/consumer/cn/design/harmonyos-symbol 亦可按名检索（579 个）。
+ * 但社区实测 API 24 上部分名称编译通过却不渲染（仅 `arrow_clockwise` 等 8 个确认可用），
+ * 且本项目 HAP 未上架、真机 symbol 字体版本不可控，故仍不自绘切系统 Symbol 的路线：
+ * 全部图标自绘保证确定性。若将来切系统 Symbol，须先在 XT2 真机逐个验证渲染。
+ * 4.7 的硬要求「风格统一、不混两套」仍适用。
  *
  * ⚠️ 为什么不用 `Shape().viewPort()` 缩放（实测踩坑）：
  * 模拟器实测 viewPort 不缩放子 Path，图标被渲染成几个像素的点（2026-10-18）。
@@ -47,10 +49,12 @@ const P_RESTORE: string = 'M9 5L4 10L9 15M4 10H13L17 12L20 16V19';
 const P_ARCHIVE: string = 'M3 5h18v4H3zM5 9v10h14V9M9 13h6';
 const P_UNDO: string = 'M9 7L4 12L9 17M4 12H14C17.314 12 20 14.686 20 18C20 20.209 18.209 22 16 22H12';
 const P_REDO: string = 'M15 7L20 12L15 17M20 12H10C6.686 12 4 14.686 4 18C4 20.209 5.791 22 8 22H12';
-// 同步（refresh-cw，对齐 v2 gitSyncBtn 同步到 Git 按钮）：两条圆弧 + 两个直角箭头钩。
-// 弧线（A 命令）按 scalePath 约束改写为三次贝塞尔（每条弧 3 段），端点 / 半径与设计稿一致。
+// 同步（sync，2026-11-15 用户拍板改用业界标准图标）：Google Material Design 经典 24dp `sync`
+// （material-design-icons @material-icons/svg，Apache 2.0）双弧 + 实心三角箭头，是 fills 型图标。
+// 原版两处 A 圆弧已按 scalePath 约束改写为三次贝塞尔；小数一律带前导 0，避免 "-.25" 被拆坏。
+// 设计稿 v2 三处 svg 与此处为同一路径（加 icon-filled 类按填充渲染）。
 const P_SYNC: string =
-  'M20 7V12H15M4 17V12H9M5.5 9C5.81 7.19 6.82 5.58 8.31 4.51C9.8 3.44 11.65 3 13.46 3.28C15.27 3.56 16.9 4.53 18 6L20 8M4 16L6 18C7.1 19.47 8.73 20.44 10.54 20.72C12.35 21 14.2 20.56 15.69 19.49C17.18 18.42 18.19 16.81 18.5 15';
+  'M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6c0 1.01-0.25 1.97-0.7 2.8l1.46 1.46C19.57 14.99 20 13.51 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6c0-1.01 0.25-1.97 0.7-2.8L5.24 7.74C4.43 9.01 4 10.49 4 12c0 4.42 3.58 8 8 8v3l4-4l-4-4v3z';
 // 设置（sliders）：三条等长横线 + 三个圆形滑钮（对齐 v2 settingsBtn：knob 用三段三次贝塞尔画圆，避免 A 命令 flag 被 scalePath 缩放）
 const P_SETTINGS: string = 'M4 6h3M11 6h9M9 4C10.1 4 11 4.9 11 6C11 7.1 10.1 8 9 8C7.9 8 7 7.1 7 6C7 4.9 7.9 4 9 4'
   + 'M4 12h9M17 12h3M15 10C16.1 10 17 10.9 17 12C17 13.1 16.1 14 15 14C13.9 14 13 13.1 13 12C13 10.9 13.9 10 15 10'
@@ -210,20 +214,32 @@ export function iconCommands(name: string, size: number): string {
 }
 
 /**
- * 描边图标。
+ * 图标渲染（默认描边；FILLED_ICONS 中的图标按填充渲染）。
+ * 业界标准图标多为填充型轮廓（如 Material Design sync），描边渲染会变成双层空心线，
+ * 因此按图标名分派渲染方式——调用方无需逐个传 filled 参数，四处 sync 入口自动一致。
  * @param name 图标名（见上方 P_* 常量）
  * @param size 边长（vp）。**触控热区由外层容器负责 ≥48**（Size.touch）
  * @param color 颜色，传 `$r('app.color.text_secondary')` 等 token
- * @param strokeWidth 线宽，默认 2（24 viewBox 下的标准描边）
+ * @param strokeWidth 线宽，默认 2（24 viewBox 下的标准描边）；填充型图标忽略
  */
+const FILLED_ICONS: string[] = ['sync'];
+
 @Builder
 export function Icon(name: string, size: number, color: ResourceColor, strokeWidth: number = 2) {
-  Path({ commands: scalePath(pathOf(name), vp2px(size) / 24) })
-    .width(size)
-    .height(size)
-    .fillOpacity(0)
-    .stroke(color)
-    .strokeWidth(strokeWidth)
-    .strokeLineCap(LineCapStyle.Round)
-    .strokeLineJoin(LineJoinStyle.Round)
+  if (FILLED_ICONS.indexOf(name) >= 0) {
+    Path({ commands: scalePath(pathOf(name), vp2px(size) / 24) })
+      .width(size)
+      .height(size)
+      .fill(color)
+      .strokeWidth(0)
+  } else {
+    Path({ commands: scalePath(pathOf(name), vp2px(size) / 24) })
+      .width(size)
+      .height(size)
+      .fillOpacity(0)
+      .stroke(color)
+      .strokeWidth(strokeWidth)
+      .strokeLineCap(LineCapStyle.Round)
+      .strokeLineJoin(LineJoinStyle.Round)
+  }
 }
