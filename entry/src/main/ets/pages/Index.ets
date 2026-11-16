@@ -7615,18 +7615,18 @@ struct Index {
   EmptyPaneAction(pane: string, action: string, label: string, icon: string, primary: boolean,
     focusId: string = '') {
     Row({ space: Space.s2 }) {
-      Icon(icon, Space.s4, primary ? $r('app.color.on_brand') : $r('app.color.text_secondary'))
+      if (primary) {
+        Icon(icon, Space.s4, $r('app.color.on_brand'))
+      }
       Text(label)
         .fontSize(FontSize.body2)
         .fontWeight(primary ? FontWeight.Medium : FontWeight.Normal)
-        .fontColor(primary ? $r('app.color.on_brand') : $r('app.color.text_primary'))
+        .fontColor(primary ? $r('app.color.on_brand') : $r('app.color.text_secondary'))
     }
     .height(Size.touch)
-    .padding({ left: Space.s4, right: Space.s4 })
+    .padding({ left: primary ? Space.s6 : Space.s2, right: primary ? Space.s6 : Space.s2 })
     .borderRadius(Radius.full)
-    .backgroundColor(primary ? $r('app.color.brand') : $r('app.color.bg_secondary'))
-    .border({ width: 1, color: primary ? $r('app.color.brand') : $r('app.color.line') })
-    .margin({ left: Space.s1, right: Space.s1, bottom: Space.s2 })
+    .backgroundColor(primary ? $r('app.color.brand') : Color.Transparent)
     .focusable(true)
     .id(focusId)
     .onAppear((): void => {
@@ -7719,21 +7719,27 @@ struct Index {
           if (this.currentVaultNoteCount === 0) {
             this.EmptyPaneAction(pane, 'new', '新建笔记', 'plus', true, 'pane-empty-new-' + pane)
           } else {
+            this.EmptyPaneAction(pane, 'new', '新建笔记', 'plus', true, 'pane-empty-new-' + pane)
+            Row({ space: Space.s4 }) {
+              this.EmptyPaneAction(pane, 'search', '搜索笔记', 'search', false)
+              if (this.isSingleScreenLayout()) {
+                this.EmptyPaneAction(pane, 'files', '文件列表', 'menu', false)
+              }
+            }
+            .justifyContent(FlexAlign.Center)
+            .width('100%')
             if (this.paneLastClosedPath(pane).length > 0) {
               Row({ space: Space.s2 }) {
-                Icon('restore', Space.s4, $r('app.color.brand'))
+                Icon('restore', Space.s4, $r('app.color.text_tertiary'))
                 Text('重新打开「' + this.noteTitleForPath(this.paneLastClosedPath(pane)) + '」')
                   .fontSize(FontSize.body2)
-                  .fontColor($r('app.color.text_primary'))
+                  .fontColor($r('app.color.text_secondary'))
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
               }
               .width('100%')
               .height(Size.touch)
               .padding({ left: Space.s4, right: Space.s4 })
-              .borderRadius(Radius.full)
-              .border({ width: 1, color: $r('app.color.line') })
-              .backgroundColor($r('app.color.bg_tertiary'))
               .focusable(true)
               .id('pane-empty-reopen-' + pane)
               .onAppear((): void => {
@@ -7742,15 +7748,6 @@ struct Index {
               .onClick((): void => { this.onSelectFile(this.paneLastClosedPath(pane), pane, true); })
               .accessibilityText('重新打开「' + this.noteTitleForPath(this.paneLastClosedPath(pane)) + '」')
             }
-            Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center,
-              alignItems: ItemAlign.Center }) {
-              this.EmptyPaneAction(pane, 'new', '新建笔记', 'plus', true, 'pane-empty-new-' + pane)
-              this.EmptyPaneAction(pane, 'search', '搜索笔记', 'search', false)
-              if (this.isSingleScreenLayout()) {
-                this.EmptyPaneAction(pane, 'files', '文件列表', 'menu', false)
-              }
-            }
-            .width('100%')
           }
           if (this.currentVaultNoteCount > 0 && this.paneRecentPaths(pane).length > 0) {
             Column({ space: Space.s1 }) {
