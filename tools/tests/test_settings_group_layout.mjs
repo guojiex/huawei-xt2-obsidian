@@ -36,7 +36,7 @@ test('data tab presents a danger row with in-group confirmation instead of a dia
   assert.match(source, /\.fontColor\(\$r\('app\.color\.danger'\)\)/);
   assert.match(source, /Text\('确定重置所有数据？'\)/);
   assert.match(source, /Text\('取消'\)/);
-  assert.match(source, /Text\('重置并恢复样例'\)/);
+  assert.match(source, /Text\('确认重置'\)/);
   // 两步防误触：先点行展开，再点确认；不再走弹窗。
   assert.match(source, /private openResetConfirm\(\): void \{/);
   assert.match(source, /this\.resetConfirmOpen = true;/);

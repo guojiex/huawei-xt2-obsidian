@@ -18,9 +18,9 @@ assert.ok(tabStart >= 0 && tabEnd > tabStart, 'could not find SettingsView.DataT
 const dataTab = settings.slice(tabStart, tabEnd);
 
 test('backup group sits above local data with export row and footnote (37.1)', () => {
-  // 分组顺序：数据标题 → 备份 → 导出行 → 注脚 → 本地数据
+  // 分组顺序（v1.66 后）：数据标题 → 应用备份 → 单库导出行 → 注脚 → 本地数据
   const heading = dataTab.indexOf("'数据'");
-  const backupTitle = dataTab.indexOf("this.GroupTitle('备份')");
+  const backupTitle = dataTab.indexOf("this.GroupTitle('应用备份')");
   const exportRow = dataTab.indexOf("'导出当前知识库（ZIP）'");
   const footnote = dataTab.indexOf('不包含应用设置、草稿、回收站与访问令牌。其他知识库可在「管理库」中逐个分享。');
   const localTitle = dataTab.indexOf("this.GroupTitle('本地数据')");
@@ -70,22 +70,21 @@ test('empty vault disables the row and swaps the hint (37.3)', () => {
 });
 
 test('reset confirm suggests exporting first via inline link (37.4)', () => {
-  // 建议先「导出当前知识库」作为备份。→ 行内链接收起确认区并打开同一分享入口
+  // 建议先「导出应用备份」（v1.66 66.5 从单库 ZIP 换成应用备份）。→ 行内链接打开应用备份弹窗
   const confirmStart = dataTab.indexOf("'确定重置所有数据？'");
-  const detailStart = dataTab.indexOf('本页编辑、插入图片、文件操作和回收站将恢复为初始样例');
+  const detailStart = dataTab.indexOf('本页编辑、插入图片、文件操作和回收站将一并清除');
   assert.ok(confirmStart >= 0 && detailStart > confirmStart, 'reset confirm block found');
   const confirm = dataTab.slice(confirmStart, detailStart);
   assert.match(confirm, /Span\('建议先'\)/);
-  assert.match(confirm, /Span\('导出当前知识库'\)[\s\S]*?fontColor\(\$r\('app\.color\.brand'\)\)/);
-  assert.match(confirm, /Span\('作为备份，之后可在『导入库 → ZIP 文件』恢复。'\)/);
-  // 空库不触发（原型 resetExportFirst 同款守卫）；点按收起确认区再打开分享
-  assert.match(confirm, /if \(this\.exportBackupDisabled\(\)\) \{\s*\n\s*return;\s*\n\s*\}/);
+  assert.match(confirm, /Span\('导出应用备份'\)[\s\S]*?fontColor\(\$r\('app\.color\.brand'\)\)/);
+  assert.match(confirm, /Span\('作为备份，之后可在「设置 → 数据 → 从备份恢复」中还原。'\)/);
+  // 应用备份不依赖具体库，无空库守卫；点按收起确认区再打开应用备份弹窗
   assert.match(confirm, /this\.resetConfirmOpen = false;/);
-  assert.match(confirm, /this\.onExportCurrentVault\('settings-export-vault-row'\);/);
+  assert.match(confirm, /this\.openApplicationBackup\('settings-app-backup-row'\);/);
   // 原型文案与行为一致：v1.66 66.5 把重置前建议从单库 ZIP 换成应用备份
   assert.ok(prototype.includes('建议先') &&
     prototype.includes('导出应用备份</button>，之后可在「数据 → 从备份恢复」找回全部本地库与设置。'));
   // 不改变重置步骤：确认标题、说明与两个按钮保持
   assert.ok(detailStart > 0, 'reset detail copy unchanged');
-  assert.match(dataTab, /'重置并恢复样例'/);
+  assert.match(dataTab, /'确认重置'/);
 });

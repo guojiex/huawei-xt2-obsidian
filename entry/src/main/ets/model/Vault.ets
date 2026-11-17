@@ -49,7 +49,7 @@ export interface VaultEntry {
 /** 个人本地库：首次启动创建为空库；用户自己的笔记默认归此库。 */
 export const DEFAULT_VAULT_ID: string = '我的笔记';
 
-/** 首次安装的样例库：首次启动打开此库，内容来自共享样例源。 */
+/** 历史首装样例库（v1.82 起不再预置）：仅用于识别既有安装中已存在的教程库与首装笔记兼容逻辑。 */
 export const SAMPLE_VAULT_ID: string = '曜石笔记教程';
 
 /**

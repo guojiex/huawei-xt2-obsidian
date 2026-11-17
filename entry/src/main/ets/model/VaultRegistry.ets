@@ -14,7 +14,7 @@ import { preferences } from '@kit.ArkData';
 import fileIo from '@ohos.file.fs';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { BusinessError } from '@kit.BasicServicesKit';
-import { DEFAULT_VAULT_ID, SAMPLE_VAULT_ID, sanitizeVaultName, VaultEntry } from './Vault';
+import { DEFAULT_VAULT_ID, sanitizeVaultName, VaultEntry } from './Vault';
 import { VaultPathResolver } from './VaultPathResolver';
 import { VaultAccess } from './VaultAccess';
 import { createExternalVaultAccess, createSandboxVaultAccess } from './VaultAccessDevice';
@@ -69,7 +69,6 @@ export class VaultRegistry implements SearchVaultRegistry {
   private store: preferences.Preferences | null = null;
   private state: VaultRegistryState = { vaults: [], currentVaultId: '' };
   private initialized: boolean = false;
-  private sampleInstallPending: boolean = false;
   private vaultKeySerial: number = 0;
   /** vaultId → VaultAccess 的缓存（只缓存 accessor，不缓存 fd）。 */
   private accessCache: Map<string, VaultAccess> = new Map<string, VaultAccess>();
@@ -99,7 +98,7 @@ export class VaultRegistry implements SearchVaultRegistry {
     return VaultRegistry.instance;
   }
 
-  /** 加载/创建注册表；全新安装创建个人库与教程库，并首次进入教程库。 */
+  /** 加载/创建注册表；全新安装创建空白个人库并进入该库（v1.82 起不再预置教程样例库）。 */
   private init(): void {
     if (this.initialized) {
       return;
@@ -119,25 +118,15 @@ export class VaultRegistry implements SearchVaultRegistry {
       this.ensureCurrentValid();
       this.persist();
     } else {
-      // 无注册表且没有既有库目录才按全新安装处理；保留失去注册表时的已有内容。
+      // 无注册表时按全新安装处理；保留失去注册表时的已有内容（目录不删不改）。
       this.state = { vaults: [], currentVaultId: '' };
-      const vaultsRoot: string = this.resolver.vaultsRoot();
-      const hasExistingVaults: boolean = fileIo.accessSync(vaultsRoot) && fileIo.listFileSync(vaultsRoot).length > 0;
-      this.sampleInstallPending = !hasExistingVaults;
       this.createInitialVaults();
     }
     this.recoverGitImportResidues();
     this.initialized = true;
   }
 
-  /** One-shot first-install grant; existing directories and later launches are never seeded. */
-  consumeSampleInstall(): boolean {
-    const pending: boolean = this.sampleInstallPending;
-    this.sampleInstallPending = false;
-    return pending;
-  }
-
-  /** 首装教程笔记路径；已有安装不会自动获得该值。 */
+  /** 首装教程笔记路径；仅既有安装的历史标记，新安装不再赋值（v1.82）。 */
   firstInstallNotePath(): string {
     return typeof this.state.initialNotePath === 'string' ? this.state.initialNotePath : '';
   }
@@ -977,28 +966,7 @@ export class VaultRegistry implements SearchVaultRegistry {
         fileIo.mkdirSync(dirPath);
       }
       this.state.vaults.push({ id: DEFAULT_VAULT_ID, vaultKey: this.newVaultKey(), type: 'local', createdAt: Date.now() });
-      if (this.sampleInstallPending) {
-        const sampleDir: string = this.resolver.vaultDir(SAMPLE_VAULT_ID);
-        try {
-          if (!fileIo.accessSync(sampleDir)) {
-            fileIo.mkdirSync(sampleDir);
-          }
-          this.state.vaults.push({
-            id: SAMPLE_VAULT_ID,
-            vaultKey: this.newVaultKey(),
-            type: 'local',
-            createdAt: Date.now()
-          });
-          this.state.currentVaultId = SAMPLE_VAULT_ID;
-          this.state.initialNotePath = '00_开始/快速上手.md';
-        } catch (error) {
-          this.sampleInstallPending = false;
-          this.state.currentVaultId = DEFAULT_VAULT_ID;
-          hilog.error(REG_DOMAIN, REG_TAG, '创建教程库失败，回退到个人库');
-        }
-      } else {
-        this.state.currentVaultId = DEFAULT_VAULT_ID;
-      }
+      this.state.currentVaultId = DEFAULT_VAULT_ID;
       this.persist();
     } catch (error) {
       hilog.error(REG_DOMAIN, REG_TAG, '创建默认库失败');

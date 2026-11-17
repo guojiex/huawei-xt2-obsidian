@@ -352,18 +352,14 @@ test('a failing vault tree removal keeps the entry and the current vault in the 
   assert.equal(registry.state.currentVaultId, 'A');
 });
 
-test('first install creates a personal vault and tutorial vault with the tutorial note pending', () => {
+test('first install creates only an empty personal vault (v1.82: no preset tutorial vault)', () => {
   const { registry } = createRegistry();
-  registry.sampleInstallPending = true;
 
   registry.createInitialVaults();
 
-  assert.deepEqual(registry.state.vaults.map((vault) => vault.id), [
-    vaultModule.DEFAULT_VAULT_ID,
-    vaultModule.SAMPLE_VAULT_ID
-  ]);
-  assert.equal(registry.state.currentVaultId, vaultModule.SAMPLE_VAULT_ID);
-  assert.equal(registry.firstInstallNotePath(), '00_开始/快速上手.md');
+  assert.deepEqual(registry.state.vaults.map((vault) => vault.id), [vaultModule.DEFAULT_VAULT_ID]);
+  assert.equal(registry.state.currentVaultId, vaultModule.DEFAULT_VAULT_ID);
+  assert.equal(registry.firstInstallNotePath(), '');
 });
 
 test('existing registries retain a valid first-install marker and ignore malformed values', () => {

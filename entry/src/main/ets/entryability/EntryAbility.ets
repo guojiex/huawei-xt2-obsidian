@@ -9,7 +9,6 @@ import { AgentMemoryStore } from '../model/AgentMemoryStore';
 import { AgentConfigStore } from '../model/AgentConfigStore';
 import { AgentRuntime } from '../model/AgentRuntime';
 import { NoteDraftService } from '../model/NoteDraftService';
-import { SampleVaultInstaller } from '../model/SampleVaultInstaller';
 import {
   ExternalVaultAuthorizationService, ExternalPermissionStatus
 } from '../model/ExternalVaultAuthorization';
@@ -223,10 +222,9 @@ export default class EntryAbility extends UIAbility {
     // ===== 折痕 / FoldStatus 数据采集日志点（T014，TODO(真机校准)）=====
     this.registerFoldCalibrationLogging();
 
-    void SampleVaultInstaller.install(registry).catch((_error: Error): void => {
-      hilog.error(DOMAIN, TAG, '样例库预置失败，保留已写入内容，不自动重试');
-    }).then(async (): Promise<void> => {
-      await this.restoreExternalVaultPermissions();
+    // v1.82 审核整改：不再预置首装样例库（1.9.0 提审因审核指南 3.4 被拒）；
+    // 全新安装仅由注册表创建空白「我的笔记」，既有安装的教程库不迁移、不删除。
+    void this.restoreExternalVaultPermissions().then((): void => {
       windowStage.loadContent(this.resolveInitialPage(), (err) => {
         if (err.code) {
           hilog.error(DOMAIN, TAG, 'Failed to load the content. code=%{public}d', err.code);
