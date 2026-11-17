@@ -137,7 +137,9 @@ test('14.4 insertion queue accepts a paragraph and preserves its source as a sep
   assert.equal(harness.dispatched[0].from, to)
   assert.equal(harness.dispatched[0].to, to)
   assert.equal(harness.dispatched[0].expected, '')
-  assert.equal(harness.dispatched[0].replacement, `\n\n${tableSource}`)
+  // 插入点后紧跟下一行（仅一个换行）：表格尾部补一个换行凑出空行，
+  // 否则表格末行与 after 粘连，重渲染被判「表格结构不规范」锁表。
+  assert.equal(harness.dispatched[0].replacement, `\n\n${tableSource}\n`)
   assert.equal(harness.dispatched[0].focusFrom, to + 2)
   assert.equal(harness.dispatched[0].showUndo, true)
   assert.equal(harness.sourceText, source)

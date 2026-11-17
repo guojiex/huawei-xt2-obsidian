@@ -214,14 +214,24 @@ export function tableInsertionPatch(source, from, to, expectedBlock, tableSource
     return null
   }
 
+  // marked 的 heading 等 token 会把块尾空行分隔符吞进 raw：光标块的 sourceEnd 之后可能
+  // 直接就是下一块首行（或只剩单个换行）。表格尾部若不补出空行，最后一行会与后续文本
+  // 粘连，重渲染后被 parseTableSource 判「表格结构不规范」锁表（与 0e0357a3 同族问题）。
+  const remainder = source.slice(to)
+  const blankLine = lineEnding + lineEnding
+  let tail = ''
+  if (remainder.length > 0 && !remainder.startsWith(blankLine)) {
+    tail = remainder.startsWith(lineEnding) ? lineEnding : blankLine
+  }
+
   if (expectedBlock.trim().length === 0) {
-    return { from, to, expected: expectedBlock, replacement: tableSource }
+    return { from, to, expected: expectedBlock, replacement: tableSource + tail }
   }
   return {
     from: to,
     to,
     expected: '',
-    replacement: `${lineEnding}${lineEnding}${tableSource}`
+    replacement: `${lineEnding}${lineEnding}${tableSource}${tail}`
   }
 }
 

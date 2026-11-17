@@ -354,6 +354,63 @@ test('14.4 refuses a stale block range and offsets that split CRLF', () => {
   assert.equal(tableInsertionPatch('paragraph', 0, 9, 'changed', '| A |\n| --- |'), null)
 })
 
+function tableTokenRaw(markdown) {
+  const token = marked.lexer(markdown).find((candidate) => candidate.type === 'table')
+  return token ? token.raw : null
+}
+
+test('14.4 insertion pads the table tail when the cursor block absorbed the separator', () => {
+  const table = '| A | B |\n| --- | --- |\n| one | two |'
+
+  // 场景一：光标在标题里。marked 的 heading token 把块尾空行吞进 raw，
+  // 插入点之后直接是下一块首行——修复前表格末行会与「正文」粘连成 `| one | two |正文`。
+  const headingSource = '# 标题\n\n正文'
+  const headingRaw = '# 标题\n\n'
+  const headingPatch = tableInsertionPatch(headingSource, 0, headingRaw.length, headingRaw, table)
+  assert.deepEqual(headingPatch, {
+    from: headingRaw.length,
+    to: headingRaw.length,
+    expected: '',
+    replacement: `\n\n${table}\n\n`
+  })
+  const headingResult = headingSource.slice(0, headingPatch.from) + headingPatch.replacement +
+    headingSource.slice(headingPatch.to)
+  assert.equal(headingResult, `# 标题\n\n\n\n${table}\n\n正文`)
+  assert.notEqual(parseTableSource(tableTokenRaw(headingResult)), null)
+
+  // 场景二：段落直接跟列表（无空行分隔），插入点后是非换行字符。
+  const listSource = '正文\n- 甲\n- 乙'
+  const listPatch = tableInsertionPatch(listSource, 0, 3, '正文\n', table)
+  assert.equal(listPatch.replacement, `\n\n${table}\n\n`)
+  const listResult = listSource.slice(0, listPatch.from) + listPatch.replacement +
+    listSource.slice(listPatch.to)
+  assert.notEqual(parseTableSource(tableTokenRaw(listResult)), null)
+
+  // 场景三：插入点后只剩单个换行（下一块首行紧贴），只补一个换行凑出空行。
+  const singleNewlineSource = 'before\nnote\nafter'
+  const singlePatch = tableInsertionPatch(singleNewlineSource, 7, 11, 'note', table)
+  assert.equal(singlePatch.replacement, `\n\n${table}\n`)
+  const singleResult = singleNewlineSource.slice(0, singlePatch.from) + singlePatch.replacement +
+    singleNewlineSource.slice(singlePatch.to)
+  assert.notEqual(parseTableSource(tableTokenRaw(singleResult)), null)
+
+  // 场景四（回归对照）：插入点后已是空行或文档结尾时，不额外补尾。
+  const blankTailPatch = tableInsertionPatch('第一段\n\n第二段', 0, 3, '第一段', table)
+  assert.equal(blankTailPatch.replacement, `\n\n${table}`)
+  const endPatch = tableInsertionPatch('第一段\n\n第二段', 5, 8, '第二段', table)
+  assert.equal(endPatch.replacement, `\n\n${table}`)
+
+  // 场景五：CRLF 文档同样补尾，且不拆散 \r\n。
+  const crlfSource = '# 标题\r\n\r\n正文'
+  const crlfRaw = '# 标题\r\n\r\n'
+  const crlfPatch = tableInsertionPatch(crlfSource, 0, crlfRaw.length, crlfRaw,
+    table.replace(/\n/g, '\r\n'), '\r\n')
+  assert.equal(crlfPatch.replacement, `\r\n\r\n${table.replace(/\n/g, '\r\n')}\r\n\r\n`)
+  const crlfResult = crlfSource.slice(0, crlfPatch.from) + crlfPatch.replacement +
+    crlfSource.slice(crlfPatch.to)
+  assert.notEqual(parseTableSource(tableTokenRaw(crlfResult)), null)
+})
+
 test('pseudo tables without a divider are identified for read-only protection', () => {
   assert.equal(isPseudoTableSource('| a | b |\n| c | d |'), true)
   assert.equal(isPseudoTableSource('a | b\nc | d'), true)
