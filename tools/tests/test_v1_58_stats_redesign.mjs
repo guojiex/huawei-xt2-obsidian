@@ -3,9 +3,11 @@
  *
  * 1. 新增展示层纯函数：下一个成就唯一、提示文案、本周圆点（口径函数本身不变，
  *    仍由 test_vault_stats.mjs 锁住）。
- * 2. 原型设计稿定向核对：库菜单无入口、各屏更多菜单打开弹窗、关闭焦点返还、
- *    热力图 7 行 × 12 列、下一个成就唯一、view=stats URL 复现打开弹窗。
- * 3. 原生形态源级断言：弹窗外壳、连写条、7×12 转置、空闲扫描与红线。
+ * 2. 原型设计稿定向核对：库菜单无入口、各屏更多菜单打开独立页、关闭焦点返还、
+ *    热力图 7 行 × 12 列、下一个成就唯一、view=stats URL 复现打开。
+ * 3. 原生形态源级断言：连写条、7×12 转置、空闲扫描与红线。
+ *    ⚠️ v1.81（81.7）起弹窗 / 半模态形态被独立页（VaultStatsPage）取代，
+ *    原 58.4 / 58.11 弹窗外壳断言已迁移；本文件保留 v1.58 仍生效的口径与入口约束。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,10 +35,9 @@ const html = readSourceFile(
   new URL('../../docs/prototype/v2/index.html', import.meta.url));
 const index = readSourceFile(
   new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
-const dialog = readSourceFile(
-  new URL('../../entry/src/main/ets/components/VaultStatsDialog.ets', import.meta.url));
-const view = readSourceFile(
-  new URL('../../entry/src/main/ets/components/VaultStatsView.ets', import.meta.url));
+// v1.81 81.7：VaultStatsDialog / VaultStatsView 已删除，原生形态断言指向独立页
+const page = readSourceFile(
+  new URL('../../entry/src/main/ets/components/VaultStatsPage.ets', import.meta.url));
 const chip = readSourceFile(
   new URL('../../entry/src/main/ets/components/VaultStatsStreakChip.ets', import.meta.url));
 const sidebar = readSourceFile(
@@ -133,14 +134,13 @@ test('58.10 原型：view=stats URL 复现打开弹窗（stateUrl / restoreUrl �
 
 /* --------------------------- 58.11 原生形态 --------------------------- */
 
-test('58.4 / 58.11 原生：弹窗外壳与焦点返还，不再有全屏 stats 视图', () => {
-  assert.match(dialog, /@CustomDialog/);
-  assert.match(dialog, /preferredWidthVp: Size\.statsDialogW/);
-  assert.match(dialog, /headerTexts: \(\): void => \{ this\.DialogHeaderTexts\(\); \}/);
-  assert.match(index, /cancel: restoreFocus/);
-  assert.match(index, /FocusRequest\.safely\(this\.getUIContext\(\), focusReturnId\)/);
-  assert.doesNotMatch(index, /if \(this\.topView === 'stats'\)/);
-  assert.doesNotMatch(index, /this\.StatsView\(\)/);
+test('58.4 / 58.11 原生（v1.81 81.7 修订）：独立页形态与焦点返还', () => {
+  // 弹窗 / 半模态形态已被独立页取代：不得再出现 CustomDialog 外壳。
+  assert.doesNotMatch(page, /@CustomDialog/);
+  assert.match(index, /private returnFromVaultStats\(\): void/);
+  assert.match(index, /FocusRequest\.safely\(this\.getUIContext\(\), focusId\)/);
+  assert.match(index, /this\.topView = 'stats';/);
+  assert.match(index, /this\.StatsPane\(\)/);
 });
 
 test('58.2 / 58.3 原生：连写条与单屏菜单入口', () => {
@@ -155,18 +155,18 @@ test('58.2 / 58.3 原生：连写条与单屏菜单入口', () => {
 });
 
 test('58.7 / 58.8 原生：热力图按 7 行 × 12 列转置，圆环只在「下一个」', () => {
-  assert.match(view, /ForEach\(this\.dayIndexes\(\), \(d: number\) => \{/);
-  assert.match(view, /ForEach\(this\.model\.weeks, \(week: VaultStatsWeek, w: number\) => \{/);
-  assert.match(view, /isToday: w === this\.model\.weeks\.length - 1 && d === this\.todayIndex\(\)/);
-  assert.match(view, /isNext: start \+ col === nextBadgeIndexOf\(this\.model\.badges\)/);
-  assert.match(view, /ProgressType\.Ring/);
-  assert.equal((view.match(/Progress\(\{ value: this\.percent\(\)/g) ?? []).length, 1);
+  assert.match(page, /ForEach\(this\.dayIndexes\(\), \(d: number\) => \{/);
+  assert.match(page, /ForEach\(this\.model\.weeks, \(week: VaultStatsWeek, w: number\) => \{/);
+  assert.match(page, /isToday: w === this\.model\.weeks\.length - 1 && d === this\.todayIndex\(\)/);
+  assert.match(page, /isNext: start \+ col === nextBadgeIndexOf\(this\.model\.badges\)/);
+  assert.match(page, /ProgressType\.Ring/);
+  assert.equal((page.match(/Progress\(\{ value: this\.percent\(\)/g) ?? []).length, 1);
 });
 
 test('58.11 原生：冷启动扫描排到空闲时机，红线不变', () => {
   assert.match(index, /this\.statsIdleTimer = setTimeout\(\(\): void => \{/);
   assert.match(index, /this\.scheduleIdleStatsRefresh\(\);/);
-  for (const src of [dialog, view, chip]) {
+  for (const src of [page, chip]) {
     assert.ok(!src.includes('hiAppEvent') && !src.includes('hilog') &&
       !src.includes('PerformanceAnalysisKit'), '统计源出现埋点 / 日志 Kit');
   }

@@ -59,6 +59,8 @@ export class FontSize {
 /** 字重：数字档（ArkUI fontWeight 接受 number），600 = semibold 强调档。 */
 export class Weight {
   static readonly semibold: number = 600;
+  /** v2 原型 font-weight: 500 档（统计大数字 / 年度标题 / 奖章名）。 */
+  static readonly medium: number = 500;
 }
 
 /** 尺寸 */
@@ -132,6 +134,17 @@ export class Size {
   static readonly statsHeroDot: number = Space.s5;
   /** 成就徽章圆形标记直径（原型 calc(--s12 + --s1)）。 */
   static readonly statsMedalSize: number = Space.s12 + Space.s1;
+  /* ---- v1.81 写作统计独立页（原型 :root --stats-*）---- */
+  /** 页面内容限宽（--stats-content-width: 1080px）。 */
+  static readonly statsPageMaxW: number = 1080;
+  /** 主视觉超大数字字号（--stats-number: 76px）。 */
+  static readonly statsNumber: number = 76;
+  /** 成就奖章圆形标记直径（--stats-medal: 64px）。 */
+  static readonly statsMedalMark: number = 64;
+  /** 年度月柱轨道高度（--stats-chart: 144px）。 */
+  static readonly statsMonthTrackH: number = 144;
+  /** 统计卡片大圆角（--stats-radius: 24px）。 */
+  static readonly statsRadius: number = 24;
   /** 分栏把手胶囊高度：映射 v2 `--split-height`（宽度用 `Space.s1`，命中区用 `Space.s4` = `--split-hit`） */
   static readonly splitHandleH: number = 40;
   static readonly splitGripW: number = 12;

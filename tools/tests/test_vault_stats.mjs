@@ -6,8 +6,8 @@
  *     连写三分支（今天有 / 今天无昨天有 / 断档）、累计去重、热力图分档与未来日 /
  *     月份刻度、徽章达成与进度边界（value == goal）、computeStatsModel 聚合、
  *     扫描分块与失败语义（快照失败 / 单篇读失败记 0 不中断）。
- *  2. 源级断言（v1.58 58.11 更新）：Index 弹窗接线 / 扫描回写 / 焦点返还、
- *     侧栏连写条与单屏菜单入口、库菜单无统计入口、弹窗内容形态、Icons flame / medal、
+ *  2. 源级断言（v1.81 81.7 更新）：Index 独立页接线 / 扫描回写 / 焦点返还、
+ *     侧栏连写条与单屏菜单入口、库菜单无统计入口、统计页内容形态、Icons flame / medal、
  *     红线（统计源文件无 hiAppEvent / hilog / PerformanceAnalysisKit）。
  *  注：58.11 要求口径用例不变且通过；v1.58 新增纯函数与原型定向测试另见
  *      test_v1_58_stats_redesign.mjs。
@@ -315,27 +315,27 @@ const sidebarSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/VaultSidebar.ets', import.meta.url));
 const agentWorkspaceSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/AgentWorkspace.ets', import.meta.url));
-const statsViewSource = readSourceFile(
-  new URL('../../entry/src/main/ets/components/VaultStatsView.ets', import.meta.url));
-const statsDialogSource = readSourceFile(
-  new URL('../../entry/src/main/ets/components/VaultStatsDialog.ets', import.meta.url));
+// v1.81 81.7：半模态 / 弹窗形态被独立页取代，源级断言迁移到 VaultStatsPage
+const statsPageSource = readSourceFile(
+  new URL('../../entry/src/main/ets/components/VaultStatsPage.ets', import.meta.url));
 const streakChipSource = readSourceFile(
   new URL('../../entry/src/main/ets/components/VaultStatsStreakChip.ets', import.meta.url));
 const iconsSource = readSourceFile(
   new URL('../../entry/src/main/ets/common/Icons.ets', import.meta.url));
 
-test('源级：Index 写作统计弹窗接线（58.4 / 58.11：不再是全屏次级页）', () => {
+test('源级：Index 写作统计独立页接线（81.7：topView 次级页范式）', () => {
   assert.match(indexSource, /@State vaultStatsModel: VaultStatsModel = emptyStatsModel\(\);/);
   assert.match(indexSource,
     /private async openVaultStats\(fromView: string, focusReturnId: string\): Promise<void>/);
-  assert.match(indexSource, /builder: VaultStatsDialog\(\{/);
-  assert.match(indexSource, /alignment: sheet \? DialogAlignment\.Bottom : DialogAlignment\.Center/);
+  assert.match(indexSource, /this\.topView = 'stats';/);
+  assert.match(indexSource, /this\.StatsPane\(\)/);
+  assert.match(indexSource, /private returnFromVaultStats\(\): void/);
+  assert.match(indexSource, /FocusRequest\.safely\(this\.getUIContext\(\), focusId\)/);
   assert.match(indexSource, /private async scanVaultStats\(vaultId: string\): Promise<VaultStatsScanOutcome>/);
   assert.match(indexSource, /private scheduleIdleStatsRefresh\(\): void/);
-  assert.match(indexSource, /if \(this\.statsDialogOpen\) \{/);
-  assert.doesNotMatch(indexSource, /this\.topView = 'stats';/);
-  assert.doesNotMatch(indexSource, /this\.StatsView\(\)/);
-  assert.doesNotMatch(indexSource, /return '统计与成就';/);
+  // 弹窗路径已删净：onBackPress 不再需要弹窗分支，次级视图分支统一消费返回
+  assert.doesNotMatch(indexSource, /statsDialog/);
+  assert.doesNotMatch(indexSource, /VaultStatsDialog/);
 });
 
 test('源级：过期结果丢弃（回填前校验当前库）', () => {
@@ -370,28 +370,23 @@ test('源级：Icons 注册 flame / medal（防线：不编造图标名）', () 
   assert.match(iconsSource, /name === 'flame'/);
 });
 
-test('源级：弹窗外壳与内容形态（58.4–58.9 / 58.11）', () => {
-  assert.match(statsDialogSource, /@CustomDialog/);
-  assert.match(statsDialogSource, /UtilityDialogShell\(\{/);
-  assert.match(statsDialogSource, /preferredWidthVp: Size\.statsDialogW/);
-  assert.match(statsDialogSource, /aboutToAppear\(\): void \{\s*void this\.loadStats\(\);/);
-  assert.match(statsDialogSource, /onRequestScan/);
-  assert.match(statsViewSource, /this\.HeroSection\(\)/);
-  assert.match(statsViewSource, /this\.NumberRow\(\)/);
-  assert.match(statsViewSource, /7 行 12 列共 84 格/);
-  assert.match(statsViewSource, /nextBadgeIndexOf\(this\.model\.badges\)/);
-  assert.match(statsViewSource, /ProgressType\.Ring/);
-  assert.match(statsViewSource, /'统计暂不可用'/);
-  assert.match(statsViewSource, /'读取当前知识库失败，请稍后重试。'/);
-  assert.match(statsViewSource, /正在统计…/);
-  assert.match(statsViewSource, /本次统计基于已扫描的部分/);
-  assert.match(statsViewSource, /统计只按当前知识库、只在本机计算，不用于埋点或上报。/);
+test('源级：统计页内容形态（81.1–81.7 独立页；52.2 失败安全文案）', () => {
+  assert.match(statsPageSource, /this\.HeroCard\(\)/);
+  assert.match(statsPageSource, /this\.NumberRow\(\)/);
+  assert.match(statsPageSource, /7 行 12 列共 84 格/);
+  assert.match(statsPageSource, /nextBadgeIndexOf\(this\.model\.badges\)/);
+  assert.match(statsPageSource, /ProgressType\.Ring/);
+  assert.match(statsPageSource, /'统计暂不可用'/);
+  assert.match(statsPageSource, /'读取当前知识库失败，请稍后重试。'/);
+  assert.match(statsPageSource, /正在统计…/);
+  assert.match(statsPageSource, /本次统计基于已扫描的部分/);
+  assert.match(statsPageSource, /统计只按当前知识库、只在本机计算，不用于埋点或上报。/);
   assert.match(streakChipSource, /'vault-stats-streak-chip'/);
   assert.match(streakChipSource, /'今天还没写'/);
 });
 
 test('源级：红线——统计源文件不埋点、不打日志（51.6 / 52.4）', () => {
-  for (const src of [source, statsViewSource, statsDialogSource, streakChipSource]) {
+  for (const src of [source, statsPageSource, streakChipSource]) {
     assert.ok(!src.includes('hiAppEvent'), '统计源出现 hiAppEvent');
     assert.ok(!src.includes('hilog'), '统计源出现 hilog');
     assert.ok(!src.includes('PerformanceAnalysisKit'), '统计源出现 PerformanceAnalysisKit');

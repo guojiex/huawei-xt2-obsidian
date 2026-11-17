@@ -53,6 +53,30 @@ export interface VaultStatsBadge {
   kind: string;
 }
 
+/** v1.81 81.5 年度月柱：活跃天数按月聚合；当前年未到的月标 future、当月标 current。 */
+export interface VaultStatsMonthBar {
+  /** 1–12。 */
+  month: number;
+  activeDays: number;
+  future: boolean;
+  current: boolean;
+}
+
+/**
+ * v1.81 81.5 年度回顾单年指标（真实 mtime 口径，非演示）：
+ * - 活跃天数 = 所选年内有笔记修改的去重日期数；
+ * - 最长连写 = 仅计算所选年内的连续活跃日，跨年截断；
+ * - 活跃月份 = 至少有一个活跃日的月份数（未来月不计）；
+ * - 月柱 = 每月活跃天数，柱高由视图按 当月活跃天数 / 当月日历天数 换算。
+ */
+export interface VaultStatsYearSummary {
+  year: number;
+  activeDays: number;
+  longestStreakDays: number;
+  activeMonths: number;
+  months: VaultStatsMonthBar[];
+}
+
 export interface VaultStatsModel {
   noteCount: number;
   wordCount: number;
@@ -60,6 +84,8 @@ export interface VaultStatsModel {
   totalDays: number;
   weeks: VaultStatsWeek[];
   badges: VaultStatsBadge[];
+  /** v1.81 81.5：年度视角的可用年份汇总，按年份降序（含当前年，即使无活跃）。 */
+  years: VaultStatsYearSummary[];
   /** 库快照被截断时如实标记，页面据此提示「基于已扫描部分」。 */
   truncated: boolean;
 }
@@ -310,6 +336,82 @@ export function currentWeekFlagsOf(weeks: VaultStatsWeek[]): boolean[] {
   return flags;
 }
 
+/**
+ * v1.81 81.5：年度视角的可用年份列表（降序去重）。
+ * = 数据中出现过活跃日的年份 ∪ 当前年；当前年即使尚无写作也在列（可看「今年到目前为止」）。
+ */
+export function yearsOf(counts: Map<number, number>, today: Date): number[] {
+  const seen: Set<number> = new Set<number>();
+  seen.add(today.getFullYear());
+  counts.forEach((_count: number, key: number): void => {
+    seen.add(Math.floor(key / 10000));
+  });
+  const list: number[] = [];
+  seen.forEach((year: number): void => {
+    list.push(year);
+  });
+  list.sort((a: number, b: number): number => b - a);
+  return list;
+}
+
+/**
+ * v1.81 81.5：单年年度指标（真实 mtime 口径）。当前年截至今日（未来月标 future、
+ * 计 0）；历史年为完整日历年（闰年由 Date 自带的月天数保证）。跨年连写在本年内截断。
+ */
+export function annualOfYear(counts: Map<number, number>, year: number,
+  today: Date): VaultStatsYearSummary {
+  const isCurrentYear: boolean = today.getFullYear() === year;
+  const monthly: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  let active: number = 0;
+  let run: number = 0;
+  let longest: number = 0;
+  let cursor: Date = new Date(year, 0, 1);
+  const end: Date = isCurrentYear
+    ? new Date(today.getFullYear(), today.getMonth(), today.getDate())
+    : new Date(year, 11, 31);
+  while (dayKeyOf(cursor) <= dayKeyOf(end)) {
+    if (counts.has(dayKeyOf(cursor))) {
+      monthly[cursor.getMonth()]++;
+      active++;
+      run++;
+      if (run > longest) {
+        longest = run;
+      }
+    } else {
+      run = 0;
+    }
+    cursor = shiftDays(cursor, 1);
+  }
+  const months: VaultStatsMonthBar[] = [];
+  let activeMonths: number = 0;
+  for (let m: number = 0; m < 12; m++) {
+    const future: boolean = isCurrentYear && m > today.getMonth();
+    if (!future && monthly[m] > 0) {
+      activeMonths++;
+    }
+    const bar: VaultStatsMonthBar = {
+      month: m + 1,
+      activeDays: future ? 0 : monthly[m],
+      future: future,
+      current: isCurrentYear && m === today.getMonth()
+    };
+    months.push(bar);
+  }
+  const summary: VaultStatsYearSummary = {
+    year: year,
+    activeDays: active,
+    longestStreakDays: longest,
+    activeMonths: activeMonths,
+    months: months
+  };
+  return summary;
+}
+
+/** v1.81 81.5：某年某月（1–12）的日历天数（闰年 2 月自动正确）。 */
+export function daysInMonthOf(year: number, month: number): number {
+  return new Date(year, month, 0).getDate();
+}
+
 /** 由扫描输入聚合出完整统计模型（纯计算入口；today 传当前时间）。 */
 export function computeStatsModel(notes: VaultStatsNoteInput[], today: Date,
   truncated: boolean): VaultStatsModel {
@@ -319,6 +421,11 @@ export function computeStatsModel(notes: VaultStatsNoteInput[], today: Date,
     wordCount += notes[i].charCount;
   }
   const streak: number = streakDaysOf(counts, today);
+  const yearList: number[] = yearsOf(counts, today);
+  const yearSummaries: VaultStatsYearSummary[] = [];
+  for (let i: number = 0; i < yearList.length; i++) {
+    yearSummaries.push(annualOfYear(counts, yearList[i], today));
+  }
   const model: VaultStatsModel = {
     noteCount: notes.length,
     wordCount: wordCount,
@@ -326,6 +433,7 @@ export function computeStatsModel(notes: VaultStatsNoteInput[], today: Date,
     totalDays: counts.size,
     weeks: heatWeeksOf(counts, today),
     badges: badgesOf(notes.length, wordCount, streak, counts.size),
+    years: yearSummaries,
     truncated: truncated
   };
   return model;
@@ -340,6 +448,7 @@ export function emptyStatsModel(): VaultStatsModel {
     totalDays: 0,
     weeks: [],
     badges: [],
+    years: [],
     truncated: false
   };
   return model;

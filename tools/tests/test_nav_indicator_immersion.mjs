@@ -42,7 +42,8 @@ test('次级页面滚动容器带底部 expandSafeArea', () => {
     ['components/SettingsView.ets', 3], // 单屏分类列表 / 多屏侧栏 / 内容区
     ['components/ReleaseHistoryView.ets', 1],
     ['components/VaultManagerView.ets', 1],
-    // v1.58 58.1 起统计改为 UtilityDialogShell 弹窗（非次级页），不再要求 expandSafeArea
+    // v1.81 起统计回归次级页形态（独立页 + 内部滚动），重新纳入清单
+    ['components/VaultStatsPage.ets', 1],
   ];
   for (const [rel, minCount] of targets) {
     const src = read(rel);
@@ -68,7 +69,7 @@ test('消费视图必须走 StorageProp + 页面侧 px2vp', () => {
     'components/SettingsView.ets',
     'components/ReleaseHistoryView.ets',
     'components/VaultManagerView.ets',
-    'components/VaultStatsView.ets',
+    'components/VaultStatsPage.ets',
   ];
   for (const rel of consumers) {
     const src = read(rel);

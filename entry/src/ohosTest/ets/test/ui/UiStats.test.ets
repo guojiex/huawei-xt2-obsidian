@@ -1,27 +1,26 @@
 /*
- * UiStats.test.ets —— 写作统计 UI 用例（v1.52 / v1.58）。
+ * UiStats.test.ets —— 写作统计 UI 用例（v1.52 / v1.58 / v1.81）。
  * 映射与约定见 docs/testing/UI自动化测试.md。
  *
  * 覆盖要点：
- * - v1.58 58.2：侧栏连写条（vault-stats-streak-chip）在 lg 笔记视图可见
- * - v1.58 58.3/58.4：更多菜单「写作统计」入口可达，弹窗打开与关闭（副标题「只在本机统计」为弹窗独有锚点）
+ * - v1.81 81.7：更多菜单「写作统计」打开独立页（stats-page），返回键恢复笔记视图；
+ *   判定锚点用页面独有文案「每一天，都算数」（菜单项与页面 Appbar 标题同名）
+ * - 历史案例 streak_chip_visible_in_note_sidebar 已删除（2026-11-17）：v1.67
+ *   （9f3138bf）按设计移除笔记侧栏连写条，chip 不再是笔记视图的可断言锚点
  *
  * ⚠️ 设备状态自愈（20261115_001720 实锤）：statsEnabled 是持久化开关（默认开，v1.58 可关），
- * 早期手工回归拨关后残留——chip 与菜单项都不渲染。套件先经设置页把开关拨回开：
+ * 早期手工回归拨关后残留——菜单项不渲染。v1.81 起自愈固定走设置页：
  * Toggle 无文本锚点，用 ON.type('Toggle') + 与 Text('启用写作统计') y 重叠过滤 + isChecked 判态。
  */
 
 import { beforeAll, describe, it } from '@ohos/hypium';
 import { Component, Driver, ON, Rect } from '@ohos.UiTest';
 import {
-  clickById,
   clickByText,
   clickUntilTextAppear,
   ensureNoteView,
-  ensureSidebarVisible,
   getDriver,
   launchMainApp,
-  tryWaitById,
   waitById,
   waitByTextContains,
   waitGoneByText
@@ -44,11 +43,8 @@ async function findStatsToggle(driver: Driver): Promise<Component | null> {
   return null;
 }
 
-/** 把持久化的写作统计开关拨回开（默认开；设备残留关闭态时自愈），并回到笔记视图 */
+/** 确认持久化的写作统计开关为开（默认开；设备残留关闭态时自愈），并回到笔记视图 */
 async function ensureStatsEnabled(driver: Driver): Promise<void> {
-  if (await tryWaitById(driver, 'vault-stats-streak-chip', 3000) !== null) {
-    return; // 已开
-  }
   await clickUntilTextAppear(driver, 'workspace-more-button', '设置与关于', 3, 15000);
   await clickByText(driver, '设置与关于');
   await waitById(driver, 'settings-heading-general');
@@ -72,7 +68,6 @@ async function ensureStatsEnabled(driver: Driver): Promise<void> {
   await driver.pressBack();
   await waitGoneByText(driver, '启用写作统计');
   await ensureNoteView(driver);
-  await waitById(driver, 'vault-stats-streak-chip');
 }
 
 export default function uiStatsTest() {
@@ -83,25 +78,18 @@ export default function uiStatsTest() {
       await ensureNoteView(await getDriver());
     });
 
-    /** v1.58 58.2：lg 笔记视图侧栏连写条可见（statsEnabled 默认开，关闭残留自愈） */
-    it('streak_chip_visible_in_note_sidebar', 0, async (): Promise<void> => {
+    /** v1.81 81.7：更多菜单「写作统计」打开独立页，返回键恢复笔记视图（承接 v1.58 58.3/58.4 入口） */
+    it('stats_page_opens_from_more_menu', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
       await ensureStatsEnabled(driver);
-      await ensureSidebarVisible(driver);
-      await waitById(driver, 'vault-stats-streak-chip');
-    });
-
-    /** v1.58 58.3/58.4：更多菜单「写作统计」打开弹窗、× 关闭 */
-    it('stats_dialog_opens_from_more_menu', 0, async (): Promise<void> => {
-      const driver: Driver = await getDriver();
-      await ensureStatsEnabled(driver);
-      // 菜单项「写作统计」与弹窗标题同名——弹窗独有锚点用副标题「只在本机统计」
+      // 菜单项「写作统计」与页面 Appbar 标题同名——打开判定用页面根 id + 独有文案，避开同名碰撞
       await clickUntilTextAppear(driver, 'workspace-more-button', '写作统计', 3, 15000);
       await clickByText(driver, '写作统计');
-      await waitByTextContains(driver, '只在本机统计');
-      // UtilityDialogShell 的 ×（id=utility-dialog-close，accessibilityText=关闭写作统计）
-      await clickById(driver, 'utility-dialog-close');
-      await waitGoneByText(driver, '写作统计');
+      await waitById(driver, 'stats-page');
+      await waitByTextContains(driver, '每一天，都算数');
+      // 返回键走 returnFromVaultStats：恢复原视图与焦点，页面内容从树中消失
+      await driver.pressBack();
+      await waitGoneByText(driver, '每一天，都算数');
     });
   });
 }

@@ -41,7 +41,7 @@ import {
   VaultStatsScanOutcome,
   VaultStatsService
 } from '../model/VaultStatsService';
-import { VaultStatsDialog } from '../components/VaultStatsDialog';
+import { VaultStatsPage } from '../components/VaultStatsPage';
 import { SettingsView } from '../components/SettingsView';
 import { ReleaseHistoryView } from '../components/ReleaseHistoryView';
 import { CreateVaultDialog, DeleteVaultDialog, RenameVaultDialog } from '../components/VaultDialogs';
@@ -633,9 +633,9 @@ struct Index {
 
   /** 对话框控制器：每次拉起重建（传新鲜目标参数），不复用旧实例防参数过期 */
   private createDialogCtl: CustomDialogController | null = null;
-  /** v1.58 58.4：写作统计弹窗 controller（每次拉起重建，避免参数过期）。 */
-  private statsDialogCtl: CustomDialogController | null = null;
-  private statsDialogOpen: boolean = false;
+  /** v1.81：写作统计独立页的返回视图与焦点返还目标（Appbar 返回 / 系统返回共用）。 */
+  private statsReturnView: string = 'note';
+  private statsFocusReturnId: string = '';
   /** 冷启动 / 切库后的空闲扫描定时器：统计不进首帧关键路径。 */
   private statsIdleTimer: number = -1;
   private importVaultCtl: CustomDialogController | null = null;
@@ -2534,12 +2534,6 @@ struct Index {
    * 都不是则返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
-    // v1.58 58.4：统计弹窗优先于次级视图消费系统返回；cancel 回调负责焦点返还。
-    if (this.statsDialogOpen) {
-      this.statsDialogCtl?.close();
-      this.statsDialogOpen = false;
-      return true;
-    }
     if (this.moreMenuOpen) {
       this.moreMenuOpen = false;
       return true;
@@ -2605,6 +2599,8 @@ struct Index {
       this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     } else if (this.topView === 'vaults') {
       this.topView = this.vaultManagerReturnView;
+    } else if (this.topView === 'stats') {
+      this.returnFromVaultStats();
     } else if (this.topView === 'gitsync') {
       this.returnFromGitSync();
     } else {
@@ -2631,9 +2627,9 @@ struct Index {
   }
 
   /**
-   * v1.58 58.4：打开「写作统计」弹窗（宽屏居中 / 单屏半模态），不再替换内容区。
-   * 弹窗自己在 aboutToAppear 重算；扫描结果同时更新菜单缓存与 Agent 引用栏。
-   * 关闭按钮 / 遮罩 / Esc / 系统返回都把焦点还给触发入口。
+   * v1.81 81.7：打开「写作统计」独立页（topView 切换，与设置 / 同步页同范式），
+   * 取代 v1.58 半模态 / 弹窗。进入时若不在扫描中则重扫一次，保证数字新鲜；
+   * 扫描结果同时更新菜单缓存与 Agent 引用栏。
    */
   private async openVaultStats(fromView: string, focusReturnId: string): Promise<void> {
     if (!this.statsEnabled) {
@@ -2643,39 +2639,26 @@ struct Index {
       return;
     }
     this.moreMenuOpen = false;
-    this.statsDialogCtl?.close();
-    const sheet: boolean = this.isSingleScreenLayout();
-    let focusRestored: boolean = false;
-    const restoreFocus = (): void => {
-      if (focusRestored || focusReturnId.length === 0) {
-        return;
-      }
-      focusRestored = true;
-      FocusRequest.safely(this.getUIContext(), focusReturnId);
-    };
-    this.statsDialogCtl = new CustomDialogController({
-      builder: VaultStatsDialog({
-        vaultName: this.currentVaultName(),
-        singleScreen: sheet,
-        windowWidthVp: this.windowWidthVp,
-        windowHeightVp: this.windowHeightVp,
-        onRequestScan: (): Promise<VaultStatsScanOutcome> => {
-          return this.scanVaultStats(this.currentVaultId);
-        },
-        onDismiss: restoreFocus
-      }),
-      cancel: restoreFocus,
-      autoCancel: true,
-      alignment: sheet ? DialogAlignment.Bottom : DialogAlignment.Center,
-      customStyle: true,
-      onWillDismiss: (action: DismissDialogAction): void => {
-        action.dismiss();
-        this.statsDialogOpen = false;
-        restoreFocus();
-      }
-    });
-    this.statsDialogOpen = true;
-    this.statsDialogCtl.open();
+    this.statsReturnView = this.topView === 'note' ? 'note' : this.topView;
+    this.statsFocusReturnId = focusReturnId;
+    if (!this.vaultStatsScanning) {
+      this.vaultStatsScanning = true;
+      this.vaultStatsFailed = false;
+      void this.scanVaultStats(this.currentVaultId);
+    }
+    this.topView = 'stats';
+    this.scheduleWorkspaceSessionSave();
+  }
+
+  /** v1.81：退出写作统计页，回到进入前的视图并还原焦点。 */
+  private returnFromVaultStats(): void {
+    this.topView = this.statsReturnView;
+    this.focusMoreMenuOnAppear = this.statsReturnView === 'note';
+    this.scheduleWorkspaceSessionSave();
+    const focusReturnId: string = this.statsFocusReturnId;
+    if (focusReturnId.length > 0) {
+      setTimeout((): void => { FocusRequest.safely(this.getUIContext(), focusReturnId); }, 0);
+    }
   }
 
   /**
@@ -4585,6 +4568,9 @@ struct Index {
     }
     if (this.topView === 'gitsync') {
       return '同步到 Git';
+    }
+    if (this.topView === 'stats') {
+      return '写作统计';
     }
     return '设置与关于';
   }
@@ -7114,6 +7100,8 @@ struct Index {
               this.AgentPane()
             } else if (this.topView === 'gitsync') {
               this.GitSyncPane()
+            } else if (this.topView === 'stats') {
+              this.StatsPane()
             }
             if (this.undoVisible) {
               this.UndoBar()
@@ -9298,6 +9286,21 @@ struct Index {
       onBusyChange: (busy: boolean): void => { this.gitSyncBusy = busy; },
       onDismiss: (): void => { this.returnFromGitSync(); },
       onPulled: (): void => { void this.refreshWorkspaceAfterPull(); }
+    })
+      .width('100%')
+      .height('100%')
+  }
+
+  /** v1.81：写作统计全屏页（顶栏返回由 Appbar 承担；概览 / 年度 / 成就三视角互斥）。 */
+  @Builder
+  StatsPane() {
+    VaultStatsPage({
+      vaultName: this.currentVaultName(),
+      model: this.vaultStatsModel,
+      scanFailed: this.vaultStatsFailed,
+      scanning: this.vaultStatsScanning,
+      singleScreen: this.isSingleScreenLayout(),
+      windowWidthVp: this.windowWidthVp
     })
       .width('100%')
       .height('100%')

@@ -99,8 +99,7 @@
 | UiSettingsExt | `diagnostics_info_row_visible_and_expandable`      | 诊断信息行可见且可展开（含构建提交行）                                                                                         | EM-F2                             |
 | UiSettingsExt | `changelog_section_visible`                        | 更新日志区可见且有内容或占位                                                                                              | EM-F5                             |
 | UiSettingsExt | `reset_pane_widths_row_visible`                    | 恢复等分栏宽行可见                                                                                                   | EM-F6                             |
-| UiStats       | `streak_chip_visible_in_note_sidebar`              | lg 笔记视图侧栏连写条（vault-stats-streak-chip）可见                                                                     | v1.58 58.2                        |
-| UiStats       | `stats_dialog_opens_from_more_menu`                | 更多菜单「写作统计」→ 弹窗（独有锚点副标题「只在本机统计」）→ × 关闭；菜单项与弹窗标题同名，判定避开同名碰撞                                                   | v1.58 58.3/58.4                   |
+| UiStats       | `stats_page_opens_from_more_menu`                  | 更多菜单「写作统计」→ 独立页（根 id `stats-page` + 独有文案「每一天，都算数」）→ pressBack 恢复笔记视图；菜单项与页面 Appbar 标题同名，判定避开同名碰撞 | v1.81 81.7（承接 v1.58 58.3/58.4 入口） |
 | UiScreensaver | `screensaver_entry_open_and_exit_smoke`            | 菜单「屏保 / 台历」进入 → 覆盖层入场后点击退出 → 应用可交互；覆盖层 a11y 不可断言（accessibilityLevel('no')），仅冒烟                              | v1.65 65.3/65.4                   |
 | UiScreensaver | `screensaver_settings_group_visible`               | 设置「屏保 / 台历」组 + 名言轮换间隔档位可见                                                                                   | v1.65 65.5                        |
 | UiShare       | `share_panel_opens_from_more_menu`                 | 更多菜单「分享笔记」**点击穿透**：应用内分享面板真的打开（格式行/描述就位，标题与菜单项同名，判定用弹窗独有文本「长图」）；非 Git 库不显示「远端网页链接」行                         | EM-J2 / EM-J4（反向）                 |
@@ -298,7 +297,10 @@ diff 0.008%）。注意 Aa 按钮本身是开关：面板开着再点 Aa 会触�
   `unpinNoteByName` 清场。
 - **UiStats 设备状态自愈**：`statsEnabled` 持久化开关可能被手工回归拨关
   （`20261115_001720` UiStats 2 例真未命中根因，dumpLayout+uinput 实证）。套件先经
-  设置页 Toggle 拨开再断言。
+  设置页 Toggle 拨开再断言。v1.81 起自愈固定走设置页：笔记侧栏连写条已被 v1.67
+  （`9f3138bf`）按设计移除，旧 chip 探针失效；`streak_chip_visible_in_note_sidebar`
+  案例随之删除（2026-11-17），`stats_dialog_opens_from_more_menu` 改独立页形态
+  `stats_page_opens_from_more_menu`（81.7）。
 - **closeQuickSwitcher 加固（`20261115_004237`→`011507` 排查）**：旧写法返回值被丢弃，
   弹窗泄漏会静默通过并级联污染后续套件；且输入法大 a11y 树下慢轮询让
   `content_search` 恒耗 ~33s（表面像 FTS 慢，实为 close 确认慢——加固后同用例 6.6s）。
