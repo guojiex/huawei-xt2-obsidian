@@ -83,21 +83,21 @@ test('58.2 / 58.5 本周圆点：最后一周 7 天、未来日一律 false', ()
 
 /* --------------------------- 58.10 原型定向 --------------------------- */
 
-test('58.1 / 58.10 原型：库菜单无统计入口，全屏统计页已删', () => {
+test('58.1 / 58.10 原型：库菜单无入口，更多菜单指向 v1.81 独立页', () => {
   assert.doesNotMatch(html, /id="vaultStatsPage"/);
   assert.doesNotMatch(html, /统计与成就…/);
   assert.doesNotMatch(html, /id="vaultStatsEntry"|class="streak-chip"/);
-  assert.match(html, /id="mobileStats"[^>]*aria-controls="statsDialog"/);
+  assert.match(html, /<button(?=[^>]*id="mobileStats")(?=[^>]*aria-controls="statsPage")/);
   assert.match(html, /\.topbar>\.mobile-top-more\{display:block\}/);
 });
 
-test('58.2 / 58.3 / 58.4 原型：各屏菜单打开弹窗（v1.67），关闭返还更多按钮，关闭返还焦点', () => {
+test('58.2 / 58.3 / 58.4 原型：各屏菜单打开独立页（v1.81），关闭返还更多按钮，关闭返还焦点', () => {
 
   assert.match(html, /\$\('mobileStats'\)\.onclick=\(\)=>\{\$\('mobileMoreTrigger'\)\.focus\(\);mobileAction\(\(\)=>openVaultStats\(\)\);\};/);
-  assert.match(html, /<dialog[^>]*class="utility-dialog import-dialog stats-dialog" id="statsDialog"/);
-  assert.match(html, /function openVaultStats\(push=true\)\{[\s\S]{0,300}\$\('statsDialog'\)\.showModal\(\);/);
-  assert.match(html, /function closeVaultStats\(updateUrl=true\)\{[\s\S]{0,320}statsReturnFocus\.focus\(\);/);
-  assert.match(html, /sheetDialogIds=\[[^\]]*'statsDialog'/);
+  assert.match(html, /<section[^>]*class="stats-page hidden" id="statsPage"/);
+  assert.match(html, /function openVaultStats\(push=true\)\{[\s\S]{0,450}\$\('statsPage'\)\.classList\.remove\('hidden'\);/);
+  assert.match(html, /function closeVaultStats\(updateUrl=true\)\{[\s\S]{0,450}statsReturnFocus\.focus\(\);/);
+  assert.doesNotMatch(html, /sheetDialogIds=\[[^\]]*'statsPage'|'statsDialog'/);
   assert.match(html, /statsReturnFocus=document\.activeElement/);
 });
 

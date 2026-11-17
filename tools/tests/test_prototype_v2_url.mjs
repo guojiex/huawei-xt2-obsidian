@@ -958,9 +958,10 @@ test('update-check prototype covers outcomes, disables repeat checks, and leaves
  }
 });
 
-test('v1.58 58.10: view=stats URL 复现打开写作统计弹窗，热力图 7×12、下一个成就唯一、关闭返还焦点',()=>{
+test('v1.58 58.10: view=stats URL 复现打开独立写作统计页，热力图 7×12、下一个成就唯一、关闭返还焦点',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&vault=reading&left=reading_stream&right=reading_reading_journal&view=stats');
- assert.equal(f.get('statsDialog').open,true,'restoreUrl 的 view=stats 必须打开统计弹窗');
+ assert(!f.get('statsPage').classList.contains('hidden'));
+ assert(f.get('window').classList.contains('stats-open'));
  assert.equal(f.run('vaultStatsOpen'),true);
  assert.equal((f.get('statsHeat').innerHTML.match(/<i class=/g)||[]).length,84,'热力图 84 格');
  assert.match(f.get('statsHeat').innerHTML,/grid-column:13/,'第 12 周落在最后一列');
@@ -969,7 +970,8 @@ test('v1.58 58.10: view=stats URL 复现打开写作统计弹窗，热力图 7×
  assert.equal((medals.match(/--p:/g)||[]).length,1,'只有一枚「下一个」显示圆环');
  f.run("document.contains=()=>true;statsReturnFocus=$('mobileMoreTrigger')");
  f.get('closeVaultStats').onclick();
- assert.equal(f.get('statsDialog').open,false);
+ assert(f.get('statsPage').classList.contains('hidden'));
+ assert(!f.get('window').classList.contains('stats-open'));
  assert.equal(f.run('vaultStatsOpen'),false);
  assert.equal(f.get('mobileMoreTrigger').focused,true,'关闭后焦点回到更多按钮');
 });
@@ -1041,4 +1043,23 @@ test('v1.81 年度回顾：切换视角、年份与十二个月汇总，未来�
  assert(f.get('statsAnnual').classList.contains('hidden'));
  assert.equal(f.get('statsOverviewTab').attrs['aria-pressed'],'true');
  assert.equal(f.get('statsBody').scrollTop,0);
+});
+
+test('v1.81 统计独立页：三个视角互斥，Esc 返回笔记，各屏保留正文与布局',()=>{
+ for(const preset of ['phone','double','wide']){
+  const f=fixture();f.run(`setViewport('${preset}')`);
+  const before=f.run('JSON.stringify({current,reference,editing,rightEditing,widths})');
+  f.run("document.contains=()=>true;document.activeElement=$('mobileMoreTrigger');openVaultStats()");
+  for(const [tab,visible] of [['statsOverviewTab','statsOverview'],['statsAnnualTab','statsAnnual'],['statsAchievementsTab','statsAchievements']]){
+   f.get(tab).onclick();
+   for(const panel of ['statsOverview','statsAnnual','statsAchievements'])assert.equal(f.get(panel).classList.contains('hidden'),panel!==visible);
+   assert.equal(f.get(tab).attrs['aria-pressed'],'true');
+  }
+  let prevented=false,stopped=false;
+  f.get('statsPage').dispatch('keydown',{key:'Escape',preventDefault(){prevented=true},stopPropagation(){stopped=true}});
+  assert(prevented&&stopped);assert.equal(f.run('vaultStatsOpen'),false);
+  assert(f.get('statsPage').classList.contains('hidden'));
+  assert(f.get('mobileMoreTrigger').focused);
+  assert.equal(f.run('JSON.stringify({current,reference,editing,rightEditing,widths})'),before);
+ }
 });
