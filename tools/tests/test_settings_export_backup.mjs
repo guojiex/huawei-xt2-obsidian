@@ -80,7 +80,7 @@ test('reset confirm suggests exporting first via inline link (37.4)', () => {
   assert.match(confirm, /Span\('作为备份，之后可在「设置 → 数据 → 从备份恢复」中还原。'\)/);
   // 应用备份不依赖具体库，无空库守卫；点按收起确认区再打开应用备份弹窗
   assert.match(confirm, /this\.resetConfirmOpen = false;/);
-  assert.match(confirm, /this\.openApplicationBackup\('settings-app-backup-row'\);/);
+  assert.match(confirm, /this\.openApplicationBackup\('export', 'settings-app-backup-row'\);/);
   // 原型文案与行为一致：v1.66 66.5 把重置前建议从单库 ZIP 换成应用备份
   assert.ok(prototype.includes('建议先') &&
     prototype.includes('导出应用备份</button>，之后可在「数据 → 从备份恢复」找回全部本地库与设置。'));

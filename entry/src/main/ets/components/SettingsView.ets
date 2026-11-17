@@ -318,10 +318,11 @@ export struct SettingsView {
     this.resetConfirmOpen = true;
   }
 
-  private openApplicationBackup(focusId: string): void {
+  private openApplicationBackup(mode: string, focusId: string): void {
     this.applicationBackupFocusId = focusId;
     this.applicationBackupDialog = new CustomDialogController({
       builder: ApplicationBackupDialog({
+        mode: mode,
         vaults: this.vaults,
         singleScreen: this.singleScreenLayout,
         windowWidthVp: this.windowWidthVp,
@@ -1463,7 +1464,7 @@ export struct SettingsView {
         .focusable(true)
         .id('settings-app-backup-row')
         .accessibilityText('导出应用备份，包含所有沙箱库和应用偏好')
-        .onClick((): void => { this.openApplicationBackup('settings-app-backup-row'); })
+        .onClick((): void => { this.openApplicationBackup('export', 'settings-app-backup-row'); })
         Divider().color($r('app.color.line'))
         Row() {
           Column() {
@@ -1486,7 +1487,7 @@ export struct SettingsView {
         .focusable(true)
         .id('settings-app-restore-row')
         .accessibilityText('从应用备份恢复，会全量替换当前数据')
-        .onClick((): void => { this.openApplicationBackup('settings-app-restore-row'); })
+        .onClick((): void => { this.openApplicationBackup('import', 'settings-app-restore-row'); })
       }
       .width('100%')
       .borderRadius(Radius.card)
@@ -1570,7 +1571,7 @@ export struct SettingsView {
                 .fontColor($r('app.color.brand'))
                 .onClick((): void => {
                   this.resetConfirmOpen = false;
-                  this.openApplicationBackup('settings-app-backup-row');
+                  this.openApplicationBackup('export', 'settings-app-backup-row');
                 })
               Span('作为备份，之后可在「设置 → 数据 → 从备份恢复」中还原。')
             }
