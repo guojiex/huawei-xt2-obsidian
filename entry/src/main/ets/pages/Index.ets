@@ -2507,6 +2507,9 @@ struct Index {
       this.setDrawerOpen(false);
     }
     this.syncNavigationForBreakpoint();
+    if (this.topView === 'note' && this.isSingleScreenLayout()) {
+      this.settleSingleScreenPanes();
+    }
     this.synchronizePreviewFollowContext();
     if (this.topView === 'note' && this.currentFilePath.length > 0) {
       void this.refreshAfterBreakpointChange(this.currentFilePath, this.currentVaultId);
@@ -3586,15 +3589,35 @@ struct Index {
     if (show && this.breakpoint === Breakpoint.SM) {
       this.setActivePane('right');
     } else if (!show) {
-      // 关闭双栏时左栏为空、笔记只在右栏：把右栏笔记带到左栏再收起，
-      // 否则单栏全屏落在空白栏（用户走查反馈 2026-11-16）。
-      // loadFile 内部会先落盘右栏未保存内容再从磁盘读，内容不丢。
-      if (this.currentFilePath.length === 0 && this.rightFilePath.length > 0) {
-        void this.loadFile(this.rightFilePath);
-      }
+      // 关闭双栏：收起后单屏只显示左栏，先把只在右栏的笔记带到左栏（2026-11-16）。
+      this.promoteRightNoteToLeft();
       if (this.activePane === 'right') {
         this.setActivePane('left');
       }
+    }
+  }
+
+  /**
+   * 左栏为空、笔记只在右栏：把右栏笔记带到左栏，避免收起双栏 / 折叠回单屏后落在空栏
+   * （用户走查反馈 2026-11-16、2026-11-17）。
+   * loadFile 内部会先落盘右栏未保存内容再从磁盘读，内容不丢。
+   */
+  private promoteRightNoteToLeft(): void {
+    if (this.currentFilePath.length === 0 && this.rightFilePath.length > 0) {
+      void this.loadFile(this.rightFilePath);
+    }
+  }
+
+  /**
+   * 折叠 / 收窄回单屏（断点变化路径，区别于分栏按钮的 toggleReference）：
+   * 单屏只渲染活动栏（notePaneWidth），活动栏为空而另一栏有笔记时收敛，避免整屏空白
+   * （用户走查反馈 2026-11-17；编辑器仅在 note 视图挂载，调用方需按 topView 门控）。
+   */
+  private settleSingleScreenPanes(): void {
+    this.promoteRightNoteToLeft();
+    if (this.activePane === 'right' && this.rightFilePath.length === 0 &&
+      this.currentFilePath.length > 0) {
+      this.setActivePane('left');
     }
   }
 
