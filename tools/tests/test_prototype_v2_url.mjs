@@ -1015,3 +1015,30 @@ test('v1.66 cancel and Escape close backup before settings and restore the trigg
   assert(prevented);assert(!f.get('appBackupDialog').open);assert.equal(f.run('settingsOpen'),true);assert(f.get('restoreAppBackup').focused);
  }
 });
+
+test('v1.81 年度回顾：切换视角、年份与十二个月汇总，未来月份不伪造活跃',()=>{
+ const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&view=stats');
+ const year=f.run('statsToday().getFullYear()');
+ assert.equal(f.get('statsYear').value,String(year));
+ f.get('statsAnnualTab').onclick();
+ assert(f.get('statsOverview').classList.contains('hidden'));
+ assert(!f.get('statsAnnual').classList.contains('hidden'));
+ assert.equal(f.get('statsAnnualTab').attrs['aria-pressed'],'true');
+ const checkMonths=()=>{
+  const labels=[...f.get('statsMonths').innerHTML.matchAll(/aria-label="(\d+)月：(未到|\d+ 个活跃日)"/g)];
+  assert.equal(labels.length,12);
+  const total=labels.reduce((sum,m)=>sum+(parseInt(m[2],10)||0),0);
+  assert.match(f.get('statsAnnualCards').innerHTML,new RegExp('<dd>'+total+' 天</dd>'));
+  return labels;
+ };
+ const thisMonth=f.run('statsToday().getMonth()');
+ assert.equal(checkMonths().filter(m=>m[2]==='未到').length,11-thisMonth);
+ f.get('statsYear').value=String(year-1);f.get('statsYear').onchange();
+ assert.match(f.get('statsYearTitle').textContent,new RegExp(String(year-1)));
+ assert.equal(checkMonths().filter(m=>m[2]==='未到').length,0);
+ f.get('statsOverviewTab').onclick();
+ assert(!f.get('statsOverview').classList.contains('hidden'));
+ assert(f.get('statsAnnual').classList.contains('hidden'));
+ assert.equal(f.get('statsOverviewTab').attrs['aria-pressed'],'true');
+ assert.equal(f.get('statsBody').scrollTop,0);
+});

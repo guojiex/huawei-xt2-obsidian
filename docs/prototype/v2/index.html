@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>曜石笔记 · 设计探索 v2</title>
 <style>
-:root{--format-width:360px;--panel-width:560px;--import-width:480px;--share-width:520px;--mismatch-width:720px;--panel-height:80vh;--scrim:#17263866;--danger:#cf4048;--swipe-width:144px;--swipe-extra:36px;--nav-duration:240ms;--nav-curve:cubic-bezier(.20,0,0,1);--mobile-nav-width:300px;--gesture-slop:8px;--switch-thumb:#fff;--blue:#007dff;--blue-soft:#eaf3ff;--ink:#202530;--muted:#7c8390;--line:#e7e9ed;--paper:#fff;--nav:#f5f6f8;--outer:#e9edf2;--float:#ffffffed;--green:#35916d;--diff-del-bg:#cf40481a;--diff-add-bg:#35916d1a;--shadow:0 24px 80px #263f5814;--float-shadow:0 8px 28px #23365214;--r:16px;--small-r:10px;--pill:999px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:20px;--s6:24px;--s8:32px;--s10:40px;--s12:48px;--s16:64px;--touch:48px;--caption:12px;--small:14px;--body:16px;--large:20px;--heading:32px;--font:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;--nav-width:240px;--pane-min-nav:200px;--pane-min-content:240px;--split-hit:24px;--split-height:40px;--tree-indent:24px;--tree-icon:18px;--tree-caret:16px;--tree-text-min:160px;--reading-width:660px;--window-width:1320px;--phone-width:390px;--double-width:820px;--window-height:820px;--window-min:620px;--stroke:1px;--focus:2px;--leading:1.85;--ease:180ms ease}
+:root{--stats-width:780px;--stats-number:76px;--stats-medal:64px;--stats-chart:144px;--stats-radius:24px;--stats-cell:18px;--stats-gap:5px;--format-width:360px;--panel-width:560px;--import-width:480px;--share-width:520px;--mismatch-width:720px;--panel-height:80vh;--scrim:#17263866;--danger:#cf4048;--swipe-width:144px;--swipe-extra:36px;--nav-duration:240ms;--nav-curve:cubic-bezier(.20,0,0,1);--mobile-nav-width:300px;--gesture-slop:8px;--switch-thumb:#fff;--blue:#007dff;--blue-soft:#eaf3ff;--ink:#202530;--muted:#7c8390;--line:#e7e9ed;--paper:#fff;--nav:#f5f6f8;--outer:#e9edf2;--float:#ffffffed;--green:#35916d;--diff-del-bg:#cf40481a;--diff-add-bg:#35916d1a;--shadow:0 24px 80px #263f5814;--float-shadow:0 8px 28px #23365214;--r:16px;--small-r:10px;--pill:999px;--s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:20px;--s6:24px;--s8:32px;--s10:40px;--s12:48px;--s16:64px;--touch:48px;--caption:12px;--small:14px;--body:16px;--large:20px;--heading:32px;--font:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;--nav-width:240px;--pane-min-nav:200px;--pane-min-content:240px;--split-hit:24px;--split-height:40px;--tree-indent:24px;--tree-icon:18px;--tree-caret:16px;--tree-text-min:160px;--reading-width:660px;--window-width:1320px;--phone-width:390px;--double-width:820px;--window-height:820px;--window-min:620px;--stroke:1px;--focus:2px;--leading:1.85;--ease:180ms ease}
 [data-theme=dark]{--ink:#e4e8ef;--muted:#9ba5b3;--line:#303741;--paper:#1d232b;--nav:#171d25;--outer:#10151d;--float:#27303af5;--blue:#71b3ff;--blue-soft:#263951;--green:#75c7a0;--danger:#ff6b6b;--diff-del-bg:#cf404833;--diff-add-bg:#35916d2e;--shadow:0 24px 80px #0003;--float-shadow:0 8px 28px #0003}
 *{box-sizing:border-box}body{margin:0;padding:var(--s8);background:var(--outer);color:var(--ink);font:var(--small)/1.6 var(--font)}button,select,input{font:inherit;color:inherit}button{border:0;background:none;cursor:pointer;min-height:var(--touch);padding:var(--s2) var(--s4);border-radius:var(--small-r);transition:background var(--ease)}button:hover{background:var(--blue-soft)}button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:var(--focus) solid var(--blue);outline-offset:var(--s1)}button:disabled{opacity:.45;cursor:default}.icon{width:var(--touch);padding:var(--s3);display:inline-grid;place-items:center}svg{width:var(--s5);height:var(--s5);fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}svg.icon-filled,#mobileGitSync svg{fill:currentColor;stroke:none}.hidden{display:none!important}.vh{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.muted{color:var(--muted)}.blue{color:var(--blue)}
 .showcase{max-width:var(--window-width);margin:auto}.intro{display:flex;align-items:center;justify-content:space-between;gap:var(--s6);margin-bottom:var(--s6)}.eyebrow{font-size:var(--caption);letter-spacing:.12em;color:var(--muted)}.intro h1{font-size:var(--large);font-weight:600;margin:var(--s1) 0}.intro p{margin:0;color:var(--muted);font-size:var(--caption)}.controls{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap}.seg{display:flex;gap:var(--s1);background:var(--nav);padding:var(--s1);border-radius:var(--pill)}.seg button{border-radius:var(--pill);font-size:var(--small)}.seg button[aria-pressed=true]{background:var(--paper);box-shadow:var(--float-shadow);color:var(--blue)}
@@ -151,23 +151,23 @@
 .stats-hero-week i{display:block;width:var(--s2);height:var(--s2);border-radius:var(--pill);background:var(--line)}
 .stats-hero-week i.on{background:var(--cb-warn)}
 .menu-meta{margin-left:auto;font-size:var(--caption);color:var(--muted)}
-.stats-dialog{width:min(calc(var(--import-width) * 1.25),calc(100% - var(--s8)))}
+.utility-dialog.import-dialog.stats-dialog{width:min(var(--stats-width),calc(100% - var(--s8)))}
 .stats-badge-head{background:color-mix(in srgb,var(--cb-warn) 14%,transparent);color:var(--cb-warn)}
 .stats-badge-head svg{fill:currentColor;stroke:none}
 .stats-body{gap:var(--s5);padding-bottom:var(--s5)}
 .stats-body>*{flex:none}
 .import-badge.stats-badge-head{background:color-mix(in srgb,var(--cb-warn) 14%,transparent);color:var(--cb-warn)}
 .import-badge.stats-badge-head svg{width:var(--s5);height:var(--s5)}
-.stats-hero{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"main week" "next next";align-items:center;gap:var(--s3) var(--s4);padding:var(--s5);border-radius:var(--r);background:linear-gradient(135deg,color-mix(in srgb,var(--cb-warn) 12%,var(--paper)),var(--paper) 70%);border:var(--stroke) solid color-mix(in srgb,var(--cb-warn) 22%,var(--line))}
+.stats-hero{display:grid;grid-template-columns:auto 1fr;grid-template-areas:"label label" "main week" "next next";align-items:center;gap:var(--s3) var(--s4);padding:var(--s5);border-radius:var(--r);background:linear-gradient(135deg,color-mix(in srgb,var(--cb-warn) 12%,var(--paper)),var(--paper) 70%);border:var(--stroke) solid color-mix(in srgb,var(--cb-warn) 22%,var(--line))}
 .stats-hero-main{grid-area:main;display:flex;align-items:center;gap:var(--s2)}
-.stats-hero-num{font-size:calc(var(--heading) * 1.75);font-weight:700;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stats-hero-num{font-size:var(--stats-number);font-weight:500;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .stats-hero-unit{font-size:var(--small);line-height:1.35;color:var(--muted)}
 .stats-hero-week{grid-area:week;justify-self:end;display:grid;grid-template-columns:repeat(7,auto);gap:var(--s1) var(--s2);text-align:center}
 .stats-hero-week span{font-size:var(--caption);color:var(--muted)}
 .stats-hero-week i{width:var(--s5);height:var(--s5);margin:0 auto}
 .stats-hero-next{grid-area:next;margin:0;font-size:var(--small);color:var(--ink)}
 .stats-hero-next b{color:var(--cb-warn);font-weight:600}
-.stats-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0;border:var(--stroke) solid var(--line);border-radius:var(--r);overflow:hidden}
+.stats-row{background:var(--paper);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin:0;border-radius:var(--r);overflow:hidden}
 .stats-row>div{padding:var(--s3) var(--s4)}
 .stats-row>div+div{border-left:var(--stroke) solid var(--line)}
 .stats-row dt{font-size:var(--caption);color:var(--muted)}
@@ -190,8 +190,8 @@
 .stats-heat .d{padding-right:var(--s2)}
 .stats-heat .m{grid-row:1}
 .stats-badges{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s3)}
-.stats-medal{display:flex;flex-direction:column;align-items:center;gap:var(--s2);padding:var(--s3) var(--s1);border-radius:var(--r);text-align:center}
-.stats-medal-mark{position:relative;display:grid;place-items:center;width:calc(var(--s12) + var(--s1));height:calc(var(--s12) + var(--s1));border-radius:var(--pill);background:var(--nav);color:var(--muted)}
+.stats-medal{position:relative;border:var(--stroke) solid var(--line);background:var(--paper);display:flex;flex-direction:column;align-items:center;gap:var(--s2);padding:var(--s5) var(--s2);border-radius:var(--r);text-align:center}
+.stats-medal-mark{position:relative;display:grid;place-items:center;width:var(--stats-medal);height:var(--stats-medal);border-radius:var(--pill);background:var(--nav);color:var(--muted)}
 .stats-medal-mark svg{width:var(--s6);height:var(--s6)}
 .stats-medal.earned .stats-medal-mark{background:radial-gradient(circle at 30% 25%,color-mix(in srgb,var(--cb-warn) 30%,var(--paper)),color-mix(in srgb,var(--cb-warn) 12%,var(--paper)));color:var(--cb-warn);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--cb-warn) 40%,transparent)}
 .stats-medal.next .stats-medal-mark{background:conic-gradient(var(--blue) calc(var(--p) * 1%),var(--nav) 0);color:var(--blue)}
@@ -201,10 +201,70 @@
 .stats-medal:not(.earned) .stats-medal-name{color:var(--muted)}
 .stats-medal-sub{font-size:var(--caption);color:var(--muted);font-variant-numeric:tabular-nums}
 .stats-foot{margin:0;font-size:var(--caption);line-height:1.7;color:var(--muted)}
-.stats-dialog.as-sheet .stats-hero{grid-template-columns:1fr;grid-template-areas:"main" "week" "next"}
-.stats-dialog.as-sheet .stats-hero-week{justify-self:start}
-.stats-dialog.as-sheet .stats-badges{grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s1)}
+.stats-dialog.as-sheet .stats-hero{grid-template-columns:auto 1fr;grid-template-areas:"label label" "main week" "next next"}
+.stats-dialog.as-sheet .stats-hero-week{justify-self:end;gap:var(--s1)}
+.stats-dialog.as-sheet .stats-badges{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}
 .stats-dialog.as-sheet .stats-row dd{font-size:var(--body)}
+/* v1.81：概览 / 年度回顾；仅设计稿，数据口径保持本地。 */
+[data-theme=dark] .stats-dialog{color-scheme:dark}
+.stats-dialog .import-head{padding:var(--s6) var(--s6) var(--s4)}
+.stats-dialog .stats-badge-head{display:none}
+.stats-dialog .import-titles h2{font-size:var(--heading);letter-spacing:-.035em}
+.stats-dialog .import-close{background:var(--nav);border-radius:var(--pill)}
+.stats-dialog .stats-body{background:var(--nav);padding:var(--s5) var(--s6) var(--s6);gap:var(--s6)}
+.stats-tabs{margin:0 var(--s6) var(--s5);align-self:flex-start;background:var(--nav)}
+.stats-tabs button{min-height:var(--s10);padding:var(--s2) var(--s5)}
+.stats-overview{display:grid;grid-template-columns:1fr 1fr;gap:var(--s4)}
+.stats-overview-main{container-type:inline-size;display:flex;flex-direction:column;gap:var(--s3);min-width:0}
+.stats-hero{border:0;border-radius:var(--stats-radius);gap:var(--s3);padding:var(--s5);background:linear-gradient(135deg,color-mix(in srgb,var(--cb-warn) 12%,var(--paper)),var(--paper))}
+.stats-hero-label{grid-area:label;font-size:var(--small);font-weight:500}
+.stats-hero-num{font-size:clamp(var(--s12),22cqw,var(--stats-number))}
+.stats-hero-unit{font-size:var(--caption);white-space:nowrap}
+.stats-hero-week i{width:var(--s3);height:var(--s3);position:relative}
+.stats-hero-week i.today{outline:var(--stroke) solid var(--cb-warn);outline-offset:var(--focus)}
+.stats-hero-week i.on::after{content:'';position:absolute;inset:var(--s1);border-radius:var(--pill);background:var(--paper)}
+.stats-hero-next{font-size:var(--caption);padding-top:var(--s3);border-top:var(--stroke) solid color-mix(in srgb,var(--cb-warn) 20%,var(--line))}
+.stats-row>div{padding:var(--s3);text-align:center}
+.stats-row dd{font-size:var(--large);font-weight:500}
+.stats-overview>.stats-block{background:var(--paper);border-radius:var(--stats-radius);padding:var(--s5);display:flex;flex-direction:column;justify-content:center;min-width:0}
+.stats-block h3{font-size:var(--body)}
+.stats-section-note{margin:var(--s1) 0 var(--s4);font-size:var(--caption);color:var(--muted)}
+.stats-heat{--hc:clamp(var(--s3),calc((100cqw - var(--s6)) / 12 - var(--stats-gap)),var(--stats-cell));gap:var(--stats-gap)}
+.stats-heat-wrap{overflow-x:auto}
+.stats-medal-mark::after{content:'';position:absolute;inset:var(--s2);border:var(--stroke) solid currentColor;opacity:.18;border-radius:var(--pill);pointer-events:none}
+.stats-medal.earned{border-color:color-mix(in srgb,var(--cb-warn) 24%,var(--line));background:linear-gradient(155deg,color-mix(in srgb,var(--cb-warn) 5%,var(--paper)),var(--paper))}
+.stats-medal.earned .stats-medal-mark{box-shadow:inset 0 0 0 var(--stroke) color-mix(in srgb,var(--cb-warn) 45%,transparent),0 var(--s1) var(--s3) color-mix(in srgb,var(--cb-warn) 12%,transparent)}
+.stats-medal.next{border-color:color-mix(in srgb,var(--blue) 40%,var(--line))}
+.stats-medal.next .stats-medal-name{color:var(--ink)}
+.stats-medal-status{font-size:var(--caption);color:var(--muted)}
+.stats-medal.earned .stats-medal-status{color:var(--cb-warn)}
+.stats-medal.next .stats-medal-status{color:var(--blue)}
+.stats-foot{padding:var(--s4);border-radius:var(--r);background:var(--paper)}
+.stats-annual{display:flex;flex-direction:column;gap:var(--s5)}
+.stats-year-head{display:flex;justify-content:space-between;align-items:center;gap:var(--s4)}
+.stats-year-head h3{font-size:var(--heading);font-weight:500;letter-spacing:-.035em;margin:0}
+.stats-year-head p{font-size:var(--caption);color:var(--muted);margin:var(--s1) 0 0}
+.stats-year-head select{background:var(--paper);border:var(--stroke) solid var(--line);border-radius:var(--pill);padding:var(--s3) var(--s4);min-height:var(--touch)}
+.stats-annual-card{background:var(--paper);border-radius:var(--stats-radius);padding:var(--s6)}
+.stats-annual .stats-row{margin-top:var(--s5)}
+.stats-annual .stats-row dd{font-size:var(--heading)}
+.stats-months{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:var(--s2);margin-top:var(--s6)}
+.stats-month{display:flex;flex-direction:column;align-items:center;gap:var(--s2);font-size:var(--caption);color:var(--muted);min-width:0}
+.stats-month-track{height:var(--stats-chart);width:100%;max-width:var(--s8);display:flex;align-items:flex-end;background:var(--nav);border-radius:var(--pill);overflow:hidden}
+.stats-month-fill{width:100%;height:calc(var(--activity) * 1%);background:color-mix(in srgb,var(--blue) 65%,var(--paper));border-radius:var(--pill)}
+.stats-month.current .stats-month-fill{background:var(--blue)}
+.stats-month.current{color:var(--blue)}
+.stats-month.future .stats-month-track{background:transparent;border:var(--stroke) dashed var(--line)}
+.stats-year-note{font-size:var(--caption);color:var(--muted);margin:var(--s5) 0 0}
+.stats-dialog.as-sheet .stats-overview{grid-template-columns:1fr}
+.stats-dialog.as-sheet .stats-body{padding:var(--s4);gap:var(--s5)}
+.stats-dialog.as-sheet .import-head{padding:var(--s4)}
+.stats-dialog.as-sheet .stats-tabs{margin-left:var(--s4)}
+.stats-dialog.as-sheet .stats-annual-card{padding:var(--s4)}
+.stats-dialog.as-sheet .stats-year-head{gap:var(--s2)}
+.stats-dialog.as-sheet .stats-year-head h3{font-size:var(--large)}
+.stats-dialog.as-sheet .stats-months{gap:var(--s1)}
+.stats-dialog.as-sheet .stats-annual .stats-row dd{font-size:var(--large)}
 .function-component-slot{display:inline-flex;align-items:center;flex:none;min-height:var(--touch);white-space:nowrap}.function-component-slot.is-hidden{display:none}.function-component-sample{display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);min-height:var(--s10);padding:var(--s1) var(--s3);border-radius:var(--pill);background:var(--blue-soft);color:var(--blue);font-size:var(--small);font-weight:500}.function-component-sample svg{width:var(--s5);height:var(--s5);flex:none}
 
 .settings-toggle-row{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);min-height:var(--touch);cursor:pointer}.settings-toggle-copy{min-width:0;display:flex;flex-direction:column;gap:var(--s1)}.settings-toggle-copy strong{font-size:var(--body);font-weight:500}.settings-toggle-copy small{color:var(--muted);font-size:var(--caption)}.settings-switch{position:relative;display:flex;align-items:center;justify-content:center;flex:none;width:var(--touch);height:var(--touch)}.settings-switch input{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}.settings-switch-track{width:var(--s10);height:var(--s6);border-radius:var(--pill);background:var(--line);transition:background var(--ease);pointer-events:none}.settings-switch-track::after{content:"";display:block;width:var(--s5);height:var(--s5);margin:var(--focus);border-radius:var(--pill);background:var(--switch-thumb);box-shadow:var(--float-shadow);transition:transform var(--ease)}.settings-switch input:checked+.settings-switch-track{background:var(--blue)}.settings-switch input:checked+.settings-switch-track::after{transform:translateX(var(--s4))}.settings-switch input:focus-visible+.settings-switch-track{outline:var(--focus) solid var(--blue);outline-offset:var(--s1)}
@@ -897,19 +957,32 @@ pre.simple-protected::after,table.simple-table.simple-protected::after{content:n
             <div class="import-titles"><h2 id="statsTitle">写作统计</h2><p id="statsScope"></p></div>
             <button aria-label="关闭写作统计" class="icon import-close" id="closeVaultStats" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
         </header>
-        <div class="import-body stats-body">
+        <div class="seg stats-tabs" role="group" aria-label="统计视角"><button type="button" id="statsOverviewTab" aria-pressed="true" aria-controls="statsOverview">写作概览</button><button type="button" id="statsAnnualTab" aria-pressed="false" aria-controls="statsAnnual">年度回顾</button></div>
+        <div class="import-body stats-body" id="statsBody">
+          <div id="statsOverview" class="stats-overview">
+          <div class="stats-overview-main">
             <section class="stats-hero" aria-label="连续写作">
+                <span class="stats-hero-label">每一天，都算数</span>
                 <div class="stats-hero-main"><span class="stats-hero-num" id="statsStreak"></span><span class="stats-hero-unit">天<br>连续写作</span></div>
                 <p class="stats-hero-next" id="statsNext"></p>
                 <div class="stats-hero-week" id="statsWeek" aria-label="本周每天是否有写作"></div>
             </section>
             <dl class="stats-row" id="statsCards"></dl>
+          </div>
             <section aria-labelledby="statsHeatTitle" class="stats-block">
                 <div class="stats-block-head"><h3 id="statsHeatTitle">近 12 周</h3><span class="stats-legend" aria-hidden="true">少<i></i><i class="l1"></i><i class="l2"></i><i class="l3"></i>多</span></div>
                 <div class="stats-heat-wrap"><div aria-label="近 12 周写作热力图，演示数据" class="stats-heat" id="statsHeat" role="img"></div></div>
             </section>
+          </div>
+          <section id="statsAnnual" class="stats-annual hidden" aria-label="年度回顾">
+            <div class="stats-year-head"><div><h3 id="statsYearTitle"></h3><p>把日常落笔，连成一年的轨迹</p></div><label><span class="vh">选择统计年份</span><select id="statsYear"></select></label></div>
+            <div class="stats-annual-card"><div class="stats-block-head"><h3>这一年的积累</h3><span class="stats-badge-count">演示数据</span></div><dl class="stats-row" id="statsAnnualCards"></dl></div>
+            <div class="stats-annual-card"><div class="stats-block-head"><h3>每月写作足迹</h3><span class="stats-badge-count">活跃天数</span></div><div id="statsMonths" class="stats-months"></div><p class="stats-year-note">柱高按当月活跃天数占日历天数的比例显示；未来月份留空。</p></div>
+            <p class="stats-foot">年度回顾为交互演示。正式统计按文件修改时间归日，导入与同步也可能改变分布；不代表当年新增字数或完整写作历史。成就仍按当前库累计口径展示。</p>
+          </section>
             <section aria-labelledby="statsBadgesTitle" class="stats-block">
-                <div class="stats-block-head"><h3 id="statsBadgesTitle">成就</h3><span class="stats-badge-count" id="statsBadgeCount"></span></div>
+                <div class="stats-block-head"><h3 id="statsBadgesTitle">成就收藏</h3><span class="stats-badge-count" id="statsBadgeCount"></span></div>
+                <p class="stats-section-note">从第一次落笔，到让写作成为习惯</p>
                 <div class="stats-badges" id="statsBadges"></div>
             </section>
             <p class="stats-foot">活跃日 = 当日至少一篇笔记有修改（以文件时间为准，导入与同步也会计入）。统计只按当前知识库、只在本机计算，不用于埋点或上报。连写、累计与热力图为演示数据。</p>
@@ -1678,11 +1751,17 @@ function statsToday(){const t=new Date();t.setHours(12,0,0,0);return t;}
 function statsDayCount(date){const today=statsToday(),dow=(today.getDay()+6)%7,monday=new Date(today);monday.setDate(today.getDate()-dow);const diff=Math.round((date-monday)/864e5),w=11+Math.floor(diff/7),d=((diff%7)+7)%7;if(date>today||w<0||w>11)return 0;return VAULT_STATS_DEMO.weeks[w][d];}
 function statsWeekDots(withLabels){const today=statsToday(),dow=(today.getDay()+6)%7,names='一二三四五六日';let html='';for(let d=0;d<7;d++){const date=new Date(today);date.setDate(today.getDate()-dow+d);const on=d<=dow&&(d>=dow-VAULT_STATS_DEMO.streak+1||statsDayCount(date)>0),cls=(on?'on':'')+(d===dow?' today':'');html+=withLabels?'<span>'+names[d]+'</span>':'';html+='<i class="'+cls.trim()+'"'+(withLabels?' title="星期'+names[d]+(on?' · 有写作':d>dow?' · 未到':' · 未写')+'"':'')+'></i>';}if(withLabels){const labels=[...html.matchAll(/<span>.<\/span>/g)].map(m=>m[0]).join(''),dots=html.replace(/<span>.<\/span>/g,'');return labels+dots;}return html;}
 function renderStatsHeat(){const today=statsToday(),dow=(today.getDay()+6)%7,monday=new Date(today);monday.setDate(today.getDate()-dow);let html='<span class="d" style="grid-row:1"></span>';for(const [i,n] of ['一','','三','','五','',''].entries())html+='<span class="d" style="grid-row:'+(i+2)+'">'+n+'</span>';let last=-1;for(let w=0;w<12;w++){const ws=new Date(monday);ws.setDate(monday.getDate()-(11-w)*7);const m=ws.getMonth();html+='<span class="m" style="grid-column:'+(w+2)+'">'+(m!==last?(m+1)+'月':'')+'</span>';last=m;for(let d=0;d<7;d++){const date=new Date(ws);date.setDate(ws.getDate()+d);const future=date>today,c=future?0:VAULT_STATS_DEMO.weeks[w][d],lv=future?' future':c>=4?' l3':c>=2?' l2':c>=1?' l1':'',isToday=w===11&&d===dow,label=(date.getMonth()+1)+'月'+date.getDate()+'日'+(future?' · 未到':' · '+c+' 篇');html+='<i class="'+(lv+(isToday?' today':'')).trim()+'" style="grid-column:'+(w+2)+';grid-row:'+(d+2)+'" title="'+label+'"></i>';}}$('statsHeat').innerHTML=html;}
-function renderStatsBadges(v){const list=STATS_BADGES.map(b=>({...b,value:v[b.key],earned:v[b.key]>=b.goal}));const next=list.filter(b=>!b.earned).sort((a,b)=>b.value/b.goal-a.value/a.goal)[0];$('statsBadgeCount').textContent=list.filter(b=>b.earned).length+' / '+list.length+' 已获得';$('statsBadges').innerHTML=list.map(b=>{const isNext=b===next,p=Math.round(Math.min(1,b.value/b.goal)*100),sub=b.earned?'已获得':isNext?(b.key==='words'?b.value.toLocaleString():Math.min(b.value,b.goal))+' / '+(b.key==='words'?b.goal.toLocaleString():b.goal):b.desc;return '<div class="stats-medal'+(b.earned?' earned':'')+(isNext?' next':'')+'"'+(isNext?' style="--p:'+p+'"':'')+' role="group" aria-label="'+b.name+'，'+(b.earned?'已获得':'未获得，'+b.desc+(isNext?'，进度 '+p+'%':''))+'"><span class="stats-medal-mark" aria-hidden="true"><svg viewBox="0 0 24 24">'+b.icon+'</svg></span><span class="stats-medal-name">'+b.name+'</span><span class="stats-medal-sub">'+sub+'</span></div>';}).join('');return next;}
+function renderStatsBadges(v){const list=STATS_BADGES.map(b=>({...b,value:v[b.key],earned:v[b.key]>=b.goal}));const next=list.filter(b=>!b.earned).sort((a,b)=>b.value/b.goal-a.value/a.goal)[0];$('statsBadgeCount').textContent=list.filter(b=>b.earned).length+' / '+list.length+' 已获得';$('statsBadges').innerHTML=list.map(b=>{const isNext=b===next,p=Math.round(Math.min(1,b.value/b.goal)*100),sub=b.earned?b.desc:isNext?(b.key==='words'?b.value.toLocaleString():Math.min(b.value,b.goal))+' / '+(b.key==='words'?b.goal.toLocaleString():b.goal):b.desc;return '<div class="stats-medal'+(b.earned?' earned':'')+(isNext?' next':'')+'"'+(isNext?' style="--p:'+p+'"':'')+' role="group" aria-label="'+b.name+'，'+(b.earned?'已获得':'未获得，'+b.desc+(isNext?'，进度 '+p+'%':''))+'"><span class="stats-medal-mark" aria-hidden="true"><svg viewBox="0 0 24 24">'+b.icon+'</svg></span><span class="stats-medal-status">'+(b.earned?'已获得':isNext?'即将达成':'未解锁')+'</span><span class="stats-medal-name">'+b.name+'</span><span class="stats-medal-sub">'+sub+'</span></div>';}).join('');return next;}
 function statsValues(){const n=vaultStatsNumbers();return {count:n.count,words:n.words,streak:VAULT_STATS_DEMO.streak,days:VAULT_STATS_DEMO.totalDays};}
 function renderStatsMenu(){const v=statsValues();$('mobileStatsMeta').textContent='连写 '+v.streak+' 天';}
 function renderVaultStats(){const vault=libraries.find(x=>x.id===activeVault),v=statsValues();$('statsScope').textContent=(vault?vault.name:'暂无知识库')+' · 只在本机统计';$('statsStreak').textContent=v.streak;$('statsWeek').innerHTML=statsWeekDots(true);$('statsCards').innerHTML=[['笔记',String(v.count)+' 篇'],['总字数',v.words>=10000?(v.words/10000).toFixed(1)+' 万':v.words.toLocaleString()],['累计写作',v.days+' 天']].map(c=>'<div><dt>'+c[0]+'</dt><dd>'+c[1]+'</dd></div>').join('');renderStatsHeat();const next=renderStatsBadges(v);$('statsNext').innerHTML=next?(next.key==='streak'&&next.goal-v.streak<=3?'再写 <b>'+(next.goal-v.streak)+' 天</b>，解锁「'+next.name+'」':'下一个成就「'+next.name+'」：'+next.desc):'所有成就都已获得';}
-function openVaultStats(push=true){if(vaultStatsOpen)return;$('vaultPicker').open=false;vaultStatsOpen=true;statsReturnFocus=document.activeElement;renderVaultStats();$('statsDialog').showModal();positionSheetDialog($('statsDialog'));$('closeVaultStats').focus();if(push)syncUrl('push');}
+// 年度回顾为确定性演示；不把当前库字数当作年度新增量。
+function renderStatsAnnual(){const today=statsToday(),currentYear=today.getFullYear(),select=$('statsYear');if(!select.innerHTML){select.innerHTML=[currentYear,currentYear-1,currentYear-2].map(y=>'<option value="'+y+'">'+y+' 年</option>').join('');select.value=String(currentYear);}const year=Number(select.value),monthly=Array(12).fill(0),cursor=new Date(year,0,1,12),end=year===currentYear?today:new Date(year,11,31,12);let active=0,run=0,longest=0;while(cursor<=end){const on=((Math.floor(cursor.getTime()/864e5)*3+year)%37)<26;if(on){monthly[cursor.getMonth()]++;active++;run++;longest=Math.max(longest,run);}else run=0;cursor.setDate(cursor.getDate()+1);}$('statsYearTitle').textContent=year+' · 写作回顾';$('statsAnnualCards').innerHTML=[['活跃天数',active+' 天'],['最长连写',longest+' 天'],['活跃月份',monthly.filter(Boolean).length+' 个月']].map(c=>'<div><dt>'+c[0]+'</dt><dd>'+c[1]+'</dd></div>').join('');$('statsMonths').innerHTML=monthly.map((n,m)=>{const future=year===currentYear&&m>today.getMonth(),days=new Date(year,m+1,0).getDate(),current=year===currentYear&&m===today.getMonth();return '<div class="stats-month'+(future?' future':'')+(current?' current':'')+'" aria-label="'+(m+1)+'月：'+(future?'未到':n+' 个活跃日')+'"><span>'+(future?'—':n)+'</span><span class="stats-month-track"><i class="stats-month-fill" style="--activity:'+Math.round(n/days*100)+'"></i></span><span>'+(m+1)+'月</span></div>';}).join('');}
+function setStatsPerspective(annual){$('statsBody').scrollTop=0;$('statsOverview').classList.toggle('hidden',annual);$('statsAnnual').classList.toggle('hidden',!annual);$('statsOverviewTab').setAttribute('aria-pressed',String(!annual));$('statsAnnualTab').setAttribute('aria-pressed',String(annual));}
+$('statsOverviewTab').onclick=()=>setStatsPerspective(false);
+$('statsAnnualTab').onclick=()=>setStatsPerspective(true);
+$('statsYear').onchange=renderStatsAnnual;
+function openVaultStats(push=true){if(vaultStatsOpen)return;$('vaultPicker').open=false;vaultStatsOpen=true;statsReturnFocus=document.activeElement;renderVaultStats();renderStatsAnnual();$('statsDialog').showModal();positionSheetDialog($('statsDialog'));$('closeVaultStats').focus();if(push)syncUrl('push');}
 function closeVaultStats(updateUrl=true){if(!vaultStatsOpen)return;vaultStatsOpen=false;if($('statsDialog').open)$('statsDialog').close();if(statsReturnFocus&&statsReturnFocus.focus&&document.contains(statsReturnFocus))statsReturnFocus.focus();if(updateUrl)syncUrl();}
 let statsReturnFocus=null;
 function updateVaultActionHint(){const name=sanitizeDemoVaultName($('vaultActionName').value),mode=vaultActionMode,valid=name.length>0,candidate=valid?uniqueDemoVaultId(name,mode==='rename'?vaultActionTarget:''):'';$('confirmVaultAction').disabled=mode!=='delete'&&!valid;let hint='';if(mode==='create')hint=valid?'目录：vaults/'+candidate:'名称不能为空，也不能只由 / \\ : * ? " < > | 等字符组成';else if(mode==='rename'){const target=libraries.find(v=>v.id===vaultActionTarget);hint=valid?'vaults/'+(target?target.id:'')+' → vaults/'+candidate+(candidate!==name?'（重名，已自动加后缀）':''):'名称不能为空，也不能只由 / \\ : * ? " < > | 等字符组成';}else hint='此操作只从本页演示中移除该库；刷新后公开样例会恢复。';$('vaultActionPath').textContent=hint;}
