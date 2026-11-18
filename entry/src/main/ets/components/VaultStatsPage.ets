@@ -409,8 +409,13 @@ export struct VaultStatsPage {
       .fontColor(this.activeTab === tab
         ? $r('app.color.brand') : $r('app.color.text_primary'))
       .textAlign(TextAlign.Center)
-      .height(Space.s10)
-      .padding({ left: Space.s5, right: Space.s5 })
+      // 原型 .stats-tabs button min-height --touch；单屏 flex:1 均分整行、水平 padding --s3
+      .height(Size.touch)
+      .padding({
+        left: this.singleScreen ? Space.s3 : Space.s6,
+        right: this.singleScreen ? Space.s3 : Space.s6
+      })
+      .layoutWeight(this.singleScreen ? 1 : 0)
       .borderRadius(Radius.full)
       .backgroundColor(this.activeTab === tab
         ? $r('app.color.brand_bg') : Color.Transparent)
@@ -422,26 +427,42 @@ export struct VaultStatsPage {
 
   @Builder
   TabBar() {
-    Row() {
-      Row({ space: Space.s1 }) {
-        this.TabButton('overview')
-        this.TabButton('annual')
-        this.TabButton('achievements')
+    Column() {
+      // 单屏：范围说明置于按钮行上方（原型页头副标题位置），三个按钮均分整行
+      if (this.singleScreen) {
+        Text(this.scopeText())
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .margin({ bottom: Space.s1 })
       }
-      .padding({ left: Space.s1, right: Space.s1, top: Space.s1, bottom: Space.s1 })
-      .borderRadius(Radius.full)
+      Row() {
+        Row({ space: Space.s1 }) {
+          this.TabButton('overview')
+          this.TabButton('annual')
+          this.TabButton('achievements')
+        }
+        .padding({ left: Space.s1, right: Space.s1, top: Space.s1, bottom: Space.s1 })
+        .borderRadius(Radius.full)
+        .layoutWeight(this.singleScreen ? 1 : 0)
 
-      Text(this.scopeText())
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_tertiary'))
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ left: Space.s3 })
-        .layoutWeight(1)
-        .textAlign(TextAlign.End)
+        if (!this.singleScreen) {
+          Text(this.scopeText())
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ left: Space.s3 })
+            .layoutWeight(1)
+            .textAlign(TextAlign.End)
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .alignItems(VerticalAlign.Center)
     .padding({
       left: this.singleScreen ? Space.s4 : Space.s6,
       right: this.singleScreen ? Space.s4 : Space.s6,
@@ -453,6 +474,11 @@ export struct VaultStatsPage {
   }
 
   /* ---- 概览：主卡（81.1） ---- */
+
+  /** 单屏圆点 12（原型 .window.phone .stats-hero-week i --s3），宽屏 20（--s5）。 */
+  private heroDotSize(): number {
+    return this.singleScreen ? Space.s3 : Space.s5;
+  }
 
   @Builder
   HeroNumber() {
@@ -484,8 +510,8 @@ export struct VaultStatsPage {
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_tertiary'))
           Column()
-            .width(Size.statsHeroDot)
-            .height(Size.statsHeroDot)
+            .width(this.heroDotSize())
+            .height(this.heroDotSize())
             .borderRadius(Radius.full)
             .backgroundColor(this.weekFlags()[d]
               ? $r('app.color.cb_warn') : $r('app.color.line'))
@@ -508,22 +534,15 @@ export struct VaultStatsPage {
         .fontWeight(Weight.medium)
         .fontColor($r('app.color.text_primary'))
         .width('100%')
-      if (this.singleScreen) {
+      // 原型网格区 "main week"：各形态均为大数字左、本周圆点右、同一行；
+      // 只有 .window.double 才上下分行（原生无双屏专用分支，宽屏分支沿用同排）。
+      Row() {
         this.HeroNumber()
-        Row() {
-          this.HeroWeek()
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.End)
-      } else {
-        Row() {
-          this.HeroNumber()
-          Blank()
-          this.HeroWeek()
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
+        Blank()
+        this.HeroWeek()
       }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
       Text(this.scanning ? '正在统计…' : this.nextHint())
         .fontSize(FontSize.caption)
         .fontColor($r('app.color.text_primary'))
@@ -533,7 +552,8 @@ export struct VaultStatsPage {
         .border({ width: { top: 1 }, color: $r('app.color.line') })
     }
     .width('100%')
-    .padding(Space.s6)
+    // 单屏 padding --s5（.window.phone .stats-hero）、宽屏 --s6
+    .padding(this.singleScreen ? Space.s5 : Space.s6)
     .borderRadius(Size.statsRadius)
     .linearGradient({
       angle: 135,
@@ -811,7 +831,8 @@ export struct VaultStatsPage {
     .width('100%')
     .layoutWeight(rowWeight)
     .constraintSize({ minHeight: rowWeight > 0 ? '100%' : 0 })
-    .padding(Space.s6)
+    // 单屏年度卡 padding --s4（.window.phone .stats-annual-card）、宽屏 --s6
+    .padding(this.singleScreen ? Space.s4 : Space.s6)
     .borderRadius(Size.statsRadius)
     .backgroundColor($r('app.color.bg_card'))
     .alignItems(HorizontalAlign.Start)
@@ -894,7 +915,8 @@ export struct VaultStatsPage {
     .width('100%')
     .layoutWeight(rowWeight)
     .constraintSize({ minHeight: rowWeight > 0 ? '100%' : 0 })
-    .padding(Space.s6)
+    // 单屏年度卡 padding --s4（.window.phone .stats-annual-card）、宽屏 --s6
+    .padding(this.singleScreen ? Space.s4 : Space.s6)
     .borderRadius(Size.statsRadius)
     .backgroundColor($r('app.color.bg_card'))
     .alignItems(HorizontalAlign.Start)
@@ -922,10 +944,11 @@ export struct VaultStatsPage {
         .width('100%')
     } else {
       Column({ space: Space.s5 }) {
-        Row() {
+        // 单屏年份头间距 --s2、年度标题 --large；宽屏 --s4 / --heading（.stats-year-head）
+        Row({ space: this.singleScreen ? Space.s2 : Space.s4 }) {
           Column({ space: Space.s1 }) {
             Text(summary.year.toString() + ' · 写作回顾')
-              .fontSize(FontSize.heading)
+              .fontSize(this.singleScreen ? FontSize.s3 : FontSize.heading)
               .fontWeight(Weight.medium)
               .fontColor($r('app.color.text_primary'))
               .maxLines(1)
@@ -1115,7 +1138,8 @@ export struct VaultStatsPage {
           .padding({
             left: this.singleScreen ? Space.s4 : Space.s10,
             right: this.singleScreen ? Space.s4 : Space.s10,
-            top: Space.s8,
+            // 单屏上边距 --s5（.window.phone .stats-body），宽屏 --s8
+            top: this.singleScreen ? Space.s5 : Space.s8,
             bottom: Space.s8 + this.navClearanceVp()
           })
         }
