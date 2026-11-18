@@ -1998,7 +1998,8 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
   if (editable && !empty && root.querySelector('.preview-source-block') === null) {
     empty = document.createElement('div')
     empty.className = 'empty'
-    empty.dataset.placeholder = '在此输入正文'
+    // v1.83：与只读空态占位统一为「空笔记」，两栏开同一篇空笔记不再显示成不一样。
+    empty.dataset.placeholder = '空笔记'
     empty.dataset.simpleGenerated = 'true'
     root.appendChild(empty)
   } else if (!editable && empty?.dataset.simpleGenerated === 'true') {
@@ -2006,9 +2007,10 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     return
   }
   if (empty && editable) {
-    // setContent 的空笔记分支先建了 .empty（placeholder=空笔记），可编辑态必须换成输入提示，
-    // 否则居中的只读空状态文案会变成打字位置（2026-11-09 新建笔记光标居中 bug）。
-    empty.dataset.placeholder = '在此输入正文'
+    // setContent 的空笔记分支先建了 .empty（placeholder=空笔记）；文案 v1.83 已统一，
+    // 这里仍必须补 contenteditable 与源区间属性，否则只读空态节点不会成为打字位置
+    // （2026-11-09 新建笔记光标居中 bug 的修复语义，不随文案统一回退）。
+    empty.dataset.placeholder = '空笔记'
     empty.setAttribute('contenteditable', 'true')
     empty.setAttribute('data-simple-editable', 'true')
     empty.dataset.sourceFrom = String(bodyOffset)
