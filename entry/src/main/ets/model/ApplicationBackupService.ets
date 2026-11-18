@@ -315,6 +315,7 @@ export class ApplicationBackupService {
       }
 
       const manifest: ApplicationBackupManifest = ApplicationBackupService.readAndValidateManifest(newRoot);
+      ApplicationBackupService.ensureSandboxVaultDirs(newRoot, manifest);
       const storeSnapshots: Record<string, Record<string, Object>> =
         ApplicationBackupService.readAndValidateBackupPreferences(newRoot);
       ApplicationBackupService.validateRegistryAgainstManifest(storeSnapshots, manifest, newRoot);
@@ -805,6 +806,25 @@ export class ApplicationBackupService {
       preferenceStores: APPLICATION_PREFERENCE_STORES.slice(),
       includes: ['vaults', 'trash', 'drafts', 'agent', BACKUP_PREFERENCES_DIR]
     };
+  }
+
+  /**
+   * 空知识库目录补齐（2026-11-18）：备份 zip 里空库只有目录条目（compressFile 记录
+   * vaults/<id>/ 目录，没有任何文件条目），而 ZipImportService.parse 按设计跳过
+   * 目录条目，解压后空库目录缺失，注册校验报「应用备份缺少知识库目录」。
+   * manifest 中的沙箱库在恢复校验前按清单补建（已存在时 no-op）；外部库不占沙箱目录，跳过。
+   */
+  private static ensureSandboxVaultDirs(rootDir: string, manifest: ApplicationBackupManifest): void {
+    for (let i: number = 0; i < manifest.vaults.length; i++) {
+      const vault: ApplicationBackupVaultPreview = manifest.vaults[i];
+      if (vault.rootKind !== 'sandbox') {
+        continue;
+      }
+      const dir: string = rootDir + '/vaults/' + vault.id;
+      if (!fileIo.accessSync(dir)) {
+        fileIo.mkdirSync(dir, true);
+      }
+    }
   }
 
   private static validateRegistryAgainstManifest(stores: Record<string, Record<string, Object>>,
