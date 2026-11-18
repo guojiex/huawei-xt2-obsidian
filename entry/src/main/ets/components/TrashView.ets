@@ -4,7 +4,7 @@
  */
 import { TrashItem, TrashService } from '../model/TrashService';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { Space, FontSize, Size } from '../common/Tokens';
+import { Space, FontSize, Size, Radius, Weight } from '../common/Tokens';
 import { Icon } from '../common/Icons';
 import { noteDisplayName } from '../common/NoteDisplayName';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -25,11 +25,15 @@ export struct TrashView {
   onPurge: (relPath: string) => void = (relPath: string) => {};
   /** 「预览」回调（74.3：点行主体弹只读预览；父级读取内容并打开 TrashPreviewDialog） */
   onPreview: (relPath: string) => void = (relPath: string) => {};
+  /** 「清空回收站」回调（55.1：父级拉清空确认弹窗；确认后 TrashService.purgeAll，不进撤销） */
+  onPurgeAll: () => void = () => {};
 
   @State items: TrashItem[] = [];
   @State expandedVaultIds: string[] = [];
   @State loadFailed: boolean = false;
   @State legacyMigrationFailed: boolean = false;
+  /** 清空按钮悬停态（55.1：悬停 10% 危险色底，无悬停透明） */
+  @State emptyHover: boolean = false;
   private reloadGeneration: number = 0;
 
   aboutToAppear(): void {
@@ -222,6 +226,38 @@ export struct TrashView {
             .height(Math.min(this.items.length, 3) * Size.touch)
             .constraintSize({ maxHeight: Size.touch * 3 })
             .scrollBar(BarState.Auto)
+
+            // 55.1 清空入口：只在展开且有内容时出现；与列表之间一条细线，右侧恒有说明。
+            if (this.items.length > 0) {
+              Divider()
+                .color($r('app.color.line'))
+                .margin({ top: Space.s1 })
+              Row({ space: Space.s2 }) {
+                Text('清空回收站（' + this.items.length + '）')
+                  .fontSize(FontSize.body2)
+                  .fontWeight(Weight.medium)
+                  .fontColor($r('app.color.danger'))
+                  .height(Size.touch)
+                  .padding({ left: Space.s3, right: Space.s3 })
+                  .textAlign(TextAlign.Center)
+                  .borderRadius(Radius.full)
+                  .backgroundColor(this.emptyHover ? $r('app.color.danger_bg') : Color.Transparent)
+                  .focusable(true)
+                  .id('trash-empty-button')
+                  .accessibilityText('清空回收站，永久删除 ' + this.items.length + ' 篇笔记')
+                  .onClick((): void => { this.onPurgeAll(); })
+                  .onHover((isHover: boolean): void => { this.emptyHover = isHover; })
+                Text('永久删除，无法恢复')
+                  .fontSize(FontSize.caption)
+                  .fontColor($r('app.color.text_tertiary'))
+                  .layoutWeight(1)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .textAlign(TextAlign.End)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Center)
+            }
           }
         }
       }

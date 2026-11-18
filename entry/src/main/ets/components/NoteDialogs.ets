@@ -415,6 +415,17 @@ export struct PurgeTrashDialog {
   noteName: string = '';
   /** 原位置（库内文件夹路径；根目录显示「根目录」） */
   origin: string = '';
+  /**
+   * 清空模式（55.2）：true = 清空回收站确认（标题/正文/按钮按清空文案，默认焦点在取消）；
+   * false = v1.47 单条永久删除原文案，行为不变。快照清单由父级在打开时传入并在确认时执行。
+   */
+  emptyAll: boolean = false;
+  /** 清空模式：当前库名（正文「将永久删除「库名」回收站中的 N 篇笔记：」） */
+  vaultName: string = '';
+  /** 清空模式：条目总数（正文与按钮数字，防止误以为只删一条） */
+  emptyCount: number = 0;
+  /** 清空模式：前 3 篇标题（浅底列表 ellipsis；超出由「…等 N 篇」行补足） */
+  emptyTitles: string[] = [];
   onConfirm: () => void = () => {};
 
   private confirm(): void {
@@ -424,29 +435,69 @@ export struct PurgeTrashDialog {
 
   @Builder
   DialogContent() {
-    Column() {
-      Text('笔记将从回收站彻底清除，无法恢复，也不会进入撤销。')
-        .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_secondary'))
-        .margin({ top: Space.s2, bottom: Space.s3 })
-      Text(this.noteName)
-        .fontSize(FontSize.body3)
-        .fontColor($r('app.color.text_primary'))
+    if (this.emptyAll) {
+      Column() {
+        Text('将永久删除「' + this.vaultName + '」回收站中的 ' + this.emptyCount + ' 篇笔记：')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_secondary'))
+          .margin({ top: Space.s2, bottom: Space.s2 })
+        Column() {
+          ForEach(this.emptyTitles, (title: string, index: number) => {
+            Text(title)
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_primary'))
+              .width('100%')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s1 })
+          }, (title: string, index: number) => title + '#' + index.toString())
+          if (this.emptyCount > this.emptyTitles.length) {
+            Text('…等 ' + this.emptyCount + ' 篇')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+              .maxLines(1)
+              .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s1 })
+          }
+        }
         .width('100%')
-        .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
+        .alignItems(HorizontalAlign.Start)
+        .padding({ top: Space.s2, bottom: Space.s2 })
         .backgroundColor($r('app.color.bg_secondary'))
-        .borderRadius(Radius.icon)
-      Text('原位置：' + this.origin)
-        .fontSize(FontSize.caption)
-        .fontColor($r('app.color.text_tertiary'))
-        .width('100%')
-        .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
-        .backgroundColor($r('app.color.bg_secondary'))
-        .borderRadius(Radius.icon)
-        .margin({ top: Space.s1, bottom: Space.s3 })
+        .borderRadius(Radius.control)
+        Text('永久删除不进撤销，删除后无法恢复。只影响当前知识库的回收站，其他知识库与未删除的笔记不受影响。')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .margin({ top: Space.s3, bottom: Space.s2 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    } else {
+      Column() {
+        Text('笔记将从回收站彻底清除，无法恢复，也不会进入撤销。')
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_secondary'))
+          .margin({ top: Space.s2, bottom: Space.s3 })
+        Text(this.noteName)
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.text_primary'))
+          .width('100%')
+          .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.icon)
+        Text('原位置：' + this.origin)
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+          .padding({ left: Space.s2, right: Space.s2, top: Space.s1, bottom: Space.s1 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.icon)
+          .margin({ top: Space.s1, bottom: Space.s3 })
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
     }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
@@ -454,8 +505,9 @@ export struct PurgeTrashDialog {
     Row({ space: Space.s2 }) {
       UtilityDialogAction(UIUtils.makeBinding<string>(() => '取消'), 'secondary', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.controller?.close();
-      })
-      UtilityDialogAction(UIUtils.makeBinding<string>(() => '永久删除'), 'danger', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
+      }, false, this.emptyAll ? 'trash-empty-cancel' : '', this.emptyAll)
+      UtilityDialogAction(UIUtils.makeBinding<string>(() => this.emptyAll
+        ? '永久删除 ' + this.emptyCount + ' 篇' : '永久删除'), 'danger', this.singleScreen, UIUtils.makeBinding<boolean>(() => true), (): void => {
         this.confirm();
       })
     }
@@ -465,8 +517,8 @@ export struct PurgeTrashDialog {
 
   build() {
     UtilityDialogShell({
-      title: '永久删除笔记？',
-      closeLabel: '关闭永久删除确认',
+      title: this.emptyAll ? '清空回收站？' : '永久删除笔记？',
+      closeLabel: this.emptyAll ? '关闭清空回收站确认' : '关闭永久删除确认',
       singleScreen: this.singleScreen,
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,

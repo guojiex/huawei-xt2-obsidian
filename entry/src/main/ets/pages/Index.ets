@@ -58,7 +58,7 @@ import {
   TrashPreviewDialog
 } from '../components/NoteDialogs';
 import { QuickSwitcher } from '../components/QuickSwitcher';
-import { TrashService, UndoSnap } from '../model/TrashService';
+import { TrashService, UndoSnap, TrashItem, PurgeAllOutcome } from '../model/TrashService';
 import { RecentOpenStore } from '../model/RecentOpenStore';
 import {
   formatRecentErrorFeedback,
@@ -653,6 +653,8 @@ struct Index {
   private deletePathCtl: CustomDialogController | null = null;
   /** 回收站永久删除确认 controller（47.3） */
   private purgeTrashCtl: CustomDialogController | null = null;
+  /** 清空回收站确认 controller（55.2） */
+  private purgeAllTrashCtl: CustomDialogController | null = null;
   /** 回收站条目只读预览 controller（74.2） */
   private trashPreviewCtl: CustomDialogController | null = null;
   /** 重命名 / 移动对话框 controller（1.6 左滑操作条） */
@@ -6863,6 +6865,63 @@ struct Index {
     }
   }
 
+  /**
+   * 「清空回收站」（55.1/55.2）：入口在回收站展开时的底部操作行。
+   * 快照在**打开弹窗那一刻**取（55.5：打开期间新进回收站的笔记不在本次范围）；
+   * 确认弹窗是唯一保护 —— 确认后逐条永久删除，不进撤销（与 v1.47 单条口径一致）。
+   */
+  private openEmptyTrashDialog(): void {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    const items: TrashItem[] = TrashService.list(VaultRegistry.get(), this.currentVaultId);
+    if (items.length === 0) {
+      return;
+    }
+    const relPaths: string[] = items.map((item: TrashItem): string => item.relPath);
+    const titles: string[] = items.slice(0, 3).map((item: TrashItem): string => noteDisplayName(item.name));
+    // 库名 = 目录名 = 显示名（Vault.ets：显示名与目录名不分离），即当前库 id。
+    const vaultName: string = this.currentVaultId;
+    this.purgeAllTrashCtl = new CustomDialogController({
+      builder: PurgeTrashDialog({
+        emptyAll: true,
+        vaultName: vaultName,
+        emptyCount: items.length,
+        emptyTitles: titles,
+        singleScreen: this.isSingleScreenLayout(),
+        windowWidthVp: this.windowWidthVp,
+        windowHeightVp: this.windowHeightVp,
+        onConfirm: (): void => {
+          void this.doEmptyTrash(relPaths);
+        }
+      }),
+      alignment: this.isSingleScreenLayout() ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: true,
+      customStyle: true
+    });
+    this.purgeAllTrashCtl.open();
+  }
+
+  /**
+   * 确认清空后执行（55.3/55.4）：范围固定为弹窗打开时的快照；任一条失败不回滚
+   * 已成功的，失败条目保留在回收站；toast 按成功 / 部分失败分流。
+   */
+  private async doEmptyTrash(relPaths: string[]): Promise<void> {
+    if (this.currentVaultId.length === 0) {
+      return;
+    }
+    const outcome: PurgeAllOutcome = await TrashService.purgeAll(VaultRegistry.get(),
+      this.currentVaultId, relPaths);
+    this.refreshFileTree();
+    this.trashSeq++;
+    if (outcome.failed.length === 0) {
+      promptAction.showToast({ message: '已清空回收站：永久删除 ' + outcome.succeeded.length + ' 篇笔记' });
+      return;
+    }
+    promptAction.showToast({ message: '已永久删除 ' + outcome.succeeded.length + ' 篇，' +
+      outcome.failed.length + ' 篇未能删除，可稍后重试' });
+  }
+
   // ===== 1.6 左滑三档：重命名 / 移动 =====
 
   /**
@@ -8473,6 +8532,9 @@ struct Index {
       },
       onPurgeTrash: (relPath: string): void => {
         this.openPurgeTrashDialog(relPath);
+      },
+      onPurgeAllTrash: (): void => {
+        this.openEmptyTrashDialog();
       },
       onPreviewTrash: (relPath: string): void => {
         this.openTrashPreviewDialog(relPath);

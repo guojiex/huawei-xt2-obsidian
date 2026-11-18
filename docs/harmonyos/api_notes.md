@@ -1902,6 +1902,8 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 ### T1 ✅ API 24 可以用官方 Picker 选目录
 本机 `@ohos.file.picker.d.ts`：`DocumentViewPicker.select()` 自 API9；`DocumentSelectOptions.selectMode` 与 `DocumentSelectMode.FOLDER` 自 API11（syscap `FileManagement.UserFileService.FolderSelection`），均在 API 24 内。`maxSelectNumber` 注释写明目录一次只能选一个；`authMode`（since 12）注释写明只在 2-in-1 设备生效，手机上无效果，不能依赖。
 
+> **2026-11-18 更正**：~~API 24 可以用官方 Picker 选目录~~——「可以」只对 **SDK 声明层**成立。官方《选择用户文件》明文（本机文档库核实）：**Phone 设备自 API 26.0.0 起才支持 `selectMode = FOLDER`**（此前仅 2in1）。API 24/25 Phone 上 `canIUse` 预期 false（❓ 无该档位真机，待实测），v1.5 走既有 -2「此设备不支持系统目录选择」降级；XT2（系统 API 26）不受影响。详见 [T11 2026-11-18 补记](#t11--folder-模式选择路径交互细节未记载形态不可控以真机为准2026-11-17-官方答复--xt2-实测--本机-sdk-复核) 与 [答复归档](qa/2026-11-18_模拟器FOLDER模式能力缺失_API24.md)。
+
 ### T2 ⚠️ 持久授权依赖 `FILE_ACCESS_PERSIST`；2026-10-31 用户拍板申请，调试期 ACL profile 已就位
 `@ohos.fileshare.d.ts` 的 `persistPermission` / `activatePermission` / `deactivatePermission` / `revokePermission` 自 API11，`checkPersistentPermission` 自 API17，全部 ≤ API 24；`OperationMode` 仅 `READ_MODE`(0b1) 与 `WRITE_MODE`(0b10) 可用（`CREATE_MODE` / `DELETE_MODE` 自 API20，超出范围）。五个接口**全部**要求权限 `ohos.permission.FILE_ACCESS_PERSIST`。持久授权存在系统数据库里，**应用或设备重启后必须调 `activatePermission()` 激活**。
 
@@ -2115,6 +2117,55 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 > **2026-11-01 v1.5 轮询实现选择**：页面处于前台时每 5 秒经 `VaultAccess.snapshot()` 比较可见树，并逐字读取当前打开的最多两篇笔记；路径集合变化时刷新文件树，内容变化时按编辑器是否有本地改动决定自动重载或显示冲突。实现使用现有、深度和节点数有上限的统一快照，避免为每个已知目录 / 文件分别打开关闭外部根 fd；它偏向可验证的简单性。这个具体间隔与扫描策略是工程选择，不是 HarmonyOS 官方承诺，仍需在 API24 / XT2 上观察性能与响应时间。
 
+### T11 ✅ FOLDER 模式「选择路径」交互：细节未记载、形态不可控，以真机为准（2026-11-17 官方答复 + XT2 实测 + 本机 SDK 复核）
+
+背景：v1.5「导入本地目录」在 XT2 真机上被反馈「钻到最深层子目录也没有确认按钮」。
+官方答复（2026-11-17，3 问）+ hdc 抓屏实测 + 本机 SDK 逐字段复核，全文见
+[FilePicker「选择路径」交互与形态差异](qa/2026-11-17_FilePicker_选择路径交互_API24.md)。
+
+- ❓ **交互细节官方未记载**：「行点击选中 + 箭头展开、右上角对勾确认、无底部按钮、
+  『仅可访问所选项目』提示」是系统 FilePicker 应用自身 UI，官方文档（API 参考
+  《@ohos.file.picker》+ 开发指南《选择用户文件》）均不记载、不承诺。
+- ⚠️ **真机与模拟器形态差异成因未记载**；已确认的机制：Picker UI 由**设备预装的系统
+  FilePicker 应用**渲染、随系统版本演进，官方不保证模拟器与真机一致，并明确
+  **涉及 Picker 的界面验证以真机为准**。本机 x86_64 模拟器的「我的手机」弹窗形态
+  **不是规范形态**，不得据其推断真机交互（2026-11-17 本次即为教训）。
+- ✅ **`DocumentSelectOptions` 无任何控制 UI 形态的参数**（弹窗/页面不可控）；字段清单
+  本机 SDK 逐条复核一致：`defaultFilePathUri`(10) / `fileSuffixFilters`(10) /
+  `maxSelectNumber`(10) / `selectMode`(11) / `authMode`(12，仅 2in1) /
+  `multiAuthMode`(15) / `multiUriArray`(15，仅手机仅文件) / `mergeMode`(15，仅手机) /
+  `isEncryptionSupported`(19，仅文件) / `allowsMulFolderSelection`(26.0.0——
+  **d.ts 注释写「Only 2-in-1 devices are supported」，官方答复漏提该限制**，答复与
+  SDK 错位的又一例；超出 API 24 本工程不可用)。唯一官方记载的「自定义文件选择界面」
+  途径是 ArkWeb `onShowFileSelector`（Web 组件场景，不适用普通页面）。
+- ✅ **XT2 实测值（2026-11-17，hdc 抓屏）**：「选择路径」独立页，左上 X、右上
+  新建文件夹 + **对勾＝确认**；**点行＝选中**（浅蓝高亮 + 底部「已选中 xxx」），
+  **点箭头＝展开**（展开≠选中）；**无底部确认按钮，钻多深都不会出现**——确认入口
+  始终在右上角。用户「没有确认按钮」的体感由此而来，非缺陷。
+- 产品侧含义：导入引导文案**不得假设固定形态**（如「点击底部确认」）；当前
+  `ImportVaultDialog` 文案（「在系统选择器中选一个文件夹」）未写死形态，无需返工。
+
+**2026-11-18 追问补记（模拟器能力缺失定性 + Phone 支持起点更正）**，答复与本机复核全文见
+[模拟器 FOLDER 模式能力缺失归档](qa/2026-11-18_模拟器FOLDER模式能力缺失_API24.md)：
+
+- ✅ **x86_64 模拟器 FilePicker 未实现 FOLDER 目录选中交互，属模拟器侧能力限制**：无公开成功案例、
+  无参数可解（与 2026-11-17 `uitest` 节点树实测互证）。官方承认该类情况的依据是**通用错误码 804**
+  「The capability is not supported on the emulator at this time」（本机文档库《通用错误码》原文核实，
+  可能原因即「模拟器暂未实现此API，将在后续版本实现」，处理＝真机调测）；《模拟器与真机的差异》
+  未记载 FilePicker 条目。
+- ✅ **Phone 设备 FOLDER selectMode 支持起点 = 系统 API 26.0.0**：官方《选择用户文件》明文
+  「从API版本26.0.0开始，当文件类型是FOLDER时，Phone设备支持该参数」（本机文档库核实；答复称
+  此前仅 2in1，两端一致）。→ **T1「API 24 可以用」只对 SDK 声明层成立**：API 24/25 Phone 上
+  `canIUse` 预期 false（❓ 无该档位真机），v1.5 走既有 -2 降级；XT2（系统 API 26）不受影响。
+  产品语义：v1.5 外部库实际可用下限是「系统 API 26 的 Phone」。
+- ⚠️ **`canIUse` 识别不了模拟器 Picker 缺口**：2026-11-17 模拟器会话中产品链路 canIUse 门禁放行
+  （即 API26 x86_64 模拟器上为 true）、Picker 拉起，但选不了目录——`canIUse` 只识别设备 / 系统
+  版本能力缺口，不识别模拟器 Picker 实现缺口；答复「canIUse 比设备类型判断更可靠」仅对前者成立。
+- ⚠️ 答复口径不精确两处：「FOLDER 模式 maxSelectNumber 不生效」（指南按版本分档：23 起取消目录
+  数量限制）；示例代码 `deviceInfo.productModel` 判模拟器无官方明文，不采纳，产品代码不做模拟器
+  分支 mock（模拟器仅作 UI 证据、不外推）。
+- 可选待办：经 DevEco 反馈入口提单，推动《模拟器与真机的差异》补记 FilePicker 条目；不阻塞 v1.5。
+
 ## U 组：减少动态效果偏好与 ArkUI 动画
 
 ### U1 ❓ `ANIMATOR_DURATION_SCALE` 不能作为系统减动效偏好的已证实接口（2026-11-01）
@@ -2262,6 +2313,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - `Zip.inflateInit2` Raw Deflate 在 API 24 运行时的 `ZStream` 字段更新语义与错误码 `17800004/17800005` 触发形态——声明齐全但未实测；声明可编译 ≠ 解压已验收。
 - API 24 / XT2 的真实 Picker `.zip` 过滤视觉与取消行为未验收。
 - **实现期补充（2026-11-07，v1.36 落码，声明核对）**：随机读改用 `RandomAccessFile`（`fileIo.createRandomAccessFileSync` / `setFilePointer` / `read(buffer): Promise<number>` / readonly `filePointer`，均 `@ohos.file.fs` **since 10**），**绕开 Y3 ⚠️ 的 `fs.read` ReadOptions.offset 存疑语义**——实现不依赖该存疑行为。`ZStream` 字段按声明使用（nextIn/availableIn/totalIn/nextOut/availableOut/totalOut/dataType/adler，全可选）。设备链路封装于 `entry/src/main/ets/model/ZipImportDevice.ets`；解析 / 校验 / 解压编排在 `ZipImportService.ets`（零 `@kit`，Node 侧真实 zlib deflateRaw 交叉验证，`tools/tests/test_zip_import.mjs` 25/25），签名 HAP 构建通过。⚠️ 项不变：`17800004/17800005` 触发形态与 Picker 过滤视觉仍待 API 24 / XT2 真机验收（`docs/releases/v1.36/需求文档.md` §6.2）。
+- **✅ `ZStream` 字段更新语义已实测确认（2026-11-17，x86_64 API26 模拟器实测 + d.ts/官方 FAQ 佐证）**：`Zip.inflate` 等流式操作**不回写调用方传入的 `ZStream` 对象**——操作后读 `strm.availableOut/totalOut` 拿到的仍是**初始值**；当前真实状态必须 `await zip.getZStream()` 重取（`@ohos.zlib.d.ts:1215`，官方 FAQ「zip.deflate 压缩数据后……totalOut 都没有发生改变……每次操作完成，需要重新 getZStream() 获取最新状态」）。**踩坑记录**：`ZlibRawInflate.inflateRaw` 曾在 STREAM_END 后直接读 `strm.availableOut`（恒为初始值 `expectedSize`），完整性检查 `expectedSize - availableOut !== expectedSize` 对**所有非空 deflate 条目恒真**→ 一律误判「ZIP 数据损坏」——应用备份恢复必现「备份文件损坏或格式不完整」（备份 zip 全部 18 条目均为 method 8，首个非空条目 manifest.json 即失败），含非空笔记的 vault ZIP 导入同理必现；解压本身成功、输出 buffer 字节正确，纯检查误杀。**修复**：STREAM_END 后 `const current = await zip.getZStream();` 读 `current.availableOut`（缺省回落 0，空表不误伤；extract 的长度 + CRC32 校验仍在兜底）。修复后模拟器上导出→恢复全链路实测通过（预览 15 文件、替换恢复、重启后数据完整）。空条目（uncompressedSize 0）走提前返回不经 zlib，故 0 字节笔记库导入此前侥幸通过、掩盖了该缺陷。XT2 / API 24 真机复验仍待做（沿 Y4 原 ⚠️ 项）。
 
 ### Y5 ✅ `fs.utimes(path, mtime)` 可在导入后回填文件修改时间（2026-11-10，本机 SDK 声明核对）
 

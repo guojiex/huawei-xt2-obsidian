@@ -103,12 +103,6 @@ const ALLOWED = [
     reason: 'LazyForEach 目录键含折叠态 |e/|c（键生成器 :690），折叠切换整行重建',
   },
   {
-    file: 'components/FileTreeView.ets',
-    needle: 'n.relPath === this.currentFilePath',
-    kind: 'safe',
-    reason: '文件键含选中态 |s/|u（键生成器 :692），选中变化整行重建；目录分支实参不含状态',
-  },
-  {
     file: 'components/VaultSidebar.ets',
     needle: 'this.isChapterCollapsed(chapter) ? \'chevronRight\'',
     kind: 'safe',

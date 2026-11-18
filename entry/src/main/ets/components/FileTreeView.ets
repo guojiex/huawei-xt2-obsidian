@@ -179,6 +179,8 @@ export struct FileTreeView {
   /** 从内嵌回收站恢复笔记，由父级复用现有 TrashService 处理。 */
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
   onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
+  /** 清空回收站（55.1）：父级拉清空确认弹窗，确认后 TrashService.purgeAll。 */
+  onPurgeAllTrash: () => void = () => {};
 
   /** 回收站条目预览（74.3：点行主体弹只读预览） */
   onPreviewTrash: (relPath: string) => void = (relPath: string) => {};
@@ -685,6 +687,7 @@ export struct FileTreeView {
             refreshSeq: this.trashRefreshSeq,
             onRestore: (relPath: string): void => { this.onRestoreTrash(relPath); },
             onPurge: (relPath: string): void => { this.onPurgeTrash(relPath); },
+            onPurgeAll: (): void => { this.onPurgeAllTrash(); },
             onPreview: (relPath: string): void => { this.onPreviewTrash(relPath); }
           })
         }

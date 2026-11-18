@@ -42,6 +42,14 @@ export interface TrashItem {
   deletedAt: number;
 }
 
+/** purgeAll 的结果（55.3/55.4）：成功 / 失败清单，调用方据此分流 toast 文案 */
+export interface PurgeAllOutcome {
+  /** 已成功永久删除的回收站内相对路径 */
+  succeeded: string[];
+  /** 未能删除、仍保留在回收站的相对路径（可稍后重试） */
+  failed: string[];
+}
+
 /** 撤销条快照（1.7）：移入回收站那一刻的现场，5 秒内「撤销」用（Index 持有） */
 export interface UndoSnap {
   /** 删除时所在的库（撤销时可能已切库，恢复要指回原库） */
@@ -336,6 +344,29 @@ export class TrashService {
       }
       hilog.info(TRASH_DOMAIN, TRASH_TAG, '回收站条目已永久删除');
     });
+  }
+
+  /**
+   * 清空回收站（v1.55 55.3/55.4/55.5）：对**弹窗打开时快照**的条目逐条调用 purge，
+   * 任一条失败不回滚已成功的（55.4），失败条目保留在回收站可稍后重试。
+   * 入参是调用方（弹窗打开时）列好的清单：执行期间新进入回收站的笔记不在本次范围（55.5）。
+   * 空列表直接返回空结果；本方法本身不抛错 —— 逐条错误都收进 failed，调用方按计数分流 toast。
+   */
+  static async purgeAll(registry: VaultRegistry, vaultId: string,
+    trashRels: string[]): Promise<PurgeAllOutcome> {
+    const outcome: PurgeAllOutcome = { succeeded: [], failed: [] };
+    for (let i = 0; i < trashRels.length; i++) {
+      try {
+        await TrashService.purge(registry, vaultId, trashRels[i]);
+        outcome.succeeded.push(trashRels[i]);
+      } catch (error) {
+        outcome.failed.push(trashRels[i]);
+      }
+    }
+    if (outcome.succeeded.length > 0) {
+      hilog.info(TRASH_DOMAIN, TRASH_TAG, '清空回收站：已永久删除 %{public}d 篇', outcome.succeeded.length);
+    }
+    return outcome;
   }
 
   /**

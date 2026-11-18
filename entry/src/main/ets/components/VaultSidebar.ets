@@ -118,6 +118,8 @@ export struct VaultSidebar {
   onRestoreTrash: (relPath: string) => void = (relPath: string) => {};
   /** 回收站永久删除回调（父级拉确认弹窗）。 */
   onPurgeTrash: (relPath: string) => void = (relPath: string) => {};
+  /** 清空回收站回调（55.1：父级拉清空确认弹窗）。 */
+  onPurgeAllTrash: () => void = () => {};
   /** 回收站条目预览回调（74.3：点行主体弹只读预览）。 */
   onPreviewTrash: (relPath: string) => void = (relPath: string) => {};
   /** v1.71 树内拖拽移动：drop 到目录行 / 树根空白时回调，移动全链执行在父级（Index）。 */
@@ -708,6 +710,7 @@ export struct VaultSidebar {
             onSwipeDelete: (relPath: string): void => { this.onSwipeDelete(relPath); },
             onRestoreTrash: (relPath: string): void => { this.onRestoreTrash(relPath); },
             onPurgeTrash: (relPath: string): void => { this.onPurgeTrash(relPath); },
+            onPurgeAllTrash: (): void => { this.onPurgeAllTrash(); },
             onPreviewTrash: (relPath: string): void => { this.onPreviewTrash(relPath); },
             onDragMovePath: (relPath: string, isDir: boolean, destDir: string): void => {
               this.onDragMovePath(relPath, isDir, destDir);

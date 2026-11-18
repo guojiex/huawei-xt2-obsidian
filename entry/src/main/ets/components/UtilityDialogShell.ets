@@ -182,7 +182,10 @@ export function UtilityDialogAction(
   enabled: Binding<boolean>,
   onClick: () => void,
   keyboardFocusable: boolean = false,
-  focusId: string = ''
+  focusId: string = '',
+  // v1.55 55.2：清空回收站确认弹窗默认焦点在「取消」（Enter 不会直接清空）。
+  // 仅影响首帧取焦，按值实参固化无碍（L-7/Z2 针对的是需随状态刷新的场景）。
+  defaultFocused: boolean = false
 ) {
   if (focusId.length > 0) {
     Text(label.value)
@@ -206,7 +209,8 @@ export function UtilityDialogAction(
       .enabled(enabled.value)
       .opacity(!enabled.value && tone === 'secondary' ? 0.45 : 1)
       .onClick(onClick)
-      .focusable(keyboardFocusable && enabled.value)
+      .focusable((keyboardFocusable || defaultFocused) && enabled.value)
+      .defaultFocus(defaultFocused)
       .id(focusId)
   } else {
     Text(label.value)
