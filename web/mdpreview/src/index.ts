@@ -2971,12 +2971,39 @@ const api: MdPreviewApi = {
         if (child.classList.contains('share-watermark')) {
           continue
         }
+        // 2026-11-18 修复：块由 .preview-source-block（display: contents，v0.9 起）包裹，
+        // 无盒模型——getBoundingClientRect 全零，bounds 只剩零星真实盒（XT2 实测
+        // kids=22 bounds=1），多页笔记被算成 1 页。contents 包装器改为测量其内部
+        // 真实块，恢复 v1.53 设计的块边界分页粒度。
+        if (window.getComputedStyle(child).display === 'contents') {
+          for (let k = 0; k < child.children.length; k++) {
+            const inner = child.children[k] as HTMLElement
+            const innerRect = inner.getBoundingClientRect()
+            if (innerRect.height <= 0) {
+              continue
+            }
+            const innerTop = innerRect.top - contentRect.top + content.scrollTop
+            bounds.push({ top: innerTop, bottom: innerTop + innerRect.height,
+              heading: /^H[1-6]$/.test(inner.tagName) })
+          }
+          continue
+        }
         const childRect = child.getBoundingClientRect()
         if (childRect.height <= 0) {
           continue
         }
         const top = childRect.top - contentRect.top + content.scrollTop
         bounds.push({ top: top, bottom: top + childRect.height, heading: /^H[1-6]$/.test(child.tagName) })
+      }
+      // 2026-11-18 防回归守卫：bounds 必须覆盖到内容底部——若块测量再次整体失效
+      // （如又出现零高度包装器），明确报错而非静默截断成 1 页。pageHeightVp 的
+      // 裕量已覆盖 #content 上下 padding 与正常舍入。
+      let maxBottomAll = 0
+      for (const bound of bounds) {
+        maxBottomAll = Math.max(maxBottomAll, bound.bottom)
+      }
+      if (metrics.scrollHeight - maxBottomAll > pageHeightVp) {
+        throw new Error('PDF 分页未能覆盖全部内容，请重试')
       }
       // 53.7：标题与下一块合并为一个分页单元，标题不孤悬页尾（与 v2 原型同一规则）。
       const units = mergeHeadingUnits(bounds)
@@ -2989,14 +3016,25 @@ const api: MdPreviewApi = {
       if (finalMetrics.scrollHeight < tops[tops.length - 1] + pageHeightVp) {
         throw new Error('PDF 分页高度不足，无法完整分页')
       }
-      sendPdfPagesResult(id, tops)
+      // 临时调试（XT2 PDF 只出一页定位）：纯数字布局诊断，随根因修复整段移除
+      let maxBottom = 0
+      for (const bound of bounds) {
+        maxBottom = Math.max(maxBottom, bound.bottom)
+      }
+      const pdfDebug = `kids=${children.length} bounds=${bounds.length} maxBottom=${maxBottom.toFixed(0)}` +
+        ` cRectH=${contentRect.height.toFixed(0)} sh=${metrics.scrollHeight} vh=${metrics.viewportHeight}` +
+        ` vw=${metrics.viewportWidth} st=${metrics.scrollTop} iw=${window.innerWidth}` +
+        ` ih=${window.innerHeight} dpr=${window.devicePixelRatio} units=${units.length}` +
+        ` tops=${JSON.stringify(tops)} pageH=${pageHeightVp} finalSh=${finalMetrics.scrollHeight}`
+      sendPdfPagesResult(id, tops, '', pdfDebug)
     } catch (error) {
       sendPdfPagesResult(id, [], String(error))
     }
   }
 }
 
-function sendPdfPagesResult(id: number, tops: number[], errorText: string = ''): void {
+function sendPdfPagesResult(id: number, tops: number[], errorText: string = '',
+  debugText: string = ''): void {
   const arkts = window.__arkts
   if (!arkts || typeof arkts.onShareCaptureResult !== 'function') {
     return
@@ -3010,7 +3048,8 @@ function sendPdfPagesResult(id: number, tops: number[], errorText: string = ''):
     viewportWidth: metrics.viewportWidth,
     scrollTop: metrics.scrollTop,
     pageCount: tops.length,
-    pageTops: JSON.stringify(tops)
+    pageTops: JSON.stringify(tops),
+    debug: debugText
   }))
 }
 

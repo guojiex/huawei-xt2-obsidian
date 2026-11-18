@@ -32,9 +32,15 @@ export class NotePdfExportDevice {
         }
         const drawWidth: number = Math.min(NotePdfDocumentService.A4_WIDTH_PT,
           NotePdfDocumentService.A4_HEIGHT_PT * aspect);
+        const drawHeight: number = drawWidth / aspect;
         const page: pdfService.PdfPage = document.insertBlankPage(i,
           NotePdfDocumentService.A4_WIDTH_PT, NotePdfDocumentService.A4_HEIGHT_PT);
-        page.addImageObject(pageJpegs[i], 0, 0, drawWidth, drawWidth / aspect);
+        // 2026-11-18 XT2 实测（产物 fitz 解析）：addImageObject 的 y 原点在页底
+        // （PDF 原生坐标系，向上为正），y=0 会把不满页高的页图钉在页底、白边留在
+        // 页顶。顶对齐须传 y = 页高 − 图高；页图恒 ≤ 页高，y ≥ 0 满足 SDK 约束。
+        // 见 api_notes AD6。
+        page.addImageObject(pageJpegs[i], 0,
+          NotePdfDocumentService.A4_HEIGHT_PT - drawHeight, drawWidth, drawHeight);
         page.release();
       }
       // createDocument 实测（模拟器 PDF-1.7）自带一张初始空白页：逐图 insertBlankPage 后

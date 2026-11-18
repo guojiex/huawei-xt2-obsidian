@@ -36,6 +36,7 @@
     { "name": "bg_card_transparent", "value": "#00FFFFFF" },
     { "name": "bg_secondary", "value": "#F5F6F8" },
     { "name": "bg_tertiary", "value": "#FFFFFF" },
+    { "name": "bg_paper", "value": "#FFFFFF" },
     { "name": "bg_sunken", "value": "#0A000000" },
     { "name": "float_shadow", "value": "#14233652" },
 

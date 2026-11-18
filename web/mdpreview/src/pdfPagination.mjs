@@ -2,11 +2,20 @@
  * pdfPagination.mjs —— PDF 导出的逐页分页纯函数（v1.53 53.2）。
  *
  * 输入是块边界数据（不依赖 DOM），Node 可直接切片测试。
- * 分页规则：块边界贪心——块放得下当前页则继续；放不下且块高不超页高则新页从该块顶
- * 开始（不切断文字行 / 代码块）；单块自身超页高按页高硬切兜底。
+ * 分页规则（2026-11-18 折中拍板，替代 v1.53「块不切断」对大块的约束）：
+ * - 小块（≤ 30% 页高）放不下时整块下移，不切断（v1.53 拍板对小块继续生效）；
+ * - 大块（> 30% 页高）放不下时跨页续排填满本页，新页从精确页边界开始；
+ * - 页底剩余空间 < 15% 页高时不切（避免在页底只排进一条碎片），整块下移；
+ * - 单块自身超页高按页高硬切兜底。
  */
 
 export const MAX_PDF_PAGES = 100
+
+/** 大块判定阈值（占页高比例）：超过则允许跨页切断续排。 */
+export const SPLIT_THRESHOLD_RATIO = 0.3
+
+/** 跨页续排的最小页底剩余（占页高比例）：不足则不切，整块下移。 */
+export const MIN_FILL_RATIO = 0.15
 
 /**
  * 标题与下一块合并为一个分页单元（v2 原型 53.7 规则）：标题不孤悬页尾。
@@ -46,6 +55,8 @@ export function computePdfPageTops(bounds, pageHeight) {
   }
   const tops = [0]
   let currentTop = 0
+  const splitThreshold = pageHeight * SPLIT_THRESHOLD_RATIO
+  const minFill = pageHeight * MIN_FILL_RATIO
   for (let i = 0; i < bounds.length; i++) {
     const bound = bounds[i]
     const top = bound ? bound.top : NaN
@@ -56,7 +67,15 @@ export function computePdfPageTops(bounds, pageHeight) {
     if (bottom - currentTop <= pageHeight) {
       continue
     }
-    if (top > currentTop && bottom - top <= pageHeight) {
+    // 2026-11-18 折中拍板：大块放不下时跨页续排填满本页（while 从精确页边界步进，
+    // 页尾空白收敛到 ≤ 30%）；页底剩余 ≥ 15% 页高才切，避免只排进一条碎片。
+    // 小块仍整块下移不切断（v1.53 拍板对小块继续生效）。
+    if (bottom - top > splitThreshold && currentTop + pageHeight - top >= minFill) {
+      while (bottom - currentTop > pageHeight) {
+        currentTop = currentTop + pageHeight
+        tops.push(currentTop)
+      }
+    } else if (top > currentTop && bottom - top <= pageHeight) {
       currentTop = top
       tops.push(currentTop)
     } else {

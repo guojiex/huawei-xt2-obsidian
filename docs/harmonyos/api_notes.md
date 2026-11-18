@@ -2476,7 +2476,8 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 ### AD4 ⚠️ 未记载 / 待实测项（真机验收补齐）
 
-- `addImageObject` 支持的图片格式细节（本版用 JPEG，与长图链路一致）未在声明中列举，真机验证。
+- ~~`addImageObject` 支持的图片格式细节（本版用 JPEG，与长图链路一致）未在声明中列举，真机验证。~~
+  ✅ 2026-11-18 XT2 / API24 实测：JPEG 逐页贴图导出成功（Home.pdf，7 页约 0.95MB）。
 - XT2 / API24 对 `SystemCapability.OfficeService.PDFService.Core` 的设备支持未核实；实现必须 `canIUse('SystemCapability.OfficeService.PDFService.Core')` 检测，不支持时优雅降级（分享面板不显示 PDF 选项）。
 - `createDocument` 后未 `insertBlankPage` 直接 `saveDocument` 的行为（空文档）未记载，不依赖。
 - PDF 文件体积（逐页 JPEG 贴图）真机实测后回填。
@@ -2500,6 +2501,21 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
   文件体积近似不变。
 - ⏭ 待真机回归：API24 / XT2 上 `createDocument` 是否同样自带初始页（用「分享 PDF → 产物
   无空白尾页」验收即可，不必解析结构）。
+
+### AD6 ✅ addImageObject 的 y 原点在页底，顶对齐须传 页高−图高（2026-11-18 XT2 实测）
+
+来源：XT2（API24）导出的 Home.pdf（7 页 A4，逐页 JPEG 贴图）用 PyMuPDF 解析贴图矩形；
+SDK 声明 `@hms.officeservice.pdfservice.d.ts` 只写 "Y coordinate, in points"，**未记载原点**。
+
+- **实测**：`addImageObject(path, 0, 0, w, h)` 在不满页高的页上图被精确钉在**页底**
+  （贴图矩形底边 = 页底 842pt，白边留页顶）。即 y 采用 **PDF 原生坐标系：原点在
+  左下、向上为正**，图占 `[y, y+h]`。
+- **顶对齐**：传 `y = 页高 − 图高`（本仓 `A4_HEIGHT_PT - drawHeight`，落地
+  `NotePdfExportDevice.ets exportFromPageImages`）。页图恒 ≤ 页高 → y ≥ 0，
+  满足 SDK "y must be ≥ 0" 约束。
+- 图满页（h = 页高）时 y=0 顶=底重合，与旧行为一致——此前满页贴图掩盖了该语义，
+  2026-11-18 修复 display:contents 分页（多页笔记真出多页）后才暴露。
+- 源级防回归：`tools/tests/test_pdf_pagination.mjs` 断言不得再写死 `y=0`。
 
 ## AE 组：expandSafeArea 与底部系统安全区（2026-11-13）
 

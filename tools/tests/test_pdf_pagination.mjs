@@ -25,13 +25,40 @@ test('块恰好填满一页不再开新页（边界 <=）', () => {
   assert.deepEqual(computePdfPageTops([{ top: 0, bottom: 500 }, { top: 500, bottom: 990 }], 990), [0]);
 });
 
-test('放不下的块从其顶部开新页，不切断块（v1.53 拍板：逐页渲染）', () => {
+test('小块（≤30% 页高）放不下时从其顶部开新页，不切断块（v1.53 拍板：逐页渲染）', () => {
+  // 块 250 < 297（0.3×990 阈值）→ 小块整块下移
+  const tops = computePdfPageTops([
+    { top: 0, bottom: 250 },
+    { top: 250, bottom: 500 },
+    { top: 500, bottom: 750 },
+    { top: 750, bottom: 1000 }
+  ], 990);
+  assert.deepEqual(tops, [0, 750]);
+});
+
+test('大块（>30% 页高）放不下时跨页续排填满本页（2026-11-18 折中拍板）', () => {
+  // 块 400 > 297 → 第三块放不下时本页填满到 990，新页从精确页边界开始
   const tops = computePdfPageTops([
     { top: 0, bottom: 400 },
     { top: 400, bottom: 800 },
     { top: 800, bottom: 1200 }
   ], 990);
-  assert.deepEqual(tops, [0, 800]);
+  assert.deepEqual(tops, [0, 990]);
+});
+
+test('页底剩余 <15% 页高时大块不切、整块下移（避免页底碎片）', () => {
+  // 块 500（大块）：top=880，页底剩余 990-880=110 < 148.5（0.15×990）→ 不切，整块下移
+  const tops = computePdfPageTops([
+    { top: 0, bottom: 500 },
+    { top: 500, bottom: 880 },
+    { top: 880, bottom: 1380 }
+  ], 990);
+  assert.deepEqual(tops, [0, 880]);
+});
+
+test('折中阈值常量：SPLIT_THRESHOLD_RATIO=0.3 / MIN_FILL_RATIO=0.15', () => {
+  assert.equal(paginationModule.SPLIT_THRESHOLD_RATIO, 0.3);
+  assert.equal(paginationModule.MIN_FILL_RATIO, 0.15);
 });
 
 test('单块自身超页高按页高硬切兜底（不抛错、不越界）', () => {
@@ -197,6 +224,22 @@ test('源级：rawfile 构建产物已同步 preparePdfPages（防 v1.50 产物 
   assert.ok(bundle.includes('preparePdfPages'), 'rawfile mdpreview 产物缺少 preparePdfPages，请重跑 web/mdpreview 的 node build.mjs');
 });
 
+test('源级：PDF 分页解包 display:contents 包装器（2026-11-18 修复）', () => {
+  const indexTs = readRepoFile('web/mdpreview/src/index.ts');
+  // v0.9 起 .preview-source-block{display:contents} 无盒模型，getBoundingClientRect 全零，
+  // 多页笔记被算成 1 页（XT2 实测 kids=22 bounds=1）。contents 包装器必须改测内部真实块。
+  assert.match(indexTs, /window\.getComputedStyle\(child\)\.display === 'contents'/);
+  assert.match(indexTs, /const inner = child\.children\[k\] as HTMLElement/);
+  assert.match(indexTs, /bounds\.push\(\{ top: innerTop, bottom: innerTop \+ innerRect\.height,/);
+});
+
+test('源级：PDF 分页覆盖度守卫——bounds 失效时明确报错（2026-11-18 防回归）', () => {
+  const indexTs = readRepoFile('web/mdpreview/src/index.ts');
+  // 若块测量再次整体失效（如又出现零高度包装器），报错而非静默截断成 1 页。
+  assert.match(indexTs, /metrics\.scrollHeight - maxBottomAll > pageHeightVp/);
+  assert.match(indexTs, /PDF 分页未能覆盖全部内容/);
+});
+
 test('源级：PreviewWebView 协议含 preparePdfPages 与 pageTops 解析', () => {
   const preview = readRepoFile('entry/src/main/ets/components/PreviewWebView.ets');
   assert.match(preview, /preparePdfPages\(id: number, pageHeightVp: number\): void/);
@@ -218,6 +261,15 @@ test('源级：NotePdfDocumentService 走 PDF Kit 图片→PDF 路线且 syscap 
   assert.match(device, /releaseDocument\(\)/);
   assert.equal(device.includes('ohos.permission.PRINT'), false);
   assert.equal(service.includes('ohos.permission.PRINT'), false);
+});
+
+test('源级：addImageObject 顶对齐——y 原点在页底，须传 页高−图高（2026-11-18 XT2 实测）', () => {
+  const device = readRepoFile('entry/src/main/ets/model/NotePdfExportDevice.ets');
+  // XT2 导出产物 fitz 解析：y=0 时不满页高的页图被钉在页底、白边留页顶。
+  // PDF 原生坐标系 y 向上；顶对齐传 y = A4_HEIGHT_PT − drawHeight。
+  assert.match(device, /const drawHeight: number = drawWidth \/ aspect;/);
+  assert.match(device, /A4_HEIGHT_PT - drawHeight, drawWidth, drawHeight\)/);
+  assert.equal(/addImageObject\([^)]*, 0, 0,/.test(device), false, '不得再把 y 固定传 0');
 });
 
 test('源级：exportFromPageImages 删除 createDocument 自带的富余空白页（2026-11-11 实测）', () => {
@@ -287,8 +339,11 @@ test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（5
   assert.match(dialog, /'1 个 PDF'/);
   assert.match(dialog, /this\.pageUris\.length\.toString\(\) \+ ' 页'/);
   // 缩略图：逐页 Image + 「N / M」页码 + 第 N 页共 M 页读屏
-  // 53.12：非末页裁到切片高后比例非 A4，缩略图按逐页真实比例（thumbAspectOf），A4 比例仅兜底
+  // 53.12：非末页裁到切片高后比例非 A4；2026-11-18 起缩略图为 A4 白纸信箱衬底
+  // （页图按真实比例顶对齐，与最终 PDF 页面一致，XT2 实测矮胖条修复）
   assert.match(dialog, /aspectRatio\(this\.thumbAspectOf\(index\)\)/);
+  assert.match(dialog, /aspectRatio\(595 \/ 842\)/);
+  assert.match(dialog, /\$r\('app\.color\.bg_paper'\)/);
   assert.match(dialog, /return 595 \/ 842;/);
   assert.match(dialog, /@Prop pageAspects: number\[\] = \[\];/);
   assert.match(dialog, /Size\.pdfThumbW/);

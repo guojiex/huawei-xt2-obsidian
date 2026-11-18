@@ -785,9 +785,16 @@ export struct ShareFlowPanel {
       this.shareCapturePdfMode = true;
       this.shareCaptureActive = true;
       await this.waitForShareCaptureReady();
-      await bridge.requestShareCaptureMetrics();
+      // 临时调试（XT2 PDF 只出一页定位）：metrics 带布局诊断（纯数字），根因修复后移除
+      const metricsResult: PreviewCaptureResult = await bridge.requestShareCaptureMetrics();
+      hilog.info(0x0000, 'PdfDbg', 'metrics sh=%{public}d vh=%{public}d vw=%{public}d st=%{public}d dbg=%{public}s',
+        metricsResult.scrollHeight, metricsResult.viewportHeight, metricsResult.viewportWidth,
+        metricsResult.scrollTop, metricsResult.debug ?? '');
       await bridge.appendShareWatermark();
       const prepared: PreviewCaptureResult = await bridge.preparePdfPages(this.pdfPageHeightVp);
+      hilog.info(0x0000, 'PdfDbg', 'pdf prepared count=%{public}d tops=%{public}s sh=%{public}d vh=%{public}d dbg=%{public}s',
+        prepared.pageCount ?? 0, prepared.pageTops ?? '', prepared.scrollHeight,
+        prepared.viewportHeight, prepared.debug ?? '');
       const pageCount: number = prepared.pageCount ?? 0;
       if (pageCount <= 0 || pageCount > NotePdfDocumentService.MAX_PAGES) {
         throw new Error('笔记超过单文件 PDF 页数上限；请改用 Markdown / ZIP');
