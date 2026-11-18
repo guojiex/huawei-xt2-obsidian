@@ -191,7 +191,7 @@ export class ZlibRawInflate implements InflatePort {
     try {
       const initStatus: zlib.ReturnStatus = await zip.inflateInit2(strm, -15);
       if (initStatus !== zlib.ReturnStatus.OK) {
-        throw new ZipImportError('corrupt', 'ZIP 数据损坏');
+        throw new ZipImportError('corrupt', 'ZIP 解压初始化失败(status=' + initStatus.toString() + ')');
       }
       status = await zip.inflate(strm, zlib.CompressFlushMode.NO_FLUSH);
       let calls: number = 1;
@@ -200,7 +200,8 @@ export class ZlibRawInflate implements InflatePort {
         calls++;
       }
       if (status !== zlib.ReturnStatus.STREAM_END) {
-        throw new ZipImportError('corrupt', 'ZIP 数据损坏');
+        throw new ZipImportError('corrupt',
+          'ZIP 解压未正常结束(status=' + status.toString() + ',calls=' + calls.toString() + ')');
       }
       // 不做 availableOut 后置检查（api_notes Y4）：@ohos.zlib 流式操作不回写调用方 ZStream，
       // 而 getZStream 的返回语义随系统构建而异（x86_64 模拟器与 XT2 真机固件行为不一致，
@@ -215,7 +216,8 @@ export class ZlibRawInflate implements InflatePort {
       if (err.code === NO_SPACE_ERROR_CODE) {
         throw new ZipImportError('no_space', '设备存储空间不足');
       }
-      throw new ZipImportError('corrupt', 'ZIP 数据损坏');
+      const code: number = typeof err.code === 'number' ? err.code : -1;
+      throw new ZipImportError('corrupt', 'ZIP 解压异常(code=' + code.toString() + ')');
     } finally {
       try {
         await zip.inflateEnd(strm);

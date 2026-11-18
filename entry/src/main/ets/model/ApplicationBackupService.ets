@@ -354,9 +354,20 @@ export class ApplicationBackupService {
         return { status: 'failed', detail: '设备空间不足，备份校验未完成。当前数据未更改。', preview: null };
       }
       if (error instanceof ZipImportError && error.kind === 'corrupt') {
-        return { status: 'failed', detail: '备份文件损坏或格式不完整。请选择其他文件后重试。', preview: null };
+        return {
+          status: 'failed',
+          detail: '备份文件损坏或格式不完整（' + error.message + '）。请选择其他文件后重试。',
+          preview: null
+        };
       }
-      return { status: 'failed', detail: '无法读取该应用备份。请选择有效的曜石笔记备份文件后重试。', preview: null };
+      const reason: string = typeof err.message === 'string' ? err.message : '';
+      return {
+        status: 'failed',
+        detail: reason.length > 0
+          ? '无法读取该应用备份（' + reason + '）。请选择有效的曜石笔记备份文件后重试。'
+          : '无法读取该应用备份。请选择有效的曜石笔记备份文件后重试。',
+        preview: null
+      };
     }
   }
 

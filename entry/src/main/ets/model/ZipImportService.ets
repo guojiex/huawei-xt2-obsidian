@@ -404,14 +404,14 @@ export class ZipImportService {
       }
       const header: Uint8Array = await reader.readAt(entry.localHeaderOffset, ZipImportService.LOCAL_HEADER_SIZE);
       if (ZipImportService.u32(header, 0) !== ZipImportService.LOCAL_SIGNATURE) {
-        throw new ZipImportError('corrupt', 'ZIP 内条目定位失败');
+        throw new ZipImportError('corrupt', 'ZIP 内条目定位失败(' + entry.name + ')');
       }
       const localNameLength: number = ZipImportService.u16(header, 26);
       const localExtraLength: number = ZipImportService.u16(header, 28);
       const dataOffset: number = entry.localHeaderOffset +
         ZipImportService.LOCAL_HEADER_SIZE + localNameLength + localExtraLength;
       if (dataOffset + entry.compressedSize > totalSize) {
-        throw new ZipImportError('corrupt', 'ZIP 数据损坏');
+        throw new ZipImportError('corrupt', 'ZIP 数据边界越界(' + entry.name + ')');
       }
       let compressed: Uint8Array = new Uint8Array(0);
       if (entry.compressedSize > 0) {
@@ -424,10 +424,10 @@ export class ZipImportService {
         content = compressed;
       }
       if (content.length !== entry.uncompressedSize) {
-        throw new ZipImportError('corrupt', 'ZIP 数据损坏');
+        throw new ZipImportError('corrupt', 'ZIP 条目长度不符(' + entry.name + ')');
       }
       if (ZipImportService.crc32(content) !== entry.crc32) {
-        throw new ZipImportError('corrupt', 'ZIP 数据损坏');
+        throw new ZipImportError('corrupt', 'ZIP 条目 CRC32 不符(' + entry.name + ')');
       }
       await writer.writeFile(entry.name, content);
       const restoredMtime: number = mtimeOverrides.get(entry.name) ?? entry.modifiedAtMs;
