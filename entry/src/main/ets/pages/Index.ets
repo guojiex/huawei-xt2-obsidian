@@ -5219,7 +5219,12 @@ struct Index {
     if (targetPath.length === 0 || targetVaultId.length === 0 || !this.rightEditorBridge.ready) {
       return true;
     }
-    if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId) {
+    // 双栏真共享（左栏也持有该笔记的活动会话）才委托单一活动编辑器；左栏无会话时
+    // currentFilePath 与 targetPath 相等可能只是 loadFile 打开同笔记前预写了路径，
+    // 此时右栏是唯一持有者，须走右栏自身会话——否则 sharedNoteEditor 落到空左栏，
+    // 会话守卫静默拒绝（return false 无提示），loadFile 回滚后表现为点击无响应。
+    if (targetPath === this.currentFilePath && targetVaultId === this.currentVaultId &&
+      this.leftSession !== null && this.leftSession.isFor(targetVaultId, targetPath)) {
       return await this.flushSave(targetPath, targetVaultId, this.sharedNoteEditor(), showFeedback);
     }
     // 会话即写入许可：右栏没有「本笔记」的活动会话 → 拒绝（编辑器内容身份未确认）。
