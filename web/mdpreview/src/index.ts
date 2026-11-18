@@ -3016,25 +3016,14 @@ const api: MdPreviewApi = {
       if (finalMetrics.scrollHeight < tops[tops.length - 1] + pageHeightVp) {
         throw new Error('PDF 分页高度不足，无法完整分页')
       }
-      // 临时调试（XT2 PDF 只出一页定位）：纯数字布局诊断，随根因修复整段移除
-      let maxBottom = 0
-      for (const bound of bounds) {
-        maxBottom = Math.max(maxBottom, bound.bottom)
-      }
-      const pdfDebug = `kids=${children.length} bounds=${bounds.length} maxBottom=${maxBottom.toFixed(0)}` +
-        ` cRectH=${contentRect.height.toFixed(0)} sh=${metrics.scrollHeight} vh=${metrics.viewportHeight}` +
-        ` vw=${metrics.viewportWidth} st=${metrics.scrollTop} iw=${window.innerWidth}` +
-        ` ih=${window.innerHeight} dpr=${window.devicePixelRatio} units=${units.length}` +
-        ` tops=${JSON.stringify(tops)} pageH=${pageHeightVp} finalSh=${finalMetrics.scrollHeight}`
-      sendPdfPagesResult(id, tops, '', pdfDebug)
+      sendPdfPagesResult(id, tops)
     } catch (error) {
       sendPdfPagesResult(id, [], String(error))
     }
   }
 }
 
-function sendPdfPagesResult(id: number, tops: number[], errorText: string = '',
-  debugText: string = ''): void {
+function sendPdfPagesResult(id: number, tops: number[], errorText: string = ''): void {
   const arkts = window.__arkts
   if (!arkts || typeof arkts.onShareCaptureResult !== 'function') {
     return
@@ -3048,8 +3037,7 @@ function sendPdfPagesResult(id: number, tops: number[], errorText: string = '',
     viewportWidth: metrics.viewportWidth,
     scrollTop: metrics.scrollTop,
     pageCount: tops.length,
-    pageTops: JSON.stringify(tops),
-    debug: debugText
+    pageTops: JSON.stringify(tops)
   }))
 }
 
