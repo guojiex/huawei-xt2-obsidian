@@ -202,13 +202,10 @@ export class ZlibRawInflate implements InflatePort {
       if (status !== zlib.ReturnStatus.STREAM_END) {
         throw new ZipImportError('corrupt', 'ZIP 数据损坏');
       }
-      // @ohos.zlib 不回写调用方传入的 ZStream（操作后须 getZStream() 重取状态，api_notes Y4），
-      // 直接读传入对象的 availableOut 只会拿到初始值 expectedSize，导致所有非空 deflate 条目误判损坏。
-      const current: zlib.ZStream = await zip.getZStream();
-      const availableOut: number = current.availableOut ?? 0;
-      if (expectedSize - availableOut !== expectedSize) {
-        throw new ZipImportError('corrupt', 'ZIP 数据损坏');
-      }
+      // 不做 availableOut 后置检查（api_notes Y4）：@ohos.zlib 流式操作不回写调用方 ZStream，
+      // 而 getZStream 的返回语义随系统构建而异（x86_64 模拟器与 XT2 真机固件行为不一致，
+      // 2026-11-18 真机复验仍失败），依它判定会在部分设备上把正确解压误判为损坏。
+      // 完整性由服务层权威校验兜底：ZipImportService.extract 对返回字节做长度 + CRC32 双重核对。
       return new Uint8Array(output);
     } catch (error) {
       if (error instanceof ZipImportError) {
