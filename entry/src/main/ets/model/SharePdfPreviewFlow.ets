@@ -1,6 +1,5 @@
 import fileUri from '@ohos.file.fileuri';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { SharePdfPreviewDialog } from '../components/SharePdfPreviewDialog';
 import { NotePdfDocumentService } from './NotePdfDocumentService';
 import { NoteShareService } from './NoteShareService';
 import { VaultRegistry } from './VaultRegistry';
@@ -26,18 +25,19 @@ export class SharePdfPreviewRequest {
 }
 
 /**
- * PDF 分页预览流程（v1.53 53.7，自 Index 拆出避免巨型页文件冲突）：
- * 逐页 JPEG 已在会话目录，弹窗展示分页缩略图；「分享 PDF」确认后合成 PDF
- * 交 onComposed 进文件预览；返回则清理会话交 onCancelled 回分享面板。
+ * PDF 分页预览会话（v1.53 53.7，自 Index 拆出）：逐页 JPEG 已在会话目录。
+ * ⚠️ CustomDialogController 仅在作为 @Component struct 成员变量、且在 struct
+ * 内部定义时赋值才有效（官方文档）——本类是普通类，不得创建弹窗控制器，否则
+ * open() 静默不显示（XT2 真机「点 PDF 分享无任何反应」根因，2026-11-18）。
+ * 弹窗控制器由 ShareFlowPanel（struct）持有，本类只管会话状态、合成与清理。
  */
 export class SharePdfPreviewFlow {
-  private ctl: CustomDialogController | null = null;
   private sessionId: string = '';
   private pages: string[] = [];
   private pageAspects: number[] = [];
 
-  open(request: SharePdfPreviewRequest): void {
-    this.ctl?.close();
+  /** 记录会话并生成缩略图 URI 列表；弹窗 builder 由调用方 struct 组装。 */
+  openSession(request: SharePdfPreviewRequest): string[] {
     this.sessionId = request.sessionId;
     this.pages = request.pageJpegs;
     this.pageAspects = request.pageAspects;
@@ -45,45 +45,28 @@ export class SharePdfPreviewFlow {
     for (let i: number = 0; i < request.pageJpegs.length; i++) {
       pageUris.push(fileUri.getUriFromPath(request.pageJpegs[i]));
     }
-    this.ctl = new CustomDialogController({
-      builder: SharePdfPreviewDialog({
-        itemName: request.itemName,
-        fileName: request.fileName,
-        pageUris: pageUris,
-        pageAspects: request.pageAspects,
-        windowWidthVp: request.windowWidthVp,
-        windowHeightVp: request.windowHeightVp,
-        singleScreen: request.singleScreen,
-        onConfirm: async (): Promise<void> => {
-          const sid: string = this.sessionId;
-          if (sid.length === 0) {
-            throw new Error('PDF 分页会话已失效，请返回重试');
-          }
-          const pages: string[] = this.pages;
-          if (pages.length === 0) {
-            throw new Error('PDF 分页页面缺失，请返回重试');
-          }
-          const aspects: number[] = this.pageAspects;
-          if (aspects.length !== pages.length) {
-            throw new Error('PDF 分页页面缺失，请返回重试');
-          }
-          const pdfPath: string = VaultRegistry.get().sharePath(sid + '/note.pdf');
-          // 2026-11-15 冷启动优化：NotePdfDocumentService.exportFromPageImages 随
-          // pdfService 动态化改为 async，此处 await 落盘完成后再进文件预览。
-          await NotePdfDocumentService.exportFromPageImages(pages, aspects, pdfPath);
-          this.ctl?.close();
-          request.onComposed(pdfPath);
-        },
-        onCancel: (): void => {
-          this.cleanup();
-          request.onCancelled();
-        }
-      }),
-      alignment: request.singleScreen ? DialogAlignment.Bottom : DialogAlignment.Center,
-      autoCancel: false,
-      customStyle: true
-    });
-    this.ctl.open();
+    return pageUris;
+  }
+
+  /** 合成当前会话的逐页 JPEG 为 PDF，返回产物路径（供进文件预览）。 */
+  async composePdf(): Promise<string> {
+    const sid: string = this.sessionId;
+    if (sid.length === 0) {
+      throw new Error('PDF 分页会话已失效，请返回重试');
+    }
+    const pages: string[] = this.pages;
+    if (pages.length === 0) {
+      throw new Error('PDF 分页页面缺失，请返回重试');
+    }
+    const aspects: number[] = this.pageAspects;
+    if (aspects.length !== pages.length) {
+      throw new Error('PDF 分页页面缺失，请返回重试');
+    }
+    const pdfPath: string = VaultRegistry.get().sharePath(sid + '/note.pdf');
+    // 2026-11-15 冷启动优化：NotePdfDocumentService.exportFromPageImages 随
+    // pdfService 动态化改为 async，此处 await 落盘完成后再返回。
+    await NotePdfDocumentService.exportFromPageImages(pages, aspects, pdfPath);
+    return pdfPath;
   }
 
   /** 清理会话目录（24h 过期机制兜底）；失败仅告警不掩盖原流程。 */

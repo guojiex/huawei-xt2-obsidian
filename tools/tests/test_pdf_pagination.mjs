@@ -303,14 +303,18 @@ test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（5
   assert.equal(/Color\.(?!Transparent)[A-Z]/.test(dialog), false, '组件内不得散写 Color 枚举');
 });
 
-test('源级：PDF 预览流程拆至 SharePdfPreviewFlow，ShareFlowPanel 只留接线（53.7，2026-11-13 拆分）', () => {
+test('源级：PDF 预览会话在 SharePdfPreviewFlow，弹窗控制器在 ShareFlowPanel struct（53.7 拆分 + 2026-11-18 XT2 无响应根因修复）', () => {
   const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
   const flow = readRepoFile('entry/src/main/ets/model/SharePdfPreviewFlow.ets');
-  // Index：导入流程类并持有单一实例；不再直接持有 controller / 会话散状态
+  // Panel：导入流程类与弹窗组件并持有实例 + struct 成员控制器
   assert.match(index, /import \{ SharePdfPreviewFlow, SharePdfPreviewRequest \} from '\.\.\/model\/SharePdfPreviewFlow';/);
+  assert.match(index, /import \{ SharePdfPreviewDialog \} from '\.\/SharePdfPreviewDialog';/);
   assert.match(index, /private sharePdfPreviewFlow: SharePdfPreviewFlow = new SharePdfPreviewFlow\(\);/);
-  assert.doesNotMatch(index, /sharePdfPreviewCtl|sharePdfPreviewSessionId|sharePdfPreviewPages|sharePdfPreviewPageAspects|cleanupSharePdfPreview/);
-  assert.doesNotMatch(index, /SharePdfPreviewDialog/, 'Index 不得再直接引用弹窗组件');
+  // 官方约束：CustomDialogController 仅作为 @Component struct 成员、struct 内赋值才有效；
+  // 普通类里 new 出来的 open() 静默不显示（XT2 真机 PDF 分享无响应根因，2026-11-18）
+  assert.match(index, /private sharePdfPreviewCtl: CustomDialogController \| null = null;/);
+  assert.doesNotMatch(flow, /new CustomDialogController/, '普通类不得创建/持有弹窗控制器');
+  assert.doesNotMatch(flow, /SharePdfPreviewDialog/, '普通类不得组装弹窗 builder');
   // 捕获完成后进预览弹窗，捕获层卸下；导出不再内联在 prepareNotePdfShare
   assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, pageJpegs, pageAspects, vaultId\);/);
   const prepare = index.slice(index.indexOf('private async prepareNotePdfShare'),
@@ -318,17 +322,19 @@ test('源级：PDF 预览流程拆至 SharePdfPreviewFlow，ShareFlowPanel 只�
   assert.ok(prepare.length > 0, 'prepareNotePdfShare 区间未定位');
   assert.doesNotMatch(prepare, /exportFromPageImages/, 'prepareNotePdfShare 不得内联合成 PDF（53.7 改预览后确认）');
   assert.doesNotMatch(prepare, /openShareFilePreview\(/, 'prepareNotePdfShare 不得直接进文件预览');
-  // Flow：请求对象带逐页宽高比（53.12）；onConfirm 内合成并回调；onCancel 清理后回调
+  // Flow：请求对象带逐页宽高比（53.12）；会话记录 / 合成 / 清理，无弹窗逻辑
   assert.match(flow, /export class SharePdfPreviewFlow/);
   assert.match(flow, /export class SharePdfPreviewRequest/);
   assert.match(flow, /pageAspects: number\[\] = \[\];/);
   assert.match(flow, /NotePdfDocumentService\.exportFromPageImages\(pages, aspects, pdfPath\);/);
-  assert.match(flow, /request\.onComposed\(pdfPath\);/);
-  assert.match(flow, /this\.cleanup\(\);\s*\n\s*request\.onCancelled\(\);/);
-  assert.doesNotMatch(flow, /SharePdfPreviewRequest[\s\S]*@CustomDialog/, '流程类不得是弹窗组件');
+  // Panel onConfirm：合成 → 关闭 → 进文件预览；onCancel：清理 → 回分享面板
+  assert.match(index, /const pdfPath: string = await this\.sharePdfPreviewFlow\.composePdf\(\);/);
+  assert.match(index, /this\.sharePdfPreviewCtl\?\.close\(\);\s*\n\s*request\.onComposed\(pdfPath\);/);
+  assert.match(index, /this\.sharePdfPreviewFlow\.cleanup\(\);\s*\n\s*request\.onCancelled\(\);/);
+  assert.match(index, /this\.sharePdfPreviewCtl\.open\(\);/);
   // 返回：清理会话回到分享面板（removeTree + 失败告警）
   assert.match(flow, /NoteShareService\.removeTree\(VaultRegistry\.get\(\), sessionId\);\s*\n\s*\} catch \(error\) \{\s*\n\s*hilog\.warn\(DOMAIN, TAG, 'PDF 分页预览临时文件清理失败'\);/);
-  // Index 接线：合成完成进文件预览（精确 utd PDF）、取消回分享面板
+  // Panel 接线：合成完成进文件预览（精确 utd PDF）、取消回分享面板
   assert.match(index, /onComposed: \(pdfPath: string\): void => \{\s*\n\s*this\.openShareFilePreview\(pdfPath, this\.pdfFileNameOf\(itemName\), 'PDF', \[\]/);
   assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF\);/);
   assert.match(index, /onCancelled: \(\): void => \{\s*\n\s*this\.openShareDialog\('note', notePath\);/);

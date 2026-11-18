@@ -19,6 +19,7 @@ import { PreviewBridge, PreviewCaptureResult, PreviewWebView } from './PreviewWe
 import { ShareFormatOption, ShareNoteDialog, ShareScopeOption } from './ShareNoteDialog';
 import { ShareImagePreviewDialog, ShareImagePreviewImage } from './ShareImagePreviewDialog';
 import { ShareFilePreviewDialog } from './ShareFilePreviewDialog';
+import { SharePdfPreviewDialog } from './SharePdfPreviewDialog';
 import { ShareTextPreviewDialog } from './ShareTextPreviewDialog';
 import { SaveShareDialog } from './SaveShareDialog';
 import { FocusRequest } from '../common/FocusRequest';
@@ -34,6 +35,8 @@ import { NoteService } from '../model/NoteService';
 import { PreparedArchiveShare, ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
 import { ShareLinkScope, ShareLinkService } from '../model/ShareLinkService';
 import { ShareImagePreferenceStore } from '../model/ShareImagePreferenceStore';
+import { WikiLinkParser } from '../model/WikiLinkParser';
+import { WikiLinkService } from '../model/WikiLinkService';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
 
@@ -80,8 +83,11 @@ export struct ShareFlowPanel {
   private shareTextPreviewCtl: CustomDialogController | null = null;
   /** v1.56 56.3：接收系统分享的保存确认层 controller（每次拉起重建） */
   private saveShareCtl: CustomDialogController | null = null;
-  /** 53.7：PDF 分页预览流程（会话状态与弹窗编排拆至 model/SharePdfPreviewFlow） */
+  /** 53.7：PDF 分页预览会话（状态与合成在 model/SharePdfPreviewFlow） */
   private sharePdfPreviewFlow: SharePdfPreviewFlow = new SharePdfPreviewFlow();
+  /** CustomDialogController 仅在 @Component struct 成员、struct 内赋值才有效（官方约束）；
+   * 普通类里 new 出来的 open() 静默不显示——XT2 真机 PDF 分享无响应根因（2026-11-18）。 */
+  private sharePdfPreviewCtl: CustomDialogController | null = null;
   private shareImagePreferenceStore: ShareImagePreferenceStore | null = null;
   private shareCaptureBridge: PreviewBridge = new PreviewBridge();
   private readonly shareCaptureComponentId: string = 'note-image-share-capture';
@@ -220,6 +226,17 @@ export struct ShareFlowPanel {
       throw new Error('未能读取笔记内容，暂时无法分享');
     }
     return text;
+  }
+
+  /**
+   * 分享捕获（长图 / PDF）与预览同源渲染双链（bug 修复 2026-11-18）：预览在渲染前经
+   * WikiLinkParser 展开双链，捕获层此前直接喂原始 Markdown，[[双链]] 非标准语法被
+   * marked 原样输出，导致长图 / PDF 里看到链接原文而非预览样式。此处按 pushPreview
+   * 同规则先展开，保证「看到什么就是什么」。
+   */
+  private renderForShareCapture(registry: VaultRegistry, vaultId: string, notePath: string,
+    markdown: string): string {
+    return WikiLinkParser.renderForPreview(markdown, notePath, WikiLinkService.files(registry, vaultId));
   }
 
   private async prepareShare(scope: ShareLinkScope, path: string, format: string, itemName: string,
@@ -606,7 +623,7 @@ export struct ShareFlowPanel {
         throw new Error('分享图片生成已取消');
       }
       bridge.setNoteDir(NoteShareService.parentOf(notePath));
-      bridge.setContent(markdown);
+      bridge.setContent(this.renderForShareCapture(registry, vaultId, notePath, markdown));
       this.shareCaptureActive = true;
       const ready: Promise<void> = this.waitForShareCaptureReady();
       await ready;
@@ -763,7 +780,7 @@ export struct ShareFlowPanel {
         throw new Error('分享图片生成已取消');
       }
       bridge.setNoteDir(NoteShareService.parentOf(notePath));
-      bridge.setContent(markdown);
+      bridge.setContent(this.renderForShareCapture(registry, vaultId, notePath, markdown));
       this.updatePdfPageSize();
       this.shareCapturePdfMode = true;
       this.shareCaptureActive = true;
@@ -868,8 +885,8 @@ export struct ShareFlowPanel {
   }
 
   /**
-   * 53.7：PDF 分页预览。会话与弹窗编排在 model/SharePdfPreviewFlow，
-   * 此处只补布局参数与「合成完成 → 文件预览」「取消 → 回分享面板」两条回调。
+   * 53.7：PDF 分页预览。会话状态与合成在 model/SharePdfPreviewFlow；弹窗控制器必须是
+   * 本 struct 成员（CustomDialogController 官方使用约束，普通类里 open() 静默不显示）。
    */
   private openSharePdfPreview(itemName: string, notePath: string, sessionId: string,
     pageJpegs: string[], pageAspects: number[], vaultId: string): void {
@@ -894,7 +911,32 @@ export struct ShareFlowPanel {
         this.openShareDialog('note', notePath);
       }
     };
-    this.sharePdfPreviewFlow.open(request);
+    const pageUris: string[] = this.sharePdfPreviewFlow.openSession(request);
+    this.sharePdfPreviewCtl?.close();
+    this.sharePdfPreviewCtl = new CustomDialogController({
+      builder: SharePdfPreviewDialog({
+        itemName: request.itemName,
+        fileName: request.fileName,
+        pageUris: pageUris,
+        pageAspects: request.pageAspects,
+        windowWidthVp: request.windowWidthVp,
+        windowHeightVp: request.windowHeightVp,
+        singleScreen: request.singleScreen,
+        onConfirm: async (): Promise<void> => {
+          const pdfPath: string = await this.sharePdfPreviewFlow.composePdf();
+          this.sharePdfPreviewCtl?.close();
+          request.onComposed(pdfPath);
+        },
+        onCancel: (): void => {
+          this.sharePdfPreviewFlow.cleanup();
+          request.onCancelled();
+        }
+      }),
+      alignment: request.singleScreen ? DialogAlignment.Bottom : DialogAlignment.Center,
+      autoCancel: false,
+      customStyle: true
+    });
+    this.sharePdfPreviewCtl.open();
   }
 
   private openShareImagePreview(itemName: string, previewImage: ShareImagePreviewImage, notePath: string,

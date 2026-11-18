@@ -2782,3 +2782,28 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
 
 
 
+
+## AI 组：CustomDialogController 的有效范围（2026-11-18，XT2 真机实测）
+
+来源：官方文档「自定义弹窗 (CustomDialog)」原文（devecocli docs）+ XT2 真机（LAP-AL10，API24）实测。
+
+### AI1 ✅ CustomDialogController 仅在作为 @CustomDialog/@Component struct 成员变量、且在 @Component struct 内部定义时赋值才有效——普通类里 new 出来的 open() 静默不显示
+
+- **官方原文**：「CustomDialogController 仅在作为 @CustomDialog 和 @Component struct 成员变量，
+  且在 @Component struct 内部定义时赋值才有效」。普通 TS 类（非 struct）里创建的控制器
+  没有宿主组件，open() 不抛错、不显示、无日志——**完全静默失败**。
+- **XT2 真机实测（2026-11-18）**：v1.53 53.7 的 model/SharePdfPreviewFlow（普通类）在
+  open() 里 new 控制器。真机点「PDF 文档」后逐页捕获**全部成功**（临时打点显示 0.5s 内
+  跑完：就绪→度量→水印→分页→快照 36ms→落盘），但预览弹窗不出现、无任何报错——用户
+  感知为「点 PDF 分享后什么都没有」。因 53.7 的弹窗视觉/全链验收从未做（实施总清单 ⏭
+  「模拟器 / API24 XT2 待用户」），该缺陷自上线起一直存在。
+- **修复**：控制器移回 ShareFlowPanel（@Component struct）成员 sharePdfPreviewCtl，
+  struct 内创建与 open；SharePdfPreviewFlow 只留会话状态（openSession）、合成
+  （composePdf）与清理（cleanup）。修复后 XT2 真机全链路验收通过：PDF 分享 → 分页预览
+  弹窗 → 分享 PDF → 文件预览 → 系统分享面板（Home.pdf）。
+- **防回归**：	ools/tests/test_pdf_pagination.mjs 源级断言——普通类不得
+  
+ew CustomDialogController、不得组装弹窗 builder；struct 必须持控制器成员并在
+  struct 内 open。
+- **推论**：任何「控制器封装进 model 层普通类」的重构设想都不可行；弹窗控制器只能住
+  struct。若要 model 层复用，只复用数据与回调，控制器留在组件层。
