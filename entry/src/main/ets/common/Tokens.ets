@@ -72,6 +72,8 @@ export class Size {
   static readonly buttonH: number = 48;    // v2 默认触控高度
   static readonly statusbarH: number = 28;
   static readonly sidebarW: number = 240;  // 侧栏最小宽（宽屏按等分，见 Index）
+  /** Git 同步页左栏定宽（v1.87：原型 .sync-side width: calc(var(--nav-width) * 1.65) = 396）。 */
+  static readonly syncSideW: number = Size.sidebarW * 1.65;
   static readonly drawerW: number = 300;
   static readonly utilityDialogW: number = 560; // v2 --panel-width
   static readonly mismatchDialogW: number = 720; // v2 --mismatch-width（编辑不一致双栏对照，2026-11-15）

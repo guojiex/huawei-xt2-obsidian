@@ -8,7 +8,7 @@ import { Git2ActionOptions, Git2DiffLine, Git2FileChange, Git2FileDiff, Git2File
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { FontSize, Radius, Size, Space } from '../common/Tokens';
+import { FontSize, Radius, Size, Space, Weight } from '../common/Tokens';
 import { Icon } from '../common/Icons';
 import { FocusRequest } from '../common/FocusRequest';
 import { UtilityDialogAction } from './UtilityDialogShell';
@@ -784,13 +784,13 @@ export struct GitSyncDialog {
   private StatusRow(label: string, value: string, detail: string = '') {
     Row({ space: Space.s3 }) {
       Text(label)
-        .width(Space.s16 + Space.s2)
-        .fontSize(FontSize.body3)
+        .width(Space.s16)
+        .fontSize(FontSize.body2)
         .fontColor($r('app.color.text_secondary'))
       Column({ space: Space.s1 }) {
         Text(value)
-          .fontSize(FontSize.body3)
-          .fontWeight(FontWeight.Medium)
+          .fontSize(FontSize.body2)
+          .fontWeight(Weight.semibold)
           .fontColor($r('app.color.text_primary'))
           .width('100%')
           .maxLines(2)
@@ -822,7 +822,9 @@ export struct GitSyncDialog {
       }
     }
     .width('100%')
-    .padding({ top: Space.s2, bottom: Space.s2 })
+    // v1.87：状态行对齐原型 .sync-row——行高下限 calc(--s12 + --s1)，行内边距左 --s4 / 右 --s2。
+    .constraintSize({ minHeight: Space.s12 + Space.s1 })
+    .padding({ left: Space.s4, right: Space.s2, top: Space.s2, bottom: Space.s2 })
   }
 
   @Builder
@@ -845,6 +847,8 @@ export struct GitSyncDialog {
         Text(change.path)
           .layoutWeight(1)
           .fontSize(FontSize.body3)
+          .fontWeight(!this.singleScreen && this.expandedDiffPath === change.path
+            ? Weight.semibold : FontWeight.Normal)
           .fontColor($r('app.color.text_primary'))
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -854,7 +858,8 @@ export struct GitSyncDialog {
         Text(this.diffVersion >= 0 ? this.diffStatOf(change.path) : '')
           .fontSize(FontSize.caption)
           .fontFamily('monospace')
-          .fontColor($r('app.color.text_secondary'))
+          .fontColor(!this.singleScreen && this.expandedDiffPath === change.path
+            ? $r('app.color.brand') : $r('app.color.text_secondary'))
           .accessibilityText(this.diffStatOf(change.path))
         // v1.79 单屏简化版：无右栏 diff，不显示展开箭头。
         if (!this.singleScreen) {
@@ -869,6 +874,10 @@ export struct GitSyncDialog {
       .backgroundColor(!this.singleScreen && this.expandedDiffPath === change.path
         ? $r('app.color.brand_bg') : Color.Transparent)
       .borderRadius(Radius.control)
+      // v1.87：选中左轨对齐原型 .sync-file-toggle 的 border-left（透明轨 + 选中换品牌色）。
+      .border({ width: { left: Space.s1 },
+        color: !this.singleScreen && this.expandedDiffPath === change.path
+          ? $r('app.color.brand') : Color.Transparent })
       .onClick(() => { if (!this.singleScreen) { void this.toggleDiff(change.path); } })
       .accessibilityText(this.singleScreen
         ? (change.status === 'A' ? '新增：' : change.status === 'D' ? '删除：' : '修改：') + change.path + '，' + this.diffStatOf(change.path)
@@ -895,7 +904,7 @@ export struct GitSyncDialog {
       Column() {
         Text('逐行差异')
           .fontSize(FontSize.body2)
-          .fontWeight(FontWeight.Medium)
+          .fontWeight(Weight.semibold)
           .fontColor($r('app.color.text_primary'))
         Text('当前工作区 ↔ 上次提交 · 仅本次要提交的改动')
           .fontSize(FontSize.caption)
@@ -904,7 +913,7 @@ export struct GitSyncDialog {
       }
       .alignItems(HorizontalAlign.Start)
       .width('100%')
-      .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
+      .padding({ left: Space.s5, right: Space.s5, top: Space.s4, bottom: Space.s4 })
       .border({ width: { bottom: 1 }, color: $r('app.color.line') })
 
       if (this.selectedChange() === null) {
@@ -929,11 +938,12 @@ export struct GitSyncDialog {
         this.DiffPanel(this.selectedChange() as Git2FileChange)
       }
     }
-    .width(this.singleScreen ? '100%' : '60%')
+    .width('100%')
     .height('100%')
-    // v1.78：右栏铺满——去掉左右留边，标题行自己带内边距；背景由外层 bg_page 统一。
+    // v1.78 右栏铺满 + v1.87 白底：右栏是 --paper 底的代码查看器（原型 .sync-detail）。
     .padding(0)
     .layoutWeight(this.singleScreen ? 0 : 1)
+    .backgroundColor($r('app.color.bg_card'))
   }
 
   @Builder
@@ -984,7 +994,9 @@ export struct GitSyncDialog {
             .width('100%')
         }
         .width('100%')
-        .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+        // v1.87：diff 卡头对齐原型 .sync-diff-head（padding --s3/--s5 + 底部分隔线）。
+        .padding({ left: Space.s5, right: Space.s5, top: Space.s3, bottom: Space.s3 })
+        .border({ width: { bottom: 1 }, color: $r('app.color.line') })
         if (this.activeFileDiff.truncated) {
           Text('此文件差异过大，仅显示前 ' + this.activeFileDiff.lines.length + ' 行')
             .fontSize(FontSize.caption)
@@ -1012,8 +1024,8 @@ export struct GitSyncDialog {
     }
     .width('100%')
     .layoutWeight(1)
-    // v1.78：铺满式查看器——去掉浮卡的圆角/二次底色/上下留边，融入页面底色。
-    .backgroundColor($r('app.color.bg_page'))
+    // v1.78 铺满式查看器 + v1.87 --paper 白底（原型 .sync-file-diff 落在 --paper 查看器上）。
+    .backgroundColor($r('app.color.bg_card'))
   }
 
   @Builder
@@ -1026,6 +1038,7 @@ export struct GitSyncDialog {
         .fontFamily('monospace')
         .fontColor($r('app.color.text_tertiary'))
         .backgroundColor($r('app.color.bg_secondary'))
+        .border({ width: { right: 1 }, color: $r('app.color.line') })
       Text(line.newLine > 0 ? line.newLine.toString() : '')
         .width(Space.s8)
         .textAlign(TextAlign.End)
@@ -1033,6 +1046,7 @@ export struct GitSyncDialog {
         .fontFamily('monospace')
         .fontColor($r('app.color.text_tertiary'))
         .backgroundColor($r('app.color.bg_secondary'))
+        .border({ width: { right: 1 }, color: $r('app.color.line') })
       Text(line.origin)
         .width(Space.s5)
         .textAlign(TextAlign.Center)
@@ -1263,13 +1277,14 @@ export struct GitSyncDialog {
 
   @Builder
   private DialogContent() {
-    Column({ space: Space.s3 }) {
+    // v1.87：卡片间距对齐原型 .sync-block 的 margin-bottom --s4。
+    Column({ space: Space.s4 }) {
       // v1.77：概览与改动各自成卡，信息层级从「一堆灰条」变成两组明确区块。
       Column({ space: Space.s1 }) {
         Row() {
           Text('推送概览')
             .fontSize(FontSize.body2)
-            .fontWeight(FontWeight.Medium)
+            .fontWeight(Weight.semibold)
             .fontColor($r('app.color.text_primary'))
           Blank()
           Text('上次推送：' + this.formatLastPush())
@@ -1277,28 +1292,39 @@ export struct GitSyncDialog {
             .fontColor($r('app.color.text_secondary'))
         }
         .width('100%')
-        .padding({ left: Space.s4, right: Space.s4, top: Space.s3 })
+        // v1.87：卡头对齐原型 .sync-block-head（min-height --s12 + 底部分隔线 + 标题 600）。
+        .constraintSize({ minHeight: Space.s12 })
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+        .border({ width: { bottom: 1 }, color: $r('app.color.line') })
+        // v1.87：状态行包进原型 .sync-block-body>.sync-card（--nav 底 + --small-r 圆角内卡）。
         Column() {
-          this.StatusRow('远端', this.remoteLabel, this.transportLabel + ' · ' +
-            (this.hasStoredToken ? '令牌已保存在本机' : '令牌未保存'))
-          Divider().color($r('app.color.line'))
-          this.StatusRow('推送分支', this.pushBranch,
-            (this.pushBranch === 'xt2' ? '默认分支' : '自定义分支') + '；在电脑上合并到 ' +
-            this.trackingTargetLabel())
-          Divider().color($r('app.color.line'))
-          this.StatusRow('待推送', this.waitingStatusText(),
-            this.singleScreen ? '上报的本地改动' : '点文件在右侧核对正文')
+          Column() {
+            this.StatusRow('远端', this.remoteLabel, this.transportLabel + ' · ' +
+              (this.hasStoredToken ? '令牌已保存在本机' : '令牌未保存'))
+            Divider().color($r('app.color.line'))
+            this.StatusRow('推送分支', this.pushBranch,
+              (this.pushBranch === 'xt2' ? '默认分支' : '自定义分支') + '；在电脑上合并到 ' +
+              this.trackingTargetLabel())
+            Divider().color($r('app.color.line'))
+            this.StatusRow('待推送', this.waitingStatusText(),
+              this.singleScreen ? '上报的本地改动' : '点文件在右侧核对正文')
+          }
+          .width('100%')
+          .backgroundColor($r('app.color.bg_navigation'))
+          .borderRadius(Radius.control)
+          Column() {
+            this.CredentialEditor()
+          }
+          .width('100%')
+          .padding({ top: Space.s2 })
         }
         .width('100%')
-        .padding({ left: Space.s4, right: Space.s4, bottom: Space.s2 })
-        Column() {
-          this.CredentialEditor()
-        }
-        .width('100%')
-        .padding({ left: Space.s4, right: Space.s4, bottom: Space.s2 })
+        // v1.87：卡体对齐原型 .sync-block-body（padding --s2/--s3/--s3）。
+        .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s3 })
       }
       .width('100%')
       .borderRadius(Radius.card)
+      .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
 
       if (this.branchEditing) {
@@ -1310,7 +1336,7 @@ export struct GitSyncDialog {
           Row() {
             Text('本地改动')
               .fontSize(FontSize.body2)
-              .fontWeight(FontWeight.Medium)
+              .fontWeight(Weight.semibold)
               .fontColor($r('app.color.text_primary'))
             Blank()
             Text(this.statusEntryCount.toString() + ' 个文件 · ' +
@@ -1319,7 +1345,10 @@ export struct GitSyncDialog {
               .fontColor($r('app.color.text_secondary'))
           }
           .width('100%')
-          .padding({ left: Space.s4, right: Space.s4, top: Space.s3 })
+          // v1.87：卡头对齐原型 .sync-block-head（min-height --s12 + 底部分隔线 + 标题 600）。
+          .constraintSize({ minHeight: Space.s12 })
+          .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+          .border({ width: { bottom: 1 }, color: $r('app.color.line') })
           Scroll() {
             Column({ space: Space.s1 }) {
               ForEach(this.changes, (change: Git2FileChange): void => {
@@ -1392,17 +1421,18 @@ export struct GitSyncDialog {
               .width('100%')
             }
             .width('100%')
-            .padding({ left: Space.s4, right: Space.s4, bottom: Space.s4 })
+            .padding({ left: Space.s3, right: Space.s3, bottom: Space.s4 })
           } else {
             Text('本次只推送已创建的本地提交；这些未提交改动会保留。')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_secondary'))
               .width('100%')
-              .padding({ left: Space.s4, right: Space.s4, bottom: Space.s4 })
+              .padding({ left: Space.s3, right: Space.s3, bottom: Space.s4 })
           }
         }
         .width('100%')
         .borderRadius(Radius.card)
+        .border({ width: 1, color: $r('app.color.line') })
         .backgroundColor($r('app.color.bg_card'))
         .padding({ bottom: Space.s2 })
       } else if (this.remoteBranchMissing) {
@@ -1528,14 +1558,18 @@ export struct GitSyncDialog {
         Scroll() { this.DialogContent() }
           .width('100%')
           .layoutWeight(1)
+          // v1.87：单屏对齐原型 phone 下 .sync-side 的 padding --s4 画布内缩。
+          .padding(Space.s4)
           .scrollBar(BarState.Auto)
           .edgeEffect(EdgeEffect.Spring)
       } else {
         Row() {
           Scroll() { this.DialogContent() }
-            .width('40%')
+            // v1.87：左栏固定宽对齐原型 .sync-side（calc(--nav-width * 1.65) = 396）。
+            .width(Size.syncSideW)
             .height('100%')
-            .padding({ right: Space.s2 })
+            .padding(Space.s4)
+            .border({ width: { right: 1 }, color: $r('app.color.line') })
             .scrollBar(BarState.Auto)
             .edgeEffect(EdgeEffect.Spring)
           this.DiffPane()
@@ -1548,12 +1582,15 @@ export struct GitSyncDialog {
         this.DialogFooter()
       }
       .width('100%')
-      .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s3 })
-      .backgroundColor($r('app.color.bg_page'))
+      // v1.87：页脚对齐原型 .sync-page-foot（--paper 底 + 上细线 + padding --s3/--s5）。
+      .padding({ left: Space.s5, right: Space.s5, top: Space.s3, bottom: Space.s3 })
+      .border({ width: { top: 1 }, color: $r('app.color.line') })
+      .backgroundColor($r('app.color.bg_card'))
     }
     .width('100%')
     .height('100%')
-    .backgroundColor($r('app.color.bg_page'))
+    // v1.87：画布对齐原型 .sync-page 的 --nav（bg_navigation），内容全部落在白卡上。
+    .backgroundColor($r('app.color.bg_navigation'))
     .onKeyEvent((event: KeyEvent): void => {
       if (event.keyCode === KeyCode.KEYCODE_ESCAPE && event.type === KeyType.Down) {
         this.dismiss();

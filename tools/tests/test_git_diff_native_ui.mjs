@@ -6,7 +6,8 @@
  * 2. 两份 Index.d.ts 类型同步（getFileDiffs + Git2FileDiff 等）；
  * 3. GitNativeService.fileDiffs 包装 + GitSyncDialog 手风琴展开/统计/读屏/按需取数；
  * 4. 隐私红线：diff 路径与正文不进 hilog（native 与 ETS 均无日志化 diff 文本）；
- * 5. v1.76：GitSyncDialog 为全屏 @Component（无 CustomDialog shell），Index 以 topView='gitsync' 路由。
+ * 5. v1.76：GitSyncDialog 为全屏 @Component（无 CustomDialog shell），Index 以 topView='gitsync' 路由；
+ * 6. v1.87：同步页画布 / 白卡 / 状态行 / diff 查看器样式逐项对齐原型 sync CSS（nav 画布、396 左栏、纸底页脚）。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,6 +19,7 @@ const dtsTest = readSourceFile(new URL('../../entry/src/ohosTest/cpp/types/libgi
 const service = readSourceFile(new URL('../../entry/src/main/ets/git/GitNativeService.ets', import.meta.url));
 const dialog = readSourceFile(new URL('../../entry/src/main/ets/components/GitSyncDialog.ets', import.meta.url));
 const indexEts = readSourceFile(new URL('../../entry/src/main/ets/pages/Index.ets', import.meta.url));
+const tokens = readSourceFile(new URL('../../entry/src/main/ets/common/Tokens.ets', import.meta.url));
 
 test('native getFileDiffs uses HEAD vs worktree diff and handles all change kinds', () => {
   assert.match(nativeSrc, /git_diff_tree_to_workdir_with_index\(&diff, repository, tree, &diff_opts\)/);
@@ -158,4 +160,73 @@ test('v1.79 single-screen sync page drops diff and scrolls the whole changes+com
   assert.match(dialog, /scrollForward: this\.singleScreen \? NestedScrollMode\.PARENT_FIRST/);
   // 副文案在单屏下不再是「点文件在右侧核对正文」。
   assert.match(dialog, /this\.singleScreen \? '上报的本地改动' : '点文件在右侧核对正文'/);
+});
+
+// ---- v1.87: sync page canvas/cards aligned to prototype sync CSS ----
+test('v1.87 sync page canvas: nav background, fixed side pane, footer as paper bar', () => {
+  const build = dialog.slice(dialog.indexOf('  build() {'));
+  // 画布 --nav 底（bg_navigation），内容全部落在白卡上。
+  assert.match(build, /\.backgroundColor\(\$r\('app\.color\.bg_navigation'\)\)/);
+  // 单屏整页滚动带 --s4 画布内缩（原型 phone 下 .sync-side padding --s4）。
+  const singleBranch = build.slice(build.indexOf('if (this.singleScreen)'),
+    build.indexOf('} else {'));
+  assert.match(singleBranch, /\.padding\(Space\.s4\)/);
+  // 宽屏左栏固定 396（Size.syncSideW = sidebarW * 1.65）+ 右侧 1px 分隔线，不再用 40% 弹性宽。
+  const wideBranch = build.slice(build.indexOf('} else {'),
+    build.indexOf('Column() {\n        this.DialogFooter'));
+  assert.match(wideBranch, /\.width\(Size\.syncSideW\)/);
+  assert.ok(!/width\('40%'\)/.test(wideBranch), 'side pane width is fixed, not 40%');
+  assert.match(wideBranch, /\.border\(\{ width: \{ right: 1 \}, color: \$r\('app\.color\.line'\) \}\)/);
+  // 页脚：--paper 底（bg_card）+ 上分隔线 + padding --s3/--s5（原型 .sync-page-foot）。
+  const footer = build.slice(build.indexOf('Column() {\n        this.DialogFooter'));
+  assert.match(footer, /\.border\(\{ width: \{ top: 1 \}, color: \$r\('app\.color\.line'\) \}\)/);
+  assert.match(footer, /\.backgroundColor\(\$r\('app\.color\.bg_card'\)\)/);
+  assert.match(footer, /\.padding\(\{ left: Space\.s5, right: Space\.s5, top: Space\.s3, bottom: Space\.s3 \}\)/);
+  assert.match(tokens, /static readonly syncSideW: number = Size\.sidebarW \* 1\.65;/);
+});
+
+test('v1.87 sync page cards: bordered white cards, block heads, inner nav status card', () => {
+  // 两张白卡都有 1px 边线（原型 .sync-card 描边），卡头 min-height --s12 + 底部分隔线 + 标题 600。
+  assert.equal((dialog.match(/\.border\(\{ width: 1, color: \$r\('app\.color\.line'\) \}\)/g) || []).length, 2);
+  assert.equal((dialog.match(/constraintSize\(\{ minHeight: Space\.s12 \}\)/g) || []).length, 2);
+  assert.match(dialog, /Text\('推送概览'\)[\s\S]*?fontWeight\(Weight\.semibold\)/);
+  assert.match(dialog, /Text\('本地改动'\)[\s\S]*?fontWeight\(Weight\.semibold\)/);
+  // 状态行包进 --nav 底 + --small-r 圆角内卡（原型 .sync-block-body>.sync-card）。
+  assert.match(dialog, /\.backgroundColor\(\$r\('app\.color\.bg_navigation'\)\)\n\s+\.borderRadius\(Radius\.control\)/);
+  // 卡体 padding --s2/--s3/--s3（原型 .sync-block-body）。
+  assert.match(dialog,
+    /\.padding\(\{ left: Space\.s3, right: Space\.s3, top: Space\.s2, bottom: Space\.s3 \}\)/);
+  // 状态行：标签宽 --s16、值 600、行高下限 calc(--s12 + --s1)、左 --s4 右 --s2（原型 .sync-row）。
+  const statusRow = dialog.slice(dialog.indexOf('  private StatusRow'),
+    dialog.indexOf('  private ChangeRow'));
+  assert.match(statusRow, /\.width\(Space\.s16\)/);
+  assert.match(statusRow, /fontWeight\(Weight\.semibold\)/);
+  assert.match(statusRow, /constraintSize\(\{ minHeight: Space\.s12 \+ Space\.s1 \}\)/);
+  assert.match(statusRow, /\.padding\(\{ left: Space\.s4, right: Space\.s2, top: Space\.s2, bottom: Space\.s2 \}\)/);
+  // 文件行选中态：--s1 品牌色左边轨 + 文件名 600 + 统计品牌色（原型 .sync-file-toggle）。
+  const changeRow = dialog.slice(dialog.indexOf('  private ChangeRow'),
+    dialog.indexOf('  private DiffPane'));
+  assert.match(changeRow, /\.border\(\{ width: \{ left: Space\.s1 \},/);
+  assert.match(changeRow, /color: !this\.singleScreen && this\.expandedDiffPath === change\.path\s*\?\s*\$r\('app\.color\.brand'\)/);
+  assert.match(changeRow, /fontWeight\(!this\.singleScreen && this\.expandedDiffPath === change\.path\s*\?\s*Weight\.semibold : FontWeight\.Normal\)/);
+  assert.match(changeRow, /fontColor\(!this\.singleScreen && this\.expandedDiffPath === change\.path\s*\?\s*\$r\('app\.color\.brand'\)/);
+});
+
+test('v1.87 diff viewer: paper pane, header rules, numbered code columns', () => {
+  // 右栏整体 --paper 底（原型 .sync-detail / .sync-file-diff 落在 --paper 上）。
+  const diffPane = dialog.slice(dialog.indexOf('  private DiffPane'),
+    dialog.indexOf('  private DiffPanel'));
+  assert.match(diffPane, /fontWeight\(Weight\.semibold\)/);
+  assert.match(diffPane, /\.backgroundColor\(\$r\('app\.color\.bg_card'\)\)/);
+  // diff 卡头 padding --s3/--s5 + 底部分隔线（原型 .sync-diff-head）；查看器底 --paper。
+  const diffPanel = dialog.slice(dialog.indexOf('  private DiffPanel'),
+    dialog.indexOf('  @Builder\n  private DiffLineRow'));
+  assert.match(diffPanel,
+    /\.padding\(\{ left: Space\.s5, right: Space\.s5, top: Space\.s3, bottom: Space\.s3 \}\)\n\s+\.border\(\{ width: \{ bottom: 1 \}, color: \$r\('app\.color\.line'\) \}\)/);
+  assert.match(diffPanel, /\.backgroundColor\(\$r\('app\.color\.bg_card'\)\)/);
+  // 行号两列各带右分隔线（原型 .dl-no border-right --line），底色列数不变。
+  const lineRow = dialog.slice(dialog.indexOf('  private DiffLineRow'),
+    dialog.indexOf('  @Builder\n  private BranchEditor'));
+  assert.equal((lineRow.match(/\.border\(\{ width: \{ right: 1 \}, color: \$r\('app\.color\.line'\) \}\)/g) || []).length, 2);
+  assert.equal((lineRow.match(/\.backgroundColor\(\$r\('app\.color\.bg_secondary'\)\)/g) || []).length, 2);
 });
