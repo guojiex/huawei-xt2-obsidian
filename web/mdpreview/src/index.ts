@@ -2928,13 +2928,11 @@ const api: MdPreviewApi = {
         setShareWatermarkVisibleAtScroll(pdfWatermarkBadge, top, pdfWatermarkLastTop)
       }
       await nextRenderedFrame()
-      // 53.10：双 rAF 后再等一拍，给渲染服务留出合成时间——
-      // XT2 实测仅双 rAF 时组件快照可能取到滚动前的旧表面（「两页重复」根因）。
-      await new Promise<void>((resolve: () => void): void => {
-        setTimeout((): void => {
-          resolve()
-        }, 64)
-      })
+      // 53.10 旧帧根因：仅双 rAF 时组件快照可能取到滚动前的旧表面（「两页重复」）。
+      // v1.91 P2（2026-11-19）：删掉原先每段无条件的 64ms 死等——真机实测 waitMs
+      // 中该等待占 68%、63 段累计约 4s，而旧帧重试率仅 0.8%。改由端侧
+      // captureSegmentVerified 的像素比对 + 180ms 退避重试兜底（语义不变、仍不漏判）。
+      // 判据与优化前后数据见 docs/engineering/分享预览渲染性能优化.md §3.3 / §4 P2。
       sendShareCaptureResult(id)
     } catch (error) {
       sendShareCaptureResult(id, String(error))
