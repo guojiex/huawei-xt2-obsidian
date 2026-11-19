@@ -51,6 +51,30 @@
             ]
           }
         ]
+      },
+      {
+        "name": "MarkdownViewAbility",
+        "srcEntry": "./ets/entryability/MarkdownViewAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          {
+            "actions": [
+              "ohos.want.action.viewData"
+            ],
+            "uris": [
+              {
+                "scheme": "file",
+                "type": "general.markdown",
+                "linkFeature": "FileOpen"
+              }
+            ]
+          }
+        ]
       }
     ],
     "requestPermissions": [

@@ -2707,6 +2707,21 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
   顺序隐患、`copyFileSync` 无校验直拷——落码按本仓库约定重写（v1.56 已按本仓库约定实现）。
 - 全链路（浏览器/相册分享 → 存入笔记）待模拟器 + XT2 实测后回填 ✅。
 
+### AF6 ✅ 注册为系统 md 文件打开方式：`general.markdown` UTD + `viewData`/`FileOpen`（2026-11-19，v1.89 核实）
+- 官方「拉起文件处理类应用（startAbility）」给出文件打开类应用的声明范式：
+  `skills: [{ actions: ["ohos.want.action.viewData"], uris: [{ scheme: "file", type: <UTD 或 MIME>, linkFeature: "FileOpen" }] }]`；
+  `linkFeature: "FileOpen"` 必填、大小写敏感；应用被拉起后从 `want.uri` 取待打开文件 URI。本应用主 UIAbility 即入口，无需新 ability。
+- ✅ **本机 modulecheck schema 实测**（`sdk/default/hms/toolchains/modulecheck/module.json`）：`skills[].uris[]` 字段集 =
+  `scheme`（`required: ["scheme"]`）/ `host` / `port` / `pathStartWith` / `path` / `pathRegex` / `type` / `utd` / `maxFileSupported` / `linkFeature`。
+  与 AF1（sendData 分享用 `utd`）不同：文件打开范式用 `type` + `linkFeature`；两者字段不同但都在同一 schema 内。
+- ✅ **markdown UTD 存在**：本机 `openharmony/native/sysroot/usr/include/database/udmf/udmf_meta.h:711` 定义
+  `#define UDMF_META_MARKDOWN "general.markdown"` @since 12（≤ API24）。
+  ⚠️ 与 AH2 所记「`uniformTypeDescriptor.d.ts` 177 项枚举无 markdown」不矛盾：那份是 ArkTS 侧声明枚举，native 头文件的 `general.markdown` 未列入该枚举；
+  UTD 是系统统一类型 ID，`module.json5` 的 `type` 字段按 UTD 字符串填 `general.markdown`，不走 ArkTS 枚举。
+  **结论**：`type: "general.markdown"` 为首选；不要凭社区说法填 `text/markdown` / `text/x-markdown`（非官方明文，构建期可能被拒）。
+- 临时授权语义沿用 AF4：`want.uri` 是临时授权，应用退出 / 重启即失效；只读预览当次读一次即渲染，不拷进沙箱长期持有，零新增权限。
+- ⚠️ 待验：真机文件管理器「打开方式」列表是否出现本应用、`.md` 是否正确匹配 `general.markdown`（schema 合法 ≠ 系统关联生效），由 XT2 实测回填 v1.89 §6。
+
 ## AG 组：TextDecoder 的 BOM 语义（2026-11-15，v1.70 BOM 误报修复核实）
 
 ### AG1 ⚠️ WHATWG 与 OHOS 文档对 `ignoreBOM` 默认行为的解释相反；用等价豁免兜底，不依赖任何一边

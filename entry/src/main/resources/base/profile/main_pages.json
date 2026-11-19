@@ -2,6 +2,7 @@
   "src": [
     "pages/Index",
     "pages/ExternalDirProbePage",
-    "pages/ApplicationBackupRecoveryPage"
+    "pages/ApplicationBackupRecoveryPage",
+    "pages/MarkdownFileOpenPage"
   ]
 }
