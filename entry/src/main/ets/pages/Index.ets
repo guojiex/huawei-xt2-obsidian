@@ -7843,6 +7843,7 @@ struct Index {
     .width('100%')
     .height('100%')
     .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
     .backgroundColor($r('app.color.bg_card'))
     .onClick((): void => { this.setActivePane(pane, true); })
   }
@@ -9329,6 +9330,7 @@ struct Index {
             .width('100%')
           }
           .height(Size.itemH * 2)
+          .edgeEffect(EdgeEffect.Spring)
         }
       }
     }

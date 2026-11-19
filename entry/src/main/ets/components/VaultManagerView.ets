@@ -229,6 +229,7 @@ export struct VaultManagerView {
     .align(Alignment.Top)
     .backgroundColor($r('app.color.bg_page'))
     .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

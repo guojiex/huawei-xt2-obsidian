@@ -619,6 +619,7 @@ struct SyncPage {
       }
       .layoutWeight(1)
       .align(Alignment.TopStart)
+      .edgeEffect(EdgeEffect.Spring)
 
     }
     .padding(Space.s4)

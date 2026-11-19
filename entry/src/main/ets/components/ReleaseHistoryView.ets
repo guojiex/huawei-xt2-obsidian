@@ -58,6 +58,7 @@ export struct ReleaseHistoryView {
     .height('100%')
     .backgroundColor($r('app.color.bg_page'))
     .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 }

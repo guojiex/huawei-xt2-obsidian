@@ -143,6 +143,7 @@ export struct UtilityDialogShell {
         .width('100%')
         .constraintSize({ maxHeight: this.contentMaxHeight() })
         .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
       } else {
         this.content()
       }

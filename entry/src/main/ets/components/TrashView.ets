@@ -226,6 +226,7 @@ export struct TrashView {
             .height(Math.min(this.items.length, 3) * Size.touch)
             .constraintSize({ maxHeight: Size.touch * 3 })
             .scrollBar(BarState.Auto)
+            .edgeEffect(EdgeEffect.Spring)
 
             // 55.1 清空入口：只在展开且有内容时出现；与列表之间一条细线，右侧恒有说明。
             if (this.items.length > 0) {

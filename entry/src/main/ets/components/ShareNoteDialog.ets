@@ -284,6 +284,7 @@ export struct ShareNoteDialog {
         ? Math.max(0, this.windowHeightVp - Space.s8 * 4)
         : Size.menuMaxH })
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
   }
 
   build() {

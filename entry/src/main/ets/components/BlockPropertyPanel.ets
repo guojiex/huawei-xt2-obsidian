@@ -3120,6 +3120,7 @@ export struct BlockPropertyPanel {
         .constraintSize({
           maxHeight: Math.max(Space.s1, this.blockPanelMaxHeight - Size.touch - Space.s4)
         })
+        .edgeEffect(EdgeEffect.Spring)
 
         Row() {
           Text(this.blockSourceActionLabel())

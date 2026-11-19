@@ -1149,6 +1149,7 @@ export struct VaultStatsPage {
       .layoutWeight(1)
       .width('100%')
       .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
       .backgroundColor($r('app.color.bg_page'))
       // v1.57 57.4：滚动表面延伸到导航条下方，末条让位由内容 padding bottom 保证
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])

@@ -410,6 +410,7 @@ export struct VaultSidebar {
       .width('100%')
       .align(Alignment.TopStart)
       .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
       // 620 是含 padding 的外框上限，内容区要扣掉上下 --s2
       .constraintSize({ maxHeight: Size.menuMaxH - Space.s2 * 2 })
     }

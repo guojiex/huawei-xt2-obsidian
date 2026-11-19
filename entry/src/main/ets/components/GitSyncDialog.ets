@@ -1003,6 +1003,7 @@ export struct GitSyncDialog {
         .width('100%')
         .layoutWeight(1)
         .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
         .nestedScroll({
           scrollForward: NestedScrollMode.SELF_FIRST,
           scrollBackward: NestedScrollMode.SELF_FIRST
@@ -1334,6 +1335,7 @@ export struct GitSyncDialog {
           .height(this.singleScreen ? undefined
             : Math.min(Size.touch * 4 + Space.s6, Size.touch * this.changes.length))
           .scrollBar(this.singleScreen ? BarState.Off : BarState.Auto)
+          .edgeEffect(EdgeEffect.Spring)
           // 2026-11-16 键盘避让配套：宽屏内层清单 SELF_FIRST，滑到头把手势传给外层正文。
           // 单屏整页只用一个 Scroll，内层清单不滚动，无需嵌套滚动。
           .nestedScroll({
@@ -1527,6 +1529,7 @@ export struct GitSyncDialog {
           .width('100%')
           .layoutWeight(1)
           .scrollBar(BarState.Auto)
+          .edgeEffect(EdgeEffect.Spring)
       } else {
         Row() {
           Scroll() { this.DialogContent() }
@@ -1534,6 +1537,7 @@ export struct GitSyncDialog {
             .height('100%')
             .padding({ right: Space.s2 })
             .scrollBar(BarState.Auto)
+            .edgeEffect(EdgeEffect.Spring)
           this.DiffPane()
         }
         .width('100%')

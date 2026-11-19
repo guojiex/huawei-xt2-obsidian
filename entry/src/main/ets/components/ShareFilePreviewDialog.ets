@@ -139,6 +139,7 @@ export struct ShareFilePreviewDialog {
           .width('100%')
           .constraintSize({ maxHeight: Size.menuMaxH * 0.5 })
           .scrollBar(BarState.Off)
+          .edgeEffect(EdgeEffect.Spring)
           .padding(Space.s2)
           .border({ width: 1, color: $r('app.color.line') })
           .borderRadius(Radius.menu)

@@ -677,6 +677,7 @@ export struct SettingsView {
         .height('100%')
         .align(Alignment.Top)
         .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
         .backgroundColor($r('app.color.bg_navigation'))
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       } else if (this.singleScreenLayout) {
@@ -697,6 +698,7 @@ export struct SettingsView {
           .height('100%')
           .align(Alignment.Top)
           .scrollBar(BarState.Off)
+          .edgeEffect(EdgeEffect.Spring)
           .backgroundColor($r('app.color.bg_navigation'))
           .border({ width: { right: 1 }, color: $r('app.color.line') })
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
@@ -790,6 +792,7 @@ export struct SettingsView {
       .width('100%')
       .align(Alignment.Top)
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .backgroundColor($r('app.color.bg_page'))
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
     }

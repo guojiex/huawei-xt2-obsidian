@@ -206,6 +206,7 @@ export struct FormatDockPanel {
       .width('100%')
       .constraintSize({ maxHeight: Math.max(Size.touch, this.formatMenuMaxHeight - Size.touch * 2) })
       .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width(Size.touch * 6 + Space.s1 * 5 + Space.s5 * 2)
     .constraintSize({ maxHeight: this.formatMenuMaxHeight })
@@ -382,6 +383,7 @@ export struct FormatDockPanel {
       .width('100%')
       .constraintSize({ maxHeight: Math.max(0, this.formatMenuMaxHeight - Size.touch - Space.s5) })
       .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width(this.formatMenuWidth)
     .constraintSize({ maxHeight: this.formatMenuMaxHeight })
@@ -434,6 +436,7 @@ export struct FormatDockPanel {
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .layoutWeight(1)
     }
     .width('100%')
@@ -477,6 +480,7 @@ export struct FormatDockPanel {
       }
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .layoutWeight(1)
       if (!this.isSingleScreenLayout()) {
         this.SimpleDoneAction(pane)

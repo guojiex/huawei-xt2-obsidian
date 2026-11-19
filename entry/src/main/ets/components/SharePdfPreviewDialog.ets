@@ -132,6 +132,7 @@ export struct SharePdfPreviewDialog {
       .borderRadius(Radius.menu)
       .backgroundColor($r('app.color.bg_secondary'))
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .align(Alignment.TopStart)
       .layoutWeight(1)
       .constraintSize({ minHeight: 0 })

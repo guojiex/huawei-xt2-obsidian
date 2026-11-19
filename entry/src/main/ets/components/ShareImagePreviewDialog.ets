@@ -266,6 +266,7 @@ export struct ShareImagePreviewDialog {
       .borderRadius(Radius.menu)
       .backgroundColor($r('app.color.bg_secondary'))
       .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
       .align(Alignment.Center)
       .layoutWeight(1)
       .constraintSize({ minHeight: 0 })

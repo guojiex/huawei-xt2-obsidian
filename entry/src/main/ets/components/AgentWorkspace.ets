@@ -800,6 +800,7 @@ export struct AgentWorkspace {
       .layoutWeight(1)
       .width('100%')
       .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
 
       Column({ space: Space.s1 }) {
         Scroll() {
@@ -826,6 +827,7 @@ export struct AgentWorkspace {
         .height(Size.buttonH)
         .scrollable(ScrollDirection.Horizontal)
         .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
         Row({ space: Space.s2 }) {
           ForEach(AgentConfigStore.skillDefaults(), (skill: AgentSkillDefault) => {
             this.SkillButton(skill)

@@ -266,6 +266,7 @@ export struct CreateNoteDialog {
         .borderRadius(Radius.control)
         .padding(Space.s1)
         .margin({ top: Space.s1 })
+        .edgeEffect(EdgeEffect.Spring)
       }
 
       TextInput({ placeholder: this.createType === 'folder' ? '文件夹名称' : '笔记名称' })
@@ -819,6 +820,7 @@ export struct MovePathDialog {
         .borderRadius(Radius.control)
         .padding(Space.s1)
         .margin({ top: Space.s1 })
+        .edgeEffect(EdgeEffect.Spring)
       }
     }
     .width('100%')
