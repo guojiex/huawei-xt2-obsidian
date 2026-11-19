@@ -5040,13 +5040,9 @@ struct Index {
       this.editorBridge.restoreScrollTop(this.leftEditorScrollTop);
       this.previewBridge.restoreScrollTop(this.leftPreviewScrollTop);
     }
-    if (initializeRight && relPath.length > 0 && this.rightFilePath.length === 0 &&
-      !this.rightPaneIntentionallyEmpty) {
-      if (effectiveRightRequestId === this.rightOpenRequestId) {
-        this.rightFilePath = relPath;
-        await this.readRightAndPush(relPath, effectiveRightRequestId, targetVaultId);
-      }
-    } else if (initializeRight && this.rightFilePath === relPath && relPath.length > 0) {
+    // v1.88：右栏为空时不再把左栏笔记自动镜像过去（用户反馈双栏空态点击后两栏同开），
+    // 文件名点击只在激活栏打开（原型 selectNote）；仅保留同篇双栏的右栏基线同步。
+    if (initializeRight && this.rightFilePath === relPath && relPath.length > 0) {
       if (effectiveRightRequestId === this.rightOpenRequestId) {
         await this.readRightAndPush(relPath, effectiveRightRequestId, targetVaultId);
       }
