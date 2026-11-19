@@ -12,6 +12,7 @@ import { AbilityConstant, UIAbility, Want, ConfigurationConstant } from '@kit.Ab
 import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { appThemeForColorMode } from '../common/AppTheme';
+import { breakpointFromWidthVp } from '../model/Breakpoint';
 import { MarkdownOpenService, MarkdownOpenPayload } from '../model/MarkdownOpenService';
 
 const DOMAIN = 0x0000;
@@ -20,12 +21,20 @@ const TAG = 'MarkdownViewAbility';
 export default class MarkdownViewAbility extends UIAbility {
   /** 缓存拉起 want（冷启动 onCreate 早于 onWindowStageCreate）。 */
   private openWant: Want | null = null;
+  /** 主窗口：用于断点监听，使只读页顶栏高度 / gutter 与主应用同款（观感一致，仍免库）。 */
+  private mainWindow: window.Window | null = null;
 
   onCreate(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, 'Ability onCreate');
     this.openWant = want;
-    // 只读页主题跟随系统：本 ability 不复用 EntryAbility 的 AppStorage 主题发布链，
-    // 这里单独写一次 appTheme（appThemeForColorMode 为无副作用的纯函数）。
+    // 只读页观感与主应用同款：主题 / 字号 / 断点发布到 AppStorage（同 EntryAbility 的键）。
+    // 只写纯计算结果（appThemeForColorMode / fontSizeScale），不初始化任何库服务，保持免库。
+    this.publishTheme();
+    AppStorage.setOrCreate('fontSizeScale', this.context.config?.fontSizeScale ?? 1);
+  }
+
+  /** 主题跟随系统（appThemeForColorMode 为无副作用的纯函数）。 */
+  private publishTheme(): void {
     try {
       AppStorage.setOrCreate('appTheme', appThemeForColorMode(this.context.config?.colorMode));
     } catch (_error) {
@@ -42,6 +51,18 @@ export default class MarkdownViewAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, TAG, 'Ability onWindowStageCreate');
+    // 断点 / 窗口尺寸发布：顶栏高度与 gutter 与 Index 同款（readOnly 页消费同名的 AppStorage 键）。
+    // 纯 px2vp + breakpointFromWidthVp 计算，无任何库依赖。
+    try {
+      this.mainWindow = windowStage.getMainWindowSync();
+      const props: window.WindowProperties = this.mainWindow.getWindowProperties();
+      this.applyWindowSize(props.windowRect.width, props.windowRect.height);
+      this.mainWindow.on('windowSizeChange', (size: window.Size): void => {
+        this.applyWindowSize(size.width, size.height);
+      });
+    } catch (error) {
+      hilog.error(DOMAIN, TAG, '断点监听注册失败 code=%{public}d', (error as BusinessError).code);
+    }
     const want: Want | null = this.openWant;
     // 先写载荷（异步读文件），完成后再 loadContent；页面 aboutToAppear 兜早到、@Watch 兜晚到。
     void this.publishPayload(want).finally((): void => {
@@ -53,6 +74,26 @@ export default class MarkdownViewAbility extends UIAbility {
         hilog.info(DOMAIN, TAG, 'loadContent 成功');
       });
     });
+  }
+
+  /** 窗口尺寸 px → vp → 断点，发布到 AppStorage（与 EntryAbility.applyWindowSize 同键同算法）。 */
+  private applyWindowSize(widthPx: number, heightPx: number): void {
+    const widthVp: number = px2vp(widthPx);
+    const heightVp: number = px2vp(heightPx);
+    AppStorage.setOrCreate('windowWidthVp', widthVp);
+    AppStorage.setOrCreate('windowHeightVp', heightVp);
+    AppStorage.setOrCreate('breakpoint', breakpointFromWidthVp(widthVp));
+  }
+
+  onWindowStageDestroy(): void {
+    if (this.mainWindow !== null) {
+      try {
+        this.mainWindow.off('windowSizeChange');
+      } catch (_error) {
+        // 注销失败不影响销毁。
+      }
+      this.mainWindow = null;
+    }
   }
 
   /** 解析 want → 读文件 → 写 AppStorage 载荷；任何异常都落成可读错误载荷，不崩溃。 */
@@ -85,11 +126,8 @@ export default class MarkdownViewAbility extends UIAbility {
   }
 
   onForeground(): void {
-    // 前台重 cal 主题（系统主题可能在后台切换）。
-    try {
-      AppStorage.setOrCreate('appTheme', appThemeForColorMode(this.context.config?.colorMode));
-    } catch (_error) {
-      // 保持已有主题值。
-    }
+    // 前台重算主题 / 字号（系统主题可能在后台切换），与主应用行为一致。
+    this.publishTheme();
+    AppStorage.setOrCreate('fontSizeScale', this.context.config?.fontSizeScale ?? 1);
   }
 }

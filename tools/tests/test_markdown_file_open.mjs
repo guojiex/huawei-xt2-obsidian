@@ -113,6 +113,18 @@ test('89.2 冷 / 热启动两路径 + 载荷 nonce + 不初始化 VaultRegistry'
     'MarkdownViewAbility 不应初始化库 / Agent / 搜索服务')
 })
 
+test('89.6 观感对齐：ability 发布断点 / 字号 / 主题（同 Index 的 AppStorage 键），仍不引入库服务', () => {
+  assert.match(viewAbility, /import \{ breakpointFromWidthVp \} from '\.\.\/model\/Breakpoint'/)
+  assert.match(viewAbility, /AppStorage\.setOrCreate\('breakpoint', breakpointFromWidthVp\(widthVp\)\)/)
+  assert.match(viewAbility, /AppStorage\.setOrCreate\('windowWidthVp', widthVp\)/)
+  assert.match(viewAbility, /AppStorage\.setOrCreate\('fontSizeScale'/)
+  assert.match(viewAbility, /AppStorage\.setOrCreate\('appTheme'/)
+  assert.match(viewAbility, /\.on\('windowSizeChange'/)
+  assert.match(viewAbility, /publishTheme\(\)/)
+  // 断点来自纯逻辑模块，不是 display.getFoldDisplayMode（A3 硬约束）
+  assert.ok(!/getFoldDisplayMode/.test(viewAbility))
+})
+
 test('89.3 设备层：openSync(READ_ONLY) + statSync 判上限 + readSync + 关 fd，零落盘', () => {
   assert.match(device, /fileIo\.openSync\(uri, fileIo\.OpenMode\.READ_ONLY\)/)
   assert.match(device, /fileIo\.statSync\(file\.fd\)/)
@@ -132,6 +144,18 @@ test('89.4 只读页：复用 TrashPreviewWeb，无编辑 / 保存 / 入库入�
   const pageCode = page.split('\n').filter((l) => !l.trim().startsWith('*') && !l.trim().startsWith('//')).join('\n')
   assert.ok(!/setEditable\(true\)/.test(pageCode))
   assert.ok(!/另存|保存到|入库|下载/.test(pageCode), '只读页不应出现写入口文案')
+})
+
+test('89.6 顶栏同款 Index.Appbar：back 图标 + 断点高度 / gutter + token 描边背景', () => {
+  assert.match(page, /@StorageProp\('breakpoint'\) breakpoint/)
+  assert.match(page, /@StorageProp\('windowHeightVp'\) windowHeightVp/)
+  assert.match(page, /appbarHeightVp\(\)[\s\S]*?Size\.appbarH[\s\S]*?Size\.appbarWideH/)
+  assert.match(page, /workspaceGutter\(\)[\s\S]*?Space\.s2[\s\S]*?Space\.s3[\s\S]*?Space\.s5/)
+  assert.match(page, /Icon\('back'/) // 返回图标按钮，同 Index.IconButton('back')
+  assert.match(page, /Size\.touch/)  // 48vp 热区
+  assert.match(page, /\.border\(\{ width: \{ bottom: 1 \}, color: \$r\('app\.color\.line'\) \}\)/)
+  assert.match(page, /\.backgroundColor\(\$r\('app\.color\.bg_card'\)\)/)
+  assert.match(page, /FontSize\.body1\)[\s\S]*?FontWeight\.Medium/) // 标题同 Index 次级视图
 })
 
 test('89.4 页面已注册进 main_pages', () => {
