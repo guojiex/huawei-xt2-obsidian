@@ -19,6 +19,13 @@ export struct UtilityDialogShell {
   singleScreen: boolean = false;
   scrollContent: boolean = true;
   fillContentHeight: boolean = false;
+  // v1.85 85.1 走查缺陷 #3：内联宿主（页面 Stack 内直接渲染的 shell，目前仅快切）的
+  // 容器已被页面级键盘避让收窄（模拟器 WM 收矮 → windowHeightVp 已不含键盘区；真机
+  // OFFSET_WITH_CARET 上抬，见 api_notes L-21 / AK4），dialogMaxHeight 再减
+  // keyboardInsetVp 会二次扣减——快切键盘态实测塌缩成 132vp（仅标题+输入框，
+  // scope/表头/结果列表全被压为 0 高）。此类宿主传 true 跳过扣减；CustomDialog 宿主
+  // 不受页面级避让（L-21「弹窗自成一系」），维持 v1.73 的显式扣减不动。
+  layoutAvoidsKeyboard: boolean = false;
   preferredWidthVp: number = Size.utilityDialogW;
   windowWidthVp: number = 0;
   windowHeightVp: number = 0;
@@ -74,7 +81,10 @@ export struct UtilityDialogShell {
     if (this.windowHeightVp <= 0) {
       return Size.menuMaxH;
     }
-    const availHeightVp: number = Math.max(0, this.windowHeightVp - this.keyboardInsetVp());
+    // v1.85 缺陷 #3：仅 CustomDialog 宿主需要显式扣键盘；内联宿主传
+    // layoutAvoidsKeyboard 跳过（windowHeightVp 已被避让收窄，见成员注释）。
+    const keyboardVp: number = this.layoutAvoidsKeyboard ? 0 : this.keyboardInsetVp();
+    const availHeightVp: number = Math.max(0, this.windowHeightVp - keyboardVp);
     if (this.singleScreen) {
       return availHeightVp * 0.86;
     }

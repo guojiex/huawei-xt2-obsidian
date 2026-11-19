@@ -2914,3 +2914,30 @@ compo`（17100001），Windows x86_64 模拟器 + 真机 hilog 归档交叉定�
 - 官方未记载隐藏 Web 的 ready 投递保证。影响：依赖 ready 重放内容的隐藏 pane 可能保持
   空白直到切换显示后触发。与 AK1 修复叠加时，新组件 bind 永不发生则内容空白但**无报错**，
   不会再现 17100001。不计缺陷，持续观察。
+
+## AL 组：键盘避让消费点的「窗口收窄 + inset」双计数（2026-11-20，v1.85 缺陷 #3）
+
+来源：85.1 走查发现快切（QuickSwitcher，页面 Stack 内**内联** UtilityDialogShell）键盘态
+塌缩成「标题 + 搜索框」（shell 实测 396px），scope / 表头 / 结果列表全部从布局树消失。
+
+### AL1 ✅ 模拟器键盘弹起时 windowHeightVp 与 keyboardInsetPx 双发——消费点扣减须按宿主类型分叉
+
+- **实测**（Windows x86_64 模拟器，API 26 镜像，1008×2232）：键盘弹起时页面容器被
+  WM 收窄到键盘上缘（`windowSizeChange` 触发 → `windowHeightVp` **已不含键盘区**，
+  实测 ≈454vp），**同时** `avoidAreaChange(TYPE_KEYBOARD)` 仍发布 903px 的
+  `keyboardInsetPx`（与 L-21 第 1662 行 2026-11-08 记的「inset≈0」不同——当期镜像行为
+  已变，消费点不能假设两者互斥）。
+- **双计数**：`UtilityDialogShell.dialogMaxHeight`（v1.73 为 CustomDialog 引入）把
+  `keyboardInsetVp` 从**已收窄的** `windowHeightVp` 里再扣一次：(454−301)×0.86≈132vp=396px，
+  与塌缩实测完全吻合。内容列 `layoutWeight(1)` 分到 0 剩余 → 列表压没。
+- **按宿主分叉（修复模式）**：键盘 inset 只该从「不受页面级避让的宿主」的高度里扣——
+  `setKeyboardAvoidMode` 仅对页面生效（L-21「弹窗自成一系」），**CustomDialog 宿主需要
+  扣**（v1.73 语义，19 个调用方维持）；**页面 Stack 内联宿主不扣**（容器已被避让收窄 /
+  真机被 OFFSET_WITH_CARET 上抬）。落地：shell 增 `layoutAvoidsKeyboard` 参数（默认
+  false），唯一内联调用方快切换传 true。验证：键盘态结果行 y=1067-1121 完整可见
+  （键盘顶 1348），修复前同场景仅 396px 塌缩条。
+- **残留（关联观察，未修）**：模拟器上 CustomDialog 宿主（如 Git 导入弹窗）键盘态同样
+  存在双计数（窗口收窄 + inset 扣减）；自然高 < 塌缩限高的短弹窗不可见影响，Git 导入
+  全流程实测可用。真机（OFFSET_WITH_CARET，窗口不收窄）无此问题。
+- ⚠️ **真机待验**：XT2 / API 24 上内联快切键盘态——弹窗底部是否被键盘遮、inset 报值
+  （L-21 第 1671 行既有待验项的一部分）。

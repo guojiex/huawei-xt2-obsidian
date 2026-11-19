@@ -656,6 +656,9 @@ export struct QuickSwitcher {
         closeLabel: '关闭快切与搜索',
         singleScreen: this.singleScreen,
         scrollContent: false,
+        // v1.85 缺陷 #3：快切是页面 Stack 内的内联宿主，容器已被页面级避让收窄，
+        // 壳内不再扣 keyboardInset（CustomDialog 宿主才需要，见 UtilityDialogShell 注释）。
+        layoutAvoidsKeyboard: true,
         windowWidthVp: this.windowWidthVp,
         windowHeightVp: this.windowHeightVp,
         onClose: this.onClose,
