@@ -2869,3 +2869,48 @@ ew CustomDialogController、不得组装弹窗 builder；struct 必须持控制�
   （包内实现过界动效或改文档级滚动），不在 v1.86 强行展开。
 - 另：`onOverScroll`（FAQ faqs-arkweb-40）只在滚到顶 / 底触发回调（yOffset 方向判别），
   是「检测边界」而非「反馈动效」，与 overScrollMode 不是一件事。
+
+## AK 组：Web 组件结构性重挂与 WebviewController 悬挂（2026-11-19/20，v1.85 缺陷 #2 根因闭环）
+
+来源：AGC 拒审 2.1.2.1（对外 1.10.0）引用的「删除笔记失败」弹窗复现：XT2 真机日志
+`删除失败 code=-1 message=Init error. The WebviewController must be associated with a Web
+compo`（17100001），Windows x86_64 模拟器 + 真机 hilog 归档交叉定位。
+
+### AK1 ✅ 条件分支翻转会结构性销毁重建 Web 组件；旧 controller 悬挂调用抛 17100001
+
+- **机制**（实测，CreateNWeb 日志）：组件树中包裹 Web 的自定义组件因条件分支翻转
+  （本仓 `NoteWorkspaceShell` 的 `if (isSingleScreenLayout())`）被销毁重建 → Web 组件重建
+  → 生成**新 WebviewController**（NWebId 严格递增不回收）。NWebId 随 app 进程死亡重置：
+  实测同日多次冷启动 {1,4}→{1,4}→{1,4}→{1,2,3,4}；同进程内 1-4 先建、重挂后 5-8 递增。
+- **悬挂调用**：桥接层仍持有旧 WebviewController 时调 `runJavaScript` 抛
+  `17100001 Init error. The WebviewController must be associated with a Web component`。
+  该错误是**同步 JS 异常**（Error 无数字 `code` 字段）——本仓 `toastRegistryError` 的
+  `typeof err?.code === 'number' ? err.code : -1` 把它显示成 `code=-1`。
+- **本案触发瞬态（最优假设，日志已被配额清理不可恢复）**：EntryAbility 早期生命周期
+  `px2vp` 换算异常（官方 JSDoc 明确警告早期 UIAbility 阶段换算可能不准）→ 初始断点
+  瞬态错误 → `windowSizeChange` 纠正 → 单屏分支翻转。启动后 41 秒内完成重挂
+  （旧 web 1-4 于启动 1 秒内创建，5-8 在重挂时创建）。
+- **排除项**：渲染服务携带旧 NWebId 的假说被排除——未 bind 的桥接实例对调用静默跳过
+  （`impl === undefined` 守卫），不可能抛 17100001；只有「曾 bind 旧 impl 的桥」能抛。
+
+### AK2 ✅ 修复模式：aboutToDisappear 解绑 + bind 空位重放（Editor/Preview 双文件统一）
+
+- 桥接层（EditorBridge / PreviewBridge 同型）三要素：
+  ① `aboutToDisappear()` 里 `bridge.unbind(boundImpl)`，**带所有权校验**
+  （`this.impl === impl` 才清空）——防止旧组件销毁时误清掉后挂新组件的 impl；
+  ② bind 重放条件用 `impl === undefined`（**不要**用「bind 过一次」标志位）——重建后的
+  新组件实例必须能把初始内容重放进新 web；
+  ③ 重复 ready 守卫用**组件级** `this.impl` 判重，不走桥接层状态。
+- **隐藏不阻止创建**：`visibility(Hidden)` 的 Web 照常创建 / 加载 / ready（4 个 web 全部
+  CreateNWeb）；`DEFAULT_EDITOR_EXPERIENCE='simple'` 下左编辑器 web 恒隐藏但仍参与 bind。
+- **调用侧防御（审核缺陷直接对策）**：mutation 成功后的「清空视图」步骤（如删除笔记后
+  `readAndPush('')`）与事务本体隔离、单独 try/catch——桥接异常只降级为日志，不再把
+  已成功的删除误报成「删除失败」。
+
+### AK3 ⚠️ 隐藏 Web 偶发不投递 ready（未记载，观察项）
+
+- 实测（23:01 冷启动，4 web）：2 个隐藏编辑器 web 只有 1 个走完 ready（41.020 只出现
+  一次「重复 ready」+ 41.794 一次「桥接已建立」），2 个预览只有 1 个 ready（41.861）。
+- 官方未记载隐藏 Web 的 ready 投递保证。影响：依赖 ready 重放内容的隐藏 pane 可能保持
+  空白直到切换显示后触发。与 AK1 修复叠加时，新组件 bind 永不发生则内容空白但**无报错**，
+  不会再现 17100001。不计缺陷，持续观察。

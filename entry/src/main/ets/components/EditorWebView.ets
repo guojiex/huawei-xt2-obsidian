@@ -328,7 +328,6 @@ export class EditorBridge {
   private hasInitialContent: boolean = false;
   private currentVaultId: string = '';
   private currentNoteDir: string = '';
-  private hasBoundOnce: boolean = false;
   private documentRevision: number = 0;
   private loadedDocumentRevision: number = 0;
   private unavailable: boolean = false;
@@ -337,10 +336,13 @@ export class EditorBridge {
   private hasWorkspaceScrollTop: boolean = false;
 
   bind(impl: EditorImpl): void {
+    // 重挂恢复：桥当前没有存活 impl（首次绑定或组件销毁解绑后的再绑定）时重放最新内容，
+    // 否则布局翻转重挂后的新编辑器 web 永远停在空白页（v1.85 缺陷2）。
+    const replayInitialContent: boolean = this.impl === undefined && this.hasInitialContent;
     this.impl = impl;
     impl.setDocumentRevision(this.documentRevision);
     this.unavailable = false;
-    if (!this.hasBoundOnce && this.hasInitialContent) {
+    if (replayInitialContent) {
       const revision: number = this.documentRevision;
       void impl.setContent(this.initialContent, revision, this.currentVaultId, this.currentNoteDir).then((): void => {
         if (this.documentRevision === revision) {
@@ -348,9 +350,15 @@ export class EditorBridge {
         }
       });
     }
-    this.hasBoundOnce = true;
     if (this.hasWorkspaceScrollTop) {
       impl.restoreScrollTop(this.workspaceScrollTop);
+    }
+  }
+
+  /** 持有方组件销毁时解绑：仅当桥仍指向该 impl 时清空，避免误伤后继 web 的绑定。 */
+  unbind(impl: EditorImpl): void {
+    if (this.impl === impl) {
+      this.impl = undefined;
     }
   }
 
@@ -573,6 +581,8 @@ export struct EditorWebView {
   private proxy: EditorNativeProxy = new EditorNativeProxy();
   /** 当前桥接实现（ready 时创建；content 回复按 reqId 路由给它） */
   private impl: EditorImpl | undefined = undefined;
+  /** 本实例绑定进 bridge 的 impl（aboutToDisappear 时解绑，防桥持有已销毁 web 的 controller） */
+  private boundImpl: EditorImpl | undefined = undefined;
   /** 代理是否已注册（onControllerAttached 里注册，onPageEnd 兜底；见 build()） */
   private proxyRegistered: boolean = false;
 
@@ -583,6 +593,16 @@ export struct EditorWebView {
     this.proxy.readAssetHandler = (vaultId: string, relPath: string): string => {
       return this.onReadAsset(vaultId, relPath);
     };
+  }
+
+  aboutToDisappear(): void {
+    // 布局翻转（isSingleScreenLayout 分支）会结构性销毁本组件：此时必须与桥解绑，
+    // 否则 EditorBridge 持有已脱钩的 WebviewController，后续 setContent/setEditable
+    // 全部抛 17100001（v1.85 缺陷2：删除笔记被误报「删除失败」）。
+    if (this.boundImpl !== undefined) {
+      this.bridge.unbind(this.boundImpl);
+      this.boundImpl = undefined;
+    }
   }
 
   onThemeChanged(): void {
@@ -649,6 +669,7 @@ export struct EditorWebView {
       }
       const impl = new EditorImpl(this.controller);
       this.impl = impl;
+      this.boundImpl = impl;
       this.bridge.bind(impl);
       impl.setTheme(this.theme);
       impl.setLineNumbers(this.showLineNumbers);

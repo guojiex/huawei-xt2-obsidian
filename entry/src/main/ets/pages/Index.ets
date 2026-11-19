@@ -6511,14 +6511,14 @@ struct Index {
     if (this.currentVaultId.length === 0) {
       return;
     }
+    // 删的是当前打开的文件（或其父目录）时：先落盘编辑，再删（删完文件就不复存在，
+    // 且必须在 deletePath 之前 await 完，否则 flushSave 的 getContent 在文件已删后
+    // 写回会 recreate 一个本该消失的文件）。
+    const isCurrent: boolean = this.currentFilePath === relPath
+      || this.currentFilePath.startsWith(relPath + '/');
+    const isRightCurrent: boolean = this.rightFilePath === relPath
+      || this.rightFilePath.startsWith(relPath + '/');
     try {
-      // 删的是当前打开的文件（或其父目录）时：先落盘编辑，再删（删完文件就不复存在，
-      // 且必须在 deletePath 之前 await 完，否则 flushSave 的 getContent 在文件已删后
-      // 写回会 recreate 一个本该消失的文件）。
-      const isCurrent: boolean = this.currentFilePath === relPath
-        || this.currentFilePath.startsWith(relPath + '/');
-      const isRightCurrent: boolean = this.rightFilePath === relPath
-        || this.rightFilePath.startsWith(relPath + '/');
       if (isCurrent || isRightCurrent) {
         if (!await this.flushWorkspaceSaves()) {
           return;
@@ -6532,16 +6532,26 @@ struct Index {
         this.rightFilePath = '';
       }
       await NoteService.deletePath(VaultRegistry.get(), this.currentVaultId, relPath);
-      if (isCurrent) {
-        await this.readAndPush('');
-      }
-      if (isRightCurrent) {
-        await this.readRightAndPush('');
-      }
+      // 删除已成功——先如实刷新树；「清空视图」的 web 桥异常不再误报「删除失败」（v1.85 缺陷2）。
       this.revealPath = '';
       this.refreshFileTree();
     } catch (error) {
       this.toastRegistryError('删除失败', error, 'file', 'delete');
+      return;
+    }
+    if (isCurrent) {
+      try {
+        await this.readAndPush('');
+      } catch (error) {
+        this.logPaneClearFailure('左', error);
+      }
+    }
+    if (isRightCurrent) {
+      try {
+        await this.readRightAndPush('');
+      } catch (error) {
+        this.logPaneClearFailure('右', error);
+      }
     }
   }
 
@@ -6622,9 +6632,9 @@ struct Index {
     if (this.currentVaultId.length === 0) {
       return;
     }
+    const wasCurrent: boolean = this.currentFilePath === relPath;
+    const wasRight: boolean = this.rightFilePath === relPath;
     try {
-      const wasCurrent: boolean = this.currentFilePath === relPath;
-      const wasRight: boolean = this.rightFilePath === relPath;
       if (wasCurrent || wasRight) {
         if (!await this.flushWorkspaceSaves()) {
           return;
@@ -6639,12 +6649,8 @@ struct Index {
       if (wasRight) {
         this.rightFilePath = '';
       }
-      if (wasCurrent) {
-        await this.readAndPush('');
-      }
-      if (wasRight) {
-        await this.readRightAndPush('');
-      }
+      // 回收站迁移已成功——先如实刷树与撤销条。旧版把后面「清空视图」的 web 桥
+      // 异常一并算进「删除失败」，导致已成功的删除被误报为失败（v1.85 缺陷2）。
       this.refreshFileTree();
       this.trashSeq++;
       const name: string = relPath.substring(relPath.lastIndexOf('/') + 1);
@@ -6654,7 +6660,31 @@ struct Index {
       this.showUndo('已移入回收站：「' + name + '」', snap);
     } catch (error) {
       this.toastRegistryError('删除失败', error, 'file', 'delete');
+      return;
     }
+    if (wasCurrent) {
+      try {
+        await this.readAndPush('');
+      } catch (error) {
+        // 删除本身已成功：清空左侧视图失败只记日志，不再误报「删除失败」。
+        this.logPaneClearFailure('左', error);
+      }
+    }
+    if (wasRight) {
+      try {
+        await this.readRightAndPush('');
+      } catch (error) {
+        this.logPaneClearFailure('右', error);
+      }
+    }
+  }
+
+  /** 删除/移动成功后清空某侧视图失败：仅记录，不影响已成功操作的反馈（v1.85 缺陷2）。 */
+  private logPaneClearFailure(side: string, error: Object): void {
+    const err = error as BusinessError;
+    const code: number = typeof err?.code === 'number' ? err.code : -1;
+    hilog.warn(DOMAIN, TAG, '操作已成功但清空%{public}s侧视图失败 code=%{public}d message=%{public}s',
+      side, code, err?.message ?? '');
   }
 
   /** 撤销条：弹出（snap 为 null = 无按钮的纯提示条，原型 showToast 的无 undoFn 分支） */
