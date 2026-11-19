@@ -2941,3 +2941,30 @@ compo`（17100001），Windows x86_64 模拟器 + 真机 hilog 归档交叉定�
   全流程实测可用。真机（OFFSET_WITH_CARET，窗口不收窄）无此问题。
 - ⚠️ **真机待验**：XT2 / API 24 上内联快切键盘态——弹窗底部是否被键盘遮、inset 报值
   （L-21 第 1671 行既有待验项的一部分）。
+
+### AL2 ✅ web 块聚焦键盘态不走 WM 收窄而是整页上移 transform；uitest dumpLayout 丢弃被裁剪节点（2026-11-20，v1.85 疑似缺陷 #4 排除）
+
+来源：85.1 走查疑似缺陷 #4——简单模式 web 块（contenteditable）聚焦弹键盘后，
+dumpLayout 里 Appbar / 笔记路径行 / 格式栏「集体消失」，root 报 [0,112][1008,1329]。
+定性：**非缺陷，工具假象**。证据链（临时插桩 `paneFilePath` / `appbarHeightVp` /
+`applySimpleTextFocus` + WMSKeyboard 日志 + 逐节点坐标核算，插桩已撤）：
+
+- **页面按全窗 2232 布局不变，不重排**：聚焦后 `appbarHeightVp`（getter，依赖
+  `breakpoint` / `windowHeightVp`）零调用 = 无重渲染 = `windowSizeChange` 未触发、
+  `windowHeightVp` 未变；WMS `RaiseCallingSession newCallingSessionRect: [0 0 1008 2232]`
+  会话不缩窗。**与 AL1 快切场景（ArkUI TextInput 聚焦，WM 收窄 + windowHeightVp≈454vp）
+  同一模拟器实测机制不同**——分叉条件（输入类型 / 镜像行为变化）未定位 ⚠️，键盘 inset
+  消费点两种机制都得防。
+- **避让 = 整页上移 transform**（按光标位置，实测位移 301~405px 不等）：Appbar 上移到
+  负 y 被裁、路径行恰好被裁、web 平移后与可视区求交 → 报告 [2,112][1006,1329]；
+  root 报的 [0,112][1008,1329] 是避让后可视内容区，不是窗口尺寸。
+- **uitest dumpLayout 丢弃被裁剪/被覆盖节点**：「消失」是工具假象——ed20 里格式栏报
+  [2,112][1006,216]，正是布局位 [2,413][1006,517] 上移 301px 的结果，逐节点数字吻合；
+  聚焦后 `paneFilePath('left')` 插桩仍返回 'README.md'（条件为真、节点在树上）。
+  `visibility(Hidden)` 子树同样不进 dump（简单模式隐藏编辑器缺席）。**排查 UI「消失」
+  不能只信 dumpLayout，须结合插桩 / 截像交叉验证。**
+- **残留观察（未修，v1.46 46.10 边角）**：光标块靠下时上移量大（实测 405px），把 46.10
+  用户裁定上移到内容区顶部的格式栏连同路径行一起顶出可视区——编辑中格式栏不可见 /
+  不可达（截像 wz_dbg1.jpeg 像素确认）。46.10 解决了「栏底停靠被键盘盖住」但引入此
+  边角；是否修（反补偿 / 换停靠策略）留需求池评估。⚠️ 真机同状态（API 24，
+  OFFSET_WITH_CARET）待验，未验前不外推。
