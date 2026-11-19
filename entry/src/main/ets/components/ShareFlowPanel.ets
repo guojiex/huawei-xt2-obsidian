@@ -43,10 +43,16 @@ import { VaultRegistry } from '../model/VaultRegistry';
 const DOMAIN: number = 0x0000;
 const TAG: string = 'ShareFlowPanel';
 
+// 分享预览（PDF / 长图）性能诊断打点开关：诊断期 true，交付前改回 false。
+// 打点位置、日志字段含义、判据与优化方案见 docs/engineering/分享预览渲染性能优化.md §3 / §4。
+const SHARE_PERF_TRACE: boolean = true;
+
 /** 53.10：带旧帧校验的分段快照结果（快照本体 + 用于下一段比对的像素缓冲）。 */
 interface ShareSegmentCapture {
   snapshot: image.PixelMap;
   buffer: ArrayBuffer;
+  /** 性能诊断：本段旧帧重试次数，见 docs/engineering/分享预览渲染性能优化.md §3.1 */
+  attempts: number;
 }
 
 /** 分享域对外 API（Index 经 onApiReady 回传持有；原 Index 内部直调入口全部经此转发）。 */
@@ -551,6 +557,20 @@ export struct ShareFlowPanel {
   }
 
   /**
+   * 分享预览分段耗时打点（诊断期）。只记段号 / 耗时数字，禁止记笔记内容；
+   * SHARE_PERF_TRACE=false 时零开销。判据与优化方案见 docs/engineering/分享预览渲染性能优化.md §3 / §4。
+   */
+  private traceShareSegment(stage: string, total: number, seg: number,
+    waitMs: number, snapMs: number, tailMs: number, retries: number): void {
+    if (!SHARE_PERF_TRACE) {
+      return;
+    }
+    hilog.info(DOMAIN, 'ShareDbg',
+      '%{public}s seg=%{public}d/%{public}d waitMs=%{public}d snapMs=%{public}d tailMs=%{public}d retries=%{public}d',
+      stage, seg, total, waitMs, snapMs, tailMs, retries);
+  }
+
+  /**
    * 53.10：读取分段快照的像素缓冲，用于旧帧检测。
    * XT2 实测：滚动后 DOM 状态正确（scrollTop 回读一致），但组件快照可能取到
    * 滚动前的旧合成表面（「一页渲染两页且重复」）。两段快照像素完全相同即旧帧。
@@ -591,7 +611,7 @@ export struct ShareFlowPanel {
         .get(this.shareCaptureComponentId, { waitUntilRenderFinished: true });
       const buffer: ArrayBuffer = await this.readSegmentBuffer(snapshot);
       if (prevBuffer === null || !this.segmentBuffersIdentical(buffer, prevBuffer)) {
-        return { snapshot: snapshot, buffer: buffer };
+        return { snapshot: snapshot, buffer: buffer, attempts: attempt };
       }
       await snapshot.release();
       attempt++;
@@ -651,7 +671,10 @@ export struct ShareFlowPanel {
         if (this.shareCaptureCancelled) {
           throw new Error('分享图片生成已取消');
         }
+        // 性能诊断：wait/snap/tail 三段耗时切分，见 docs/engineering/分享预览渲染性能优化.md §3.1
+        const traceT0: number = Date.now();
         const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(captureTops[i]);
+        const traceT1: number = Date.now();
         if (Math.abs(positioned.scrollTop - captureTops[i]) > 1) {
           throw new Error('分享预览无法定位到第 ' + (i + 1).toString() + ' 个渲染分段');
         }
@@ -661,6 +684,7 @@ export struct ShareFlowPanel {
         }
         // 53.10：旧帧校验快照——与上一分段完全相同即重拍，杜绝「两页重复」
         const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevSegmentBuffer);
+        const traceT2: number = Date.now();
         const segment = captured.snapshot;
         prevSegmentBuffer = captured.buffer;
         try {
@@ -697,6 +721,9 @@ export struct ShareFlowPanel {
         } finally {
           await segment.release();
         }
+        const traceT3: number = Date.now();
+        this.traceShareSegment('long', captureTops.length, i,
+          traceT1 - traceT0, traceT2 - traceT1, traceT3 - traceT2, captured.attempts);
       }
       if (this.shareCaptureCancelled) {
         throw new Error('分享图片生成已取消');
@@ -808,12 +835,16 @@ export struct ShareFlowPanel {
         if (this.shareCaptureCancelled) {
           throw new Error('分享图片生成已取消');
         }
+        // 性能诊断：wait/snap/tail 三段耗时切分，见 docs/engineering/分享预览渲染性能优化.md §3.1
+        const traceT0: number = Date.now();
         const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(tops[i]);
+        const traceT1: number = Date.now();
         if (Math.abs(positioned.scrollTop - tops[i]) > 1) {
           throw new Error('PDF 预览无法定位到第 ' + (i + 1).toString() + ' 页');
         }
         // 53.10：旧帧校验快照——与上一页完全相同即重拍，杜绝「一页内容渲染成两页」
         const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevPageBuffer);
+        const traceT2: number = Date.now();
         const pageShot: image.PixelMap = captured.snapshot;
         prevPageBuffer = captured.buffer;
         try {
@@ -846,6 +877,9 @@ export struct ShareFlowPanel {
         } finally {
           await pageShot.release();
         }
+        const traceT3: number = Date.now();
+        this.traceShareSegment('pdf', tops.length, i,
+          traceT1 - traceT0, traceT2 - traceT1, traceT3 - traceT2, captured.attempts);
       }
       if (this.shareCaptureCancelled) {
         throw new Error('分享图片生成已取消');
