@@ -55,7 +55,7 @@ export class NoteImageShareService {
       height = Math.max(1, Math.ceil(sourceHeight * scale));
     }
     if (width < NoteImageShareService.MIN_IMAGE_WIDTH) {
-      throw new Error('笔记过长，无法生成清晰的单张长图；请改用 Markdown / ZIP');
+      throw new Error('笔记过长，无法生成清晰的单张长图；请改用 PDF / Markdown / ZIP');
     }
     return { width: width, height: height, scale: scale, pixelsPerVp: pixelsPerVp };
   }

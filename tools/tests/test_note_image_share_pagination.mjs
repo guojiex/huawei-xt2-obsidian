@@ -63,5 +63,5 @@ test('long-image geometry rejects invalid sizes and outputs too narrow for a cle
   for (const dimensions of [[0, 800, 1500, 800], [1200, 0, 1500, 800], [1200, 800, Infinity, 800]]) {
     assert.throws(() => longImageGeometry(...dimensions), /长图尺寸/);
   }
-  assert.throws(() => longImageGeometry(640, 1000, 50000, 1000), /无法生成清晰的单张长图/);
+  assert.throws(() => longImageGeometry(640, 1000, 50000, 1000), /无法生成清晰的单张长图；请改用 PDF \/ Markdown \/ ZIP/);
 });
