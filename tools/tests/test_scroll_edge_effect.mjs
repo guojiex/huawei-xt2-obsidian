@@ -1,5 +1,5 @@
 /**
- * 滚动容器边界反馈防线（2026-11-19，v1.84 / AGC UX 2.1.5.3.3）。
+ * 滚动容器边界反馈防线（2026-11-19，v1.84 / v1.86 / AGC UX 2.1.5.3.3）。
  *
  * 背景：ArkUI `Scroll` / `Grid` / `WaterFlow` 的 `edgeEffect` 默认值是
  * `EdgeEffect.None`（SDK common.d.ts JSDoc）——滚动到边界无任何反馈动效；
@@ -9,6 +9,11 @@
  * 规则：新增或改写的 `Scroll` / `Grid` / `WaterFlow` 组件声明必须在其属性链
  * 显式设置 `.edgeEffect(...)`（无豁免清单——需要禁用回弹的场景极少，届时在此
  * 登记豁免并写明理由）。`List` 默认 Spring，不要求显式声明。
+ *
+ * v1.86：ArkWeb `Web` 组件 `overScrollMode` 默认 `OverScrollMode.NEVER`
+ * （SDK web.d.ts，API 11+，api_notes AJ1）——Web 内容滚动到边界同样无反馈。
+ * 用户可见且自滚动的 `Web(` 声明必须显式 `.overScrollMode(...)`；
+ * 豁免清单：GitBridgeView（1×1 隐形 git 引擎，无可见滚动）。
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -168,4 +173,63 @@ test('v1.84 legacy Scroll sites keep spring edge effect and nested-scroll wiring
     assert.ok(comp.attrs.includes('nestedScroll') || comp.line > 1500,
       `GitSyncDialog:${comp.line} 嵌套滚动配置不应丢失`);
   }
+});
+
+/**
+ * 找出全部 Web 组件声明及其属性链（v1.86 / api_notes AJ1）。
+ * Web 无内容块：`Web({...})` 后直接跟链式属性。
+ * 词边界排除 `new Web(`；嵌套滚动场景按 SDK 建议可豁免（登记理由）。
+ */
+export function findWebComponents(source) {
+  const results = [];
+  const re = /\bWeb\(/g;
+  let m;
+  while ((m = re.exec(source)) !== null) {
+    const before = source.slice(Math.max(0, m.index - 20), m.index);
+    if (/function\s+$/.test(before) || /new\s+$/.test(before)) continue;
+    const line = source.slice(0, m.index).split('\n').length;
+    const argsOpen = m.index + m[0].length - 1;
+    const argsClose = findBalanced(source, argsOpen, '(', ')');
+    if (argsClose === -1) continue;
+    const attrs = [];
+    let i = skipBlank(source, argsClose + 1);
+    while (i !== -1 && source[i] === '.') {
+      const nameMatch = /^[A-Za-z_$][\w$]*/.exec(source.slice(i + 1));
+      if (!nameMatch) break;
+      const attrParen = skipBlank(source, i + 1 + nameMatch[0].length);
+      if (attrParen === -1 || source[attrParen] !== '(') break;
+      const attrClose = findBalanced(source, attrParen, '(', ')');
+      if (attrClose === -1) break;
+      attrs.push(nameMatch[0]);
+      i = skipBlank(source, attrClose + 1);
+    }
+    results.push({ line, attrs });
+  }
+  return results;
+}
+
+/** Web overScrollMode 豁免清单（相对 etsRoot 的 POSIX 路径 → 理由） */
+const WEB_OVERSCROLL_EXEMPT = {
+  'git/GitBridgeView.ets': '1×1 隐形 git 引擎（v1.86 86.1）：无用户可见滚动，不加属性保持引擎纯净',
+};
+
+test('every user-visible Web component declares an explicit overScrollMode (AGC UX 2.1.5.3.3, v1.86)', () => {
+  const violations = [];
+  let webCount = 0;
+  for (const file of files) {
+    const rel = relative(etsRoot, file).split(sep).join('/');
+    const source = readFileSync(file, 'utf8');
+    for (const comp of findWebComponents(source)) {
+      webCount++;
+      if (WEB_OVERSCROLL_EXEMPT[rel]) continue;
+      if (!comp.attrs.includes('overScrollMode')) {
+        violations.push(`${rel}:${comp.line} -> Web 属性链 [${comp.attrs.join(', ')}] 缺 overScrollMode`);
+      }
+    }
+  }
+  assert.deepEqual(
+    violations, [],
+    `Web 的 overScrollMode 默认是 OverScrollMode.NEVER（无过滚动反馈），用户可见的 Web 组件声明必须显式设置 .overScrollMode(...)（v1.86 / api_notes AJ1）：\n${violations.join('\n')}`
+  );
+  assert.ok(webCount >= 7, `应识别到至少 7 处 Web 声明（当前 ${webCount}），解析器失效时防线会静默变绿，必须显式计数`);
 });

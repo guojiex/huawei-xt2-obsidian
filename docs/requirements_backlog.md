@@ -591,6 +591,7 @@ M-02 与 M-01 的边界：M-01 评估把外部目录直接作为知识库正式�
 | 编号 | 需求 | 分配 |
 | --- | --- | --- |
 | AD-01 | 全部 `Scroll` 容器显式设置 `.edgeEffect(EdgeEffect.Spring)`，滚动到边界产生系统一致的弹性回弹反馈（含横向 Scroll 的左右边界）；`List` / `Grid` / `WaterFlow` 维持各自默认（List 已是 Spring）；不改 Web 组件内部 HTML 滚动行为 | [v1.84](releases/v1.84/需求文档.md)（2026-11-19 用户提出并指定实现） |
+| AD-02 | Web 组件（编辑器 / 预览 / 隐私政策）开启 ArkWeb 过滚动模式 `.overScrollMode(OverScrollMode.ALWAYS)`（SDK `web.d.ts`：该属性 API 11+、默认 `NEVER`，即 v1.84 84.3 观察到的「正文滚动无回弹」根因），正文滚动到边界产生反馈；GitBridgeView 1×1 隐形引擎豁免。两个 Web 包均为内层滚动器（mdeditor `.cm-scroller`、mdpreview `#content`，body 均不滚动），`overScrollMode` 对内层滚动器是否生效无文档记载，真机验证不生效则升级 Web 侧方案 | [v1.86](releases/v1.86/需求文档.md)（2026-11-19 用户确认按 2.1.5.3.3 补齐） |
 
 ## AE. 直板手机布局基础要求审核整改（2026-11-19）
 

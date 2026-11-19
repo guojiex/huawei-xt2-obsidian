@@ -30,6 +30,8 @@ struct SpikeEditorPage {
       })
         .width('100%')
         .layoutWeight(1)
+        // v1.86 86.1：Web 默认 OverScrollMode.NEVER 无过滚动反馈（api_notes AJ1）。
+        .overScrollMode(OverScrollMode.ALWAYS)
     }
     .width('100%')
     .height('100%')

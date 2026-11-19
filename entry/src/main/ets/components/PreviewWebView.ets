@@ -74,6 +74,8 @@ export struct FormulaPreviewWeb {
 
   build() {
     Web({ src: $rawfile('mdpreview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+      // v1.86 86.1：Web 默认 OverScrollMode.NEVER 无过滚动反馈（api_notes AJ1）。
+      .overScrollMode(OverScrollMode.ALWAYS)
       .width('100%')
       .height('100%')
       .onPageEnd((): void => {
@@ -128,6 +130,8 @@ export struct TrashPreviewWeb {
 
   build() {
     Web({ src: $rawfile('mdpreview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+      // v1.86 86.1：Web 默认 OverScrollMode.NEVER 无过滚动反馈（api_notes AJ1）。
+      .overScrollMode(OverScrollMode.ALWAYS)
       .width('100%')
       .height('100%')
       .onPageEnd((): void => {
@@ -1303,6 +1307,8 @@ export struct PreviewWebView {
   build() {
     Column() {
       Web({ src: $rawfile('mdpreview/index.html'), controller: this.controller, renderMode: RenderMode.SYNC_RENDER })
+        // v1.86 86.1：Web 默认 OverScrollMode.NEVER 无过滚动反馈（api_notes AJ1）。
+        .overScrollMode(OverScrollMode.ALWAYS)
         // v1.46 46.8：简单模式段落宿主是 contenteditable，同样受键盘避让影响；
         // 与 EditorWebView 一致收敛到 UIContext 一级，避免 Web 默认 RESIZE_CONTENT 双重避让（api_notes L-21）。
         .keyboardAvoidMode(WebKeyboardAvoidMode.RETURN_TO_UICONTEXT)

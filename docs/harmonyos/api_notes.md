@@ -2823,3 +2823,34 @@ ew CustomDialogController、不得组装弹窗 builder；struct 必须持控制�
   struct 内 open。
 - **推论**：任何「控制器封装进 model 层普通类」的重构设想都不可行；弹窗控制器只能住
   struct。若要 model 层复用，只复用数据与回调，控制器留在组件层。
+
+
+## AJ 组：ArkWeb 过滚动模式 overScrollMode（2026-11-19，本机 SDK 声明核对）
+
+来源：AGC UX 2.1.5.3.3 补齐（v1.84 84.3 观察项 → v1.86），本机 API24 工具链
+`ets/build-tools/ets-loader/declarations/web.d.ts` 声明核对 + devecocli docs
+（ArkWeb Enums / FAQ）。
+
+### AJ1 ✅ Web 组件 overScrollMode API 11+、默认 NEVER；嵌套滚动场景建议 NEVER
+
+- **声明**（web.d.ts，行号为本机文件）：`overScrollMode(mode: OverScrollMode): WebAttribute`
+  `@since 11`（≤ API24 ✅）；JSDoc 明确 **默认值 `OverScrollMode.NEVER`**——即 Web 组件
+  默认**没有**过滚动（回弹）反馈，这是正文滚动到边界无动效的根因。
+- **枚举**：`NEVER = 0`（关闭）；`ALWAYS = 1`（开启，「适用于需要增强滚动反馈的场景」）。
+- **嵌套滚动警告**（SDK JSDoc 原文）：Web 参与 ArkUI 嵌套滚动时「web scrolling to the edge
+  will prioritize triggering the overscroll bounce effect」，建议设 `NEVER` 避免影响滚动
+  交接。本仓 4 类用户可见 Web（编辑器 / 预览 ×3 / 隐私政策 / spike 页）均 100% 填充自滚动、
+  不在 ArkUI Scroll 内，警告不适用。
+- **落码**（v1.86）：上述 6 处 `Web(` 加 `.overScrollMode(OverScrollMode.ALWAYS)`；
+  GitBridgeView（1×1 隐形 git 引擎）豁免。
+
+### AJ2 ⚠️ 未记载 / 待实测项：overScrollMode 对内层滚动器是否生效
+
+- 两个 Web 包的滚动都发生在**内层元素**而非文档滚动器：mdeditor 是 `.cm-scroller
+  { overflow-y: auto }`（CodeMirror 6 标准结构），mdpreview 是 `#content { overflow-y: auto }`
+  （body `overflow: hidden`）。官方文档对 `overScrollMode` 的描述均以「页面 / Web 组件」为
+  主语，**没有记载对 HTML 内层滚动容器是否同样产生过滚动反馈**。
+- XT2 真机验证结论待回填：生效 → v1.86 86.1 关闭；不生效 → 回需求池评估 Web 侧方案
+  （包内实现过界动效或改文档级滚动），不在 v1.86 强行展开。
+- 另：`onOverScroll`（FAQ faqs-arkweb-40）只在滚到顶 / 底触发回调（yOffset 方向判别），
+  是「检测边界」而非「反馈动效」，与 overScrollMode 不是一件事。

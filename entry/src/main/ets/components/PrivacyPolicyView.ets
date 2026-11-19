@@ -42,6 +42,8 @@ export struct PrivacyPolicyView {
 
       Stack() {
         Web({ src: PRIVACY_POLICY_URL, controller: this.controller })
+          // v1.86 86.1：Web 默认 OverScrollMode.NEVER 无过滚动反馈（api_notes AJ1）。
+          .overScrollMode(OverScrollMode.ALWAYS)
           .javaScriptAccess(true)
           .onPageBegin((): void => {
             this.loadStatus = 'loading';
