@@ -10,6 +10,7 @@
 #   .\tools\install.ps1 -Reinstall       # 覆盖安装（保留应用数据），改了存储结构别用
 #   .\tools\install.ps1 -Target <id>     # 连了多台设备时指定一台
 #   .\tools\install.ps1 -Run             # 装完顺手拉起应用
+#   .\tools\install.ps1 -Product dev -Run # 装 dev 开发包（com.jxg.huaweiobsidian.dev）
 #
 # 常见坑：
 #   list targets 为空          -> 没开 USB 调试 / 数据线只能充电 / 没点「允许 USB 调试」/ Windows 缺驱动
@@ -20,6 +21,8 @@ param(
     [switch]$List,
     [switch]$Reinstall,
     [switch]$Run,
+    [ValidateSet('default', 'dev')]
+    [string]$Product = 'default',
     [string]$Target = '',
     [string]$DevEco = 'C:\Program Files\Huawei\DevEco Studio'
 )
@@ -70,13 +73,16 @@ if ($Target -eq '') { $Target = $devices[0] }
 Write-Host "device    : $Target"
 
 # ---------- 2. 产物 ----------
-$outDir = 'entry\build\default\outputs\default'
-if (-not (Test-Path $outDir)) {
-    Write-Error "没有构建产物目录 $outDir`n先跑 .\tools\build.ps1"
+# 产物目录按 product 定位（2026-11-20 实测，与 build.ps1 同一套定位逻辑）：
+# 构建目录与产物目录都按 product 分 —— entry\build\<Product>\outputs\<Product>。
+# ⚠️ 不做跨 product 兜底：混着找会把 default 的产物装给 -Product dev。
+$outDir = "entry\build\$Product\outputs\$Product"
+$haps = @()
+if (Test-Path $outDir) {
+    $haps = @(Get-ChildItem -Path $outDir -Filter *.hap | Sort-Object LastWriteTime -Descending)
 }
-$haps = @(Get-ChildItem -Path $outDir -Filter *.hap | Sort-Object LastWriteTime -Descending)
 if ($haps.Count -eq 0) {
-    Write-Error "$outDir 下没有 .hap`n先跑 .\tools\build.ps1"
+    Write-Error "没有构建产物（entry\build\$Product\outputs\$Product 下没有 .hap）`n先跑 .\tools\build.ps1 -Product $Product"
 }
 
 # 优先签名包；只有 unsigned 包时要拦下来 —— 真机一定装不上，早报错比看设备报错好懂
@@ -87,10 +93,15 @@ if ($signed) {
     $hap = $haps[0]
     Write-Host ""
     Write-Host "⚠️ 只找到未签名产物：$($hap.Name)" -ForegroundColor Yellow
-    Write-Host "   真机安装会被签名校验拒绝。先在 DevEco 里做一次自动签名：" -ForegroundColor Yellow
-    Write-Host "   File > Project Structure > Project > Signing Configs > 勾选 Automatically generate signature" -ForegroundColor Yellow
-    Write-Host "   （未登录先 Sign In；本机系统时间需与北京时间一致，否则签名失败）" -ForegroundColor Yellow
-    Write-Host "   签名后再跑 .\tools\build.ps1，产物会变成 entry-default-signed.hap" -ForegroundColor Yellow
+    if ($Product -eq 'dev') {
+        Write-Host "   dev 包签名读 .local/dev-signing.json（AGC 为 com.jxg.huaweiobsidian.dev" -ForegroundColor Yellow
+        Write-Host "   申请的调试 Profile + 现有调试证书）—— 缺失时真机一定装不上" -ForegroundColor Yellow
+    } else {
+        Write-Host "   真机安装会被签名校验拒绝。先在 DevEco 里做一次自动签名：" -ForegroundColor Yellow
+        Write-Host "   File > Project Structure > Project > Signing Configs > 勾选 Automatically generate signature" -ForegroundColor Yellow
+        Write-Host "   （未登录先 Sign In；本机系统时间需与北京时间一致，否则签名失败）" -ForegroundColor Yellow
+        Write-Host "   签名后再跑 .\tools\build.ps1，产物会变成 entry-default-signed.hap" -ForegroundColor Yellow
+    }
     Write-Host ""
     $ans = Read-Host "仍要尝试安装吗？[y/N]"
     if ($ans -ne 'y' -and $ans -ne 'Y') { exit 1 }
@@ -119,9 +130,18 @@ Write-Host "安装完成。" -ForegroundColor Green
 
 # ---------- 4. 拉起 ----------
 if ($Run) {
+    # bundleName 从 hvigor 生成的 BuildProfile.ets 读（dev 包与线上包不同），
+    # 文件缺失/解析失败时回退到硬编码映射。
+    $bundle = if ($Product -eq 'dev') { 'com.jxg.huaweiobsidian.dev' } else { 'com.jxg.huaweiobsidian' }
+    $bpFile = "entry\build\$Product\generated\profile\$Product\BuildProfile.ets"
+    if (Test-Path $bpFile) {
+        $m = Select-String -LiteralPath $bpFile -Pattern "BUNDLE_NAME = '([^']+)'"
+        if ($m) { $bundle = $m.Matches[0].Groups[1].Value }
+    }
+    Write-Host "bundle    : $bundle"
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    $start = & $hdc -t $Target shell aa start -a EntryAbility -b com.jxg.huaweiobsidian 2>&1 | Out-String
+    $start = & $hdc -t $Target shell aa start -a EntryAbility -b $bundle 2>&1 | Out-String
     $ErrorActionPreference = $prevEap
     Write-Host $start
 }

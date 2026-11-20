@@ -21,7 +21,7 @@ import { buildCommitCopyPayload, buildCommitLabel, isBuildCommitKnown } from '..
 import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { FontSize, Radius, ScreenSaver, Size, Space } from '../common/Tokens';
+import { FontSize, Radius, ScreenSaver, Size, Space, Weight } from '../common/Tokens';
 import { FocusRequest } from '../common/FocusRequest';
 import { AppDataResetService } from '../model/AppDataResetService';
 import { ChangelogEntry, RECENT_CHANGELOG } from '../model/ChangelogData';
@@ -135,6 +135,9 @@ export struct SettingsView {
   private applicationBackupFocusId: string = 'settings-app-backup-row';
   private recentErrorStore: RecentErrorStore | null = null;
   private appUpdateStore: AppUpdateCheckStore | null = null;
+  /** 双包共存：PRODUCT_NAME 生成常量是字面量类型（'default'），与 'dev' 直接比较会报
+   no-overlap 编译错，先赋给 string 成员放宽类型，build() 里用它判断是否开发包。 */
+  private readonly productNameOfBuild: string = BuildProfile.PRODUCT_NAME;
 
   private normalizedCategory(category: string): string {
     return category === 'data' || category === 'feedback' || category === 'about' ? category : 'general';
@@ -1554,17 +1557,20 @@ export struct SettingsView {
             .textAlign(TextAlign.Start)
         }
         .width('100%')
-        // v2 .hs-row.hs-danger：min-height 56（原型同款行框，不再压成 48 固定高）
+        // v2 .hs-row：min-height 56（原型同款行框）+ padding s2/s4；边距在行上，卡片不加整体 padding
+        .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
         .constraintSize({ minHeight: Size.hsRowMinH })
         .focusable(true)
         .enabled(!this.resetting)
         .opacity(this.resetting ? 0.4 : 1)
         .onClick((): void => { this.openResetConfirm(); })
         if (this.resetConfirmOpen) {
+          // v2 .hs-group > *+*：确认区与危险行之间的 1px 分隔线
+          Divider().color($r('app.color.line'))
           Column() {
             Text('确定重置所有数据？')
               .fontSize(FontSize.body2)
-              .fontWeight(FontWeight.Medium)
+              .fontWeight(Weight.semibold)
               .fontColor($r('app.color.text_primary'))
               .width('100%')
             // v1.37 37.4：重置前建议先导出，行内链接复用 37.2 的分享入口；不改变重置步骤
@@ -1578,29 +1584,29 @@ export struct SettingsView {
                 })
               Span('作为备份，之后可在「设置 → 数据 → 从备份恢复」中还原。')
             }
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_secondary'))
+            .fontSize(FontSize.body2)
+            .fontColor($r('app.color.text_tertiary'))
             .width('100%')
             .margin({ top: Space.s2 })
             Text('本页编辑、插入图片、文件操作和回收站将一并清除，栏宽偏好也会清除，无法撤销。')
-              .fontSize(FontSize.caption)
-              .fontColor($r('app.color.text_secondary'))
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_tertiary'))
               .width('100%')
               .margin({ top: Space.s2 })
             Row({ space: Space.s2 }) {
               Text('取消')
-                .fontSize(FontSize.body3)
+                .fontSize(FontSize.body2)
                 .fontColor($r('app.color.text_primary'))
-                .height(Size.buttonH)
+                .height(Space.s10)
                 .padding({ left: Space.s4, right: Space.s4 })
                 .textAlign(TextAlign.Center)
                 .borderRadius(Radius.full)
                 .backgroundColor($r('app.color.bg_secondary'))
                 .onClick((): void => { this.resetConfirmOpen = false; })
               Text('确认重置')
-                .fontSize(FontSize.body3)
+                .fontSize(FontSize.body2)
                 .fontColor(Color.White)
-                .height(Size.buttonH)
+                .height(Space.s10)
                 .padding({ left: Space.s4, right: Space.s4 })
                 .textAlign(TextAlign.Center)
                 .borderRadius(Radius.full)
@@ -1613,26 +1619,24 @@ export struct SettingsView {
             .justifyContent(FlexAlign.End)
             .margin({ top: Space.s3 })
           }
+          // v2 .hs-confirm：padding s4、无底色无圆角，随卡片底色平铺
           .width('100%')
           .alignItems(HorizontalAlign.Start)
           .padding(Space.s4)
-          .borderRadius(Radius.control)
-          .backgroundColor($r('app.color.danger_bg'))
         }
         if (this.resetError.length > 0) {
+          Divider().color($r('app.color.line'))
           Text(this.resetError)
             .fontSize(FontSize.body2)
             .fontColor($r('app.color.danger'))
             .width('100%')
-            .margin({ top: Space.s3 })
+            .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
         }
       }
       .width('100%')
-      .padding(Space.s5)
       .borderRadius(Radius.card)
       .border({ width: 1, color: $r('app.color.line') })
       .backgroundColor($r('app.color.bg_card'))
-      .margin({ bottom: Space.s4 })
       Column() {
         Text('会清除本地笔记库、草稿、回收站、最近打开、同步配置和访问令牌，重新打开后恢复为全新空白知识库，无法撤销。远端仓库不受影响。')
           .fontSize(FontSize.caption)
@@ -1641,6 +1645,7 @@ export struct SettingsView {
       }
       .width('100%')
       .padding({ left: Space.s4, right: Space.s4 })
+      .margin({ top: Space.s2 })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -1734,53 +1739,57 @@ export struct SettingsView {
       .backgroundColor($r('app.color.bg_card'))
       .margin({ bottom: Space.s4 })
 
-      // v1.17：检查更新组（原型 .update-check-group，32.11 s4 下间距规则）；
-      // 仅用户主动点击触发（D-2），结果文案不显示市场版本号（V3），系统弹框接管更新引导（V4）。
-      Column() {
-        Row() {
-          Column() {
-            Text('检查更新')
-              .fontSize(FontSize.body1)
-              .fontColor($r('app.color.text_primary'))
-            Text(this.appUpdateStatusText())
+      // 双包共存（2026-11-19）：dev 包（com.jxg.huaweiobsidian.dev）不上 AGC，
+      // 「检查更新」必然失败，整组隐藏；default（上架包）不受影响。
+      if (this.productNameOfBuild !== 'dev') {
+        // v1.17：检查更新组（原型 .update-check-group，32.11 s4 下间距规则）；
+        // 仅用户主动点击触发（D-2），结果文案不显示市场版本号（V3），系统弹框接管更新引导（V4）。
+        Column() {
+          Row() {
+            Column() {
+              Text('检查更新')
+                .fontSize(FontSize.body1)
+                .fontColor($r('app.color.text_primary'))
+              Text(this.appUpdateStatusText())
+                .fontSize(FontSize.caption)
+                .fontColor($r('app.color.text_tertiary'))
+                .margin({ top: Space.s1 })
+                .accessibilityText(this.appUpdateStatusText())
+            }
+            .layoutWeight(1)
+            .alignItems(HorizontalAlign.Start)
+            Button(this.appUpdatePhase === 'checking' ? '检查中…' : '检查更新')
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.brand'))
+              .backgroundColor($r('app.color.bg_navigation'))
+              .height(Space.s10)
+              .padding({ left: Space.s4, right: Space.s4 })
+              .enabled(this.appUpdatePhase !== 'checking')
+              .accessibilityText(this.appUpdatePhase === 'checking' ? '正在检查更新' : '检查更新')
+              .onClick((): void => { this.startAppUpdateCheck(); })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          // v2 .hs-row.update-check-row：min-height 56 + 上下 s2，状态说明换行时整行随之变高
+          .constraintSize({ minHeight: Size.hsRowMinH })
+          .padding({ top: Space.s2, bottom: Space.s2 })
+
+          if (this.appUpdatePhase === 'available') {
+            Text('继续操作将由系统升级弹框接管；弹框由系统显示。')
               .fontSize(FontSize.caption)
               .fontColor($r('app.color.text_tertiary'))
-              .margin({ top: Space.s1 })
-              .accessibilityText(this.appUpdateStatusText())
+              .width('100%')
+              .margin({ top: Space.s2 })
           }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-          Button(this.appUpdatePhase === 'checking' ? '检查中…' : '检查更新')
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.brand'))
-            .backgroundColor($r('app.color.bg_navigation'))
-            .height(Space.s10)
-            .padding({ left: Space.s4, right: Space.s4 })
-            .enabled(this.appUpdatePhase !== 'checking')
-            .accessibilityText(this.appUpdatePhase === 'checking' ? '正在检查更新' : '检查更新')
-            .onClick((): void => { this.startAppUpdateCheck(); })
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
-        // v2 .hs-row.update-check-row：min-height 56 + 上下 s2，状态说明换行时整行随之变高
-        .constraintSize({ minHeight: Size.hsRowMinH })
-        .padding({ top: Space.s2, bottom: Space.s2 })
-
-        if (this.appUpdatePhase === 'available') {
-          Text('继续操作将由系统升级弹框接管；弹框由系统显示。')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-            .margin({ top: Space.s2 })
-        }
+        .alignItems(HorizontalAlign.Start)
+        .padding(Space.s5)
+        .borderRadius(Radius.card)
+        .border({ width: 1, color: $r('app.color.line') })
+        .backgroundColor($r('app.color.bg_card'))
+        .margin({ bottom: Space.s4 })
       }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding(Space.s5)
-      .borderRadius(Radius.card)
-      .border({ width: 1, color: $r('app.color.line') })
-      .backgroundColor($r('app.color.bg_card'))
-      .margin({ bottom: Space.s4 })
 
       this.GroupTitle('更新日志')
       Column() {

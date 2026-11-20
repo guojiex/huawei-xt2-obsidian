@@ -35,6 +35,20 @@
       "name": "default"
     },
     {
+      // 双包共存：dev target 给开发包（product=dev）用；resource.directories 是
+      // **替换式**语义（不写就只剩默认 src/main/resources），所以两个目录都要列全。
+      // 实测（2026-11-19）：多目录同名资源**先列者优先**——devres 放前面，
+      // 它的 EntryAbility_label 覆盖「曜石笔记开发版」，其余资源回落 main。
+      // 路径相对 entry/、必须 ./ 开头且目录存在（validateTargetCustomizeResources）。
+      "name": "dev",
+      "resource": {
+        "directories": [
+          "./src/devres",
+          "./src/main/resources"
+        ]
+      }
+    },
+    {
       "name": "ohosTest",
       "config": {
         "buildOption": {

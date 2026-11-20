@@ -95,7 +95,7 @@ display.getCurrentFoldCreaseRegion(): display.FoldCreaseRegion
 ```
 
 **结论修正**：折痕是 **`creaseRects` 数组**，不是单个 Rect —— 这意味着三折叠的两条铰链**有可能**一次性全部拿到。
-（出处：`docs/releases/v0.1/需求文档.md` §6.1 验收记录；代码见 `EntryAbility.logFoldCalibration()`，它打印的类型就是 `display.FoldCreaseRegion`。）
+（出处：`docs/releases/历史版本归档.md#v01-需求文档` §6.1 验收记录；代码见 `EntryAbility.logFoldCalibration()`，它打印的类型就是 `display.FoldCreaseRegion`。）
 
 > ⚠️ 但这**只是类型定义层面的事实**，不等于三折叠运行时真的返回两段 —— 仍属 ❓；布局实现须处理该行为未证实的情况，真机表现另行验证。
 > 教训记一笔：**官方 Agent 的答复也要交叉验证**，能查 SDK 类型定义时优先查 SDK（这次就是靠 SDK 发现答复错了）。
@@ -498,7 +498,6 @@ nativePort.onMessageEvent((result: WebMessage) => {
   见 `docs/releases/v1.93/需求文档.md` §2.1）。**不要把它当官方保证**，改动捕获层形态时
   需重测。超过 B5 的 7680px 物理像素上限仍会白屏（本工程 700vp×dpr3=2100px，安全）。
 
-
 ---
 
 ## C 组：文件系统与存储
@@ -609,10 +608,10 @@ API 24 / XT2 真机是否存在同类竞态待回归。
 本机 SDK 26.0.0.105 的 `@ohos.util.stream.d.ts` 声明 `Writable.write(chunk?: string | Uint8Array, encoding?: string,
 callback?: Function)`，列出的编码为 `utf8`、`gb18030`、`gbk`、`gb2312`。在新隔离目标上使用 `utf8`、省略 encoding、复制
 `Uint8Array` 后仍复现；这是该 API 26 模拟器的运行时证据，不外推至 API 24 运行时或 XT2。HTTP fixture 的
-`info/refs` 与 `git-upload-pack` 均返回 200；clone 未通过。设备、构建与逐轮页面结果见 [v0.3 §6](../releases/v0.3/需求文档.md)，
+`info/refs` 与 `git-upload-pack` 均返回 200；clone 未通过。设备、构建与逐轮页面结果见 [v0.3 §6](../releases/历史版本归档.md#v03-需求文档)，
 需向鸿蒙核实二进制 chunk 的官方调用方式及该日志错误码的含义；2026-10-27 已就「返回流的二进制 `write()` 规格」追问，答复见 [WriteStream 二进制写入规格答复](qa/2026-10-27_WriteStream_二进制写入规格答复.md)。
 
-**2026-10-27 API 26 图片导入复验补充**：在 `Huawei_TripleFold_v05Clean` API 26 arm64 模拟器中，经系统 Photo Picker 选中图片后，应用已完成 Picker 资产查询、源 URI 打开和大小读取；随后对 `AtomicFile` 返回的 `WriteStream` 写入 `Uint8Array` 时回报 `13900020: Invalid argument`，应用调用 `failWrite()`，没有插入 Markdown 引用。最初以测试截图复验后，用户补入 JPEG 再次选择并完成，UI 即时捕获同一分阶段错误；随后将调用第二参数从 `undefined` 临时改为 `'utf8'`，重建并替换安装，再次对该 JPEG 导入仍得到同一 `Invalid argument`；本轮改用 `'utf-8'` 复验，构建、安装后再次选择同一图片，仍得到相同错误。编码参数取省略占位、`'utf8'` 或 `'utf-8'` 均未解决失败，根因仍未知。前述临时笔记已移入回收站；本轮使用既有样例笔记且正文未变化。附件目录内容未核验。此结果不外推至 API 24 / XT2。详见 [v1.3 §6](../releases/v1.3/需求文档.md#2026-10-27-图片导入-api26-复验)。
+**2026-10-27 API 26 图片导入复验补充**：在 `Huawei_TripleFold_v05Clean` API 26 arm64 模拟器中，经系统 Photo Picker 选中图片后，应用已完成 Picker 资产查询、源 URI 打开和大小读取；随后对 `AtomicFile` 返回的 `WriteStream` 写入 `Uint8Array` 时回报 `13900020: Invalid argument`，应用调用 `failWrite()`，没有插入 Markdown 引用。最初以测试截图复验后，用户补入 JPEG 再次选择并完成，UI 即时捕获同一分阶段错误；随后将调用第二参数从 `undefined` 临时改为 `'utf8'`，重建并替换安装，再次对该 JPEG 导入仍得到同一 `Invalid argument`；本轮改用 `'utf-8'` 复验，构建、安装后再次选择同一图片，仍得到相同错误。编码参数取省略占位、`'utf8'` 或 `'utf-8'` 均未解决失败，根因仍未知。前述临时笔记已移入回收站；本轮使用既有样例笔记且正文未变化。附件目录内容未核验。此结果不外推至 API 24 / XT2。详见 [v1.3 §6](../releases/历史版本归档.md#v13-需求文档)。
 
 **同日 SDK 参数复核**：本轮查看 `Writable.write(chunk?: string | Uint8Array, encoding?: string, callback?: Function)` 声明和编码说明后，代码去掉了显式 `'utf8'`，以 `undefined` 保留第三参数回调。Hypium 任务与 HAP 构建通过；API26 替换安装后再次从 Picker 选图并点“完成”，但测试笔记没有出现 Markdown 图片引用，且笔记恢复后的编辑器未确认光标焦点，故无法区分图片复制是否完成与引用插入是否因无光标而未执行。此轮不是写入成功证据，也不能确认修复了 `Invalid argument`；应在不接受输入法协议的前提下安排能明确建立编辑器光标的后续复验。API 24 / XT2 仍待设备验证。
 
@@ -737,7 +736,7 @@ ohpm publish yourlib.har
 
 ## F 组：小艺托管 Agent、FunctionComponent 与端插件（Insight Intent 执行器）
 
-> 2026-10-25 范围调整见 [v0.6 需求](../releases/v0.6/需求文档.md)：首期本地操作不调用 Web/git，F6 的冲突仅约束未来自动 commit；F-A/F-B 等接口置信度未因此改变。2026-10-25 拟发的接入核实提问**未单独留档**（提问原文不再入库），其未决点即下方标 ⚠️/❓ 的条目。
+> 2026-10-25 范围调整见 [v0.6 需求](../releases/历史版本归档.md#v06-需求文档)：首期本地操作不调用 Web/git，F6 的冲突仅约束未来自动 commit；F-A/F-B 等接口置信度未因此改变。2026-10-25 拟发的接入核实提问**未单独留档**（提问原文不再入库），其未决点即下方标 ⚠️/❓ 的条目。
 
 > 来源：[`qa/2026-10-17_小艺智能体_端侧意图框架.md`](qa/2026-10-17_小艺智能体_端侧意图框架.md)（2026-10-17）
 > ~~本组所有结论均未附文档链接~~ → 2026-10-26：F1、F9–F11 已补官方文档核对，见 [对照归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。其他旧结论置信度保持原标记；落码前仍须复核对应 SDK 和目标设备。
@@ -895,7 +894,7 @@ ArkTS 侧只有 fs / http 桥接。叠加 F4 的「后台执行不建 window」�
 
 2026-10-28 项目进展：仓库已为平台 `ListVaults` 0.1.0 增加配置映射及后台 `InsightIntentExecutor`，把 `VaultRegistry.list()` 投影为知识库 id/name/type/isCurrent 字段。其他六项工具、FunctionComponent 接线、平台调用与 API 24 / XT2 运行仍未验；本次代码只说明本机 SDK 编译目标上的接线实现，不代表设备闭环。平台代码页提供的是 ai_plugin JSON / OpenAPI YAML 声明，不是 App 的完整 ArkTS 业务实现；早期六项草稿配置不等于已经能读写设备笔记。核对来源见 [当日归档](qa/2026-10-26_小艺开放平台文档对照_API24.md)。
 
-2026-10-30 实施更新：本工程 `Index` 已在笔记工作区顶栏接入 `FunctionComponent` 并监听关闭事件刷新文件；`insight_intent.json` 增加 `QueryNotes`、`ReadNote`、`CreateNote`、`AppendNote`、`EditNote`、`UndoLastEdit` / `0.1.0` 后台映射，统一执行器复用 `VaultRegistry`、`FileTree`、`NoteService`、`AgentOperationStorage` 与 `AtomicFile`。源码级工具契约/文本规则测试及 API 26 SDK 目标 HAP 构建通过。平台 Agent 仍是草稿，测试组、平台真实调用、API 24 / XT2 与发布审核尚未验证；SDK 构建不能表述为设备或端到端成功，详见 [v0.6 验收记录](../releases/v0.6/验收记录.md)。
+2026-10-30 实施更新：本工程 `Index` 已在笔记工作区顶栏接入 `FunctionComponent` 并监听关闭事件刷新文件；`insight_intent.json` 增加 `QueryNotes`、`ReadNote`、`CreateNote`、`AppendNote`、`EditNote`、`UndoLastEdit` / `0.1.0` 后台映射，统一执行器复用 `VaultRegistry`、`FileTree`、`NoteService`、`AgentOperationStorage` 与 `AtomicFile`。源码级工具契约/文本规则测试及 API 26 SDK 目标 HAP 构建通过。平台 Agent 仍是草稿，测试组、平台真实调用、API 24 / XT2 与发布审核尚未验证；SDK 构建不能表述为设备或端到端成功，详见 [v0.6 验收记录](../releases/历史版本归档.md#v06-验收记录)。
 
 ### F17 意图配置位置、权限与 `executeMode`（2026-11-02 官方答复 + 本机 SDK 坐实）
 
@@ -1165,7 +1164,7 @@ AppScope/app.json5 → app.versionCode / app.versionName
 
 | 编号 | 问题 | 兜底方案 |
 | --- | --- | --- |
-| **J-1** | **UI Design Kit（`Hds*` 组件，如 `HdsListItem` / `HdsSnackBar`）在 API 24 是否可直接引入？** 引入方式（ohpm 包？SDK 内置？）、最低版本、是否需额外依赖 | 按同观感**自绘**列表项（主文本 16fp / 副文本 12fp / 行高 56vp / 选中主色实底） |
+| **J-1** | **UI Design Kit（`Hds*` 组件）能否直接引入？** 引入方式、最低版本、是否需额外依赖 | ⚠️ 旧结论「不存在」已作废（2026-11-19 SDK 升到 API26 后组件存在且编译通过，见 J 组）；**当前仍自绘**同观感列表项（风格原因，非组件缺失） |
 | **J-2** | **HarmonyOS Symbol 在 ArkTS 中的引用方式**：`SymbolGlyph($r('sys.symbol.xxx'))` 的资源 id 从哪里查？自定义 SVG 是否要转资源？ | 自绘 SVG / Path 图标，风格统一（24 viewBox 描边、圆头圆角） |
 | **J-3** | **HarmonyOS Sans 是否需显式指定**：ArkUI 的 `fontFamily` 默认值是什么？要显式写 `'HarmonyOS Sans'` 吗？ | 不指定（用系统默认），但**字号/字重阶梯照 token 走** |
 
@@ -1226,7 +1225,7 @@ since:       4（OpenHarmony）；phone/tablet 12、2in1 13
 → 需求 2.7 真机验收通过，该❓销账。
 
 ⚠️ 未测的边界（不阻塞 v0.1）：sm 态抽屉打开时按返回键是否只关抽屉（2.7b 的分档逻辑）、
-库管理页顶栏是否只有一个标题。见 `docs/releases/v0.1/真机验证清单.md` §B 的 B4/B6。
+库管理页顶栏是否只有一个标题。见 `docs/releases/历史版本归档.md#v01-真机验证清单` §B 的 B4/B6。
 
 > 🔴 **红线**：禁止凭记忆编 `Hds*` 组件名或 `sys.symbol.*` 资源 id。
 > 查不到就在需求文档的验收记录里写明「未核实，用兜底」。
@@ -1275,22 +1274,31 @@ instancePath '/overrides/signingConfig', keyword 'propertyNames',
 
 ---
 
-## J 组：视觉基线的三个待核实项（J-1 / J-2 / J-3）—— ✅ 全部核实完毕（2026-10-18）
+## J 组：视觉基线的三个待核实项（J-1 / J-2 / J-3）—— ✅ 全部核实完毕（2026-10-18；J-1 于 2026-11-19 重新评估并更新）
 
 > 来源：需求池 J 节 → v0.2 §3.5。铁律：**查不到就用兜底，禁止凭记忆编 `Hds*` 或 `sys.symbol.*`**。
 
-### J-1 `Hds*` 组件能否直接引？ ❌ **不存在，改为自绘同观感**
+### J-1 `Hds*` 组件能否直接引？ ⚠️ **旧结论「不存在」已作废：SDK 升级后存在且可编译；当前仍自绘（风格原因）**
 
-在本地 SDK 里全量搜 `HdsListItem` / `HdsButton` / `HdsNavigation`：
+> **2026-11-19 重新评估**：本机 SDK 已从「API 24」升到 **HarmonyOS 26.0.0（API 26，26.0.0.105）**，
+> 旧的「0 命中」结论基于旧 SDK + 只搜了 `openharmony/ets/`；Hds 组件实际在 **HMS 侧 `hms/ets/`**，
+> 当时的搜法也漏了目录。旧结论据此作废，新证据如下。
 
-```
-sdk/default/openharmony/ets/api/ + component/   → 0 命中
-sdk/default/openharmony/ets/kits/               → 没有 UI Design Kit
-```
+**SDK 声明核对（2026-11-19）**：
+- `hms/ets/kits/@kit.UIDesignKit.d.ts` 存在，导出 `HdsListItem` / `HdsSnackBar` / `HdsNavigation` / `HdsSideBar` / `HdsActionBar` / `HdsTabs` 等全套组件；
+- `hms/ets/build-tools/ets-loader/kit_configs/@kit.UIDesignKit.json` 有逐符号映射；kit 头标注 `@since 5.0.0(12)`；
+- 组件级 `@since` 多为 `6.0.0(20)` / `6.1.0(23)`（≤ 当前 `compatibleSdkVersion 6.1.1(24)`，API24 设备可用），**少数成员标 `26.0.0`（API24 不可用，用到需查声明）**；
+- 是 SDK **内置 kit**，`import from '@kit.UIDesignKit'` 即可，**不需要 ohpm install、不需额外权限**。
 
-**结论**：API 24 的 SDK 里**没有** UI Design Kit 的 `Hds*` 组件。
-→ 按需求 4.6 的兜底执行：**自绘同观感列表项**（主文本 16fp / 副文本 12fp / 行高 56vp / 选中主色实底）。
-不为一个列表项引整套 Design Kit（v0.2 §4「明确不做」也这么定）。
+**真实编译验证（2026-11-19，挂到入口 import 的临时探针，验后已删）**：
+- 反证：import 不存在的 `HdsListItem_FAKE_DOES_NOT_EXIST` → `Module '"@kit.UIDesignKit"' has no exported member` ❌（证明编译链路确实在逐成员校验）；
+- 正证：import 真实 `HdsListItem` / `HdsSnackBar` / `HdsNavigation` → 无解析错误，`BUILD SUCCESSFUL`（仅一条探针 `void` 表达式的无害 WARN）。
+- 结论：**当前 SDK 下 `@kit.UIDesignKit` 的 Hds 组件可正常 import 并编译通过**（`targetSdkVersion 26.0.0` / `compatibleSdkVersion 6.1.1(24)`）。
+
+**当前决定（不变）**：仍按自绘同观感列表项（主文本 16fp / 副文本 12fp / 行高 56vp / 选中主色实底）。
+理由不再是「组件不存在」，而是：① 硬约束 17 视觉只认 v2 原型 token，Hds 是系统观感，直接引入会跟自绘 token 体系混成两套；
+② 不为一个列表项引整套 Design Kit（v0.2 §4「明确不做」仍成立）。
+**如将来决定引入**：需整体替换、与 token 体系对齐，并逐个核对组件 `@since` 与 API24 下限。
 
 ### J-2 `SymbolGlyph` + `sys.symbol.*` 能否覆盖图标清单？ ⚠️ **只能核实 3 个 id，改为统一自绘**
 
@@ -1552,7 +1560,7 @@ this.PaneHead({ title: ... })   // @Builder PaneHead($$: PaneHeadParam)
   「仅对拖拽成立（未验）」一句作废）。注意两点：① 刚 `install -r` + 冷启动后的首次注入可能
   整条拖拽不触发（无任何 DragManager 日志），等应用稳定（约 1 分钟）再注入即可复现；
   ② `uitest dumpLayout -p` 拿 px 坐标定位拖拽起终点最稳。
-- 证据：`.local/uitest/20261116_*`、`docs/releases/v1.71/需求文档.md` §6。
+- 证据：`.local/uitest/20261116_*`、`docs/releases/历史版本归档.md#v171-需求文档` §6。
 
 ### L-9 `ListItem.swipeAction` 三档手势落地（2026-10-21，SDK 核实 + 构建通过）✅ 签名 / ⚠️ 运行时待验
 
@@ -1582,7 +1590,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
   验证**（2026-11-07：半滑出 SwipeBar（重命名/移动/删除）、全滑触发 `onAction` → 回收站 + 撤销条，
   UiNoteFlow 套件 8/8 与全量 17/17 回归，见 `docs/testing/UI自动化测试.md`）；
   **手势手感 / actionAreaDistance 阈值体感**仍随真机验收。
-- 关联落码：`FileTreeView.ets`（SwipeBar + swipeAction）、`TrashService.ets`（`vaults/<库>/.trash/` 回收站 + 恢复拒绝覆盖）、`Index.ets`（UndoBar + doTrashFile）；详见 `docs/releases/v0.2/需求文档.md` §6。
+- 关联落码：`FileTreeView.ets`（SwipeBar + swipeAction）、`TrashService.ets`（`vaults/<库>/.trash/` 回收站 + 恢复拒绝覆盖）、`Index.ets`（UndoBar + doTrashFile）；详见 `docs/releases/历史版本归档.md#v02-需求文档` §6。
 
 ### L-10 v0.4 快切遮罩外点击命中（2026-10-23，API SDK 声明 + API 26 模拟器）✅
 
@@ -1630,8 +1638,8 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 - 本机 API 26 SDK 声明 `focusBox(FocusBoxStyle)`、`FocusBoxStyle.strokeWidth`、`FocusBoxStyle.strokeColor`、`LengthMetrics.vp()` 与 `ColorMetrics.rgba()` 均为 API 12 起，低于工程 API 24 上限；`@kit.ArkUI` 导出 `LengthMetrics` 与 `ColorMetrics`。
 - 本机 SDK `ets/component/common.d.ts` 说明 `focusBox` 只影响焦点遍历时显示系统焦点框的组件；它不适用于本次触摸正文后出现的描边。此前在 `PreviewWebView` 设置零宽透明 `focusBox` 未消除该现象，现已移除。
 - 2026-11-04 API 26 `Huawei_TripleFold` 模拟器实测：冷启动首屏无框；点按正文后黑框沿滚动正文视口出现。HDC hilog 记录 `Web/secure_field RequestFocusImmediately`、ArkWeb `GestureTap` 与 `OnCursorUpdate`，但未提供 DOM 命中标签。`#content:focus:not(:focus-visible)` 未能消除黑框；改为 `#content:focus { outline: none; }` 后，同一位置点按不再出现黑框，点击及光标更新事件仍出现。仅为 API 26 模拟器证据，不外推 API 24 / XT2。
-- 2026-11-04 最终包复验：临时 DOM 诊断在普通段落点按时记录 `target=p`、`block=paragraph`、`active=body`、`outline=none`；移除诊断代码后重建并以匹配 `appSignType=none` 的 unsigned HAP 覆盖安装，重启后同类点按截图无黑框。安装失败与复验时间线见 [v1.18 §6](../releases/v1.18/需求文档.md#2026-11-04-184-最终-hap-普通段落点按复验)。仅为 API 26 模拟器结果。
-- 2026-11-08 简单模式段落宿主复现与修复：简单模式为纯文本段落宿主 `div` 加 `contenteditable="true"` 后，点按聚焦宿主（`document.activeElement` = 宿主）再次触发引擎黑框——**新聚焦目标，非 `#content` 回归**（11-04 时 `active=body`，宿主级 contenteditable 尚未引入）。像素实测框四边 ≈ a11y 树宿主节点 bounds `[1176,1247][3071,1333]`，近黑 RGB≈13；桌面 Chromium 同 CSS computed `outline: none` 无框（无头 Edge CDP 复现），确认为 ArkWeb 引擎行为。修复：`#content [contenteditable="true"]:focus { outline: none; }`（覆盖段落宿主 / 空占位 / callout 正文），API26 x86_64 模拟器点按复验光标 + 格式栏正常、像素扫描无框；见 [v1.46 46.4](../releases/v1.46/需求文档.md)。仍不外推 API 24 / XT2。
+- 2026-11-04 最终包复验：临时 DOM 诊断在普通段落点按时记录 `target=p`、`block=paragraph`、`active=body`、`outline=none`；移除诊断代码后重建并以匹配 `appSignType=none` 的 unsigned HAP 覆盖安装，重启后同类点按截图无黑框。安装失败与复验时间线见 [v1.18 §6](../releases/历史版本归档.md#v118-需求文档)。仅为 API 26 模拟器结果。
+- 2026-11-08 简单模式段落宿主复现与修复：简单模式为纯文本段落宿主 `div` 加 `contenteditable="true"` 后，点按聚焦宿主（`document.activeElement` = 宿主）再次触发引擎黑框——**新聚焦目标，非 `#content` 回归**（11-04 时 `active=body`，宿主级 contenteditable 尚未引入）。像素实测框四边 ≈ a11y 树宿主节点 bounds `[1176,1247][3071,1333]`，近黑 RGB≈13；桌面 Chromium 同 CSS computed `outline: none` 无框（无头 Edge CDP 复现），确认为 ArkWeb 引擎行为。修复：`#content [contenteditable="true"]:focus { outline: none; }`（覆盖段落宿主 / 空占位 / callout 正文），API26 x86_64 模拟器点按复验光标 + 格式栏正常、像素扫描无框；见 [v1.46 46.4](../releases/历史版本归档.md#v146-需求文档)。仍不外推 API 24 / XT2。
 
 ### L-17 v1.29 单屏导航遮罩的命中与无障碍属性（本机 SDK 声明）⚠️
 
@@ -1684,7 +1692,7 @@ SwipeEdgeEffect { None, Spring, FolderLockMode }
 
 - 实测（API26 x86_64 模拟器，目标为 debug 签名应用 `com.jxg.huaweiobsidian`）：`hdc shell`（uid 2000，context `u:r:sh:s0`）对 `haps/entry/files/vaults/...`（标签 `o:object_r:debug_hap_data_file:s0:...`，目录 DAC `drwxrwxrwx`）——`od` / `cat` / `ls` 读取 ✅、`rm`（unlink）✅；`touch` 新建 ❌ `Permission denied`、`hdc file send` 写入 ❌ `Error opening file: permission denied`；`su` 不存在，无提权通道。`getenforce` = Enforcing——拦截在 SELinux 而非 DAC。
 - 影响：EM 用例不能靠 shell 往库里「注入」新笔记夹具（如带 BOM 的 md）；夹具只能走应用自身链路（新建 / 导入 / Git clone）或使用沙箱内既有文件。[UI 自动化测试](../testing/UI自动化测试.md)记载的 harness 宿主侧 `rm -rf uitest*` 残留清理仍成立（unlink 放行，实测 RM_OK）。
-- 依据：EM-C12（BOM 回归用例）补建时实测（2026-11-15）；BOM 误报修复见 [v1.70 需求文档](../releases/v1.70/需求文档.md) 70.5 与 AG1。
+- 依据：EM-C12（BOM 回归用例）补建时实测（2026-11-15）；BOM 误报修复见 [v1.70 需求文档](../releases/历史版本归档.md#v170-需求文档) 70.5 与 AG1。
 
 ### L-23 ⚠️ 预览 Web 内点 http(s) 外链默认**在 Web 里当网页加载**——须 `onLoadIntercept` 拦下交系统打开（官方 FAQ，未真机实测）
 
@@ -1913,7 +1921,7 @@ SDK 声明起始 API20，注释明确仅元服务可用，不能据此为当前�
 
 本机 `@ohos.net.http.d.ts` 的 `HttpRequestOptions.caPath` 从 API10 起可用；不设置时，SDK 声明网络栈使用系统预设 CA，并给出 `/etc/ssl/certs/cacert.pem` 路径。Native libgit2 在 HTTPS 操作前把此路径交给 libgit2/mbedTLS，`caFile` 仅作可选覆盖。API26 模拟器公开 GitHub HTTPS clone 通过；这是 Native 对系统 CA 路径的设备证据，不等同于 API24 / XT2 验收或服务商 HTTPS 认证。
 
-2026-10-31：Native 模块已编入主 App 与 `ohosTest` HAP；API26 模拟器 `Git2Native` Hypium 9/9，包括 Native 模块加载、隔离认证、`xt2` 分支、进度、clone 字节哈希、stage/commit/fetch/push、失败清理、索引写失败保护、`.trash` 排除和非快进拒绝。当前实现没有调用 checkout，也未实现 pull：libgit2 不承诺 checkout 多文件写入/删除的整体原子性或失败/中断整库回滚；`AtomicFile` 不能包裹其原生写入。API24 / XT2、生产 App 页面端到端、AssetStoreKit 真机读令牌和真实服务商 HTTPS 认证仍待验。详见 [v0.3 验收记录](../releases/v0.3/需求文档.md#6-验收记录)。
+2026-10-31：Native 模块已编入主 App 与 `ohosTest` HAP；API26 模拟器 `Git2Native` Hypium 9/9，包括 Native 模块加载、隔离认证、`xt2` 分支、进度、clone 字节哈希、stage/commit/fetch/push、失败清理、索引写失败保护、`.trash` 排除和非快进拒绝。当前实现没有调用 checkout，也未实现 pull：libgit2 不承诺 checkout 多文件写入/删除的整体原子性或失败/中断整库回滚；`AtomicFile` 不能包裹其原生写入。API24 / XT2、生产 App 页面端到端、AssetStoreKit 真机读令牌和真实服务商 HTTPS 认证仍待验。详见 [v0.3 验收记录](../releases/历史版本归档.md#v03-需求文档)。
 
 ## T 组：外部目录选择与持久授权（2026-10-31，v1.5 前置核实）
 
@@ -2209,7 +2217,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - `UIContext.getFont(): Font`（`api/@ohos.arkui.UIContext.d.ts:4440`）→ `Font.registerFont(options: font.FontOptions)`（同文件 `:69`、`api/@ohos.font.d.ts:448`）；`FontOptions { familyName: string | Resource, familySrc: string | Resource }`，`@since 9`，`familySrc` 可传 `$rawfile(...)` 资源，`familyName` 即后续 `fontFamily` 使用的注册名。SDK 注释要求用 UIContext 版本以避免 ambiguous UI context。
 - `CommonMethod.blur(value: number, options?)`（`@since 7`）可用于图标 / 逐字去模糊，值随 `@State` 在 `animateTo` 闭包内变更；`CanvasRenderingContext2D.createImageData(sw, sh)` / `putImageData(...)` 与 `ImageData.data: Uint8ClampedArray`（`@since 8`）；`markAnchor(Position)` 支持百分比锚点。`blendMode(BlendMode, BlendApplyType?)`（`@since 11`）可用但需离屏合成，启动首帧未启用。
 - **v1.64 用法**：`StartupMask.aboutToAppear` 注册两档静态子集（wght 400 / 600，`OS/2.usWeightClass` 同步、内部族名改写、版权与 OFL name 记录保留）；品牌名用 Semibold family + `fontWeight(600)`，名言 / 出处 / 页脚 / 大引号用 Regular family；图标与逐字用 `.blur()` 从 6 / 8 / 6vp 消融到 0；噪点用 `ImageData` 逐 2px 块随机 alpha（浅 7% / 深 5%）；紫色极光用 `markAnchor(100%)` + `position(96%,98%)` 等效 CSS `right:4%;bottom:2%`。
-- ⚠️ 仅为 SDK 声明与静态核对：**自定义字体在 API 24 / XT2 的实际加载与字形、逐字 blur 合成开销、全屏 `ImageData` 噪点的首帧耗时、`markAnchor` 百分比定位**均待设备目视；自动测试与 HAP 构建不构成运行证据。授权与再分发规则见 [v1.64 §2](../releases/v1.64/需求文档.md)。
+- ⚠️ 仅为 SDK 声明与静态核对：**自定义字体在 API 24 / XT2 的实际加载与字形、逐字 blur 合成开销、全屏 `ImageData` 噪点的首帧耗时、`markAnchor` 百分比定位**均待设备目视；自动测试与 HAP 构建不构成运行证据。授权与再分发规则见 [v1.64 §2](../releases/历史版本归档.md#v164-需求文档)。
 
 ### U4 ✅ 显式动画起播时机：`aboutToAppear` 中动画不生效（2026-11-13，v1.64 修订）
 
@@ -2222,7 +2230,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 ## V 组：应用内检测更新（AppGallery Kit `updateManager`，2026-11-02）
 
 > 证据构成：鸿蒙官方 Agent 答复 + **本机 HMS SDK 声明逐条核对**（`sdk/default/hms/ets/api/@hms.core.appgalleryservice.updateManager.d.ts`、`kits/@kit.AppGalleryKit.d.ts`）。
-> **没有任何 API 24 / XT2 运行时证据**；声明只证明接口存在、签名与起始版本。逐条来源与分歧见 [答复归档](qa/2026-11-02_应用内检测更新能力答复_API24.md)。服务 [v1.17](../releases/v1.17/需求文档.md)。
+> **没有任何 API 24 / XT2 运行时证据**；声明只证明接口存在、签名与起始版本。逐条来源与分歧见 [答复归档](qa/2026-11-02_应用内检测更新能力答复_API24.md)。服务 [v1.17](../releases/历史版本归档.md#v117-需求文档)。
 
 ### V1 ✅ 端侧检查更新接口存在，API 12 起，无需权限
 
@@ -2268,7 +2276,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 ### V11 合规边界（⚠️ 条款原文未逐字核对）
 
 - 审核禁止引导到第三方渠道下载（答复引审核指南）；我们只有市场一个渠道，天然合规。
-- 新增联网检查入口建议在隐私政策补一句说明（答复标注为**推断**，非单一条款强制）；请求由系统服务发起、不携带笔记数据，风险低。核对挂在 [v1.11](../releases/v1.11/需求文档.md) 与 [上架准备清单](../releases/上架准备清单.md)的政策一致性项。
+- 新增联网检查入口建议在隐私政策补一句说明（答复标注为**推断**，非单一条款强制）；请求由系统服务发起、不携带笔记数据，风险低。核对挂在 [v1.11](../releases/历史版本归档.md#v111-需求文档) 与 [上架准备清单](../releases/上架准备清单.md)的政策一致性项。
 - 应用市场自身的更新提醒默认生效，无需开发者额外配置（答复，未在本机 AGC 核实）。
 
 ### V12 ✅ HMS Kit 在本工程可用的旁证
@@ -2287,7 +2295,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 ### W1 ⚠️ 双指缩放手势接口层级满足 API 24，但 ArkWeb 内的手势竞争无结论（补录 2026-11-02）
 
-本组是 [v1.12 需求文档](../releases/v1.12/需求文档.md) 那轮 SDK 核对的**补录**：当时结论只写进了版本档案，`api_notes.md` 里从未落条目，而 v1.12 已按 R5 规则把链接指到这里 —— 链接因此是坏的。本轮按声明文件重新核对并补齐。
+本组是 [v1.12 需求文档](../releases/历史版本归档.md#v112-需求文档) 那轮 SDK 核对的**补录**：当时结论只写进了版本档案，`api_notes.md` 里从未落条目，而 v1.12 已按 R5 规则把链接指到这里 —— 链接因此是坏的。本轮按声明文件重新核对并补齐。
 
 - **本机 SDK 声明**（`sdk/default/openharmony/ets/component/gesture.d.ts`，2026-11-02 重新读取）：`interface PinchGestureInterface extends GestureInterface<PinchGestureInterface>` 标注 `@since 7`、`@syscap SystemCapability.ArkUI.ArkUI.Full`；其 `onActionUpdate(event: (event: GestureEvent) => void): PinchGestureInterface` 同样 `@since 7`。声明注释给出参数语义：`fingers` 最小触发指数为 2–5（默认 2，越界回落到默认值），`distance` 为最小识别距离、单位 vp、默认 5。→ **起始版本远低于 API 24 兼容下限，声明层面无障碍。**
 - **声明不能证明的事**（这条才是 v1.12 的实际卡点）：ArkWeb 组件内部的滚动、DOM 层触摸事件与 ArkUI 手势识别之间的**竞争/优先级关系**没有任何记载；`pinch` 构造器本身不在本文件的核对范围内（未单独取到 `@since`，不在此断言）。
@@ -2330,7 +2338,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 - `Zip.inflateInit2` Raw Deflate 在 API 24 运行时的 `ZStream` 字段更新语义与错误码 `17800004/17800005` 触发形态——声明齐全但未实测；声明可编译 ≠ 解压已验收。
 - API 24 / XT2 的真实 Picker `.zip` 过滤视觉与取消行为未验收。
-- **实现期补充（2026-11-07，v1.36 落码，声明核对）**：随机读改用 `RandomAccessFile`（`fileIo.createRandomAccessFileSync` / `setFilePointer` / `read(buffer): Promise<number>` / readonly `filePointer`，均 `@ohos.file.fs` **since 10**），**绕开 Y3 ⚠️ 的 `fs.read` ReadOptions.offset 存疑语义**——实现不依赖该存疑行为。`ZStream` 字段按声明使用（nextIn/availableIn/totalIn/nextOut/availableOut/totalOut/dataType/adler，全可选）。设备链路封装于 `entry/src/main/ets/model/ZipImportDevice.ets`；解析 / 校验 / 解压编排在 `ZipImportService.ets`（零 `@kit`，Node 侧真实 zlib deflateRaw 交叉验证，`tools/tests/test_zip_import.mjs` 25/25），签名 HAP 构建通过。⚠️ 项不变：`17800004/17800005` 触发形态与 Picker 过滤视觉仍待 API 24 / XT2 真机验收（`docs/releases/v1.36/需求文档.md` §6.2）。
+- **实现期补充（2026-11-07，v1.36 落码，声明核对）**：随机读改用 `RandomAccessFile`（`fileIo.createRandomAccessFileSync` / `setFilePointer` / `read(buffer): Promise<number>` / readonly `filePointer`，均 `@ohos.file.fs` **since 10**），**绕开 Y3 ⚠️ 的 `fs.read` ReadOptions.offset 存疑语义**——实现不依赖该存疑行为。`ZStream` 字段按声明使用（nextIn/availableIn/totalIn/nextOut/availableOut/totalOut/dataType/adler，全可选）。设备链路封装于 `entry/src/main/ets/model/ZipImportDevice.ets`；解析 / 校验 / 解压编排在 `ZipImportService.ets`（零 `@kit`，Node 侧真实 zlib deflateRaw 交叉验证，`tools/tests/test_zip_import.mjs` 25/25），签名 HAP 构建通过。⚠️ 项不变：`17800004/17800005` 触发形态与 Picker 过滤视觉仍待 API 24 / XT2 真机验收（`docs/releases/历史版本归档.md#v136-需求文档` §6.2）。
 - **✅ `ZStream` 字段更新语义已实测确认（2026-11-17，x86_64 API26 模拟器实测 + d.ts/官方 FAQ 佐证）**：`Zip.inflate` 等流式操作**不回写调用方传入的 `ZStream` 对象**——操作后读 `strm.availableOut/totalOut` 拿到的仍是**初始值**；当前真实状态必须 `await zip.getZStream()` 重取（`@ohos.zlib.d.ts:1215`，官方 FAQ「zip.deflate 压缩数据后……totalOut 都没有发生改变……每次操作完成，需要重新 getZStream() 获取最新状态」）。**踩坑记录**：`ZlibRawInflate.inflateRaw` 曾在 STREAM_END 后直接读 `strm.availableOut`（恒为初始值 `expectedSize`），完整性检查 `expectedSize - availableOut !== expectedSize` 对**所有非空 deflate 条目恒真**→ 一律误判「ZIP 数据损坏」——应用备份恢复必现「备份文件损坏或格式不完整」（备份 zip 全部 18 条目均为 method 8，首个非空条目 manifest.json 即失败），含非空笔记的 vault ZIP 导入同理必现；解压本身成功、输出 buffer 字节正确，纯检查误杀。**修复**：STREAM_END 后 `const current = await zip.getZStream();` 读 `current.availableOut`（缺省回落 0，空表不误伤；extract 的长度 + CRC32 校验仍在兜底）。修复后模拟器上导出→恢复全链路实测通过（预览 15 文件、替换恢复、重启后数据完整）。空条目（uncompressedSize 0）走提前返回不经 zlib，故 0 字节笔记库导入此前侥幸通过、掩盖了该缺陷。XT2 / API 24 真机复验仍待做（沿 Y4 原 ⚠️ 项）。
 - **⚠️ 真机复验失败，availableOut 检查整体移除（2026-11-18，XT2 真机用户复测）**：用户在 XT2 真机上「ZIP 导出后再导入」仍报「格式已损坏」——getZStream 版修复在 x86_64 模拟器通过但真机不通过，说明 **`getZStream()` 返回语义随系统构建而异**（XT2 固件可能仍返回初始 `availableOut`、或该调用抛错落入 catch→corrupt；亦不排除真机装的是修复前构建，两种情形的嫌疑环节相同）。**拍板：设备层不再做任何 `availableOut` 后置检查**（`ZipImportDevice.ets` 移除 getZStream 判定，`tools/tests/test_zlib_inflate_state.mjs` 改为断言无 availableOut 判定 + 服务层校验仍在）：该检查本就冗余——`ZipImportService.extract` 对返回字节做**长度 + CRC32 双重权威校验**，比 availableOut 更强且与设备固件无关；设备层只保留 `ReturnStatus.STREAM_END` 终态要求。getZStream 的平台事实（读状态须重取）不变，但本项目不再依赖它做判定。真机后续实测结果照实回填本条。
 
@@ -2387,7 +2395,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - 配置后系统字号变化实时生效：前台 UIAbility 收到 `onConfigurationUpdate`（API 24 起另有 `onFontSizeScaleUpdated` 订阅），UI 自动重排，无需重启。
 - 若调用应用侧 `setFontSizeScale` 自定义字体，则不再跟随系统，也不再触发订阅。
 - 适老化适配指南建议：最大适配 1.75 倍（部分组件 2 倍），即 configuration 标签的 `fontSizeMaxScale` 建议配 1.75。
-- **实测（API 26 x86_64 模拟器）**：滑条 标准→特大 后应用进程实时收到 `onFontSizeScaleUpdated`（1 → 1.45），同页文字高度精确 ×1.45；拖回标准回调恢复 1，无需重启。证据记录见 [v1.10 需求文档 §4.3](../releases/v1.10/需求文档.md)。
+- **实测（API 26 x86_64 模拟器）**：滑条 标准→特大 后应用进程实时收到 `onFontSizeScaleUpdated`（1 → 1.45），同页文字高度精确 ×1.45；拖回标准回调恢复 1，无需重启。证据记录见 [v1.10 需求文档 §4.3](../releases/历史版本归档.md#v110-需求文档)。
 
 ### AA2 应用侧读取 / 订阅字号缩放系数的 API ✅
 
@@ -2758,7 +2766,7 @@ Huawei TripleFold 模拟器；`hidumper -s WindowManagerService -a '-a'` 窗口�
   （`web/mdeditor/src/index.ts` / `web/mdpreview/src/index.ts` / `web/shared/codec.ts`）；
   ArkTS 侧 `BridgeCodec.decode` **不动**（OHOS 语义存疑），`Index.ets` 两处保存前校验改
   `isEditorTextEquivalent`（剥前导 U+FEFF + CRLF→LF）统一豁免——两种解释下带 BOM 笔记都
-  不会误弹窗。已定决策见 [v1.70 需求文档](../releases/v1.70/需求文档.md) 70.5。
+  不会误弹窗。已定决策见 [v1.70 需求文档](../releases/历史版本归档.md#v170-需求文档) 70.5。
 - 附带结论：`TextEncoder`（两侧）把字符串里的 U+FEFF 原样编码，不剥离；桥接下发侧无此问题。
 
 ## AH 组：统一拖放（drag & drop，2026-11-16，v1.71 落码核实）
@@ -2986,3 +2994,43 @@ dumpLayout 里 Appbar / 笔记路径行 / 格式栏「集体消失」，root 报
   不可达（截像 wz_dbg1.jpeg 像素确认）。46.10 解决了「栏底停靠被键盘盖住」但引入此
   边角；是否修（反补偿 / 换停靠策略）留需求池评估。⚠️ 真机同状态（API 24，
   OFFSET_WITH_CARET）待验，未验前不外推。
+
+## AM 组：多 product 双包共存（2026-11-20，构建链路实测）
+
+来源：真机同时保留应用市场线上包与开发调试包的需求（覆盖安装报 9568286）。
+本组全部为本机构建实测（hvigor 5.x / API26 SDK），非官方问答结论。
+
+### AM1 ✅ 根 build-profile 多 product：`dev` 只需覆盖 `bundleName`
+
+- `"products"` 数组加 `{"name": "dev", "bundleName": "com.jxg.huaweiobsidian.dev"}`；
+  `modules[].targets[].applyToProducts` 需为 default / dev 各加一条映射（target 名与
+  product 名不必相同）。
+- `dev` product **不要**配 `resource`（`resource.directories`）：其 `[0]` 会**替换**
+  AppScope 资源目录（`process-resource.js` getAppResourceDir），直接 `$string:app_name`
+  未定义编译失败。应用名覆盖走 AM2。
+- hvigorfile 里探测当前 product **不能用 `process.argv`**（hvigor 走 daemon，argv 无 CLI
+  参数）；官方读法是 `hvigorCore.getExtraConfig().get('product')`
+  （`@ohos/hvigor`，find-target-product.js 同款）。
+
+### AM2 ✅ 模块 target `resource.directories`：替换式语义 + 先列者优先 + 按名去重
+
+- entry 模块 `build-profile.json5` 的 target 级 `resource.directories` 是**替换式**：
+  不配则默认 `src/main/resources`；配了就要列全（覆盖目录在前，`./src/main/resources`
+  在后）。路径相对 entry/、必须 `./` 开头、目录必须存在
+  （validateTargetCustomizeResources）。
+- **同名资源 restool 按名去重，先列目录优先**：devres 在前时 `EntryAbility_label`
+  唯一绑定为「曜石笔记开发版」；字节级核验（module.json `labelId` ↔ resources.index
+  字符串区 id 序）确认**无重复值歧义**。调换顺序则主目录值胜出。
+- 构建目录与产物全按 product 分：`entry\build\<product>\outputs\<product>\entry-<product>-<signed|unsigned>.hap`、
+  `BuildProfile.ets` 在 `entry\build\<product>\generated\profile\<product>\`。
+  定位脚本不要跨 product 兜底（会把 default 旧产物误报给 dev）。
+
+### AM3 ✅ `BuildProfile.PRODUCT_NAME` 是字面量类型；dev 包设置页隐藏检查更新
+
+- 生成的 `PRODUCT_NAME` 常量是字面量类型（`'default'`），与 `'dev'` 直接 `!==` 比较报
+  no-overlap 编译错；先赋给 `string` 成员再比较。
+- dev 包不上 AGC，设置页「检查更新」组用 `productNameOfBuild !== 'dev'` 守卫隐藏。
+- 签名分流：hvigorfile 按 product 选 `.local/dev-signing.json`（dev 包名单独申请的
+  调试 p7b；调试 p7b 绑定 bundle-name，不能复用线上包的）。
+  `-Product dev` 与 `-Release` 互斥（上架只有 default）。
+- ⚠️ 真机双包并装 + 桌面名显示待用户完成 AGC 前置后验收。

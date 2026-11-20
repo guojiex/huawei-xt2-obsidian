@@ -1,4 +1,5 @@
 import { appTasks } from '@ohos/hvigor-ohos-plugin';
+import { hvigorCore } from '@ohos/hvigor';
 import * as fs from 'fs';
 
 /**
@@ -29,12 +30,16 @@ import * as fs from 'fs';
  * 没有该文件时（例如别人 clone 后首次构建）不注入，产物为 unsigned，构建不报错。
  */
 /**
- * 调试 / 发布两套凭据分开（2026-10-31 上架需要）：
+ * 调试 / 发布 / dev 三套凭据分开：
  *   默认读 local-signing.json（DevEco 自动签名的调试凭据，日常装机调试用）；
  *   设置环境变量 OHOS_SIGNING_PROFILE=release 时改读 release-signing.json（AGC 申请的
- *   发布证书 + 发布 Profile），对应 tools/build.ps1 -Release。
- * 两者**不能混用**：发布签名的包装不上真机（只能上架），调试签名上不了架。
- * 不设环境变量时行为与过去完全一致 —— IDE 点「运行」不受影响。
+ *   发布证书 + 发布 Profile），对应 tools/build.ps1 -Release；
+ *   dev product（包名 com.jxg.huaweiobsidian.dev，与应用市场线上包同机共存）读
+ *   dev-signing.json：**同一套调试证书**（避免 9568322 同源坑），仅 profile 换成
+ *   AGC 为 dev 包名单独申请的调试 Profile（调试 p7b 绑定 bundle-name，不可复用）。
+ * 三者**不能混用**：发布签名的包装不上真机（只能上架），调试签名上不了架。
+ * 选择优先级：OHOS_SIGNING_PROFILE 环境变量 > hvigor 当前 product（extraConfig）> default。
+ * 不设环境变量且不构 dev 时行为与过去完全一致 —— IDE 点「运行」不受影响。
  */
 const LOCAL_SIGNING_FILES: Record<string, string> = {
   default: './.local/local-signing.json',
@@ -43,10 +48,35 @@ const LOCAL_SIGNING_FILES: Record<string, string> = {
   // ⚠️ 启用前提：该 profile 的 development-certificate 必须与 certpath/storeFile
   // 是同一个开发证书，否则 `bm install` 报 9568322 not trusted app source
   // （2026-10-31 实测：证书 SHA1 65E4… 与本机 keystore C7FA… 不同源）。
-  'file-access': './.local/file-access-signing.json'
+  'file-access': './.local/file-access-signing.json',
+  // 双包共存（2026-11-19）：dev 包独立凭据，证书与 default 调试凭据同源。
+  dev: './.local/dev-signing.json'
 };
 
-const signingProfileKey: string = (process.env['OHOS_SIGNING_PROFILE'] ?? 'default').trim();
+/**
+ * 签名凭据选择：环境变量显式指定优先（向后兼容）；
+ * 未指定时读 hvigor 当前构建的 product（hvigorCore.getExtraConfig().get('product')，
+ * 官方插件 find-target-product.js 同款读法 —— hvigor 走 daemon 进程，process.argv
+ * 里没有 CLI 参数，不能从 argv 探测）；
+ * product=dev 时用 dev 专用凭据，其余回落 default。
+ */
+function selectSigningProfileKey(): string {
+  const envKey: string = (process.env['OHOS_SIGNING_PROFILE'] ?? '').trim();
+  if (envKey.length > 0) {
+    return envKey;
+  }
+  try {
+    const product: string | undefined = hvigorCore.getExtraConfig()?.get('product');
+    if (typeof product === 'string' && product.length > 0) {
+      return product;
+    }
+  } catch (error) {
+    // extraConfig 未初始化等场景按 default 处理，不阻塞构建
+  }
+  return 'default';
+}
+
+const signingProfileKey: string = selectSigningProfileKey();
 const LOCAL_SIGNING_FILE: string = LOCAL_SIGNING_FILES[signingProfileKey] ?? LOCAL_SIGNING_FILES['default'];
 
 function loadLocalSigning(): Record<string, string> {

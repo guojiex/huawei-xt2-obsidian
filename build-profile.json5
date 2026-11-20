@@ -1,21 +1,37 @@
 {
   "app": {
     "signingConfigs": [],
-    "products": [
-      {
-        "name": "default",
-        "signingConfig": "default",
-        "targetSdkVersion": "26.0.0",
-        "compatibleSdkVersion": "6.1.1(24)",
-        "runtimeOS": "HarmonyOS",
-        "buildOption": {
-          "strictMode": {
-            "caseSensitiveCheck": true,
-            "useNormalizedOHMUrl": true
-          }
+  "products": [
+    {
+      "name": "default",
+      "signingConfig": "default",
+      "targetSdkVersion": "26.0.0",
+      "compatibleSdkVersion": "6.1.1(24)",
+      "runtimeOS": "HarmonyOS",
+      "buildOption": {
+        "strictMode": {
+          "caseSensitiveCheck": true,
+          "useNormalizedOHMUrl": true
         }
       }
-    ],
+    },
+    {
+      "name": "dev",
+      "signingConfig": "default",
+      "targetSdkVersion": "26.0.0",
+      "compatibleSdkVersion": "6.1.1(24)",
+      "runtimeOS": "HarmonyOS",
+      "buildOption": {
+        "strictMode": {
+          "caseSensitiveCheck": true,
+          "useNormalizedOHMUrl": true
+        }
+      },
+      // 双包共存：仅覆盖包名；应用名覆盖走 entry 模块 dev target 的 resource.directories
+      // （product 级 resource.directories 会替换 AppScope 资源目录，别用——见 api_notes）
+      "bundleName": "com.jxg.huaweiobsidian.dev"
+    }
+  ],
     "buildModeSet": [
       {
         "name": "debug",
@@ -34,6 +50,12 @@
           "name": "default",
           "applyToProducts": [
             "default"
+          ]
+        },
+        {
+          "name": "dev",
+          "applyToProducts": [
+            "dev"
           ]
         }
       ]

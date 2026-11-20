@@ -6,6 +6,15 @@
 #   .\tools\build.ps1 -Task clean     # 清理
 #   .\tools\build.ps1 -Abi x86_64     # 只本次构建编 x86_64
 #   .\tools\build.ps1 -Release        # ★ 上架发布包：用 AGC 发布证书/Profile 签名并打 .app
+#   .\tools\build.ps1 -Product dev    # ★ 开发调试包：包名 com.jxg.huaweiobsidian.dev，
+#                                     #   与应用市场线上包同机共存（9568286 不再出现）
+#
+# -Product 说明（双包共存，2026-11-19）：
+#   dev product 覆盖 bundleName 为 com.jxg.huaweiobsidian.dev、应用名为「曜石笔记开发版」，
+#   签名读 .local/dev-signing.json（证书与 default 调试凭据同源，profile 是 AGC 为 dev
+#   包名单独申请的调试 Profile —— 调试 p7b 绑定 bundle-name，不能复用线上的）。
+#   hvigorfile.ts 会按 -p product=dev 自动选该凭据，无需设环境变量。
+#   线上包相关链路（default / -Release）不受任何影响；-Product dev 不能与 -Release 同用。
 #
 # -Release 说明（2026-10-31 上架用）：
 #   设置环境变量 OHOS_SIGNING_PROFILE=release → 工程级 hvigorfile.ts 改读
@@ -36,6 +45,8 @@ param(
     [string]$Task = 'assembleHap',
     [ValidateSet('arm64-v8a', 'x86_64')]
     [string]$Abi = 'arm64-v8a',
+    [ValidateSet('default', 'dev')]
+    [string]$Product = 'default',
     [switch]$OhpmInstall,
     [switch]$Release,
     [string]$DevEco = 'C:\Program Files\Huawei\DevEco Studio'
@@ -66,6 +77,9 @@ if ($OhpmInstall) {
 }
 
 if ($Release) {
+    if ($Product -ne 'default') {
+        Write-Error "-Release 只支持 default product（上架包），不能 -Product $Product"
+    }
     if (-not $PSBoundParameters.ContainsKey('Task')) { $Task = 'assembleApp' }
     if (-not (Test-Path -LiteralPath (Join-Path $repoRoot '.local\release-signing.json'))) {
         Write-Error "缺少 .local/release-signing.json（发布凭据）—— 见 hvigorfile.ts 注释与 tools/signing.ps1"
@@ -84,7 +98,8 @@ if ($Release) {
 
 Write-Host "task      : $Task"
 Write-Host "abi       : $Abi"
-Write-Host "signing   : $(if ($Release) { 'release（发布证书/Profile）' } else { 'default（调试自动签名）' })"
+Write-Host "product   : $Product"
+Write-Host "signing   : $(if ($Release) { 'release（发布证书/Profile）' } elseif ($Product -eq 'dev') { 'dev（dev 包名调试 Profile）' } else { 'default（调试自动签名）' })"
 Write-Host "deveco    : $DevEco"
 Write-Host "java home : $env:JAVA_HOME"
 
@@ -124,7 +139,7 @@ $hvigorMode = if ($Release) { 'project' } else { 'module' }
 try {
     $ErrorActionPreference = 'Continue'
     # 一边实时输出一边留档：后面要按 hvigor 的报错关键词给针对性提示。
-    & $hvigorw $Task --mode $hvigorMode -p product=default --node-home $nodeHome 2>&1 |
+    & $hvigorw $Task --mode $hvigorMode -p product=$Product --node-home $nodeHome 2>&1 |
         ForEach-Object { $script:buildLog += [string]$_; $_ }
     $exitCode = $LASTEXITCODE
 } finally {
@@ -173,12 +188,26 @@ if ($Release) {
     exit 0
 }
 
-$outDir = Join-Path $repoRoot 'entry\build\default\outputs\default'
+# 产物目录按 product 定位（2026-11-20 实测）：构建目录与产物目录都按 product 分 ——
+# default 在 entry\build\default\outputs\default，dev 在 entry\build\dev\outputs\dev。
+# ⚠️ 不做跨 product 兜底：混着找会把 default 的旧产物误报成 dev 的本次产物
+# （dev 只出 unsigned 时尤其误导）。
+$outDir = Join-Path $repoRoot "entry\build\$Product\outputs\$Product"
 $signed = Get-ChildItem -LiteralPath $outDir -Filter '*-signed.hap' -ErrorAction SilentlyContinue |
           Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($signed) {
-    Write-Host "`n产物（已签名）：$($signed.Name)  $($signed.LastWriteTime)" -ForegroundColor Green
+    Write-Host "`n产物（已签名）：$($signed.FullName.Substring($repoRoot.Length + 1))  $($signed.LastWriteTime)" -ForegroundColor Green
 } else {
-    Write-Host "`n产物（未签名）：entry\build\default\outputs\default\entry-default-unsigned.hap" -ForegroundColor Yellow
-    Write-Host "  要签名构建：DevEco 自动签名后跑 .\tools\signing.ps1 -Import" -ForegroundColor Yellow
+    $unsigned = Get-ChildItem -LiteralPath $outDir -Filter '*-unsigned.hap' -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($unsigned) {
+        Write-Host "`n本次产物未签名：entry\build\$Product\outputs\$Product\$($unsigned.Name)" -ForegroundColor Yellow
+    } else {
+        Write-Host "`n未找到产物（entry\build\$Product\outputs\$Product\）" -ForegroundColor Yellow
+    }
+    if ($Product -eq 'dev') {
+        Write-Host "  dev 包签名读 .local/dev-signing.json —— 缺失时只出 unsigned，真机装不上" -ForegroundColor Yellow
+    } else {
+        Write-Host "  要签名构建：DevEco 自动签名后跑 .\tools\signing.ps1 -Import" -ForegroundColor Yellow
+    }
 }
