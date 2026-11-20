@@ -837,6 +837,13 @@ export struct ShareFlowPanel {
         throw new Error('PDF 页面尺寸与渲染视口不符，请重试');
       }
       sessionId = NoteImageShareService.createSession(registry);
+      // 临时诊断 2026-11-20：逐页切片几何（定位「预览一页很短」）。字段含义与判据见
+      // docs/engineering/分享预览渲染性能优化.md §3.6；验后随 SHARE_PERF_TRACE 一并删除。
+      if (SHARE_PERF_TRACE) {
+        hilog.info(DOMAIN, 'ShareDbg',
+          'pdfgeo start pages=%{public}d scalePct=%{public}d pageVp=%{public}d',
+          tops.length, Math.round(PDF_SNAPSHOT_SCALE * 100), Math.round(this.pdfPageHeightVp));
+      }
       const pageJpegs: string[] = [];
       const pageAspects: number[] = [];
       let expectedWidth: number = 0;
@@ -885,6 +892,15 @@ export struct ShareFlowPanel {
           const pagePath: string = registry.sharePath(sessionId + '/page-' + (i + 1).toString() + '.jpg');
           await NoteImageShareService.writeJpegTo(pagePath, pageShot);
           pageJpegs.push(pagePath);
+          // 临时诊断 2026-11-20：fillPct = 本页切片高 / 整页高（100=满页，越小越「短」）；
+          // aspectMilli = 页图宽/高 ×1000（A4 约 707）。见 §3.6，验后随 SHARE_PERF_TRACE 删除。
+          if (SHARE_PERF_TRACE) {
+            hilog.info(DOMAIN, 'ShareDbg',
+              'pdfgeo i=%{public}d/%{public}d w=%{public}d h=%{public}d fillPct=%{public}d cropPx=%{public}d aspectMilli=%{public}d',
+              i, tops.length, imageInfo.size.width, imageInfo.size.height,
+              Math.round(sliceVp * 100 / this.pdfPageHeightVp), cropPx,
+              Math.round(imageInfo.size.width * 1000 / cropPx));
+          }
           pageAspects.push(imageInfo.size.width / cropPx);
         } finally {
           await pageShot.release();
