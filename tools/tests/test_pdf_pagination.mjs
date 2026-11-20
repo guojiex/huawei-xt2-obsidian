@@ -422,17 +422,16 @@ test('源级：ShareFlowPanel 分段快照带旧帧校验与重试（53.10）', 
   assert.doesNotMatch(pdfLoop, /getComponentSnapshot\(\)/, 'PDF 循环不得绕过旧帧校验直连快照');
 });
 
-test('源级：web setShareCaptureScrollTop 双 rAF 后无 64ms 死等（v1.91 P2）', () => {
+test('源级：web setShareCaptureScrollTop 滚动后给渲染服务留合成时间（53.10，P2 已回退）', () => {
   const indexTs = readRepoFile('web/mdpreview/src/index.ts');
   const scrollFn = indexTs.slice(indexTs.indexOf('async setShareCaptureScrollTop'),
     indexTs.indexOf('async preparePdfPages'));
   assert.ok(scrollFn.length > 0, 'setShareCaptureScrollTop 区间未定位');
-  // 保留双 rAF（渲染一拍），但删掉 53.10 每段无条件的 64ms 死等——
-  // 旧帧兜底交给端侧 captureSegmentVerified 的像素比对 + 180ms 退避重试。
-  // 实测依据与判据见 docs/engineering/分享预览渲染性能优化.md §3.3 / §4 P2。
+  // 双 rAF 之后仍有 64ms 沉淀，避免组件快照取到滚动前旧表面。
+  // v1.91 P2 曾删除此等待，真机复测旧帧重试率 0.8%→87%、墙钟 15.5s→43.4s，净亏已回退（2026-11-20）。
+  // 数据与结论见 docs/engineering/分享预览渲染性能优化.md §3.3 / §4 P2。
   assert.match(scrollFn, /await nextRenderedFrame\(\)/);
-  assert.doesNotMatch(scrollFn, /\}, 64\)/, 'P2 后不得再有 64ms 死等');
-  assert.match(scrollFn, /v1\.91 P2/, '改动处应留判据注释指向优化文档');
+  assert.match(scrollFn, /\}, 64\)/, '64ms 合成等待必须保留（P2 回退后恢复）');
 });
 
 test('源级：PDF 水印转末页 fixed 徽标，不参与分页 bounds（53.13）', () => {
