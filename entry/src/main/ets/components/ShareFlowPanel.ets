@@ -56,6 +56,17 @@ const SHARE_PERF_TRACE: boolean = true;
 // ⚠️ 试验值：真机验证后按 docs/engineering/分享预览渲染性能优化.md §4 P6 调整或整版回退。
 const PDF_SNAPSHOT_SCALE: number = 0.5;
 
+// v1.93（93.2）：PDF 捕获页目标尺寸——固定 700vp 上限（A4 竖版 700×990.59，页高取整 991）。
+// 2026-11-11 曾改成「随窗口自适应」，根因是固定 700×990.59 时捕获层超出布局边界、
+// #content 实际视口被压矮，分页要求 scrollHeight ≥ 末页顶 + 页高永远补不齐（PDF 分页高度不足）。
+// v1.93 不再假设平台必然压矮视口：先按固定大页试，若视口被压回窗口以内则自动降级回
+// 窗口自适应尺寸（ShareFlowPanel.applyPdfPageSize / adaptivePdfPageSize）。
+// 700vp × dpr3 = 2100 物理 px，远低于硬约束 12 的 7680px 上限。
+// 依据与判据见 docs/releases/v1.93/需求文档.md §2 / §3。
+const PDF_TARGET_PAGE_WIDTH_VP: number = 700;
+const PDF_TARGET_PAGE_HEIGHT_VP: number = Math.round(
+  PDF_TARGET_PAGE_WIDTH_VP * NotePdfDocumentService.A4_HEIGHT_PT / NotePdfDocumentService.A4_WIDTH_PT);
+
 /** 53.10：带旧帧校验的分段快照结果（快照本体 + 用于下一段比对的像素缓冲）。 */
 interface ShareSegmentCapture {
   snapshot: image.PixelMap;
@@ -120,16 +131,17 @@ export struct ShareFlowPanel {
   /** v1.53 PDF 模式：捕获层按 A4 比例 + 浅色主题渲染（53.3）。 */
   @State shareCapturePdfMode: boolean = false;
   /**
-   * PDF 捕获页尺寸（2026-11-11 修复）：不再固定 700×990.59vp——窗口高不足 990.59vp
-   * （模拟器 776vp、XT2 折叠 / 展开横屏均如此）时捕获层超出布局边界，#content 实际
-   * 视口被压矮，分页要求 scrollHeight ≥ 末页顶 + 990.59 永远补不齐（PDF 分页高度
-   * 不足）。现按当前窗口自适应：比例恒 A4 竖版，宽度 ≤ 700vp 且不超窗口宽高，
-   * 高度取整（scrollHeight / clientHeight 均为取整值，整数页高消除 ±0.5px 歧义）。
-   * prepareNotePdfShare 挂捕获层前调 updatePdfPageSize() 重算。
+   * PDF 捕获页尺寸（v1.93 93.2）：改为**脱离窗口约束**的固定大页——任意形态都用
+   * 700×990.59vp（A4 竖版，页高取整 991），每页容量不再随窄窗缩水。
+   * 2026-11-11 之所以改成窗口自适应：固定 700×990.59 时窗口高不足 990.59vp
+   * （模拟器 776vp、XT2 折叠 / 展开横屏均如此）捕获层超出布局边界，#content 实际
+   * 视口被压矮，分页要求 scrollHeight ≥ 末页顶 + 页高永远补不齐（PDF 分页高度不足）。
+   * v1.93 不再假设平台必然压矮视口：先按固定大页试，视口被压回窗口以内时自动降级
+   * 回窗口自适应尺寸（见 93.1 降级分支与 applyPdfPageSize / adaptivePdfPageSize）。
+   * 用 @State：降级时要改尺寸触发 build 重跑，PreviewWebView 才会真正 resize。
    */
-  private pdfPageWidthVp: number = 700;
-  private pdfPageHeightVp: number = 700 * NotePdfDocumentService.A4_HEIGHT_PT /
-    NotePdfDocumentService.A4_WIDTH_PT;
+  @State pdfPageWidthVp: number = PDF_TARGET_PAGE_WIDTH_VP;
+  @State pdfPageHeightVp: number = PDF_TARGET_PAGE_HEIGHT_VP;
   @State shareImagePreviewImage: ShareImagePreviewImage = {
     uri: '', aspectRatio: 1, width: 0, height: 0, theme: 'light', scaled: false, widthId: 'phone'
   };
@@ -787,14 +799,78 @@ export struct ShareFlowPanel {
     }
   }
 
-  /** PDF 捕获页尺寸自适应（2026-11-11 修复，见字段注释）：挂捕获层前按当前窗口重算。 */
-  private updatePdfPageSize(): void {
+  /**
+   * PDF 捕获页尺寸（v1.93 93.2，见字段注释）：挂捕获层前应用目标尺寸；
+   * 降级时改尺寸触发 build 重跑，PreviewWebView 才会真正 resize。
+   */
+  private applyPdfPageSize(widthVp: number, heightVp: number): void {
+    this.pdfPageWidthVp = widthVp;
+    this.pdfPageHeightVp = heightVp;
+  }
+
+  /**
+   * v1.93（93.1）降级口径：窗口自适应尺寸（沿用 2026-11-11 逻辑）——比例恒 A4 竖版，
+   * 宽度 ≤ 700vp 且不超窗口宽高，高度取整。仅在平台把固定大页的视口压回窗口以内时使用，
+   * 保证窄窗下导出仍可用（每页容量回到 2026-11-11 的水平）。
+   */
+  private adaptivePdfPageSize(): number[] {
     const widthByHeight: number = this.windowHeightVp > 0 ? this.windowHeightVp *
-      NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT : this.pdfPageWidthVp;
+      NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT : PDF_TARGET_PAGE_WIDTH_VP;
     const widthByWindow: number = this.windowWidthVp > 0 ? this.windowWidthVp : widthByHeight;
-    this.pdfPageWidthVp = Math.min(700, widthByWindow, widthByHeight);
-    this.pdfPageHeightVp = Math.round(this.pdfPageWidthVp *
+    const width: number = Math.min(PDF_TARGET_PAGE_WIDTH_VP, widthByWindow, widthByHeight);
+    const height: number = Math.round(width *
       NotePdfDocumentService.A4_HEIGHT_PT / NotePdfDocumentService.A4_WIDTH_PT);
+    return [width, height];
+  }
+
+  /**
+   * v1.93（93.1）：捕获视口是否与目标页尺寸一致。web 侧回传 #content 的 clientWidth /
+   * clientHeight——#content 是 flex:1 撑满 Web 视口且 border-box，两个值即组件尺寸。
+   */
+  private pdfViewportMatches(prepared: PreviewCaptureResult): boolean {
+    return Math.abs(prepared.viewportHeight - this.pdfPageHeightVp) <= 2 &&
+      Math.abs(prepared.viewportWidth - this.pdfPageWidthVp) <= 2;
+  }
+
+  /**
+   * v1.93（93.1）：按目标页高分页。web 侧在视口被压矮时会抛「PDF 分页高度不足」——
+   * 那正是「固定大页不可用」的信号，不能直接失败：交由调用方降级重排。
+   * 失败时返回空结果（视口 0），由视口比对判定为不匹配。
+   */
+  private async tryPreparePdfPages(bridge: PreviewBridge, pageHeightVp: number): Promise<PreviewCaptureResult> {
+    try {
+      return await bridge.preparePdfPages(pageHeightVp);
+    } catch (error) {
+      if (SHARE_PERF_TRACE) {
+        hilog.error(DOMAIN, 'ShareDbg', 'pdfgeo prepare failed msg=%{public}s',
+          (error as Error).message);
+      }
+      return {
+        scrollHeight: 0,
+        viewportHeight: 0,
+        viewportWidth: 0,
+        scrollTop: 0,
+        pageCount: 0,
+        pageTops: ''
+      };
+    }
+  }
+
+  /**
+   * v1.93（93.1）：Web resize 后重新分页——布局重排有延迟，最多 3 轮，
+   * 每轮以 web 回传的视口尺寸判定是否已生效。
+   */
+  private async preparePdfPagesAfterResize(bridge: PreviewBridge): Promise<PreviewCaptureResult> {
+    let prepared: PreviewCaptureResult = await this.tryPreparePdfPages(bridge, this.pdfPageHeightVp);
+    for (let attempt: number = 1; attempt < 3 && !this.pdfViewportMatches(prepared); attempt++) {
+      await new Promise<void>((resolve: () => void): void => {
+        setTimeout((): void => {
+          resolve()
+        }, 120)
+      })
+      prepared = await this.tryPreparePdfPages(bridge, this.pdfPageHeightVp);
+    }
+    return prepared;
   }
 
   /**
@@ -819,12 +895,26 @@ export struct ShareFlowPanel {
       }
       bridge.setNoteDir(NoteShareService.parentOf(notePath));
       bridge.setContent(this.renderForShareCapture(registry, vaultId, notePath, markdown));
-      this.updatePdfPageSize();
+      this.applyPdfPageSize(PDF_TARGET_PAGE_WIDTH_VP, PDF_TARGET_PAGE_HEIGHT_VP);
       this.shareCapturePdfMode = true;
       this.shareCaptureActive = true;
       await this.waitForShareCaptureReady();
       await bridge.appendShareWatermark();
-      const prepared: PreviewCaptureResult = await bridge.preparePdfPages(this.pdfPageHeightVp);
+      let prepared: PreviewCaptureResult =
+        await this.tryPreparePdfPages(bridge, this.pdfPageHeightVp);
+      // v1.93（93.1）：平台可能把捕获视口压回窗口以内（2026-11-11「分页高度不足」的根因）。
+      // 命中则降级回窗口自适应尺寸并重新分页——窄窗下导出仍可用，每页容量回到今天的水平；
+      // 固定大页是否生效由本次真机打点判定（见 v1.93 需求文档 §2）。
+      let degraded: boolean = false;
+      if (!this.pdfViewportMatches(prepared)) {
+        const adaptive: number[] = this.adaptivePdfPageSize();
+        degraded = true;
+        this.applyPdfPageSize(adaptive[0], adaptive[1]);
+        prepared = await this.preparePdfPagesAfterResize(bridge);
+      }
+      if (!this.pdfViewportMatches(prepared)) {
+        throw new Error('PDF 页面尺寸与渲染视口不符，请重试');
+      }
       const pageCount: number = prepared.pageCount ?? 0;
       if (pageCount <= 0 || pageCount > NotePdfDocumentService.MAX_PAGES) {
         throw new Error('笔记超过单文件 PDF 页数上限；请改用 Markdown / ZIP');
@@ -833,16 +923,21 @@ export struct ShareFlowPanel {
       if (tops.length !== pageCount) {
         throw new Error('PDF 分页结果无效，请重试');
       }
-      if (Math.abs(prepared.viewportHeight - this.pdfPageHeightVp) > 2) {
-        throw new Error('PDF 页面尺寸与渲染视口不符，请重试');
-      }
       sessionId = NoteImageShareService.createSession(registry);
       // 临时诊断 2026-11-20：逐页切片几何（定位「预览一页很短」）。字段含义与判据见
       // docs/engineering/分享预览渲染性能优化.md §3.6；验后随 SHARE_PERF_TRACE 一并删除。
+      // v1.93 追加 vpW/vpH（web 回传的实际捕获视口）与 degraded（是否降级回自适应尺寸）：
+      // vpW≈pageW 且 vpH≈pageVp → 固定大页生效；vpW/vpH 被压到窗口以内且 degraded=1 →
+      // 平台压矮视口，固定大页在该形态不可用。判据见 docs/releases/v1.93/需求文档.md §2。
       if (SHARE_PERF_TRACE) {
         hilog.info(DOMAIN, 'ShareDbg',
-          'pdfgeo start pages=%{public}d scalePct=%{public}d pageVp=%{public}d',
-          tops.length, Math.round(PDF_SNAPSHOT_SCALE * 100), Math.round(this.pdfPageHeightVp));
+          'pdfgeo start pages=%{public}d scalePct=%{public}d pageW=%{public}d pageVp=%{public}d ' +
+            'winW=%{public}d winH=%{public}d vpW=%{public}d vpH=%{public}d degraded=%{public}d',
+          tops.length, Math.round(PDF_SNAPSHOT_SCALE * 100),
+          Math.round(this.pdfPageWidthVp), Math.round(this.pdfPageHeightVp),
+          Math.round(this.windowWidthVp), Math.round(this.windowHeightVp),
+          Math.round(prepared.viewportWidth), Math.round(prepared.viewportHeight),
+          degraded ? 1 : 0);
       }
       const pageJpegs: string[] = [];
       const pageAspects: number[] = [];
@@ -929,6 +1024,10 @@ export struct ShareFlowPanel {
         }
       }
       const err = error as Error;
+      if (SHARE_PERF_TRACE) {
+        // 诊断期：v1.93 的降级判定失败等需要落到日志（仅本域错误文案，无笔记内容）。
+        hilog.error(DOMAIN, 'ShareDbg', 'pdfgeo failed msg=%{public}s', err.message);
+      }
       throw new Error(err.message);
     } finally {
       if (this.shareCaptureReadyTimer >= 0) {
@@ -1238,8 +1337,11 @@ export struct ShareFlowPanel {
             (this.shareCaptureWidthVp > 0 ? this.shareCaptureWidthVp : '100%'))
           .height(this.shareCapturePdfMode ? this.pdfPageHeightVp : '100%')
       }
-      .width('100%')
-      .height('100%')
+      // v1.93（93.1）：PDF 模式下捕获层本身也用页尺寸（而非窗口尺寸），且不裁剪——
+      // 固定大页时组件尺寸超出窗口，靠超界渲染拿真实视口；长图模式仍是 100%×100%。
+      .width(this.shareCapturePdfMode ? this.pdfPageWidthVp : '100%')
+      .height(this.shareCapturePdfMode ? this.pdfPageHeightVp : '100%')
+      .clip(false)
     }
   }
 }

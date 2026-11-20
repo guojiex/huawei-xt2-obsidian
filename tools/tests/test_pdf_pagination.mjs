@@ -292,24 +292,43 @@ test('源级：ShareFlowPanel 含 PDF 路由、捕获层 PDF 模式与分享面�
   assert.match(index, /format === 'pdf' && scope === 'note'/);
   assert.match(index, /prepareNotePdfShare\(/);
   assert.match(index, /shareCapturePdfMode/);
-  assert.match(index, /preparePdfPages\(this\.pdfPageHeightVp\)/);
+  // v1.93：分页入口改为「尝试分页」（视口被压矮时 web 抛错不直接失败，降级分支才能接手）
+  assert.match(index, /tryPreparePdfPages\(bridge, this\.pdfPageHeightVp\)/);
+  assert.match(index, /bridge\.preparePdfPages\(pageHeightVp\)/);
   assert.match(index, /value: 'pdf', label: 'PDF 文档'/);
   assert.match(index, /NotePdfDocumentService\.isSupported\(\)/);
   assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF/);
   assert.match(index, /writeJpegTo\(/);
 });
 
-test('源级：PDF 捕获页尺寸随窗口自适应且挂捕获层前重算（2026-11-11 修复）', () => {
+test('源级：v1.93 PDF 捕获页固定 700vp 大页 + 视口不符自动降级（93.1~93.3）', () => {
   const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
-  // 固定 700×990.59 在窗口高 < 990.59vp 时分页高度永远补不齐；宽度上限 700 不变，
-  // 比例恒 A4，高度取整消除 scrollHeight 取整歧义。
-  assert.match(index, /private updatePdfPageSize\(\): void/);
-  assert.match(index, /Math\.min\(700, widthByWindow, widthByHeight\)/);
-  assert.match(index, /pdfPageHeightVp = Math\.round\(/);
-  assert.doesNotMatch(index, /readonly pdfPageWidthVp/);
-  assert.doesNotMatch(index, /readonly pdfPageHeightVp/);
-  // 必须在置 shareCapturePdfMode / shareCaptureActive 挂捕获层之前重算尺寸。
-  assert.match(index, /this\.updatePdfPageSize\(\);\s*\n\s*this\.shareCapturePdfMode = true;/);
+  // 目标尺寸常量：固定 700vp（A4 竖版），页高按 700×842/595≈990.59 取整
+  assert.match(index, /const PDF_TARGET_PAGE_WIDTH_VP: number = 700;/);
+  assert.match(index, /const PDF_TARGET_PAGE_HEIGHT_VP: number = Math\.round\(/);
+  // 尺寸字段必须是 @State——降级改尺寸要触发 build 重跑，PreviewWebView 才会真正 resize
+  assert.match(index, /@State pdfPageWidthVp: number = PDF_TARGET_PAGE_WIDTH_VP;/);
+  assert.match(index, /@State pdfPageHeightVp: number = PDF_TARGET_PAGE_HEIGHT_VP;/);
+  assert.doesNotMatch(index, /private pdfPageWidthVp/, '捕获页尺寸不得再是普通字段（改值不触发重排）');
+  assert.doesNotMatch(index, /private pdfPageHeightVp/, '捕获页尺寸不得再是普通字段（改值不触发重排）');
+  // 挂捕获层前先应用目标尺寸
+  assert.match(index, /this\.applyPdfPageSize\(PDF_TARGET_PAGE_WIDTH_VP, PDF_TARGET_PAGE_HEIGHT_VP\);\s*\n\s*this\.shareCapturePdfMode = true;/);
+  // 视口比对：宽高都要一致（web 回传 #content 的 clientWidth / clientHeight）
+  assert.match(index, /private pdfViewportMatches\(prepared: PreviewCaptureResult\): boolean/);
+  assert.match(index, /Math\.abs\(prepared\.viewportHeight - this\.pdfPageHeightVp\) <= 2/);
+  assert.match(index, /Math\.abs\(prepared\.viewportWidth - this\.pdfPageWidthVp\) <= 2/);
+  // 降级：视口被压回窗口以内 → 换回窗口自适应尺寸（2026-11-11 口径）并重新分页
+  assert.match(index, /private adaptivePdfPageSize\(\): number\[\]/);
+  assert.match(index, /Math\.min\(PDF_TARGET_PAGE_WIDTH_VP, widthByWindow, widthByHeight\)/);
+  assert.match(index, /this\.applyPdfPageSize\(adaptive\[0\], adaptive\[1\]\);/);
+  assert.match(index, /prepared = await this\.preparePdfPagesAfterResize\(bridge\);/);
+  // 分页失败不得直接失败——web 侧抛「分页高度不足」正是「视口被压矮」的降级信号
+  assert.match(index, /private async tryPreparePdfPages\(/);
+  assert.match(index, /private async preparePdfPagesAfterResize\(/);
+  // 捕获层：PDF 模式用页尺寸（而非窗口尺寸）且不裁剪
+  assert.match(index, /\.width\(this\.shareCapturePdfMode \? this\.pdfPageWidthVp : '100%'\)/);
+  assert.match(index, /\.height\(this\.shareCapturePdfMode \? this\.pdfPageHeightVp : '100%'\)/);
+  assert.match(index, /\.clip\(false\)/);
 });
 
 test('红线：module.json5 零新增权限（硬约束 13；打印框架路线已否决）', () => {
@@ -414,7 +433,7 @@ test('源级：ShareFlowPanel 分段快照带旧帧校验与重试（53.10）', 
   assert.match(index, /const PDF_SNAPSHOT_SCALE: number = 0\.5;/);
   // 长图与 PDF 两循环都走校验快照，不再直连 getComponentSnapshot
   const imageLoop = index.slice(index.indexOf('private async prepareNoteImageShare'),
-    index.indexOf('/** PDF 捕获页尺寸自适应'));
+    index.indexOf('private applyPdfPageSize'));
   assert.ok(imageLoop.length > 0, 'prepareNoteImageShare 区间未定位');
   // 长图固定 1.0：longImageGeometry 依赖原始截图尺寸推算 96MiB 预算，降 scale 会破坏长图几何
   assert.match(imageLoop, /await this\.captureSegmentVerified\(prevSegmentBuffer, 1\.0\)/);
