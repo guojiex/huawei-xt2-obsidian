@@ -139,7 +139,7 @@ docs/harmonyos/
 | # | 问题 | 卡住什么 | 状态 |
 | --- | --- | --- | --- |
 | ~~A-3~~ | ~~除 `FoldSplitContainer` 外，官方有无面向三折叠三屏态的**多列横排**方案~~ | ~~若有，可省掉自绘 + 真机校准~~ | ✅ **已答**（2026-10-17 折痕追问 Q4）：**没有**。官方立场是「布局适配优先基于响应式断点」，`FoldSplitContainer` 只有 `PresetSplitRatio` 三档预设且不对齐折痕 → **自绘等分是官方认可路线**，不必再找 |
-| **C1-API26** | API 26 模拟器 clone 写 `.git/config` 时 `AtomicFile` 返回流的 `WriteStream.write(Uint8Array, ...)` 报 13900020 | v0.3 clone | 🟡 实时 hilog 记录 `Illegal write buffer or encoding` / `Failed to resolve buf and options`；旧 `startWrite failed` UI 标签由共享 `try/catch` 误标，分阶段捕获后定位到 `WriteStream.write()` 参数解析路径。`utf8`、不传 encoding、复制字节数组仍复现；具体原因未知，只在 API 26 模拟器实测，API 24 / XT2 未测试。见 [`api_notes.md`](api_notes.md)、[v0.3 §6](../releases/v0.3/需求文档.md)；就此追问过官方「返回流的二进制 `write()` 规格」，答复见 [2026-10-27 WriteStream 答复](qa/2026-10-27_WriteStream_二进制写入规格答复.md) |
+| **C1-API26** | API 26 模拟器 clone 写 `.git/config` 时 `AtomicFile` 返回流的 `WriteStream.write(Uint8Array, ...)` 报 13900020 | v0.3 clone | 🟡 实时 hilog 记录 `Illegal write buffer or encoding` / `Failed to resolve buf and options`；旧 `startWrite failed` UI 标签由共享 `try/catch` 误标，分阶段捕获后定位到 `WriteStream.write()` 参数解析路径。`utf8`、不传 encoding、复制字节数组仍复现；具体原因未知，只在 API 26 模拟器实测，API 24 / XT2 未测试。见 [`api_notes.md`](api_notes.md)、[v0.3 §6](../releases/历史版本归档.md#v03-需求文档)；就此追问过官方「返回流的二进制 `write()` 规格」，答复见 [2026-10-27 WriteStream 答复](qa/2026-10-27_WriteStream_二进制写入规格答复.md) |
 | ~~B-1~~ | ~~`onInterceptRequest` 能否拿到 POST body~~ | ~~同步层能否简化为拦截~~ | ✅ **已解决**：能拿到但是 `string`，**拦截方案否决**，转发为最终方案 |
 | ~~B-2~~ | ~~`WebMessagePort` 在 rawfile 页面能否建立~~ | ~~大数据通道选型~~ | ✅ **已解决**：可用、支持 ArrayBuffer；剩「上限多少」只能真机测 |
 | B-7 | `runJavaScript` 的**实际**长度上限、`WebMessagePort` 单条 ArrayBuffer **实际上限** | 分块大小怎么定 | ❓ 只能真机二分法测 |
@@ -154,7 +154,7 @@ docs/harmonyos/
 | G-C | `customProperty()` 的值有无类型 / 长度限制？ | 组件标识怎么编码 | ❓ 待问 |
 | **H-1** | **API 24 下运行时读取自身 `versionName` 的确切接口与所需 flag**？读自身包信息要不要权限？ | 「关于」页显示版本号 | ❓ 待问（**别凭记忆写接口**） |
 | H-2 | `bundleManager` 的同步版本（如 `getBundleInfoForSelfSync`）在 API 24 是否可用？ | 同上，实现选型 | ❓ 待问 |
-| **V-1** | **API ≤ 24 有无官方的「应用内检测更新」能力** | **v1.17 的方向 A / B / C 与能否落码**（[需求](../releases/v1.17/需求文档.md)） | ✅ **已答**（2026-11-02）：方向 **A 成立**，见 [api_notes V1–V12](api_notes.md#v-组应用内检测更新appgallery-kit-updatemanager2026-11-02)。剩余项转入 V 组「仍未解决」：`checkAppUpdate` 限流阈值 ❓、请求携带信息清单 ❓、真机与市场侧行为 ⚠️；答复的两处口径错位已按本机 SDK 声明修正，**别照转贴的答复原文落码** |
+| **V-1** | **API ≤ 24 有无官方的「应用内检测更新」能力** | **v1.17 的方向 A / B / C 与能否落码**（[需求](../releases/历史版本归档.md#v117-需求文档)） | ✅ **已答**（2026-11-02）：方向 **A 成立**，见 [api_notes V1–V12](api_notes.md#v-组应用内检测更新appgallery-kit-updatemanager2026-11-02)。剩余项转入 V 组「仍未解决」：`checkAppUpdate` 限流阈值 ❓、请求携带信息清单 ❓、真机与市场侧行为 ⚠️；答复的两处口径错位已按本机 SDK 声明修正，**别照转贴的答复原文落码** |
 
 **真机验证清单（问了也没用，只能实测，已排进 M0.5 spike）**：中文输入法（含 **CodeMirror 6 的 contenteditable** 与 textarea 对比）、`visibility(Hidden)` 时 JS 会不会被暂停、`WebMessagePort` 实际分块上限、三屏态 `FoldStatus` 返回值、铰链实际位置。
 

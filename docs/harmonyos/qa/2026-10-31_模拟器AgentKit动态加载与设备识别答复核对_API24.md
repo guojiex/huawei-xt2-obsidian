@@ -33,6 +33,6 @@
 
 当前 [`Index.ets`](../../../entry/src/main/ets/pages/Index.ets) 在首页静态导入 `@kit.AgentFrameworkKit` 并直接渲染 `FunctionComponent`，因此目前没有 `productModel` 门禁；即使在后续代码中加条件渲染，也不能避免该静态依赖在启动时加载。
 
-既有 2026-10-30 隔离复验将 Kit 依赖留在 `AgentKitPage`，模拟器按 `deviceInfo.productModel` 跳过动态导入；API 26 模拟器构建、安装和启动后进程仍运行。那次只证明“未触发加载时启动隔离可行”，没有证明首页动态挂载 `FunctionComponent`。2026-10-31 当前 main 的启动复验再次命中 `agentKitHsp` 缺失并停留在桌面，详见 [v0.10 验收记录](../../releases/v0.10/需求文档.md#6-验收记录与场景)。
+既有 2026-10-30 隔离复验将 Kit 依赖留在 `AgentKitPage`，模拟器按 `deviceInfo.productModel` 跳过动态导入；API 26 模拟器构建、安装和启动后进程仍运行。那次只证明“未触发加载时启动隔离可行”，没有证明首页动态挂载 `FunctionComponent`。2026-10-31 当前 main 的启动复验再次命中 `agentKitHsp` 缺失并停留在桌面，详见 [v0.10 验收记录](../../releases/历史版本归档.md#v010-需求文档)。
 
 因此推荐的验证方向是：主首页不静态依赖 AgentFrameworkKit；用 `productModel` 在模拟器跳过动态加载；仅在目标设备动态加载 Kit 依赖模块，并在成功后于首页原位置渲染官方组件。该方向受官方动态加载与模拟器差异文档支持，但动态加载后的组件挂载代码、启动稳定性和 XT2 行为仍需分别编译及实机验证。本次只核对和归档文档，没有改代码或声称启动问题已修复。

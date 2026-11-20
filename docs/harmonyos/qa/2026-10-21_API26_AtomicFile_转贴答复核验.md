@@ -19,7 +19,7 @@
 - SDK 包：`/Applications/DevEco-Studio.app/Contents/sdk/default/sdk-pkg.json`，`apiVersion` 为 `26`，版本 `26.0.0.105`。
 - 声明：`/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony/ets/api/@ohos.file.fs.d.ts`。`AtomicFile` 类和 `startWrite()` 标注 `@since 15`；`startWrite()` 异常列表为 13900001、13900002、13900012、13900027、13900042，没有 13900020。
 - `13900020` 在该 SDK 的其他文件操作声明中出现为 `Invalid argument`；该含义只适用于对应方法的声明，不足以确定 `AtomicFile.startWrite()` 的错误原因。
-- 本机 API 26 模拟器上目标不存在、父目录存在且为目录时多次复现 `startWrite()` 返回 13900020；详细设备和请求证据见 [v0.3 §6](../../releases/v0.3/需求文档.md)。原始提问（2026-10-20，就 13900020 的具体触发条件发问）不再入库，问的是哪件事见下文核验表「问题」列。
+- 本机 API 26 模拟器上目标不存在、父目录存在且为目录时多次复现 `startWrite()` 返回 13900020；详细设备和请求证据见 [v0.3 §6](../../releases/历史版本归档.md#v03-需求文档)。原始提问（2026-10-20，就 13900020 的具体触发条件发问）不再入库，问的是哪件事见下文核验表「问题」列。
 
 ## 结论
 

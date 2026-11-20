@@ -56,4 +56,4 @@
 - ✅ 落地（v1.46 46.8）：`Index.aboutToAppear` 设 `OFFSET_WITH_CARET`；`EditorWebView` / `PreviewWebView` 两个 Web 显式 `.keyboardAvoidMode(WebKeyboardAvoidMode.RETURN_TO_UICONTEXT)`，Web 默认 RESIZE_CONTENT 不再与页面上抬叠加。
 - ⚠️ 真机待验（全部只能在 XT2 / API 24 验）：键盘起落无全页重排（`windowSizeChange` 不触发）；Web 内 contenteditable 光标行是否被系统上抬保持可见（若不生效，评估 Web 侧回退默认 RESIZE_CONTENT 的取舍）；`avoidAreaChange` 在该模式下的报值（`keyboardInsetPx` 消费点已有 `Math.max(0,…)` 防护）；上抬动画平滑度。
 - 📌 弹窗结论已解释既有现象：格式弹窗 / 重命名等 Dialog 自行避让（16vp 间距），不随页面上抬——`keyboardSafeBottom` 等 Dialog 内消费点逻辑不受页面级模式切换影响。
-- 结论提炼进 [api_notes L-21](../api_notes.md)；改动记录见 [v1.46 需求文档 §46.8](../../releases/v1.46/需求文档.md)。
+- 结论提炼进 [api_notes L-21](../api_notes.md)；改动记录见 [v1.46 需求文档 §46.8](../../releases/历史版本归档.md#v146-需求文档)。

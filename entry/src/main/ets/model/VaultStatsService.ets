@@ -1,7 +1,7 @@
 /**
  * VaultStatsService.ets —— 统计与成就面板的计算与扫描（v1.52）
  *
- * 口径真源：docs/releases/v1.51/需求文档.md §2（本文件不定义口径，只实现）：
+ * 口径真源：docs/releases/历史版本归档.md#v151-需求文档 §2（本文件不定义口径，只实现）：
  *  - 按当前库统计；只统计未删除笔记（回收站在库外 filesDir/trash，allNotes 天然不计）；
  *  - 总字数 = 各笔记源码文本去掉空白字符后的字符数总和；
  *  - 活跃日 = 当日至少一篇笔记 mtime 落在该日历日（本地时区，VaultFileStat.mtimeSec 单位秒）；

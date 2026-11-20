@@ -21,4 +21,4 @@ SDK：DevEco Studio 26.0.0.851，`/Applications/DevEco-Studio.app/Contents/sdk/d
 
 隐私政策正文仍从用户提供的在线地址加载。原生视图显示主页面加载中 / 失败状态；主页面网络错误、HTTP 错误和 SSL 错误会显示重试，SSL 错误请求通过 `handleCancel()` 取消。
 
-本次 API 版本结论来自 API 26 SDK 的 `@since` 注解；构建可检查 ArkTS 类型和调用签名。API26 `Huawei_TripleFold` 模拟器已验证单 / 双 / 三屏关于页入口、单 / 三屏在线正文加载，以及应用栏返回、页内返回和系统 Back 的返回层级；这不代表 API24 / XT2 运行通过，相关设备由用户手动验收。网络不可用与重试状态未在设备上触发，详见 [v1.11 验收记录](../../releases/v1.11/需求文档.md#4-验收记录)。
+本次 API 版本结论来自 API 26 SDK 的 `@since` 注解；构建可检查 ArkTS 类型和调用签名。API26 `Huawei_TripleFold` 模拟器已验证单 / 双 / 三屏关于页入口、单 / 三屏在线正文加载，以及应用栏返回、页内返回和系统 Back 的返回层级；这不代表 API24 / XT2 运行通过，相关设备由用户手动验收。网络不可用与重试状态未在设备上触发，详见 [v1.11 验收记录](../../releases/历史版本归档.md#v111-需求文档)。

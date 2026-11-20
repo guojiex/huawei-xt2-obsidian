@@ -31,7 +31,7 @@ test('the shared top menu keeps actions scoped to the active pane', () => {
   assert.match(noteGroup, /this\.setPreviewFollowEnabled\(!this\.followPreviewEnabled\)/);
   assert.match(noteGroup, /this\.toggleActivePane\(\)/);
   // 2026-11-13 用户拍板：设计稿菜单没有「块操作」项，顶栏菜单入口已移除
-  //（见 docs/releases/v1.18/需求文档.md 验收记录）；面板仍可经复杂块点按 / 浮条「更多」打开。
+  //（见 docs/releases/历史版本归档.md#v118-需求文档 验收记录）；面板仍可经复杂块点按 / 浮条「更多」打开。
   assert.doesNotMatch(noteGroup, /openBlockPropertyPanel/);
 });
 

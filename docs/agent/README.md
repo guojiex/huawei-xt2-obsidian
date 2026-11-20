@@ -11,7 +11,7 @@
 | Agent 功能/工程需求、编号、分配与待办 | [Agent 需求清单](requirements_backlog.md) |
 | loop、上下文、工具与副作用、配置、后台能力设计 | [Agent 运行设计](运行设计.md) |
 | 各 Agent 版本的承诺与验收 | 本目录 `releases/vX.Y/需求文档.md` |
-| 原计划 App 聊天页、文件树、行内引用、设置与交互验收（已延期） | [App v0.7](../releases/v0.7/需求文档.md)、[交互设计](../releases/v0.7/交互设计.md) |
+| 原计划 App 聊天页、文件树、行内引用、设置与交互验收（已延期） | [App v0.7](../releases/历史版本归档.md#v07-需求文档)、[交互设计](../releases/历史版本归档.md#v07-交互设计) |
 | 鸿蒙/小艺接口事实与置信度 | [api_notes](../harmonyos/api_notes.md)，不在本目录复制接口结论 |
 
 ## 2. 独立版本线与执行顺序
