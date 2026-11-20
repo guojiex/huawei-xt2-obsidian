@@ -220,6 +220,50 @@ function collectInlineTokenRanges(tokens, parentRaw) {
   return { items, safe: true }
 }
 
+/**
+ * 收集列表项里的行内项（链接 / 图片 / 行内代码 / 行内公式 / 脚注引用）。
+ * marked 把列表解析成 list -> items[] -> list_item.tokens[] -> text.tokens[] -> 行内项；
+ * 列表标记（`- ` / `1. ` / `- [ ] `）不在 text.raw 里，需把 text.raw 在 list.raw 中的位置
+ * 加回，行内项的 displayStart 才能与 paragraph 一样以 token.raw 为基准。逐项复用
+ * collectInlineTokenRanges 的安全判定：任一 unsupported 项（双链 / 高亮 / 非法链接等）
+ * 即整块 safe=false，维持只读。
+ */
+function collectListInlineItems(listToken) {
+  const items = []
+  let safe = true
+  let cursor = 0
+  const listRaw = listToken.raw || ''
+  for (const listItem of listToken.items || []) {
+    for (const child of listItem.tokens || []) {
+      // 只处理承载行内项的 text token；嵌套 list / space 等跳过（其行内项随各自块处理）。
+      // 多段列表项可能有多个 text token，逐个按游标定位。
+      if (child.type !== 'text' || !Array.isArray(child.tokens) || child.tokens.length === 0) continue
+      const childRaw = child.raw || ''
+      const relativeStart = listRaw.indexOf(childRaw, cursor)
+      if (relativeStart < 0) {
+        safe = false
+        break
+      }
+      cursor = relativeStart + childRaw.length
+      const collected = collectInlineTokenRanges(child.tokens, childRaw)
+      if (!collected.safe) {
+        safe = false
+        break
+      }
+      for (const item of collected.items) {
+        items.push({
+          ...item,
+          displayStart: relativeStart + item.displayStart,
+          displayEnd: relativeStart + item.displayEnd
+        })
+      }
+    }
+    if (!safe) break
+  }
+  if (!safe) return { items: [], safe: false }
+  return { items, safe: true }
+}
+
 export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceOffset = 0,
   sourceEdits = [], displayOffset = 0) {
   const normalizedSource = markdown.replace(/\r\n/g, '\n')
@@ -304,7 +348,9 @@ export function renderMarkdownWithSourceBlocks(markdown, lineOffset = 0, sourceO
             : sourceOffset + originalOffsetForNormalizedPosition(segmentOffset + mappedRawLength, normalizedLineEndings)
           const inline = token.type === 'paragraph'
             ? collectInlineTokenRanges(token.tokens || [], raw)
-            : { items: [], safe: false }
+            : token.type === 'list'
+              ? collectListInlineItems(token)
+              : { items: [], safe: false }
           const inlineItems = inline.safe ? inline.items.map((item, itemIndex) => {
             const itemDisplayStart = displayOffset +
               originalOffsetForNormalizedPosition(segmentOffset + item.displayStart, normalizedLineEndings)

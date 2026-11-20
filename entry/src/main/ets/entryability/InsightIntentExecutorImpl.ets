@@ -1,7 +1,11 @@
 import { common, insightIntent, InsightIntentExecutor } from '@kit.AbilityKit';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { InsightIntentNoteService } from './InsightIntentNoteService';
 import { VaultEntry } from '../model/Vault';
 import { VaultRegistry } from '../model/VaultRegistry';
+
+const DOMAIN: number = 0x0A00;
+const TAG: string = 'InsightIntentExecutor';
 
 interface VaultSummary {
   vaultId: string;
@@ -14,6 +18,7 @@ interface VaultSummary {
 export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
   async onExecuteInUIAbilityBackgroundMode(name: string,
     param: Record<string, Object>): Promise<insightIntent.ExecuteResult> {
+    hilog.info(DOMAIN, TAG, '端插件后台执行到达端侧 name=%{public}s', name);
     // SearchNotes / ListTree / GetLinks 是端侧只读 wiki 工具，已于 2026-11-13 登记进
     // insight_intent.json（此前 v1.16 因平台集成关闭而延期，现随小艺接通一并开放）。
     const isNoteTool: boolean = name === 'QueryNotes' || name === 'ReadNote' || name === 'CreateNote' ||
@@ -75,7 +80,10 @@ export default class InsightIntentExecutorImpl extends InsightIntentExecutor {
           message: '已找到 ' + vaults.length.toString() + ' 个已注册知识库。'
         }
       };
-    } catch (_error) {
+    } catch (error) {
+      // 2026-11-19：真实错误只进 hilog 便于定位（v1.34 34.2 模式：日志留真、回给小艺仍是白名单文案）。
+      const err = error as Error;
+      hilog.error(DOMAIN, TAG, '端插件执行失败 name=%{public}s detail=%{public}s', name, err.toString());
       let message: string = '笔记操作失败；操作完成状态未确认。原因未确定，请在应用内检查目标笔记和操作记录后再决定是否重试。';
       if (name === 'CreateVault') {
         message = '创建知识库失败；创建结果未确认。原因未确定，请检查知识库列表后再决定是否重试。';

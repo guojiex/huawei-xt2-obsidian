@@ -145,7 +145,7 @@ test('HTML, directive, and mixed-syntax blocks explain read-only mode and retain
   assert.match(blockPanelSource, /this\.blockPanelAnchor\.type === 'html' \|\| this\.blockPanelAnchor\.type === 'directive'/)
   assert.match(blockPanelSource, /this\.blockPanelAnchor\.type === 'mixed'/)
   assert.match(blockPanelSource, /this\.blockPanelAnchor\.type === 'paragraph' && !this\.blockPanelAnchor\.inlineSafe/)
-  assert.match(blockPanelSource, /Text\('此内容请在专业模式编辑'\)/)
+  assert.match(blockPanelSource, /Text\('此块暂未开放编辑，可用下方「以源码编辑此块」修改'\)/)
   assert.match(blockPanelSource, /Text\(this\.blockSourceActionLabel\(\)\)[\s\S]*?this\.openBlockSourceDrawer\(\)/)
 })
 
@@ -265,12 +265,55 @@ test('protected paragraphs show prototype-aligned hints for supported and unsupp
   assert.equal(pseudoTable.paragraph.dataset.simpleModeHint, 'unsupported')
 })
 
+test('受保护列表含可逐项编辑行内项时显示 inline-items 提示', () => {
+  const { fn: configure, context } = loadFunction(
+    previewSource,
+    'function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {',
+    '\nfunction replaceSourceBlock',
+    'configureEditableBlocks'
+  )
+  context.editable = true
+  context.setActiveLockedBlocks = () => {}
+  context.publishLockedBlockAnchor = () => {}
+  context.containsLockedSyntax = () => true
+  context.sourceText = ''
+  context.isPseudoTableSource = () => false
+
+  const makeList = (inlineItemsReady) => {
+    const ul = { tagName: 'UL', dataset: {}, setAttribute() {}, removeAttribute() {}, querySelectorAll: () => [] }
+    const block = {
+      dataset: { sourceType: 'list', inlineItemsReady },
+      list: ul,
+      attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value },
+      removeAttribute() {}
+    }
+    context.editableElementFor = (b) => b.list
+    return {
+      block, ul,
+      root: {
+        querySelectorAll(sel) { return sel === '.preview-source-block' ? [block] : [] },
+        querySelector(sel) { return sel === '.preview-source-block' ? block : null },
+        appendChild() {}
+      }
+    }
+  }
+
+  const ready = makeList('true')
+  configure(ready.root, 0)
+  assert.equal(ready.ul.dataset.simpleModeHint, 'inline-items')
+
+  const notReady = makeList('false')
+  configure(notReady.root, 0)
+  assert.equal(notReady.ul.dataset.simpleModeHint, 'unsupported')
+})
+
 test('generated preview uses the same protected-paragraph copy and v2 visual tokens', () => {
   assert.match(buildSource, /data-simple-mode-hint="inline-items"[\s\S]*?content: '含链接、代码或公式 · 点按逐项编辑'/)
-  assert.match(buildSource, /data-simple-mode-hint="unsupported"[\s\S]*?content: '此内容请在专业模式编辑'/)
+  assert.match(buildSource, /data-simple-mode-hint="unsupported"[\s\S]*?content: '此块暂未开放编辑，点按可用源码编辑此块'/)
   assert.match(buildSource, /margin-top: var\(--s1\); color: var\(--muted\)/)
   assert.ok(generatedPreview.includes('含链接、代码或公式 · 点按逐项编辑'))
-  assert.ok(generatedPreview.includes('此内容请在专业模式编辑'))
+  assert.ok(generatedPreview.includes('此块暂未开放编辑，点按可用源码编辑此块'))
   assert.ok(generatedPreview.includes('font-size: var(--caption); line-height: var(--leading);'))
 })
 

@@ -1971,13 +1971,15 @@ function configureEditableBlocks(root: HTMLElement, bodyOffset: number): void {
     }
     if (!supported || containsLockedSyntax(block)) {
       block.dataset.editLocked = 'true'
-      block.setAttribute('aria-label', '此内容请在专业模式编辑')
-      if (type === 'paragraph') {
-        const paragraph = editableElementFor(block)
-        if (paragraph?.tagName === 'P') {
-          paragraph.dataset.simpleModeHint = block.dataset.inlineItemsReady === 'true'
-            ? 'inline-items' : 'unsupported'
-        }
+      const inlineReady = block.dataset.inlineItemsReady === 'true'
+      block.setAttribute('aria-label', inlineReady
+        ? '点按其中链接、代码或公式逐项编辑'
+        : '此块暂未开放编辑，点按可用源码编辑此块')
+      // 段落与列表的行内项都可逐项编辑：给宿主元素挂 hint，与 v2 原型口径一致。
+      // 列表含链接/代码时整块仍锁 text 编辑，但 inlineItemsReady 的行内项可点按打开面板。
+      const host = editableElementFor(block)
+      if (host && /^(P|UL|OL)$/.test(host.tagName)) {
+        host.dataset.simpleModeHint = inlineReady ? 'inline-items' : 'unsupported'
       }
       continue
     }

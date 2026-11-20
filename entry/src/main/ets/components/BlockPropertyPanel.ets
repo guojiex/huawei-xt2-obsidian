@@ -2459,7 +2459,7 @@ export struct BlockPropertyPanel {
               (this.blockPanelAnchor.type === 'html' || this.blockPanelAnchor.type === 'directive' ||
               this.blockPanelAnchor.type === 'mixed' ||
               (this.blockPanelAnchor.type === 'paragraph' && !this.blockPanelAnchor.inlineSafe))) {
-              Text('此内容请在专业模式编辑')
+              Text('此块暂未开放编辑，可用下方「以源码编辑此块」修改')
                 .fontSize(FontSize.caption)
                 .fontColor($r('app.color.text_secondary'))
                 .width('100%')

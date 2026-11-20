@@ -58,14 +58,16 @@ export function simpleModeChangeFilter(protectedField: StateField<SimpleModeRang
 }
 
 /**
- * 受保护块的提示文案（v1.7 17.4：限制须在相关内容附近清楚说明）。
- * 只写「后续版本」不写版本号，避免版本重排后文案过期。
- * - 表格：v1.14「简单模式表格编辑」已立项，可以承诺后续开放。
- * - 其余：需求池没有排期，属简单模式的长期边界，只说清「不支持」，
- *   不承诺会支持，也不让用户干等。
+ * 受保护块的提示文案（v1.7 17.4：限制须在相关内容附近清楚说明；2026-11-19 按
+ * 「简单模式复杂块编辑设计」§1/§3.4 修订）。
+ *
+ * 口径：复杂块是「还没做、逐类开放」，不是「永久不支持」；统一兜底是「以源码编辑此块」
+ * 源码抽屉（不切模式、不暴露整篇源码）。所以：
+ * - 表格已由 v1.14 落地，不能再承诺「后续版本开放」；
+ * - 其余块说「暂未开放结构化编辑」，不用「不支持」，并给出源码抽屉这条出口。
  */
-export const PROTECTED_HINT_TABLE: string = '表格编辑将在后续版本开放，当前请在专业模式修改'
-export const PROTECTED_HINT_DEFAULT: string = '此内容不支持在简单模式编辑，请在专业模式修改'
+export const PROTECTED_HINT_TABLE: string = '表格已可在预览中直接编辑；结构不规范时请以源码编辑此块'
+export const PROTECTED_HINT_DEFAULT: string = '此块暂未开放结构化编辑，请以源码编辑此块'
 
 function mergeProtected(ranges: SimpleRange[]): SimpleRange[] {
   const sorted = ranges.filter((range) => range.to > range.from)

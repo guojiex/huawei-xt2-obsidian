@@ -262,3 +262,53 @@ test('source scroll target honors block progress, viewport placement, and docume
   assert.equal(sourceScrollTop(blocks, 8, 1, 1, 100, 400, false, true), 400)
   assert.equal(sourceScrollTop([], 1, 0, 0, 100, 400), 0)
 })
+
+test('列表内的链接与行内代码暴露精确 source 区间，可逐项编辑', () => {
+  const source = '- 苹果 [官网](https://a.test) 与 `code`\n- 香蕉 ![图](images/b.png)\n'
+  const result = renderMarkdownWithSourceBlocks(source)
+  const list = result.blocks[0]
+
+  assert.equal(list.type, 'list')
+  assert.equal(list.inlineSafe, true)
+  assert.deepEqual(list.inlineItems.map((item) => item.type), ['link', 'inlinecode', 'image'])
+  assert.deepEqual(list.inlineItems.map((item) => source.slice(item.from, item.to)), [
+    '[官网](https://a.test)',
+    '`code`',
+    '![图](images/b.png)'
+  ])
+})
+
+test('有序列表与任务列表内行内项同样映射到精确 source 区间', () => {
+  const ordered = '1. 第一 [a](https://a.test)\n2. 第二 `x`\n'
+  const listBlock = renderMarkdownWithSourceBlocks(ordered).blocks[0]
+  assert.equal(listBlock.inlineSafe, true)
+  assert.deepEqual(listBlock.inlineItems.map((item) => ordered.slice(item.from, item.to)),
+    ['[a](https://a.test)', '`x`'])
+
+  const task = '- [ ] 待办 [链接](https://a.test)\n- [x] 完成 `代码`\n'
+  const taskBlock = renderMarkdownWithSourceBlocks(task).blocks[0]
+  assert.equal(taskBlock.inlineSafe, true)
+  assert.deepEqual(taskBlock.inlineItems.map((item) => task.slice(item.from, item.to)),
+    ['[链接](https://a.test)', '`代码`'])
+})
+
+test('列表行内项跨 CRLF 与 BOM 仍精确映射', () => {
+  const source = '\uFEFF- 首行 [a](https://a.test)\r\n- 次行 `code`\r\n'
+  const body = source.slice(1)
+  const result = renderMarkdownWithSourceBlocks(body, 0, 1)
+  const list = result.blocks[0]
+
+  assert.equal(list.inlineSafe, true)
+  assert.deepEqual(list.inlineItems.map((item) => source.slice(item.from, item.to)),
+    ['[a](https://a.test)', '`code`'])
+})
+
+test('含双链或高亮的列表保持整块只读，不暴露部分行内项', () => {
+  const wiki = renderMarkdownWithSourceBlocks('- [[另一篇]] 与 [链接](https://a.test)\n').blocks[0]
+  assert.equal(wiki.inlineSafe, false)
+  assert.deepEqual(wiki.inlineItems, [])
+
+  const mark = renderMarkdownWithSourceBlocks('- ==高亮== 与 `code`\n').blocks[0]
+  assert.equal(mark.inlineSafe, false)
+  assert.deepEqual(mark.inlineItems, [])
+})

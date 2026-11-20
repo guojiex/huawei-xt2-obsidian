@@ -353,7 +353,7 @@
 .window.simple-mode .edit-switch,.window.simple-mode #samePreview,.window.simple-mode #rightSamePreview,.window.simple-mode #switchPane,.window.simple-mode .file-reference{display:none!important}
 .window.simple-mode .writing{display:flex!important}.window.simple-mode #editor,.window.simple-mode #editTools{display:none!important}.window.simple-mode #article{display:block!important;padding-bottom:calc(var(--touch) + var(--s16))}.window.simple-mode #writingLabel{display:none}
 .simple-mode .article [contenteditable=true]{outline:none;border-radius:var(--s1);min-height:var(--s6);cursor:text}.simple-mode .article [contenteditable=true]:focus{box-shadow:calc(-1 * var(--s1)) 0 var(--blue);background:var(--blue-soft)}
-.simple-protected{position:relative}.simple-protected::after{content:'此内容请在专业模式编辑';display:block;color:var(--muted);font:var(--caption)/var(--leading) var(--font);margin-top:var(--s1)}
+.simple-protected{position:relative}.simple-protected::after{content:'此块暂未开放编辑，点按可用源码编辑此块';display:block;color:var(--muted);font:var(--caption)/var(--leading) var(--font);margin-top:var(--s1)}
 #simpleAa{position:relative;text-align:center}#simpleAa summary{list-style:none;min-height:var(--touch);display:grid;place-items:center;cursor:pointer;font-weight:600}#simpleAa summary::-webkit-details-marker{display:none}.simple-format-menu{position:absolute;bottom:calc(100% + var(--s2));left:0;width:calc(var(--touch) * 4);max-height:calc(var(--touch) * 6 + var(--s4));overflow:auto;padding:var(--s2);border:var(--stroke) solid var(--line);border-radius:var(--r);background:var(--paper);box-shadow:var(--float-shadow)}.simple-format-menu button{display:block;width:100%;font-size:var(--small);text-align:left}
 
 .experience-options{display:flex;flex-direction:column;gap:var(--s2);margin:var(--s4) 0}
@@ -2602,7 +2602,7 @@ function cbSpec(t){
    html:CBH.group(CBH.field('类型',CBH.select('type',opts,known?type:m.type),known?'':'未知类型会原样保留')+CBH.field('标题',CBH.input('title',m.title,'留空则显示类型名'))+CBH.field('折叠',CBH.seg('fold',[['','不折叠'],['+','默认展开'],['-','默认收起']],m.fold,'折叠方式'),'阅读时是否可以收起正文'))+CBH.info('提示块的正文直接在正文里点击修改。')+CBH.source(),
    onField:(k,v)=>{if(k==='type')cbWrite(t,cbCalloutRaw(m,{type:v}),'已改为'+((CB_CALLOUTS.find(([x])=>x===v)||[0,v])[1]));else if(k==='title')cbWrite(t,cbCalloutRaw(m,{title:v.trim()}),'已更新标题');},
    onSeg:(k,v)=>{if(k==='fold')cbWrite(t,cbCalloutRaw(m,{fold:v}),'已更新折叠方式');}};}
- case 'directive':return {title:'指令块',html:CBH.info('此内容请在专业模式编辑')+CBH.source()};
+ case 'directive':return {title:'指令块',html:CBH.info('此块暂未开放编辑，点按可用源码编辑此块')+CBH.source()};
  case 'props':{const m=cbPropsModel(t.raw);if(!m)return {title:'属性',html:CBH.info('文档头不是标准 YAML，暂时只能改源码。','warn')+CBH.source()};
   const rows=m.entries.map((e,i)=>{if(!e.key)return '';const rm='<button type="button" class="cb-remove" data-cb-act="rm:'+i+'" aria-label="移除属性 '+esc(e.key)+'">移除</button>';
    if(e.kind==='list')return CBH.field(esc(e.key)+rm,CBH.input('v:'+i,e.items.join('、'),'用顿号或逗号分隔'),e.key==='tags'?'标签':e.key==='aliases'?'别名':'列表');

@@ -89,7 +89,7 @@ test('frontmatter, code, links, tables, callouts and math are read-only with inl
   assert.equal(result.decorations.filter((range) => range.kind === 'protected-hint').length, result.protected.length)
 })
 
-test('protected hints promise the planned release only for tables', () => {
+test('protected hints point to the source drawer without stale promises or permanent-refusal wording', () => {
   const source = '| a | b |\n| --- | --- |\n| 1 | 2 |\n\n```js\nconst x = 1\n```\n'
   const result = simpleMode.inspect(source)
   const hints = result.decorations.filter((range) => range.kind === 'protected-hint')
@@ -97,12 +97,15 @@ test('protected hints promise the planned release only for tables', () => {
   const table = hints.find((range) => range.from === tableFrom)
   assert.ok(table, '表格块应带提示')
   assert.equal(table.value, simpleMode.hints.table)
-  assert.match(table.value, /后续版本/, '已排期的表格须说明后续会开放')
+  assert.doesNotMatch(table.value, /后续版本/, '表格已实现，不得再承诺后续开放')
+  assert.match(table.value, /以源码编辑此块/, '提示须给出结构不规范时的源码抽屉出口')
   const code = hints.find((range) => range.from === source.indexOf('```js'))
   assert.ok(code, '代码块应带提示')
   assert.equal(code.value, simpleMode.hints.fallback)
-  assert.doesNotMatch(code.value, /后续版本/, '没有排期的块不得承诺后续支持')
-  assert.match(code.value, /专业模式/)
+  assert.doesNotMatch(code.value, /后续版本/, '未排期块不得承诺后续支持')
+  assert.doesNotMatch(code.value, /不支持|专业模式/, '不得用永久拒绝或切模式的旧口径')
+  assert.match(code.value, /暂未开放结构化编辑/, '未排期块用「暂未开放」表达逐类开放的口径')
+  assert.match(code.value, /以源码编辑此块/, '提示须给出源码抽屉这条兜底出口')
 })
 
 test('19.5 unsupported fenced code stays protected with the v1.7 default hint', () => {
