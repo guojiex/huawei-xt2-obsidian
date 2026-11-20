@@ -47,6 +47,15 @@ const TAG: string = 'ShareFlowPanel';
 // 打点位置、日志字段含义、判据与优化方案见 docs/engineering/分享预览渲染性能优化.md §3 / §4。
 const SHARE_PERF_TRACE: boolean = true;
 
+// v1.92 试验：PDF 逐页快照降分辨率，长图保持原分辨率。
+// 依据：SDK 声明 @ohos.arkui.componentSnapshot.d.ts:414 的 scale?: number（@since 12，API24 可用），
+// 等比缩小截图产物，直接减少 readPixelsToBuffer 与 JPEG 编码的像素量（实测 snap+tail 约 8.9s/63 页）。
+// 等比缩放不改变 A4 宽高比，故页比例校验 / 页间尺寸一致性校验 / 按 imageInfo.size 比例算的 crop 均不受影响。
+// ⚠️ 长图路径必须传 1.0：longImageGeometry 依赖原始截图尺寸与 pixelsPerVp 推算 96MiB 预算和 640px 下限，
+//    降 scale 会破坏长图几何。这也是为什么 scale 由调用方传入、不写成方法内固定值。
+// ⚠️ 试验值：真机验证后按 docs/engineering/分享预览渲染性能优化.md §4 P6 调整或整版回退。
+const PDF_SNAPSHOT_SCALE: number = 0.5;
+
 /** 53.10：带旧帧校验的分段快照结果（快照本体 + 用于下一段比对的像素缓冲）。 */
 interface ShareSegmentCapture {
   snapshot: image.PixelMap;
@@ -603,12 +612,13 @@ export struct ShareFlowPanel {
    * Markdown 连续空白会折叠、分页贪心装填，两段合法快照像素完全相同几乎不可能；
    * 若出现该极端场景将以明确报错替代静默输出重复图。
    */
-  private async captureSegmentVerified(prevBuffer: ArrayBuffer | null): Promise<ShareSegmentCapture> {
+  private async captureSegmentVerified(prevBuffer: ArrayBuffer | null,
+    snapshotScale: number): Promise<ShareSegmentCapture> {
     const maxAttempts: number = 4;
     let attempt: number = 0;
     while (true) {
       const snapshot: image.PixelMap = await this.getUIContext().getComponentSnapshot()
-        .get(this.shareCaptureComponentId, { waitUntilRenderFinished: true });
+        .get(this.shareCaptureComponentId, { waitUntilRenderFinished: true, scale: snapshotScale });
       const buffer: ArrayBuffer = await this.readSegmentBuffer(snapshot);
       if (prevBuffer === null || !this.segmentBuffersIdentical(buffer, prevBuffer)) {
         return { snapshot: snapshot, buffer: buffer, attempts: attempt };
@@ -683,7 +693,8 @@ export struct ShareFlowPanel {
           throw new Error('分享预览尺寸发生变化，请重新生成长图');
         }
         // 53.10：旧帧校验快照——与上一分段完全相同即重拍，杜绝「两页重复」
-        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevSegmentBuffer);
+        // 长图固定 1.0：longImageGeometry 依赖原始截图尺寸推算 96MiB 预算，不可降 scale。
+        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevSegmentBuffer, 1.0);
         const traceT2: number = Date.now();
         const segment = captured.snapshot;
         prevSegmentBuffer = captured.buffer;
@@ -843,7 +854,8 @@ export struct ShareFlowPanel {
           throw new Error('PDF 预览无法定位到第 ' + (i + 1).toString() + ' 页');
         }
         // 53.10：旧帧校验快照——与上一页完全相同即重拍，杜绝「一页内容渲染成两页」
-        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevPageBuffer);
+        // v1.92 试验：PDF 逐页快照降分辨率（长图保持 1.0），见 docs/engineering/分享预览渲染性能优化.md §4 P6
+        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevPageBuffer, PDF_SNAPSHOT_SCALE);
         const traceT2: number = Date.now();
         const pageShot: image.PixelMap = captured.snapshot;
         prevPageBuffer = captured.buffer;

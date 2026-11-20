@@ -404,21 +404,25 @@ test('源级：ShareFlowPanel 分段快照带旧帧校验与重试（53.10）', 
   // 逐字节比较 + readPixelsToBuffer 读帧 + 有界重试 + 明确报错
   assert.match(index, /private segmentBuffersIdentical\(a: ArrayBuffer, b: ArrayBuffer\): boolean/);
   assert.match(index, /await snapshot\.readPixelsToBuffer\(buffer\);/);
-  assert.match(index, /private async captureSegmentVerified\(prevBuffer: ArrayBuffer \| null\)/);
+  assert.match(index, /private async captureSegmentVerified\(prevBuffer: ArrayBuffer \| null,\s*snapshotScale: number\)/);
   assert.match(index, /throw new Error\('分享预览渲染未更新，请重试'\);/);
   // 重试有界（4 次）且等待 180ms 后重拍
   assert.match(index, /const maxAttempts: number = 4;/);
   assert.match(index, /\}, 180\);/);
+  // v1.92：scale 必须透传进 get 的 options，且常量为 0.5（试验值）
+  assert.match(index, /scale: snapshotScale/);
+  assert.match(index, /const PDF_SNAPSHOT_SCALE: number = 0\.5;/);
   // 长图与 PDF 两循环都走校验快照，不再直连 getComponentSnapshot
   const imageLoop = index.slice(index.indexOf('private async prepareNoteImageShare'),
     index.indexOf('/** PDF 捕获页尺寸自适应'));
   assert.ok(imageLoop.length > 0, 'prepareNoteImageShare 区间未定位');
-  assert.match(imageLoop, /await this\.captureSegmentVerified\(prevSegmentBuffer\)/);
+  // 长图固定 1.0：longImageGeometry 依赖原始截图尺寸推算 96MiB 预算，降 scale 会破坏长图几何
+  assert.match(imageLoop, /await this\.captureSegmentVerified\(prevSegmentBuffer, 1\.0\)/);
   assert.doesNotMatch(imageLoop, /getComponentSnapshot\(\)/, '长图循环不得绕过旧帧校验直连快照');
   const pdfLoop = index.slice(index.indexOf('private async prepareNotePdfShare'),
     index.indexOf('private pdfFileNameOf'));
   assert.ok(pdfLoop.length > 0, 'prepareNotePdfShare 区间未定位');
-  assert.match(pdfLoop, /await this\.captureSegmentVerified\(prevPageBuffer\)/);
+  assert.match(pdfLoop, /await this\.captureSegmentVerified\(prevPageBuffer, PDF_SNAPSHOT_SCALE\)/);
   assert.doesNotMatch(pdfLoop, /getComponentSnapshot\(\)/, 'PDF 循环不得绕过旧帧校验直连快照');
 });
 
