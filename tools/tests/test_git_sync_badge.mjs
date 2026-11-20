@@ -100,7 +100,7 @@ test('Git entry visibility does not gate remote-link sharing', () => {
   assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitAheadBadge\(\)/);
   assert.match(source, /if \(GIT_ENTRY_UI_ENABLED && this\.currentVaultIsGit\(\)\) \{\s*this\.GitSyncButton\(\)/);
   // openShareDialog（含分享范围与格式选项构建）已随分享域拆至 ShareFlowPanel
-  const shareDialogStart = shareFlowSource.indexOf('  private openShareDialog(scope: ShareLinkScope');
+  const shareDialogStart = shareFlowSource.indexOf('  private async openShareDialog(scope: ShareLinkScope');
   const shareDialog = shareFlowSource.slice(shareDialogStart,
     shareFlowSource.indexOf('\n  build() {', shareDialogStart));
   assert.match(shareDialog, /value: 'file', label: 'Markdown \/ ZIP'/);

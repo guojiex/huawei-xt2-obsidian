@@ -66,8 +66,8 @@ test('manager share action is accessible and returns to its own trigger', () => 
 test('manager share stays on the selected vault, exposes ZIP only, and preserves detail back navigation', () => {
   const openFromManager = sourceMethod(shareFlowSource, '  private openShareVaultFromManager(',
     '\n  private sharePathForScope(');
-  // openShareDialog 在 ShareFlowPanel 内紧邻 build()
-  const openDialog = sourceMethod(shareFlowSource, '  private openShareDialog(',
+  // openShareDialog 在 ShareFlowPanel 内紧邻 build()（v1.96 起为 async）
+  const openDialog = sourceMethod(shareFlowSource, '  private async openShareDialog(',
     '\n  build() {');
   const prepareShare = sourceMethod(shareFlowSource, '  private async prepareShare(',
     '\n  private async shareFile(');
@@ -87,8 +87,8 @@ test('manager share stays on the selected vault, exposes ZIP only, and preserves
 });
 
 test('normal note share retains the vault range and Git remote-link path', () => {
-  // openShareDialog 在 ShareFlowPanel 内紧邻 build()
-  const openDialog = sourceMethod(shareFlowSource, '  private openShareDialog(',
+  // openShareDialog 在 ShareFlowPanel 内紧邻 build()（v1.96 起为 async）
+  const openDialog = sourceMethod(shareFlowSource, '  private async openShareDialog(',
     '\n  build() {');
   assert.match(openDialog, /folderScopeDistinct \? \[noteOption, folderOption, vaultOption\] : \[noteOption, vaultOption\]/);
   assert.match(openDialog, /if \(vault\.type === 'git' && focusReturnId\.length === 0\)/);

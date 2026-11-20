@@ -30,6 +30,7 @@ import { ShareIngestDraft, ShareIngestPayload, ShareIngestService } from '../mod
 import { SharePdfPreviewFlow, SharePdfPreviewRequest } from '../model/SharePdfPreviewFlow';
 import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
+import { NoteImageShareEstimate } from '../model/NoteImageShareEstimate';
 import { NotePdfDocumentService } from '../model/NotePdfDocumentService';
 import { NotePdfEngineService } from '../model/NotePdfEngineService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
@@ -1056,8 +1057,8 @@ export struct ShareFlowPanel {
     await showSheet(previewImage.uri, title, registry.abilityContext());
   }
 
-  private openShareDialog(scope: ShareLinkScope, path: string, targetVaultId: string = this.currentVaultId,
-    vaultNoteCount: number = -1, focusReturnId: string = ''): void {
+  private async openShareDialog(scope: ShareLinkScope, path: string, targetVaultId: string = this.currentVaultId,
+    vaultNoteCount: number = -1, focusReturnId: string = ''): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
     const entries: VaultEntry[] = registry.list();
     let vault: VaultEntry | null = null;
@@ -1078,17 +1079,41 @@ export struct ShareFlowPanel {
     }
     const folderPath: string = this.sharePathForScope('folder', scope, path, notePath);
     const noteName: string = notePath.substring(notePath.lastIndexOf('/') + 1);
-    const noteOptions: ShareFormatOption[] = [
-      { value: 'image', label: '长图', detail: '整篇笔记合成一张带水印的图片。', icon: 'image' },
-      { value: 'file', label: 'Markdown / ZIP', detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc' },
-      { value: 'text', label: '文本', detail: '预览并编辑本次分享文本，不写回笔记。', icon: 'message' }
-    ];
+    // v1.96（B 方案）：按当前宽度偏好预估笔记渲染高度，超过长图拒绝线（约 61.44:1 高宽比）
+    // 就不展示「长图」行——避免超长笔记点了才发现生成不了。估算是下界、读取失败 fail-open
+    // （不隐藏），生成阶段沿用 v1.90 报错引导兜底。
+    let hideImageOption: boolean = false;
+    if (focusReturnId.length === 0 && notePath.length > 0) {
+      const captureWidthVp: number = this.shareLayoutWidthVp(this.shareCaptureWidthId,
+        this.activeSharePaneWidthVp());
+      try {
+        const noteMarkdown: string = await this.noteMarkdownForShare(vault.id, notePath);
+        hideImageOption = NoteImageShareEstimate.exceedsLongImageLimit(noteMarkdown, captureWidthVp);
+      } catch (error) {
+        hideImageOption = false;
+      }
+    }
+    const noteOptions: ShareFormatOption[] = [];
+    if (!hideImageOption) {
+      noteOptions.push({
+        value: 'image', label: '长图',
+        detail: '整篇笔记合成一张带水印的图片。', icon: 'image'
+      });
+    }
     if (NotePdfDocumentService.isSupported()) {
-      noteOptions.splice(1, 0, {
+      noteOptions.push({
         value: 'pdf', label: 'PDF 文档',
         detail: 'A4 竖版逐页排版，适合打印与通用阅读。', icon: 'doc'
       });
     }
+    noteOptions.push({
+      value: 'file', label: 'Markdown / ZIP',
+      detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc'
+    });
+    noteOptions.push({
+      value: 'text', label: '文本',
+      detail: '预览并编辑本次分享文本，不写回笔记。', icon: 'message'
+    });
     const folderOptions: ShareFormatOption[] = [
       { value: 'zip', label: 'ZIP 文件', detail: '保留目录结构，并补齐引用的本地图片。', icon: 'archive' }
     ];
