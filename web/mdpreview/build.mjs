@@ -280,6 +280,47 @@ const html = `<!doctype html>
   #content .preview-source-block.simple-block-active > * {
     outline: var(--stroke) solid var(--blue); outline-offset: var(--stroke);
   }
+
+  /* v1.94 94.2：打印媒体适配（ArkWeb 官方 createPdf 引擎）。
+     Chromium print 管线按纸宽（A4 = 8.27in = 793.92 CSS px）重新布局整篇文档，
+     因此必须解除视口应用布局的约束：body 锁 height:100% + overflow:hidden，
+     #content 内部滚动——否则 print 认为可视高度只有一屏，内容会被截断成第一页。
+     分页控制用 CSS Fragmentation：行级断页 + orphans/widows + break-inside/after。 */
+  @media print {
+    html, body {
+      height: auto; overflow: visible; background: var(--paper);
+    }
+    body { display: block; }
+    #content {
+      flex: none; height: auto; min-height: 0; overflow: visible;
+      /* 纸宽 793.92 CSS px 下重新取内边距：视口口径的 24/40/64 在纸面上过窄且不对称 */
+      padding: 0 48px;
+    }
+    /* 正文缩放（zoom）在 print 下会破坏 Chromium 的分页计算，强制 1 */
+    #content .preview-body { zoom: 1; }
+    /* 视口专属的浮层与控件在纸面无意义 */
+    #preview-zoom-controls, #image-viewer { display: none !important; }
+    /* 标题不与后文分离（53.7 的诉求交给原生分页实现） */
+    #content h1, #content h2, #content h3,
+    #content h4, #content h5, #content h6 { break-after: avoid; page-break-after: avoid; }
+    /* 图 / 表 / 代码块 / 提示块整体不切 */
+    #content pre, #content table, #content img,
+    #content figure, #content .callout, #content .mermaid {
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    #content tr { break-inside: avoid; page-break-inside: avoid; }
+    /* 段落首尾不留孤行（CSS Fragmentation 标准属性） */
+    #content p, #content li, #content blockquote { orphans: 2; widows: 2; }
+    /* 水印：视口态是 fixed 末页徽标（53.13），print 下 fixed 会每页重复，
+       改为整篇末尾一次的静态页脚，与长图链路一致 */
+    #content .share-watermark {
+      position: static !important; display: block !important;
+      right: auto; bottom: auto; margin: var(--s8) 0 0; padding: var(--s3) 0 0;
+      border-top: var(--stroke) solid var(--line);
+      background: transparent; border-radius: 0;
+      break-inside: avoid; page-break-inside: avoid;
+    }
+  }
 </style>
 <style>
 ${katexCss}

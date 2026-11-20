@@ -1123,6 +1123,14 @@ export struct PreviewWebView {
   componentId: string = 'note-preview-web';
   /** v1.25：隐藏 Web 原生滚动条（长图分段截图时滚动条不进入合成结果；常规预览保持默认）。 */
   hideScrollBar: boolean = false;
+  /**
+   * v1.94 94.3：把 WebviewController 交给父级。
+   * ArkWeb 官方 PDF 引擎 `WebviewController.createPdf()` 是实例方法，必须由持有
+   * Web 组件的那一层调用；父组件（ShareFlowPanel 的捕获层）拿不到子组件的私有
+   * 成员，故经此回调在 aboutToAppear 时交出句柄（controller 在组件构造期即已存在，
+   * 不必等 onControllerAttached）。
+   */
+  onControllerReady: (controller: webview.WebviewController) => void = (_controller: webview.WebviewController): void => {};
   /** 父级通过这个句柄下发渲染内容 / 笔记目录 / 主题 */
   bridge: PreviewBridge = new PreviewBridge();
 
@@ -1145,6 +1153,8 @@ export struct PreviewWebView {
 
   aboutToAppear(): void {
     this.componentActive = true;
+    // v1.94 94.3：交出 controller 句柄，供父级调 ArkWeb 官方 createPdf 生成矢量 PDF。
+    this.onControllerReady(this.controller);
     this.proxy.imageViewerChangeHandler = (state: string): void => {
       this.bridge.setImageViewerOpen(state === 'open');
     };

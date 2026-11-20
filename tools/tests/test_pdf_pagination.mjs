@@ -292,39 +292,35 @@ test('源级：ShareFlowPanel 含 PDF 路由、捕获层 PDF 模式与分享面�
   assert.match(index, /format === 'pdf' && scope === 'note'/);
   assert.match(index, /prepareNotePdfShare\(/);
   assert.match(index, /shareCapturePdfMode/);
-  // v1.93：分页入口改为「尝试分页」（视口被压矮时 web 抛错不直接失败，降级分支才能接手）
-  assert.match(index, /tryPreparePdfPages\(bridge, this\.pdfPageHeightVp\)/);
-  assert.match(index, /bridge\.preparePdfPages\(pageHeightVp\)/);
+  // v1.94：分页改由 ArkWeb 官方引擎负责（Chromium print 管线），不再调 web 侧自研分页
+  assert.doesNotMatch(index, /tryPreparePdfPages\(bridge, this\.pdfPageHeightVp\)/);
   assert.match(index, /value: 'pdf', label: 'PDF 文档'/);
   assert.match(index, /NotePdfDocumentService\.isSupported\(\)/);
   assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF/);
-  assert.match(index, /writeJpegTo\(/);
+  // 写 JPEG 是长图路径的职责（v1.94：PDF 位图路线已下线，改走官方引擎）
+  const imageService = readRepoFile('entry/src/main/ets/model/NoteImageShareService.ets');
+  assert.match(imageService, /writeJpegTo/);
+  assert.doesNotMatch(index, /writeJpegTo/, 'PDF 位图路线已下线，ShareFlowPanel 不应再写 JPEG');
 });
 
-test('源级：v1.93 PDF 捕获页固定 700vp 大页 + 视口不符自动降级（93.1~93.3）', () => {
+test('源级：v1.94 PDF 捕获层视口尺寸 + 官方引擎不依赖捕获视口（94.2~94.3）', () => {
   const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
   // 目标尺寸常量：固定 700vp（A4 竖版），页高按 700×842/595≈990.59 取整
   assert.match(index, /const PDF_TARGET_PAGE_WIDTH_VP: number = 700;/);
   assert.match(index, /const PDF_TARGET_PAGE_HEIGHT_VP: number = Math\.round\(/);
-  // 尺寸字段必须是 @State——降级改尺寸要触发 build 重跑，PreviewWebView 才会真正 resize
+  // 尺寸字段仍是 @State（改尺寸要触发 build 重跑，PreviewWebView 才会真正 resize）
   assert.match(index, /@State pdfPageWidthVp: number = PDF_TARGET_PAGE_WIDTH_VP;/);
   assert.match(index, /@State pdfPageHeightVp: number = PDF_TARGET_PAGE_HEIGHT_VP;/);
   assert.doesNotMatch(index, /private pdfPageWidthVp/, '捕获页尺寸不得再是普通字段（改值不触发重排）');
   assert.doesNotMatch(index, /private pdfPageHeightVp/, '捕获页尺寸不得再是普通字段（改值不触发重排）');
   // 挂捕获层前先应用目标尺寸
   assert.match(index, /this\.applyPdfPageSize\(PDF_TARGET_PAGE_WIDTH_VP, PDF_TARGET_PAGE_HEIGHT_VP\);\s*\n\s*this\.shareCapturePdfMode = true;/);
-  // 视口比对：宽高都要一致（web 回传 #content 的 clientWidth / clientHeight）
-  assert.match(index, /private pdfViewportMatches\(prepared: PreviewCaptureResult\): boolean/);
-  assert.match(index, /Math\.abs\(prepared\.viewportHeight - this\.pdfPageHeightVp\) <= 2/);
-  assert.match(index, /Math\.abs\(prepared\.viewportWidth - this\.pdfPageWidthVp\) <= 2/);
-  // 降级：视口被压回窗口以内 → 换回窗口自适应尺寸（2026-11-11 口径）并重新分页
-  assert.match(index, /private adaptivePdfPageSize\(\): number\[\]/);
-  assert.match(index, /Math\.min\(PDF_TARGET_PAGE_WIDTH_VP, widthByWindow, widthByHeight\)/);
-  assert.match(index, /this\.applyPdfPageSize\(adaptive\[0\], adaptive\[1\]\);/);
-  assert.match(index, /prepared = await this\.preparePdfPagesAfterResize\(bridge\);/);
-  // 分页失败不得直接失败——web 侧抛「分页高度不足」正是「视口被压矮」的降级信号
-  assert.match(index, /private async tryPreparePdfPages\(/);
-  assert.match(index, /private async preparePdfPagesAfterResize\(/);
+  // v1.94：纸宽由 PdfConfiguration 决定（Chromium 按纸宽重排），捕获层尺寸只影响屏幕渲染视口，
+  // 故 v1.93 的「视口比对 + 自动降级」机制随自研分页一并下线
+  assert.doesNotMatch(index, /private pdfViewportMatches\(/);
+  assert.doesNotMatch(index, /private adaptivePdfPageSize\(/);
+  assert.doesNotMatch(index, /private async tryPreparePdfPages\(/);
+  assert.doesNotMatch(index, /private async preparePdfPagesAfterResize\(/);
   // 捕获层：PDF 模式用页尺寸（而非窗口尺寸）且不裁剪
   assert.match(index, /\.width\(this\.shareCapturePdfMode \? this\.pdfPageWidthVp : '100%'\)/);
   assert.match(index, /\.height\(this\.shareCapturePdfMode \? this\.pdfPageHeightVp : '100%'\)/);
@@ -350,8 +346,9 @@ test('红线：module.json5 零新增权限（硬约束 13；打印框架路线�
 test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（53.7）', () => {
   const dialog = readRepoFile('entry/src/main/ets/components/SharePdfPreviewDialog.ets');
   assert.match(dialog, /export struct SharePdfPreviewDialog/);
-  // 原型 pdf-specs 四枚胶囊
-  for (const chip of ['A4 竖版', '浅色纸面', '按段落分页', '末页水印']) {
+  // 原型 pdf-specs 四枚胶囊（v1.94：「按段落分页」改为「印刷级分页」——官方引擎走
+  // Chromium print 管线的 CSS Fragmentation，不再是自研块级贪心分页）
+  for (const chip of ['A4 竖版', '浅色纸面', '印刷级分页', '末页水印']) {
     assert.ok(dialog.includes(`this.SpecChip('${chip}')`), `缺少规格胶囊「${chip}」`);
   }
   // 原型 shareMeta：1 个 PDF + 文件名 + N 页
@@ -390,17 +387,21 @@ test('源级：PDF 预览会话在 SharePdfPreviewFlow，弹窗控制器在 Shar
   assert.doesNotMatch(flow, /new CustomDialogController/, '普通类不得创建/持有弹窗控制器');
   assert.doesNotMatch(flow, /SharePdfPreviewDialog/, '普通类不得组装弹窗 builder');
   // 捕获完成后进预览弹窗，捕获层卸下；导出不再内联在 prepareNotePdfShare
-  assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, pageJpegs, pageAspects, vaultId\);/);
+  // v1.94：签名改为传预览缩略图与已生成的 PDF 产物路径（官方引擎路线）
+  assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, previewImages, \[\], pdfPath, vaultId\);/);
   const prepare = index.slice(index.indexOf('private async prepareNotePdfShare'),
     index.indexOf('private pdfFileNameOf'));
   assert.ok(prepare.length > 0, 'prepareNotePdfShare 区间未定位');
   assert.doesNotMatch(prepare, /exportFromPageImages/, 'prepareNotePdfShare 不得内联合成 PDF（53.7 改预览后确认）');
   assert.doesNotMatch(prepare, /openShareFilePreview\(/, 'prepareNotePdfShare 不得直接进文件预览');
-  // Flow：请求对象带逐页宽高比（53.12）；会话记录 / 合成 / 清理，无弹窗逻辑
+  // Flow：请求对象带逐页宽高比（53.12）；会话记录 / 清理，无弹窗逻辑
   assert.match(flow, /export class SharePdfPreviewFlow/);
   assert.match(flow, /export class SharePdfPreviewRequest/);
   assert.match(flow, /pageAspects: number\[\] = \[\];/);
-  assert.match(flow, /NotePdfDocumentService\.exportFromPageImages\(pages, aspects, pdfPath\);/);
+  // v1.94：官方引擎路线下 PDF 在预览前已生成，flow 不再合成，只返回已有产物路径
+  assert.match(flow, /pdfPath: string = '';/);
+  assert.match(flow, /async composePdf\(\): Promise<string> \{/);
+  assert.doesNotMatch(flow, /exportFromPageImages/);
   // Panel onConfirm：合成 → 关闭 → 进文件预览；onCancel：清理 → 回分享面板
   assert.match(index, /const pdfPath: string = await this\.sharePdfPreviewFlow\.composePdf\(\);/);
   assert.match(index, /this\.sharePdfPreviewCtl\?\.close\(\);\s*\n\s*request\.onComposed\(pdfPath\);/);
@@ -409,11 +410,11 @@ test('源级：PDF 预览会话在 SharePdfPreviewFlow，弹窗控制器在 Shar
   // 返回：清理会话回到分享面板（removeTree + 失败告警）
   assert.match(flow, /NoteShareService\.removeTree\(VaultRegistry\.get\(\), sessionId\);\s*\n\s*\} catch \(error\) \{\s*\n\s*hilog\.warn\(DOMAIN, TAG, 'PDF 分页预览临时文件清理失败'\);/);
   // Panel 接线：合成完成进文件预览（精确 utd PDF）、取消回分享面板
-  assert.match(index, /onComposed: \(pdfPath: string\): void => \{\s*\n\s*this\.openShareFilePreview\(pdfPath, this\.pdfFileNameOf\(itemName\), 'PDF', \[\]/);
+  assert.match(index, /onComposed: \(composedPath: string\): void => \{\s*\n\s*this\.openShareFilePreview\(composedPath, this\.pdfFileNameOf\(itemName\), 'PDF', \[\]/);
   assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF\);/);
   assert.match(index, /onCancelled: \(\): void => \{\s*\n\s*this\.openShareDialog\('note', notePath\);/);
-  // 缩略图 URI 走 fileUri.getUriFromPath
-  assert.match(flow, /pageUris\.push\(fileUri\.getUriFromPath\(request\.pageJpegs\[i\]\)\);/);
+  // 缩略图 URI 走 fileUri.getUriFromPath（v1.94：源为预览缩略图而非端侧 JPEG）
+  assert.match(flow, /pageUris\.push\(fileUri\.getUriFromPath\(request\.previewImages\[i\]\)\);/);
 });
 
 // ---------- 53.10 分段快照旧帧校验（XT2「一页渲染两页且重复」修复） ----------
@@ -428,9 +429,10 @@ test('源级：ShareFlowPanel 分段快照带旧帧校验与重试（53.10）', 
   // 重试有界（4 次）且等待 180ms 后重拍
   assert.match(index, /const maxAttempts: number = 4;/);
   assert.match(index, /\}, 180\);/);
-  // v1.92：scale 必须透传进 get 的 options，且常量为 0.5（试验值）
+  // v1.92：scale 必须透传进 get 的 options（PDF 位图路线下线后仅长图使用，固定 1.0）
   assert.match(index, /scale: snapshotScale/);
-  assert.match(index, /const PDF_SNAPSHOT_SCALE: number = 0\.5;/);
+  assert.doesNotMatch(index, /const PDF_SNAPSHOT_SCALE/,
+    'PDF 位图路线已下线，不得残留 PDF 快照 scale 常量');
   // 长图与 PDF 两循环都走校验快照，不再直连 getComponentSnapshot
   const imageLoop = index.slice(index.indexOf('private async prepareNoteImageShare'),
     index.indexOf('private applyPdfPageSize'));
@@ -438,11 +440,13 @@ test('源级：ShareFlowPanel 分段快照带旧帧校验与重试（53.10）', 
   // 长图固定 1.0：longImageGeometry 依赖原始截图尺寸推算 96MiB 预算，降 scale 会破坏长图几何
   assert.match(imageLoop, /await this\.captureSegmentVerified\(prevSegmentBuffer, 1\.0\)/);
   assert.doesNotMatch(imageLoop, /getComponentSnapshot\(\)/, '长图循环不得绕过旧帧校验直连快照');
+  // v1.94：PDF 路径改走 ArkWeb 官方引擎，不再有逐页截图循环
   const pdfLoop = index.slice(index.indexOf('private async prepareNotePdfShare'),
     index.indexOf('private pdfFileNameOf'));
   assert.ok(pdfLoop.length > 0, 'prepareNotePdfShare 区间未定位');
-  assert.match(pdfLoop, /await this\.captureSegmentVerified\(prevPageBuffer, PDF_SNAPSHOT_SCALE\)/);
-  assert.doesNotMatch(pdfLoop, /getComponentSnapshot\(\)/, 'PDF 循环不得绕过旧帧校验直连快照');
+  assert.doesNotMatch(pdfLoop, /captureSegmentVerified/, 'PDF 路径不得再走逐页截图');
+  assert.doesNotMatch(pdfLoop, /getComponentSnapshot\(\)/, 'PDF 路径不得绕过旧帧校验直连快照');
+  assert.match(pdfLoop, /NotePdfEngineService\.exportFromWeb\(controller, pdfPath\)/);
 });
 
 test('源级：web setShareCaptureScrollTop 滚动后给渲染服务留合成时间（53.10，P2 已回退）', () => {

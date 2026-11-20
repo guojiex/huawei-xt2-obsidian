@@ -13,6 +13,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { common } from '@kit.AbilityKit';
 import { image } from '@kit.ImageKit';
 import { uniformTypeDescriptor } from '@kit.ArkData';
+import { webview } from '@kit.ArkWeb';
 import fileUri from '@ohos.file.fileuri';
 import { EditorBridge } from './EditorWebView';
 import { PreviewBridge, PreviewCaptureResult, PreviewWebView } from './PreviewWebView';
@@ -30,6 +31,7 @@ import { SharePdfPreviewFlow, SharePdfPreviewRequest } from '../model/SharePdfPr
 import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
 import { NotePdfDocumentService } from '../model/NotePdfDocumentService';
+import { NotePdfEngineService } from '../model/NotePdfEngineService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteService } from '../model/NoteService';
 import { PreparedArchiveShare, ShareArchiveService, ShareSnapshot } from '../model/ShareArchiveService';
@@ -47,22 +49,14 @@ const TAG: string = 'ShareFlowPanel';
 // 打点位置、日志字段含义、判据与优化方案见 docs/engineering/分享预览渲染性能优化.md §3 / §4。
 const SHARE_PERF_TRACE: boolean = true;
 
-// v1.92 试验：PDF 逐页快照降分辨率，长图保持原分辨率。
-// 依据：SDK 声明 @ohos.arkui.componentSnapshot.d.ts:414 的 scale?: number（@since 12，API24 可用），
-// 等比缩小截图产物，直接减少 readPixelsToBuffer 与 JPEG 编码的像素量（实测 snap+tail 约 8.9s/63 页）。
-// 等比缩放不改变 A4 宽高比，故页比例校验 / 页间尺寸一致性校验 / 按 imageInfo.size 比例算的 crop 均不受影响。
-// ⚠️ 长图路径必须传 1.0：longImageGeometry 依赖原始截图尺寸与 pixelsPerVp 推算 96MiB 预算和 640px 下限，
-//    降 scale 会破坏长图几何。这也是为什么 scale 由调用方传入、不写成方法内固定值。
-// ⚠️ 试验值：真机验证后按 docs/engineering/分享预览渲染性能优化.md §4 P6 调整或整版回退。
-const PDF_SNAPSHOT_SCALE: number = 0.5;
-
-// v1.93（93.2）：PDF 捕获页目标尺寸——固定 700vp 上限（A4 竖版 700×990.59，页高取整 991）。
-// 2026-11-11 曾改成「随窗口自适应」，根因是固定 700×990.59 时捕获层超出布局边界、
-// #content 实际视口被压矮，分页要求 scrollHeight ≥ 末页顶 + 页高永远补不齐（PDF 分页高度不足）。
-// v1.93 不再假设平台必然压矮视口：先按固定大页试，若视口被压回窗口以内则自动降级回
-// 窗口自适应尺寸（ShareFlowPanel.applyPdfPageSize / adaptivePdfPageSize）。
+// v1.94：PDF 捕获层视口尺寸。
+//
+// ⚠️ 语义已变：官方引擎（ArkWeb createPdf）下**纸宽由 PdfConfiguration 决定**
+// （A4 = 8.27in = 793.92 CSS px），Chromium 按纸宽重新布局整篇文档并分页。
+// 捕获层尺寸只决定「屏幕渲染视口」，不影响 print 排版结果。
+// 取 A4 比例的 700×991vp（沿用 v1.93 的取值）：与纸面比例一致，屏幕预览所见即纸面所得。
 // 700vp × dpr3 = 2100 物理 px，远低于硬约束 12 的 7680px 上限。
-// 依据与判据见 docs/releases/v1.93/需求文档.md §2 / §3。
+// 依据见 docs/releases/v1.94/需求文档.md §3.2。
 const PDF_TARGET_PAGE_WIDTH_VP: number = 700;
 const PDF_TARGET_PAGE_HEIGHT_VP: number = Math.round(
   PDF_TARGET_PAGE_WIDTH_VP * NotePdfDocumentService.A4_HEIGHT_PT / NotePdfDocumentService.A4_WIDTH_PT);
@@ -121,6 +115,13 @@ export struct ShareFlowPanel {
   private shareCaptureReadyRejecter: ((error: Error) => void) | null = null;
   private shareCaptureReadyTimer: number = -1;
   private shareCaptureCancelled: boolean = false;
+  /**
+   * v1.94：捕获层 Web 的 controller 句柄。
+   * ArkWeb 官方 PDF 引擎 `createPdf()` 是 controller 的实例方法，必须由持有
+   * Web 组件的那一层调用——捕获层的 Web 在 PreviewWebView 内部，其 controller
+   * 私有，父组件经 `onControllerReady` 回调取得（见 build() 里的捕获层挂载）。
+   */
+  private shareCaptureController: webview.WebviewController | null = null;
   private shareImagePreviewSessionId: string = '';
   private shareImagePreviewTitle: string = '';
   @State shareCaptureActive: boolean = false;
@@ -131,14 +132,13 @@ export struct ShareFlowPanel {
   /** v1.53 PDF 模式：捕获层按 A4 比例 + 浅色主题渲染（53.3）。 */
   @State shareCapturePdfMode: boolean = false;
   /**
-   * PDF 捕获页尺寸（v1.93 93.2）：改为**脱离窗口约束**的固定大页——任意形态都用
-   * 700×990.59vp（A4 竖版，页高取整 991），每页容量不再随窄窗缩水。
-   * 2026-11-11 之所以改成窗口自适应：固定 700×990.59 时窗口高不足 990.59vp
-   * （模拟器 776vp、XT2 折叠 / 展开横屏均如此）捕获层超出布局边界，#content 实际
-   * 视口被压矮，分页要求 scrollHeight ≥ 末页顶 + 页高永远补不齐（PDF 分页高度不足）。
-   * v1.93 不再假设平台必然压矮视口：先按固定大页试，视口被压回窗口以内时自动降级
-   * 回窗口自适应尺寸（见 93.1 降级分支与 applyPdfPageSize / adaptivePdfPageSize）。
-   * 用 @State：降级时要改尺寸触发 build 重跑，PreviewWebView 才会真正 resize。
+   * PDF 捕获层视口尺寸（v1.94）：A4 比例的 700×991vp。
+   *
+   * ⚠️ 官方引擎下这两个值**不再决定纸面排版**——纸宽由 PdfConfiguration 给出
+   * （A4 = 8.27in = 793.92 CSS px），Chromium 按纸宽重新布局并分页。
+   * 捕获层尺寸只影响屏幕渲染视口（内容流在此视口里排布，print 时被重排）。
+   * 用 @State：改尺寸触发 build 重跑，PreviewWebView 才会真正 resize。
+   * 依据见 docs/releases/v1.94/需求文档.md §3.2。
    */
   @State pdfPageWidthVp: number = PDF_TARGET_PAGE_WIDTH_VP;
   @State pdfPageHeightVp: number = PDF_TARGET_PAGE_HEIGHT_VP;
@@ -809,74 +809,26 @@ export struct ShareFlowPanel {
   }
 
   /**
-   * v1.93（93.1）降级口径：窗口自适应尺寸（沿用 2026-11-11 逻辑）——比例恒 A4 竖版，
-   * 宽度 ≤ 700vp 且不超窗口宽高，高度取整。仅在平台把固定大页的视口压回窗口以内时使用，
-   * 保证窄窗下导出仍可用（每页容量回到 2026-11-11 的水平）。
-   */
-  private adaptivePdfPageSize(): number[] {
-    const widthByHeight: number = this.windowHeightVp > 0 ? this.windowHeightVp *
-      NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT : PDF_TARGET_PAGE_WIDTH_VP;
-    const widthByWindow: number = this.windowWidthVp > 0 ? this.windowWidthVp : widthByHeight;
-    const width: number = Math.min(PDF_TARGET_PAGE_WIDTH_VP, widthByWindow, widthByHeight);
-    const height: number = Math.round(width *
-      NotePdfDocumentService.A4_HEIGHT_PT / NotePdfDocumentService.A4_WIDTH_PT);
-    return [width, height];
-  }
-
-  /**
-   * v1.93（93.1）：捕获视口是否与目标页尺寸一致。web 侧回传 #content 的 clientWidth /
-   * clientHeight——#content 是 flex:1 撑满 Web 视口且 border-box，两个值即组件尺寸。
-   */
-  private pdfViewportMatches(prepared: PreviewCaptureResult): boolean {
-    return Math.abs(prepared.viewportHeight - this.pdfPageHeightVp) <= 2 &&
-      Math.abs(prepared.viewportWidth - this.pdfPageWidthVp) <= 2;
-  }
-
-  /**
-   * v1.93（93.1）：按目标页高分页。web 侧在视口被压矮时会抛「PDF 分页高度不足」——
-   * 那正是「固定大页不可用」的信号，不能直接失败：交由调用方降级重排。
-   * 失败时返回空结果（视口 0），由视口比对判定为不匹配。
-   */
-  private async tryPreparePdfPages(bridge: PreviewBridge, pageHeightVp: number): Promise<PreviewCaptureResult> {
-    try {
-      return await bridge.preparePdfPages(pageHeightVp);
-    } catch (error) {
-      if (SHARE_PERF_TRACE) {
-        hilog.error(DOMAIN, 'ShareDbg', 'pdfgeo prepare failed msg=%{public}s',
-          (error as Error).message);
-      }
-      return {
-        scrollHeight: 0,
-        viewportHeight: 0,
-        viewportWidth: 0,
-        scrollTop: 0,
-        pageCount: 0,
-        pageTops: ''
-      };
-    }
-  }
-
-  /**
-   * v1.93（93.1）：Web resize 后重新分页——布局重排有延迟，最多 3 轮，
-   * 每轮以 web 回传的视口尺寸判定是否已生效。
-   */
-  private async preparePdfPagesAfterResize(bridge: PreviewBridge): Promise<PreviewCaptureResult> {
-    let prepared: PreviewCaptureResult = await this.tryPreparePdfPages(bridge, this.pdfPageHeightVp);
-    for (let attempt: number = 1; attempt < 3 && !this.pdfViewportMatches(prepared); attempt++) {
-      await new Promise<void>((resolve: () => void): void => {
-        setTimeout((): void => {
-          resolve()
-        }, 120)
-      })
-      prepared = await this.tryPreparePdfPages(bridge, this.pdfPageHeightVp);
-    }
-    return prepared;
-  }
-
-  /**
    * v1.53 导出 PDF（需求 53.3）：复用隐藏捕获层按 A4 比例逐页渲染截图，
    * 逐页 JPEG 经 PDF Kit 合成 note.pdf 后走文件预览分享（utd 精确类型 com.adobe.pdf）。
    * 失败清理会话目录不留半成品；取消语义与长图一致。
+   */
+  /**
+   * v1.94：PDF 导出走 **ArkWeb 官方引擎**（`WebviewController.createPdf`）。
+   *
+   * 与旧版（v1.53~v1.93）的根本差异：
+   * - 旧：web 侧自研块级贪心分页 → 端侧逐页滚动截图成 JPEG → PDF Kit 把 JPEG 贴进
+   *   A4 页。产物是**位图 PDF**（文字不可选中），页尾留白 2.3%~18.1% 随机分布。
+   * - 新：一次 `createPdf` 交由 Chromium print 管线按 A4 纸宽（8.27in = 793.92 CSS px）
+   *   **重新布局整篇并分页**，原生支持行级断页 / orphans / widows / break-inside。
+   *   产物是**矢量 PDF**（文字可选中可搜索、放大清晰）。
+   *
+   * 选型依据：print 适配器（`createWebPrintDocumentAdapter` + `print.print`）会拉起
+   * 系统打印 UI、产物不在应用沙箱（分享链路拿不到）、且需 ohos.permission.PRINT；
+   * `createPdf` 直接返回字节流进沙箱，天然适配「生成 → 预览 → 分享」。
+   * 见 docs/releases/v1.94/需求文档.md §3.1。
+   *
+   * 长图路径不受影响（print 管线只产出分页 PDF，无长图输出形态——见 §1.3）。
    */
   private async prepareNotePdfShare(vaultId: string, notePath: string,
     itemName: string): Promise<void> {
@@ -898,123 +850,46 @@ export struct ShareFlowPanel {
       this.applyPdfPageSize(PDF_TARGET_PAGE_WIDTH_VP, PDF_TARGET_PAGE_HEIGHT_VP);
       this.shareCapturePdfMode = true;
       this.shareCaptureActive = true;
+      this.shareCaptureController = null;
       await this.waitForShareCaptureReady();
+      const controller: webview.WebviewController | null = this.shareCaptureController;
+      if (controller === null) {
+        throw new Error('分享预览未就绪，请重试');
+      }
+      // 水印：print 媒体下由 web 侧 CSS 改为整篇末尾的静态页脚
+      // （web/mdpreview/build.mjs 的 @media print 块）；此处只需把流内水印插入文档。
       await bridge.appendShareWatermark();
-      let prepared: PreviewCaptureResult =
-        await this.tryPreparePdfPages(bridge, this.pdfPageHeightVp);
-      // v1.93（93.1）：平台可能把捕获视口压回窗口以内（2026-11-11「分页高度不足」的根因）。
-      // 命中则降级回窗口自适应尺寸并重新分页——窄窗下导出仍可用，每页容量回到今天的水平；
-      // 固定大页是否生效由本次真机打点判定（见 v1.93 需求文档 §2）。
-      let degraded: boolean = false;
-      if (!this.pdfViewportMatches(prepared)) {
-        const adaptive: number[] = this.adaptivePdfPageSize();
-        degraded = true;
-        this.applyPdfPageSize(adaptive[0], adaptive[1]);
-        prepared = await this.preparePdfPagesAfterResize(bridge);
-      }
-      if (!this.pdfViewportMatches(prepared)) {
-        throw new Error('PDF 页面尺寸与渲染视口不符，请重试');
-      }
-      const pageCount: number = prepared.pageCount ?? 0;
-      if (pageCount <= 0 || pageCount > NotePdfDocumentService.MAX_PAGES) {
-        throw new Error('笔记超过单文件 PDF 页数上限；请改用 Markdown / ZIP');
-      }
-      const tops: number[] = JSON.parse(prepared.pageTops ?? '[]') as number[];
-      if (tops.length !== pageCount) {
-        throw new Error('PDF 分页结果无效，请重试');
-      }
       sessionId = NoteImageShareService.createSession(registry);
-      // 临时诊断 2026-11-20：逐页切片几何（定位「预览一页很短」）。字段含义与判据见
-      // docs/engineering/分享预览渲染性能优化.md §3.6；验后随 SHARE_PERF_TRACE 一并删除。
-      // v1.93 追加 vpW/vpH（web 回传的实际捕获视口）与 degraded（是否降级回自适应尺寸）：
-      // vpW≈pageW 且 vpH≈pageVp → 固定大页生效；vpW/vpH 被压到窗口以内且 degraded=1 →
-      // 平台压矮视口，固定大页在该形态不可用。判据见 docs/releases/v1.93/需求文档.md §2。
+      const sessionDir: string = registry.sharePath(sessionId);
+      const pdfPath: string = sessionDir + '/note.pdf';
+      // 官方引擎一次产出矢量 PDF。耗时含 Chromium 排版 + 渲染，替换旧的 N 次滚动截图。
+      const traceT0: number = Date.now();
+      await NotePdfEngineService.exportFromWeb(controller, pdfPath);
+      const traceT1: number = Date.now();
+      // 预览缩略图：从真实 PDF 渲染（PDF Kit），保证「预览即产物」。
+      const previewImages: string[] = await NotePdfEngineService.renderPreview(pdfPath, sessionDir);
+      const traceT2: number = Date.now();
       if (SHARE_PERF_TRACE) {
+        // 诊断期：仅记数字与耗时，不记笔记内容。
         hilog.info(DOMAIN, 'ShareDbg',
-          'pdfgeo start pages=%{public}d scalePct=%{public}d pageW=%{public}d pageVp=%{public}d ' +
-            'winW=%{public}d winH=%{public}d vpW=%{public}d vpH=%{public}d degraded=%{public}d',
-          tops.length, Math.round(PDF_SNAPSHOT_SCALE * 100),
-          Math.round(this.pdfPageWidthVp), Math.round(this.pdfPageHeightVp),
-          Math.round(this.windowWidthVp), Math.round(this.windowHeightVp),
-          Math.round(prepared.viewportWidth), Math.round(prepared.viewportHeight),
-          degraded ? 1 : 0);
+          'pdfengine createMs=%{public}d previewMs=%{public}d pages=%{public}d',
+          traceT1 - traceT0, traceT2 - traceT1, previewImages.length);
       }
-      const pageJpegs: string[] = [];
-      const pageAspects: number[] = [];
-      let expectedWidth: number = 0;
-      let expectedHeight: number = 0;
-      let prevPageBuffer: ArrayBuffer | null = null;
-      for (let i: number = 0; i < tops.length; i++) {
-        if (this.shareCaptureCancelled) {
-          throw new Error('分享图片生成已取消');
-        }
-        // 性能诊断：wait/snap/tail 三段耗时切分，见 docs/engineering/分享预览渲染性能优化.md §3.1
-        const traceT0: number = Date.now();
-        const positioned: PreviewCaptureResult = await bridge.setShareCaptureScrollTop(tops[i]);
-        const traceT1: number = Date.now();
-        if (Math.abs(positioned.scrollTop - tops[i]) > 1) {
-          throw new Error('PDF 预览无法定位到第 ' + (i + 1).toString() + ' 页');
-        }
-        // 53.10：旧帧校验快照——与上一页完全相同即重拍，杜绝「一页内容渲染成两页」
-        // v1.92 试验：PDF 逐页快照降分辨率（长图保持 1.0），见 docs/engineering/分享预览渲染性能优化.md §4 P6
-        const captured: ShareSegmentCapture = await this.captureSegmentVerified(prevPageBuffer, PDF_SNAPSHOT_SCALE);
-        const traceT2: number = Date.now();
-        const pageShot: image.PixelMap = captured.snapshot;
-        prevPageBuffer = captured.buffer;
-        try {
-          const imageInfo: image.ImageInfo = await pageShot.getImageInfo();
-          if (i === 0) {
-            expectedWidth = imageInfo.size.width;
-            expectedHeight = imageInfo.size.height;
-            if (Math.abs(expectedWidth / expectedHeight -
-              NotePdfDocumentService.A4_WIDTH_PT / NotePdfDocumentService.A4_HEIGHT_PT) > 0.01) {
-              throw new Error('PDF 页面比例异常，请重试');
-            }
-          } else if (imageInfo.size.width !== expectedWidth || imageInfo.size.height !== expectedHeight) {
-            throw new Error('PDF 渲染期间页面尺寸变化，请重试');
-          }
-          // 53.12：贪心分页切片高（块边界）小于页高，整屏快照会把下一页开头的
-          // 内容重复拍进本页页尾（XT2 实测「三种形态」在页缝出现两次）。非末页
-          // 裁到切片高；末页含水印与补白保持整页。纸面纯白（PDF 模式强制 light，
-          // --paper:#fff），A4 页上图片下方留白即自然分页留白，无缝衔接。
-          const sliceVp: number = i === tops.length - 1 ? this.pdfPageHeightVp :
-            Math.max(1, Math.min(this.pdfPageHeightVp, tops[i + 1] - tops[i]));
-          const cropPx: number = Math.max(1, Math.min(imageInfo.size.height,
-            Math.round(imageInfo.size.height * sliceVp / this.pdfPageHeightVp)));
-          if (cropPx < imageInfo.size.height) {
-            await pageShot.crop({ x: 0, y: 0, size: { width: imageInfo.size.width, height: cropPx } });
-          }
-          const pagePath: string = registry.sharePath(sessionId + '/page-' + (i + 1).toString() + '.jpg');
-          await NoteImageShareService.writeJpegTo(pagePath, pageShot);
-          pageJpegs.push(pagePath);
-          // 临时诊断 2026-11-20：fillPct = 本页切片高 / 整页高（100=满页，越小越「短」）；
-          // aspectMilli = 页图宽/高 ×1000（A4 约 707）。见 §3.6，验后随 SHARE_PERF_TRACE 删除。
-          if (SHARE_PERF_TRACE) {
-            hilog.info(DOMAIN, 'ShareDbg',
-              'pdfgeo i=%{public}d/%{public}d w=%{public}d h=%{public}d fillPct=%{public}d cropPx=%{public}d aspectMilli=%{public}d',
-              i, tops.length, imageInfo.size.width, imageInfo.size.height,
-              Math.round(sliceVp * 100 / this.pdfPageHeightVp), cropPx,
-              Math.round(imageInfo.size.width * 1000 / cropPx));
-          }
-          pageAspects.push(imageInfo.size.width / cropPx);
-        } finally {
-          await pageShot.release();
-        }
-        const traceT3: number = Date.now();
-        this.traceShareSegment('pdf', tops.length, i,
-          traceT1 - traceT0, traceT2 - traceT1, traceT3 - traceT2, captured.attempts);
+      if (previewImages.length > NotePdfEngineService.MAX_PAGES) {
+        throw new Error('笔记超过单文件 PDF 页数上限；请改用 Markdown / ZIP');
       }
       if (this.shareCaptureCancelled) {
         throw new Error('分享图片生成已取消');
       }
-      // 53.7：先逐页捕获成 JPEG 进分页预览弹窗；「分享 PDF」确认后才在 onConfirm
-      // 里合成 PDF。捕获层此时卸下（页面已落盘），预览读会话目录里的 JPEG。
+      // 捕获层此时卸下（产物已落盘），预览读会话目录里的缩略图。
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
-      this.openSharePdfPreview(itemName, notePath, sessionId, pageJpegs, pageAspects, vaultId);
+      this.shareCaptureController = null;
+      this.openSharePdfPreview(itemName, notePath, sessionId, previewImages, [], pdfPath, vaultId);
     } catch (error) {
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
+      this.shareCaptureController = null;
       bridge.cancelShareCaptureRequests('PDF 导出已结束');
       if (sessionId.length > 0) {
         try {
@@ -1025,8 +900,8 @@ export struct ShareFlowPanel {
       }
       const err = error as Error;
       if (SHARE_PERF_TRACE) {
-        // 诊断期：v1.93 的降级判定失败等需要落到日志（仅本域错误文案，无笔记内容）。
-        hilog.error(DOMAIN, 'ShareDbg', 'pdfgeo failed msg=%{public}s', err.message);
+        // 诊断期：官方引擎失败原因需要落到日志（仅本域错误文案，无笔记内容）。
+        hilog.error(DOMAIN, 'ShareDbg', 'pdfengine failed msg=%{public}s', err.message);
       }
       throw new Error(err.message);
     } finally {
@@ -1047,9 +922,10 @@ export struct ShareFlowPanel {
   /**
    * 53.7：PDF 分页预览。会话状态与合成在 model/SharePdfPreviewFlow；弹窗控制器必须是
    * 本 struct 成员（CustomDialogController 官方使用约束，普通类里 open() 静默不显示）。
+   * v1.94：产物 PDF 已在预览前生成（ArkWeb 官方引擎），此处只传预览缩略图与产物路径。
    */
   private openSharePdfPreview(itemName: string, notePath: string, sessionId: string,
-    pageJpegs: string[], pageAspects: number[], vaultId: string): void {
+    previewImages: string[], pageAspects: number[], pdfPath: string, vaultId: string): void {
     const registry: VaultRegistry = VaultRegistry.get();
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
@@ -1057,13 +933,14 @@ export struct ShareFlowPanel {
       itemName: itemName,
       fileName: this.pdfFileNameOf(itemName),
       sessionId: sessionId,
-      pageJpegs: pageJpegs,
+      previewImages: previewImages,
       pageAspects: pageAspects,
+      pdfPath: pdfPath,
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
       singleScreen: shareSheet,
-      onComposed: (pdfPath: string): void => {
-        this.openShareFilePreview(pdfPath, this.pdfFileNameOf(itemName), 'PDF', [],
+      onComposed: (composedPath: string): void => {
+        this.openShareFilePreview(composedPath, this.pdfFileNameOf(itemName), 'PDF', [],
           itemName, 1, 0, 'note', notePath, registry, '', async (): Promise<void> => {},
           vaultId, -1, '', uniformTypeDescriptor.UniformDataType.PDF);
       },
@@ -1327,6 +1204,10 @@ export struct ShareFlowPanel {
           },
           onReady: (): void => {
             this.resolveShareCaptureReady();
+          },
+          // v1.94：交出捕获层 Web 的 controller，供 ArkWeb 官方 createPdf 生成矢量 PDF。
+          onControllerReady: (controller: webview.WebviewController): void => {
+            this.shareCaptureController = controller;
           },
           onError: (msg: string): void => {
             hilog.error(DOMAIN, TAG, '分享预览加载错误');

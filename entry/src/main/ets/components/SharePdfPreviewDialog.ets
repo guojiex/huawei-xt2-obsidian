@@ -5,9 +5,10 @@ import { UtilityDialogAction, UtilityDialogShell } from './UtilityDialogShell';
 
 /**
  * PDF 分页预览弹窗（v1.53 53.7，对齐 v2 原型 previewPdfShare）：
- * 点击分享面板「PDF 文档」后先逐页捕获成 JPEG，再在本弹窗内展示分页预览——
- * 规格胶囊（A4 竖版 / 浅色纸面 / 按段落分页 / 末页水印）、逐页缩略图（第 N 页 / 共 M 页）
- * 与「分享 PDF」主按钮；确认后才把逐页 JPEG 合成为 PDF 并进入文件预览。
+ * 点击分享面板「PDF 文档」后先按 ArkWeb 官方引擎（`createPdf`）生成矢量 PDF，
+ * 再把真实 PDF 的各页渲染成缩略图在本弹窗内展示——**预览即产物**。
+ * 规格胶囊（A4 竖版 / 浅色纸面 / 印刷级分页 / 末页水印）、逐页缩略图（第 N 页 / 共 M 页）
+ * 与「分享 PDF」主按钮；确认后直接把已生成的 PDF 送进文件预览（无需再合成）。
  */
 @CustomDialog
 export struct SharePdfPreviewDialog {
@@ -96,7 +97,10 @@ export struct SharePdfPreviewDialog {
       Row({ space: Space.s1 }) {
         this.SpecChip('A4 竖版')
         this.SpecChip('浅色纸面')
-        this.SpecChip('按段落分页')
+        // v1.94：官方引擎（ArkWeb createPdf）下分页由 Chromium print 管线按
+        // CSS Fragmentation 规则实现（行级断页 / orphans / widows / break-inside），
+        // 不再是旧的自研「按段落分页」。
+        this.SpecChip('印刷级分页')
         this.SpecChip('末页水印')
       }
       .width('100%')
