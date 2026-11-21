@@ -272,11 +272,13 @@ const html = `<!doctype html>
   #content a { color: var(--blue); text-decoration: none; }
   #content input[type="checkbox"] { accent-color: var(--blue); width: 15px; height: 15px; vertical-align: -2px; margin-right: var(--s1); }
   /* 空笔记占位不居中、不下沉（2026-11-09 修复）：可编辑态就是正文起点，必须贴顶左对齐，
-     光标落点 = 首行首列；只读态同样贴顶，作为一行安静的提示。 */
+     光标落点 = 首行首列；只读态同样贴顶，作为一行安静的提示。
+     v1.98：可编辑占位文字改品牌蓝（「这是打字起点」与焦点/活动态品牌色语言对齐，
+     用户 2026-11-21 拍板「输入栏才需要变蓝提示」）；只读档保持 muted。 */
   #content .empty { color: var(--muted); font-size: var(--small); text-align: left; }
   #content .empty[contenteditable="true"] { color: var(--ink); font-size: var(--body); line-height: var(--leading); min-height: var(--body); }
   #content .empty:empty::before { content: attr(data-placeholder); }
-  #content .empty[contenteditable="true"]:empty::before { color: var(--muted); }
+  #content .empty[contenteditable="true"]:empty::before { color: var(--blue); }
   #content .preview-source-block.simple-block-active > * {
     outline: var(--stroke) solid var(--blue); outline-offset: var(--stroke);
   }
