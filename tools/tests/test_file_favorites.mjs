@@ -233,6 +233,17 @@ test('源级：Icons 注册 star / starFilled（描边 / 填充），不编造�
   assert.match(iconsSource, /const FILLED_ICONS: string\[\] = \['sync', 'starFilled'\];/);
 });
 
+test('回归：图标路径常量禁止 -. 无前导零小数（scalePath 会拆坏路径导致图标不渲染）', () => {
+  // 2026-11-21 用户真机反馈「收藏此笔记」菜单无图标：P_STAR 写了 -.61，scalePath 正则
+  // 要求小数点前有数字，匹配不上就只缩放尾数 61，路径畸形 → Path 解析失败整颗不画。
+  const constantLines = iconsSource.split('\n').filter((line) => /^const P_[A-Z_]+/.test(line.trim()) || /^\s*'[^']*' \+?$/.test(line));
+  assert.ok(constantLines.length > 30, '应能收集到图标路径常量行');
+  for (const line of constantLines) {
+    assert.doesNotMatch(line, /-\.\d/, `路径常量含 -. 无前导零小数（scalePath 会拆坏）：${line.trim().slice(0, 60)}`);
+    assert.doesNotMatch(line, /\s\.\d/, `路径命令含空格后 .小数（缺前导数字）：${line.trim().slice(0, 60)}`);
+  }
+});
+
 test('源级：零新增权限 + 收藏标题 / 路径 / 篇数不进埋点', () => {
   const permissions = Array.from(moduleSource.matchAll(/"name":\s*"(ohos\.permission\.[A-Z_]+)"/g))
     .map((m) => m[1]);
