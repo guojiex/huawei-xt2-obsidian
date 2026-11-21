@@ -23,8 +23,6 @@ export class NotePdfEngineService {
   static readonly A4_HEIGHT_INCH: number = 11.69;
   /** 单文件页数上限（与旧路线一致，需求 53.1）；超限提示改用 Markdown / ZIP。 */
   static readonly MAX_PAGES: number = 100;
-  /** 预览缩略图宽度（像素）；高度按 A4 比例在设备层推算。 */
-  static readonly PREVIEW_WIDTH_PX: number = 300;
 
   /**
    * 生成矢量 PDF 并写入沙箱指定路径，返回产物路径。
@@ -48,7 +46,7 @@ export class NotePdfEngineService {
   static async renderPreview(pdfPath: string, outDir: string): Promise<string[]> {
     const deviceModule: ESObject = await import('./NotePdfEngineDevice');
     const device: ESObject = deviceModule.NotePdfEngineDevice;
-    return device.renderPreviewPages(pdfPath, outDir, NotePdfEngineService.PREVIEW_WIDTH_PX);
+    return device.renderPreviewPages(pdfPath, outDir);
   }
 
   /** 写入沙箱文件；失败清理半成品后抛错（避免留下损坏的 PDF）。 */

@@ -4,6 +4,7 @@ import { CHANGELOG_ENTRIES } from '../model/ChangelogData';
 import { releasedEntries } from '../model/ChangelogFilter';
 import { ChangelogList } from './ChangelogList';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { pageGutter } from '../model/PageGutter';
 
 @Component
 export struct ReleaseHistoryView {
@@ -11,10 +12,18 @@ export struct ReleaseHistoryView {
   @State installedVersion: string = '';
   // v1.57 57.2：导航条避让高度 px（EntryAbility avoidAreaChange 发布，页面侧换算）
   @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
+  // 一多缩进：断点与窗口高度由 AppStorage 提供
+  @StorageProp('breakpoint') breakpoint: string = 'sm';
+  @StorageProp('windowHeightVp') windowHeightVp: number = 0;
 
   /** v1.57 57.2：导航条避让高度 vp（禁止硬编码，qa/2026-11-13 手势条问答）。 */
   private navClearanceVp(): number {
     return px2vp(Math.max(0, this.navIndicatorHeightPx));
+  }
+
+  /** 页面级左右留白随断点放大：窄屏沿用 s5，md 24vp，lg 32vp。 */
+  private contentGutter(): number {
+    return pageGutter(this.breakpoint, this.windowHeightVp, Space.s5);
   }
 
   aboutToAppear(): void {
@@ -52,7 +61,10 @@ export struct ReleaseHistoryView {
       }
       .width('100%')
       .constraintSize({ maxWidth: Size.contentMaxW })
-      .padding({ left: Space.s5, right: Space.s5, top: Space.s5, bottom: Space.s8 + this.navClearanceVp() })
+      .padding({
+        left: this.contentGutter(), right: this.contentGutter(),
+        top: Space.s5, bottom: Space.s8 + this.navClearanceVp()
+      })
     }
     .width('100%')
     .height('100%')

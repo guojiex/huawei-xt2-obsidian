@@ -22,6 +22,7 @@ import BuildProfile from 'BuildProfile';
 import { PrivacyPolicyView } from './PrivacyPolicyView';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { FontSize, Radius, ScreenSaver, Size, Space, Weight } from '../common/Tokens';
+import { pageGutter } from '../model/PageGutter';
 import { FocusRequest } from '../common/FocusRequest';
 import { AppDataResetService } from '../model/AppDataResetService';
 import { ChangelogEntry, RECENT_CHANGELOG } from '../model/ChangelogData';
@@ -734,6 +735,11 @@ export struct SettingsView {
     return px2vp(Math.max(0, this.navIndicatorHeightPx));
   }
 
+  /** 页面级左右留白随断点放大：窄屏沿用 s5，md 24vp，lg 32vp（非 2in1 专有逻辑）。 */
+  private contentGutter(): number {
+    return pageGutter(this.breakpoint, this.windowHeightVp, Space.s5);
+  }
+
   private isCategoryHighlighted(category: string): boolean {
     return this.selectedTab === category && !this.isCategoryListOnly();
   }
@@ -789,7 +795,10 @@ export struct SettingsView {
         }
         .width('100%')
         .constraintSize({ maxWidth: Size.contentMaxW })
-        .padding({ left: Space.s5, right: Space.s5, top: Space.s4, bottom: Space.s8 + this.navClearanceVp() })
+        .padding({
+          left: this.contentGutter(), right: this.contentGutter(),
+          top: Space.s4, bottom: Space.s8 + this.navClearanceVp()
+        })
       }
       .layoutWeight(1)
       .width('100%')

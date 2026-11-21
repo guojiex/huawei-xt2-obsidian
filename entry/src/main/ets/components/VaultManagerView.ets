@@ -10,6 +10,7 @@
  */
 import { VaultEntry } from '../model/Vault';
 import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { pageGutter } from '../model/PageGutter';
 
 export interface VaultManagerShareSummary {
   vaultId: string;
@@ -37,6 +38,9 @@ export struct VaultManagerView {
   @Prop shareSummaries: VaultManagerShareSummary[] = [];
   // v1.57 57.2：导航条避让高度 px（EntryAbility avoidAreaChange 发布，页面侧换算）
   @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
+  // 一多缩进：断点与窗口高度由 AppStorage 提供，避免为组件再加一层窗口监听
+  @StorageProp('breakpoint') breakpoint: string = 'sm';
+  @StorageProp('windowHeightVp') windowHeightVp: number = 0;
   onSetCurrent: (id: string) => void = (id: string) => {};
   onShare: (id: string, focusId: string) => void = (id: string, focusId: string) => {};
   onRename: (id: string) => void = (id: string) => {};
@@ -56,6 +60,11 @@ export struct VaultManagerView {
   /** v1.57 57.2：导航条避让高度 vp（页面侧 px2vp，禁止硬编码，qa/2026-11-13 手势条问答）。 */
   private navClearanceVp(): number {
     return px2vp(Math.max(0, this.navIndicatorHeightPx));
+  }
+
+  /** 页面级左右留白随断点放大：窄屏沿用 s5，md 24vp，lg 32vp。 */
+  private contentGutter(): number {
+    return pageGutter(this.breakpoint, this.windowHeightVp, Space.s5);
   }
 
   @Builder
@@ -222,7 +231,10 @@ export struct VaultManagerView {
         .constraintSize({ maxWidth: Size.contentMaxW })
       }
       .width('100%')
-      .padding({ left: Space.s5, right: Space.s5, top: Space.s5, bottom: Space.s8 + this.navClearanceVp() })
+      .padding({
+        left: this.contentGutter(), right: this.contentGutter(),
+        top: Space.s5, bottom: Space.s8 + this.navClearanceVp()
+      })
     }
     .width('100%')
     .height('100%')

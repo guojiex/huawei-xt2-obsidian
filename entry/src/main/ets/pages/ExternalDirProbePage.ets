@@ -17,6 +17,7 @@ import { router } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { common } from '@kit.AbilityKit';
 import { FontSize, Radius, Space } from '../common/Tokens';
+import { pageGutter } from '../model/PageGutter';
 import { errorCodeOf } from '../common/ErrorCode';
 import {
   ExternalDirProbeRunner, ProbeStep, describeProbeStep, displayNameFromUri, selectProbeMarkdown,
@@ -49,6 +50,9 @@ struct ExternalDirProbePage {
   @State dirLabel: string = '尚未选择目录';
   @State busy: boolean = false;
   @State markdownCount: number = 0;
+  // 一多缩进：断点与窗口高度由 AppStorage 提供（工程统一断点机制）
+  @StorageProp('breakpoint') breakpoint: string = 'sm';
+  @StorageProp('windowHeightVp') windowHeightVp: number = 0;
   private runner: ExternalDirProbeRunner = createDeviceProbeRunner(
     getContext(this) as common.UIAbilityContext);
   private scanner: VaultDirectoryScanner = createVaultDirScanner();
@@ -389,7 +393,11 @@ struct ExternalDirProbePage {
       .layoutWeight(1)
     }
     .backgroundColor($r('app.color.bg_page'))
-    .padding(Space.s4)
+    .padding({
+      left: pageGutter(this.breakpoint, this.windowHeightVp, Space.s4),
+      right: pageGutter(this.breakpoint, this.windowHeightVp, Space.s4),
+      top: Space.s4, bottom: Space.s4
+    })
     .width('100%')
     .height('100%')
   }

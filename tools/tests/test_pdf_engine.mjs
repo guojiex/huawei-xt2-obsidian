@@ -109,3 +109,35 @@ test('v1.94：预览弹窗规格标签改为印刷级分页', () => {
   assert.match(dialog, /SpecChip\('印刷级分页'\)/);
   assert.doesNotMatch(dialog, /SpecChip\('按段落分页'\)/);
 });
+
+test('v1.94 修复：PDF Kit 静态 import，禁止动态 import @kit.*（2026-11-20 XT2 实测）', () => {
+  // 官方《动态加载》规格表：动态 import 支持的 API 形态只有 @system.* / @ohos.* /
+  // @arkui-x.*。@kit.* 是编译期 d.ts 别名，运行时无此模块名——XT2 真机动态 import
+  // '@kit.PDFKit' 拿到的命名空间里 pdfService 为 undefined，
+  // new pdfService.PdfDocument() 抛「cannot read property PdfDocument of undefined」。
+  // 冷启动优化靠服务层动态 import 设备层文件（./NotePdfEngineDevice）实现，kit 静态导入。
+  assert.match(device, /import \{ pdfService \} from '@kit\.PDFKit';/);
+  // 断言匹配「语句形态」（const/let … await import('@kit.*)，注释里的代码示例不误伤
+  assert.doesNotMatch(device, /(const|let)[^=]*=\s*await import\('@kit\./);
+  assert.doesNotMatch(service, /(const|let)[^=]*=\s*await import\('@kit\./);
+});
+
+test('v1.94 修复：PdfMatrix 覆盖整页 + bitmap 与页面 1:1（2026-11-20/21 XT2 实测）', () => {
+  // 两个真机踩坑，一并锁死：
+  // 1) PdfMatrix width/height 单位是 point（官方示例传 500×500 页面区域），首版误传
+  //    1×1（当成归一化坐标）→ 渲染 1 平方 point 白边拉满全图 → 预览全空白。
+  // 2) FAQ faqs-pdf-9：getAreaPixelMap 的 bitmap 宽高与 matrix 区域（point）1:1 映射、
+  //    不缩放——bitmap 小于区域会被截断，大于区域以空白填补，PixelOptions 无缩放选项。
+  //    首版 bitmap 传 300×424 < 页面 595×842 → 预览只显示页面左半，右侧内容被截断。
+  // 修复：matrix 覆盖整页（x/y 归零，宽高取 PdfPage.getWidth/getHeight，@since 5.0.0(12)），
+  // bitmap = ceil(页面 point 尺寸)（A4 → 595×842 px PNG，ceil 保证 ≥ 区域不截内容）。
+  assert.match(device, /matrix\.width = pageWidthPt;/);
+  assert.match(device, /matrix\.height = pageHeightPt;/);
+  assert.match(device, /page\.getWidth\(\)/);
+  assert.match(device, /page\.getHeight\(\)/);
+  assert.doesNotMatch(device, /matrix\.width = 1;/);
+  assert.doesNotMatch(device, /matrix\.height = 1;/);
+  // bitmap 必须等于页面 point 尺寸（1:1），不允许再传独立的目标像素宽
+  assert.match(device, /getAreaPixelMap\(matrix, Math\.ceil\(pageWidthPt\),\s*\n\s*Math\.ceil\(pageHeightPt\), false, false\)/);
+  assert.doesNotMatch(service, /PREVIEW_WIDTH_PX/);
+});

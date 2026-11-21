@@ -1,5 +1,7 @@
 import { image } from '@kit.ImageKit';
 import { webview } from '@kit.ArkWeb';
+import { pdfService } from '@kit.PDFKit';
+import fileIo from '@ohos.file.fs';
 
 /**
  * NotePdfEngineDevice —— v1.94 PDF 导出的设备层（ArkWeb 官方引擎 + PDF Kit 渲染）。
@@ -24,6 +26,13 @@ import { webview } from '@kit.ArkWeb';
  *   枚举（`PARSE_SUCCESS` = 0），取页用 `getPage(index)`（非 getPageByIndex），
  *   渲染用 `PdfPage.getAreaPixelMap(matrix, bitmapWidth, bitmapHeight, isGray, drawAnnotations)`；
  * - ImageKit：`image.createImagePacker()` → `packing(pixelMap, option): Promise<ArrayBuffer>`。
+ *
+ * 2026-11-20 真机修复（XT2 报「cannot read property PdfDocument of undefined」）：
+ * `await import('@kit.PDFKit')` **不可用**——官方《动态加载》规格表中动态 import 支持的
+ * API 形态只有 `@system.*` / `@ohos.*` / `@arkui-x.*`，`@kit.*` 是编译期 d.ts 别名、
+ * 运行时无此模块名，拿到的命名空间里 pdfService 为 undefined。kit 一律静态 import
+ * （与 NotePdfExportDevice 同模式）；冷启动优化不受影响——本文件仍由服务层
+ * 动态 import（./NotePdfEngineDevice），首次导出 PDF 才加载。
  */
 export class NotePdfEngineDevice {
   /**
@@ -61,42 +70,50 @@ export class NotePdfEngineDevice {
    * 预览渲染**真实产物**——旧位图路线里预览图与最终 PDF 同源但尺寸不同；
    * 本路线统一到「预览即产物」，避免用户看到的和拿到的不一致。
    *
+   * ⚠️ getAreaPixelMap 的 bitmap 宽高与 matrix 区域（point）是 **1:1 映射，不缩放**
+   * （FAQ faqs-pdf-9）：bitmap 小于区域 → 超出部分被截断；大于区域 → 空白填补；
+   * PixelOptions 也无缩放选项。因此完整渲染整页必须让 bitmap = 页面 point 尺寸
+   * （A4 → 595×842 px PNG）。2026-11-21 XT2 实测：bitmap 传 300×424 时预览
+   * 恰好只显示页面左半，右侧内容被截断，与该规则一致。
+   *
    * @param pdfPath PDF 文件路径（沙箱内）
    * @param outDir 缩略图输出目录
-   * @param targetWidthPx 缩略图宽度（像素），高度按 A4 比例推算
    * @returns 每页 PNG 路径（顺序对应页序）
    */
-  static async renderPreviewPages(pdfPath: string, outDir: string,
-    targetWidthPx: number): Promise<string[]> {
-    const pdfServiceModule: ESObject = await import('@kit.PDFKit');
-    const pdfService: ESObject = pdfServiceModule.pdfService;
-    const doc: ESObject = new pdfService.PdfDocument();
-    const parseResult: number = doc.loadDocument(pdfPath);
-    if (parseResult !== pdfService.ParseResult.PARSE_SUCCESS) {
-      throw new Error('PDF 预览渲染失败，请重试');
-    }
+  static async renderPreviewPages(pdfPath: string, outDir: string): Promise<string[]> {
+    const doc: pdfService.PdfDocument = new pdfService.PdfDocument();
     const paths: string[] = [];
     try {
+      const parseResult: pdfService.ParseResult = doc.loadDocument(pdfPath);
+      if (parseResult !== pdfService.ParseResult.PARSE_SUCCESS) {
+        throw new Error('PDF 预览渲染失败，请重试');
+      }
       const pageCount: number = doc.getPageCount();
       if (pageCount <= 0) {
         throw new Error('PDF 预览渲染失败，请重试');
       }
       for (let i: number = 0; i < pageCount; i++) {
-        const page: ESObject = doc.getPage(i);
-        if (!page) {
-          continue;
-        }
+        const page: pdfService.PdfPage = doc.getPage(i);
         try {
-          const matrix: ESObject = new pdfService.PdfMatrix();
+          // PdfMatrix 单位是 point（API 参考明确 width/height 单位为 Points）。首版误传
+          // 1×1（当成归一化坐标），真机渲染 1 平方 point 白边拉满全图 → 预览全空白
+          // （2026-11-20 XT2 实测）。matrix 覆盖整页：x/y 归零，宽高取真实页面尺寸
+          // （PdfPage.getWidth/getHeight，@since 5.0.0(12)，单位 point）。
+          const pageWidthPt: number = page.getWidth();
+          const pageHeightPt: number = page.getHeight();
+          if (!(pageWidthPt > 0) || !(pageHeightPt > 0)) {
+            throw new Error('PDF 预览渲染失败，请重试');
+          }
+          const matrix: pdfService.PdfMatrix = new pdfService.PdfMatrix();
           matrix.x = 0;
           matrix.y = 0;
-          matrix.width = 1;
-          matrix.height = 1;
+          matrix.width = pageWidthPt;
+          matrix.height = pageHeightPt;
           matrix.rotate = 0;
-          // 渲染尺寸单位为 point（1 inch = 72 point）；按 A4 比例推算高度。
-          const heightPx: number = Math.round(targetWidthPx * 842 / 595);
-          const pixelMap: ESObject = page.getAreaPixelMap(matrix, targetWidthPx, heightPx,
-            false, false);
+          // bitmap 与 matrix 区域 1:1（见方法注释）；ceil 保证 bitmap ≥ 区域，
+          // 宁可右/下多 1px 白边也不截内容（FAQ：小于区域会截断）。
+          const pixelMap: image.PixelMap = page.getAreaPixelMap(matrix, Math.ceil(pageWidthPt),
+            Math.ceil(pageHeightPt), false, false);
           const outPath: string = outDir + '/preview-' + (i + 1).toString() + '.png';
           await NotePdfEngineDevice.writePngTo(pixelMap, outPath);
           paths.push(outPath);
@@ -120,9 +137,7 @@ export class NotePdfEngineDevice {
       quality: 100
     };
     const data: ArrayBuffer = await packer.packing(pixelMap, option);
-    const fileIoModule: ESObject = await import('@ohos.file.fs');
-    const fileIo: ESObject = fileIoModule.default;
-    const file: ESObject = fileIo.openSync(path,
+    const file: fileIo.File = fileIo.openSync(path,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
     try {
       await fileIo.write(file.fd, data);

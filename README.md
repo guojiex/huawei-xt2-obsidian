@@ -26,7 +26,7 @@ Native libgit2 把知识库推送到你自己的 Git 远端，不依赖任何厂
 
 **技术栈**：ArkTS · Stage 模型 · API 24（6.1.1）· Native libgit2（C / NAPI）· ArkWeb 预览渲染。
 
-> 当前整体处于首发前的开发阶段，各项功能的实现与验收状态以[实施总清单](docs/releases/实施总清单.md)为准。
+> 已于 2026-11-20 上架华为应用市场（对外 1.11.0）。各功能的实现与验收状态以[实施总清单](docs/releases/实施总清单.md)为准；尚未完成的部分按版本继续迭代。
 
 ## 功能
 
@@ -114,11 +114,15 @@ Native libgit2 把知识库推送到你自己的 Git 远端，不依赖任何厂
 
 ## 下载与安装
 
-应用尚未上架华为应用市场（版本状态以 [CHANGELOG.md](CHANGELOG.md) 为准，当前均未正式发布）。在发布之前，请从源码自行构建并安装到真机：
+**已上架华为应用市场**：在应用市场搜索「曜石笔记」即可安装。当前对外版本 **1.11.0**（versionCode 1000008），于 2026-11-20 通过审核上架。版本状态以 [CHANGELOG.md](CHANGELOG.md) 为准，发布记录内容真源是 [`changelog.json`](changelog.json)。
+
+也可以从源码自行构建并安装到真机：
 
 1. 在 DevEco Studio 中完成自动签名（详见 [`AGENTS.md`](AGENTS.md) 硬约束 19）；
 2. 运行 `.\tools\build.ps1` 构建 HAP；
 3. 运行 `.\tools\install.ps1 -Run` 安装到真机并拉起。
+
+> 注：市场包与源码构建的调试包签名不同，二者可共存（`dev` product，包名 `com.jxg.huaweiobsidian.dev`）。
 
 ## 从源码构建
 

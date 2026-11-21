@@ -1089,8 +1089,16 @@ export struct ShareFlowPanel {
       try {
         const noteMarkdown: string = await this.noteMarkdownForShare(vault.id, notePath);
         hideImageOption = NoteImageShareEstimate.exceedsLongImageLimit(noteMarkdown, captureWidthVp);
+        // 只记数值不记内容（埋点红线硬约束 16）；真机漏判排查用。
+        hilog.info(DOMAIN, 'ShareDbg',
+          'v196 len=%{public}d w=%{public}d est=%{public}d max=%{public}d hide=%{public}d',
+          noteMarkdown.length, captureWidthVp,
+          Math.round(NoteImageShareEstimate.estimateHeightVp(noteMarkdown, captureWidthVp)),
+          Math.round(NoteImageShareEstimate.maxHeightVp(captureWidthVp)),
+          hideImageOption ? 1 : 0);
       } catch (error) {
         hideImageOption = false;
+        hilog.warn(DOMAIN, 'ShareDbg', 'v196 estimate failed (fail-open)');
       }
     }
     const noteOptions: ShareFormatOption[] = [];

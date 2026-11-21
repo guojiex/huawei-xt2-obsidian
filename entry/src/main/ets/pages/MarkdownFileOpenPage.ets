@@ -11,6 +11,7 @@ import { FontSize, Size, Space } from '../common/Tokens';
 import { Icon } from '../common/Icons';
 import { TrashPreviewWeb } from '../components/PreviewWebView';
 import { MarkdownOpenService, MarkdownOpenPayload } from '../model/MarkdownOpenService';
+import { pageGutter } from '../model/PageGutter';
 
 @Entry
 @Component
@@ -33,6 +34,11 @@ struct MarkdownFileOpenPage {
       return Space.s2;
     }
     return this.breakpoint === 'md' ? Space.s3 : Space.s5;
+  }
+
+  /** 截断提示左右留白：窄屏沿用 s4，md 24vp，lg 32vp（正文排版仍由笔记预览 Web 负责）。 */
+  private noticeGutter(): number {
+    return pageGutter(this.breakpoint, this.windowHeightVp, Space.s4);
   }
 
   aboutToAppear(): void {
@@ -124,8 +130,11 @@ struct MarkdownFileOpenPage {
           Text(this.payload.message)
             .fontSize(FontSize.caption)
             .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-            .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+          .width('100%')
+          .padding({
+            left: this.noticeGutter(), right: this.noticeGutter(),
+            top: Space.s2, bottom: Space.s2
+          })
         }
         TrashPreviewWeb({ markdown: this.payload.content })
           .width('100%')

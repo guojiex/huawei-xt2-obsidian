@@ -1,5 +1,6 @@
 import { webview } from '@kit.ArkWeb';
 import { FontSize, Size, Space } from '../common/Tokens';
+import { pageGutter } from '../model/PageGutter';
 
 const PRIVACY_POLICY_URL: string =
   'https://agreement-drcn.hispace.dbankcloud.cn/index.html?lang=zh&agreementId=2064689818977197760';
@@ -7,6 +8,14 @@ const PRIVACY_POLICY_URL: string =
 @Component
 export struct PrivacyPolicyView {
   onClose: () => void = () => {};
+
+  // 一多缩进：顶栏左右留白随断点放大；正文由远端网页自身响应式排版
+  @StorageProp('breakpoint') breakpoint: string = 'sm';
+  @StorageProp('windowHeightVp') windowHeightVp: number = 0;
+
+  private headerGutter(): number {
+    return pageGutter(this.breakpoint, this.windowHeightVp, Space.s4);
+  }
 
   @State private loadStatus: string = 'loading';
   private controller: webview.WebviewController = new webview.WebviewController();
@@ -38,7 +47,7 @@ export struct PrivacyPolicyView {
       }
       .width('100%')
       .height(Size.touch)
-      .padding({ left: Space.s4, right: Space.s4 })
+      .padding({ left: this.headerGutter(), right: this.headerGutter() })
 
       Stack() {
         Web({ src: PRIVACY_POLICY_URL, controller: this.controller })

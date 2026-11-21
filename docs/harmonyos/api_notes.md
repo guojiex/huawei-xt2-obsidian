@@ -197,6 +197,16 @@ display.getCurrentFoldCreaseRegion(): display.FoldCreaseRegion
 决策不变（且理由更硬了）：本版本**折痕只做日志采集与读数**，布局按等分；
 是否做动态分栏，等官方答复 —— 见 **A6**。
 
+#### ⚠️ XT2 折叠几何与亮屏规则（2026-11-20 用户真机口述，待系统性复测）
+
+1. **U 字型折叠，非 Z 字型**：三块屏是同一连续面、两道铰链同向折（不是 Galaxy Fold 式内外双面结构）。
+2. **折起任一 1/3，亮屏恒为未折的另外 2/3**：折起侧熄屏，只作物理支撑；不存在「折起侧亮屏」的形态。
+3. **铰链只能向屏幕一侧折（凹面），不能反折**（不存在屏幕背靠背的形态）。支架姿态 = 折起的一块绕**竖向铰链**向背后仰作后撑（立式画板相），亮屏 2/3 面向用户；折起侧屏幕朝前上方但熄屏。
+4. **推论**：Galaxy 式 flex「笔记本模式」（平放半屏亮屏当工具坞）与「折起侧挂到主屏背后的相框式」（需反折）在 XT2 上均**物理不成立**；悬停可用的只有上述立式支架形态，且折起侧熄屏、无交互价值。v1.95 支架悬停阅读据此立项后**同日关闭（2026-11-20）**：产品价值不成立，用户拍板砍掉（`docs/releases/历史版本归档.md` v1.95 节，锚点 `#v195-需求文档`）。
+5. 旁证：本节实测表「左两屏 709vp vs 右两屏 683vp」两双屏宽度不等（三块屏宽度不一）。原计划的逐形态复测（v1.95 §95.1）随版本关闭取消，后续形态需求用到时再测。
+
+> ⚠️ 以上为用户口述实测（2026-11-20），未做逐形态系统采集；v1.95 §95.1 复测坐实后更新本条并移除口述标记。
+
 ### A2-bis `FoldSplitContainer` 核实结论：**不适用本工程**（2026-10-17 查官方参数表 + SDK 复核）
 
 曾把它列为首选方案（悬停态自动避让折痕 + 支持三分栏），查完官方参数表后**否决**。三条硬伤：
@@ -2267,7 +2277,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 
 ### V9 ⚠️ 新版本判定口径 = `versionCode`
 
-答复依据是 AGC 提审提示「`versionCode` 与在架版本相同时，已安装同版本号用户无法升级到该版本」；`versionName` 仅展示。控制台侧原文本轮未核对。→ 与仓库既有发布纪律一致，作为**上架待办**记入 [上架准备清单](../releases/上架准备清单.md)：每次发版必须抬 `versionCode`，抬 `versionName` 不抬 `versionCode` 会让更新检测静默失效。
+答复依据是 AGC 提审提示「`versionCode` 与在架版本相同时，已安装同版本号用户无法升级到该版本」；`versionName` 仅展示。控制台侧原文本轮未核对。→ 与仓库既有发布纪律一致，作为**发布纪律**：每次发版必须抬 `versionCode`，抬 `versionName` 不抬 `versionCode` 会让更新检测静默失效。
 
 ### V10 ⚠️ 首发后可用调测证书联调整条链路
 
@@ -2276,7 +2286,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 ### V11 合规边界（⚠️ 条款原文未逐字核对）
 
 - 审核禁止引导到第三方渠道下载（答复引审核指南）；我们只有市场一个渠道，天然合规。
-- 新增联网检查入口建议在隐私政策补一句说明（答复标注为**推断**，非单一条款强制）；请求由系统服务发起、不携带笔记数据，风险低。核对挂在 [v1.11](../releases/历史版本归档.md#v111-需求文档) 与 [上架准备清单](../releases/上架准备清单.md)的政策一致性项。
+- 新增联网检查入口建议在隐私政策补一句说明（答复标注为**推断**，非单一条款强制）；请求由系统服务发起、不携带笔记数据，风险低。核对挂在 [v1.11](../releases/历史版本归档.md#v111-需求文档) 的政策一致性项。
 - 应用市场自身的更新提醒默认生效，无需开发者额外配置（答复，未在本机 AGC 核实）。
 
 ### V12 ✅ HMS Kit 在本工程可用的旁证
@@ -2542,6 +2552,79 @@ SDK 声明 `@hms.officeservice.pdfservice.d.ts` 只写 "Y coordinate, in points"
 - 图满页（h = 页高）时 y=0 顶=底重合，与旧行为一致——此前满页贴图掩盖了该语义，
   2026-11-18 修复 display:contents 分页（多页笔记真出多页）后才暴露。
 - 源级防回归：`tools/tests/test_pdf_pagination.mjs` 断言不得再写死 `y=0`。
+
+### AD7 ⚠️ createPdf 的 print 媒体生效有官方记载；视口截断 / 遮挡 / fixed 三个行为点未记载（2026-11-20 官方答复 + v1.94 真机验收项）
+
+来源：[qa/2026-11-20_PDF引擎createPdf与PDFKit渲染_API24.md](qa/2026-11-20_PDF引擎createPdf与PDFKit渲染_API24.md)
+（v1.94 落码后、真机验收前的六问官方核实；本机 API 26 SDK 复核）。
+
+- ✅ **`@media print` 在 createPdf（Chromium print 管线）下生效**：官方指南《使用Web组件保存
+  前端页面为PDF》明确推荐「通过 CSS 媒体查询（@media print）优化 PDF 排序」。
+- ✅ **`PdfConfiguration` 参数口径**：width/height 单位英寸（像素 = 96 × 英寸）、scale
+  [0.0, 2.0] 越界钳制、边距 [0, 半页高/宽) 越界置 0、`shouldPrintBackground` 默认 false；
+  官方未标注 API 24 与 26 差异，可视为一致。与 v1.94 落码取值（8.27 / 11.69 /
+  `shouldPrintBackground: true`）一致。
+- ❓ **三个行为点官方均未记载**，只能真机验证（即 v1.94 §2 验收项，不是新增风险）：
+  ① 视口应用布局（`body{height:100%}` + `overflow:hidden` + `#content{overflow-y:auto}`）
+  print 下是否截断为第一页——官方建议在 `@media print` 显式重置（v1.94 已做，见 web 侧
+  `@media print` 块）；② 捕获层被父级不透明容器完全遮住时 createPdf 能否出完整内容
+  （官方前提仅「Web 组件已加载且内容渲染完成」）；③ `position:fixed` 元素在产物中
+  每页重复 / 仅一次 / 被裁掉的表现（v1.94 水印已改 `position: static` 规避）。
+- ❓ **产物是否矢量**（可选中可搜索）与**页数 / 耗时上限**未记载——以 v1.94 真机产物解析
+  （`%PDF-` + 文本对象）与实测时长回填。
+- ✅ **createPdf 错误码（API 24）**：401 参数校验失败；17100001 WebviewController 未与
+  Web 组件绑定（v1.94 经 `onControllerReady` 交出 controller 的做法正是规避后者）。
+
+### AD8 ✅ PDF Kit 渲染 API 24 边界：getAreaPixelMap(12) 可用、getPixelMapWithPages(26) 不可用、`PdfPage.render` 不存在（2026-11-20 官方答复 + 本机 SDK 逐条坐实）
+
+来源：同 [qa/2026-11-20_PDF引擎createPdf与PDFKit渲染_API24.md](qa/2026-11-20_PDF引擎createPdf与PDFKit渲染_API24.md)；
+本机 API 26 SDK `hms/ets/api/@hms.officeservice.pdfservice.d.ts` 行号复核。
+
+- ✅ `PdfPage.getAreaPixelMap(matrix, bitmapwidth, bitmapHeight, isGray, drawAnnotations):
+  image.PixelMap` —— **@since 5.0.0(12)**，API 24 可用；`getAreaPixelMapWithOptions`
+  （`options?: PixelOptions`）—— @since 5.1.0(18)，`PixelOptions` 同 18；整页转图
+  `getPagePixelMap()` —— @since 5.0.0(12)。**预览渲染走这三个，v1.94 落地用
+  `getAreaPixelMap`（`NotePdfEngineDevice.ets`）**。
+- ✅ `getPixelMapWithPages(...)`（多页合并转图）—— **@since 26.0.0**，API 24 **不可用**
+  （d.ts 约 :1100）；官方指南也明确多页合并转图为 26 新增。
+- ✅ **`PdfPage.render` 在 SDK 中不存在**（全文件无此方法）——~~v1.94 需求文档 §3.4
+  「PDF Kit `PdfPage.render()` 渲染各页」提法有误~~，实际落码即 `getAreaPixelMap`，
+  无代码影响；后续文档一律用真实接口名。
+- ✅ `loadDocument(path, password?, onProgress?): ParseResult` —— @since 5.0.0(12)
+  （不支持重复 loadDocument）；`getPage(index)` —— @since 5.0.0(12)。
+- ✅ **PDF Kit 错误码（API 24 适用）**：1011301001 pageIndices/matrices 长度不匹配、
+  1011301002 页码越界、1011301003 bitmap 像素数超上限（减小宽高）、1011301004 创建
+  bitmap 失败（资源不足，减少渲染页数/尺寸）、1011301005 bitmap 渲染失败（文档不完整）、
+  1011301006 文档未加载（重新 loadDocument）。⚠️ 前三个与 API 26 `getPixelMapWithPages`
+  关联；后三个为通用错误码，`getAreaPixelMap` 遇到按括号内步骤排查。
+- 📌 官方落地建议：API 24 多页合并渲染不可用，预览逐页 `getAreaPixelMap` 或直接用
+  `PdfView` 组件（since 12）——v1.94 选前者（缩略图进现有 `SharePdfPreviewDialog`，
+  不引入新预览形态）。
+- ✅ **🔴 2026-11-20 XT2 实测补记：动态 import 不支持 `@kit.*`，kit 一律静态 import。**
+  官方《动态加载》规格表中动态 import 支持的 API 形态只有 `@system.*` / `@ohos.*` /
+  `@arkui-x.*`——`@kit.*` 是编译期 d.ts 别名，运行时无此模块名。v1.94 首版
+  `NotePdfEngineDevice.renderPreviewPages` 写了 `await import('@kit.PDFKit')`，XT2 真机
+  点 PDF 分享报 **「cannot read property PdfDocument of undefined」**（拿到的命名空间里
+  `pdfService` 为 undefined）。修复 = kit 静态 import（与 `NotePdfExportDevice` 同模式，
+  `import { pdfService } from '@kit.PDFKit'`），冷启动优化不受影响——设备层文件仍由
+  服务层动态 import（`./NotePdfEngineDevice`），首次导出 PDF 才加载。防线断言：
+  `tools/tests/test_pdf_engine.mjs`（禁语句形态 `await import('@kit.`）。
+  ⚠️ 推论：`await import('@ohos.file.fs')` 合法（`@ohos.*` 在规格表内，v1.94 真机已跑通）。
+- ✅ **🔴 2026-11-21 XT2 实测补记：`PdfMatrix` 的 width/height 单位是 point，不是归一化
+  [0,1]。** API 参考明确「width, height 指定图像的宽度和高度，单位为 Points」，官方
+  示例传 500×500 的页面区域（`matrix.width = 500`）。v1.94 首版预览渲染把
+  `matrix.width/height` 误设为 1（当成归一化坐标），XT2 真机表现：`getAreaPixelMap`
+  渲染 1 平方 point 的页面白边再拉满整张位图 → **预览缩略图全空白**（分享出去的 PDF
+  本身正确）。修复 = matrix 覆盖整页：x/y 归零，宽高取 `PdfPage.getWidth()/getHeight()`
+  （@since 5.0.0(12)，单位 point）；位图高度按页真实宽高比推算，不写死 A4 比例。
+  防线断言：`tools/tests/test_pdf_engine.mjs`（禁 `matrix.width = 1`）。
+- ✅ **🔴 2026-11-21 XT2 实测补记（二）：`getAreaPixelMap` 的 bitmap 宽高与 matrix 区域
+  （point）1:1 映射，不缩放。** FAQ faqs-pdf-9 原文：bitmap 小于矩形区域 → 超出部分
+  **被截断**；大于区域 → 不足部分**以空白填补**；`PixelOptions`（since 18）也只有
+  isGray/drawAnnotations/isTransparent，**无缩放选项**。v1.94 二版预览 bitmap 传
+  300×424 < 页面 595×842 → 预览只显示页面左半、右侧内容被截（XT2 实测与规则吻合）。
+  正确做法：**bitmap = ceil(页面 point 尺寸)**（A4 → 595×842 px PNG，ceil 保证 ≥ 区域
+  不截内容）；缩略图清晰度由弹窗侧缩放展示，PDF Kit 侧无法提分辨率。
 
 ## AE 组：expandSafeArea 与底部系统安全区（2026-11-13）
 

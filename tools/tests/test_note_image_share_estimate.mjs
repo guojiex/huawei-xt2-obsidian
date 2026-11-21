@@ -83,11 +83,39 @@ test('96.1 list items, headings and table rows each occupy at least one line', (
   assert.equal(NoteImageShareEstimate.exceedsLongImageLimit(rows.join('\n'), PHONE), true);
 });
 
-test('96.1 frontmatter, image-only lines and horizontal rules contribute no height', () => {
+test('96.1 frontmatter and image-only lines contribute no height', () => {
   const withFm = '---\n' + '很长的元数据属性值'.repeat(2000) + '\n---\n\n短正文';
   assert.ok(NoteImageShareEstimate.estimateHeightVp(withFm, PHONE) < RATIO * PHONE);
-  const withImages = '![图](a.png)\n\n---\n\n短正文';
+  const withImages = '![图](a.png)\n\n短正文';
   assert.ok(NoteImageShareEstimate.estimateHeightVp(withImages, PHONE) < RATIO * PHONE);
+});
+
+test('96.3 calibrated spacing: paragraph margins, heading size and hr height are counted', () => {
+  // 段落间距计入：两段比两行同段更高（margin 折叠后每段仍多出下边距）
+  const twoParagraphs = NoteImageShareEstimate.estimateHeightVp('一\n\n二', PHONE);
+  assert.ok(twoParagraphs > 2 * NoteImageShareEstimate.BODY_LINE_VP,
+    `two paragraphs should exceed two bare body lines, got ${twoParagraphs}`);
+  // 标题按真实字号与边距计（h1 = 32×1.35 + 上边距 12）
+  const h1 = NoteImageShareEstimate.estimateHeightVp('# 标题', PHONE);
+  assert.ok(h1 >= 32 * 1.35 + 12, `h1 should use heading metrics, got ${h1}`);
+  // hr 按真实边距计（margin 32×2 + 1px），不再计 0；用 *** 避免首行 --- 被判 frontmatter
+  const hr = NoteImageShareEstimate.estimateHeightVp('***\n', PHONE);
+  assert.ok(hr > NoteImageShareEstimate.HR_TOP_VP, `hr should contribute margin, got ${hr}`);
+});
+
+test('96.3 real-device leak band: marginal v1.90-failure note now hides (calibration fix)', () => {
+  // 2026-11-21 真机漏判回归：210 段 × 3 行短文，纯下界模型估算 ≈ 18648 < 22118 → 漏判
+  // （真实渲染 ≈ 22848vp，高宽比 63.5 > 61.44，v1.90 阶段必失败）。
+  // 校准后（段落间距 + 水印）估算 ≈ 22895 > 22118 → 隐藏。
+  const paragraphs = [];
+  for (let i = 0; i < 210; i++) {
+    paragraphs.push('段'.repeat(52));
+  }
+  const note = paragraphs.join('\n\n');
+  const bareLines = 210 * 3 * NoteImageShareEstimate.BODY_LINE_VP;
+  const estimated = NoteImageShareEstimate.estimateHeightVp(note, PHONE);
+  assert.ok(estimated > bareLines, `spacing must be included: ${estimated} vs ${bareLines}`);
+  assert.equal(NoteImageShareEstimate.exceedsLongImageLimit(note, PHONE), true);
 });
 
 test('96.2 ShareFlowPanel gates the image row on the estimate (source-level)', () => {
@@ -96,8 +124,10 @@ test('96.2 ShareFlowPanel gates the image row on the estimate (source-level)', (
   // 门控接线：估算调用 + 条件不构建
   assert.ok(panel.includes('NoteImageShareEstimate.exceedsLongImageLimit'));
   assert.match(panel, /if \(!hideImageOption\) \{\s*\n\s*noteOptions\.push\(\{\s*\n\s*value: 'image'/);
-  // fail-open：读取失败不隐藏
-  assert.match(panel, /catch \(error\) \{\s*\n\s*hideImageOption = false;\s*\n\s*\}/);
+  // fail-open：读取失败不隐藏（v1.96.3 起带 hilog 数值诊断）
+  assert.match(panel, /catch \(error\) \{\s*\n\s*hideImageOption = false;/);
+  assert.ok(panel.includes('v196 len='),
+    'numeric estimate diagnostics must be logged (no note content, hard rule 16)');
   // 格式顺序保持：image → pdf → file → text
   const order = ['image', 'pdf', 'file', 'text']
     .map((v) => panel.indexOf(`value: '${v}'`));
