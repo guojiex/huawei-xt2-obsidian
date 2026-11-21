@@ -21,7 +21,7 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { promptAction } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
-import { FileTree, ExpandStore, PinStore, TreeNode, PinnedNote } from '../model/FileTree';
+import { FileTree, ExpandStore, PinStore, FavoriteStore, TreeNode, PinnedNote } from '../model/FileTree';
 import { VaultAccess, VaultDirChild, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
 import { Icon, iconCommands } from '../common/Icons';
@@ -86,10 +86,11 @@ class TreeRowDataSource implements IDataSource {
 }
 
 /**
- * 置顶区数据源（v1.62）：与树行**完全独立**的列表段，LazyForEach 键以 `pin-` 开头，
- * 不会和树行键撞复用。行数少（区内滚动上限 5.5 行），但仍走懒加载保持口径一致。
+ * 置顶区 / 收藏区数据源（v1.62 · v1.97 共用）：与树行**完全独立**的列表段，
+ * LazyForEach 键以 `pin-` / `fav-` 开头，不会和树行键撞复用。行数少
+ * （区内滚动上限 5.5 行），但仍走懒加载保持口径一致。
  */
-class PinRowDataSource implements IDataSource {
+class SectionRowDataSource implements IDataSource {
   private rows: PinnedNote[] = [];
   private listeners: DataChangeListener[] = [];
 
@@ -202,12 +203,20 @@ export struct FileTreeView {
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
   @State pinned: string[] = [];
+  /** v1.97 收藏路径数组（数组顺序即收藏先后，渲染层逆序 = 最新在前）。 */
+  @State favorites: string[] = [];
   /** 置顶区可见行（v1.62）：由 PinStore 数组 ∩ 当前库全量笔记解析，陈旧条目自动不显示。 */
   @State pinRows: PinnedNote[] = [];
+  /** 收藏区可见行（v1.97）：解析复用 pinnedNotes（收藏行与置顶行同构，不写两套）。 */
+  @State favRows: PinnedNote[] = [];
   /** 置顶区折叠状态，按库持久化（PinStore.loadSectionOpen / saveSectionOpen）。 */
   @State pinSectionOpen: boolean = true;
+  /** 收藏区折叠状态，按库持久化（FavoriteStore.loadSectionOpen / saveSectionOpen）。 */
+  @State favSectionOpen: boolean = true;
   @State pinHoverPath: string = '';
   @State pinFocusPath: string = '';
+  @State favHoverPath: string = '';
+  @State favFocusPath: string = '';
   @State pathMenuPath: string = '';
   @State helpHintOpen: boolean = false;
   /** 57.7：导航条避让高度（px，EntryAbility 发布；px2vp 后即下移量）。 */
@@ -219,8 +228,10 @@ export struct FileTreeView {
   private pathMenuReturnFocusId: string = '';
   private store: ExpandStore | null = null;
   private pinStore: PinStore | null = null;
+  private favStore: FavoriteStore | null = null;
   private treeSource: TreeRowDataSource = new TreeRowDataSource();
-  private pinSource: PinRowDataSource = new PinRowDataSource();
+  private pinSource: SectionRowDataSource = new SectionRowDataSource();
+  private favSource: SectionRowDataSource = new SectionRowDataSource();
   /** v1.71 拖拽会话源：onDragStart 记录、onDragEnd 清空；只在事件回调里读，不进渲染绑定。 */
   private dragSourcePath: string = '';
   private dragSourceIsDir: boolean = false;
@@ -267,6 +278,12 @@ export struct FileTreeView {
   private ensurePinStore(): void {
     if (this.pinStore === null) {
       this.pinStore = new PinStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  private ensureFavStore(): void {
+    if (this.favStore === null) {
+      this.favStore = new FavoriteStore(VaultRegistry.get().abilityContext());
     }
   }
 
@@ -324,13 +341,21 @@ export struct FileTreeView {
     this.pinSource.reload(rows);
   }
 
+  /** 收藏区同理（v1.97）：显隐 @State 与独立数据源同批更新。 */
+  private applyFavRows(rows: PinnedNote[]): void {
+    this.favRows = rows;
+    this.favSource.reload(rows);
+  }
+
   /** 重扫：读出该库的展开状态 → scan → 刷新可见行 */
   private reload(): void {
     this.ensureStore();
     this.ensurePinStore();
+    this.ensureFavStore();
     if (this.vaultId.length === 0) {
       this.applyNodes([]);
       this.applyPinRows([]);
+      this.applyFavRows([]);
       return;
     }
     const store: ExpandStore = this.store as ExpandStore;
@@ -340,15 +365,21 @@ export struct FileTreeView {
     this.pinSectionOpen = pins.loadSectionOpen(this.vaultId);
     this.pinHoverPath = '';
     this.pinFocusPath = '';
+    const favs: FavoriteStore = this.favStore as FavoriteStore;
+    this.favorites = favs.load(this.vaultId);
+    this.favSectionOpen = favs.loadSectionOpen(this.vaultId);
+    this.favHoverPath = '';
+    this.favFocusPath = '';
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描开始');
     this.rescan();
   }
 
-  /** 按当前 expanded 重新扫描库目录，并同源解析置顶区（v1.62：一次 snapshot 两处用）。 */
+  /** 按当前 expanded 重新扫描库目录，并同源解析置顶区与收藏区（一次 snapshot 三处用）。 */
   private rescan(): void {
     if (this.vaultId.length === 0) {
       this.applyNodes([]);
       this.applyPinRows([]);
+      this.applyFavRows([]);
       return;
     }
     // v1.5：不再拿绝对路径自己递归 —— 外部授权库给不出绝对路径。
@@ -363,8 +394,10 @@ export struct FileTreeView {
         const meta: VaultFileStat | null = access.stat(relPath);
         return meta === null ? -1 : meta.mtimeSec;
       });
-    // 折叠文件夹里的置顶笔记也要显示（62.1 核心价值），故置顶区取**全量**笔记而非可见行。
+    // 折叠文件夹里的置顶笔记也要显示（62.1 核心价值），故置顶区取**全量**笔记而非可见行；
+    // 收藏区同款（97.1）：同一份全量笔记解析收藏行，收藏行与置顶行同构（不写两套）。
     this.applyPinRows(FileTree.pinnedNotes(FileTree.notesOfEntries(entries), this.pinned));
+    this.applyFavRows(FileTree.pinnedNotes(FileTree.notesOfEntries(entries), this.favorites));
     this.applyNodes(nodes);
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成');
   }
@@ -606,6 +639,67 @@ export struct FileTreeView {
     return row.folderPath.length === 0 ? '根目录' : row.folderPath;
   }
 
+  /** 该文件行是否已收藏（v1.97 · 97.2：仅笔记文件行，目录恒 false）。 */
+  private isFavorite(relPath: string): boolean {
+    return this.favorites.indexOf(relPath) >= 0;
+  }
+
+  /**
+   * 收藏切换唯一写入口（97.2）：切换后立即落盘、toast 反馈、收藏区即时增删行；
+   * 树行星标靠行键 `|fav` 刷新（faqs-arkui-219）。删除进回收站关系保留（97.3），
+   * 永久删除清理与改名 / 移动 retarget 在 Index 侧调 FavoriteStore。
+   */
+  private toggleFavoritePath(relPath: string): void {
+    if (this.vaultId.length === 0 || relPath.length === 0) {
+      return;
+    }
+    const next: string[] = [];
+    let found: boolean = false;
+    for (let i = 0; i < this.favorites.length; i++) {
+      if (this.favorites[i] === relPath) {
+        found = true;
+      } else {
+        next.push(this.favorites[i]);
+      }
+    }
+    if (!found) {
+      next.push(relPath);
+    }
+    this.favorites = next;
+    this.ensureFavStore();
+    const favs: FavoriteStore = this.favStore as FavoriteStore;
+    favs.save(this.vaultId, next);
+    promptAction.showToast({
+      message: (found ? '已取消收藏：' : '已收藏：') + noteDisplayNameOfPath(relPath)
+    });
+    hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：收藏切换');
+    this.rescan();
+  }
+
+  /** 收藏区折叠：按库记忆，默认展开（97.1）。 */
+  private toggleFavSection(): void {
+    const next: boolean = !this.favSectionOpen;
+    this.favSectionOpen = next;
+    this.ensureFavStore();
+    const favs: FavoriteStore = this.favStore as FavoriteStore;
+    favs.saveSectionOpen(this.vaultId, next);
+  }
+
+  /** 收藏区行高：与置顶区同款（区内滚动上限 5.5 行，不推挤目录树）。 */
+  private favListHeight(): number {
+    const rows: number = this.favRows.length < Size.pinListMaxRows
+      ? this.favRows.length : Size.pinListMaxRows;
+    return rows * (Size.pinRowH + Size.pinRowGap);
+  }
+
+  private favRowActive(relPath: string): boolean {
+    return this.favHoverPath === relPath || this.favFocusPath === relPath;
+  }
+
+  private favLocation(row: PinnedNote): string {
+    return row.folderPath.length === 0 ? '根目录' : row.folderPath;
+  }
+
   /** callout 色板（v1.54 §54.1 第三稿），颜色一律走资源 token，深色自动切换。 */
   private pinToneFg(tone: number): ResourceColor {
     if (tone === 1) {
@@ -645,10 +739,16 @@ export struct FileTreeView {
     // 根节点仍是**唯一**容器：空态与列表走 if/else，不能提前 return（10905210）。
     Stack({ alignContent: Alignment.Bottom }) {
       // v1.62：置顶区在计数头之下、目录树之上；仅当前库至少有一篇置顶时显示。
+      // v1.97：收藏区在置顶区之下、目录树之上（97.1 四段：置顶 → 收藏 → 全部笔记 → 树）；
       // referenceOnly（Agent 引用侧栏）保持纯树，「章节」页签由父级整树隐藏。
       Column() {
         if (!this.referenceOnly && this.pinRows.length > 0) {
           this.PinSection()
+        }
+        if (!this.referenceOnly && this.favRows.length > 0) {
+          this.FavSection()
+        }
+        if (!this.referenceOnly && (this.pinRows.length > 0 || this.favRows.length > 0)) {
           this.AllNotesLabel()
         }
         if (this.nodes.length === 0) {
@@ -751,7 +851,7 @@ export struct FileTreeView {
         List() {
           LazyForEach(this.pinSource, (row: PinnedNote) => {
             ListItem() {
-              this.PinRow(row)
+              this.SectionRow(row, true)
             }
             .width('100%')
             .padding({ right: Space.s2 })
@@ -784,6 +884,82 @@ export struct FileTreeView {
     .alignItems(HorizontalAlign.Start)
   }
 
+  /**
+   * 收藏区（v1.97 · 97.1）：与置顶区同款分区标签 + 共用行组件（SectionRow），
+   * 置顶之下、目录树之上；最新收藏在前（数组逆序渲染）。区头箭头常显（同 v1.62）。
+   */
+  @Builder
+  FavSection() {
+    Column() {
+      Row({ space: Space.s2 }) {
+        Text('收藏')
+          .fontSize(FontSize.caption)
+          .fontWeight(FontWeight.Medium)
+          .letterSpacing(Size.pinLabelTracking)
+          .fontColor($r('app.color.text_tertiary'))
+        Text(this.favRows.length.toString())
+          .fontSize(FontSize.caption)
+          .fontWeight(FontWeight.Normal)
+          .fontColor($r('app.color.text_tertiary'))
+          .opacity(0.8)
+        Row() {
+          if (this.favSectionOpen) {
+            Icon('chevronDown', Size.treeChevron, $r('app.color.text_tertiary'))
+          } else {
+            Icon('chevronRight', Size.treeChevron, $r('app.color.text_tertiary'))
+          }
+        }
+        .width(Size.touch)
+        .height(Space.s6)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .height(Size.touch)
+      .padding({ left: Space.s4, right: Space.s1 })
+      .alignItems(VerticalAlign.Center)
+      .borderRadius(Radius.control)
+      .onClick((): void => { this.toggleFavSection(); })
+      .focusable(true)
+      .accessibilityText('收藏，' + this.favRows.length.toString() + ' 篇笔记，点按展开 / 收起')
+
+      if (this.favSectionOpen) {
+        List() {
+          LazyForEach(this.favSource, (row: PinnedNote) => {
+            ListItem() {
+              this.SectionRow(row, false)
+            }
+            .width('100%')
+            .padding({ right: Space.s2 })
+            // 97.1：收藏区左滑是独立手势（改名 + 移出收藏），滑到底 = 移出收藏，
+            // 绝不复用树行的三档删除语义（与置顶区同款红线）。
+            .swipeAction({
+              end: {
+                builder: (): void => { this.FavSwipeBar(row); },
+                actionAreaDistance: Size.swipeDelExtra,
+                onAction: (): void => { this.toggleFavoritePath(row.relPath); }
+              },
+              edgeEffect: SwipeEdgeEffect.Spring
+            })
+          }, (row: PinnedNote): string => {
+            // 独立键空间；当前态 / 悬停态进键，避免 faqs-arkui-219 行子树复用不刷新。
+            return 'fav-' + row.relPath +
+              (row.relPath === this.currentFilePath ? '|cur' : '|u') +
+              (this.favRowActive(row.relPath) ? '|act' : '');
+          })
+        }
+        .width('100%')
+        .height(this.favListHeight())
+        .padding({ left: Space.s4 })
+        .scrollBar(BarState.Auto)
+        .cachedCount(10)
+        .backgroundColor($r('app.color.bg_navigation'))
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
   /** 置顶区可见时，目录树上方补同款分区标签（62.1）。 */
   @Builder
   AllNotesLabel() {
@@ -796,9 +972,13 @@ export struct FileTreeView {
       .padding({ left: Space.s4, right: Space.s2, top: Space.s2, bottom: Space.s1 })
   }
 
-  /** 置顶区行：首字色块 + 标题 + 所在文件夹 / 行尾取消置顶按钮。 */
+  /**
+   * 置顶区 / 收藏区共用行（v1.62 落形，v1.97 兑现「共用行组件不写两套」）：
+   * 首字色块 + 标题 + 所在文件夹；行尾文件夹名在悬停 / 焦点时原位换成取消按钮。
+   * isPin 区分两区：取消入口（置顶 / 收藏）、读屏文案、行 id 前缀与悬停状态组。
+   */
   @Builder
-  PinRow(row: PinnedNote) {
+  SectionRow(row: PinnedNote, isPin: boolean) {
     Row() {
       Row({ space: Space.s2 }) {
         Row() {
@@ -830,17 +1010,28 @@ export struct FileTreeView {
       // 同树行坑：内容子树透明，点击统一冒泡到外层 Row；行尾按钮在子树之外才点得动。
       .hitTestBehavior(HitTestMode.None)
 
-      if (this.pinRowActive(row.relPath)) {
+      if (isPin ? this.pinRowActive(row.relPath) : this.favRowActive(row.relPath)) {
         Row() {
-          Icon('pin', Space.s4, $r('app.color.text_tertiary'))
+          if (isPin) {
+            Icon('pin', Space.s4, $r('app.color.text_tertiary'))
+          } else {
+            // 全局 @Builder 按值实参首帧固化（Z2/L-7）：图标名必须字面量分支。
+            Icon('starFilled', Space.s4, $r('app.color.text_tertiary'))
+          }
         }
         .width(Size.touch)
         .height(Size.touch)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .borderRadius(Radius.icon)
-        .onClick((): void => { this.togglePinPath(row.relPath); })
-        .accessibilityText('取消置顶：' + row.title)
+        .onClick((): void => {
+          if (isPin) {
+            this.togglePinPath(row.relPath);
+          } else {
+            this.toggleFavoritePath(row.relPath);
+          }
+        })
+        .accessibilityText((isPin ? '取消置顶：' : '取消收藏：') + row.title)
       } else {
         Text(row.folder)
           .fontSize(FontSize.caption)
@@ -861,17 +1052,34 @@ export struct FileTreeView {
       }
     })
     .onHover((isHover: boolean): void => {
-      this.pinHoverPath = isHover ? row.relPath : '';
+      if (isPin) {
+        this.pinHoverPath = isHover ? row.relPath : '';
+      } else {
+        this.favHoverPath = isHover ? row.relPath : '';
+      }
     })
-    .onFocus((): void => { this.pinFocusPath = row.relPath; })
+    .onFocus((): void => {
+      if (isPin) {
+        this.pinFocusPath = row.relPath;
+      } else {
+        this.favFocusPath = row.relPath;
+      }
+    })
     .onBlur((): void => {
-      if (this.pinFocusPath === row.relPath) {
-        this.pinFocusPath = '';
+      if (isPin) {
+        if (this.pinFocusPath === row.relPath) {
+          this.pinFocusPath = '';
+        }
+      } else {
+        if (this.favFocusPath === row.relPath) {
+          this.favFocusPath = '';
+        }
       }
     })
     .focusable(true)
-    .id('pin-row-' + this.vaultId + ':' + row.relPath)
-    .accessibilityText('打开置顶的笔记：' + row.title + '，位于 ' + this.pinLocation(row))
+    .id((isPin ? 'pin-row-' : 'fav-row-') + this.vaultId + ':' + row.relPath)
+    .accessibilityText((isPin ? '打开置顶的笔记：' : '打开收藏的笔记：') + row.title +
+      '，位于 ' + (isPin ? this.pinLocation(row) : this.favLocation(row)))
   }
 
   /** 置顶区左滑操作条：可点「取消置顶」，滑到底松手同样取消（不触发删除）。 */
@@ -890,6 +1098,45 @@ export struct FileTreeView {
       .backgroundColor($r('app.color.brand_bg'))
       .onClick((): void => { this.togglePinPath(row.relPath); })
       Text('· 松手取消置顶')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.brand'))
+        .maxLines(1)
+        .padding({ right: Space.s2 })
+    }
+    .height('100%')
+    .backgroundColor($r('app.color.brand_bg'))
+  }
+
+  /**
+   * 收藏区左滑操作条（97.1 第三稿）：「改名 / 移出收藏」可点；
+   * 滑到底松手 = 移出收藏（提示「· 松手移出」，非删除语义）。
+   */
+  @Builder
+  FavSwipeBar(row: PinnedNote) {
+    Row() {
+      Row() {
+        Text('改名')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.brand'))
+      }
+      .width(Size.touch)
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor($r('app.color.brand_bg'))
+      .onClick((): void => { this.onRenamePath(row.relPath, false); })
+      Row() {
+        Text('移出收藏')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.brand'))
+      }
+      .width(Size.touch)
+      .height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor($r('app.color.brand_bg'))
+      .onClick((): void => { this.toggleFavoritePath(row.relPath); })
+      Text('· 松手移出')
         .fontSize(FontSize.caption)
         .fontColor($r('app.color.brand'))
         .maxLines(1)
@@ -1133,6 +1380,26 @@ export struct FileTreeView {
             // 见下方 onClick 的踩坑说明：不把子控件排除在命中之外，点文件名会「点不动」
             .hitTestBehavior(HitTestMode.None)
 
+            // v1.97 收藏星标（97.2）：笔记行行尾、跨栏图标之前，常显 muted——已收藏的
+            // 状态感由顶部收藏区表达，树内不抢视觉。54.2 的「指针设备未收藏悬停才出现」
+            // 原生不做（无法区分触屏与指针，沿用 v1.62 区头箭头常显先例，口径修订见
+            // 需求文档 97.2）。图标名必须字面量分支（Z2/L-7 首帧固化）。
+            if (!n.isDir && !this.referenceOnly) {
+              Row() {
+                if (this.isFavorite(n.relPath)) {
+                  Icon('starFilled', Space.s4, $r('app.color.text_tertiary'))
+                } else {
+                  Icon('star', Space.s4, $r('app.color.text_tertiary'))
+                }
+              }
+              .width(Size.touch)
+              .height(Size.touch)
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .borderRadius(Radius.icon)
+              .onClick((): void => { this.toggleFavoritePath(n.relPath); })
+              .accessibilityText((this.isFavorite(n.relPath) ? '取消收藏：' : '收藏：') + n.name)
+            }
             // 目录行尾的「+」：在该目录下新建笔记（仅目录行有）。
             // ⚠️ 位置有讲究：必须是内容 Row 的**兄弟**，不能塞进那个 Row 里 ——
             // 内容 Row 整体设了 HitTestMode.None（子树透明，让点击冒泡到外层行），
@@ -1302,7 +1569,9 @@ export struct FileTreeView {
         }
         // v1.50：置顶态进键值——不进的话切换置顶后行顺序变了、行内 pin 标记不刷新
         // （faqs-arkui-219 官方键值复用规则，与选中高亮同机理）。
+        // v1.97：收藏态进键值——星标切换后行子树（星 / 描边星）复用不刷新，同机理。
         return n.relPath + (this.isPinned(n.relPath) ? '|pin' : '') +
+          (this.isFavorite(n.relPath) ? '|fav' : '') +
           (n.relPath === this.currentFilePath ? '|s' : '|u');
       })
     }

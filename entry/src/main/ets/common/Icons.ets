@@ -68,6 +68,10 @@ const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 const P_SORT: string = 'M4 6h11M4 12h8M4 18h5M18 4v13M14 13l4 4 4-4';
 // 置顶图钉（v1.50）：斜 45° 图钉——菱形钉头 + 针（纯直线命令，无弧线）
 const P_PIN: string = 'M16 3l5 5-5 5-5-5 5-5M14 11l-9 9';
+// 星标（v1.97 收藏）：Google Material Design 24dp 五角星（material-design-icons
+// @material-icons/svg，Apache 2.0），纯直线命令可整表缩放。
+// 'star' 描边（未收藏）/ 'starFilled' 填充（已收藏，进 FILLED_ICONS）。
+const P_STAR: string = 'M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z';
 const P_SWAP: string = 'M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4';
 const P_LINK: string = 'M10 14C11.55 15.55 14.05 15.55 15.6 14L18.7 10.9C20.25 9.35 20.25 6.85 18.7 5.3C17.15 3.75 14.65 3.75 13.1 5.3L12.1 6.3'
   + 'M14 10C12.45 8.45 9.95 8.45 8.4 10L5.3 13.1C3.75 14.65 3.75 17.15 5.3 18.7C6.85 20.25 9.35 20.25 10.9 18.7L11.9 17.7';
@@ -160,6 +164,10 @@ function pathOf(name: string): string {
     return P_SORT;
   } else if (name === 'pin') {
     return P_PIN;
+  } else if (name === 'star') {
+    return P_STAR;
+  } else if (name === 'starFilled') {
+    return P_STAR;
   } else if (name === 'swap') {
     return P_SWAP;
   } else if (name === 'link') {
@@ -222,7 +230,7 @@ export function iconCommands(name: string, size: number): string {
  * @param color 颜色，传 `$r('app.color.text_secondary')` 等 token
  * @param strokeWidth 线宽，默认 2（24 viewBox 下的标准描边）；填充型图标忽略
  */
-const FILLED_ICONS: string[] = ['sync'];
+const FILLED_ICONS: string[] = ['sync', 'starFilled'];
 
 @Builder
 export function Icon(name: string, size: number, color: ResourceColor, strokeWidth: number = 2) {

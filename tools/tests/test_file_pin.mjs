@@ -208,7 +208,7 @@ test('源级：置顶区与树同源一次 snapshot，行键独立、折叠按�
   assert.match(fileTreeViewSource, /FileTree\.scanEntries\(entries, this\.expanded\)/);
   assert.match(fileTreeViewSource,
     /FileTree\.pinnedNotes\(FileTree\.notesOfEntries\(entries\), this\.pinned\)/);
-  assert.match(fileTreeViewSource, /class PinRowDataSource implements IDataSource/);
+  assert.match(fileTreeViewSource, /class SectionRowDataSource implements IDataSource/);
   assert.match(fileTreeViewSource, /return 'pin-' \+ row\.relPath/);
   assert.match(fileTreeViewSource, /pins\.loadSectionOpen\(this\.vaultId\)/);
   assert.match(fileTreeViewSource, /pins\.saveSectionOpen\(this\.vaultId, next\)/);
@@ -226,11 +226,11 @@ test('源级：分区标签与行形态（置顶 / 全部笔记 / 首字色块 /
   assert.match(fileTreeViewSource, /this\.pinToneBg\(row\.tone\)/);
   assert.match(fileTreeViewSource, /打开置顶的笔记：/);
   assert.match(fileTreeViewSource, /\.hitTestBehavior\(HitTestMode\.None\)/);
-  // 置顶区行不加底色高亮（底色留给目录树）
+  // 置顶区行不加底色高亮（底色留给目录树）；v1.97 起行组件与收藏区共用（SectionRow）。
   const pinRowBlock = fileTreeViewSource.slice(
-    fileTreeViewSource.indexOf('  PinRow(row: PinnedNote)'),
+    fileTreeViewSource.indexOf('  SectionRow(row: PinnedNote, isPin: boolean)'),
     fileTreeViewSource.indexOf('  /** 置顶区左滑操作条'));
-  assert.ok(pinRowBlock.length > 0, '找不到 PinRow 实现');
+  assert.ok(pinRowBlock.length > 0, '找不到 SectionRow 实现');
   assert.doesNotMatch(pinRowBlock, /brand_bg_solid/);
 });
 

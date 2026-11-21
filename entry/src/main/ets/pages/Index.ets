@@ -28,7 +28,7 @@ import { AgentMemoryStore } from '../model/AgentMemoryStore';
 import { AgentRuntime } from '../model/AgentRuntime';
 import { NotePathMutationResult, NoteService } from '../model/NoteService';
 import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
-import { FileTree } from '../model/FileTree';
+import { FileTree, FavoriteStore } from '../model/FileTree';
 import { WikiLinkCandidate, WikiLinkParser, WikiLinkResolution } from '../model/WikiLinkParser';
 import { WikiLinkService, WikiLinkUpdateReport } from '../model/WikiLinkService';
 import { MarkdownImageParts, MarkdownInlineParser } from '../model/MarkdownInlineParser';
@@ -335,6 +335,7 @@ struct Index {
   @State paneCloseHovered: string = '';
   private recentOpenStore: RecentOpenStore | null = null;
   private recentErrorStore: RecentErrorStore | null = null;
+  private favoriteStore: FavoriteStore | null = null;
   /** sm 抽屉开关（瞬态 @State：UIAbility 折叠切换不重建则存活，api_notes A4 ✅） */
   @State drawerOpen: boolean = false;
   /** md/lg 侧栏收起态（瞬态 @State） */
@@ -1970,6 +1971,52 @@ struct Index {
     if (this.recentErrorStore === null) {
       this.recentErrorStore = new RecentErrorStore(VaultRegistry.get().abilityContext());
     }
+  }
+
+  private ensureFavoriteStore(): void {
+    if (this.favoriteStore === null) {
+      this.favoriteStore = new FavoriteStore(VaultRegistry.get().abilityContext());
+    }
+  }
+
+  /** 97.2「⋯」菜单项状态：激活栏笔记是否已收藏（菜单打开时求值一次）。 */
+  private isFavoriteNote(relPath: string): boolean {
+    if (this.currentVaultId.length === 0 || relPath.length === 0) {
+      return false;
+    }
+    this.ensureFavoriteStore();
+    return (this.favoriteStore as FavoriteStore).load(this.currentVaultId).indexOf(relPath) >= 0;
+  }
+
+  /**
+   * 97.2「⋯」菜单收藏切换：作用于激活栏笔记，写 FavoriteStore 后重扫文件树，
+   * 星标与收藏区随之同步（树行键 `|fav` + 收藏区 reload）。toast 同左滑入口。
+   */
+  private toggleFavoriteActiveNote(): void {
+    const relPath: string = this.activeFilePath();
+    if (this.currentVaultId.length === 0 || relPath.length === 0) {
+      return;
+    }
+    this.ensureFavoriteStore();
+    const store: FavoriteStore = this.favoriteStore as FavoriteStore;
+    const current: string[] = store.load(this.currentVaultId);
+    const next: string[] = [];
+    let found: boolean = false;
+    for (let i: number = 0; i < current.length; i++) {
+      if (current[i] === relPath) {
+        found = true;
+      } else {
+        next.push(current[i]);
+      }
+    }
+    if (!found) {
+      next.push(relPath);
+    }
+    store.save(this.currentVaultId, next);
+    promptAction.showToast({
+      message: (found ? '已取消收藏：' : '已收藏：') + noteDisplayNameOfPath(relPath)
+    });
+    this.refreshFileTree();
   }
 
   private recordFailureFeedback(operation: RecentErrorOperation, phase: RecentErrorPhase,
@@ -6881,6 +6928,10 @@ struct Index {
     try {
       await TrashService.purge(VaultRegistry.get(), this.currentVaultId, relPath);
       this.trashSeq++;
+      // 97.3：永久删除后清理收藏关系（trash relPath 与原库路径同镜像，可直接匹配；
+      // 补齐 v1.55 55.3 登记的收藏空操作遗留）。
+      this.ensureFavoriteStore();
+      (this.favoriteStore as FavoriteStore).removePaths(this.currentVaultId, [relPath]);
       promptAction.showToast({ message: '已永久删除：' + display });
     } catch (error) {
       const err = error as BusinessError;
@@ -6940,6 +6991,11 @@ struct Index {
       this.currentVaultId, relPaths);
     this.refreshFileTree();
     this.trashSeq++;
+    // 97.3：清空成功的条目同步移出收藏（失败条目仍在回收站，关系保留待恢复）。
+    if (outcome.succeeded.length > 0) {
+      this.ensureFavoriteStore();
+      (this.favoriteStore as FavoriteStore).removePaths(this.currentVaultId, outcome.succeeded);
+    }
     if (outcome.failed.length === 0) {
       promptAction.showToast({ message: '已清空回收站：永久删除 ' + outcome.succeeded.length + ' 篇笔记' });
       return;
@@ -6967,6 +7023,9 @@ struct Index {
         this.currentVaultId, relPath, newName, isDir);
       this.ensureRecentOpenStore();
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
+      // 97.3（54.3 口径）：改名后收藏关系跟随新路径（与 Pin 陈旧条目口径 50.4 有意不同）。
+      this.ensureFavoriteStore();
+      (this.favoriteStore as FavoriteStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
       this.retargetCurrent(relPath, mutation.path, isDir);
       this.retargetRight(relPath, mutation.path, isDir);
       this.refreshFileTree();
@@ -7002,6 +7061,9 @@ struct Index {
         this.currentVaultId, relPath, destDir, isDir);
       this.ensureRecentOpenStore();
       (this.recentOpenStore as RecentOpenStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
+      // 97.3（54.3 口径）：移动后收藏关系跟随新路径。
+      this.ensureFavoriteStore();
+      (this.favoriteStore as FavoriteStore).retarget(this.currentVaultId, relPath, mutation.path, isDir);
       this.retargetCurrent(relPath, mutation.path, isDir);
       this.retargetRight(relPath, mutation.path, isDir);
       this.revealPath = mutation.path;
@@ -8286,6 +8348,12 @@ struct Index {
       this.MobileMoreMenuItem('share', 'share', '分享笔记',
         this.activeFilePath().length > 0, (): void => {
           this.shareFlowApi?.openShareNoteDialog();
+        })
+      // v1.97 97.2：收藏切换（54.2「⋯」菜单入口，动态 label 反映当前状态）。
+      this.MobileMoreMenuItem('favorite', 'star',
+        this.isFavoriteNote(this.activeFilePath()) ? '取消收藏此笔记' : '收藏此笔记',
+        this.activeFilePath().length > 0, (): void => {
+          this.toggleFavoriteActiveNote();
         })
       this.MobileMoreMenuItem('backlinks', 'link',
         this.backlinksExpanded && this.backlinksPane === this.activeNotePane() ? '隐藏反链' : '查看反链',

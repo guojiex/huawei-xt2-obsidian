@@ -496,3 +496,130 @@ export class PinStore {
     }
   }
 }
+
+/**
+ * FavoriteStore —— 收藏状态持久化（v1.97 · 97.3）。
+ *
+ * 与 PinStore 同库同款：按库分别记忆，存 `file_tree_state` preferences 的
+ * `favorites_<vaultId>` 键（JSON 字符串数组；数组顺序即收藏先后，渲染层
+ * 逆序 = 最新在前，与置顶同构）。删除进回收站关系保留（快照交集自然
+ * 隐藏），恢复自动回显；永久删除由调用方 `removePaths` 清理，改名 /
+ * 移动走 `retarget`（54.3：收藏关系不丢，与置顶的陈旧条目口径 50.4
+ * 有意不同）。
+ */
+export class FavoriteStore {
+  private static readonly PREF_NAME: string = 'file_tree_state';
+  private store: preferences.Preferences | null = null;
+
+  constructor(context: common.UIAbilityContext) {
+    try {
+      this.store = preferences.getPreferencesSync(context, { name: FavoriteStore.PREF_NAME });
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '收藏状态库打开失败 code=%{public}d', err.code);
+      this.store = null;
+    }
+  }
+
+  load(vaultId: string): string[] {
+    if (this.store === null || vaultId.length === 0) {
+      return [];
+    }
+    const raw: string = this.store.getSync('favorites_' + vaultId, '[]') as string;
+    try {
+      const parsed: string[] = JSON.parse(raw) as string[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  save(vaultId: string, favorites: string[]): void {
+    if (this.store === null || vaultId.length === 0) {
+      return;
+    }
+    try {
+      this.store.putSync('favorites_' + vaultId, JSON.stringify(favorites));
+      this.store.flush();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '收藏状态写入失败 code=%{public}d', err.code);
+    }
+  }
+
+  /**
+   * 永久删除后清理收藏关系（97.3）：`paths` 为原库相对路径（回收站
+   * relPath 与原库同镜像，可直接匹配）。只删列出的条目，其余原样保留；
+   * 没命中任何条目则不写盘。清空回收站传 `outcome.succeeded` 批量走这里。
+   */
+  removePaths(vaultId: string, paths: string[]): void {
+    if (this.store === null || vaultId.length === 0 || paths.length === 0) {
+      return;
+    }
+    const current: string[] = this.load(vaultId);
+    const next: string[] = [];
+    for (let i = 0; i < current.length; i++) {
+      if (paths.indexOf(current[i]) < 0) {
+        next.push(current[i]);
+      }
+    }
+    if (next.length === current.length) {
+      return;
+    }
+    this.save(vaultId, next);
+  }
+
+  /**
+   * 改名 / 移动后收藏关系跟随新路径（54.3「收藏关系不丢」）：文件条目
+   * 整条替换；目录移动时前缀下的所有收藏条目一并改写。保序。
+   */
+  retarget(vaultId: string, oldPath: string, newPath: string, isDir: boolean): void {
+    if (this.store === null || vaultId.length === 0 || oldPath === newPath) {
+      return;
+    }
+    const current: string[] = this.load(vaultId);
+    const next: string[] = [];
+    let changed: boolean = false;
+    for (let i = 0; i < current.length; i++) {
+      const path: string = current[i];
+      if (path === oldPath || (isDir && path.startsWith(oldPath + '/'))) {
+        next.push(newPath + path.substring(oldPath.length));
+        changed = true;
+      } else {
+        next.push(path);
+      }
+    }
+    if (changed) {
+      this.save(vaultId, next);
+    }
+  }
+
+  /**
+   * 收藏区展开 / 收起（97.1）：`favSectionOpen_<vaultId>`，按库记忆，默认
+   * 展开——收藏是主动行为，与置顶区同款回退策略。
+   */
+  loadSectionOpen(vaultId: string): boolean {
+    if (this.store === null || vaultId.length === 0) {
+      return true;
+    }
+    try {
+      const raw: boolean = this.store.getSync('favSectionOpen_' + vaultId, true) as boolean;
+      return typeof raw === 'boolean' ? raw : true;
+    } catch (error) {
+      return true;
+    }
+  }
+
+  saveSectionOpen(vaultId: string, open: boolean): void {
+    if (this.store === null || vaultId.length === 0) {
+      return;
+    }
+    try {
+      this.store.putSync('favSectionOpen_' + vaultId, open);
+      this.store.flush();
+    } catch (error) {
+      const err = error as BusinessError;
+      hilog.error(DOMAIN, TAG, '收藏区状态写入失败 code=%{public}d', err.code);
+    }
+  }
+}
