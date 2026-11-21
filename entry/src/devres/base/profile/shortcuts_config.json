@@ -1,0 +1,34 @@
+{
+  "shortcuts": [
+    {
+      "shortcutId": "new_note",
+      "label": "$string:shortcut_new_note",
+      "icon": "$media:startIcon",
+      "wants": [
+        {
+          "bundleName": "com.jxg.huaweiobsidian.dev",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility",
+          "parameters": {
+            "yaoshi_shortcut": "new_note"
+          }
+        }
+      ]
+    },
+    {
+      "shortcutId": "search",
+      "label": "$string:shortcut_search",
+      "icon": "$media:startIcon",
+      "wants": [
+        {
+          "bundleName": "com.jxg.huaweiobsidian.dev",
+          "moduleName": "entry",
+          "abilityName": "EntryAbility",
+          "parameters": {
+            "yaoshi_shortcut": "search"
+          }
+        }
+      ]
+    }
+  ]
+}

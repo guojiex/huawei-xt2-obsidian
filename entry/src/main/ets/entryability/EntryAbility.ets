@@ -17,6 +17,7 @@ import { CrashGuard } from '../common/CrashGuard';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { createSearchStore } from '../model/SearchStoreDevice';
 import { ShareIngestPayload, ShareIngestService } from '../model/ShareIngestService';
+import { LaunchShortcutPayload, LaunchShortcutService } from '../model/LaunchShortcutService';
 import { ApplicationBackupService } from '../model/ApplicationBackupService';
 
 const DOMAIN = 0x0000;
@@ -80,6 +81,8 @@ export default class EntryAbility extends UIAbility {
     // 里调（官方 FAQ：不能在 onForeground 取数）；解析是异步 IPC，载荷就绪后才写
     // AppStorage —— Index 的 @Watch 兜晚到、aboutToAppear 兜早到，两头都覆盖。
     this.handleSharedWant(want);
+    // v2.0 2.0.2：应用图标静态快捷方式拉起的冷启动路径（api_notes AO1）。
+    this.handleShortcutWant(want);
   }
 
   /**
@@ -89,6 +92,24 @@ export default class EntryAbility extends UIAbility {
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onNewWant');
     this.handleSharedWant(want);
+    // v2.0 2.0.2：静态快捷方式的热启动路径（App 已在后台）。
+    this.handleShortcutWant(want);
+  }
+
+  /**
+   * v2.0 2.0.2：应用图标静态快捷方式（冷 / 热同入口）。shortcuts_config.json 的
+   * wants[].parameters 动作值经 AppStorage['launchShortcut'] 转发，Index
+   * `@StorageProp + @Watch` 消费；普通启动（无参数 / 未知动作）零行为变化。
+   * 依据 api_notes AO1；转发范式同 v1.56 incomingShare。
+   */
+  private handleShortcutWant(want: Want): void {
+    const action: string = LaunchShortcutService.actionFromParameters(want.parameters);
+    if (action.length === 0) {
+      return;
+    }
+    const payload: LaunchShortcutPayload = LaunchShortcutService.buildPayload(action, Date.now());
+    AppStorage.setOrCreate(LaunchShortcutService.STORAGE_KEY, JSON.stringify(payload));
+    hilog.info(DOMAIN, TAG, '静态快捷方式拉起 action=%{public}s', action);
   }
 
   /** 只处理 sendData want；正常桌面启动等零行为变化（v1.56 需求文档 56.2）。 */

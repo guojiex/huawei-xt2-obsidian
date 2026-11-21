@@ -132,6 +132,7 @@ import {
 } from '../model/ExternalVaultAuthorization';
 import { createExternalVaultAuthorization } from '../model/ExternalVaultAuthorizationDevice';
 import { GitImportDraft, GitImportOutcome } from '../model/GitImportDraftStore';
+import { LaunchShortcutPayload, LaunchShortcutService } from '../model/LaunchShortcutService';
 import { VaultPathResolver } from '../model/VaultPathResolver';
 import {
   ZipChooseOutcome,
@@ -313,6 +314,13 @@ struct Index {
    * @Watch 兜「晚到」，消费后清空键防重复弹层。
    */
   @StorageProp('incomingShare') @Watch('onIncomingShareChanged') incomingShareJson: string = '';
+  /**
+   * v2.0 2.0.2：静态快捷方式动作通道（api_notes AO1）。EntryAbility 在 onCreate /
+   * onNewWant 解析 shortcuts want 后把 JSON 写进 `launchShortcut`（receivedAt 时间戳
+   * 保证同动作重复点击也触发 @Watch）；aboutToAppear 兜「早到」（冷启动解析先于页面
+   * 挂载完成），@Watch 兜「晚到」，消费后清空键防重复（与 v1.56 incomingShare 同构）。
+   */
+  @StorageProp('launchShortcut') @Watch('onLaunchShortcutChanged') launchShortcutJson: string = '';
   /** 57.7：底部导航条避让高度（px，EntryAbility 随 avoidAreaChange 动态发布）；状态条 offset 进条带用。 */
   @StorageProp('navIndicatorHeightPx') navIndicatorHeightPx: number = 0;
   /** 库列表（单一数据源 VaultRegistry；CRUD 后 refreshFromRegistry） */
@@ -727,6 +735,14 @@ struct Index {
     }, WORKSPACE_WEB_MOUNT_DELAY_MS);
     this.startExternalVaultPolling();
     this.cleanupZipImportStaging();
+    // v2.0 2.0.2：冷启动快捷方式——EntryAbility 的动作可能早于页面挂载就已写进
+    // AppStorage（@Watch 不触发），这里兜底消费一次（同 ShareFlowPanel 惯例）。
+    const launchShortcutRaw: string = AppStorage.get<string>(LaunchShortcutService.STORAGE_KEY) ?? '';
+    if (launchShortcutRaw.length > 0) {
+      setTimeout((): void => {
+        this.consumeLaunchShortcut();
+      }, 0);
+    }
     // v1.58 §5：统计缓存的首次扫描排到空闲时机，不进入启动页首帧关键路径。
     this.scheduleIdleStatsRefresh();
   }
@@ -7349,6 +7365,55 @@ struct Index {
       setTimeout((): void => {
         this.shareFlowApi?.consumeIncomingShare();
       }, 0);
+    }
+  }
+
+  /** v2.0 2.0.2：@Watch 入口（热启动 / 冷启动晚到的快捷方式动作）。 */
+  private onLaunchShortcutChanged(): void {
+    if (this.launchShortcutJson.length > 0) {
+      setTimeout((): void => {
+        this.consumeLaunchShortcut();
+      }, 0);
+    }
+  }
+
+  /**
+   * v2.0 2.0.2：消费静态快捷方式动作。先取值并清空键防重复，再回笔记主视图
+   * （关屏保 / 次级视图回落 / 关抽屉与更多菜单），最后按动作打开对应入口：
+   * new_note → 新建笔记对话框（与侧栏「＋」同链）、search → 快切搜索
+   * （与侧栏搜索同链）。载荷不合法（脏数据）静默忽略，不打断当前界面。
+   */
+  private consumeLaunchShortcut(): void {
+    const raw: string = AppStorage.get<string>(LaunchShortcutService.STORAGE_KEY) ?? '';
+    AppStorage.setOrCreate(LaunchShortcutService.STORAGE_KEY, '');
+    if (raw.length === 0) {
+      return;
+    }
+    let payload: LaunchShortcutPayload | null = null;
+    try {
+      payload = JSON.parse(raw) as LaunchShortcutPayload;
+    } catch (_error) {
+      payload = null;
+    }
+    if (payload === null || !LaunchShortcutService.isValidPayload(payload)) {
+      hilog.warn(DOMAIN, TAG, '%{public}s', '忽略非法的快捷方式载荷');
+      return;
+    }
+    const action: string = payload.action;
+    hilog.info(DOMAIN, TAG, '消费静态快捷方式动作 action=%{public}s', action);
+    if (this.screenSaverOpen) {
+      this.closeScreenSaver();
+    }
+    if (this.topView !== 'note') {
+      this.topView = 'note';
+    }
+    this.closeNoteNavigation();
+    this.drawerOpen = false;
+    this.moreMenuOpen = false;
+    if (action === LaunchShortcutService.ACTION_NEW_NOTE) {
+      this.openCreateNoteDialog();
+    } else if (action === LaunchShortcutService.ACTION_SEARCH) {
+      this.openQuickSwitcher();
     }
   }
 

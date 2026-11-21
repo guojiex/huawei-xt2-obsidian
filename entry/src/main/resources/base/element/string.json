@@ -15,6 +15,14 @@
     {
       "name": "file_access_persist_reason",
       "value": "记住你授权的笔记目录，重启应用或设备后仍能直接读写该目录，无需重新选择"
+    },
+    {
+      "name": "shortcut_new_note",
+      "value": "新建笔记"
+    },
+    {
+      "name": "shortcut_search",
+      "value": "搜索"
     }
   ]
 }
