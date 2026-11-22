@@ -216,7 +216,8 @@ test('parseQueue / parseChangelog / classifyVersionStatus / compareVersions / su
 
   assert.equal(P.classifyVersionStatus('🔒 已冻结'), 'frozen');
   assert.equal(P.classifyVersionStatus('✅ 已发布'), 'released');
-  assert.equal(P.classifyVersionStatus('已关闭'), 'closed');
+  assert.equal(P.classifyVersionStatus('已关闭'), 'progress'); // 歧义文案不再判 closed，需 ❌ / 结论关闭强信号
+  assert.equal(P.classifyVersionStatus('❌ 结论关闭'), 'closed');
   assert.equal(P.classifyVersionStatus('⚪ 规划中'), 'planning');
   assert.equal(P.classifyVersionStatus('🟡 开发中'), 'progress');
   assert.equal(P.classifyVersionStatus('任意未知文案'), 'progress');
@@ -246,6 +247,19 @@ test('scanVersionDirs 兼容 `> **状态**：` 粗体写法', () => {
   const v = dirs.find((d) => d.version === 'v1.99');
   assert.equal(v.status, '🟡 开发中，待验收');
   assert.equal(v.statusKey, 'progress');
+});
+
+test('classifyVersionStatus 状态语义强信号（防正文关键词误伤）', () => {
+  // 误伤回归：正文里出现的「关闭 / 冻结」不改变版本状态
+  assert.equal(P.classifyVersionStatus('🟡 开发中；小艺入口显隐改为设置页持久化开关，默认关闭'), 'progress');
+  assert.equal(P.classifyVersionStatus('原型与原生实现完成；设计基线：[关闭笔记与空态设计](../prototype/v2/x.md)'), 'progress');
+  assert.equal(P.classifyVersionStatus('开发中（47.1 已落码）；来源 [W 组](../requirements_backlog.md#w-图标全局-builder-按值实参冻结2026-11-09)'), 'progress');
+  // 真实状态语义
+  assert.equal(P.classifyVersionStatus('❌ **应用侧无法实现，结论关闭（2026-11-10）**——API 24 无生产可用 API'), 'closed');
+  assert.equal(P.classifyVersionStatus('🔒 关闭（2026-11-19 用户决定）：原生曾实现弹窗'), 'frozen');
+  assert.equal(P.classifyVersionStatus('⚪ 规划中（2026-11-15 立项，范围已确认，未落码）'), 'planning');
+  assert.equal(P.classifyVersionStatus('已发布（2026-11-20 上架应用市场）'), 'released');
+  assert.equal(P.classifyVersionStatus('🟡 本地实现完成；定向回归通过；XT2 待验'), 'progress');
 });
 
 test('排期全流程：新版本脚手架 + README 索引行 + 需求池补记（端到端）', () => {

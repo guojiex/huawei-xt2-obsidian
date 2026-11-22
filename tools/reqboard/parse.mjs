@@ -275,11 +275,12 @@ export function parseBacklog(relPath) {
 
 export function classifyVersionStatus(statusText) {
   const t = statusText ?? '';
-  if (/🔒|冻结/.test(t)) return 'frozen';
+  // 只认「状态语义」的强信号，避免正文里出现的「默认关闭」「关闭笔记…」「按值实参冻结」等误伤：
+  // frozen 只认行首 🔒/🧊 或「版本冻结」；closed 只认 ❌ 或「结论关闭」。
+  if (/^\s*🔒|^\s*🧊|版本冻结|冻结版本/.test(t)) return 'frozen';
+  if (/❌|结论关闭/.test(t)) return 'closed';
   if (/已发布|✅/.test(t)) return 'released';
-  if (/关闭/.test(t)) return 'closed';
-  if (/⚪|规划中/.test(t)) return 'planning';
-  if (/🟡|开发中|进行中|▶|继续|实现中|本地实现完成|实现完成/.test(t)) return 'progress';
+  if (/^\s*⚪|规划中/.test(t)) return 'planning';
   return 'progress';
 }
 
