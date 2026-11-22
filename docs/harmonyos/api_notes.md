@@ -3223,3 +3223,38 @@ dumpLayout 里 Appbar / 笔记路径行 / 格式栏「集体消失」，root 报
 - ✅ 周边复核：shortcutManager 首批接口 API 20（本机文档库）；shortcuts `visible`
   子标签 API 20 起、`getAllShortcutInfoForSelf` API 20 起（答复转述 + 文档库互证）；
   上限 4 条（《创建应用静态快捷方式》原文，与 AO1 互证）。
+
+## AP 组：关系图谱图渲染路线（2026-11-22 本机 SDK 声明核对）
+
+来源：用户转贴 AI 答复（自标「内容由 AI 生成，仅供参考」）+ 本机 SDK 声明核对。
+背景：v2.4 关系图谱设计稿完成，原生实现前需收口图渲染路线。**结论：无现成图谱组件，需自绘。**
+
+### AP1 ✅ Canvas / CanvasRenderingContext2D 是首选自绘方案
+
+- Canvas 组件 + `CanvasRenderingContext2D`（`@since 8`）已在本仓 v1.63 启动页噪点落地（[U2/U3](#u2-启动页循环动效与氛围层-api-声明核对2026-11-13v163)），`fillStyle` / `arc` / `fillRect` / `fillText` / `clearRect` 等 2D 绘制接口 API ≤ 24。
+- 力导向图 = 节点圆 + 连线 + 文本，全部是 CanvasRenderingContext2D 基础能力，可直接实现；`onTouch` 触点与节点坐标做距离判断即可点击 / 拖拽（标准做法，无额外 API 依赖）。
+
+### AP2 ✅ 性能升级备选组件 API ≤ 24 均可用（本机 SDK 声明核对）
+
+| 组件 | `@since` | SDK 出处 |
+| --- | --- | --- |
+| XComponent（高性能自绘 Surface） | 8（Surface 相关选项 12） | `component/xcomponent.d.ts` |
+| RenderNode（动态节点树） | 11 | `api/arkui/RenderNode.d.ts` |
+| OffscreenCanvas（离屏渲染） | 12 | `component/canvas.d.ts` |
+| NodeContainer / NodeController | 8 | `component/node_container.d.ts` |
+
+- ⚠️ `NodeContainer` 卸载销毁是 **Web 节点**的结论（[B2](#b2-隐藏的计算型-web-组件--常驻用-visibilityhidden不要用-nodecontainer-卸载)）；普通节点树管理用途不同，不沿用该结论。
+
+### AP3 ⚠️ OffscreenCanvas「独立线程离屏渲染」完整链路未逐条坐实
+
+- 仅 SDK 声明确认 `OffscreenCanvas` 存在（`@since 12`）；「`OffscreenCanvasRenderingContext2D` + worker 转移 + `transferToImageBitmap`」这条独立线程渲染链路在 ArkUI API 24 是否完整可用、性能收益如何，未逐条坐实 → 原生实现前再补核实。
+
+### AP4 ❓ 「Canvas 宽/高超 8000px 性能下降、官方推荐改 RenderNode」为 AI 转述，官方文档未坐实
+
+- 与硬约束 12（Web 组件 7680px 物理像素）是**两个不同对象**，不混用；图谱画布尺寸跟随窗口、首期大概率碰不到该上限，但结论未坐实前不写进「已定」。
+
+### 方向收口（原生实现前）
+
+- 首选 **Canvas + 力导向**（与 repo 现有 Canvas 用法一致，成本最低）。
+- 性能升级备选：节点数百以上 → 力模拟放 TaskPool 或 OffscreenCanvas（AP3 先核实）；极大数据量 / 复杂手势 → XComponent / RenderNode。
+- 原生实现前：力导向 + `onTouch` 命中做 **spike**（沿用 v1.94 PDF spike / v0.2 WebView spike 先例），通过后再开原生版。
