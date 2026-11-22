@@ -6,7 +6,8 @@
  * 2. 聚合口径 —— frontmatter tags + 正文行内 #tag（排除代码块 / 行内代码 / 公式）、小写去重、不跨库；
  * 3. 过滤行为 —— 点击药丸切换过滤、再点清除、无效标签丢弃、过滤行点击 selectNote；
  * 4. URL —— tag / tagsOpen 进 stateUrl，restoreUrl 校验标签存在否则丢弃；
- * 5. 红线 —— v2.1 CSS 只引用 token、过滤态隐藏「全部笔记」分区标签、tree-help 提示。
+ * 5. 红线 —— v2.1 CSS 只引用 token、过滤态隐藏「全部笔记」分区标签、tree-help 提示；
+ * 6. 笔记内标签 chip —— 预览里的 chip 是按钮，点击切到文件视图并进入该标签过滤（含单屏展开侧栏）。
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +34,9 @@ test('sidebar gains a tag section between favorites and the full note tree', () 
 
 test('filter bar replaces the all-notes section label and hides the swipe hint while filtering', () => {
   assert.match(html, /\.tag-filter:not\(\.hidden\)\+\.tree-section-label\{display:none\}/);
-  assert.match(html, /\$\('tagFilterBar'\)\.classList\.toggle\('hidden',!filtering\);\$\('treeHelp'\)\.classList\.toggle\('hidden',filtering\)/);
+  assert.match(html, /\.window\.tag-filtering #pinFolder,\.window\.tag-filtering #favoritesFolder\{display:none!important\}/);
+  assert.match(html, /\.window\.phone\.tag-filtering #tagsFolder\{display:none!important\}/);
+  assert.match(html, /\$\('window'\)\.classList\.toggle\('tag-filtering',filtering\);\s*\n?\s*\$\('tagFilterBar'\)\.classList\.toggle\('hidden',!filtering\);\$\('treeHelp'\)\.classList\.toggle\('hidden',filtering\)/);
 });
 
 test('tag state is persisted and restored through the URL', () => {
@@ -49,6 +52,28 @@ test('render pipeline wires renderTags next to favorites and pins', () => {
   assert.match(html, /\$\('tagList'\)\.querySelectorAll\('\[data-tag\]'\)\.forEach\(b=>b\.onclick=\(\)=>setTagFilter\(b\.dataset\.tag===activeTagFilter\?'':b\.dataset\.tag\)\)/);
   assert.match(html, /\$\('notes'\)\.querySelectorAll\('\[data-tag-open\]'\)\.forEach\(b=>b\.onclick=\(\)=>selectNote\(b\.dataset\.tagOpen\)\)/);
   assert.match(html, /\$\('tagFilterClear'\)\.onclick=\(\)=>setTagFilter\(''\)/);
+});
+
+test('note tag chips filter the left list instead of opening block editing', () => {
+  // 预览里的标签 chip 是按钮语义，携带 data-note-tag。
+  assert.match(html, /function tagChip\(tag\)\{return '<button type="button" class="note-tag" contenteditable="false" data-note-tag="'\+esc\(tag\)\+'"/);
+  assert.match(html, /aria-label="按标签筛选：#'\+esc\(tag\)\+'"/);
+  // 点击 chip → 切文件视图、单屏展开侧栏 / 宽屏取消隐藏、进入标签过滤。
+  assert.match(html, /function openTagFilter\(value\)\{/);
+  assert.match(html, /if\(sidebarView!=='files'\)setSidebarView\('files'\)/);
+  assert.match(html, /if\(phone\)\$\('window'\)\.classList\.add\('nav-open'\);else \$\('window'\)\.classList\.remove\('nav-hidden'\)/);
+  // pointerdown 先于 contenteditable 的段落选中，click 保留给键盘 / 普通点击。
+  assert.match(html, /article\.addEventListener\('pointerdown',event=>\{const noteTag=event\.target\.closest\('\[data-note-tag\]'\);if\(!noteTag\|\|!article\.contains\(noteTag\)\)return;event\.preventDefault\(\);event\.stopPropagation\(\);openTagFilter\(noteTag\.dataset\.noteTag\);\},true\)/);
+  // 简单模式捕获阶段原本会把 chip 当段落打开块编辑器，必须先放行。
+  assert.match(html, /const noteTag=tgt\.closest\('\[data-note-tag\]'\);if\(noteTag&&root\.contains\(noteTag\)\)return;/);
+  assert.match(html, /if\(tgt\.closest&&tgt\.closest\('\[data-note-tag\]'\)\)return;/);
+  // chip 的可点击样式只引用 token，不散写颜色。
+  const chipCss = html.match(/button\.note-tag\{[^}]*\}/)?.[0] ?? '';
+  assert.match(chipCss, /line-height:inherit/);
+  assert.doesNotMatch(chipCss, /#[0-9a-fA-F]{3,8}\b/);
+  const hoverCss = html.match(/button\.note-tag:hover\{[^}]*\}/)?.[0] ?? '';
+  assert.match(hoverCss, /var\(--blue\)/);
+  assert.match(hoverCss, /var\(--paper\)/);
 });
 
 test('v2.1 CSS only references tokens, never scattered colors', () => {
@@ -115,6 +140,8 @@ function fixture(initial = {}) {
     scheduleUrl() {},
     selectNote(id) { ctx.selectedId = id; },
     renderTree() { ctx.treeRenders = (ctx.treeRenders || 0) + 1; },
+    setSidebarView(view) { ctx.sidebarView = view; },
+    applySplits() { ctx.splits = (ctx.splits || 0) + 1; },
     favTone() { return 'var(--blue)'; },
     svg() { return ''; },
     folderPathsForVault() { return []; },
@@ -124,13 +151,14 @@ function fixture(initial = {}) {
     swipeSuppressed: null, folderSwipeSuppressed: null,
     revealFileActions() {}, closeFileSwipes() {},
     openNewEntry() {}, openFolderShare() {}, openDeleteFolder() {}, openFolderAction() {}, openInPane() {},
-    phone: false, draggedReference: '', clearReferenceDrag() {}, rememberEditorPosition() {},
+    phone: false, focused: false, draggedReference: '', clearReferenceDrag() {}, rememberEditorPosition() {},
   };
   ctx.currentNotes = () => ctx.notes.filter((n) => n.vault === ctx.activeVault && !n.deleted);
   const context = vm.createContext(ctx);
   const run = (s) => vm.runInContext(s, context);
   // 原型基础解析函数（单行 function 声明，逐行装载）。
   run(lineOf('function validTag('));
+  run(lineOf('function tagChip('));
   run(lineOf('function markdownBody('));
   run(lineOf('function frontmatterTags('));
   // v2.1 聚合 + 过滤状态块（注释行到 setTagFilter 行）。
@@ -172,6 +200,34 @@ test('renderTags sorts pills by note count desc and reflects the active filter',
   f.run("setTagFilter('工作')");
   f.run('renderTags()');
   assert.ok(f.get('tagList').innerHTML.includes('aria-pressed="true"'));
+});
+
+test('tagChip renders a keyboard-reachable filter button', () => {
+  const f = fixture();
+  const chip = f.run("tagChip('工作')");
+  assert.match(chip, /^<button type="button" class="note-tag"/);
+  assert.match(chip, /contenteditable="false"/);
+  assert.match(chip, /data-note-tag="工作"/);
+  assert.match(chip, /aria-label="按标签筛选：#工作"/);
+  assert.match(chip, /title="按标签筛选：#工作"/);
+  assert.doesNotMatch(chip, /<span/);
+});
+
+test('openTagFilter switches to files view, enters the filter and reveals the sidebar', () => {
+  const f = fixture();
+  f.context.sidebarView = 'chapters';
+  f.run('openTagFilter(\'工作\')');
+  assert.equal(f.run('activeTagFilter'), '工作');
+  assert.equal(f.context.sidebarView, 'files');
+  assert.equal(f.get('window').classList.contains('nav-hidden'), false);
+  assert.ok((f.context.splits || 0) >= 1, '布局在展开侧栏后重算');
+  assert.equal(f.get('tagFilterBar').classList.contains('hidden'), false);
+  // 大小写不敏感地命中药丸的书写形式。
+  f.run('openTagFilter(\'灵感\')');
+  assert.equal(f.run('activeTagFilter'), '灵感');
+  // 当前库不存在的标签忽略，不破坏已有过滤。
+  f.run('openTagFilter(\'不存在\')');
+  assert.equal(f.run('activeTagFilter'), '灵感');
 });
 
 test('setTagFilter toggles the filter, re-click clears, invalid tags are dropped', () => {
