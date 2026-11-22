@@ -371,7 +371,7 @@ test('phone more menu groups actions and updates labels without replacing icons'
  const menu=html.match(/<details[^>]*id="mobileMore"[\s\S]*?<\/details>/)[0];
  assert(menu.indexOf('aria-label="当前笔记"')<menu.indexOf('aria-label="快捷编辑模式"'));
  assert(menu.indexOf('aria-label="快捷编辑模式"')<menu.indexOf('aria-label="应用"'));
-   assert.equal((menu.match(/class="menu-icon"/g)||[]).length,11); // v2.2 版本历史入口加入当前笔记组
+   assert.equal((menu.match(/class="menu-icon"/g)||[]).length,12); // v2.4 关系图谱入口加入应用组
  assert.match(menu,/class="git-sync-count"/);
  const f=fixture();f.run("setViewport('phone');backlinksPane=activePane;updatePaneChrome()");
  assert.equal(f.get('mobileBacklinksLabel').textContent,'隐藏反链');
