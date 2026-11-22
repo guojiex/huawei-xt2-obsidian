@@ -741,7 +741,7 @@ test('vault create and rename preserve the active empty vault and suffix duplica
 });
 
 test('vault rename migrates notes and folder state; confirmed deletion removes only that demo vault',()=>{
- const f=fixture();f.run("switchVault('reading');folderState['reading/10_写作']=false;openVaultManager(false);openVaultAction('rename','reading')");f.get('vaultActionName').value='项目笔记';f.get('vaultActionName').oninput();f.get('confirmVaultAction').onclick();assert.equal(f.run('activeVault'),'项目笔记-2');assert.equal(f.run("currentNotes().length"),2);assert(f.run("notes.filter(n=>n.vault==='reading').length===0"));assert.equal(f.run("folderState['项目笔记-2/10_写作']"),false);
+ const f=fixture();f.run("switchVault('reading')");const migrated=f.run('currentNotes().length');f.run("folderState['reading/10_写作']=false;openVaultManager(false);openVaultAction('rename','reading')");f.get('vaultActionName').value='项目笔记';f.get('vaultActionName').oninput();f.get('confirmVaultAction').onclick();assert.equal(f.run('activeVault'),'项目笔记-2');assert.equal(f.run("currentNotes().length"),migrated);assert(f.run("notes.filter(n=>n.vault==='reading').length===0"));assert.equal(f.run("folderState['项目笔记-2/10_写作']"),false);
  f.run("openVaultAction('delete','项目笔记-2')");assert(f.get('vaultActionDialog').open);assert.match(f.get('vaultActionDescription').textContent,/刷新后公开样例会恢复/);f.get('confirmVaultAction').onclick();assert(!f.run("libraries.some(v=>v.id==='项目笔记-2')"));assert.equal(f.run("notes.filter(n=>n.vault==='项目笔记-2').length"),0);assert.equal(f.run('activeVault'),'local');assert(f.get('vaultCards').innerHTML.includes('本地笔记'));
 });
 
@@ -770,7 +770,7 @@ test('wiki links resolve relative paths, offer missing-note creation, and backli
  f.get('article').dispatch('click',{target:{closest:selector=>selector==='[data-wiki-create]'?missing:null},preventDefault(){}});
  assert.equal(f.get('newEntryDialog').open,true);assert.equal(f.get('newEntryFolder').value,'40_阅读');assert.equal(f.get('newEntryName').value,'新建条目');
  f.get('confirmNewEntry').onclick();assert.equal(f.run('note(current).title'),'新建条目');assert.equal(f.run('note(current).folder'),'40_阅读');
- const g=fixture();g.run("openInPane('reading_reading_journal','left');note('reading_reading_journal').text='[[10_写作/基础排版]] `[[幽灵]]`\\n~~~md\\n[[幽灵]]\\n~~~';render();openInPane('reading_stream','right')");g.get('rightBacklinks').onclick();
+ const g=fixture();g.run("for(const n of notes)if(n.vault==='reading')n.text='';openInPane('reading_reading_journal','left');note('reading_reading_journal').text='[[10_写作/基础排版]] `[[幽灵]]`\\n~~~md\\n[[幽灵]]\\n~~~';render();openInPane('reading_stream','right')");g.get('rightBacklinks').onclick();
  assert.equal(g.get('rightBacklinksCount').textContent,'1');assert(!g.get('rightBacklinksPanel').classList.contains('hidden'));assert(g.get('rightBacklinksItems').innerHTML.includes('40_阅读 / 读书对话练习.md'));
  g.flush();assert.equal(new URL(g.href()).searchParams.get('backlinks'),'right');
  const source={dataset:{backlinkNote:'reading_reading_journal',backlinkPane:'right'}};g.event('document','click',{target:{closest:selector=>selector==='[data-backlink-note]'?source:null}});assert.equal(g.run('reference'),'reading_reading_journal');assert.equal(g.run('activePane'),'right');

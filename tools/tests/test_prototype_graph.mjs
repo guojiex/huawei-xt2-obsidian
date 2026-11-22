@@ -175,3 +175,109 @@ test('renderGraph shows empty state when the vault has no notes', () => {
   f.run('renderGraph()');
   assert.ok(f.get('graphCanvas').innerHTML.includes('当前库暂无笔记'));
 });
+
+// —— 2026-11-22 交互增补：悬停高亮 / 节点拖拽 / 画布平移缩放 ——
+test('graph markup is focusable, labeled and wrapped in a pan/zoom viewport group', () => {
+  const f = fixture();
+  f.run('renderGraph()');
+  const out = f.get('graphCanvas').innerHTML;
+  assert.ok(out.includes('<g class="graph-view">'), 'canvas content sits inside the viewport group');
+  assert.match(out, /tabindex="0" role="button" aria-label="打开笔记：[^"]+" transform=/, 'nodes carry button semantics and stay keyboard reachable');
+  assert.match(out, /data-graph-source="a" data-graph-target="b"/, 'edges carry endpoint ids for live position sync');
+});
+
+test('graph interaction wiring and constants stay guarded in the source', () => {
+  assert.match(html, /function wireGraphInteractions\(/);
+  assert.match(html, /function graphRelax\(rounds,pinnedId\)/);
+  assert.match(html, /function graphHighlight\(id\)/);
+  assert.match(html, /canvas\.addEventListener\('wheel'/);
+  assert.match(html, /\{passive:false\}\)/, 'wheel zoom must be able to preventDefault');
+  assert.match(html, /Math\.min\(3,Math\.max\(0\.4,s\.view\.scale\*factor\)\)/, 'zoom clamped to 0.4–3');
+  assert.match(html, /drag\.moved<8/, 'tap vs drag separated by a movement threshold');
+  assert.match(html, /\.graph-canvas\{[^}]*cursor:grab/);
+  assert.match(html, /\.graph-node\.focus-dim\{opacity:\.3\}/);
+  assert.match(html, /\.graph-node\.near circle,\.graph-node:focus circle\{stroke-width:2\.5\}/);
+  assert.match(html, /paint-order:stroke/, 'node labels carve a paper halo so edges pass underneath text');
+  assert.match(html, /function graphRadii\(/, 'radius table shared by layout and rendering');
+  assert.match(html, /const min=rad\.get\(nodes\[i\]\.id\)\+rad\.get\(nodes\[j\]\.id\)\+20/, 'collision keeps node clearance');
+});
+
+test('graphLayout collision pass keeps dense graphs from overlapping', () => {
+  const dense = ['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, vault: 'local', folder: '', title: id.toUpperCase(), text: ['a', 'b', 'c', 'd', 'e'].filter((o) => o !== id).map((o) => `[[${o.toUpperCase()}]]`).join(' '), deleted: false }));
+  const f = fixture({ notes: dense });
+  const r = f.run('(function(){const d=graphData(),p=graphLayout(d,640,440),rad=graphRadii(d);let min=Infinity;for(let i=0;i<d.nodes.length;i++)for(let j=i+1;j<d.nodes.length;j++){const a=p.get(d.nodes[i].id),b=p.get(d.nodes[j].id);min=Math.min(min,Math.hypot(a.x-b.x,a.y-b.y)-rad.get(d.nodes[i].id)-rad.get(d.nodes[j].id));}return min;})()');
+  assert.ok(r >= 19.5, `K5 layout keeps node clearance ≥ 20 (got ${r.toFixed(2)})`);
+});
+
+test('graph interactions bind once and support tap, drag, pan, zoom and reset', () => {
+  const f = fixture();
+  const canvas = f.get('graphCanvas');
+  const listeners = {};
+  const svgStub = {
+    getScreenCTM() { return { inverse() { return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }; } }; },
+    setPointerCapture() {},
+  };
+  canvas.querySelector = (sel) => sel === 'svg' ? svgStub : { attrs: {}, dataset: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+  canvas.querySelectorAll = () => [];
+  canvas.addEventListener = (k, fn) => { (listeners[k] ??= []).push(fn); };
+  f.context.DOMPoint = class {
+    constructor(x, y) { this.x = x; this.y = y; }
+    matrixTransform(m) { return { x: this.x * m.a + m.e, y: this.y * m.d + m.f }; }
+  };
+  let selections = 0;
+  let closes = 0;
+  f.context.selectNote = () => { selections += 1; };
+  f.context.closeGraph = () => { closes += 1; };
+
+  f.run('renderGraph()');
+  const s = f.run('graphInteractions');
+  assert.ok(s && s.svg === svgStub, 'interaction state wired to the rendered svg');
+  assert.ok(listeners['pointerdown'] && listeners['pointermove'] && listeners['pointerup'] && listeners['wheel'] && listeners['dblclick'], 'pointer, wheel and dblclick handlers bound');
+
+  // 点按（位移小于阈值）打开笔记并退出图谱
+  const nodeG = { dataset: { graphNote: 'a' } };
+  const onNode = { target: { closest: (sel) => sel === '.graph-node' ? nodeG : null } };
+  listeners['pointerdown'][0]({ ...onNode, clientX: 300, clientY: 200, pointerId: 1 });
+  assert.equal(f.run('graphInteractions.drag.id'), 'a');
+  listeners['pointerup'][0]({});
+  assert.equal(selections, 1, 'tap selects the note');
+  assert.equal(closes, 1, 'tap exits the graph view');
+
+  // 拖拽（位移超阈值）只挪节点，不触发打开
+  listeners['pointerdown'][0]({ ...onNode, clientX: 300, clientY: 200, pointerId: 1 });
+  listeners['pointermove'][0]({ clientX: 420, clientY: 260, pointerId: 1 });
+  listeners['pointerup'][0]({});
+  assert.equal(selections, 1, 'drag beyond threshold must not open the note');
+  assert.equal(closes, 1);
+
+  // 拖空白平移画布
+  const onBlank = { target: { closest: () => null } };
+  listeners['pointerdown'][0]({ ...onBlank, clientX: 100, clientY: 100, pointerId: 1 });
+  assert.ok(canvas.classList.contains('grabbing'), 'pan shows the grabbing cursor state');
+  listeners['pointermove'][0]({ clientX: 160, clientY: 140, pointerId: 1 });
+  let view = f.run('graphInteractions.view');
+  assert.equal(view.x, 60);
+  assert.equal(view.y, 40);
+  assert.match(f.run('graphInteractions.viewG').attrs.transform, /translate\(60\.00,40\.00\) scale\(1\.0000\)/, 'viewport group transform follows the pan');
+  listeners['pointerup'][0]({});
+  assert.ok(!canvas.classList.contains('grabbing'));
+
+  // 滚轮以光标为中心缩放，并夹在 0.4–3
+  listeners['wheel'][0]({ deltaY: -100, clientX: 320, clientY: 220, preventDefault() {} });
+  view = f.run('graphInteractions.view');
+  assert.ok(Math.abs(view.scale - 1.161834) < 1e-3, 'wheel zooms toward the cursor');
+  assert.ok(Math.abs(view.x - 17.923) < 0.05 && Math.abs(view.y - 10.87) < 0.05);
+  for (let i = 0; i < 20; i++) listeners['wheel'][0]({ deltaY: -1000, clientX: 320, clientY: 220, preventDefault() {} });
+  assert.equal(f.run('graphInteractions.view.scale'), 3, 'zoom clamps at 3x');
+
+  // 双击空白复位视口
+  listeners['dblclick'][0]({ target: { closest: () => null } });
+  view = f.run('graphInteractions.view');
+  assert.deepEqual({ x: view.x, y: view.y, scale: view.scale }, { x: 0, y: 0, scale: 1 }, 'double click resets the viewport');
+
+  // 重绘只重建状态，不重复绑事件；视口随重绘复位
+  f.run('renderGraph()');
+  assert.equal(listeners['pointerdown'].length, 1, 'listeners bind once per canvas');
+  view = f.run('graphInteractions.view');
+  assert.deepEqual({ x: view.x, y: view.y, scale: view.scale }, { x: 0, y: 0, scale: 1 }, 're-render resets the viewport');
+});
