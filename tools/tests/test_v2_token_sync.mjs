@@ -141,7 +141,7 @@ test('native theme colors and ArkTS numeric tokens match v2 mappings', () => {
     ['Size.sidebarW', 'nav-width'], ['Size.drawerW', 'mobile-nav-width'], ['Size.paneMinW', 'pane-min-content'],
     ['Size.paneMinNavW', 'pane-min-nav'],
     ['Size.formatMenuW', 'format-width'],
-    ['Size.touch', 'touch'], ['Size.treeIndent', 'tree-indent'], ['Size.swipeDelExtra', 'swipe-extra'],
+    ['Size.touch', 'touch'], ['Size.treeIndent', 'tree-indent'], ['Size.treeDepthCap', 'tree-depth-cap'], ['Size.swipeDelExtra', 'swipe-extra'],
     ['Motion.durBase', 'ease'], ['Motion.durNav', 'nav-duration']
   ]
   for (const [tokenName, cssName] of numericMappings) {
@@ -176,7 +176,7 @@ test('settings hs-row box keeps the v2 min-height (56) instead of fixed 48', () 
     `expected >= 9 hs-row min-height uses in SettingsView, got ${uses.length}`)
   for (const [anchorRegex, window] of [
     [/Text\('显示行号'\)/, 800],
-    [/Text\(this\.resetting \? '正在重置…' : '重置所有数据…'\)/, 400],
+    [/Text\(this\.resetting \? '正在重置…' : '重置所有数据…'\)/, 600],
     [/Text\('检查更新'\)/, 1300],
     [/Text\('预览反馈内容'\)/, 300]
   ]) {

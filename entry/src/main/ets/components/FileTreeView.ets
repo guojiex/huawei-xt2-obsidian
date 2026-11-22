@@ -558,10 +558,11 @@ export struct FileTreeView {
     // rank === 2：笔记行上的 drop 只做拦截（无操作），防止被 List 兜底解释成「移到库根」。
   }
 
-  /** 缩进格子数 = 层级数（depth=0 的行不长缩进、也没有引导线） */
+  /** 缩进格子数 = 层级数，超过封顶层级（v2.5 Size.treeDepthCap）后不再增长，深层级不侵占笔记名空间 */
   private levelsOf(depth: number): number[] {
+    const capped: number = Math.min(depth, Size.treeDepthCap);
     const out: number[] = [];
-    for (let i = 0; i < depth; i++) {
+    for (let i = 0; i < capped; i++) {
       out.push(i);
     }
     return out;

@@ -107,6 +107,8 @@ export class Size {
   static readonly menuMaxH: number = 620;
   /** 目录树每级缩进（1.5）—— 原实现 32/48/64/80 级差 16 太窄 */
   static readonly treeIndent: number = 24;
+  /** 目录树视觉缩进封顶层级（v2.5）：超过该层级的行缩进不再增长，保证笔记名显示空间 */
+  static readonly treeDepthCap: number = 4;
   /** 文件树图标尺寸：映射 v2 `--tree-icon`。 */
   static readonly treeIcon: number = 18;
   /** 文件树目录箭头（chevron）与文件行占位块尺寸：比 treeIcon 小一档的视觉档。 */
