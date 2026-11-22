@@ -129,10 +129,20 @@ test('v1.71 fix: ApplicationDefinedRecord drag type + pane shields reclaim Web d
 });
 
 test('71.5 prototype syncs whole-row drag source and keeps the tail icon click-only', () => {
-  // 行按钮成为拖拽源（整行语义，替代行尾图标拖动）。
-  assert.match(prototype,
-    /<button class="tree-row file-row" draggable="true" style="--depth:'\+depth\+'"/);
+  // 行按钮仍是拖拽源（整行语义，替代行尾图标拖动），但 2026-11-22 起默认不 draggable：
+  // 与左滑互斥修复——鼠标横拖会被原生 DnD 掐断（dragstart→pointercancel，acebdce9 同提交
+  // 引入 draggable 与 bindFileSwipe，笔记行左滑自该日起在鼠标下即失效）。
+  // 改为 bindFileSwipe 内长按 350ms 武装拖拽（兑现行 title「长按拖动移动」），
+  // 按住位移 >4px 缴械、dragend / 松手复位；仅 file-row 武装，收藏 / 置顶行零变化。
+  assert.match(prototype, /<button class="tree-row file-row" style="--depth:'\+depth\+'"/);
+  assert.ok(!prototype.includes('<button class="tree-row file-row" draggable="true"'),
+    'file row must not be statically draggable (mouse swipe would be hijacked by native DnD)');
   assert.match(prototype, /\$\('notes'\)\.querySelectorAll\('\.file-row\[data-note\]'\)\.forEach\(b=>\{b\.ondragstart/);
+  assert.match(prototype,
+    /button\.addEventListener\('dragend',\(\)=>\{dndActive=false;button\.draggable=false;\}\)/);
+  assert.match(prototype,
+    /if\(e\.pointerType!=='touch'&&button\.classList\.contains\('file-row'\)\)dragArm=setTimeout\(\(\)=>\{if\(drag&&!drag\.active&&!dndActive\)button\.draggable=true;\},350\)/);
+  assert.match(prototype, /if\(dragArm&&Math\.hypot\(dx,dy\)>4\)clearTimeout\(dragArm\)/);
   // 行尾图标保留点击语义，不再是拖拽源。
   assert.match(prototype, /title="点击在另一栏打开" aria-pressed="/);
   assert.doesNotMatch(prototype, /class="file-reference" draggable="true"/);
