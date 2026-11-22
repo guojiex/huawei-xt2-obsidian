@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- v2.0 桌面静态快捷方式图标：AO4 官方口径（透明背景 24×24vp SVG 单色功能图标）。
+     字形与 Icons.ets P_SEARCH 同源（搜索），描边 2 / 圆头圆角 / 品牌蓝 --blue #007dff，与 App 图标体系风格统一。
+     不用完整应用启动图标——那会在长按弹层显示成「应用图标」（AO4 定性）。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <path d="M10.8 4.3L13.29 4.79L15.39 6.21L16.81 8.31L17.3 10.8L16.81 13.29L15.39 15.39L13.29 16.81L10.8 17.3L8.31 16.81L6.21 15.39L4.79 13.29L4.3 10.8L4.79 8.31L6.21 6.21L8.31 4.79Z M16 16L20.5 20.5" stroke="#007dff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

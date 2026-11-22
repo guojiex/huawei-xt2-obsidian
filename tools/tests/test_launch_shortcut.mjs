@@ -67,7 +67,8 @@ test('2.0.1 shortcuts_config：两条快捷方式，id / label / icon / wants �
   assert.deepEqual(ids, ['new_note', 'search'])
   for (const sc of config.shortcuts) {
     assert.ok(sc.label.startsWith('$string:'), `label 必须走 string 资源：${sc.label}`)
-    assert.ok(sc.icon.startsWith('$media:'), `icon 必须引用既有 media 资源：${sc.icon}`)
+    assert.ok(sc.icon.startsWith('$media:shortcut_'), `icon 必须用独立功能图标资源（AO4，不用完整应用图标）：${sc.icon}`)
+    assert.notEqual(sc.icon, '$media:startIcon', 'icon 不得复用应用启动图标（AO4：长按弹层会显示成应用图标）')
     assert.equal(sc.wants.length, 1)
     const want = sc.wants[0]
     assert.equal(want.bundleName, 'com.jxg.huaweiobsidian')
@@ -83,6 +84,27 @@ test('2.0.3 dev 双包：devres 覆盖版 shortcuts_config 指向 dev bundleName
   assert.deepEqual(ids, ['new_note', 'search'])
   for (const sc of config.shortcuts) {
     assert.equal(sc.wants[0].bundleName, 'com.jxg.huaweiobsidian.dev')
+    assert.ok(sc.icon.startsWith('$media:shortcut_'), `devres icon 也必须用独立功能图标（AO4）：${sc.icon}`)
+  }
+})
+
+test('2.0.5 快捷方式图标：AO4 口径 24×24 透明 SVG，字形与 Icons.ets 同源（回归锁定）', () => {
+  const iconsSource = readSourceFile(new URL('entry/src/main/ets/common/Icons.ets', root))
+  const expected = {
+    shortcut_new_note: /const P_NOTE: string = '([^']+)'/.exec(iconsSource)?.[1],
+    shortcut_search: /const P_SEARCH: string = '([^']+)'/.exec(iconsSource)?.[1]
+  }
+  for (const entry of Object.entries(expected)) {
+    const name = entry[0]
+    const glyph = entry[1]
+    const svg = readSourceFile(new URL(`entry/src/main/resources/base/media/${name}.svg`, root))
+    assert.ok(svg.includes('viewBox="0 0 24 24"') && svg.includes('width="24"') && svg.includes('height="24"'),
+      `${name}.svg 必须是 24×24vp（AO4：透明背景 24×24vp SVG）`)
+    assert.ok(svg.includes('fill="none"'), `${name}.svg 必须透明背景（不得画底色）`)
+    assert.ok(svg.includes('stroke="#007dff"'), `${name}.svg 描边必须用品牌蓝 --blue`)
+    assert.ok(svg.includes('stroke-width="2"') && svg.includes('stroke-linecap="round"'),
+      `${name}.svg 描边口径必须与 App Icon() 一致（宽 2 / 圆头）`)
+    assert.ok(glyph && svg.includes(glyph), `${name}.svg 字形必须与 Icons.ets 同源路径逐字一致`)
   }
 })
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- v2.0 桌面静态快捷方式图标：AO4 官方口径（透明背景 24×24vp SVG 单色功能图标）。
+     字形与 Icons.ets P_NOTE 同源（新建笔记），描边 2 / 圆头圆角 / 品牌蓝 --blue #007dff，与 App 图标体系风格统一。
+     不用完整应用启动图标——那会在长按弹层显示成「应用图标」（AO4 定性）。 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <path d="M14 3H6C4.9 3 4 3.9 4 5V19C4 20.1 4.9 21 6 21H18C19.1 21 20 20.1 20 19V9ZM14 3V9H20M8 13H16M8 17H13" stroke="#007dff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

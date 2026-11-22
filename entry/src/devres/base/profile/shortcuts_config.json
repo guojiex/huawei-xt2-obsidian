@@ -3,7 +3,7 @@
     {
       "shortcutId": "new_note",
       "label": "$string:shortcut_new_note",
-      "icon": "$media:startIcon",
+      "icon": "$media:shortcut_new_note",
       "wants": [
         {
           "bundleName": "com.jxg.huaweiobsidian.dev",
@@ -18,7 +18,7 @@
     {
       "shortcutId": "search",
       "label": "$string:shortcut_search",
-      "icon": "$media:startIcon",
+      "icon": "$media:shortcut_search",
       "wants": [
         {
           "bundleName": "com.jxg.huaweiobsidian.dev",
