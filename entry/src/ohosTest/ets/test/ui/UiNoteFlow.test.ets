@@ -181,12 +181,12 @@ function pinRowId(name: string): string {
 }
 
 /**
- * 在已拉出的操作条里点「置顶」。不能 clickByText('置顶')：已存在置顶时置顶区头
- * Text('置顶') 排在树前，findComponent 先命中头（点了会把置顶区收起）而非操作条按钮；
- * 按「与目标行 y 重叠 + 在行右侧近端」过滤候选。
+ * 在已拉出的操作条里点置顶图标按钮（v2.3 图标化后无文字，ON.text 不可用）：
+ * 按 pin-swipe- id 前缀找候选（LazyForEach 多行可能同时挂 swipe 操作条），
+ * 再按「与目标行 y 重叠 + 在行右侧近端」过滤出目标行的按钮。
  */
 async function clickPinButtonInBar(driver: Driver, rowRect: Rect): Promise<void> {
-  const cands: Component[] = await driver.findComponents(ON.text('置顶'));
+  const cands: Component[] = await driver.findComponents(ON.id('pin-swipe-.*'));
   for (const c of cands) {
     const r: Rect = await c.getBounds();
     if (r.top >= rowRect.top - 8 && r.bottom <= rowRect.bottom + 8 && r.left > rowRect.right - 620) {
@@ -194,7 +194,7 @@ async function clickPinButtonInBar(driver: Driver, rowRect: Rect): Promise<void>
       return;
     }
   }
-  throw new Error('操作条上未找到「置顶」按钮');
+  throw new Error('操作条上未找到置顶图标按钮');
 }
 
 /**
@@ -226,7 +226,9 @@ async function unpinNoteByName(driver: Driver, name: string): Promise<void> {
   const startX: number = r.right - 30;
   const distance: number = Math.round((r.right - r.left) * 0.45);
   await driver.swipe(startX, y, startX - distance, y, 300);
-  await clickByText(driver, '取消置顶');
+  // v2.3：取消置顶图标化（pinOff，无文字），按 unpin-swipe- id 定位
+  const unpinBtn: Component = await waitById(driver, 'unpin-swipe-' + name + '.md');
+  await unpinBtn.click();
   await driver.delayMs(SNACK_MS); // 「已取消置顶：…」toast
   await waitGoneById(driver, pinRowId(name));
   await waitById(driver, noteRowId(name));

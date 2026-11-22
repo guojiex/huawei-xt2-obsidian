@@ -1082,20 +1082,21 @@ export struct FileTreeView {
       '，位于 ' + (isPin ? this.pinLocation(row) : this.favLocation(row)))
   }
 
-  /** 置顶区左滑操作条：可点「取消置顶」，滑到底松手同样取消（不触发删除）。 */
+  /** 置顶区左滑操作条：可点图标「取消置顶」，滑到底松手同样取消（不触发删除）。 */
   @Builder
   PinSwipeBar(row: PinnedNote) {
     Row() {
       Row() {
-        Text('取消置顶')
-          .fontSize(FontSize.caption)
-          .fontColor($r('app.color.brand'))
+        // v2.3：取消置顶图标化（pinOff），无文字；读屏语义进 accessibilityText。
+        Icon('pinOff', Space.s5, $r('app.color.brand'))
       }
       .width(Size.touch)
       .height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .backgroundColor($r('app.color.brand_bg'))
+      .id('unpin-swipe-' + row.relPath)
+      .accessibilityText('取消置顶：' + row.title)
       .onClick((): void => { this.togglePinPath(row.relPath); })
       Text('· 松手取消置顶')
         .fontSize(FontSize.caption)
@@ -1196,16 +1197,22 @@ export struct FileTreeView {
           this.onSharePath(n.relPath, true);
         })
       } else {
+        // v2.3：置顶切换图标化——未置顶 pin / 已置顶 pinOff，无文字。
+        // 全局 @Builder 按值实参首帧固化（Z2/L-7）：图标名必须字面量分支。
         Row() {
-          Text(this.isPinned(n.relPath) ? '已置顶' : '置顶')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.brand'))
+          if (this.isPinned(n.relPath)) {
+            Icon('pinOff', Space.s5, $r('app.color.brand'))
+          } else {
+            Icon('pin', Space.s5, $r('app.color.brand'))
+          }
         }
         .width(Size.touch)
         .height('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .backgroundColor($r('app.color.brand_bg'))
+        .id('pin-swipe-' + n.relPath)
+        .accessibilityText(this.isPinned(n.relPath) ? '取消置顶：' + n.name : '置顶：' + n.name)
         .onClick(() => {
           hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：置顶切换');
           this.togglePin(n);

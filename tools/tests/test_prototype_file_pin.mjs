@@ -47,7 +47,7 @@ test('pin section rows render with unpin swipe, end-of-row unpin button and empt
   assert.ok(renderPins, 'renderPins must exist');
   assert.ok(renderPins.includes("data-swipe-commit=\"unpin\""));
   assert.ok(renderPins.includes('aria-label="打开置顶的笔记：\'+esc(n.title)+\'，位于 \'+esc(n.folder||\'根目录\')+\'"'));
-  assert.ok(renderPins.includes('<button class="delete-file fav-remove" data-pin-remove="\'+n.id+\'">取消置顶</button>'));
+  assert.ok(renderPins.includes('<button class="delete-file fav-remove" data-pin-remove="\'+n.id+\'" aria-label="取消置顶 \'+esc(n.title)+\'" title="取消置顶">\'+svg(\'pinOff\')+\'</button>'));
   assert.ok(renderPins.includes('<button class="fav-unstar" data-pin-remove="\'+n.id+\'" title="取消置顶" aria-label="取消置顶 \'+esc(n.title)+\'">\'+svg(\'pin\')+\'</button>'));
   assert.ok(renderPins.includes("'<p class=\"fav-empty\">还没有置顶的笔记</p>'"));
   // 空态自动收起 + 计数 + 区头标签；折叠态回写 details。
@@ -65,14 +65,18 @@ test('pin section rows render with unpin swipe, end-of-row unpin button and empt
 });
 
 test('file rows expose the pin toggle as the frontmost swipe action without data-file-action', () => {
-  const bar = '<div class="file-actions" inert><button data-pin-note="\'+n.id+\'" aria-pressed="\'+pinned+\'">\'+(pinned?\'已置顶\':\'置顶\')+\'</button><button data-file-action="rename" data-action-note="\'+n.id+\'">改名</button><button data-file-action="move" data-action-note="\'+n.id+\'">移动</button><button class="delete-file" data-file-action="delete" data-action-note="\'+n.id+\'">删除</button></div>';
-  assert.ok(html.includes(bar), 'swipe bar must lead with the pin toggle');
+  // v2.3：置顶切换图标化——未置顶 pin / 已置顶 pinOff（lucide pin-off），无文字；
+  // 语义进 aria-label / title（点击动作 = 置顶 / 取消置顶）。
+  const bar = '<div class="file-actions" inert><button data-pin-note="\'+n.id+\'" aria-pressed="\'+pinned+\'" aria-label="\'+(pinned?\'取消置顶 \':\'置顶 \')+esc(n.title)+\'" title="\'+(pinned?\'取消置顶\':\'置顶\')+\'">\'+svg(pinned?\'pinOff\':\'pin\')+\'</button><button data-file-action="rename" data-action-note="\'+n.id+\'">改名</button><button data-file-action="move" data-action-note="\'+n.id+\'">移动</button><button class="delete-file" data-file-action="delete" data-action-note="\'+n.id+\'">删除</button></div>';
+  assert.ok(html.includes(bar), 'swipe bar must lead with the icon pin toggle');
   const pinButton = bar.slice(bar.indexOf('<button data-pin-note'), bar.indexOf('<button data-file-action'));
   assert.ok(!pinButton.includes('data-file-action'), 'pin button must not ride the generic file-action binding');
   // 事件绑定独立于 data-file-action。
   assert.ok(html.includes("$('notes').querySelectorAll('[data-pin-note]').forEach(b=>b.onclick=e=>{e.stopPropagation();togglePin(b.dataset.pinNote);});"));
   // delete-ready 态非删除按钮（含置顶）全部隐藏，复用现有规则。
   assert.ok(html.includes('.file-entry.delete-ready .file-actions button:not(.delete-file){visibility:hidden}'));
+  // 图标居中：file-actions 内 svg 块级水平居中（全局 svg 规则给尺寸 / 描边 / currentColor）。
+  assert.ok(html.includes('.file-actions button svg{display:block;margin:auto}'));
 });
 
 test('tree keeps pure folder-first order regardless of pin status (62.2)', () => {
@@ -86,6 +90,7 @@ test('tree keeps pure folder-first order regardless of pin status (62.2)', () =>
   // 置顶行名字尾部 12px pin 标记；未置顶行保持原名。
   assert.ok(html.includes("(pinned?'<span class=\"tree-name-wrap\"><span class=\"tree-name\">'+esc(n.title)+'</span><span class=\"tree-pin\" aria-hidden=\"true\">'+svg('pin')+'</span></span>':'<span class=\"tree-name\">'+esc(n.title)+'</span>')"));
   assert.ok(html.includes("pin:'<path d=\"M12 17v5\"/>"), 'icon registry must ship a pin icon');
+  assert.ok(html.includes("pinOff:'<path d=\"M12 17v5\"/>"), 'icon registry must ship a pinOff icon (lucide pin-off)');
   // 视觉 token：12px（--s3）、muted（tertiary）、名字尾部跟随收缩。
   assert.ok(html.includes('#notes .file-entry{--swipe-width:192px}'));
   assert.ok(html.includes('.tree-name-wrap{flex:1;min-width:0;display:flex;align-items:center;gap:var(--s1)}'));
@@ -233,12 +238,13 @@ test('treeHtml rendering: folders lead, pin status never reorders, marker stays 
   const pinnedAt = out.indexOf('data-note="p1"');
   assert.ok(folderAt >= 0 && nestedAt > folderAt && restAt > nestedAt && pinnedAt > restAt, `unexpected order: ${folderAt}/${nestedAt}/${restAt}/${pinnedAt}`);
 
-  // 置顶行：名字尾部 pin 标记 + 已置顶按钮态；未置顶行：无标记 + 「置顶」按钮态
+  // 置顶行：名字尾部 pin 标记 + 已置顶图标按钮态（pinOff = 取消置顶动作）；
+  // 未置顶行：无标记 + pin 图标按钮态（置顶动作）
   const pinnedRow = out.slice(out.indexOf('data-file-wrap="p1"'));
-  assert.ok(pinnedRow.includes('data-pin-note="p1" aria-pressed="true">已置顶</button>'));
+  assert.ok(pinnedRow.includes('data-pin-note="p1" aria-pressed="true" aria-label="取消置顶 Pinned" title="取消置顶"><svg data-icon="pinOff"></svg></button>'));
   assert.ok(pinnedRow.includes('<span class="tree-pin" aria-hidden="true"><svg data-icon="pin"></svg></span>'));
   const restRow = out.slice(out.indexOf('data-file-wrap="f1"'), out.indexOf('data-file-wrap="p1"'));
-  assert.ok(restRow.includes('data-pin-note="f1" aria-pressed="false">置顶</button>'));
+  assert.ok(restRow.includes('data-pin-note="f1" aria-pressed="false" aria-label="置顶 File1" title="置顶"><svg data-icon="pin"></svg></button>'));
   assert.ok(!restRow.includes('tree-pin'));
   assert.equal(out.split('tree-pin" aria-hidden').length - 1, 1, 'exactly one pin marker in this branch');
 });

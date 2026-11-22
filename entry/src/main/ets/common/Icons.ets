@@ -68,6 +68,8 @@ const P_MORE: string = 'M12 5v.01M12 12v.01M12 19v.01';
 const P_SORT: string = 'M4 6h11M4 12h8M4 18h5M18 4v13M14 13l4 4 4-4';
 // 置顶图钉（v1.50）：斜 45° 图钉——菱形钉头 + 针（纯直线命令，无弧线）
 const P_PIN: string = 'M16 3l5 5-5 5-5-5 5-5M14 11l-9 9';
+// 取消置顶（v2.3）：同款斜 45° 图钉 + 贯穿钉头的斜杠（纯直线命令，无弧线）
+const P_PIN_OFF: string = 'M16 3l5 5-5 5-5-5 5-5M14 11l-9 9M9 3L21 15';
 // 星标（v1.97 收藏）：Google Material Design 24dp 五角星（material-design-icons
 // @material-icons/svg，Apache 2.0），纯直线命令可整表缩放。
 // 'star' 描边（未收藏）/ 'starFilled' 填充（已收藏，进 FILLED_ICONS）。
@@ -166,6 +168,8 @@ function pathOf(name: string): string {
     return P_SORT;
   } else if (name === 'pin') {
     return P_PIN;
+  } else if (name === 'pinOff') {
+    return P_PIN_OFF;
   } else if (name === 'star') {
     return P_STAR;
   } else if (name === 'starFilled') {
