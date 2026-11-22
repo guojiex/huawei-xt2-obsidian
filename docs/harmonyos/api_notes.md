@@ -3117,3 +3117,109 @@ dumpLayout 里 Appbar / 笔记路径行 / 格式栏「集体消失」，root 报
   调试 p7b；调试 p7b 绑定 bundle-name，不能复用线上包的）。
   `-Product dev` 与 `-Release` 互斥（上架只有 default）。
 - ⚠️ 真机双包并装 + 桌面名显示待用户完成 AGC 前置后验收。
+
+## AN 组：华为云空间同步 = Core File Kit 端云文件协同（2026-11-21 官方答复 + 本机 SDK/文档库复核）
+
+来源：需求池 C 节「华为云空间同步」API 24 前置核实（`open_questions.md` Q8 并列候选）。
+答复与逐条复核证据见 [qa/2026-11-21_云空间端云文件协同_API24.md](qa/2026-11-21_云空间端云文件协同_API24.md)。
+
+### AN1 ✅ 官方路径 = 端云文件协同，不是 Drive Kit
+
+- HarmonyOS 应用接入华为云空间的官方路径是 **Core File Kit 端云文件协同**：笔记库放
+  `context.cloudFileDir`（`/data/storage/el2/cloud`，@since 12，stage only），用基本文件接口读写，
+  系统自动双向同步。Drive Kit 面向 Android/Web（⚠️ 答复口径，本机文档库无条目未复核）。
+- 模块 `@ohos.file.cloudSync`（`@kit.CoreFileKit`，namespace @since 11）：`FileSync`（@since 12）
+  管同步状态/触发，`CloudFileCache`（@since 11）管按需缓存。
+- 接入配置：`AppScope/app.json5` 加 `"cloudFileSyncEnabled": true`（SDK modulecheck schema 含该键），
+  用户在 设置→云空间 打开应用同步开关。**零新增权限**（不触发硬约束 13 例外）。
+- ⚠️ `cloudFileSyncEnabled` 是全局开关，启用前评估对 git 同步库 / 外部库的意外行为。
+
+### AN2 ✅ API 24 可用；环境与并发约束
+
+- 指南门槛：SDK API 21+（API 24 满足）；设备 HarmonyOS 6.0.0.115+、云空间 6.0.0.300+（XT2 系统侧
+  满足，云空间版本装机确认 ❓）。
+- `FileSync.start()` **仅支持有限并发，调用频率过高会导致整机异常**（限值未记载 ❓），不可高频触发。
+- `CloudFileCache.start` 并发 ≤10；`startBatch`（@since 20）单批 URI ≤400、超限抛 22400004 ——
+  千级文件库首次全量下行要分批。
+- `getCachedTotalSize` / `cleanAllFileCache` @since 26.0.0：**API 24 不可用**，空间管理功能需门禁或砍。
+
+### AN3 ✅ 读写语义：本地缓存 + 自动双向同步；Location 三态
+
+- 写入完成 / 目录创建成功后自动触发上云，无需显式上传；断网本地读写不受影响（错误
+  `NETWORK_UNAVAILABLE`=1，电量低 10% 停同步，云端不足上行失败云端无记录）。
+- Location（`fileIo.statSync` 读）：1=仅本地未上云、2=仅云端（本地仅元数据）、3=本地+云端。
+  **下行新文件 Location=2，必须 `CloudFileCache.start(uri)` 缓存到本地才能读内容** —— 打开附件
+  链路要处理「缓存中 / 失败」态。
+
+### AN4 ❓ 多设备冲突未记载 —— 产品必须自防
+
+- 双端同改一文件的冲突策略、冲突回调、保留策略、版本历史开放接口**全部未记载**
+  （`22400007` 历史版本错误码存在于 d.ts @since 20，但对三方应用可用性无法确认）。
+- 与 git 路线的本质差异：无版本历史语义。落码不押宝平台合并；排期前双机同改实测（⏸），
+  产品侧预防（拉齐后写入、多端勿同时编辑提示）由版本需求承接。
+
+### AN5 ❓ 未核实残留（排期前补齐）
+
+- AGC 开通服务 / 上架审核前置（文档未记载，AGC 控制台实测）；
+- 文件数量 / 单文件大小限制；用户是否开通云空间无检测接口（只能靠 `FileSync` progress 的
+  `ErrorType` / 22400001 间接判断）。
+- 与既有决策不冲突：git（libgit2）与本地目录候选保留，本组只把「华为云空间」候选从
+  「API 24 待核实」收敛为「能力存在 ✅ + 冲突与前置 ❓」。
+
+## AO 组：应用静态快捷方式（长按图标 / X 键，2026-11-21 本地官方文档库核实）
+
+来源：需求池 D 节「应用图标长按静态快捷方式」（[v2.0](../releases/v2.0/需求文档.md) 前置核实）。
+本机 `devecocli docs` 官方文档库：《创建应用静态快捷方式》《FAQ·应用静态快捷方式如何接入X键》。
+
+### AO1 ✅ 静态快捷方式 = 声明式配置；桌面最多展示 4 条
+
+- 配置法：`resources/base/profile/shortcuts_config.json`
+  （`shortcutId` / `label`(`$string`) / `icon`(`$media`) / `wants[{bundleName, moduleName,
+  abilityName, parameters}]`）+ `module.json5` `abilities[].metadata`
+  `{"name": "ohos.ability.shortcuts", "resource": "$profile:shortcuts_config"}`。
+- 安装后长按桌面图标，图标上方弹出静态快捷方式；**桌面展示上限 4 条**（文档明写）。
+- `wants[].parameters` 随 Want 到达目标 ability 的 `onCreate` / `onNewWant`（`want.parameters`）。
+- 管理能力（本版不用）：`shortcutManager` 模块管理快捷方式；`setShortcutVisibleForSelf`
+  隐藏 / 展示；AGC「应用内快捷方式」pin 加桌另算（上限 2，API 24 起有 remove / get）。
+
+### AO2 ⚠️ wants[].bundleName 硬编码 × dev 双包共存
+
+- 官方配置 wants 必带 `bundleName`；双包共存（AM 组）下 dev 包 bundleName 不同，
+  同一份 profile 会把 dev 包的快捷方式指到线上包。
+- 方案：`entry/src/devres` 按资源名覆盖（先列者优先）追加 dev 版 `shortcuts_config.json`
+  （dev bundleName）——**profile JSON 是否同 `string.json` 一样被 restool 按名去重未实测**，
+  以 dev product 构建解包核实；不生效则 dev 包快捷方式接受指向线上包或直接砍掉（⏸）。
+
+### AO3 ✅ X 键九宫格自动接入静态快捷方式（应用侧零代码）
+
+- 官方 FAQ：X 键编辑界面会显示应用的静态快捷方式（**不限数量**），可点击添加至 X 键
+  九宫格面板，之后单击 X 键呼出九宫格一键直达；X 键双击 / 长按列表只对部分应用开放。
+- 前提 = 应用创建了自己的静态快捷方式；XT2 设备实测归用户。
+
+### AO4 ✅ shortcuts[].icon 规格：$media 资源索引；对齐系统功能入口 = 透明 24×24vp SVG；icon 可缺省（2026-11-21 官方答复）
+
+来源：[qa/2026-11-21_桌面快捷方式icon规格_API24.md](qa/2026-11-21_桌面快捷方式icon规格_API24.md)
+（用户转交官方 Agent 答复；《创建应用静态快捷方式》/ shortcutManager 本机文档库复核互证）。
+背景：v2.0 落地时长按弹层 icon 直接复用完整应用启动图标 → 显示成「应用图标」而非
+系统应用（备忘录「新建便签」）那种功能入口小图标，故核实 icon 规格。
+
+- ✅ 取值：资源文件的索引（官方示例均 `$media:xxx`）；推荐分层图标——前景 = 显示
+  450×450px / 资源 1024×1024px 透明图层，背景 = 1024×1024px。
+- ✅ 设计规范两格式：**SVG 优先**（透明背景、图标资源 24×24vp）；或 **PNG**
+  1024×1024px 正方形、无需圆角（系统做最大圆角遮罩裁切，开发者不自行裁）。
+- ✅ icon **可缺省**（shortcuts 标签说明「缺省值为空」）。
+- ❓ 是否需按密度出多套资源、是否支持 `$symbol` 系统符号图标：均未记载（示例均 `$media`）。
+- ❓ 长按弹层对 icon 的圆角/底容器/统一缩放处理、弹层与 X 键九宫格显示规格是否一致：
+  均未记载。
+- ❓ 系统应用（备忘录等）快捷方式图标资源、icon 缺省时弹层/九宫格展示效果：均未记载
+  （缺省展示真机验证）。
+- ⚠️ **实操结论（归 v2.0 图标选型，已落地 2026-11-22）**：复用完整应用启动图标 = 弹层显示
+  应用图标；要对齐系统应用功能入口风格，应提供**透明背景 24×24vp 单色 SVG 线性图标**
+  （HarmonyOS Symbol 风格：主题物 22×22vp 区间、描边 1.5vp 圆头终点）
+  或 1024×1024px 透明前景 PNG，不用完整应用图标。
+  落地：`entry/src/main/resources/base/media/shortcut_new_note.svg` / `shortcut_search.svg`
+  （24×24 透明 SVG，字形同 `Icons.ets` `P_NOTE` / `P_SEARCH`，描边 2 / 圆头 / 品牌蓝
+  `#007dff`，随 App 图标体系保持风格统一）；弹层深浅色可见性归 XT2 真机验收。
+- ✅ 周边复核：shortcutManager 首批接口 API 20（本机文档库）；shortcuts `visible`
+  子标签 API 20 起、`getAllShortcutInfoForSelf` API 20 起（答复转述 + 文档库互证）；
+  上限 4 条（《创建应用静态快捷方式》原文，与 AO1 互证）。
