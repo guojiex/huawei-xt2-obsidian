@@ -4,7 +4,7 @@
  * 锁五件事：
  * 1. 结构 —— #graphPage 全屏视图（顶栏返回 + 视角分段 + 画布）、更多菜单「应用」组入口、.window.graph-open 布局；
  * 2. 数据 —— graphData 只取当前库非删除笔记、边为解析后的 resolved 双链、去重去自环、度数累计、不跨库；
- * 3. 渲染 —— 节点带 data-graph-note、当前节点 current、孤岛 orphan、本地图 dim 非邻域、空态；
+ * 3. 渲染 —— 节点带 data-graph-note、当前节点 current、孤岛 orphan、本篇图 dim 非邻域、空态；
  * 4. URL —— view=graph 直达 flag、graphFocus 进 stateUrl / restoreUrl 校验；
  * 5. 红线 —— v2.4 CSS 只引用 token。
  */
@@ -21,8 +21,8 @@ test('graph page gains a full-screen section with header, focus tabs and canvas'
   assert.match(section, /class="graph-page hidden" id="graphPage"/);
   assert.match(section, /id="closeGraph"/);
   assert.match(section, /id="graphTitle">关系图谱</);
-  assert.match(section, /id="graphGlobalTab"[^>]*>全局</);
-  assert.match(section, /id="graphLocalTab"[^>]*>本地</);
+  assert.match(section, /id="graphGlobalTab"[^>]*>全库</);
+  assert.match(section, /id="graphLocalTab"[^>]*>本篇</);
   assert.match(section, /class="graph-canvas" id="graphCanvas"/);
 });
 
