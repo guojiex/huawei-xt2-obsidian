@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>曜石 · 需求看板</title>
+<style>
+:root{
+  --blue:#007dff;--blue-soft:#eaf3ff;--ink:#202530;--muted:#7c8390;--line:#e7e9ed;
+  --paper:#fff;--nav:#f5f6f8;--outer:#e9edf2;--green:#35916d;--danger:#cf4048;--amber:#b07a1a;
+  --shadow:0 24px 80px #263f5814;--r:16px;--small-r:10px;
+  --font:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+[data-theme=dark]{
+  --blue:#71b3ff;--blue-soft:#263951;--ink:#e4e8ef;--muted:#9ba5b3;--line:#303741;
+  --paper:#1d232b;--nav:#171d25;--outer:#10151d;--green:#75c7a0;--danger:#ff6b6b;--amber:#d9a441;
+  --shadow:0 24px 80px #0003;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--outer);color:var(--ink);font:14px/1.7 var(--font)}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:var(--small-r);padding:8px 10px;width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--blue);outline-offset:-1px}
+h1,h2,h3{margin:0}
+.wrap{max-width:1280px;margin:0 auto;padding:0 24px 80px}
+/* header */
+header{position:sticky;top:0;z-index:20;background:var(--paper);border-bottom:1px solid var(--line)}
+.head-in{max-width:1280px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand h1{font-size:19px;font-weight:700}
+.brand .sub{color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:4px;background:var(--nav);border-radius:999px;padding:4px}
+.tabs button{padding:6px 18px;border-radius:999px;color:var(--muted);font-weight:600}
+.tabs button.on{background:var(--paper);color:var(--blue);box-shadow:0 1px 4px #00000014}
+.spacer{flex:1}
+.icon-btn{width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--muted);font-size:16px}
+.icon-btn:hover{background:var(--nav);color:var(--ink)}
+/* cards */
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.stat-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:22px 0}
+.stat{padding:18px 20px}
+.stat .num{font-size:32px;font-weight:700;line-height:1.2}
+.stat .num small{font-size:14px;color:var(--muted);font-weight:400}
+.stat .lbl{color:var(--muted);font-size:12px;margin-top:2px}
+.stat.clickable{cursor:pointer;transition:transform .12s}
+.stat.clickable:hover{transform:translateY(-2px)}
+.grid-2{display:grid;grid-template-columns:1.2fr .8fr;gap:14px;align-items:start}
+@media(max-width:960px){.grid-2{grid-template-columns:1fr}}
+.panel{padding:18px 20px;margin-bottom:14px}
+.panel h2{font-size:15px;margin-bottom:12px}
+.panel h2 .cnt{color:var(--muted);font-weight:400;font-size:12px;margin-left:6px}
+/* badges */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:1px 9px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;vertical-align:1px}
+.b-pool{background:var(--nav);color:var(--muted)}
+.b-assigned{background:var(--blue-soft);color:var(--blue)}
+.b-closed{background:color-mix(in srgb,var(--danger) 12%,transparent);color:var(--danger)}
+.b-mvp{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
+.b-planning{background:var(--nav);color:var(--muted)}
+.b-progress{background:var(--blue-soft);color:var(--blue)}
+.b-released{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
+.b-frozen{background:color-mix(in srgb,var(--ink) 10%,transparent);color:var(--muted)}
+.vchip{display:inline-block;margin:2px 4px 2px 0;padding:0 8px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--blue);font-family:var(--mono)}
+/* list rows */
+.item{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);align-items:flex-start}
+.item:last-child{border-bottom:none}
+.item .v{font-family:var(--mono);font-weight:700;font-size:14px;min-width:52px}
+.item .body{flex:1;min-width:0}
+.item .desc{color:var(--muted);font-size:12.5px;margin-top:1px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.item.clickable{cursor:pointer}
+.item.clickable:hover{background:var(--nav)}
+.muted{color:var(--muted)}
+.mono{font-family:var(--mono)}
+/* backlog layout */
+.backlog-layout{display:grid;grid-template-columns:230px 1fr;gap:14px;margin-top:22px;align-items:start}
+@media(max-width:960px){.backlog-layout{grid-template-columns:1fr}}
+.sec-nav{position:sticky;top:76px;max-height:calc(100vh - 100px);overflow:auto;padding:10px}
+.sec-nav button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;padding:7px 10px;border-radius:var(--small-r);color:var(--ink);font-size:13px}
+.sec-nav button:hover{background:var(--nav)}
+.sec-nav button.on{background:var(--blue-soft);color:var(--blue);font-weight:600}
+.sec-nav .n{color:var(--muted);font-size:11px}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.toolbar input[type=search]{max-width:300px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chips button{padding:4px 14px;border-radius:999px;border:1px solid var(--line);color:var(--muted);font-size:12px}
+.chips button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.tbl-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.tbl-head h3{font-size:14px;flex:1}
+.tbl-head .heads{color:var(--muted);font-size:11px}
+.btn{padding:6px 14px;border-radius:var(--small-r);font-weight:600;font-size:13px}
+.btn.primary{background:var(--blue);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{border:1px solid var(--line);color:var(--ink)}
+.btn.ghost:hover{background:var(--nav)}
+.btn.danger{color:var(--danger)}
+.btn.danger:hover{background:color-mix(in srgb,var(--danger) 10%,transparent)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.req{display:flex;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);align-items:flex-start}
+.req:last-child{border-bottom:none}
+.req .ck{margin-top:4px;accent-color:var(--blue);width:15px;height:15px;flex:none}
+.req .body{flex:1;min-width:0}
+.req .top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.req .name{font-weight:700;font-size:14px}
+.req .note{color:var(--muted);font-size:12.5px;margin-top:3px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.req .note.open{-webkit-line-clamp:unset}
+.req .note:empty{display:none}
+.req .ops{display:flex;gap:2px;flex:none;align-items:center}
+.req .ops button{padding:4px 8px;border-radius:8px;color:var(--muted);font-size:12px}
+.req .ops button:hover{background:var(--nav);color:var(--ink)}
+.req .meta{font-size:11px;color:var(--muted);font-family:var(--mono);margin-top:4px}
+.sel-bar{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:var(--paper);border-radius:999px;padding:8px 10px 8px 20px;display:flex;gap:14px;align-items:center;box-shadow:0 12px 40px #0004;z-index:30}
+[data-theme=dark] .sel-bar{background:var(--paper);color:var(--ink)}
+.sel-bar .btn{border-radius:999px}
+.sel-bar .clear{color:inherit;opacity:.7}
+/* dialog */
+dialog{border:none;border-radius:var(--r);box-shadow:0 24px 80px #0005;padding:0;background:var(--paper);color:var(--ink);width:min(640px,92vw)}
+dialog::backdrop{background:#17263866}
+.dlg-h{padding:16px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.dlg-h h3{font-size:16px;flex:1}
+.dlg-b{padding:18px 22px;max-height:64vh;overflow:auto}
+.dlg-f{padding:14px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+.field{margin-bottom:13px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}
+.field .hint{font-size:11px;color:var(--muted);margin-top:3px}
+.radio-row{display:flex;gap:18px;margin-bottom:14px}
+.radio-row label{display:flex;gap:6px;align-items:center;font-weight:600;cursor:pointer}
+.radio-row input{width:auto}
+pre.doc{white-space:pre-wrap;word-break:break-word;font:12px/1.7 var(--mono);background:var(--nav);border-radius:var(--small-r);padding:14px;max-height:58vh;overflow:auto;margin:0}
+
+/* markdown 渲染（文档弹窗） */
+.md{font-size:13px;line-height:1.8;max-height:60vh;overflow:auto}
+.md h1{font-size:18px;margin:14px 0 8px}.md h2{font-size:16px;margin:16px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line)}
+.md h3{font-size:14px;margin:12px 0 4px}.md h4,.md h5,.md h6{font-size:13px;margin:10px 0 4px}
+.md p{margin:6px 0}
+.md blockquote{margin:8px 0;padding:6px 12px;border-left:3px solid var(--blue);background:var(--nav);border-radius:6px}
+.md blockquote p{margin:4px 0}
+.md table{border-collapse:collapse;width:100%;font-size:12px;margin:8px 0}
+.md th,.md td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
+.md th{background:var(--nav)}
+.md code{font-family:var(--mono);font-size:12px;background:var(--nav);padding:1px 5px;border-radius:4px}
+.md pre.md-code{white-space:pre-wrap;font:12px/1.6 var(--mono);background:var(--nav);border-radius:8px;padding:10px;margin:8px 0;overflow:auto}
+.md del{color:var(--muted)}
+.md a{color:var(--blue)}
+.md-ilink{color:var(--blue);text-decoration:underline dotted;cursor:help}
+.pill-list{display:flex;flex-wrap:wrap;gap:6px}
+.pill-list .pill{border:1px solid var(--line);border-radius:999px;padding:2px 12px;font-size:12px;color:var(--muted);font-family:var(--mono)}
+/* toast */
+#toast{position:fixed;left:50%;top:70px;transform:translateX(-50%) translateY(-16px);background:var(--ink);color:var(--paper);padding:9px 20px;border-radius:999px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:80vw}
+[data-theme=dark] #toast{background:var(--paper);color:var(--ink)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{background:var(--danger);color:#fff}
+.empty{padding:36px;text-align:center;color:var(--muted)}
+.arch-chips{display:flex;flex-wrap:wrap;gap:6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-in">
+    <div class="brand"><h1>曜石 · 需求看板</h1><span class="sub">需求池与版本排期 · 数据真源 docs/</span></div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="overview" class="on">总览</button>
+      <button data-tab="versions">版本</button>
+      <button data-tab="backlog">需求池</button>
+    </nav>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="btn-theme" title="深浅色切换">◐</button>
+    <button class="icon-btn" id="btn-refresh" title="重新读取 docs/">↻</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <section id="view-overview"></section>
+  <section id="view-versions" hidden></section>
+  <section id="view-backlog" hidden></section>
+</div>
+
+<div class="sel-bar" id="sel-bar" hidden>
+  <span id="sel-count">已选 0 条</span>
+  <button class="btn primary" id="sel-schedule">排期所选</button>
+  <button class="btn clear" id="sel-clear">取消</button>
+</div>
+
+<dialog id="dlg-edit"><div class="dlg-h"><h3 id="edit-title">编辑需求</h3></div>
+  <div class="dlg-b" id="edit-body"></div>
+  <div class="dlg-f"><button class="btn ghost" data-close>取消</button><button class="btn primary" id="edit-save">保存</button></div>
+</dialog>
+
+<dialog id="dlg-schedule"><div class="dlg-h"><h3>排期</h3></div>
+  <div class="dlg-b" id="schedule-body"></div>
+  <div class="dlg-f"><button class="btn ghost" data-close>取消</button><button class="btn primary" id="schedule-save">执行排期</button></div>
+</dialog>
+
+<dialog id="dlg-confirm"><div class="dlg-h"><h3>确认</h3></div>
+  <div class="dlg-b" id="confirm-msg"></div>
+  <div class="dlg-f"><button class="btn ghost" data-close>取消</button><button class="btn danger" id="confirm-yes">确认</button></div>
+</dialog>
+
+<dialog id="dlg-doc" style="width:min(860px,94vw)"><div class="dlg-h"><h3 id="doc-title">需求文档</h3></div>
+  <div class="dlg-b"><div class="md" id="doc-md"></div><pre class="doc" id="doc-pre" hidden></pre></div>
+  <div class="dlg-f"><button class="btn ghost" id="doc-raw">查看原文</button><button class="btn ghost" data-close>关闭</button></div>
+</dialog>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+const $ = (s, el) => (el || document).querySelector(s);
+const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+const STATUS = {
+  pool: ['未分配', 'b-pool'], assigned: ['已排期', 'b-assigned'], closed: ['已关闭', 'b-closed'], mvp: ['已实现（MVP）', 'b-mvp'],
+  planning: ['规划中', 'b-planning'], progress: ['进行中', 'b-progress'], released: ['已发布', 'b-released'],
+  frozen: ['已冻结', 'b-frozen'],
+};
+
+const state = {
+  data: null, tab: 'overview',
+  filter: 'all', search: '', section: null,
+  selected: new Set(),   // row keys: `${sectionIdx}::${tableIdx}::${rowIdx}`
+  editCtx: null, scheduleCtx: null, confirmCb: null,
+};
+
+function stripMd(s) {
+  return String(s ?? '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[*`_]/g, m => m)
+    .replace(/\*\*/g, '').replace(/`/g, '')
+    .trim();
+}
+function badge(key) { const [t, c] = STATUS[key] || [key, 'b-pool']; return `<span class="badge ${c}">${esc(t)}</span>`; }
+function toast(msg, isErr) {
+  const t = $('#toast'); t.textContent = msg; t.className = isErr ? 'err show' : 'show';
+  clearTimeout(t._h); t._h = setTimeout(() => { t.className = ''; }, isErr ? 5200 : 2600);
+}
+async function api(path, body) {
+  const opt = body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {};
+  const res = await fetch(path, opt);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || res.statusText);
+  return json;
+}
+async function load() {
+  state.data = await api('/api/overview');
+  state.selected.clear();
+  render();
+}
+
+/* ---------------- render ---------------- */
+function render() {
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
+  $('#view-overview').hidden = state.tab !== 'overview';
+  $('#view-versions').hidden = state.tab !== 'versions';
+  $('#view-backlog').hidden = state.tab !== 'backlog';
+  if (state.tab === 'overview') renderOverview();
+  if (state.tab === 'versions') renderVersions();
+  if (state.tab === 'backlog') renderBacklog();
+  renderSelBar();
+}
+
+function rowKey(si, ti, ri) { return si + '::' + ti + '::' + ri; }
+
+function allRows() {
+  const out = [];
+  state.data.backlog.sections.forEach((sec, si) => {
+    sec.tables.forEach((tbl, ti) => {
+      tbl.rows.forEach((row, ri) => {
+        out.push({ si, ti, ri, sec, tbl, row, key: rowKey(si, ti, ri) });
+      });
+    });
+  });
+  return out;
+}
+
+function tableMeta(tbl) {
+  const idx = (name) => tbl.headers.findIndex(h => h.includes(name));
+  return { iVal: idx('价值'), iCost: idx('成本'), iDep: idx('依赖'), iNote: tbl.headers.length - 1 };
+}
+function rowExtras(e) {
+  const m = tableMeta(e.tbl);
+  const val = m.iVal >= 0 ? e.row.cells[m.iVal] : '';
+  const cost = m.iCost >= 0 ? e.row.cells[m.iCost] : '';
+  const note = e.row.cells[m.iNote] ?? '';
+  return { val, cost, note, m };
+}
+
+function renderOverview() {
+  const d = state.data;
+  const active = d.versions.active;
+  const inFlight = active.filter(v => ['planning', 'progress'].includes(v.statusKey));
+  const released = d.versions.released;
+  const poolBySec = {};
+  d.backlog.sections.forEach((sec, si) => {
+    let n = 0;
+    sec.tables.forEach(t => t.rows.forEach(r => { if (r.status === 'pool') n++; }));
+    poolBySec[si] = { title: sec.title, n };
+  });
+  const poolSections = Object.values(poolBySec).filter(s => s.n > 0).sort((a, b) => b.n - a.n);
+
+  $('#view-overview').innerHTML = `
+  <div class="stat-row">
+    <div class="card stat clickable" data-goto="backlog"><div class="num">${d.backlog.totalRows}<small> 条</small></div><div class="lbl">需求池条目 · 其中 ${d.backlog.poolRows} 条未分配</div></div>
+    <div class="card stat clickable" data-goto="versions"><div class="num">${inFlight.length}<small> 个</small></div><div class="lbl">进行中 / 规划中版本</div></div>
+    <div class="card stat clickable" data-goto="versions"><div class="num">${d.versions.archived.length}<small> 个</small></div><div class="lbl">已归档版本（历史版本归档）</div></div>
+    <div class="card stat clickable" data-goto="versions"><div class="num">${released.length}<small> 个</small></div><div class="lbl">对外发布记录（changelog.json）</div></div>
+  </div>
+  <div class="grid-2">
+    <div>
+      <div class="card panel"><h2>进行中 / 规划中版本<span class="cnt">README 版本索引</span></h2>
+        ${inFlight.length ? inFlight.map(v => `
+          <div class="item clickable" data-version="${esc(v.version)}">
+            <span class="v">${esc(v.version)}</span>
+            <div class="body"><div>${badge(v.statusKey)} <span class="muted" style="font-size:12px">${esc(v.milestone)}</span></div>
+            <div class="desc">${esc(stripMd(v.desc))}</div></div>
+          </div>`).join('') : '<div class="empty">没有进行中的版本</div>'}
+      </div>
+      <div class="card panel"><h2>执行队列<span class="cnt">实施总清单勾选项</span></h2>
+        ${d.queue.length ? d.queue.map(q => `
+          <div class="item"><span class="v">${esc(q.version)}</span>
+          <div class="body"><div class="desc" style="-webkit-line-clamp:3">${esc(stripMd(q.text))}</div></div></div>`).join('')
+          : '<div class="empty">实施总清单中没有待领取勾选项</div>'}
+      </div>
+    </div>
+    <div>
+      <div class="card panel"><h2>需求池未分配分布<span class="cnt">点击进入对应章节</span></h2>
+        ${poolSections.length ? poolSections.map((s, i) => `
+          <div class="item clickable" data-sec="${esc(s.title)}"><div class="body" style="display:flex;justify-content:space-between;gap:10px">
+            <span>${esc(s.title)}</span><span class="badge b-pool">${s.n} 条</span></div></div>`).join('')
+          : '<div class="empty">需求池没有未分配条目</div>'}
+      </div>
+      <div class="card panel"><h2>最近对外发布<span class="cnt">changelog.json</span></h2>
+        ${released.slice(0, 6).map(r => `
+          <div class="item"><span class="v">${esc(r.version)}</span>
+          <div class="body"><div>${r.status === 'in_progress' ? badge('progress') : badge('released')} <span class="muted mono" style="font-size:11px">${esc(r.date)}</span></div>
+          <div class="desc">${esc(r.title)}</div></div></div>`).join('')}
+      </div>
+    </div>
+  </div>`;
+  $$('#view-overview [data-goto]').forEach(el => el.onclick = () => switchTab(el.dataset.goto));
+  $$('#view-overview [data-sec]').forEach(el => el.onclick = () => {
+    state.section = el.dataset.sec; switchTab('backlog');
+  });
+  $$('#view-overview [data-version]').forEach(el => el.onclick = () => openVersionDetail(el.dataset.version));
+}
+
+function renderVersions() {
+  const d = state.data;
+  const active = d.versions.active;
+  const done = active.filter(v => !['planning', 'progress'].includes(v.statusKey));
+  const anchor = (v) => '历史版本归档.md#v' + v.replace(/^v/, '').replace('.', '') + '-需求文档';
+  $('#view-versions').innerHTML = `
+  <div class="grid-2" style="grid-template-columns:1fr 1fr;margin-top:22px">
+    <div class="card panel"><h2>活跃版本<span class="cnt">仍在推进 / 待领取（README §4）</span></h2>
+      ${active.length ? active.map(v => `
+        <div class="item clickable" data-version="${esc(v.version)}">
+          <span class="v">${esc(v.version)}</span>
+          <div class="body"><div>${badge(v.statusKey)} <span class="muted" style="font-size:12px">${esc(v.milestone)}</span></div>
+          <div class="desc">${esc(stripMd(v.desc))}</div></div>
+        </div>`).join('') : '<div class="empty">—</div>'}
+    </div>
+    <div>
+      <div class="card panel"><h2>已完结（索引仍列）<span class="cnt">关闭 / 冻结 / 已发布</span></h2>
+        ${done.length ? done.map(v => `
+          <div class="item"><span class="v">${esc(v.version)}</span>
+          <div class="body"><div>${badge(v.statusKey)}</div><div class="desc">${esc(stripMd(v.desc))}</div></div></div>`).join('')
+          : '<div class="empty">—</div>'}
+      </div>
+      <div class="card panel"><h2>速查：已实现旧版本<span class="cnt">历史版本速查.md</span></h2>
+        ${d.versions.quick.length ? d.versions.quick.map(q => `
+          <div class="item"><span class="v">${esc(q.version)}</span>
+          <div class="body"><div>${esc(stripMd(q.desc))}</div><div class="desc">${esc(stripMd(q.summary))}</div></div></div>`).join('')
+          : '<div class="empty">—</div>'}
+      </div>
+      <div class="card panel"><h2>对外发布时间线<span class="cnt">changelog.json</span></h2>
+        ${d.versions.released.map(r => `
+          <div class="item"><span class="v">${esc(r.version)}</span>
+          <div class="body"><div>${r.status === 'in_progress' ? badge('progress') : badge('released')} <span class="muted mono" style="font-size:11px">${esc(r.date)}</span></div>
+          <div class="desc">${esc(r.title)}</div></div></div>`).join('') || '<div class="empty">—</div>'}
+      </div>
+      <div class="card panel"><h2>归档版本<span class="cnt">${d.versions.archived.length} 个 · 历史版本归档.md</span></h2>
+        <div class="arch-chips">${d.versions.archived.map(v => `<span class="pill" title="${anchor(v)}">${esc(v)}</span>`).join('')}</div>
+      </div>
+    </div>
+  </div>`;
+  $$('#view-versions [data-version]').forEach(el => el.onclick = () => openVersionDetail(el.dataset.version));
+}
+
+function renderBacklog() {
+  const d = state.data;
+  const secs = d.backlog.sections;
+  if (state.section && !secs.some(s => s.title === state.section)) state.section = null;
+  const rows = allRows();
+
+  const secCounts = secs.map(sec => {
+    let pool = 0, total = 0;
+    sec.tables.forEach(t => t.rows.forEach(r => { total++; if (r.status === 'pool') pool++; }));
+    return { pool, total };
+  });
+
+  $('#view-backlog').innerHTML = `
+  <div class="backlog-layout">
+    <nav class="card sec-nav">
+      <button data-sec="" class="${state.section ? '' : 'on'}"><span>全部章节</span><span class="n">${rows.length}</span></button>
+      ${secs.map((s, i) => `<button data-sec="${esc(s.title)}" class="${state.section === s.title ? 'on' : ''}">
+        <span>${esc(s.title)}</span><span class="n">${secCounts[i].pool} 待排</span></button>`).join('')}
+    </nav>
+    <div>
+      <div class="toolbar">
+        <input type="search" id="bl-search" placeholder="搜索需求（名称 / 备注 / 章节）…" value="${esc(state.search)}">
+        <div class="chips" id="bl-chips">
+          ${[['all', '全部'], ['pool', '未分配'], ['assigned', '已排期'], ['mvp', '已实现（MVP）'], ['closed', '已关闭']]
+            .map(([k, t]) => `<button data-f="${k}" class="${state.filter === k ? 'on' : ''}">${t}</button>`).join('')}
+        </div>
+        <span class="muted" style="font-size:12px">勾选条目后可批量排期；编辑直接写回 requirements_backlog.md</span>
+      </div>
+      <div id="bl-list"></div>
+    </div>
+  </div>`;
+
+  $('#bl-search').oninput = (ev) => { state.search = ev.target.value; renderBacklogList(); };
+  $$('#bl-chips button').forEach(b => b.onclick = () => { state.filter = b.dataset.f; renderBacklog(); });
+  $$('.sec-nav [data-sec]').forEach(b => b.onclick = () => { state.section = b.dataset.sec || null; renderBacklog(); });
+  renderBacklogList();
+}
+function escHtmlAttr(s){return esc(s);}
+
+function renderBacklogList() {
+  const d = state.data;
+  const secs = d.backlog.sections;
+  if (state.section && !secs.some(s => s.title === state.section)) state.section = null;
+  const rows = allRows();
+  const match = (e) => {
+    if (state.filter !== 'all' && e.row.status !== state.filter) return false;
+    if (state.search) {
+      const hay = (e.row.cells.join(' ') + ' ' + e.sec.title).toLowerCase();
+      if (!hay.includes(state.search.toLowerCase())) return false;
+    }
+    if (state.section && e.sec.title !== state.section) return false;
+    return true;
+  };
+
+  const groups = new Map();
+  for (const e of rows) {
+    if (!match(e)) continue;
+    const gk = e.si + '::' + e.ti;
+    if (!groups.has(gk)) groups.set(gk, { e, rows: [] });
+    groups.get(gk).rows.push(e);
+  }
+  const listEl = $('#bl-list');
+  if (groups.size === 0) { listEl.innerHTML = '<div class="card empty">没有匹配的需求条目</div>'; }
+  else {
+    listEl.innerHTML = [...groups.values()].map(g => `
+    <div class="card" style="margin-bottom:14px">
+      <div class="tbl-head">
+        <h3>${esc(g.e.sec.title)}</h3>
+        <span class="heads">${esc(g.e.tbl.headers.join(' · '))}</span>
+        <button class="btn ghost" data-add="${g.e.si}:${g.e.ti}">＋ 新增需求</button>
+      </div>
+      ${g.rows.map(e => renderReq(e)).join('')}
+    </div>`).join('');
+  }
+
+  $$('#bl-list [data-add]').forEach(b => b.onclick = () => {
+    const [si, ti] = b.dataset.add.split(':').map(Number);
+    openEdit({ mode: 'add', si, ti });
+  });
+  $$('#bl-list .req').forEach(el => {
+    const key = el.dataset.key;
+    const [si, ti, ri] = key.split('::').map(Number);
+    const e = rows.find(r => r.key === key); if (!e) return;
+    $('.ck', el).onchange = (ev) => { ev.target.checked ? state.selected.add(key) : state.selected.delete(key); renderSelBar(); };
+    $('.note', el).onclick = () => { $('.note', el).classList.toggle('open'); };
+    $('[data-op=edit]', el).onclick = () => openEdit({ mode: 'edit', si, ti, ri });
+    $('[data-op=sched]', el).onclick = () => { state.selected = new Set([key]); openSchedule(); };
+    $('[data-op=del]', el).onclick = () => {
+      confirmDlg(`删除需求池条目「${escHtmlAttr(stripMd(e.row.name))}」？<br><span class="muted" style="font-size:12px">${esc(e.row.raw.slice(0, 120))}…</span>`, async () => {
+        await api('/api/backlog/delete', { file: 'docs/requirements_backlog.md', line: e.row.line, expect: e.row.raw });
+        toast('已删除'); await load();
+      });
+    };
+  });
+  renderSelBar();
+}
+function renderReq(e) {
+  const { val, cost, note } = rowExtras(e);
+  const versions = e.row.versions.map(v => `<span class="vchip">${esc(v)}</span>`).join('');
+  const checked = state.selected.has(e.key) ? 'checked' : '';
+  return `
+  <div class="req" data-key="${e.key}">
+    <input type="checkbox" class="ck" ${checked}>
+    <div class="body">
+      <div class="top">
+        <span class="name">${esc(stripMd(e.row.name)) || '（未命名）'}</span>
+        ${badge(e.row.status)}
+        ${val ? `<span class="muted" style="font-size:12px">价值 ${esc(val)}</span>` : ''}
+        ${cost ? `<span class="muted" style="font-size:12px">成本 ${esc(cost)}</span>` : ''}
+      </div>
+      <div class="note">${esc(stripMd(note))}</div>
+      <div>${versions}</div>
+      <div class="meta">requirements_backlog.md:${e.row.line}</div>
+    </div>
+    <div class="ops">
+      <button data-op="edit">编辑</button>
+      <button data-op="sched">排期</button>
+      <button data-op="del" class="danger">删除</button>
+    </div>
+  </div>`;
+}
+
+function renderSelBar() {
+  const n = state.selected.size;
+  $('#sel-bar').hidden = n === 0 || state.tab !== 'backlog';
+  $('#sel-count').textContent = `已选 ${n} 条`;
+}
+function selectedEntries() {
+  return allRows().filter(e => state.selected.has(e.key));
+}
+
+/* ---------------- tabs / theme / refresh ---------------- */
+function switchTab(tab) { state.tab = tab; render(); }
+$$('#tabs button').forEach(b => b.onclick = () => switchTab(b.dataset.tab));
+$('#btn-refresh').onclick = async () => { try { await load(); toast('已重新读取'); } catch (e) { toast(e.message, true); } };
+$('#btn-theme').onclick = () => {
+  const cur = document.documentElement.dataset.theme === 'dark' ? '' : 'dark';
+  document.documentElement.dataset.theme = cur || 'light';
+  localStorage.setItem('reqboard-theme', cur);
+};
+document.documentElement.dataset.theme = localStorage.getItem('reqboard-theme') || 'light';
+
+/* ---------------- dialogs ---------------- */
+$$('dialog [data-close]').forEach(b => b.onclick = () => b.closest('dialog').close());
+function confirmDlg(html, cb) {
+  $('#confirm-msg').innerHTML = html;
+  state.confirmCb = cb;
+  $('#dlg-confirm').showModal();
+}
+$('#confirm-yes').onclick = async () => {
+  const cb = state.confirmCb; state.confirmCb = null;
+  $('#dlg-confirm').close();
+  try { await cb(); } catch (e) { toast(e.message, true); }
+};
+
+function openEdit(ctx) {
+  state.editCtx = ctx;
+  const d = state.data;
+  const sec = d.backlog.sections[ctx.si];
+  const tbl = sec.tables[ctx.ti];
+  const isAdd = ctx.mode === 'add';
+  $('#edit-title').textContent = isAdd ? `新增需求 · ${sec.title}` : `编辑需求 · ${sec.title}`;
+  const cells = isAdd ? tbl.headers.map(() => '') : tbl.rows[ctx.ri].cells;
+  $('#edit-body').innerHTML = tbl.headers.map((h, i) => `
+    <div class="field"><label>${esc(h)}</label>
+      ${i === tbl.headers.length - 1 ? `<textarea rows="3" data-i="${i}">${esc(cells[i] ?? '')}</textarea>`
+        : `<input data-i="${i}" value="${esc(cells[i] ?? '')}">`}
+    </div>`).join('') + `<div class="hint muted">保存会直接改写 docs/requirements_backlog.md 第 ${isAdd ? '新行' : tbl.rows[ctx.ri].line} 行；「|」会被转义。</div>`;
+  $('#dlg-edit').showModal();
+}
+$('#edit-save').onclick = async () => {
+  const ctx = state.editCtx; if (!ctx) return;
+  const d = state.data;
+  const sec = d.backlog.sections[ctx.si];
+  const tbl = sec.tables[ctx.ti];
+  const inputs = $$('#edit-body [data-i]');
+  const cells = tbl.headers.map((_, i) => {
+    const el = inputs.find(x => Number(x.dataset.i) === i);
+    return el ? el.value.trim() : '';
+  });
+  try {
+    if (ctx.mode === 'add') {
+      const anchor = tbl.rows.length ? tbl.rows[tbl.rows.length - 1].line : tbl.sepLine;
+      await api('/api/backlog/add', { file: 'docs/requirements_backlog.md', anchorLine: anchor, cells });
+    } else {
+      const row = tbl.rows[ctx.ri];
+      await api('/api/backlog/update', { file: 'docs/requirements_backlog.md', line: row.line, expect: row.raw, cells });
+    }
+    $('#dlg-edit').close();
+    toast('已保存到需求池'); await load();
+  } catch (e) { toast(e.message, true); }
+};
+
+function openSchedule() {
+  const d = state.data;
+  const entries = selectedEntries();
+  if (entries.length === 0) { toast('请先勾选需求条目', true); return; }
+  const active = d.versions.active.filter(v => ['planning', 'progress'].includes(v.statusKey) && v.dirDoc);
+  $('#schedule-body').innerHTML = `
+    <div class="field"><label>所选需求（${entries.length} 条）</label>
+      <div>${entries.map(e => `<div style="padding:2px 0">· ${esc(stripMd(e.row.name))} <span class="muted" style="font-size:11px">（${esc(e.sec.title)}）</span></div>`).join('')}</div>
+    </div>
+    <div class="radio-row">
+      <label><input type="radio" name="sched-mode" value="new" checked>排期到新版本</label>
+      <label><input type="radio" name="sched-mode" value="existing">并入已有进行中版本</label>
+    </div>
+    <div id="sched-new">
+      <div class="field"><label>版本号（内部迭代编号 vX.Y）</label><input id="sch-version" value="${esc(d.suggestions.nextVersion)}">
+        <div class="hint">当前最大版本之后顺延；会创建 docs/releases/vX.Y/需求文档.md 并在 README 版本索引加一行。</div></div>
+      <div class="field"><label>一句话定位（这个版本交付什么）</label><input id="sch-pos" placeholder="例：模板与今日笔记"></div>
+      <div class="field"><label>完成判定（一句话，可验收）</label><input id="sch-done" placeholder="例：新建笔记可选模板并成功创建"></div>
+      <div class="field"><label>明确不做（可留空）</label><textarea id="sch-not" rows="2"></textarea></div>
+    </div>
+    <div id="sched-existing" hidden>
+      <div class="field"><label>目标版本（仅列出仍在推进、目录存在的版本）</label>
+        <select id="sch-target">${active.map(v => `<option value="${esc(v.version)}">${esc(v.version)} — ${esc(stripMd(v.desc)).slice(0, 40)}</option>`).join('')}</select>
+        <div class="hint">追加到该版需求文档「## 3. 需求清单」；已发布 / 冻结版本按规则 R7 不允许追加。</div></div>
+    </div>`;
+  $$('input[name=sched-mode]').forEach(r => r.onchange = () => {
+    $('#sched-new').hidden = $$('input[name=sched-mode]').find(x => x.checked).value !== 'new';
+    $('#sched-existing').hidden = !$('#sched-new').hidden;
+  });
+  $('#dlg-schedule').showModal();
+}
+$('#sel-schedule').onclick = openSchedule;
+$('#sel-clear').onclick = () => { state.selected.clear(); renderSelBar(); $$('#bl-list .ck').forEach(c => c.checked = false); };
+
+$('#schedule-save').onclick = async () => {
+  const entries = selectedEntries();
+  if (entries.length === 0) return;
+  const mode = $$('input[name=sched-mode]').find(x => x.checked).value;
+  const body = {
+    mode,
+    rows: entries.map(e => {
+      const { val, cost } = rowExtras(e);
+      return { file: 'docs/requirements_backlog.md', line: e.row.line, expect: e.row.raw, cells: e.row.cells, section: e.sec.title, name: stripMd(e.row.name), value: val, cost };
+    }),
+  };
+  if (mode === 'new') {
+    body.version = $('#sch-version').value.trim();
+    body.positioning = $('#sch-pos').value.trim();
+    body.completion = $('#sch-done').value.trim();
+    body.notDoing = $('#sch-not').value.trim();
+    body.milestone = '';
+  } else {
+    body.version = $('#sch-target').value;
+  }
+  try {
+    const r = await api('/api/schedule', body);
+    $('#dlg-schedule').close();
+    toast(r.results.join('；'));
+    await load();
+  } catch (e) { toast(e.message, true); }
+};
+
+/* ---------------- 轻量 markdown 渲染（文档弹窗，零依赖子集） ---------------- */
+function inlineMd(s) {
+  return s
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, txt, href) =>
+      /^https?:\/\//.test(href)
+        ? `<a href="${href}" target="_blank" rel="noopener">${txt}</a>`
+        : `<span class="md-ilink" title="${href}">${txt}</span>`)
+    .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\*)/g, '$1<em>$2</em>');
+}
+
+function splitMdRow(line) {
+  let t = line.trim();
+  if (t.startsWith('|')) t = t.slice(1);
+  if (t.endsWith('|')) t = t.slice(0, -1);
+  return t.split('|').map((c) => c.trim());
+}
+
+function isMdSep(line) {
+  const t = line.trim();
+  return t.startsWith('|') && /^[\s:|-]+$/.test(t) && t.includes('-');
+}
+
+function renderMarkdown(src) {
+  const lines = String(src ?? '').replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let para = [];
+  const flushPara = () => { if (para.length) { out.push('<p>' + inlineMd(para.join('<br>')) + '</p>'); para = []; } };
+  let i = 0;
+  while (i < lines.length) {
+    const t = lines[i].trim();
+    if (t === '') { flushPara(); i++; continue; }
+    if (t.startsWith('```')) {
+      flushPara();
+      const buf = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) { buf.push(lines[i]); i++; }
+      i++;
+      out.push('<pre class="md-code">' + esc(buf.join('\n')) + '</pre>');
+      continue;
+    }
+    const h = t.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      flushPara();
+      const lv = h[1].length;
+      out.push(`<h${lv}>` + inlineMd(esc(h[2])) + `</h${lv}>`);
+      i++;
+      continue;
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { flushPara(); out.push('<hr>'); i++; continue; }
+    if (t.startsWith('>')) {
+      flushPara();
+      const buf = [];
+      while (i < lines.length && lines[i].trim().startsWith('>')) {
+        buf.push(lines[i].trim().replace(/^>\s?/, ''));
+        i++;
+      }
+      out.push('<blockquote>' + renderMarkdown(buf.join('\n')) + '</blockquote>');
+      continue;
+    }
+    if (t.startsWith('|') && i + 1 < lines.length && isMdSep(lines[i + 1])) {
+      flushPara();
+      const headers = splitMdRow(lines[i]);
+      i += 2;
+      const rows = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        rows.push(splitMdRow(lines[i]));
+        i++;
+      }
+      out.push('<table><thead><tr>' + headers.map((c) => '<th>' + inlineMd(esc(c)) + '</th>').join('') + '</tr></thead><tbody>'
+        + rows.map((r) => '<tr>' + r.map((c) => '<td>' + inlineMd(esc(c)) + '</td>').join('') + '</tr>').join('') + '</tbody></table>');
+      continue;
+    }
+    const li = lines[i].match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+    if (li) {
+      flushPara();
+      while (i < lines.length) {
+        const m = lines[i].match(/^(\s*)([-*+]|\d+\.)\s+(.*)$/);
+        if (!m) {
+          // 列表项续行：缩进的普通文本并入上一项
+          if (lines[i].trim() !== '' && out.length > 0 && out[out.length - 1].startsWith('<div class="md-li"')) {
+            out[out.length - 1] = out[out.length - 1].replace(/<\/div>$/, '<br>' + inlineMd(esc(lines[i].trim())) + '</div>');
+            i++;
+            continue;
+          }
+          break;
+        }
+        const depth = Math.min(Math.floor(m[1].replace(/\t/g, '  ').length / 2), 4);
+        const ordered = /^\d+\./.test(m[2]);
+        const task = m[3].match(/^\[([ xX])\]\s+(.*)$/);
+        const inner = task ? (task[1].trim() ? '☑ ' : '☐ ') + inlineMd(esc(task[2])) : inlineMd(esc(m[3]));
+        out.push(`<div class="md-li" style="margin-left:${depth * 18}px">${ordered ? m[2] + ' ' : '• '}${inner}</div>`);
+        i++;
+      }
+      continue;
+    }
+    para.push(esc(t));
+    i++;
+  }
+  flushPara();
+  return out.join('\n');
+}
+
+function setDocView(raw) {
+  $('#doc-md').hidden = raw;
+  $('#doc-pre').hidden = !raw;
+  $('#doc-raw').textContent = raw ? '渲染视图' : '查看原文';
+}
+
+async function openVersionDetail(version) {
+  const d = state.data;
+  const v = d.versions.active.find(x => x.version === version);
+  const docPath = v && v.docPath;
+  $('#doc-title').textContent = `${version} · ${v ? stripMd(v.desc).slice(0, 60) : '版本详情'}`;
+  let text;
+  try {
+    if (docPath && !docPath.includes('历史版本归档')) {
+      const r = await api('/api/file?path=' + encodeURIComponent(docPath));
+      text = r.text;
+    } else {
+      const anchor = 'docs/releases/历史版本归档.md#v' + version.replace(/^v/, '').replace('.', '') + '-需求文档';
+      text = `${version} 已归档，需求文档见：${anchor}\n\n（归档文件较大，不在看板内展开；请到编辑器中查看。）\n\n状态摘要：${v ? v.statusText : '—'}`;
+    }
+  } catch (e) {
+    text = '读取失败：' + e.message;
+  }
+  $('#doc-md').innerHTML = renderMarkdown(text);
+  $('#doc-pre').textContent = text;
+  setDocView(false);
+  $('#dlg-doc').showModal();
+}
+$('#doc-raw').onclick = () => setDocView($('#doc-md').hidden === false);
+
+/* ---------------- boot ---------------- */
+load().catch(e => { toast('加载失败：' + e.message, true); });
+</script>
+</body>
+</html>

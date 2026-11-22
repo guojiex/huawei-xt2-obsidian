@@ -99,8 +99,10 @@ tools/
   build.ps1                   命令行构建 HAP（不用开 DevEco）
   install.ps1                 装 HAP 到真机 / 拉起
   signing.ps1                 签名配置挂载(-On) / 还原(-Off) / 状态(-Status) / 装钩子
+  reqboard.ps1                一键启动需求看板（浏览器可视化需求池/版本，编辑直接写回 markdown）
   tests/                      全部 Node/Python 测试（test_*.mjs、test_changelog.py、lib/source.mjs）
   generators/                 生成器与图标脚本（build_*.py、gen_*.py）
+  reqboard/                   需求看板本地服务（parse.mjs / server.mjs / index.html，node 零依赖）
 .local/                       ★ 本地私有：签名版 build-profile 备份（已 gitignore）
 ```
 
@@ -113,6 +115,12 @@ macOS 可从仓库根目录运行 `./hvigorw assembleHap --mode module -p produc
 .\tools\build.ps1 -Task clean
 .\tools\build.ps1 -OhpmInstall # 缺依赖时
 .\tools\install.ps1 -Run    # 装到真机并拉起（前置：DevEco 里做过自动签名）
+```
+
+```powershell
+# 需求看板：浏览器可视化需求池 / 版本，编辑直接写回 markdown（node 零依赖）
+.\tools\reqboard.ps1            # 启动并自动开浏览器 → http://127.0.0.1:7812
+.\tools\reqboard.ps1 -Port 7813 # 换端口；-NoOpen 不自动开浏览器
 ```
 
 ```powershell
