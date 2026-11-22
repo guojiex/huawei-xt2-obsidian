@@ -789,8 +789,8 @@ test('escaped wiki links stay literal and do not create backlinks',()=>{
  const f=fixture(),escaped='\\[[10_写作/基础排版]]';
  assert.deepEqual(JSON.parse(f.run('JSON.stringify(wikiTargetsIn('+JSON.stringify(escaped)+'))')),[]);
  f.run('note(\'reading_reading_journal\').text='+JSON.stringify(escaped)+';render()');
- assert(!f.get('article').innerHTML.includes('class="wiki-link'));
- assert(!f.get('article').innerHTML.includes('data-wiki-create='));
+ assert(!f.get('reference').innerHTML.includes('class="wiki-link'));
+ assert(!f.get('reference').innerHTML.includes('data-wiki-create='));
 });
 
 test('import library switches sources and associates a demo directory with safe removal semantics',()=>{

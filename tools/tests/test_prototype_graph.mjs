@@ -163,6 +163,13 @@ test('local focus centers on current note and dims non-neighborhood nodes', () =
   assert.ok(cNode.includes('dim'), 'non-neighborhood node dimmed');
 });
 
+test('graphLayout clusters linked notes closer than unlinked notes', () => {
+  const f = fixture();
+  const r = f.run('(function(){const p=graphLayout(graphData(),640,440);const a=p.get("a"),b=p.get("b"),c=p.get("c");return {ab:Math.hypot(a.x-b.x,a.y-b.y),ac:Math.hypot(a.x-c.x,a.y-c.y),bc:Math.hypot(b.x-c.x,b.y-c.y)};})()');
+  assert.ok(r.ab < r.ac, `linked a-b (${r.ab.toFixed(1)}) should be closer than a-c (${r.ac.toFixed(1)})`);
+  assert.ok(r.ab < r.bc, `linked a-b (${r.ab.toFixed(1)}) should be closer than b-c (${r.bc.toFixed(1)})`);
+});
+
 test('renderGraph shows empty state when the vault has no notes', () => {
   const f = fixture({ notes: [] });
   f.run('renderGraph()');
