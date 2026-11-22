@@ -371,7 +371,7 @@ test('phone more menu groups actions and updates labels without replacing icons'
  const menu=html.match(/<details[^>]*id="mobileMore"[\s\S]*?<\/details>/)[0];
  assert(menu.indexOf('aria-label="当前笔记"')<menu.indexOf('aria-label="快捷编辑模式"'));
  assert(menu.indexOf('aria-label="快捷编辑模式"')<menu.indexOf('aria-label="应用"'));
-  assert.equal((menu.match(/class="menu-icon"/g)||[]).length,10);
+   assert.equal((menu.match(/class="menu-icon"/g)||[]).length,11); // v2.2 版本历史入口加入当前笔记组
  assert.match(menu,/class="git-sync-count"/);
  const f=fixture();f.run("setViewport('phone');backlinksPane=activePane;updatePaneChrome()");
  assert.equal(f.get('mobileBacklinksLabel').textContent,'隐藏反链');
@@ -514,8 +514,8 @@ test('permanent delete removes a real deleted note from the list and later resto
   f.run("restoreFile('reading_stream')"); // 已清除：恢复为无操作，不复活条目
   assert.equal(f.run("notes.some(n=>n.id==='reading_stream')"),false);
   assert(f.get('trashList').innerHTML.includes('回收站为空'));
-  assert.match(code,/if\(\$\('shareDialog'\)\.open\|\|\$\('fileActionDialog'\)\.open\|\|\$\('trashDialog'\)\.open\|\|\$\('trashDeleteDialog'\)\.open\|\|\$\('trashPreviewDialog'\)\.open\)return;/);
-  assert(code.includes("'trashDeleteDialog','trashPreviewDialog','vaultActionDialog'")); // sheetDialogIds / MutationObserver 注册
+   assert.match(code,/if\(\$\('shareDialog'\)\.open\|\|\$\('fileActionDialog'\)\.open\|\|\$\('trashDialog'\)\.open\|\|\$\('trashDeleteDialog'\)\.open\|\|\$\('trashPreviewDialog'\)\.open\|\|\$\('historyDialog'\)\.open\|\|\$\('historyPreviewDialog'\)\.open\)return;/);
+    assert(code.includes("'trashPreviewDialog','historyDialog','historyPreviewDialog','vaultActionDialog'")); // sheetDialogIds / MutationObserver 注册（v2.2 版本历史并入）
 });
 
 test('trash row body opens a read-only preview dialog that leaves entry state unchanged on close',()=>{

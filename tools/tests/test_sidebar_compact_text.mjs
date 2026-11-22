@@ -26,7 +26,7 @@ test('tree help shows one compact line with the complete hover and screen-reader
   assert.match(fileTree, /\.accessibilityText\('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开'\)/);
   assert.match(fileTree, /\.bindPopup\(this\.helpHintOpen,[\s\S]*?builder: this\.HelpHint\(\)/);
   assert.match(fileTree, /HelpHint\(\) \{[\s\S]*Text\('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开'\)/);
-  assert.match(prototype, /<div class="tree-help" title="左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开">左滑操作 · 拖动移动或打开<\/div>/);
+  assert.match(prototype, /<div class="tree-help" id="treeHelp" title="左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开">左滑操作 · 拖动移动或打开<\/div>/);
 });
 
 test('sidebar toolbar centers tab labels and sizes nav icons per the v2 prototype', () => {

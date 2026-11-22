@@ -54,7 +54,7 @@ test('v1.76 git sync is a full-screen page (not a dialog), with left changes + r
   // URL 直达全屏页（v1.77 修复：跨 script 块必须先捕获，并在 openGitSync 定义后调用）。
   assert.match(html, /window\.__initialViewSync=true/);
   assert.match(html, /if\(window\.__initialViewSync\)openGitSync\(\)/);
-  assert.match(html, /view:\['notes','settings','vaults','sync'\]/);
+  assert.match(html, /view:\['notes','settings','vaults','sync','cloud'\]/);
 });
 
 test('v1.77 sync page opens with first diff selected and card-based hierarchy', () => {
