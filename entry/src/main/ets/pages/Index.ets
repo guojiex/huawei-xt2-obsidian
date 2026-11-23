@@ -5908,6 +5908,32 @@ struct Index {
     }
   }
 
+  /** 预览里点击库内普通 Markdown 链接：解析目标笔记后打开；外链/锚点不在此处理。 */
+  private handleVaultLinkClick(href: string, pane: string = 'left'): void {
+    const vaultId: string = this.currentVaultId;
+    const sourcePath: string = pane === 'right' ? this.rightFilePath : this.currentFilePath;
+    if (vaultId.length === 0 || sourcePath.length === 0 || href.length === 0) {
+      return;
+    }
+    const registry: VaultRegistry = VaultRegistry.get();
+    const resolution: WikiLinkResolution = WikiLinkParser.resolveMarkdownLink(href, sourcePath,
+      WikiLinkService.files(registry, vaultId));
+    if (resolution.status === 'resolved') {
+      if (pane === 'right') {
+        void this.loadRightFile(resolution.path);
+      } else {
+        void this.loadFile(resolution.path);
+      }
+      return;
+    }
+    const fragmentAt: number = href.indexOf('#');
+    const target: string = (fragmentAt > 0 ? href.substring(0, fragmentAt) : href).trim();
+    if (resolution.status === 'missing' &&
+      (target.endsWith('.md') || target.endsWith('.markdown'))) {
+      promptAction.showToast({ message: '目标笔记不存在' });
+    }
+  }
+
   /** 编辑器有改动：防抖 500ms 后从编辑器拉全量内容渲染预览 */
   private schedulePreviewUpdate(): void {
     if (this.previewTimer !== -1) {
@@ -8410,10 +8436,13 @@ struct Index {
         .fontColor($r('app.color.text_secondary'))
         .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s1 })
         .accessibilityText(this.activeNoteMenuScopeLabel())
-      this.MobileMoreMenuItem('share', 'share', '分享笔记',
-        this.activeFilePath().length > 0, (): void => {
-          this.shareFlowApi?.openShareNoteDialog();
-        })
+      // v2.6 2.6.7：单屏顶栏无分享按钮，菜单是唯一入口；双/三屏由顶栏按钮承载，菜单不重复。
+      if (this.isSingleScreenLayout()) {
+        this.MobileMoreMenuItem('share', 'share', '分享笔记',
+          this.activeFilePath().length > 0, (): void => {
+            this.shareFlowApi?.openShareNoteDialog();
+          })
+      }
       // v1.97 97.2：收藏切换（54.2「⋯」菜单入口，动态 label 反映当前状态）。
       this.MobileMoreMenuItem('favorite', 'star',
         this.isFavoriteNote(this.activeFilePath()) ? '取消收藏此笔记' : '收藏此笔记',
@@ -8481,7 +8510,8 @@ struct Index {
   @Builder
   MobileMoreMenuAppGroup() {
     Column() {
-      if (GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
+      // v2.6 2.6.7：单屏顶栏无同步按钮，菜单是唯一入口；双/三屏由顶栏 GitSyncButton 承载。
+      if (this.isSingleScreenLayout() && GIT_ENTRY_UI_ENABLED && this.currentVaultIsGit()) {
         this.MobileMoreGitSyncItem()
       }
       // v1.67：写作统计统一放在「应用」组的设置与关于之前；行尾是连写缓存值。
@@ -9128,6 +9158,7 @@ struct Index {
               }
             },
             onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
+            onVaultLinkClick: (href: string): void => { this.handleVaultLinkClick(href, 'right'); },
             onEditableContentChange: (content: string): void => {
               this.handleSimplePreviewEdit('right', content);
             },
@@ -9374,6 +9405,9 @@ struct Index {
           },
           onWikiLinkClick: (target: string): void => {
             void this.handleWikiLinkClick(target);
+          },
+          onVaultLinkClick: (href: string): void => {
+            this.handleVaultLinkClick(href);
           },
           onEditableContentChange: (content: string): void => {
             this.handleSimplePreviewEdit('left', content);

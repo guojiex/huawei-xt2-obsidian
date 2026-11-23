@@ -24,7 +24,7 @@ import { util } from '@kit.ArkTS';
 import { FileTree, ExpandStore, PinStore, FavoriteStore, TreeNode, PinnedNote } from '../model/FileTree';
 import { VaultAccess, VaultDirChild, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
-import { Icon, iconCommands } from '../common/Icons';
+import { Icon, symbolGlyphOf } from '../common/Icons';
 import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
 import { Space, Radius, FontSize, Size, Weight } from '../common/Tokens';
@@ -213,6 +213,8 @@ export struct FileTreeView {
   @State pinSectionOpen: boolean = true;
   /** 收藏区折叠状态，按库持久化（FavoriteStore.loadSectionOpen / saveSectionOpen）。 */
   @State favSectionOpen: boolean = true;
+  /** v2.5 闭环（方案 A）：树 List 实测宽（onAreaChange 回填，vp），驱动 isNarrowNav()。 */
+  @State treeWidthVp: number = 0;
   @State pinHoverPath: string = '';
   @State pinFocusPath: string = '';
   @State favHoverPath: string = '';
@@ -474,7 +476,10 @@ export struct FileTreeView {
 
   private runPathMenuAction(node: TreeNode, action: string): void {
     this.closePathMenu(false);
-    if (action === 'pin') {
+    if (action === 'favorite' && !node.isDir) {
+      // v2.5 闭环（方案 A）：星标按钮移除后，树内收藏切换入口收进 ⋯ 菜单。
+      this.toggleFavoritePath(node.relPath);
+    } else if (action === 'pin') {
       this.togglePin(node);
     } else if (action === 'share' && node.isDir) {
       this.onSharePath(node.relPath, true);
@@ -646,8 +651,17 @@ export struct FileTreeView {
   }
 
   /**
+   * v2.5 闭环（方案 A，2026-11-23）：窄侧栏 = 树实测宽 < Size.narrowNavW
+   * （XT2 三栏 nav 200-248vp）时隐藏行尾跨栏按钮——拖笔记到栏内打开是既有
+   * 替代路径；宽侧栏 / 桌面不受影响。未测得宽度（0）前按窄处理，避免首帧闪现。
+   */
+  private isNarrowNav(): boolean {
+    return this.treeWidthVp < Size.narrowNavW;
+  }
+
+  /**
    * 收藏切换唯一写入口（97.2）：切换后立即落盘、toast 反馈、收藏区即时增删行；
-   * 树行星标靠行键 `|fav` 刷新（faqs-arkui-219）。删除进回收站关系保留（97.3），
+   * 树行收藏星标（名字尾标记）靠行键 `|fav` 刷新（faqs-arkui-219）。删除进回收站关系保留（97.3），
    * 永久删除清理与改名 / 移动 retarget 在 Index 侧调 FavoriteStore。
    */
   private toggleFavoritePath(relPath: string): void {
@@ -1218,6 +1232,26 @@ export struct FileTreeView {
           hilog.info(TREE_DOMAIN, TREE_TAG, '文件树操作：置顶切换');
           this.togglePin(n);
         })
+        // v2.5 闭环（方案 A）：星标按钮移除后，触屏的树内收藏切换入口——左滑操作条
+        // 加收藏按钮（原型左滑条 --swipe-width 为固定行程，不跟随加宽，原型侧不加、
+        // 走 ⋯ 菜单；原生 swipeAction builder 自适应，无此约束）。
+        // 图标名字面量分支（Z2/L-7 首帧固化）。
+        Row() {
+          if (this.isFavorite(n.relPath)) {
+            Icon('starFilled', Space.s5, $r('app.color.brand'))
+          } else {
+            Icon('star', Space.s5, $r('app.color.brand'))
+          }
+        }
+        .width(Size.touch)
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor($r('app.color.brand_bg'))
+        .accessibilityText(this.isFavorite(n.relPath) ? '取消收藏：' + n.name : '收藏：' + n.name)
+        .onClick(() => {
+          this.toggleFavoritePath(n.relPath);
+        })
       }
       Row() {
         Text('改名')
@@ -1297,8 +1331,12 @@ export struct FileTreeView {
         this.PathMenuItem(n, 'share', '分享', 'share', false, true)
         this.PathMenuItem(n, 'rename', '改名', 'rename', false, false)
       } else {
+        // v2.5 闭环（方案 A）：星标按钮移除后，树内收藏切换入口收进长按 ⋯ 菜单。
+        // 图标名字面量分支（Z2/L-7 首帧固化）。
+        this.PathMenuItem(n, 'favorite', this.isFavorite(n.relPath) ? '取消收藏' : '收藏',
+          this.isFavorite(n.relPath) ? 'starFilled' : 'star', false, true)
         this.PathMenuItem(n, 'pin', this.isPinned(n.relPath) ? '取消置顶' : '置顶',
-          'pin', false, true)
+          'pin', false, false)
         this.PathMenuItem(n, 'rename', '改名', 'rename', false, false)
       }
       this.PathMenuItem(n, 'move', '移动', 'move', false, false)
@@ -1337,17 +1375,12 @@ export struct FileTreeView {
                   .height(Size.treeChevron)
               }
               // 图标颜色不能经全局 @Builder 按值实参传递（api_notes L-7/Z2：首帧固化，
-              // 切换笔记后蓝图标停在旧笔记上）。内联 Path 让 .stroke 与行背景 / 标题色
-              // 一样直接绑定 currentFilePath，走同一条局部更新通道。
-              Path({ commands: iconCommands(n.isDir ? 'folder' : 'note', Size.treeIcon) })
-                .width(Size.treeIcon)
-                .height(Size.treeIcon)
-                .fillOpacity(0)
-                .stroke(n.isDir ? $r('app.color.brand') : n.relPath === this.currentFilePath
-                  ? $r('app.color.brand') : $r('app.color.text_secondary'))
-                .strokeWidth(1.7)
-                .strokeLineCap(LineCapStyle.Round)
-                .strokeLineJoin(LineJoinStyle.Round)
+              // 切换笔记后蓝图标停在旧笔记上）。内联 SymbolGlyph（v2.6 官方 Symbol）让
+              // .fontColor 与行背景 / 标题色一样直接绑定 currentFilePath，走同一条局部更新通道。
+              SymbolGlyph(symbolGlyphOf(n.isDir ? 'folder' : 'note'))
+                .fontSize(Size.treeIcon)
+                .fontColor([n.isDir ? $r('app.color.brand') : n.relPath === this.currentFilePath
+                  ? $r('app.color.brand') : $r('app.color.text_secondary')])
             if (this.referenceOnly && !n.isDir) {
               Column() {
                 Text(this.displayName(n))
@@ -1380,6 +1413,14 @@ export struct FileTreeView {
             if (!n.isDir && this.isPinned(n.relPath)) {
               Icon('pin', 12, $r('app.color.text_tertiary'))
             }
+            // v2.5 闭环（方案 A，2026-11-23）：收藏降为名字尾 12vp 状态星标（同图钉
+            // 口径：不可点，切换走左滑操作条 / 长按 ⋯ 菜单 / 收藏区行）。行尾 48vp
+            // 星标按钮与跨栏按钮在窄侧栏（XT2 三栏 200-248vp）合计 ~96vp，深层笔记
+            // 名宽直接归零——缩进封顶（v2.5）单独救不回来。已收藏才渲染
+            // （starFilled 字面量，Z2/L-7 首帧固化），行键 |fav 驱动刷新。
+            if (!n.isDir && this.isFavorite(n.relPath)) {
+              Icon('starFilled', 12, $r('app.color.text_tertiary'))
+            }
             }
             .layoutWeight(1)
             .height(Size.itemH)
@@ -1388,26 +1429,8 @@ export struct FileTreeView {
             // 见下方 onClick 的踩坑说明：不把子控件排除在命中之外，点文件名会「点不动」
             .hitTestBehavior(HitTestMode.None)
 
-            // v1.97 收藏星标（97.2）：笔记行行尾、跨栏图标之前，常显 muted——已收藏的
-            // 状态感由顶部收藏区表达，树内不抢视觉。54.2 的「指针设备未收藏悬停才出现」
-            // 原生不做（无法区分触屏与指针，沿用 v1.62 区头箭头常显先例，口径修订见
-            // 需求文档 97.2）。图标名必须字面量分支（Z2/L-7 首帧固化）。
-            if (!n.isDir && !this.referenceOnly) {
-              Row() {
-                if (this.isFavorite(n.relPath)) {
-                  Icon('starFilled', Space.s4, $r('app.color.text_tertiary'))
-                } else {
-                  Icon('star', Space.s4, $r('app.color.text_tertiary'))
-                }
-              }
-              .width(Size.touch)
-              .height(Size.touch)
-              .justifyContent(FlexAlign.Center)
-              .alignItems(VerticalAlign.Center)
-              .borderRadius(Radius.icon)
-              .onClick((): void => { this.toggleFavoritePath(n.relPath); })
-              .accessibilityText((this.isFavorite(n.relPath) ? '取消收藏：' : '收藏：') + n.name)
-            }
+            // （v1.97 树行行尾 48vp 星标按钮已随 v2.5 闭环方案 A 移除：与跨栏按钮在
+            // 窄侧栏合计 ~96vp，深层笔记名宽归零；收藏改名字尾 12vp 标记，见上方。）
             // 目录行尾的「+」：在该目录下新建笔记（仅目录行有）。
             // ⚠️ 位置有讲究：必须是内容 Row 的**兄弟**，不能塞进那个 Row 里 ——
             // 内容 Row 整体设了 HitTestMode.None（子树透明，让点击冒泡到外层行），
@@ -1429,7 +1452,8 @@ export struct FileTreeView {
               })
               // v1.10 读屏：纯图标按钮没有可见文字，必须自带名称
               .accessibilityText('在「' + n.name + '」下新建')
-            } else if (!n.isDir && !this.referenceOnly && !this.hideOtherPane) {
+            } else if (!n.isDir && !this.referenceOnly && !this.hideOtherPane &&
+              !this.isNarrowNav()) {
               Row() {
                 Icon('fileReference', Space.s5, $r('app.color.text_secondary'), 1.7)
               }
@@ -1588,6 +1612,12 @@ export struct FileTreeView {
     .padding({ left: Space.s4, bottom: this.treeBottomClearanceVp() })
     .scrollBar(BarState.Auto)
     .cachedCount(10)
+    // v2.5 闭环（方案 A）：实测树宽回填（vp），驱动 isNarrowNav()（跨栏按钮显隐）。
+    .onAreaChange((oldArea: Area, newArea: Area) => {
+      if (typeof newArea.width === 'number') {
+        this.treeWidthVp = newArea.width;
+      }
+    })
     .backgroundColor($r('app.color.bg_navigation'))
     // v1.71 树根空白兜底（71.1）：drop 到行外空白（左侧缩进区 / 末条让位区）= 移到库根，
     // 对齐「移动」对话框的「库根目录」语义；rank 1 会被任何行级 drop（rank 2/3）覆盖。

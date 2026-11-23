@@ -160,6 +160,81 @@ export class WikiLinkParser {
       const parent: string = slash >= 0 ? sourcePath.substring(0, slash) : '';
       candidate = parent.length > 0 ? parent + '/' + pathValue : pathValue;
     }
+    return WikiLinkParser.lookupNote(candidate, files);
+  }
+
+  /**
+   * 解析普通 Markdown 链接 `[文字](目标)` 的库内笔记目标：
+   * 相对路径按来源笔记所在目录解析（支持 `./`、`../`；`..` 不许越出库根），
+   * 未命中时回落按库根相对路径找一次；`#锚点` 去掉、百分号编码解码；
+   * 带 scheme（http/mailto/tel…）、绝对路径、反斜杠视为 invalid。
+   */
+  static resolveMarkdownLink(destination: string, sourcePath: string, files: string[]): WikiLinkResolution {
+    let value: string = destination.trim();
+    const fragmentAt: number = value.indexOf('#');
+    if (fragmentAt === 0) {
+      return { status: 'invalid', path: '' };
+    }
+    if (fragmentAt > 0) {
+      value = value.substring(0, fragmentAt).trim();
+    }
+    if (value.length === 0 || value.indexOf('\\') >= 0 || value.startsWith('/') ||
+      /^[a-zA-Z][a-zA-Z0-9+.\-]*:/.test(value)) {
+      return { status: 'invalid', path: '' };
+    }
+    if (value.indexOf('%') >= 0) {
+      try {
+        value = decodeURIComponent(value);
+      } catch (_error) {
+        // 保留原文，交给下面的库内查找判定。
+      }
+    }
+    const segments: string[] = value.split('/');
+    for (let i = 0; i < segments.length; i++) {
+      if (segments[i].length === 0) {
+        return { status: 'invalid', path: '' };
+      }
+    }
+    const sourceSlash: number = sourcePath.lastIndexOf('/');
+    const noteResolved: string[] = sourceSlash >= 0 ? sourcePath.substring(0, sourceSlash).split('/') : [];
+    if (!WikiLinkParser.applyLinkSegments(noteResolved, segments)) {
+      return { status: 'invalid', path: '' };
+    }
+    const noteLookup: WikiLinkResolution = WikiLinkParser.lookupNote(noteResolved.join('/'), files);
+    if (noteLookup.status !== 'missing') {
+      return noteLookup;
+    }
+    const rootResolved: string[] = [];
+    if (WikiLinkParser.applyLinkSegments(rootResolved, segments)) {
+      const rootLookup: WikiLinkResolution = WikiLinkParser.lookupNote(rootResolved.join('/'), files);
+      if (rootLookup.status !== 'missing') {
+        return rootLookup;
+      }
+    }
+    return noteLookup;
+  }
+
+  /** 把链接段并入 resolved（就地修改）；`.` 跳过、`..` 弹栈、越出栈顶失败；最终为空失败。 */
+  private static applyLinkSegments(resolved: string[], segments: string[]): boolean {
+    for (let i = 0; i < segments.length; i++) {
+      const segment: string = segments[i];
+      if (segment === '.') {
+        continue;
+      }
+      if (segment === '..') {
+        if (resolved.length === 0) {
+          return false;
+        }
+        resolved.pop();
+        continue;
+      }
+      resolved.push(segment);
+    }
+    return resolved.length > 0;
+  }
+
+  /** 按候选路径查库内笔记：命中一条 resolved、多条 ambiguous、零条 missing。 */
+  private static lookupNote(candidate: string, files: string[]): WikiLinkResolution {
     const hasMarkdownExtension: boolean = candidate.endsWith('.md') || candidate.endsWith('.markdown');
     const candidates: string[] = hasMarkdownExtension
       ? [candidate] : [candidate + '.md', candidate + '.markdown'];

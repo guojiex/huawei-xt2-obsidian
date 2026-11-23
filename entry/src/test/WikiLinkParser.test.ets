@@ -51,4 +51,41 @@ export default function wikiLinkParserTest(): void {
       expect(preview.indexOf('&lt;新笔记&gt;') >= 0).assertTrue();
     });
   });
+
+  describe('plain markdown link resolution against the source note directory', () => {
+    it('resolves relative, parent, and vault-root destinations with extensions appended', 0, (): void => {
+      const files: string[] = ['00_开始/快速上手.md', '10_写作/基础排版.md',
+        '10_写作/样式支持清单.markdown', 'A/来源.md', 'A/B/同目录.md'];
+      expect(WikiLinkParser.resolveMarkdownLink('B/同目录.md', 'A/来源.md', files).path)
+        .assertEqual('A/B/同目录.md');
+      expect(WikiLinkParser.resolveMarkdownLink('../10_写作/基础排版.md', '00_开始/快速上手.md', files).path)
+        .assertEqual('10_写作/基础排版.md');
+      expect(WikiLinkParser.resolveMarkdownLink('10_写作/样式支持清单', '00_开始/快速上手.md', files).path)
+        .assertEqual('10_写作/样式支持清单.markdown');
+      expect(WikiLinkParser.resolveMarkdownLink('./A/B/同目录.md', '其他.md', files).path)
+        .assertEqual('A/B/同目录.md');
+    });
+
+    it('strips fragments, decodes percent-encoding, and rejects schemes and root traversal', 0, (): void => {
+      const files: string[] = ['A/笔记.md', 'A/目标.md', 'A/缺失前缀.md'];
+      expect(WikiLinkParser.resolveMarkdownLink('目标.md#标题', 'A/笔记.md', files).path)
+        .assertEqual('A/目标.md');
+      expect(WikiLinkParser.resolveMarkdownLink('%E7%9B%AE%E6%A0%87.md', 'A/笔记.md', files).path)
+        .assertEqual('A/目标.md');
+      expect(WikiLinkParser.resolveMarkdownLink('https://example.com/a.md', 'A/笔记.md', files).status)
+        .assertEqual('invalid');
+      expect(WikiLinkParser.resolveMarkdownLink('mailto:a@b.c', 'A/笔记.md', files).status)
+        .assertEqual('invalid');
+      expect(WikiLinkParser.resolveMarkdownLink('#锚点', 'A/笔记.md', files).status)
+        .assertEqual('invalid');
+      expect(WikiLinkParser.resolveMarkdownLink('/绝对/目标.md', 'A/笔记.md', files).status)
+        .assertEqual('invalid');
+      expect(WikiLinkParser.resolveMarkdownLink('../../越出库根.md', 'A/笔记.md', files).status)
+        .assertEqual('invalid');
+      expect(WikiLinkParser.resolveMarkdownLink('../回到库根.md', 'A/笔记.md', ['回到库根.md']).path)
+        .assertEqual('回到库根.md');
+      expect(WikiLinkParser.resolveMarkdownLink('缺失.md', 'A/笔记.md', files).status)
+        .assertEqual('missing');
+    });
+  });
 }

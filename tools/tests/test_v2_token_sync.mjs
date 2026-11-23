@@ -141,7 +141,7 @@ test('native theme colors and ArkTS numeric tokens match v2 mappings', () => {
     ['Size.sidebarW', 'nav-width'], ['Size.drawerW', 'mobile-nav-width'], ['Size.paneMinW', 'pane-min-content'],
     ['Size.paneMinNavW', 'pane-min-nav'],
     ['Size.formatMenuW', 'format-width'],
-    ['Size.touch', 'touch'], ['Size.treeIndent', 'tree-indent'], ['Size.treeDepthCap', 'tree-depth-cap'], ['Size.swipeDelExtra', 'swipe-extra'],
+    ['Size.touch', 'touch'], ['Size.treeIndent', 'tree-indent'], ['Size.treeDepthCap', 'tree-depth-cap'], ['Size.narrowNavW', 'narrow-nav'], ['Size.swipeDelExtra', 'swipe-extra'],
     ['Motion.durBase', 'ease'], ['Motion.durNav', 'nav-duration']
   ]
   for (const [tokenName, cssName] of numericMappings) {

@@ -38,17 +38,18 @@ test('native file-reference action matches the v2 icon geometry and size', () =>
   assert.doesNotMatch(fileTree, /Icon\('swap', 16,/);
 });
 
-test('native file-tree note icon matches the v2 note glyph and metrics', () => {
-  const prototype = readFileSync(prototypePath, 'utf8');
+test('native file-tree note icon renders the official Symbol glyph at token size (v2.6)', () => {
   const icons = readFileSync(iconsPath, 'utf8');
   const fileTree = readFileSync(fileTreePath, 'utf8');
   const tokens = readFileSync(new URL('../../entry/src/main/ets/common/Tokens.ets', import.meta.url), 'utf8');
 
-  assert.match(prototype, /note:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 13h8M8 17h5"\/>/);
+  // v2.6：树行图标整包迁移官方 Symbol；P_NOTE 自绘路径保留为兜底与快捷方式字形真源。
   assert.match(icons, /const P_NOTE: string = 'M14 3H6C4\.9 3 4 3\.9 4 5V19C4 20\.1 4\.9 21 6 21H18C19\.1 21 20 20\.1 20 19V9ZM14 3V9H20M8 13H16M8 17H13';/);
-  assert.match(icons, /name === 'note'[\s\S]{0,70}return P_NOTE;/);
+  assert.match(icons, /'folder': \$r\('sys\.symbol\.folder'\),/);
+  assert.match(icons, /'note': \$r\('sys\.symbol\.doc_text'\),/);
   assert.match(tokens, /static readonly treeIcon: number = 18;/);
-  assert.match(fileTree, /Icon\(n\.isDir \? 'folder' : 'note', Size\.treeIcon,[\s\S]{0,200}1\.7\)/);
-  assert.match(fileTree, /n\.relPath === this\.currentFilePath[\s\S]{0,100}\$r\('app\.color\.brand'\)/);
+  // L-7/Z2：内联 SymbolGlyph + .fontColor 直接绑定 currentFilePath（不走全局 @Builder 按值传参）。
+  assert.match(fileTree, /SymbolGlyph\(symbolGlyphOf\(n\.isDir \? 'folder' : 'note'\)\)\r?\n\s*\.fontSize\(Size\.treeIcon\)/);
+  assert.match(fileTree, /n\.relPath === this\.currentFilePath[\s\S]{0,120}\$r\('app\.color\.brand'\)/);
   assert.doesNotMatch(fileTree, /Icon\(n\.isDir \? 'folder' : 'doc', 18,/);
 });

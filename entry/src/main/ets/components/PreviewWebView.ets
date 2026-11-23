@@ -383,6 +383,7 @@ class PreviewNativeProxy {
   imageViewerChangeHandler: (state: string) => void = () => {};
   shareCaptureHandler: (payload: string) => void = (payload: string) => {};
   wikiLinkClickHandler: (targetB64: string) => void = (_targetB64: string) => {};
+  vaultLinkClickHandler: (hrefEncoded: string) => void = (_hrefEncoded: string) => {};
   workspaceScrollHandler: (top: number) => void = (_top: number) => {};
   editableContentHandler: (contentB64: string) => void = (_contentB64: string) => {};
   editableContentRequestHandler: (id: number, contentB64: string) => void = (_id: number, _contentB64: string) => {};
@@ -413,6 +414,10 @@ class PreviewNativeProxy {
 
   onWikiLinkClick(targetB64: string): void {
     this.wikiLinkClickHandler(targetB64);
+  }
+
+  onVaultLinkClick(hrefEncoded: string): void {
+    this.vaultLinkClickHandler(hrefEncoded);
   }
 
   onWorkspaceScroll(top: number): void {
@@ -700,10 +705,19 @@ class PreviewImpl {
       while(node&&node!==document){if(node.nodeType===1&&node.classList&&node.classList.contains('wiki-link')){
       var href=node.getAttribute('href')||'';if(href.indexOf('#wikilink:')===0){
       if(window.__mdpreview&&window.__mdpreview.isEditable()&&
+      node.hasAttribute('data-preview-inline-index')&&
       !(typeof window.__mdpreview.isLockedTapActivation==='function'&&
-      window.__mdpreview.isLockedTapActivation()))return;event.preventDefault();
+      window.__mdpreview.isLockedTapActivation()))return;event.preventDefault();event.stopPropagation();
       var api=window.__arkts;if(api&&typeof api.onWikiLinkClick==='function'){
-      api.onWikiLinkClick(href.substring(10));}}return;}node=node.parentElement;}} ,true)`);
+      api.onWikiLinkClick(href.substring(10));}}return;}
+      if(node.nodeType===1&&node.tagName==='A'){var raw=node.getAttribute('href')||'';
+      if(raw.length>0&&raw.charAt(0)!=='#'&&!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)){
+      if(window.__mdpreview&&window.__mdpreview.isEditable()&&
+      node.hasAttribute('data-preview-inline-index')&&
+      !(typeof window.__mdpreview.isLockedTapActivation==='function'&&
+      window.__mdpreview.isLockedTapActivation()))return;event.preventDefault();event.stopPropagation();
+      var proxy=window.__arkts;if(proxy&&typeof proxy.onVaultLinkClick==='function'){
+      proxy.onVaultLinkClick(encodeURIComponent(raw));}}return;}node=node.parentElement;}} ,true)`);
   }
 
   prepareShareCapturePages(id: number, pageCount: number): void {
@@ -1102,6 +1116,8 @@ export struct PreviewWebView {
   onError: (msg: string) => void = (msg: string) => {};
   /** 双链点击回调，参数为目标文本。 */
   onWikiLinkClick: (target: string) => void = (_target: string) => {};
+  /** 库内普通 Markdown 链接点击回调，参数为链接目标原文（含 ./ ../ 或百分号编码）。 */
+  onVaultLinkClick: (href: string) => void = (_href: string) => {};
   /** Web 预览视口滚动位置；只上报数字，不传递笔记内容。 */
   onScrollPositionChange: (top: number) => void = (top: number) => {};
   /** Web 页面桥接就绪。 */
@@ -1163,6 +1179,13 @@ export struct PreviewWebView {
     };
     this.proxy.wikiLinkClickHandler = (targetB64: string): void => {
       this.handleWikiLinkClick(targetB64);
+    };
+    this.proxy.vaultLinkClickHandler = (hrefEncoded: string): void => {
+      try {
+        this.onVaultLinkClick(decodeURIComponent(hrefEncoded));
+      } catch (_error) {
+        hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '库内链接点击参数解码失败');
+      }
     };
     this.proxy.workspaceScrollHandler = (top: number): void => {
       this.onScrollPositionChange(top);
@@ -1302,7 +1325,7 @@ export struct PreviewWebView {
     }
     try {
       this.controller.registerJavaScriptProxy(this.proxy, '__arkts',
-        ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onWorkspaceScroll',
+        ['readAsset', 'onImageViewerChange', 'onShareCaptureResult', 'onWikiLinkClick', 'onVaultLinkClick', 'onWorkspaceScroll',
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
           'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onTableActionMessage',
           'onCodeBlockEditingChange',

@@ -82,6 +82,9 @@ export class Size {
   static readonly paneMinW: number = 240;
   /** v1.39 39.1：目录栏基准下限（内容栏仍是 paneMinW 240）；对应原型 --pane-min-nav */
   static readonly paneMinNavW: number = 200;
+  /** v2.5 闭环（方案 A）：窄侧栏阈值，对应原型 --narrow-nav。树实测宽低于该值时
+   *  隐藏行尾跨栏按钮（拖拽笔记到栏内打开为既有替代路径）；XT2 三栏 nav 200-248vp 触发。 */
+  static readonly narrowNavW: number = 280;
   static readonly paneClose: number = Space.s10;
   /** v1.28 §6.7：空栏活动目标指示线。 */
   static readonly paneSelectionIndicator: number = Space.s1 / 2;
@@ -107,8 +110,13 @@ export class Size {
   static readonly menuMaxH: number = 620;
   /** 目录树每级缩进（1.5）—— 原实现 32/48/64/80 级差 16 太窄 */
   static readonly treeIndent: number = 24;
-  /** 目录树视觉缩进封顶层级（v2.5）：超过该层级的行缩进不再增长，保证笔记名显示空间 */
-  static readonly treeDepthCap: number = 4;
+  /**
+   * 目录树视觉缩进封顶层级（v2.5 → 2026-11-23 闭环修订，方案 A）：窄侧栏
+   * （XT2 三栏 200-248vp）下行尾固定开销 ~90vp，封 2 级（48vp）才能给深层
+   * 笔记名留出 ≥60vp；封 4 级（96vp）时深层名字宽归零（真机验收发现缺陷，
+   * 缩进封顶单独不成立）。
+   */
+  static readonly treeDepthCap: number = 2;
   /** 文件树图标尺寸：映射 v2 `--tree-icon`。 */
   static readonly treeIcon: number = 18;
   /** 文件树目录箭头（chevron）与文件行占位块尺寸：比 treeIcon 小一档的视觉档。 */

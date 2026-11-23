@@ -1,15 +1,15 @@
 /**
- * Icons.ets —— 统一图标（默认描边，业界标准填充图标见 FILLED_ICONS；v0.2 §3.5 需求 4.7 的**兜底方案**）
+ * Icons.ets —— 统一图标（v2.6 起整包渲染官方 HarmonyOS Symbol）
  *
- * ⚠️ 为什么不用 `SymbolGlyph` + `sys.symbol.*`（2026-11-15 复核）：
- * 旧结论「只核到 3 个 symbol id」是只翻 `ets/component/*.d.ts` 注释示例得出的，**已过时**。
- * 本机 SDK `sdk/default/openharmony/toolchains/id_defined.json` 是全量资源表，含 **4042 个
- * `type: "symbol"`** 名称（如 `arrow_2_circlepath` / `arrow_clockwise` / `arrow_double_clockwise`），
- * 官方图标库 developer.huawei.com/consumer/cn/design/harmonyos-symbol 亦可按名检索（579 个）。
- * 但社区实测 API 24 上部分名称编译通过却不渲染（仅 `arrow_clockwise` 等 8 个确认可用），
- * 且本项目 HAP 未上架、真机 symbol 字体版本不可控，故仍不自绘切系统 Symbol 的路线：
- * 全部图标自绘保证确定性。若将来切系统 Symbol，须先在 XT2 真机逐个验证渲染。
- * 4.7 的硬要求「风格统一、不混两套」仍适用。
+ * ✅ v2.6（2026-11-23）：`Icon()` 默认渲染 `SymbolGlyph`（官方 sys.symbol 资源），
+ * 45 个图标名 → 官方 id 的映射逐一核自本机 SDK `sysResource.js` symbol 段
+ * （[api_notes J-2](../../../docs/harmonyos/api_notes.md)，4042 个 symbol）。
+ * ⚠️ id 禁止凭记忆新增（AGENTS 硬约束 18）：新图标必须先在名单内核实再进 `SYMBOLS`。
+ * ⚠️ 真机渲染风险（api_notes J-2）：名单内 ≠ 设备能渲染，XT2 逐图标目检归用户；
+ * 渲染缺失的图标从 `SYMBOLS` 摘除即回落自绘兜底分支。
+ *
+ * 自绘 `P_*` / `pathOf` / `scalePath` 保留：① `SYMBOLS` 未覆盖的名字的兜底渲染；
+ * ② 桌面快捷方式 SVG 等字形真源（test_launch_shortcut 源级锁定）；③ XT2 回退通道。
  *
  * ⚠️ 为什么不用 `Shape().viewPort()` 缩放（实测踩坑）：
  * 模拟器实测 viewPort 不缩放子 Path，图标被渲染成几个像素的点（2026-10-18）。
@@ -222,25 +222,96 @@ function scalePath(cmd: string, k: number): string {
  * ⚠️ 全局 @Builder 按值实参会首帧固化（api_notes L-7 / Z2）：随状态变化的颜色
  * 不能作为 Icon(color) 实参传递，调用方必须内联 Path 并把 .stroke() 直接绑到状态变量，
  * 才能走局部更新（FileTreeView 树行图标，2026-11-15）。
+ * v2.6 起树行图标内联渲染已换 SymbolGlyph（symbolGlyphOf），本函数保留给自绘兜底。
  */
 export function iconCommands(name: string, size: number): string {
   return scalePath(pathOf(name), vp2px(size) / 24);
 }
 
 /**
- * 图标渲染（默认描边；FILLED_ICONS 中的图标按填充渲染）。
- * 业界标准图标多为填充型轮廓（如 Material Design sync），描边渲染会变成双层空心线，
- * 因此按图标名分派渲染方式——调用方无需逐个传 filled 参数，四处 sync 入口自动一致。
- * @param name 图标名（见上方 P_* 常量）
+ * 官方 Symbol id 映射（v2.6 · 2.6.1 需求文档 §3 映射表）。
+ * 45 个 id 逐一核自本机 SDK `sysResource.js` symbol 段（api_notes J-2，2026-11-22）。
+ * ⚠️ 禁止凭记忆新增 id（硬约束 18）；△ 置信项以 XT2 目检为准，形态不符换备选或摘除回落自绘。
+ */
+const SYMBOLS: Record<string, Resource> = {
+  'menu': $r('sys.symbol.line_3_horizontal'),
+  'close': $r('sys.symbol.xmark'),
+  'back': $r('sys.symbol.chevron_left'),
+  'chevronDown': $r('sys.symbol.chevron_down'),
+  'chevronUp': $r('sys.symbol.chevron_up'),
+  'chevronRight': $r('sys.symbol.chevron_forward'),
+  'search': $r('sys.symbol.magnifyingglass'),
+  'collapse': $r('sys.symbol.chevron_left_2'),
+  'folder': $r('sys.symbol.folder'),
+  'check': $r('sys.symbol.checkmark'),
+  'doc': $r('sys.symbol.doc'),
+  'note': $r('sys.symbol.doc_text'),
+  'plus': $r('sys.symbol.plus'),
+  'rename': $r('sys.symbol.square_and_pencil'),
+  'move': $r('sys.symbol.move'),
+  'trash': $r('sys.symbol.trash'),
+  'restore': $r('sys.symbol.restore_all_items'),
+  'archive': $r('sys.symbol.archivebox'),
+  'undo': $r('sys.symbol.arrow_counterclockwise'),
+  'redo': $r('sys.symbol.arrow_clockwise'),
+  'sync': $r('sys.symbol.arrow_2_circlepath'),
+  'settings': $r('sys.symbol.slider_horizontal_2'),
+  'message': $r('sys.symbol.message'),
+  'share': $r('sys.symbol.share'),
+  'image': $r('sys.symbol.picture'),
+  'task': $r('sys.symbol.checkmark_square'),
+  'more': $r('sys.symbol.ellipsis_circle'),
+  'sort': $r('sys.symbol.sort'),
+  'pin': $r('sys.symbol.pin'),
+  'pinOff': $r('sys.symbol.pin_slash'),
+  'star': $r('sys.symbol.star'),
+  'starFilled': $r('sys.symbol.star_fill'),
+  'swap': $r('sys.symbol.swap'),
+  'link': $r('sys.symbol.link'),
+  'follow': $r('sys.symbol.text_arrow_up_and_down'),
+  'columns': $r('sys.symbol.rectangle_split_2x1'),
+  'fileReference': $r('sys.symbol.uiwindow_split_1x2'),
+  'focus': $r('sys.symbol.viewfinder_square'),
+  'exitFocus': $r('sys.symbol.fullscreen'),
+  'simpleMode': $r('sys.symbol.text_alignleft'),
+  'professionalMode': $r('sys.symbol.code'),
+  'keyboardDone': $r('sys.symbol.keyboard_chevron_compact_up'),
+  'medal': $r('sys.symbol.medal'),
+  'flame': $r('sys.symbol.flame'),
+  'screenSaver': $r('sys.symbol.display')
+};
+
+/** 名字是否已映射官方 Symbol（未映射走自绘兜底）。 */
+function symbolMapped(name: string): boolean {
+  return SYMBOLS[name] !== undefined;
+}
+
+/**
+ * 名字 → 官方 Symbol 资源（内联渲染用）。
+ * ⚠️ 仅与「字面量图标名」搭配：未映射的名字返回 undefined 的 Resource，
+ * SymbolGlyph 渲染行为未定义——动态名先过 symbolMapped()。
+ * 颜色由调用方 `.fontColor([状态表达式])` 直接绑状态（api_notes L-7 / Z2）。
+ */
+export function symbolGlyphOf(name: string): Resource {
+  return SYMBOLS[name];
+}
+
+/**
+ * 图标渲染（v2.6：默认官方 SymbolGlyph；未映射名字回落自绘 Path）。
+ * @param name 图标名（见 SYMBOLS / P_* 常量）
  * @param size 边长（vp）。**触控热区由外层容器负责 ≥48**（Size.touch）
  * @param color 颜色，传 `$r('app.color.text_secondary')` 等 token
- * @param strokeWidth 线宽，默认 2（24 viewBox 下的标准描边）；填充型图标忽略
+ * @param strokeWidth 自绘兜底的线宽（官方 Symbol 无描边粗细概念，忽略）
  */
 const FILLED_ICONS: string[] = ['sync', 'starFilled'];
 
 @Builder
 export function Icon(name: string, size: number, color: ResourceColor, strokeWidth: number = 2) {
-  if (FILLED_ICONS.indexOf(name) >= 0) {
+  if (symbolMapped(name)) {
+    SymbolGlyph(symbolGlyphOf(name))
+      .fontSize(size)
+      .fontColor([color])
+  } else if (FILLED_ICONS.indexOf(name) >= 0) {
     Path({ commands: scalePath(pathOf(name), vp2px(size) / 24) })
       .width(size)
       .height(size)

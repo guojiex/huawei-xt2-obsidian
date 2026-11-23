@@ -1284,7 +1284,7 @@ instancePath '/overrides/signingConfig', keyword 'propertyNames',
 
 ---
 
-## J 组：视觉基线的三个待核实项（J-1 / J-2 / J-3）—— ✅ 全部核实完毕（2026-10-18；J-1 于 2026-11-19 重新评估并更新）
+## J 组：视觉基线的三个待核实项（J-1 / J-2 / J-3）—— ✅ 全部核实完毕（2026-10-18；J-1 于 2026-11-19、J-2 于 2026-11-22 重新评估并更新）
 
 > 来源：需求池 J 节 → v0.2 §3.5。铁律：**查不到就用兜底，禁止凭记忆编 `Hds*` 或 `sys.symbol.*`**。
 
@@ -1310,16 +1310,44 @@ instancePath '/overrides/signingConfig', keyword 'propertyNames',
 ② 不为一个列表项引整套 Design Kit（v0.2 §4「明确不做」仍成立）。
 **如将来决定引入**：需整体替换、与 token 体系对齐，并逐个核对组件 `@since` 与 API24 下限。
 
-### J-2 `SymbolGlyph` + `sys.symbol.*` 能否覆盖图标清单？ ⚠️ **只能核实 3 个 id，改为统一自绘**
+### J-2 `SymbolGlyph` + `sys.symbol.*` 能否覆盖图标清单？ ✅ **全量名单已找到（2026-11-22），旧结论「名单查不全」作废；当前仍自绘，待整包迁移**
 
-- `SymbolGlyph` 组件**存在**（`component/common.d.ts` 有 `SymbolGlyphModifier`）。
-- 但 `sys.symbol.*` 的**可用名单在 SDK 里查不到全量**，只有 d.ts 注释里出现的几个：
-  `sys.symbol.open_sidebar` / `chevron_down` / `chevron_forward` / `ohos_wifi` / `ohos_lungs`。
-  文件树需要的 文件夹 / 文档 / 收起 / 重命名 / 删除 **都核实不到**。
+> **2026-11-22 重新核实**：`sys.symbol.*` 的**全量名单就在 SDK 本地**，旧的「只有 d.ts 注释里 3 个」
+> 结论是当时搜法漏了文件，据此作废。新证据如下。
 
-**结论**：只用核实得到的 3 个会与自绘混成两套风格（4.7 明确禁止混用）→ **全部自绘**。
-实现见 `entry/src/main/ets/common/Icons.ets`：24 viewBox 描边、`strokeWidth 2`、圆头圆角。
-→ **待办（v0.3）**：拿到官方 Symbol 资源全量名单后，整体替换为 `SymbolGlyph`。
+**名单位置（2026-11-22 实测，SDK 26.0.0.105）**：
+- `<SDK>\default\openharmony\ets\build-tools\ets-loader\sysResource.js` —— `module.exports.sys`
+  下的 `symbol:` 段即 `$r('sys.symbol.*')` 的全量映射（本机该段 3372–7415 行，共 **4042 个 id**，
+  键名即资源名、值是数值 id）。`hms\ets\sysResource.js` **没有** symbol 段（只有 string/media/color/float）。
+- 同一份名单另见 `<SDK>\default\openharmony\toolchains\id_defined.json`（**2026-11-15 复核时即已发现**，
+  当时结论记在 `Icons.ets` 头注释而**漏记进本条**，本次补记）；官方图标库
+  `developer.huawei.com/consumer/cn/design/harmonyos-symbol` 可按名检索（579 个）。
+- 这两份文件是 ets-loader 的**编译期 id 映射**：`$r('sys.symbol.名字')` 按键名解析成数值 id，
+  所以「名字必须在名单里」是硬校验，名单外必挂。
+
+⚠️ **真机渲染风险（2026-11-15 记录，未消除）**：名单内 ≠ 设备能渲染。
+社区实测 **API 24 上部分名称编译通过却不渲染**（当时仅 `arrow_clockwise` 等 8 个确认可用）；
+symbol 字形由**设备系统字体**提供，HAP 未上架、真机 symbol 字体版本不可控。
+**迁移到 SymbolGlyph 的每个图标都必须在 XT2 真机逐个目检渲染**（真机验收归用户，见
+releases/README 2026-11-01/11-18 口径）；渲染缺失的图标按验收记录回退自绘或换 id。
+
+**pin / unpin 相关已核实 id**（当前自绘图标丑的直接解法，值见 sysResource.js）：
+`sys.symbol.pin`（125831547）/ `sys.symbol.pin_fill`（125831548）/ `sys.symbol.pin_slash`（125831549）/
+`sys.symbol.pin_fill_1`（125833456）/ `sys.symbol.pin_vertical_fill`（125831437）/
+`sys.symbol.mappin_and_rectangle`（125832204，地图钉勿混用）。
+注意 `pin_dot` 是 **media** 段不是 symbol（sysResource.js 3334 行），别引错。
+
+**覆盖面抽查**：项目现有图标词汇（chevron / folder / doc / trash / star / star_slash / settings /
+gearshape / search / plus / more / share / sync=arrow_2_circlepath / edit=square_and_pencil /
+image / keyboard / medal / flame / bold / italic / underline / strikethrough / textformat …）
+**全部在名单内**，整包迁移可行。
+
+**结论**：
+- `SymbolGlyph` 组件存在（API 11+），用法 `SymbolGlyph($r('sys.symbol.pin')).fontSize(size).fontColor([颜色])`。
+- **当前实现仍是自绘**（`entry/src/main/ets/common/Icons.ets`：24 viewBox 描边、`strokeWidth 2`、圆头圆角）。
+  只把 pin/unpin 单独换成 SymbolGlyph 会与自绘**混成两套风格**（4.7 明确禁止混用）。
+- → **待办**：立版本**整包迁移** `Icon()` → `SymbolGlyph`（对应需求池 J 节「图标换 HarmonyOS Symbol」），
+  迁移时逐个核对名单 + XT2 真机渲染验收 + 深浅色 token 走 `fontColor`。
 
 > ⚠️ 自绘踩坑记录（两次，都已修）：
 > ① `Shape().viewPort()` **不缩放子 Path** —— 图标被渲染成几个像素的点；
@@ -2351,6 +2379,7 @@ T1 / T2 / T3 / T5 / T6 / T7 / T8 均有设备实测支撑；T9 / T10 由本机�
 - **实现期补充（2026-11-07，v1.36 落码，声明核对）**：随机读改用 `RandomAccessFile`（`fileIo.createRandomAccessFileSync` / `setFilePointer` / `read(buffer): Promise<number>` / readonly `filePointer`，均 `@ohos.file.fs` **since 10**），**绕开 Y3 ⚠️ 的 `fs.read` ReadOptions.offset 存疑语义**——实现不依赖该存疑行为。`ZStream` 字段按声明使用（nextIn/availableIn/totalIn/nextOut/availableOut/totalOut/dataType/adler，全可选）。设备链路封装于 `entry/src/main/ets/model/ZipImportDevice.ets`；解析 / 校验 / 解压编排在 `ZipImportService.ets`（零 `@kit`，Node 侧真实 zlib deflateRaw 交叉验证，`tools/tests/test_zip_import.mjs` 25/25），签名 HAP 构建通过。⚠️ 项不变：`17800004/17800005` 触发形态与 Picker 过滤视觉仍待 API 24 / XT2 真机验收（`docs/releases/历史版本归档.md#v136-需求文档` §6.2）。
 - **✅ `ZStream` 字段更新语义已实测确认（2026-11-17，x86_64 API26 模拟器实测 + d.ts/官方 FAQ 佐证）**：`Zip.inflate` 等流式操作**不回写调用方传入的 `ZStream` 对象**——操作后读 `strm.availableOut/totalOut` 拿到的仍是**初始值**；当前真实状态必须 `await zip.getZStream()` 重取（`@ohos.zlib.d.ts:1215`，官方 FAQ「zip.deflate 压缩数据后……totalOut 都没有发生改变……每次操作完成，需要重新 getZStream() 获取最新状态」）。**踩坑记录**：`ZlibRawInflate.inflateRaw` 曾在 STREAM_END 后直接读 `strm.availableOut`（恒为初始值 `expectedSize`），完整性检查 `expectedSize - availableOut !== expectedSize` 对**所有非空 deflate 条目恒真**→ 一律误判「ZIP 数据损坏」——应用备份恢复必现「备份文件损坏或格式不完整」（备份 zip 全部 18 条目均为 method 8，首个非空条目 manifest.json 即失败），含非空笔记的 vault ZIP 导入同理必现；解压本身成功、输出 buffer 字节正确，纯检查误杀。**修复**：STREAM_END 后 `const current = await zip.getZStream();` 读 `current.availableOut`（缺省回落 0，空表不误伤；extract 的长度 + CRC32 校验仍在兜底）。修复后模拟器上导出→恢复全链路实测通过（预览 15 文件、替换恢复、重启后数据完整）。空条目（uncompressedSize 0）走提前返回不经 zlib，故 0 字节笔记库导入此前侥幸通过、掩盖了该缺陷。XT2 / API 24 真机复验仍待做（沿 Y4 原 ⚠️ 项）。
 - **⚠️ 真机复验失败，availableOut 检查整体移除（2026-11-18，XT2 真机用户复测）**：用户在 XT2 真机上「ZIP 导出后再导入」仍报「格式已损坏」——getZStream 版修复在 x86_64 模拟器通过但真机不通过，说明 **`getZStream()` 返回语义随系统构建而异**（XT2 固件可能仍返回初始 `availableOut`、或该调用抛错落入 catch→corrupt；亦不排除真机装的是修复前构建，两种情形的嫌疑环节相同）。**拍板：设备层不再做任何 `availableOut` 后置检查**（`ZipImportDevice.ets` 移除 getZStream 判定，`tools/tests/test_zlib_inflate_state.mjs` 改为断言无 availableOut 判定 + 服务层校验仍在）：该检查本就冗余——`ZipImportService.extract` 对返回字节做**长度 + CRC32 双重权威校验**，比 availableOut 更强且与设备固件无关；设备层只保留 `ReturnStatus.STREAM_END` 终态要求。getZStream 的平台事实（读状态须重取）不变，但本项目不再依赖它做判定。真机后续实测结果照实回填本条。
+- **✅ 用法经官方确认无误 + 自绘路线被官方背书（2026-11-23，官方答复，[归档](qa/2026-11-23_zlib流式inflate状态语义_API24.md)）**：① 本项目 `inflateInit2(-15)` + NO_FLUSH 循环 + `STREAM_END` 终态与官方《压缩与解压》指南一致（指南未要求特定 flush 值 / 分段；windowBits raw deflate 官方口径 **[-15,-8]**，-15 为标准取值——本条目此前 [-15,-1] 的口径不精确，-15 用法无影响）；② 指南写法为**每次 `inflate()` 后 `getZStream()` 逐字段拷回**再判定，原地更新语义官方未做「保证」措辞声明；③ **API 24 真机与 API 26 模拟器 `getZStream()` 返回语义差异与已知缺陷——官方「未记载」**，建议工单渠道反馈——印证 2026-11-18 拍板（不依赖 getZStream 判定）正确，官方同时明确兜底姿势 =「输出长度 + CRC32 校验为准、getZStream 仅辅助」，与本项目现状一致，**零代码改动**；④ **API ≤ 24 不存在官方逐条目 / 带进度 / 可取消的 ZIP 解压接口**（带进度回调的 `OH_Archive_*` C API since 26 且仅整包 `ExtractAllFile`），本项目「自绘容器解析 + 逐条目流式 inflate + 自行 CRC32」被确认为 API 24 约束下与官方能力对齐的合理做法，v1.36 选型不回炉；⑤ `decompressFile`：包内条目名含 `../` 抛 `900003`（API 13+）有记载，**解压前是否校验条目 CRC / 加密 ZIP 行为 / symlink 条目行为均「未记载」**——不得假设 `decompressFile` 做了完整性 / 安全性兜底；⑥ `17800004`（压缩/解压流错误，含未初始化就调流式接口）/ `17800005`（传入数据错误，数据非压缩格式 / 损坏 / 未压缩）触发条件已记载。
 
 ### Y5 ✅ `fs.utimes(path, mtime)` 可在导入后回填文件修改时间（2026-11-10，本机 SDK 声明核对）
 

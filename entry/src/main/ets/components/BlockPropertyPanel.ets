@@ -4,6 +4,7 @@
  * 打开/关闭、几何布局与 sheet 挂载留在 Index。
  */
 import { promptAction } from '@kit.ArkUI';
+import { common, Want } from '@kit.AbilityKit';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 import { pasteboard } from '@kit.BasicServicesKit';
 import { WorkspaceEditGuard } from '../model/WorkspaceEditGuard';
@@ -1975,6 +1976,53 @@ export struct BlockPropertyPanel {
     this.openFileInOtherPane(resolution.path);
   }
 
+  /** 面板「打开链接」：http(s)/mailto/tel 交系统打开；库内 .md 目标解析后打开笔记。 */
+  private openBlockPanelLink(): void {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null || anchor.tapType !== 'link' || !this.blockPanelLinkReady ||
+      this.blockPanelLinkParts === null) {
+      return;
+    }
+    const destination: string = this.blockPanelLinkDestination.trim();
+    if (destination.length === 0) {
+      return;
+    }
+    if (/^(https?|mailto|tel):/i.test(destination)) {
+      this.openBlockPanelLinkExternally(destination);
+      return;
+    }
+    const resolution: WikiLinkResolution = WikiLinkParser.resolveMarkdownLink(destination,
+      this.blockPanelSourcePath,
+      WikiLinkService.files(VaultRegistry.get(), this.blockPanelSourceVaultId));
+    if (resolution.status === 'resolved') {
+      this.closeBlockPropertyPanel(false);
+      this.openFileInOtherPane(resolution.path);
+      return;
+    }
+    if (resolution.status === 'missing' &&
+      (destination.endsWith('.md') || destination.endsWith('.markdown'))) {
+      promptAction.showToast({ message: '目标笔记不存在' });
+      return;
+    }
+    promptAction.showToast({ message: '此链接不是库内笔记链接' });
+  }
+
+  private openBlockPanelLinkExternally(url: string): void {
+    const want: Want = {
+      action: 'ohos.want.action.viewData',
+      entities: ['entity.system.browsable'],
+      uri: url
+    };
+    try {
+      void (getContext(this) as common.UIAbilityContext).startAbility(want)
+        .catch((): void => {
+          promptAction.showToast({ message: '打开链接失败' });
+        });
+    } catch (_error) {
+      promptAction.showToast({ message: '打开链接失败' });
+    }
+  }
+
   private async convertInlineCodeToPlainText(): Promise<void> {
     const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
     const pane: string = this.blockPanelPane;
@@ -2261,6 +2309,10 @@ export struct BlockPropertyPanel {
     }
     if (anchor !== null && anchor.tapType === 'wikilink') {
       this.openBlockPanelWikiTarget();
+      return;
+    }
+    if (anchor !== null && anchor.tapType === 'link') {
+      this.openBlockPanelLink();
       return;
     }
     this.closeBlockPanelForContentAction();

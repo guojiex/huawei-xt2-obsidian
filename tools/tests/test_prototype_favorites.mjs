@@ -28,15 +28,17 @@ test('v2 files panel hosts a collapsible favorites section mirroring the trash f
   assert.ok(html.indexOf('id="pinFolder"') < html.indexOf('id="favoritesFolder"'));
 });
 
-test('v2 file rows carry an end-of-row star toggle wired to toggleFavorite', () => {
-  assert.match(html, /class="file-star" type="button" data-favorite="'\+n\.id\+'" aria-pressed="'\+isFavorite\(n\.id\)\+'"/);
-  assert.match(html, /\$\('notes'\)\.querySelectorAll\('\[data-favorite\]'\)\.forEach\(b=>b\.onclick=e=>\{e\.stopPropagation\(\);toggleFavorite\(b\.dataset\.favorite\);\}\);/);
-  assert.match(html, /\.file-star\[aria-pressed=true\]\{color:var\(--muted\)\}/);
-  assert.match(html, /\.file-star\[aria-pressed=true\]:hover\{color:var\(--ink\)\}/);
-  assert.match(html, /\.file-star svg\{width:var\(--s4\);height:var\(--s4\)\}/);
-  assert.match(html, /\.file-star\[aria-pressed=true\] svg\{fill:currentColor\}/);
-  // 指针设备降噪（Notion 式）：未收藏星标默认隐藏，行悬停 / 当前行 / 键盘焦点才出现；触屏设备常显。
-  assert.match(html, /@media\(hover:hover\)\{\.file-star:not\(\[aria-pressed=true\]\):not\(:focus-visible\)\{opacity:0;pointer-events:none\}\.file-front:hover \.file-star,\.file-entry\[data-active=true\] \.file-star,\.file-star:focus-visible\{opacity:1;pointer-events:auto\}\}/);
+test('v2 file rows mark favorites inline (12px tree-fav) instead of an end-of-row star button', () => {
+  // v2.5 闭环方案 A（2026-11-23）：行尾 48px 星标按钮与跨栏按钮在窄侧栏（XT2 三栏
+  // 200-248px）合计 ~96px，深层笔记名宽归零。收藏降为名字尾 12px 状态标记（同
+  // tree-pin 口径：已收藏才渲染、不可点），切换走笔记级 ⋯ 菜单（mobileFavorite /
+  // leftFavorite / rightFavorite）与收藏区行。
+  assert.match(html, /const pinned=isPinned\(n\.id\),fav=isFavorite\(n\.id\);/);
+  assert.match(html, /\(fav\?'<span class="tree-fav" aria-hidden="true">'\+svg\('star'\)\+'<\/span>':''\)/);
+  assert.match(html, /\.tree-fav\{flex:none;display:grid;place-items:center;width:var\(--s3\);height:var\(--s3\);color:var\(--muted\)\}/);
+  assert.match(html, /\.tree-fav svg\{width:var\(--s3\);height:var\(--s3\);fill:currentColor\}/);
+  assert.doesNotMatch(html, /class="file-star"/);
+  assert.doesNotMatch(html, /data-favorite/);
 });
 
 test('favorites rows are single-line nav rows aligned with tree file titles', () => {
@@ -52,8 +54,9 @@ test('favorites rows are single-line nav rows aligned with tree file titles', ()
   assert.match(html, /\.fav-row:hover \.fav-folder,\.fav-row:focus-within \.fav-folder\{display:none\}/);
   assert.match(html, /\.fav-row:hover \.fav-unstar,\.fav-row:focus-within \.fav-unstar\{display:grid\}/);
   assert.match(html, /\.fav-list\{max-height:calc\(var\(--s10\) \* 5\.5\);overflow:auto;scrollbar-width:thin/);
-  // 图标按钮 grid 居中并使用同一列宽，区头箭头、移出收藏与树行尾图标中心对齐。
-  assert.match(html, /\.file-star\{display:grid;place-items:center;/);
+  // 图标按钮 grid 居中并使用同一列宽，区头箭头、移出收藏与树行尾图标中心对齐；
+  // 树行收藏星标自 v2.5 闭环方案 A 起为名字尾 12px 内联标记（.tree-fav），不再占行尾列。
+  assert.match(html, /\.tree-fav\{flex:none;display:grid;place-items:center;/);
   assert.match(html, /\.file-reference\{display:grid;place-items:center;/);
   assert.ok(html.includes('class="fav-mono" style="--tone:\'+favTone(n.folder)+\'" aria-hidden="true">\'+esc(mono)+\'</span>'));
   assert.ok(html.includes('<span class="fav-name">\'+esc(n.title)+\'</span><span class="fav-folder" aria-hidden="true">\'+esc(folder)+\'</span>'));

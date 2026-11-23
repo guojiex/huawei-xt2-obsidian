@@ -88,7 +88,9 @@ test('tree keeps pure folder-first order regardless of pin status (62.2)', () =>
   const fileLoop = html.indexOf('for(const n of branch.files) html+=fileRowHtml(n,depth);');
   assert.ok(folderLoop >= 0 && fileLoop > folderLoop, 'treeHtml order must be folders → files');
   // 置顶行名字尾部 12px pin 标记；未置顶行保持原名。
-  assert.ok(html.includes("(pinned?'<span class=\"tree-name-wrap\"><span class=\"tree-name\">'+esc(n.title)+'</span><span class=\"tree-pin\" aria-hidden=\"true\">'+svg('pin')+'</span></span>':'<span class=\"tree-name\">'+esc(n.title)+'</span>')"));
+  // v2.5 闭环方案 A（2026-11-23）：name-wrap 条件扩为 pinned||fav（收藏加名字尾
+  // .tree-fav 标记，星标按钮移除），pin 标记本身仍是 12px、已置顶才渲染。
+  assert.ok(html.includes("((pinned||fav)?'<span class=\"tree-name-wrap\"><span class=\"tree-name\">'+esc(n.title)+'</span>'+(pinned?'<span class=\"tree-pin\" aria-hidden=\"true\">'+svg('pin')+'</span>':'')+(fav?'<span class=\"tree-fav\" aria-hidden=\"true\">'+svg('star')+'</span>':'')+'</span>':'<span class=\"tree-name\">'+esc(n.title)+'</span>')"));
   assert.ok(html.includes("pin:'<path d=\"M12 17v5\"/>"), 'icon registry must ship a pin icon');
   assert.ok(html.includes("pinOff:'<path d=\"M12 17v5\"/>"), 'icon registry must ship a pinOff icon (lucide pin-off)');
   // 视觉 token：12px（--s3）、muted（tertiary）、名字尾部跟随收缩。

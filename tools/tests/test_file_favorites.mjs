@@ -207,10 +207,18 @@ test('源级：移出收藏双入口与 toast（左滑滑到底 = 移出，非�
   assert.match(fileTreeViewSource, /this\.favHoverPath = isHover \? row\.relPath : '';/);
 });
 
-test('源级：树行星标常显 muted + 字面量分支（97.2 口径修订，Z2 首帧固化）+ 行键 |fav', () => {
-  assert.match(fileTreeViewSource, /if \(!n\.isDir && !this\.referenceOnly\) \{\s*Row\(\) \{\s*if \(this\.isFavorite\(n\.relPath\)\) \{\s*Icon\('starFilled', Space\.s4, \$r\('app\.color\.text_tertiary'\)\)\s*\} else \{\s*Icon\('star', Space\.s4, \$r\('app\.color\.text_tertiary'\)\)/);
+test('源级：树行收藏为名字尾 12vp 星标标记（v2.5 闭环方案 A）+ 行键 |fav', () => {
+  // 行尾 48vp 星标按钮与跨栏按钮在窄侧栏（XT2 三栏 200-248vp）合计 ~96vp，深层笔记
+  // 名宽归零；收藏降为名字尾状态标记（同图钉口径：已收藏才渲染、不可点），
+  // starFilled 字面量（Z2/L-7 首帧固化）。
+  assert.match(fileTreeViewSource, /if \(!n\.isDir && this\.isFavorite\(n\.relPath\)\) \{\s*Icon\('starFilled', 12, \$r\('app\.color\.text_tertiary'\)\)/);
   assert.match(fileTreeViewSource, /this\.isFavorite\(n\.relPath\) \? '\|fav' : ''/);
-  assert.match(fileTreeViewSource, /\(this\.isFavorite\(n\.relPath\) \? '取消收藏：' : '收藏：'\) \+ n\.name/);
+  // 行尾星标按钮整体移除（其 a11y 文案形态不得再现；左滑按钮的拼接形态不同，不冲突）
+  assert.doesNotMatch(fileTreeViewSource, /\(this\.isFavorite\(n\.relPath\) \? '取消收藏：' : '收藏：'\) \+ n\.name/);
+  // 树内收藏切换入口收编：长按 ⋯ 菜单项（首项聚焦）+ 左滑操作条按钮（触屏主路径）
+  assert.match(fileTreeViewSource, /PathMenuItem\(n, 'favorite', this\.isFavorite\(n\.relPath\) \? '取消收藏' : '收藏',\s*this\.isFavorite\(n\.relPath\) \? 'starFilled' : 'star', false, true\)/);
+  assert.match(fileTreeViewSource, /action === 'favorite' && !node\.isDir/);
+  assert.match(fileTreeViewSource, /accessibilityText\(this\.isFavorite\(n\.relPath\) \? '取消收藏：' \+ n\.name : '收藏：' \+ n\.name\)/);
 });
 
 test('源级：Index「⋯」菜单入口 + 永久删除清理 + 改名 / 移动 retarget（97.2 / 97.3）', () => {
