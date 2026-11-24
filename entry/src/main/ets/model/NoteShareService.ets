@@ -180,10 +180,15 @@ export class NoteShareService {
     return refs;
   }
 
-  /** Markdown/HTML 图片按 noteDir 解析；Obsidian 图片嵌入按库根解析；均拒绝越出库根。 */
+  /** Markdown/HTML 图片按 noteDir 解析；Obsidian 图片嵌入按库根解析；均拒绝越出库根。
+   * 单斜杠开头的「库内绝对路径」（Obsidian /path/to/img）同样按库根解析。 */
   static resolveImagePath(notePath: string, source: string, rootRelative: boolean = false): string {
-    if (source.length === 0 || source.startsWith('/') || source.indexOf('\\') >= 0) {
+    if (source.length === 0 || source.startsWith('//') || source.indexOf('\\') >= 0) {
       throw new Error('图片路径必须是当前知识库内的相对路径：' + source);
+    }
+    if (source.startsWith('/')) {
+      rootRelative = true;
+      source = source.substring(1);
     }
     let decoded: string = source;
     try {
