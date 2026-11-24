@@ -257,6 +257,15 @@ interface TableEditUndoState {
   expectedContent: string;
 }
 
+/** v2.9 链接跳转返回历史的单条记录：pane = 跳转发生时来源笔记所在栏。 */
+interface NoteNavEntry {
+  pane: string;
+  path: string;
+}
+
+/** v2.9 链接跳转返回历史上限：超出丢最旧一条（会话级内存态，不持久化）。 */
+const NOTE_NAV_LIMIT = 50;
+
 /** 窗口宽度档位标签；不把断点直接解释成物理屏幕形态。 */
 function formLabelOf(bp: string, widthVp: number, heightVp: number): string {
   if (isSingleLandscapeWindow(widthVp, heightVp)) {
@@ -551,6 +560,8 @@ struct Index {
   @State backlinksPane: string = 'left';
   @State backlinksLoading: boolean = false;
   @State backlinksFailed: boolean = false;
+  /** v2.9 链接跳转返回历史栈：点双链 / 库内链接跳转前压入来源笔记，切库清空 */
+  private noteNavStack: NoteNavEntry[] = [];
   /**
    * M0.5 spike：Web 编辑器（CodeMirror 6）的桥接句柄与「最近一次内容长度」。
    * bridge 由本页创建并传给 EditorWebView（对象引用共享，页面 ready 时内部 bind）。
@@ -2600,7 +2611,7 @@ struct Index {
   /**
    * 系统返回键/侧滑返回拦截（需求 2.7b；api_notes I-1 / I3.1 已真机核实：侧滑同样触发）。
    * 按优先级依次消费：① 快切/抽屉；② 工作区导航；③ 次级视图；④ 图片查看器；⑤ sm 预览态；
-   * 都不是则返 false 走系统默认（退出应用）。
+   * ⑥ 链接跳转返回历史（v2.9）；都不是则返 false 走系统默认（退出应用）。
    */
   onBackPress(): boolean {
     if (this.moreMenuOpen) {
@@ -2636,6 +2647,9 @@ struct Index {
     if (this.experienceMode === 'professional' && this.breakpoint === Breakpoint.SM && this.smMode === 'preview') {
       this.smMode = 'edit';
       this.scheduleWorkspaceSessionSave();
+      return true;
+    }
+    if (this.goBackNoteNav()) {
       return true;
     }
     return false;
@@ -2684,6 +2698,42 @@ struct Index {
     this.topView = this.settingsReturnView;
     this.focusMoreMenuOnAppear = this.settingsReturnView === 'note';
     this.scheduleWorkspaceSessionSave();
+  }
+
+  /** v2.9：链接跳转前压入来源笔记；连续相同 (pane, path) 去重，超上限丢最旧。 */
+  private pushNoteNav(pane: string, path: string): void {
+    if (path.length === 0) {
+      return;
+    }
+    const top: NoteNavEntry | undefined =
+      this.noteNavStack.length > 0 ? this.noteNavStack[this.noteNavStack.length - 1] : undefined;
+    if (top !== undefined && top.pane === pane && top.path === path) {
+      return;
+    }
+    this.noteNavStack.push({ pane: pane, path: path });
+    while (this.noteNavStack.length > NOTE_NAV_LIMIT) {
+      this.noteNavStack.shift();
+    }
+  }
+
+  /** v2.9：系统返回消费链末端回上一笔记；目标已删除 / 改名则跳过继续弹，栈空返 false。 */
+  private goBackNoteNav(): boolean {
+    while (this.noteNavStack.length > 0) {
+      const entry: NoteNavEntry | undefined = this.noteNavStack.pop();
+      if (entry === undefined) {
+        continue;
+      }
+      if (!WikiLinkService.files(VaultRegistry.get(), this.currentVaultId).includes(entry.path)) {
+        continue;
+      }
+      if (entry.pane === 'right') {
+        void this.loadRightFile(entry.path);
+      } else {
+        void this.loadFile(entry.path);
+      }
+      return true;
+    }
+    return false;
   }
 
   private async openVaultManager(fromView: string): Promise<void> {
@@ -5864,6 +5914,7 @@ struct Index {
     const resolution: WikiLinkResolution = WikiLinkParser.resolve(target, sourcePath,
       WikiLinkService.files(registry, vaultId));
     if (resolution.status === 'resolved') {
+      this.pushNoteNav(pane, sourcePath);
       if (pane === 'right') {
         void this.loadRightFile(resolution.path);
       } else {
@@ -5898,6 +5949,7 @@ struct Index {
     const latest: WikiLinkResolution = WikiLinkParser.resolve(target, sourcePath,
       WikiLinkService.files(registry, vaultId));
     if (latest.status === 'resolved') {
+      this.pushNoteNav(pane, sourcePath);
       if (pane === 'right') {
         void this.loadRightFile(latest.path);
       } else {
@@ -5922,6 +5974,7 @@ struct Index {
         this.setDrawerOpen(false);
         this.smMode = 'edit';
       }
+      this.pushNoteNav(pane, sourcePath);
       if (pane === 'right') {
         await this.loadRightFile(createdPath);
       } else {
@@ -5943,6 +5996,7 @@ struct Index {
     const resolution: WikiLinkResolution = WikiLinkParser.resolveMarkdownLink(href, sourcePath,
       WikiLinkService.files(registry, vaultId));
     if (resolution.status === 'resolved') {
+      this.pushNoteNav(pane, sourcePath);
       if (pane === 'right') {
         void this.loadRightFile(resolution.path);
       } else {
@@ -6232,6 +6286,7 @@ struct Index {
       this.rightPaneIntentionallyEmpty = false;
       this.quickSwitchOpen = false;
       this.quickSwitchFiles = [];
+      this.noteNavStack = [];
       this.recentOpenPaths = [];
       this.smMode = 'edit';
       if (targetSession === null) {
@@ -6498,6 +6553,7 @@ struct Index {
     this.rightPaneIntentionallyEmpty = false;
     this.quickSwitchOpen = false;
     this.quickSwitchFiles = [];
+    this.noteNavStack = [];
     this.recentOpenPaths = [];
     this.leftLastClosedPath = '';
     this.rightLastClosedPath = '';
