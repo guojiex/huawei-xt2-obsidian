@@ -221,7 +221,8 @@ export struct ApplicationBackupDialog {
       if (outcome.status === 'ok') {
         this.restored = true;
         this.doneTitle = '数据已恢复';
-        this.doneCopy = '已按备份内容替换当前数据。外部目录需重新授权，Git 访问令牌需重新填写。';
+        this.doneCopy = '已按备份内容替换当前数据。外部目录需重新授权，Git 访问令牌需重新填写；' +
+          'Git 库恢复后请在同步页重新关联远端。';
         this.step = 'done';
         return;
       }
@@ -527,13 +528,13 @@ export struct ApplicationBackupDialog {
     Column({ space: Space.s4 }) {
       this.BackupOverview()
       Column({ space: Space.s3 }) {
-        this.BackupContentItem('知识库与文件', '笔记、图片附件、回收站、草稿与 Git 历史')
+        this.BackupContentItem('知识库与文件', '笔记、图片附件、回收站与草稿')
         this.BackupContentItem('应用设置与使用偏好', '库列表、置顶、收藏、排序、外观与编辑器设置')
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
-      this.NoteText('不包含 Git 访问令牌、缓存和搜索索引。外部目录只备份关联信息，文件请另行备份；' +
-        '恢复后需重新授权。写作统计按文件时间重新计算。')
+      this.NoteText('Git 历史不备份（在同步页重新关联远端即可恢复），也不含 Git 访问令牌、缓存和搜索索引。' +
+        '外部目录只备份关联信息，文件请另行备份；恢复后需重新授权。写作统计按文件时间重新计算。')
       if (this.errorText.length > 0) {
         this.WarningText(this.errorText)
       }

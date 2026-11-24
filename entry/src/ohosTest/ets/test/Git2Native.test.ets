@@ -159,6 +159,25 @@ function writeText(path: string, value: string): void {
   }
 }
 
+// v2.10：模拟应用备份恢复出的目录——复制全部工作区文件但不含 .git。
+function copyWorktreeWithoutGit(fromPath: string, toPath: string): void {
+  fileIo.mkdirSync(toPath);
+  const names: string[] = fileIo.listFileSync(fromPath);
+  for (let i: number = 0; i < names.length; i++) {
+    const name: string = names[i];
+    if (name === '.git') {
+      continue;
+    }
+    const from: string = fromPath + '/' + name;
+    const to: string = toPath + '/' + name;
+    if (fileIo.statSync(from).isDirectory()) {
+      copyWorktreeWithoutGit(from, to);
+    } else {
+      fileIo.copyFileSync(from, to);
+    }
+  }
+}
+
 async function fixturePackSha256(): Promise<string> {
   const request: http.HttpRequest = http.createHttp();
   try {
@@ -511,6 +530,125 @@ export default function git2NativeTest() {
         } finally {
           removeTree(source.path);
           removeTree(target.path);
+        }
+      });
+
+    it('reattaches a vault restored without .git, retries idempotently and refuses usable repositories',
+      0, async (): Promise<void> => {
+        const source = newTarget('reattach_source');
+        const restored = newTarget('reattach_restored');
+        const missingBranch = newTarget('reattach_missing_branch');
+        const noteRelPath: string = '笔记/中文.md';
+        const restoredNotePath: string = registry.absoluteIn(restored.id, noteRelPath);
+        try {
+          await nativeGit2.clone({
+            url: FIXTURE_URL,
+            targetPath: source.path,
+            branch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          });
+          const sourceHead: string = nativeGit2.getRepositoryState(source.path).head;
+
+          // 模拟 v2.10 备份恢复：工作区文件在、.git 不在；恢复内容与远端有差异（未同步修改）。
+          copyWorktreeWithoutGit(source.path, restored.path);
+          writeText(restoredNotePath, '# 恢复后未同步的修改\n');
+          const restoredNoteHash: string = await sha256(restoredNotePath);
+          expect(fileIo.accessSync(restored.path + '/.git')).assertFalse();
+
+          // 先失败（不可达远端）：留下半成品 .git，不得删除用户数据。
+          let offlineFailed: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'reattach',
+              repositoryPath: restored.path,
+              remoteUrl: 'http://127.0.0.1:19440/unreachable.git',
+              targetBranch: 'xt2',
+              username: FIXTURE_USERNAME,
+              password: FIXTURE_PASSWORD,
+            });
+          } catch {
+            offlineFailed = true;
+          }
+          expect(offlineFailed).assertTrue();
+          expect(fileIo.accessSync(restored.path + '/.git')).assertTrue();
+          expect(await sha256(restoredNotePath)).assertEqual(restoredNoteHash);
+
+          // 幂等重试：半成品 .git 续跑，origin URL 被改指正确地址。
+          expect(await nativeGit2.gitAction({
+            operation: 'reattach',
+            repositoryPath: restored.path,
+            remoteUrl: FIXTURE_URL,
+            targetBranch: 'xt2',
+            username: FIXTURE_USERNAME,
+            password: FIXTURE_PASSWORD,
+          })).assertEqual('reattached');
+
+          const state: Git2RepositoryState = nativeGit2.getRepositoryState(restored.path);
+          expect(state.branch).assertEqual('xt2');
+          expect(state.head).assertEqual(sourceHead);
+          expect(state.trackingKnown).assertTrue();
+          expect(state.aheadCount).assertEqual(0);
+          expect(state.behindCount).assertEqual(0);
+          // index 对齐 HEAD 树：与远端一致的字节不产生状态，未同步修改以 M 呈现。
+          expect(state.statusEntryCount).assertEqual(1);
+          expect(state.changes.length).assertEqual(1);
+          expect(state.changes[0].path).assertEqual(noteRelPath);
+          expect(state.changes[0].status).assertEqual('M');
+          // 工作区字节零改动。
+          expect(await sha256(restoredNotePath)).assertEqual(restoredNoteHash);
+          expect(await sha256(registry.absoluteIn(restored.id, '空文件.bin')))
+            .assertEqual(EMPTY_SHA256);
+
+          // 已是可用仓库（HEAD 有提交）：拒绝重做。
+          let alreadyUsable: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'reattach',
+              repositoryPath: restored.path,
+              remoteUrl: FIXTURE_URL,
+              targetBranch: 'xt2',
+              username: FIXTURE_USERNAME,
+              password: FIXTURE_PASSWORD,
+            });
+          } catch (error) {
+            alreadyUsable = String(error).indexOf('无需重新关联') >= 0;
+          }
+          expect(alreadyUsable).assertTrue();
+
+          // 远端缺目标分支：报可读错误，不落 HEAD。
+          let branchMissing: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'reattach',
+              repositoryPath: missingBranch.path,
+              remoteUrl: FIXTURE_URL,
+              targetBranch: 'reattach_missing_probe',
+              username: FIXTURE_USERNAME,
+              password: FIXTURE_PASSWORD,
+            });
+          } catch (error) {
+            branchMissing = String(error).indexOf('远端没有分支') >= 0;
+          }
+          expect(branchMissing).assertTrue();
+
+          // remoteUrl 内嵌凭据：与 clone 同口径拒绝。
+          let embeddedRejected: boolean = false;
+          try {
+            await nativeGit2.gitAction({
+              operation: 'reattach',
+              repositoryPath: missingBranch.path,
+              remoteUrl: 'http://user:pass@127.0.0.1:19439/fixture.git',
+              targetBranch: 'xt2',
+            });
+          } catch (error) {
+            embeddedRejected = String(error).indexOf('credentials must be passed separately') >= 0;
+          }
+          expect(embeddedRejected).assertTrue();
+        } finally {
+          removeTree(source.path);
+          removeTree(restored.path);
+          removeTree(missingBranch.path);
         }
       });
 

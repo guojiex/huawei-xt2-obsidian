@@ -91,6 +91,12 @@ interface TreeSize {
   bytes: number;
 }
 
+/** 备份 payload 中首个超限文件（相对 payload 根的路径 + 字节数），供错误提示点名。 */
+interface OversizedFile {
+  relativePath: string;
+  bytes: number;
+}
+
 /** Writes extracted files only under the unregistered staging root. */
 class ApplicationBackupStageWriter implements ZipWriterPort {
   private rootDir: string;
@@ -196,7 +202,7 @@ export class ApplicationBackupService {
           if (!fileIo.accessSync(source)) {
             throw new Error('有知识库目录不可读取，请检查后重试');
           }
-          await ApplicationBackupService.copyTree(source, target, true);
+          await ApplicationBackupService.copyTree(source, target);
         }
       }
 
@@ -227,10 +233,21 @@ export class ApplicationBackupService {
 
       const treeSize: TreeSize = ApplicationBackupService.measureTree(payloadDir);
       if (treeSize.entries > APP_BACKUP_LIMITS.maxEntries || treeSize.bytes > APP_BACKUP_LIMITS.maxTotalUncompressed) {
-        throw new ZipImportError('over_limit', '应用数据超过单个备份文件的安全上限');
+        throw new ZipImportError('over_limit',
+          '备份数据共 ' + treeSize.entries.toString() + ' 个文件、约 ' +
+          ZipImportService.formatBytes(treeSize.bytes) + '，超过备份安全上限（' +
+          APP_BACKUP_LIMITS.maxEntries.toString() + ' 个文件 / ' +
+          ZipImportService.formatBytes(APP_BACKUP_LIMITS.maxTotalUncompressed) +
+          '）。请移出部分文件后重试。');
       }
-      if (ApplicationBackupService.hasOversizedFile(payloadDir, APP_BACKUP_LIMITS.maxSingleUncompressed)) {
-        throw new ZipImportError('over_limit', '有单个文件超过备份安全上限');
+      const oversized: OversizedFile | null =
+        ApplicationBackupService.findOversizedFile(payloadDir, '', APP_BACKUP_LIMITS.maxSingleUncompressed);
+      if (oversized !== null) {
+        throw new ZipImportError('over_limit',
+          '「' + oversized.relativePath + '」（约 ' +
+          ZipImportService.formatBytes(oversized.bytes) + '）超过单个文件 ' +
+          ZipImportService.formatBytes(APP_BACKUP_LIMITS.maxSingleUncompressed) +
+          ' 的备份上限，请移出或删除该文件后重试。');
       }
       await zlib.compressFile(payloadDir, archivePath, {});
 
@@ -1060,11 +1077,11 @@ export class ApplicationBackupService {
 
   private static async copyTreeIfPresent(source: string, target: string): Promise<void> {
     if (fileIo.accessSync(source)) {
-      await ApplicationBackupService.copyTree(source, target, true);
+      await ApplicationBackupService.copyTree(source, target);
     }
   }
 
-  private static async copyTree(source: string, target: string, scrubGitConfig: boolean): Promise<void> {
+  private static async copyTree(source: string, target: string): Promise<void> {
     const sourceStat: fileIo.Stat = fileIo.lstatSync(source);
     if (sourceStat.isSymbolicLink()) {
       throw new Error('应用数据包含不支持的链接文件，备份未生成');
@@ -1078,6 +1095,10 @@ export class ApplicationBackupService {
     const names: string[] = fileIo.listFileSync(source);
     for (let i: number = 0; i < names.length; i++) {
       const name: string = names[i];
+      // v2.10：备份无条件排除 .git（目录或同名文件，任意层级）——Git 历史由远端重新关联承接。
+      if (name === '.git') {
+        continue;
+      }
       const sourcePath: string = source + '/' + name;
       const targetPath: string = target + '/' + name;
       const stat: fileIo.Stat = fileIo.lstatSync(sourcePath);
@@ -1085,52 +1106,16 @@ export class ApplicationBackupService {
         throw new Error('应用数据包含不支持的链接文件，备份未生成');
       }
       if (stat.isDirectory()) {
-        await ApplicationBackupService.copyTree(sourcePath, targetPath, scrubGitConfig);
+        await ApplicationBackupService.copyTree(sourcePath, targetPath);
         fileIo.utimes(targetPath, stat.mtime * 1000);
         continue;
       }
       if (!stat.isFile()) {
         throw new Error('应用数据包含不支持的文件类型，备份未生成');
       }
-      if (ApplicationBackupService.isGitCredentialFile(sourcePath)) {
-        continue;
-      }
-      if (scrubGitConfig && ApplicationBackupService.isGitConfigFile(sourcePath)) {
-        const original: string = fileIo.readTextSync(sourcePath);
-        const cleaned: string = ApplicationBackupService.sanitizeGitConfig(original);
-        ApplicationBackupService.writeNewTextFile(targetPath, cleaned);
-      } else {
-        await fileIo.copyFile(sourcePath, targetPath);
-      }
+      await fileIo.copyFile(sourcePath, targetPath);
       fileIo.utimes(targetPath, stat.mtime * 1000);
     }
-  }
-
-  private static isGitConfigFile(path: string): boolean {
-    const segments: string[] = path.split('/');
-    return segments[segments.length - 1] === 'config' && segments.indexOf('.git') >= 0;
-  }
-
-  private static isGitCredentialFile(path: string): boolean {
-    const segments: string[] = path.split('/');
-    const name: string = segments[segments.length - 1].toLowerCase();
-    return segments.indexOf('.git') >= 0 && (name === '.git-credentials' || name === 'credentials');
-  }
-
-  private static sanitizeGitConfig(source: string): string {
-    const lines: string[] = source.split(/\r?\n/);
-    const kept: string[] = [];
-    for (let i: number = 0; i < lines.length; i++) {
-      const line: string = lines[i];
-      if (/^\s*(?:helper|extraheader)\s*=/i.test(line) ||
-        /^\s*http\..*\.extraheader\s*=/i.test(line)) {
-        continue;
-      }
-      let cleaned: string = line.replace(/([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)([^/@\s]+@)/g, '$1');
-      cleaned = cleaned.replace(/([?&](?:access_)?token|[?&]password|[?&]secret|[?&]key)=([^&#\s]*)/gi, '$1=');
-      kept.push(cleaned);
-    }
-    return kept.join('\n');
   }
 
   private static measureTree(root: string): TreeSize {
@@ -1153,20 +1138,23 @@ export class ApplicationBackupService {
     }
   }
 
-  private static hasOversizedFile(root: string, maxBytes: number): boolean {
+  private static findOversizedFile(root: string, relativeRoot: string, maxBytes: number): OversizedFile | null {
     const names: string[] = fileIo.listFileSync(root);
     for (let i: number = 0; i < names.length; i++) {
       const child: string = root + '/' + names[i];
+      const childRelative: string = relativeRoot.length === 0 ? names[i] : relativeRoot + '/' + names[i];
       const stat: fileIo.Stat = fileIo.lstatSync(child);
       if (stat.isDirectory()) {
-        if (ApplicationBackupService.hasOversizedFile(child, maxBytes)) {
-          return true;
+        const found: OversizedFile | null =
+          ApplicationBackupService.findOversizedFile(child, childRelative, maxBytes);
+        if (found !== null) {
+          return found;
         }
       } else if (stat.size > maxBytes) {
-        return true;
+        return { relativePath: childRelative, bytes: stat.size };
       }
     }
-    return false;
+    return null;
   }
 
   private static writeNewTextFile(path: string, content: string): void {

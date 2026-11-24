@@ -1191,23 +1191,24 @@ export struct FileTreeView {
 
   /**
    * 左滑操作条（1.6 三档）：笔记按 v2 原型显示「置顶 / 改名 / 移动 / 删除」文字按钮，
-   * 普通操作为浅蓝底蓝字，删除为红底白字。目录保留原有分享入口。
+   * 普通操作为浅蓝底蓝字，删除为红底白字。目录保留分享入口（2026-11-24 图标化）。
    * v1.50：文件行最前新增置顶切换（已置顶显示「已置顶」），点击切换并收回操作条。
    */
   @Builder
   SwipeBar(n: TreeNode) {
     Row() {
       if (n.isDir) {
+        // 2026-11-24：目录「分享」图标化（share），无文字；读屏语义进 accessibilityText。
         Row() {
-          Text('分享')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.brand'))
+          Icon('share', Space.s5, $r('app.color.brand'))
         }
         .width(Size.touch)
         .height('100%')
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
         .backgroundColor($r('app.color.brand_bg'))
+        .id('share-swipe-' + n.relPath)
+        .accessibilityText('分享：' + n.name)
         .onClick(() => {
           this.onSharePath(n.relPath, true);
         })

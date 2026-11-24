@@ -131,6 +131,15 @@ async function parseKind(zipBuffer, limits) {
   }
 }
 
+async function parseError(zipBuffer, limits) {
+  try {
+    await ZipImportService.parse(createMockReader(zipBuffer), limits || ZipImportService.DEFAULT_LIMITS);
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
+
 async function extractKind(zipBuffer, parsed, writer, hooks) {
   try {
     await ZipImportService.extract(createMockReader(zipBuffer), writer || createMockWriter(),
@@ -282,6 +291,40 @@ test('v1.36 36.5 条目数 / 单文件 / 总量上限', async () => {
   const pair = buildZip([{ name: 'a.md', data: 'x'.repeat(10) }, { name: 'b.md', data: 'y'.repeat(10) }]);
   const totalLimit = Object.assign({}, smallLimits, { maxTotalUncompressed: 15 });
   assert.equal(await parseKind(pair, totalLimit), 'over_limit');
+});
+
+test('备份超限报错点名文件与大小（2026-11-24 用户反馈）', async () => {
+  // 单文件超限：错误信息必须包含条目名、实际大小与上限值，不许再只说「超出大小上限」。
+  const big = buildZip([{ name: '我的库/attachments/录像.mp4', data: 'x'.repeat(20) }]);
+  const singleLimit = Object.assign({}, smallLimits, { maxSingleUncompressed: 10 });
+  const singleError = await parseError(big, singleLimit);
+  assert.equal(singleError.kind, 'over_limit');
+  assert.match(singleError.message, /我的库\/attachments\/录像\.mp4/);
+  assert.match(singleError.message, /解压后约 20 字节/);
+  assert.match(singleError.message, /超过单文件上限 10 字节/);
+
+  // 总量超限：包含累计总量与上限值。
+  const pair = buildZip([{ name: 'a.md', data: 'x'.repeat(10) }, { name: 'b.md', data: 'y'.repeat(10) }]);
+  const totalLimit = Object.assign({}, smallLimits, { maxTotalUncompressed: 15 });
+  const totalError = await parseError(pair, totalLimit);
+  assert.equal(totalError.kind, 'over_limit');
+  assert.match(totalError.message, /约 20 字节/);
+  assert.match(totalError.message, /上限 15 字节/);
+
+  // 条目数超限：包含实际条目数与上限值。
+  const two = buildZip([{ name: 'a.md', data: 'x' }, { name: 'b.md', data: 'y' }]);
+  const entryLimit = Object.assign({}, smallLimits, { maxEntries: 1 });
+  const entryError = await parseError(two, entryLimit);
+  assert.equal(entryError.kind, 'over_limit');
+  assert.match(entryError.message, /2 个条目/);
+  assert.match(entryError.message, /上限 1/);
+
+  // formatBytes：1024 进制；GB 两位 / MB、KB 一位小数 / 不足 1KB 显示字节数。
+  assert.equal(ZipImportService.formatBytes(128 * 1024 * 1024), '128.0 MB');
+  assert.equal(ZipImportService.formatBytes(1024 * 1024 * 1024), '1.00 GB');
+  assert.equal(ZipImportService.formatBytes(1536), '1.5 KB');
+  assert.equal(ZipImportService.formatBytes(512), '512 字节');
+  assert.equal(ZipImportService.formatBytes(20), '20 字节');
 });
 
 test('v1.36 不是笔记库 ZIP（无 Markdown）或空 ZIP 时拒绝', async () => {

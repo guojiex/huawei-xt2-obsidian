@@ -149,7 +149,8 @@ test('v1.79 single-screen sync page drops diff and scrolls the whole changes+com
   const build = dialog.slice(dialog.indexOf('  build() {'));
   const singleBranch = build.slice(build.indexOf('if (this.singleScreen)'),
     build.indexOf('} else {'));
-  assert.ok(singleBranch.includes('Scroll() { this.DialogContent() }'));
+  // v2.10：单屏滚动体改走 ContentBody（缺 .git 分流到 ReattachCard，常规态仍 DialogContent）。
+  assert.ok(singleBranch.includes('Scroll() { this.ContentBody() }'));
   assert.ok(!singleBranch.includes('this.DiffPane()'), 'no diff pane on single screen');
   // 宽屏分支仍渲染 DiffPane（v1.78 铺满 diff 不变）。
   const wideBranch = build.slice(build.indexOf('} else {'), build.indexOf('Column() {\n        this.DialogFooter'));
@@ -187,7 +188,8 @@ test('v1.87 sync page canvas: nav background, fixed side pane, footer as paper b
 
 test('v1.87 sync page cards: bordered white cards, block heads, inner nav status card', () => {
   // 两张白卡都有 1px 边线（原型 .sync-card 描边），卡头 min-height --s12 + 底部分隔线 + 标题 600。
-  assert.equal((dialog.match(/\.border\(\{ width: 1, color: \$r\('app\.color\.line'\) \}\)/g) || []).length, 2);
+  // v2.10：缺 .git 的「重新关联远端」卡片是第三张 1px 边线白卡。
+  assert.equal((dialog.match(/\.border\(\{ width: 1, color: \$r\('app\.color\.line'\) \}\)/g) || []).length, 3);
   assert.equal((dialog.match(/constraintSize\(\{ minHeight: Space\.s12 \}\)/g) || []).length, 2);
   assert.match(dialog, /Text\('推送概览'\)[\s\S]*?fontWeight\(Weight\.semibold\)/);
   assert.match(dialog, /Text\('本地改动'\)[\s\S]*?fontWeight\(Weight\.semibold\)/);

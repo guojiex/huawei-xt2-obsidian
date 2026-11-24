@@ -212,7 +212,8 @@ export class ZipImportService {
       throw new ZipImportError('not_vault', 'ZIP 中没有任何文件');
     }
     if (entryCount > limits.maxEntries) {
-      throw new ZipImportError('over_limit', 'ZIP 内条目数超出上限');
+      throw new ZipImportError('over_limit',
+        'ZIP 内共 ' + entryCount.toString() + ' 个条目，超出上限 ' + limits.maxEntries.toString());
     }
     // Central Directory 必须完整落在 EOCD 之前。
     if (centralOffset > eocdOffset || centralOffset + centralSize > eocdOffset) {
@@ -255,7 +256,8 @@ export class ZipImportService {
         throw new ZipImportError('corrupt', 'ZIP 目录结构损坏');
       }
       if (nameLength > limits.maxNameBytes) {
-        throw new ZipImportError('over_limit', 'ZIP 内条目名超出长度上限');
+        throw new ZipImportError('over_limit',
+          'ZIP 内有条目名长 ' + nameLength.toString() + ' 字节，超出上限 ' + limits.maxNameBytes.toString() + ' 字节');
       }
       if ((generalFlag & 0x1) !== 0) {
         throw new ZipImportError('encrypted', 'ZIP 使用了加密，暂不支持');
@@ -274,7 +276,11 @@ export class ZipImportService {
         throw new ZipImportError('over_limit', 'ZIP 使用了不支持的 ZIP64 格式');
       }
       if (uncompressedSize > limits.maxSingleUncompressed) {
-        throw new ZipImportError('over_limit', 'ZIP 内单文件解压后超出大小上限');
+        const sizeCulpritName: string = ZipImportService.decodeUtf8(central.subarray(
+          cursor + ZipImportService.CENTRAL_HEADER_SIZE, cursor + ZipImportService.CENTRAL_HEADER_SIZE + nameLength));
+        throw new ZipImportError('over_limit',
+          '「' + sizeCulpritName + '」解压后约 ' + ZipImportService.formatBytes(uncompressedSize) +
+          '，超过单文件上限 ' + ZipImportService.formatBytes(limits.maxSingleUncompressed));
       }
       if (localHeaderOffset + ZipImportService.LOCAL_HEADER_SIZE > centralOffset) {
         throw new ZipImportError('corrupt', 'ZIP 内条目定位失败');
@@ -340,7 +346,9 @@ export class ZipImportService {
       }
       totalUncompressed += uncompressedSize;
       if (totalUncompressed > limits.maxTotalUncompressed) {
-        throw new ZipImportError('over_limit', 'ZIP 解压后总大小超出上限');
+        throw new ZipImportError('over_limit',
+          'ZIP 解压后总大小约 ' + ZipImportService.formatBytes(totalUncompressed) +
+          '，超出上限 ' + ZipImportService.formatBytes(limits.maxTotalUncompressed));
       }
       const topSegment: string = decoded.indexOf('/') >= 0 ? decoded.slice(0, decoded.indexOf('/')) : '';
       if (topSegments.indexOf(topSegment) < 0) {
@@ -624,6 +632,22 @@ export class ZipImportService {
       }
     }
     return false;
+  }
+
+  /** 人类可读字节数（导入 / 备份错误提示共用；GB 两位小数、MB/KB 一位小数、不足 1KB 显示字节数，1024 进制）。 */
+  static formatBytes(bytes: number): string {
+    const gbUnit: number = 1024 * 1024 * 1024;
+    const mbUnit: number = 1024 * 1024;
+    if (bytes >= gbUnit) {
+      return (bytes / gbUnit).toFixed(2) + ' GB';
+    }
+    if (bytes >= mbUnit) {
+      return (bytes / mbUnit).toFixed(1) + ' MB';
+    }
+    if (bytes >= 1024) {
+      return (bytes / 1024).toFixed(1) + ' KB';
+    }
+    return bytes.toString() + ' 字节';
   }
 
   /** 宽容式 UTF-8 解码（无效序列替换为 U+FFFD）；ZIP 条目名按 UTF-8 处理。 */

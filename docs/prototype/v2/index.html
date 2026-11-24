@@ -1125,8 +1125,8 @@ pre.simple-protected::after,table.simple-table.simple-protected::after{content:n
     <section id="appBackupChoose" class="hidden"><button id="chooseAppBackupFile" class="directory-choice" type="button"><span class="directory-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6zM15 3v4h4M10 11h4M10 15h4"/></svg></span><span class="directory-copy"><strong>选择应用备份文件</strong><small>选择由「导出应用备份」生成的 ZIP 文件</small></span><span class="directory-action" aria-hidden="true">选择</span></button><p class="backup-note">单个知识库的 ZIP 请使用「导入库 → ZIP 文件」，不会替换整个应用。</p></section>
     <section id="appBackupReview" class="hidden">
       <div class="backup-overview"><p class="backup-eyebrow" id="appBackupFileMeta">备份范围</p><h3 id="appBackupSummary"></h3><p id="appBackupVaultNames"></p></div>
-      <ul class="backup-contents"><li><strong>知识库与文件</strong><small>笔记、图片附件、回收站、草稿与 Git 历史</small></li><li><strong>应用设置与使用偏好</strong><small>库列表、置顶、收藏、排序、外观与编辑器设置</small></li></ul>
-      <p class="backup-note" id="appBackupScopeNote">不包含 Git 访问令牌、缓存和搜索索引。外部目录只备份关联信息，文件请另行备份；恢复后需重新授权。写作统计按文件时间重新计算。</p>
+      <ul class="backup-contents"><li><strong>知识库与文件</strong><small>笔记、图片附件、回收站与草稿</small></li><li><strong>应用设置与使用偏好</strong><small>库列表、置顶、收藏、排序、外观与编辑器设置</small></li></ul>
+      <p class="backup-note" id="appBackupScopeNote">Git 历史不备份（在同步页重新关联远端即可恢复），也不含 Git 访问令牌、缓存和搜索索引。外部目录只备份关联信息，文件请另行备份；恢复后需重新授权。写作统计按文件时间重新计算。</p>
       <button id="changeAppBackupFile" class="backup-inline hidden" type="button">重新选择文件</button>
     </section>
     <section id="appBackupConfirm" class="hidden"><div class="backup-overview"><p class="backup-eyebrow">即将从所选备份恢复</p><h3>替换当前全部数据？</h3><p id="appBackupReplaceSummary"></p></div><p class="backup-note backup-warning">当前全部知识库、回收站、草稿与应用设置将被备份内容替换，无法撤销。不会合并同名库。外部目录中的文件不会被替换，恢复关联后需重新授权。</p><button id="backupBeforeRestore" class="backup-inline" type="button">先导出当前应用数据</button><label class="backup-check"><input id="ackAppBackupReplace" type="checkbox"><span>我了解当前数据将被替换，且无法撤销</span></label></section>
@@ -3430,7 +3430,7 @@ function renderAppBackup(){
  $('changeAppBackupFile').classList.toggle('hidden',!importing);
  $('appBackupWorkingTitle').textContent=importing?'正在恢复数据':'正在打包备份';
  $('appBackupDoneTitle').textContent=importing?'恢复流程演示完成':'应用备份已准备好（演示）';
- $('appBackupDoneCopy').textContent=importing?'真实恢复后可查看库列表；外部目录需重新授权，Git 访问令牌需重新填写。本页未替换任何数据。':'真实导出时将打开系统保存面板，选择保存位置后才算完成。备份包含笔记正文，请妥善保存。';
+  $('appBackupDoneCopy').textContent=importing?'真实恢复后可查看库列表；外部目录需重新授权，Git 访问令牌需重新填写，Git 库恢复后请在同步页重新关联远端。本页未替换任何数据。':'真实导出时将打开系统保存面板，选择保存位置后才算完成。备份包含笔记正文，请妥善保存。';
  const primary=$('appBackupPrimary');primary.textContent=busy?'正在处理…':done?(importing?'查看知识库':'完成'):error?'重新选择文件':confirm?'替换并恢复':importing?'检查并继续':'导出备份';
  primary.disabled=busy||appBackupStep==='choose'||(confirm&&!$('ackAppBackupReplace').checked);primary.classList.toggle('backup-destructive',confirm);
  $('appBackupBack').textContent=confirm?'上一步':done?'关闭':'取消';$('appBackupBack').disabled=busy;$('closeAppBackup').disabled=busy;
