@@ -676,3 +676,32 @@ test('v1.36 36.6 Registry 提供本地导入登记并沿用 git 导入标记机�
   assert.match(registrySource, /cleanupGitImport\(finalId: string, importingId: string\): void \{/);
   assert.match(registrySource, /this\.recoverGitImportResidues\(\);/);
 });
+
+// ------------------------------- v2.8 上限提高 -------------------------------
+
+test('v2.8 DEFAULT_LIMITS 全局提高：10000 条目 / 1GB 总量 / 128MB 单文件（值 + 源 + 行为）', async () => {
+  // 值断言（vm realm 内真实常量；条目名字节上限不变）
+  assert.equal(ZipImportService.DEFAULT_LIMITS.maxEntries, 10000);
+  assert.equal(ZipImportService.DEFAULT_LIMITS.maxTotalUncompressed, 1024 * 1024 * 1024);
+  assert.equal(ZipImportService.DEFAULT_LIMITS.maxSingleUncompressed, 128 * 1024 * 1024);
+  assert.equal(ZipImportService.DEFAULT_LIMITS.maxNameBytes, 1024);
+  // 源断言（防回退到 v1.36 定值）
+  assert.match(serviceSource, /maxEntries: 10000,/);
+  assert.match(serviceSource, /maxTotalUncompressed: 1024 \* 1024 \* 1024,/);
+  assert.match(serviceSource, /maxSingleUncompressed: 128 \* 1024 \* 1024,/);
+  // 行为：介于旧 64MB 与新 128MB 之间的单文件按 DEFAULT_LIMITS 放行；v1.36 单文件口径按 over_limit 拒
+  const big = Buffer.alloc(70 * 1024 * 1024, 0);
+  const zip = buildZip([
+    { name: 'MyVault/' },
+    { name: 'MyVault/note.md', data: '# 笔记' },
+    { name: 'MyVault/big.bin', data: big }
+  ]);
+  assert.equal(await parseKind(zip), null);
+  const v136Single = {
+    maxEntries: 10000,
+    maxTotalUncompressed: 1024 * 1024 * 1024,
+    maxSingleUncompressed: 64 * 1024 * 1024,
+    maxNameBytes: 1024
+  };
+  assert.equal(await parseKind(zip, v136Single), 'over_limit');
+});

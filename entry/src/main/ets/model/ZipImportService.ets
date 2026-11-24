@@ -156,11 +156,11 @@ interface MtimeManifestFileRaw {
 }
 
 export class ZipImportService {
-  /** 默认上限（512MB 总量 / 单文件 64MB / 5000 条目，v1.36 §6 定值）。 */
+  /** 默认上限（1GB 总量 / 单文件 128MB / 10000 条目；v1.36 §6 初值，v2.8 全局提高）。 */
   static readonly DEFAULT_LIMITS: ZipImportLimits = {
-    maxEntries: 5000,
-    maxTotalUncompressed: 512 * 1024 * 1024,
-    maxSingleUncompressed: 64 * 1024 * 1024,
+    maxEntries: 10000,
+    maxTotalUncompressed: 1024 * 1024 * 1024,
+    maxSingleUncompressed: 128 * 1024 * 1024,
     maxNameBytes: 1024
   };
 
