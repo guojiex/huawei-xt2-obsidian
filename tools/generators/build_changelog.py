@@ -96,7 +96,9 @@ def main():
             if not path.exists() or path.read_text(encoding='utf-8') != text:
                 stale.append(str(path.relative_to(ROOT)))
         else:
-            path.write_text(text, encoding='utf-8', newline='\n')
+            # open(newline=) 而非 write_text(newline=)：兼容 Python 3.9（macOS 自带）。
+            with path.open('w', encoding='utf-8', newline='\n') as fh:
+                fh.write(text)
             print('Generated', path.relative_to(ROOT))
     if stale:
         raise SystemExit('Changelog generated output is stale: ' + ', '.join(stale))
