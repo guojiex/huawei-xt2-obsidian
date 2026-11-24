@@ -202,8 +202,8 @@ test('21.3 malformed frontmatter is rejected for structured edits and panel sour
   assert.match(panel, /anchor\.type === 'frontmatter'[\s\S]*?loadBlockPanelFrontmatter\(\)/)
   assert.match(panel, /anchor\.type !== 'frontmatter'\) \|\|/)
   assert.match(panel, /this\.blockSourceActionLabel\(\)[\s\S]*?openBlockSourceDrawer\(\)/)
-  assert.match(panel, /Checkbox\(\{ name: entry\.key \}\)/)
-  assert.match(panel, /DatePicker\(\{[\s\S]*?onDateChange/)
+  assert.match(panel, /Toggle\(\{ type: ToggleType\.Switch, isOn: entry\.text === 'true' \}\)/)
+  assert.match(panel, /showDatePickerDialog\(/)
 })
 
 test('21.4 footnote definitions parse, edit, and preserve CRLF continuation formatting', () => {

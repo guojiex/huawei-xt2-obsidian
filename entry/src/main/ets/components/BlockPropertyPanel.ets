@@ -51,6 +51,8 @@ export struct BlockPropertyPanel {
   @Prop blockPanelSourceVaultId: string = '';
   @Prop blockPanelSourcePath: string = '';
   @Prop blockPanelMaxHeight: number = Size.menuMaxH;
+  /** v2.7：底部 sheet 内让面板撑满可用高度，修复内容滚不到底。 */
+  @Prop blockPanelFillSheet: boolean = false;
   @Prop blockSourceEditing: boolean = false;
   @Prop currentVaultId: string = '';
   @Prop leftOpenRequestId: number = 0;
@@ -102,8 +104,7 @@ export struct BlockPropertyPanel {
   @State blockPanelFrontmatterMessage: string = '';
   @State blockPanelFrontmatterNewKey: string = '';
   @State blockPanelFrontmatterNewValue: string = '';
-  @State blockPanelFrontmatterDateKey: string = '';
-  @State blockPanelFrontmatterDateDraft: string = '';
+  @State blockPanelFrontmatterAdding: boolean = false;
   @State blockPanelFrontmatterSaving: boolean = false;
   private blockPanelFrontmatterRaw: string = '';
   private blockPanelFrontmatterModel: FrontmatterSourceModel | null = null;
@@ -137,6 +138,7 @@ export struct BlockPropertyPanel {
   onContentActionClose: () => void = (): void => {};
   onAnchorChange: (anchor: PreviewBlockAnchor) => void = (anchor: PreviewBlockAnchor): void => {};
   onTitleChange: (title: string) => void = (title: string): void => {};
+  onSubtitleChange: (subtitle: string) => void = (subtitle: string): void => {};
   onSourceEditingChange: (editing: boolean) => void = (editing: boolean): void => {};
   onDirtyChange: (pane: string, dirty: boolean) => void = (pane: string, dirty: boolean): void => {};
   isDirty: (pane: string) => boolean = (pane: string): boolean => false;
@@ -220,8 +222,7 @@ export struct BlockPropertyPanel {
     this.blockPanelFrontmatterMessage = anchor.type === 'frontmatter' ? '正在读取属性…' : '';
     this.blockPanelFrontmatterNewKey = '';
     this.blockPanelFrontmatterNewValue = '';
-    this.blockPanelFrontmatterDateKey = '';
-    this.blockPanelFrontmatterDateDraft = '';
+    this.blockPanelFrontmatterAdding = false;
     this.blockPanelFrontmatterSaving = false;
     this.blockPanelFrontmatterRaw = '';
     this.blockPanelFrontmatterModel = null;
@@ -409,6 +410,7 @@ export struct BlockPropertyPanel {
     };
     this.blockPanelAnchor = itemAnchor;
     this.onTitleChange(this.blockPanelTitleFor(itemAnchor));
+    this.onSubtitleChange('');
     this.updateBlockPropertyPanelLayout(this.blockPanelPane);
     this.blockPanelLinkReady = itemAnchor.tapType !== 'link';
     this.blockPanelLinkLabel = '';
@@ -1067,6 +1069,42 @@ export struct BlockPropertyPanel {
     this.blockPanelFrontmatterMessage = model === null
       ? '文档头不是可安全编辑的 YAML，请以源码编辑' : '';
     this.blockPanelFrontmatterEntries = model === null ? [] : model.properties;
+    this.publishBlockPanelFrontmatterSubtitle();
+  }
+
+  private blockPanelFrontmatterSubtitle(): string {
+    const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
+    if (anchor === null || anchor.type !== 'frontmatter' || !this.blockPanelFrontmatterReady ||
+      this.blockPanelFrontmatterModel === null) {
+      return '';
+    }
+    return `${this.blockPanelFrontmatterEntries.length} 项`;
+  }
+
+  private publishBlockPanelFrontmatterSubtitle(): void {
+    this.onSubtitleChange(this.blockPanelFrontmatterSubtitle());
+  }
+
+  private blockPanelFrontmatterKindLabel(entry: FrontmatterPropertyModel): string {
+    if (entry.key === 'tags') {
+      return '标签';
+    }
+    if (entry.key === 'aliases') {
+      return '别名';
+    }
+    if (entry.kind === 'list') {
+      return '列表';
+    }
+    if (entry.kind === 'bool') {
+      return '开关';
+    }
+    if (entry.kind === 'date') {
+      return '日期';
+    }
+    if (entry.kind === 'complex') {
+      return '嵌套';
+    }
+    return '文本';
   }
 
   private saveBlockPanelFrontmatterProperty(
@@ -1120,16 +1158,18 @@ export struct BlockPropertyPanel {
         this.blockPanelFrontmatterModel = null;
         this.blockPanelFrontmatterEntries = [];
         this.blockPanelFrontmatterMessage = '属性写回后无法解析，请以源码编辑';
+        this.publishBlockPanelFrontmatterSubtitle();
         return false;
       }
       this.blockPanelFrontmatterRaw = replacement;
       this.blockPanelFrontmatterModel = model;
       this.blockPanelFrontmatterEntries = model.properties;
       this.blockPanelFrontmatterMessage = '';
-      this.blockPanelFrontmatterDateKey = '';
+      this.publishBlockPanelFrontmatterSubtitle();
       if (action === 'add') {
         this.blockPanelFrontmatterNewKey = '';
         this.blockPanelFrontmatterNewValue = '';
+        this.blockPanelFrontmatterAdding = false;
       }
       return true;
     } finally {
@@ -1148,15 +1188,6 @@ export struct BlockPropertyPanel {
     this.blockPanelFrontmatterEntries = entries;
   }
 
-  private blockPanelFrontmatterDate(): Date {
-    const parts: RegExpExecArray | null =
-      /^(\d{4})-(\d{2})-(\d{2})$/.exec(this.blockPanelFrontmatterDateDraft);
-    if (parts === null) {
-      return new Date();
-    }
-    return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
-  }
-
   private blockPanelFrontmatterDateSelectable(value: string): boolean {
     const parts: RegExpExecArray | null = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
     if (parts === null) {
@@ -1166,42 +1197,37 @@ export struct BlockPropertyPanel {
     return date >= 19000131 && date <= 21001231;
   }
 
-  private beginBlockPanelFrontmatterDate(key: string): void {
-    for (const entry of this.blockPanelFrontmatterEntries) {
-      if (entry.key !== key) {
-        continue;
-      }
-      if (!this.blockPanelFrontmatterDateSelectable(entry.text)) {
-        this.blockPanelFrontmatterMessage = '该日期超出系统选择范围，请以源码编辑';
-        return;
-      }
-      this.blockPanelFrontmatterDateKey = key;
-      this.blockPanelFrontmatterDateDraft = entry.text;
-      this.blockPanelFrontmatterMessage = '';
+  private openBlockPanelFrontmatterDate(key: string, value: string): void {
+    if (!this.blockPanelFrontmatterDateSelectable(value)) {
+      this.blockPanelFrontmatterMessage = '该日期超出系统选择范围，请以源码编辑';
       return;
     }
+    this.blockPanelFrontmatterMessage = '';
+    const selected: Date = this.blockPanelFrontmatterDateFromValue(value);
+    this.getUIContext().showDatePickerDialog({
+      start: new Date(1900, 0, 31),
+      end: new Date(2100, 11, 31),
+      selected: selected,
+      onDateAccept: (picked: Date): void => {
+        void this.saveBlockPanelFrontmatterProperty(
+          'set', key, this.blockPanelFrontmatterDateText(picked));
+      }
+    });
   }
 
-  private cancelBlockPanelFrontmatterDate(): void {
-    this.blockPanelFrontmatterDateKey = '';
-    this.blockPanelFrontmatterDateDraft = '';
+  private blockPanelFrontmatterDateFromValue(value: string): Date {
+    const parts: RegExpExecArray | null = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (parts === null) {
+      return new Date();
+    }
+    return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]));
   }
 
-  private blockPanelFrontmatterDateValue(value: Date): string {
+  private blockPanelFrontmatterDateText(value: Date): string {
     const year: string = String(value.getFullYear());
     const month: string = String(value.getMonth() + 1).padStart(2, '0');
     const day: string = String(value.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-  }
-
-  private async finishBlockPanelFrontmatterDate(): Promise<void> {
-    const key: string = this.blockPanelFrontmatterDateKey;
-    if (key.length === 0) {
-      return;
-    }
-    if (await this.saveBlockPanelFrontmatterProperty('set', key, this.blockPanelFrontmatterDateDraft)) {
-      this.cancelBlockPanelFrontmatterDate();
-    }
   }
 
   private blockPanelCalloutTypeOptions(): SelectOption[] {
@@ -2179,6 +2205,7 @@ export struct BlockPropertyPanel {
     this.blockSourceDocumentRevision = documentRevision;
     this.blockSourceOpenRequestId = requestId;
     this.onTitleChange('以源码编辑');
+    this.onSubtitleChange('');
     this.onSourceEditingChange(true);
     this.updateBlockPropertyPanelLayout(pane);
   }
@@ -2199,6 +2226,7 @@ export struct BlockPropertyPanel {
     this.resetBlockSourceEditor();
     if (anchor !== null) {
       this.onTitleChange(this.blockPanelTitleFor(anchor));
+      this.publishBlockPanelFrontmatterSubtitle();
     }
     this.updateBlockPropertyPanelLayout(this.blockPanelPane);
   }
@@ -2628,184 +2656,9 @@ export struct BlockPropertyPanel {
                   .fontSize(FontSize.caption)
                   .fontColor($r('app.color.text_secondary'))
                   .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
+                  .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
               } else {
-                ForEach(this.blockPanelFrontmatterEntries, (entry: FrontmatterPropertyModel): void => {
-                  Column({ space: Space.s1 }) {
-                    Row({ space: Space.s1 }) {
-                      Column({ space: Space.s1 }) {
-                        Text(entry.key)
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_primary'))
-                        Text(entry.key === 'tags' ? '标签' : entry.key === 'aliases'
-                          ? '别名' : entry.kind === 'list' ? '列表' : entry.kind === 'date'
-                          ? '日期' : entry.kind === 'bool' ? '复选框' : entry.kind === 'text'
-                          ? '文本' : '保留原值')
-                          .fontSize(FontSize.caption)
-                          .fontColor($r('app.color.text_tertiary'))
-                      }
-                      .layoutWeight(1)
-                      Button('移除')
-                        .enabled(!this.blockPanelFrontmatterSaving)
-                        .onClick((): void => {
-                          void this.saveBlockPanelFrontmatterProperty('remove', entry.key, '');
-                        })
-                    }
-                    .width('100%')
-                    if (entry.kind === 'complex') {
-                      Text('嵌套或未知结构保持原值，请以源码编辑')
-                        .fontSize(FontSize.caption)
-                        .fontColor($r('app.color.text_tertiary'))
-                        .width('100%')
-                    } else if (entry.kind === 'bool') {
-                      Row({ space: Space.s2 }) {
-                        Text(entry.text === 'true' ? '开启' : '关闭')
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_secondary'))
-                          .layoutWeight(1)
-                        Checkbox({ name: entry.key })
-                          .select(entry.text === 'true')
-                          .onChange((checked: boolean): void => {
-                            void this.saveBlockPanelFrontmatterProperty(
-                              'set', entry.key, checked ? 'true' : 'false');
-                          })
-                          .accessibilityText(`${entry.key} ${entry.text === 'true' ? '开启' : '关闭'}`)
-                      }
-                      .width('100%')
-                      .height(Size.touch)
-                    } else if (entry.kind === 'date') {
-                      Row({ space: Space.s2 }) {
-                        Text(entry.text)
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_primary'))
-                          .layoutWeight(1)
-                        if (this.blockPanelFrontmatterDateSelectable(entry.text)) {
-                          Button(this.blockPanelFrontmatterDateKey === entry.key ? '已选择' : '选择日期')
-                            .enabled(!this.blockPanelFrontmatterSaving)
-                            .onClick((): void => { this.beginBlockPanelFrontmatterDate(entry.key); })
-                        } else {
-                          Text('超出选择范围')
-                            .fontSize(FontSize.caption)
-                            .fontColor($r('app.color.text_tertiary'))
-                        }
-                      }
-                      .width('100%')
-                      if (this.blockPanelFrontmatterDateKey === entry.key) {
-                        DatePicker({
-                          start: new Date(1900, 0, 31),
-                          end: new Date(2100, 11, 31),
-                          selected: this.blockPanelFrontmatterDate()
-                        })
-                          .onDateChange((value: Date): void => {
-                            this.blockPanelFrontmatterDateDraft =
-                              this.blockPanelFrontmatterDateValue(value);
-                          })
-                        Row({ space: Space.s2 }) {
-                          Text(this.blockPanelFrontmatterDateDraft)
-                            .fontSize(FontSize.body2)
-                            .fontColor($r('app.color.text_secondary'))
-                            .layoutWeight(1)
-                          Button('取消')
-                            .onClick((): void => { this.cancelBlockPanelFrontmatterDate(); })
-                          Button('保存')
-                            .enabled(!this.blockPanelFrontmatterSaving)
-                            .onClick((): void => { void this.finishBlockPanelFrontmatterDate(); })
-                        }
-                        .width('100%')
-                      }
-                    } else {
-                      Row({ space: Space.s1 }) {
-                        TextInput({
-                          text: entry.text,
-                          placeholder: entry.kind === 'list' ? '用顿号或逗号分隔' : '属性值'
-                        })
-                          .height(Size.buttonH)
-                          .fontSize(FontSize.body2)
-                          .fontColor($r('app.color.text_primary'))
-                          .placeholderColor($r('app.color.text_tertiary'))
-                          .padding({ left: Space.s2, right: Space.s2 })
-                          .backgroundColor($r('app.color.bg_secondary'))
-                          .borderRadius(Radius.control)
-                          .layoutWeight(1)
-                          .onChange((value: string): void => {
-                            this.updateBlockPanelFrontmatterDraft(entry.key, value);
-                          })
-                          .onSubmit((): void => {
-                            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
-                          })
-                          .accessibilityText(`${entry.key} ${entry.kind === 'list' ? '列表' : '文本'}`)
-                        Button('保存')
-                          .enabled(!this.blockPanelFrontmatterSaving)
-                          .onClick((): void => {
-                            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
-                          })
-                      }
-                      .width('100%')
-                    }
-                  }
-                  .width('100%')
-                  .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                }, (entry: FrontmatterPropertyModel): string => entry.key)
-                if (this.blockPanelFrontmatterEntries.length === 0) {
-                  Text('暂无属性')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-                }
-                Column({ space: Space.s1 }) {
-                  Text('添加属性')
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .width('100%')
-                  TextInput({ text: this.blockPanelFrontmatterNewKey, placeholder: '名称' })
-                    .height(Size.buttonH)
-                    .fontSize(FontSize.body2)
-                    .fontColor($r('app.color.text_primary'))
-                    .placeholderColor($r('app.color.text_tertiary'))
-                    .padding({ left: Space.s2, right: Space.s2 })
-                    .backgroundColor($r('app.color.bg_secondary'))
-                    .borderRadius(Radius.control)
-                    .width('100%')
-                    .onChange((value: string): void => { this.blockPanelFrontmatterNewKey = value; })
-                    .accessibilityText('新属性名称')
-                  Row({ space: Space.s1 }) {
-                    TextInput({
-                      text: this.blockPanelFrontmatterNewValue,
-                      placeholder: '值；a、b 表示列表'
-                    })
-                      .height(Size.buttonH)
-                      .fontSize(FontSize.body2)
-                      .fontColor($r('app.color.text_primary'))
-                      .placeholderColor($r('app.color.text_tertiary'))
-                      .padding({ left: Space.s2, right: Space.s2 })
-                      .backgroundColor($r('app.color.bg_secondary'))
-                      .borderRadius(Radius.control)
-                      .layoutWeight(1)
-                      .onChange((value: string): void => { this.blockPanelFrontmatterNewValue = value; })
-                      .accessibilityText('新属性值')
-                    Button('添加')
-                      .enabled(!this.blockPanelFrontmatterSaving)
-                      .onClick((): void => {
-                        void this.saveBlockPanelFrontmatterProperty(
-                          'add', this.blockPanelFrontmatterNewKey, this.blockPanelFrontmatterNewValue);
-                      })
-                  }
-                  .width('100%')
-                  Text('只改动当前属性；其他行、注释与嵌套结构保持原样。')
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_tertiary'))
-                    .width('100%')
-                }
-                .width('100%')
-                .padding({ left: Space.s3, right: Space.s3, top: Space.s3, bottom: Space.s2 })
-                if (this.blockPanelFrontmatterMessage.length > 0) {
-                  Text(this.blockPanelFrontmatterMessage)
-                    .fontSize(FontSize.caption)
-                    .fontColor($r('app.color.text_secondary'))
-                    .width('100%')
-                    .padding({ left: Space.s3, right: Space.s3, top: Space.s1, bottom: Space.s2 })
-                }
+                this.BlockPanelFrontmatterPanel()
               }
             } else if (this.blockPanelAnchor !== null &&
               (this.blockPanelAnchor.tapType === 'footnoteRef' ||
@@ -3169,29 +3022,320 @@ export struct BlockPropertyPanel {
           .width('100%')
         }
         .width('100%')
+        .layoutWeight(this.blockPanelFillSheet ? 1 : 0)
         .constraintSize({
-          maxHeight: Math.max(Space.s1, this.blockPanelMaxHeight - Size.touch - Space.s4)
+          maxHeight: this.blockPanelFillSheet
+            ? '100%' : Math.max(Space.s1, this.blockPanelMaxHeight - Size.touch - Space.s4)
         })
         .edgeEffect(EdgeEffect.Spring)
 
-        Row() {
-          Text(this.blockSourceActionLabel())
-            .fontSize(FontSize.body2)
-            .fontColor($r('app.color.text_primary'))
-            .layoutWeight(1)
+        if (this.blockPanelAnchor?.type !== 'frontmatter') {
+          Row() {
+            Text(this.blockSourceActionLabel())
+              .fontSize(FontSize.body2)
+              .fontColor($r('app.color.text_primary'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(Size.touch)
+          .padding({ left: Space.s3, right: Space.s3 })
+          .accessibilityText(this.blockSourceActionLabel())
+          .onClick((): void => { void this.openBlockSourceDrawer(); })
         }
-        .width('100%')
-        .height(Size.touch)
-        .padding({ left: Space.s3, right: Space.s3 })
-        .accessibilityText(this.blockSourceActionLabel())
-        .onClick((): void => { void this.openBlockSourceDrawer(); })
       }
       .width('100%')
-      .padding({ left: Space.s3, right: Space.s3, top: Space.s2, bottom: Space.s2 })
-      .constraintSize({ maxHeight: this.blockPanelMaxHeight })
+      .height(this.blockPanelFillSheet ? '100%' : 'auto')
+      .padding({
+        left: this.blockPanelAnchor?.type === 'frontmatter' ? 0 : Space.s3,
+        right: this.blockPanelAnchor?.type === 'frontmatter' ? 0 : Space.s3,
+        top: Space.s2,
+        bottom: Space.s2
+      })
+      .backgroundColor(this.blockPanelAnchor?.type === 'frontmatter'
+        ? $r('app.color.bg_secondary') : Color.Transparent)
+      .constraintSize({
+        maxHeight: this.blockPanelFillSheet ? '100%' : this.blockPanelMaxHeight
+      })
       .focusable(true)
       .onKeyEvent((event: KeyEvent): void => { this.onBlockPropertyPanelKey(event); })
     }
+  }
+
+  @Builder
+  BlockPanelFrontmatterPanel() {
+    Column() {
+      Column() {
+        if (this.blockPanelFrontmatterEntries.length === 0) {
+          Column({ space: Space.s1 }) {
+            Text('还没有属性')
+              .fontSize(FontSize.body1)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('app.color.text_primary'))
+            Text('从下面添加第一个属性')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+          }
+          .width('100%')
+          .padding({ left: Space.s5, right: Space.s5, top: Space.s6, bottom: Space.s6 })
+          .alignItems(HorizontalAlign.Center)
+        } else {
+          ForEach(this.blockPanelFrontmatterEntries,
+            (entry: FrontmatterPropertyModel, index: number): void => {
+              this.BlockPanelFrontmatterRow(entry)
+              if (index < this.blockPanelFrontmatterEntries.length - 1) {
+                Divider().color($r('app.color.line'))
+              }
+            }, (entry: FrontmatterPropertyModel): string => entry.key)
+        }
+        Divider().color($r('app.color.line'))
+        if (this.blockPanelFrontmatterAdding) {
+          this.BlockPanelFrontmatterAddForm()
+        } else {
+          Row({ space: Space.s2 }) {
+            Stack() {
+              Text('＋')
+                .fontSize(FontSize.body1)
+                .fontColor($r('app.color.brand'))
+            }
+            .width(Space.s6)
+            .height(Space.s6)
+            .backgroundColor($r('app.color.brand_bg'))
+            .borderRadius(Radius.full)
+            Text('添加属性')
+              .fontSize(FontSize.body1)
+              .fontColor($r('app.color.brand'))
+          }
+          .width('100%')
+          .height(Size.touch)
+          .padding({ left: Space.s4, right: Space.s4 })
+          .focusable(true)
+          .accessibilityText('添加属性')
+          .onClick((): void => { this.blockPanelFrontmatterAdding = true; })
+        }
+      }
+      .width('100%')
+      .backgroundColor($r('app.color.bg_paper'))
+      .borderRadius(Radius.menu)
+      .clip(true)
+      .margin({ left: Space.s4, right: Space.s4 })
+
+      Text('只重写你改动过的属性；其他行（含嵌套结构和注释）逐字保留。')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .lineHeight(FontSize.caption * 1.6)
+        .width('100%')
+        .padding({ left: Space.s5, right: Space.s5, top: Space.s3 })
+      if (this.blockPanelFrontmatterMessage.length > 0) {
+        Text(this.blockPanelFrontmatterMessage)
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+      }
+      this.BlockPanelFrontmatterSourceRow()
+    }
+    .width('100%')
+  }
+
+  @Builder
+  BlockPanelFrontmatterSourceRow() {
+    Row({ space: Space.s3 }) {
+      Icon('professionalMode', Space.s5, $r('app.color.brand'))
+      Column({ space: Space.s1 }) {
+        Text('以源码编辑此块')
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.brand'))
+        Text('只显示这一块的 Markdown，保存后只替换这一块')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .lineHeight(FontSize.caption * 1.6)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
+    .backgroundColor($r('app.color.bg_paper'))
+    .borderRadius(Radius.menu)
+    .margin({ left: Space.s4, right: Space.s4, top: Space.s4 })
+    .focusable(true)
+    .accessibilityText('以源码编辑此块')
+    .onClick((): void => { void this.openBlockSourceDrawer(); })
+  }
+
+  @Builder
+  BlockPanelFrontmatterRow(entry: FrontmatterPropertyModel) {
+    Row({ space: Space.s2 }) {
+      Column({ space: Space.s1 }) {
+        Text(entry.key)
+          .fontSize(FontSize.body1)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.blockPanelFrontmatterKindLabel(entry))
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .layoutWeight(2)
+      .alignItems(HorizontalAlign.Start)
+
+      if (entry.kind === 'bool') {
+        Row() {
+          Toggle({ type: ToggleType.Switch, isOn: entry.text === 'true' })
+            .onChange((checked: boolean): void => {
+              void this.saveBlockPanelFrontmatterProperty(
+                'set', entry.key, checked ? 'true' : 'false');
+            })
+            .accessibilityText(`${entry.key} ${entry.text === 'true' ? '开启' : '关闭'}`)
+        }
+        .layoutWeight(3)
+        .justifyContent(FlexAlign.End)
+      } else if (entry.kind === 'complex') {
+        Text('保留原值')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .layoutWeight(3)
+          .textAlign(TextAlign.End)
+      } else if (entry.kind === 'date') {
+        Row({ space: Space.s1 }) {
+          Text(entry.text.length > 0 ? entry.text : '选择日期')
+            .fontSize(FontSize.body1)
+            .fontColor(entry.text.length > 0
+              ? $r('app.color.text_primary') : $r('app.color.text_tertiary'))
+            .maxLines(1)
+            .layoutWeight(1)
+            .textAlign(TextAlign.End)
+          Icon('chevronRight', Space.s4, $r('app.color.text_tertiary'))
+        }
+        .layoutWeight(3)
+        .height(Size.touch)
+        .focusable(true)
+        .accessibilityText(`日期 ${entry.text}，点按选择`)
+        .onClick((): void => { this.openBlockPanelFrontmatterDate(entry.key, entry.text); })
+      } else {
+        TextInput({
+          text: entry.text,
+          placeholder: entry.kind === 'list' ? '用顿号或逗号分隔' : '属性值'
+        })
+          .layoutWeight(3)
+          .height(Size.touch)
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .textAlign(TextAlign.End)
+          .padding({ left: Space.s2, right: 0 })
+          .backgroundColor($r('app.color.bg_card_transparent'))
+          .onChange((value: string): void => {
+            this.updateBlockPanelFrontmatterDraft(entry.key, value);
+          })
+          .onSubmit((): void => {
+            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
+          })
+          .onBlur((): void => {
+            void this.saveBlockPanelFrontmatterProperty('set', entry.key, entry.text);
+          })
+          .accessibilityText(`${entry.key} ${entry.kind === 'list' ? '列表' : '文本'}`)
+      }
+
+      if (entry.kind !== 'complex') {
+        this.BlockPanelFrontmatterRemoveButton(entry)
+      }
+    }
+    .width('100%')
+    .constraintSize({ minHeight: Size.hsRowMinH + Space.s2 })
+    .padding({ left: Space.s4, right: Space.s4, top: Space.s2, bottom: Space.s2 })
+  }
+
+  @Builder
+  BlockPanelFrontmatterAddForm() {
+    Column({ space: Space.s2 }) {
+      Column({ space: Space.s1 }) {
+        Text('名称')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+        TextInput({ text: this.blockPanelFrontmatterNewKey, placeholder: '例如 tags' })
+          .height(Space.s10)
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .padding({ left: Space.s3, right: Space.s3 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.control)
+          .width('100%')
+          .onChange((value: string): void => { this.blockPanelFrontmatterNewKey = value; })
+          .accessibilityText('新属性名称')
+      }
+      .width('100%')
+      Column({ space: Space.s1 }) {
+        Text('值')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .width('100%')
+        TextInput({ text: this.blockPanelFrontmatterNewValue, placeholder: '写作、语法' })
+          .height(Space.s10)
+          .fontSize(FontSize.body1)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .padding({ left: Space.s3, right: Space.s3 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.control)
+          .width('100%')
+          .onChange((value: string): void => { this.blockPanelFrontmatterNewValue = value; })
+          .accessibilityText('新属性值')
+      }
+      .width('100%')
+      Row({ space: Space.s2 }) {
+        Button('取消', { type: ButtonType.Capsule })
+          .height(Space.s10)
+          .padding({ left: Space.s4, right: Space.s4 })
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.text_primary'))
+          .backgroundColor($r('app.color.bg_secondary'))
+          .onClick((): void => {
+            this.blockPanelFrontmatterAdding = false;
+            this.blockPanelFrontmatterNewKey = '';
+            this.blockPanelFrontmatterNewValue = '';
+          })
+        Button('添加', { type: ButtonType.Capsule })
+          .height(Space.s10)
+          .padding({ left: Space.s4, right: Space.s4 })
+          .fontSize(FontSize.body2)
+          .fontColor($r('app.color.on_brand'))
+          .backgroundColor($r('app.color.brand'))
+          .onClick((): void => {
+            void this.saveBlockPanelFrontmatterProperty(
+              'add', this.blockPanelFrontmatterNewKey, this.blockPanelFrontmatterNewValue);
+          })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+      Text('值写成「a、b」会保存为列表')
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+    }
+    .width('100%')
+    .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
+  }
+
+  @Builder
+  BlockPanelFrontmatterRemoveButton(entry: FrontmatterPropertyModel) {
+    Button({ type: ButtonType.Normal }) {
+      Icon('trash', Space.s4, $r('app.color.text_tertiary'))
+    }
+    .width(Space.s10)
+    .height(Size.touch)
+    .padding(0)
+    .backgroundColor($r('app.color.bg_card_transparent'))
+    .borderRadius(Radius.full)
+    .accessibilityText(`移除属性 ${entry.key}`)
+    .onClick((): void => {
+      void this.saveBlockPanelFrontmatterProperty('remove', entry.key, '');
+    })
   }
 
   @Builder

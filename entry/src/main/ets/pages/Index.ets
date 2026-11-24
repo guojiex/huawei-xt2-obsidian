@@ -406,6 +406,7 @@ struct Index {
   @State rightBlockPanelOpen: boolean = false;
   @State blockPanelPane: string = 'left';
   @State blockPanelTitle: string = '当前块';
+  @State blockPanelSubtitle: string = '';
   @State blockPanelAnchor: PreviewBlockAnchor | null = null;
   @State pushedAnchor: PreviewBlockAnchor | null = null;
   @State pushedAnchorSeq: number = 0;
@@ -4048,6 +4049,7 @@ struct Index {
           this.pushedAnchorMode = 'merge';
           this.pushedAnchorSeq++;
           this.blockPanelTitle = this.blockSourceEditing ? '以源码编辑' : blockPanelTitleFor(panelAnchor);
+          this.blockPanelSubtitle = '';
           this.updateBlockPropertyPanelLayout(pane);
         }
       }
@@ -4353,15 +4355,35 @@ struct Index {
     this.blockPanelMaxHeight = Math.min(Size.menuMaxH, layout.maxHeight);
   }
 
+  private blockPanelSheetTitle(): SheetTitleOptions {
+    if (this.blockPanelSubtitle.length > 0) {
+      return { title: this.blockPanelTitle, subtitle: this.blockPanelSubtitle };
+    }
+    return { title: this.blockPanelTitle };
+  }
+
   private blockPanelSheetOptions(): SheetOptions {
     if (this.breakpoint === Breakpoint.SM) {
+      const frontmatter: boolean = this.blockPanelAnchor?.type === 'frontmatter';
+      if (frontmatter) {
+        return {
+          detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+          width: '100%',
+          preferType: SheetType.BOTTOM,
+          dragBar: true,
+          showClose: true,
+          backgroundColor: $r('app.color.bg_secondary'),
+          title: this.blockPanelSheetTitle(),
+          onDisappear: (): void => { this.onBlockPropertyPanelDisappear(); }
+        };
+      }
       return {
         height: SheetSize.MEDIUM,
         width: '100%',
         preferType: SheetType.BOTTOM,
         dragBar: true,
         showClose: true,
-        title: { title: this.blockPanelTitle },
+        title: this.blockPanelSheetTitle(),
         onDisappear: (): void => { this.onBlockPropertyPanelDisappear(); }
       };
     }
@@ -4371,7 +4393,7 @@ struct Index {
       preferType: SheetType.POPUP,
       dragBar: false,
       showClose: true,
-      title: { title: this.blockPanelTitle },
+      title: this.blockPanelSheetTitle(),
       placement: this.blockPanelPlacement,
       maskColor: Color.Transparent,
       onDisappear: (): void => { this.onBlockPropertyPanelDisappear(); }
@@ -4394,6 +4416,7 @@ struct Index {
     this.blockPanelRestoreFocus = restoreFocus;
     this.leftBlockPanelOpen = false;
     this.rightBlockPanelOpen = false;
+    this.blockPanelSubtitle = '';
     this.resetBlockSourceEditor();
   }
 
@@ -4432,6 +4455,7 @@ struct Index {
   }
 
   private onBlockPropertyPanelDisappear(): void {
+    this.blockPanelSubtitle = '';
     if (this.blockPanelPendingAction) {
       this.blockPanelPendingAction = false;
       const anchor: PreviewBlockAnchor | null = this.blockPanelAnchor;
@@ -8868,6 +8892,8 @@ struct Index {
       blockPanelSourceVaultId: this.blockPanelSourceVaultId,
       blockPanelSourcePath: this.blockPanelSourcePath,
       blockPanelMaxHeight: this.blockPanelMaxHeight,
+      blockPanelFillSheet: this.breakpoint === Breakpoint.SM &&
+        this.blockPanelAnchor?.type === 'frontmatter',
       blockSourceEditing: this.blockSourceEditing,
       currentVaultId: this.currentVaultId,
       leftOpenRequestId: this.leftOpenRequestId,
@@ -8883,6 +8909,7 @@ struct Index {
         }
       },
       onTitleChange: (title: string): void => { this.blockPanelTitle = title; },
+      onSubtitleChange: (subtitle: string): void => { this.blockPanelSubtitle = subtitle; },
       onSourceEditingChange: (editing: boolean): void => { this.blockSourceEditing = editing; },
       onDirtyChange: (pane: string, dirty: boolean): void => {
         if (pane === 'right') {
@@ -8986,6 +9013,7 @@ struct Index {
     this.pushedAnchorMode = 'open';
     this.pushedAnchorSeq++;
     this.blockPanelTitle = blockPanelTitleFor(anchor);
+    this.blockPanelSubtitle = '';
     this.blockPanelSourceVaultId = this.currentVaultId;
     this.blockPanelSourcePath = this.paneFilePath(pane);
     this.blockPanelRestoreFocus = true;

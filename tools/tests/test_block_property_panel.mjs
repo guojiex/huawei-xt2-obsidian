@@ -228,6 +228,7 @@ function makeApp() {
     leftBlockPanelOpen: false,
     rightBlockPanelOpen: false,
     blockPanelPlacement: 'bottom-left',
+    blockPanelSubtitle: '',
     leftBlockAnchor: null,
     rightBlockAnchor: null,
     blockPanelSourceVaultId: '',
@@ -257,6 +258,7 @@ function makeApp() {
     },
     previewBridgeForPane() { return this.previewBridge },
     onTitleChange(title) { this.blockPanelTitle = title },
+    onSubtitleChange(subtitle) { this.blockPanelSubtitle = subtitle },
     onSourceEditingChange(editing) { this.blockSourceEditing = editing },
     onDirtyChange(pane, dirty) {
       if (pane === 'right') {
