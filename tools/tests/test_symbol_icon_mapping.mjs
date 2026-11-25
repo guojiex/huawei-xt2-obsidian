@@ -53,7 +53,7 @@ const EXPECTED = new Map(Object.entries({
   follow: 'sys.symbol.text_arrow_up_and_down',
   columns: 'sys.symbol.rectangle_split_2x1',
   fileReference: 'sys.symbol.rectangle_split_2x1',
-  focus: 'sys.symbol.arrow_up_left_and_arrow_down_right',
+  focus: 'sys.symbol.full_screen',
   exitFocus: 'sys.symbol.fullscreen',
   simpleMode: 'sys.symbol.text_alignleft',
   professionalMode: 'sys.symbol.code',

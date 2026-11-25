@@ -419,7 +419,7 @@ test('hamburger toggles the in-focus navigation without exiting focus',()=>{
 test('focus button icon and accessible label follow mode changes and Escape',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=wide');
  f.run('setFocused(false)');
- assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.match(f.get('focus').innerHTML,/M8 3H5a2 2 0 0 0-2 2v3/);
  assert.equal(f.get('focus').attrs['aria-pressed'],'false');
  assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
  f.get('focus').onclick();
@@ -429,7 +429,7 @@ test('focus button icon and accessible label follow mode changes and Escape',()=
  assert.equal(f.get('focus').title,'退出专注');
  f.event('document','keydown',{key:'Escape',preventDefault(){}});
  assert.equal(f.run('focused'),false);
- assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.match(f.get('focus').innerHTML,/M8 3H5a2 2 0 0 0-2 2v3/);
  assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
 });
 
@@ -441,7 +441,7 @@ test('restored focus state is announced and compact layout reset updates the but
  assert.equal(f.get('focus').attrs['aria-label'],'退出专注模式');
  f.run("setViewport('phone')");
  assert.equal(f.run('focused'),false);
- assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.match(f.get('focus').innerHTML,/M8 3H5a2 2 0 0 0-2 2v3/);
  assert.equal(f.get('focus').attrs['aria-pressed'],'false');
  assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
 });
