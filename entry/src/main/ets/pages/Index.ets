@@ -7733,7 +7733,7 @@ struct Index {
     Row() {
       // L-7/Z2：全局 @Builder 按值实参不随状态刷新，图标名+色必须走 if 分支，不能写成三元实参
       if (this.focused) {
-        Icon('exitFocus', Space.s5, $r('app.color.brand'))
+        Icon('columns', Space.s5, $r('app.color.brand'))
       } else {
         Icon('focus', Space.s5, $r('app.color.text_secondary'))
       }
