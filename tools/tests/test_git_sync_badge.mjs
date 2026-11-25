@@ -103,7 +103,7 @@ test('Git entry visibility does not gate remote-link sharing', () => {
   const shareDialogStart = shareFlowSource.indexOf('  private async openShareDialog(scope: ShareLinkScope');
   const shareDialog = shareFlowSource.slice(shareDialogStart,
     shareFlowSource.indexOf('\n  build() {', shareDialogStart));
-  assert.match(shareDialog, /value: 'file', label: 'Markdown \/ ZIP'/);
+  assert.match(shareDialog, /value: 'file', label: fileOptionLabel/);
   assert.match(shareDialog, /if \(vault\.type === 'git' && focusReturnId\.length === 0\) \{[\s\S]*?value: 'link'/);
   assert.doesNotMatch(shareDialog, /GIT_ENTRY_UI_ENABLED/);
 });

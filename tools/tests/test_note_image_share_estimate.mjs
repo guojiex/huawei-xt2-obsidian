@@ -138,6 +138,31 @@ test('96.2 ShareFlowPanel gates the image row on the estimate (source-level)', (
   assert.match(panel, /private async openShareDialog\(scope: ShareLinkScope[\s\S]*?\): Promise<void> \{/);
 });
 
+test('96.4 file row shows the pre-judged concrete format (source-level)', () => {
+  const panel = readSourceFile(new URL(
+    '../../entry/src/main/ets/components/ShareFlowPanel.ets', import.meta.url));
+  const service = readSourceFile(new URL(
+    '../../entry/src/main/ets/model/NoteShareService.ets', import.meta.url));
+  // 预判函数：scanMarkdownImages 语法扫描 + isRemoteImage 过滤（零 IO，不 stat 图片文件）
+  assert.match(service,
+    /static hasLocalImageRefs\(markdown: string\): boolean \{[\s\S]*?scanMarkdownImages[\s\S]*?isRemoteImage/);
+  // 接线：同一份正文快照同时驱动长图估算与「文件」行预判（不二次读取）
+  assert.ok(panel.includes('NoteShareService.hasLocalImageRefs(noteMarkdown)'),
+    'file-row pre-judgment must reuse the already-read note snapshot');
+  // 原型 v2 对齐的两种具体标签（shareFileLabel 口径）+ fail-open 合并标签
+  assert.ok(panel.includes("'ZIP 压缩包'"));
+  assert.ok(panel.includes("'Markdown 文件'"));
+  assert.ok(panel.includes("'Markdown / ZIP'"), 'fail-open keeps the combined label');
+  assert.ok(panel.includes("'保留目录关系，包含引用的本地图片。'"));
+  assert.ok(panel.includes("'保留 Markdown 源码，方便继续编辑。'"));
+  // 行 value 与格式顺序不变（96.2 顺序断言仍适用）
+  assert.ok(panel.includes("value: 'file', label: fileOptionLabel"));
+  // prepareShare 失败详情标题复用预判标签，不再散写合并标签
+  assert.ok(panel.includes("format === 'file' ? this.shareFileOptionLabel : 'ZIP'"));
+  // 预判标签存成员供失败路径复用
+  assert.match(panel, /private shareFileOptionLabel: string = 'Markdown \/ ZIP';/);
+});
+
 test('v1.90 generation-time error message stays unchanged (regression guard)', () => {
   const service = readSourceFile(new URL(
     '../../entry/src/main/ets/model/NoteImageShareService.ets', import.meta.url));

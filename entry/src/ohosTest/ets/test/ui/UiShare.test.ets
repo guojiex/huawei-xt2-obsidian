@@ -143,7 +143,11 @@ export default function uiShareTest() {
       await openShareFormatPanel(driver);
       // 笔记范围的三种基础格式行都在（PDF 行按设备能力显示，见最后一个用例）
       expect(await existsByText(driver, '长图')).assertTrue();
-      expect(await existsByText(driver, 'Markdown / ZIP')).assertTrue();
+      // 96.4：「文件」行按正文预判显示具体格式（原型 v2 shareFileLabel 口径），合并标签不再出现
+      const mdFileRow: boolean = await existsByText(driver, 'Markdown 文件');
+      const zipPkgRow: boolean = await existsByText(driver, 'ZIP 压缩包');
+      expect(mdFileRow || zipPkgRow).assertTrue();
+      expect(await existsByText(driver, 'Markdown / ZIP')).assertFalse();
       expect(await existsByText(driver, '文本')).assertTrue();
       // 描述行：面板内容按范围渲染，不是空壳
       expect(await existsByText(driver, '当前笔记及其引用的库内图片，不包含链接到的其他笔记。')).assertTrue();
@@ -223,12 +227,14 @@ export default function uiShareTest() {
       await closeSharePanel(driver);
     });
 
-    /** EM-J2：Markdown / ZIP 文件详情（标题/分享文件/返回）可达并返回 */
+    /** EM-J2：「文件」行（96.4 预判格式）详情（标题/分享文件/返回）可达并返回 */
     it('share_note_file_preview_roundtrip', 0, async (): Promise<void> => {
       const driver: Driver = await getDriver();
       await openTutorialNote(driver);
       await openShareFormatPanel(driver);
-      await clickByText(driver, 'Markdown / ZIP');
+      // 96.4：行标签按正文预判（教程笔记有无本地配图 → ZIP 压缩包 / Markdown 文件），点实际显示的那个
+      const zipPkgRow: boolean = await existsByText(driver, 'ZIP 压缩包');
+      await clickByText(driver, zipPkgRow ? 'ZIP 压缩包' : 'Markdown 文件');
       // 文件准备是异步的（读内容 + 本地打包），详情弹窗在准备完成后出现
       await waitByText(driver, '分享文件', 30000);
       // 标题按实际格式「Markdown 分享 / ZIP 分享」（有无本地配图决定）
@@ -334,9 +340,11 @@ export default function uiShareTest() {
         await clickByText(driver, '返回');
         await waitByText(driver, '长图');
       } else {
-        // 不支持 PDF 的设备：基础三行必须在（优雅降级不残缺）
+        // 不支持 PDF 的设备：基础三行必须在（优雅降级不残缺；「文件」行 96.4 起按预判显示具体格式）
         expect(await existsByText(driver, '长图')).assertTrue();
-        expect(await existsByText(driver, 'Markdown / ZIP')).assertTrue();
+        const mdFileRow: boolean = await existsByText(driver, 'Markdown 文件');
+        const zipPkgRow: boolean = await existsByText(driver, 'ZIP 压缩包');
+        expect(mdFileRow || zipPkgRow).assertTrue();
         expect(await existsByText(driver, '文本')).assertTrue();
       }
       await closeSharePanel(driver);

@@ -235,6 +235,22 @@ export class NoteShareService {
     return source.startsWith('//') || /^(https?:|data:|blob:)/i.test(source);
   }
 
+  /**
+   * v1.96（96.4）：正文是否含非远端图片引用——分享列表「文件」行据此预判显示
+   * 「ZIP 压缩包」或「Markdown 文件」（对齐原型 v2 shareFileLabel）。只做语法扫描
+   * （零 IO），不解析文件是否真实存在：缺图仍由 prepareNote 在生成期报
+   * 「缺少本地图片」，口径与 v0.8 8.3 一致。
+   */
+  static hasLocalImageRefs(markdown: string): boolean {
+    const references: MarkdownImageReference[] = NoteShareService.scanMarkdownImages(markdown);
+    for (let i: number = 0; i < references.length; i++) {
+      if (!NoteShareService.isRemoteImage(references[i].source)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** ZIP 路径中不分享应用内部状态、Git 元数据、草稿、缓存和常见凭据文件。 */
   static isExcludedVaultPath(relativePath: string): boolean {
     const parts: string[] = relativePath.split('/');

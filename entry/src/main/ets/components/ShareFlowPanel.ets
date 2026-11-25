@@ -105,6 +105,12 @@ export struct ShareFlowPanel {
   private saveShareCtl: CustomDialogController | null = null;
   /** 53.7：PDF 分页预览会话（状态与合成在 model/SharePdfPreviewFlow） */
   private sharePdfPreviewFlow: SharePdfPreviewFlow = new SharePdfPreviewFlow();
+  /**
+   * v1.96（96.4）：openShareDialog 预判的「文件」行标签（「ZIP 压缩包 / Markdown 文件」，
+   * 读取失败 fail-open 为合并标签）。存成员是因为 prepareShare 失败详情标题要复用同一
+   * 预判，避免用户点了「ZIP 压缩包」后失败页还显示「Markdown / ZIP」。
+   */
+  private shareFileOptionLabel: string = 'Markdown / ZIP';
   /** CustomDialogController 仅在 @Component struct 成员、struct 内赋值才有效（官方约束）；
    * 普通类里 new 出来的 open() 静默不显示——XT2 真机 PDF 分享无响应根因（2026-11-18）。 */
   private sharePdfPreviewCtl: CustomDialogController | null = null;
@@ -335,7 +341,7 @@ export struct ShareFlowPanel {
         return;
       }
       if (format !== 'link') {
-        const detailFormat: string = format === 'file' ? 'Markdown / ZIP' : 'ZIP';
+        const detailFormat: string = format === 'file' ? this.shareFileOptionLabel : 'ZIP';
         this.openShareFilePreview('', itemName, detailFormat, [], itemName, 0, 0, scope, path, registry,
           shareFailureMessage(error, 'file_prepare'),
           (): Promise<void> => {
@@ -1080,12 +1086,25 @@ export struct ShareFlowPanel {
     // 就不展示「长图」行——避免超长笔记点了才发现生成不了。估算是下界、读取失败 fail-open
     // （不隐藏），生成阶段沿用 v1.90 报错引导兜底。
     let hideImageOption: boolean = false;
+    // v1.96（96.4）：「文件」行按正文预判显示具体格式，对齐原型 v2 shareFileLabel
+    // （renderShareOptions 按 s.zip 动态显示）——含非远端图片引用必为 ZIP，无引用必为
+    // 纯 Markdown；读取失败 fail-open 保留合并标签。生成逻辑与失败报错零改动（v0.8 8.3）。
+    let fileOptionLabel: string = 'Markdown / ZIP';
+    let fileOptionDetail: string = '按本地图片情况生成 Markdown 文件或 ZIP。';
     if (focusReturnId.length === 0 && notePath.length > 0) {
       const captureWidthVp: number = this.shareLayoutWidthVp(this.shareCaptureWidthId,
         this.activeSharePaneWidthVp());
       try {
         const noteMarkdown: string = await this.noteMarkdownForShare(vault.id, notePath);
         hideImageOption = NoteImageShareEstimate.exceedsLongImageLimit(noteMarkdown, captureWidthVp);
+        // 同一份正文快照同时驱动长图估算与文件行预判，不二次读取。
+        if (NoteShareService.hasLocalImageRefs(noteMarkdown)) {
+          fileOptionLabel = 'ZIP 压缩包';
+          fileOptionDetail = '保留目录关系，包含引用的本地图片。';
+        } else {
+          fileOptionLabel = 'Markdown 文件';
+          fileOptionDetail = '保留 Markdown 源码，方便继续编辑。';
+        }
         // 只记数值不记内容（埋点红线硬约束 16）；真机漏判排查用。
         hilog.info(DOMAIN, 'ShareDbg',
           'v196 len=%{public}d w=%{public}d est=%{public}d max=%{public}d hide=%{public}d',
@@ -1098,6 +1117,7 @@ export struct ShareFlowPanel {
         hilog.warn(DOMAIN, 'ShareDbg', 'v196 estimate failed (fail-open)');
       }
     }
+    this.shareFileOptionLabel = fileOptionLabel;
     const noteOptions: ShareFormatOption[] = [];
     if (!hideImageOption) {
       noteOptions.push({
@@ -1112,8 +1132,8 @@ export struct ShareFlowPanel {
       });
     }
     noteOptions.push({
-      value: 'file', label: 'Markdown / ZIP',
-      detail: '按本地图片情况生成 Markdown 文件或 ZIP。', icon: 'doc'
+      value: 'file', label: fileOptionLabel,
+      detail: fileOptionDetail, icon: 'doc'
     });
     noteOptions.push({
       value: 'text', label: '文本',

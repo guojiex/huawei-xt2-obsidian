@@ -106,7 +106,7 @@
 | UiShare       | `share_scope_segments_switch_formats`              | 范围分段「笔记/文件夹/知识库」切换，各范围标题与格式列表正确                                                                             | EM-J2 25.12/25.13                 |
 | UiShare       | `share_note_text_preview_roundtrip`                | 文本分享详情（可编辑说明 + 返回格式选择）可达并返回                                                                                 | v0.9 9.14                         |
 | UiShare       | `share_text_system_handoff_cancel_keeps_dialog`    | 分享文本调起系统分享：无交接失败文案；取消（pressBack）后应用内弹窗保留；系统面板标记（华为分享/复制/另存为/中转站）尽力探测不硬断言                                    | EM-J2（取消系统分享，可达部分）                |
-| UiShare       | `share_note_file_preview_roundtrip`                | Markdown / ZIP 文件详情（标题按格式 / 分享文件 / 返回）可达并返回                                                                 | EM-J2 / v0.8                      |
+| UiShare       | `share_note_file_preview_roundtrip`                | 「文件」行（96.4 起按正文预判显示 ZIP 压缩包 / Markdown 文件）详情（标题按格式 / 分享文件 / 返回）可达并返回                                                      | EM-J2 / v0.8 / v1.96 96.4          |
 | UiShare       | `share_long_image_preview_roundtrip`               | 长图详情（宽度/外观设置区 + 返回）可达并返回；不断言成图                                                                              | EM-J2 / v1.19 / v1.25             |
 | UiShare       | `share_vault_zip_preview_roundtrip`                | 知识库范围 ZIP 详情（1 个 ZIP / 分享文件）可达并返回                                                                           | EM-J2 / v0.8                      |
 | UiShare       | `share_vault_entry_from_manager`                   | 库管理「分享」→ 仅 ZIP 的「分享知识库」面板（无范围分段）                                                                            | EM-J1 / v1.25 25.18               |
