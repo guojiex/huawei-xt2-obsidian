@@ -187,7 +187,7 @@ test('every utility action passes label as a makeBinding<string> callback', () =
   const consumers = [
     { name: 'NoteDialogs', source: noteDialogSource, calls: 12 },
     { name: 'VaultDialogs', source: vaultDialogSource, calls: 6 },
-    { name: 'GitSyncDialog', source: gitSyncSource, calls: 4 },
+    { name: 'GitSyncDialog', source: gitSyncSource, calls: 5 },
     { name: 'ImportVaultDialog', source: importDialogSource, calls: 4 },
     { name: 'ShareImagePreviewDialog', source: shareImagePreviewSource, calls: 2 },
     { name: 'ShareTextPreviewDialog', source: shareTextPreviewSource, calls: 2 },

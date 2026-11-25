@@ -1,5 +1,6 @@
 import { promptAction, UIUtils } from '@kit.ArkUI';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { fileIo } from '@kit.CoreFileKit';
 import { GitCredentialStore } from '../git/GitCredentialStore';
 import { GitBranchNameValidation, validateGitBranchName } from '../git/GitBranchName';
 import { GitNativeService } from '../git/GitNativeService';
@@ -67,6 +68,10 @@ export struct GitSyncDialog {
   @State resultTitle: string = '';
   @State resultBody: string = '';
   @State pulling: boolean = false;
+  // v2.10：恢复后缺 .git 的库进入「重新关联远端」卡片态（应用备份不含 Git 历史）。
+  @State missingGit: boolean = false;
+  @State reattachUrl: string = '';
+  @State reattachError: string = '';
   onBusyChange: (busy: boolean) => void = (_busy: boolean) => {};
   /** v1.76：请求退出全屏页（Index 收到后把 topView 切回 note 并还原焦点）。 */
   onDismiss: () => void = () => {};
@@ -90,6 +95,7 @@ export struct GitSyncDialog {
     this.lastPushAt = entry.lastSyncAt ?? 0;
     this.remoteLabel = this.remoteHostPath(entry.remote ?? '');
     this.transportLabel = (entry.remote ?? '').toLowerCase().startsWith('https://') ? 'HTTPS' : 'Git';
+    this.reattachUrl = entry.remote ?? '';
     this.commitMessage = '更新 0 个文件（曜石笔记）';
     try {
       const storedToken: string | null = GitCredentialStore.getToken(this.vaultId);
@@ -147,6 +153,7 @@ export struct GitSyncDialog {
       const state: Git2RepositoryState =
         await GitNativeService.repositoryState(registry.vaultDirOf(this.vaultId), this.pushBranch);
       this.statusReady = true;
+      this.missingGit = false;
       this.trackingKnown = state.trackingKnown;
       this.aheadCount = state.aheadCount;
       this.behindCount = state.behindCount;
@@ -159,8 +166,24 @@ export struct GitSyncDialog {
       this.statusMessage = '';
       void this.loadFileDiffs();
     } catch (_error) {
+      // v2.10：仓库打不开且 .git 缺失（典型：应用备份恢复后）→ 进「重新关联远端」卡片态。
+      if (this.probeMissingGit()) {
+        this.missingGit = true;
+        this.statusReady = false;
+        this.statusMessage = '';
+        return;
+      }
       this.statusReady = false;
       this.statusMessage = '无法读取本地 Git 状态；请刷新后再决定是否推送。';
+    }
+  }
+
+  /** v2.10：复核 vaultDir 下是否真的没有 .git（fileIo 不可用时维持原报错路径）。 */
+  private probeMissingGit(): boolean {
+    try {
+      return !fileIo.accessSync(VaultRegistry.get().vaultDirOf(this.vaultId) + '/.git');
+    } catch (_error) {
+      return false;
     }
   }
 
@@ -541,6 +564,81 @@ export struct GitSyncDialog {
       this.resultTitle = '拉取远端更新失败';
       this.resultBody = '本地库内容未变；检查网络后可重试拉取。';
     }
+    this.progressText = '失败';
+  }
+
+  /** v2.10：远端地址校验，返回空串表示可用；错误文案直接进卡片。 */
+  private reattachUrlIssue(): string {
+    const url: string = this.reattachUrl.trim();
+    if (url.length === 0) {
+      return '请填写远端仓库地址。';
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return '远端地址必须以 http:// 或 https:// 开头。';
+    }
+    const schemePos: number = url.indexOf('://');
+    const authorityStart: number = schemePos + 3;
+    const authorityEnd: number = url.indexOf('/', authorityStart);
+    const authority: string = url.substring(authorityStart,
+      authorityEnd >= 0 ? authorityEnd : url.length);
+    if (authority.length === 0) {
+      return '远端地址缺少主机名。';
+    }
+    if (authority.includes('@')) {
+      return '地址中不能内嵌账号或令牌；凭据请在下方单独填写。';
+    }
+    return '';
+  }
+
+  /** v2.10：缺 .git 的库重新关联远端——本地只重建 .git，笔记文件零改动。 */
+  private async runReattach(): Promise<void> {
+    if (this.busy || !this.missingGit || VaultRegistry.get().currentId() !== this.vaultId) {
+      return;
+    }
+    const issue: string = this.reattachUrlIssue();
+    if (issue.length > 0) {
+      this.reattachError = issue;
+      return;
+    }
+    const token: string = this.effectiveToken();
+    const remote: string = this.reattachUrl.trim();
+    if (token.length > 0 && !isGitHubRemote(remote) && this.authUsername.trim().length === 0) {
+      this.reattachError = '此 Git 服务需要先填写用户名。';
+      this.credentialEditorOpen = true;
+      return;
+    }
+    this.reattachError = '';
+    this.startBusy();
+    this.progressText = '正在重新关联远端…';
+    try {
+      const options: Git2ActionOptions = {
+        operation: 'reattach',
+        repositoryPath: VaultRegistry.get().vaultDirOf(this.vaultId),
+        // targetBranch 取库注册的 clone 分支（trackingBranch），缺省回退推送分支。
+        targetBranch: this.trackingBranch.length > 0 ? this.trackingBranch : this.pushBranch,
+        remoteUrl: remote,
+        onProgress: (progress: Git2Progress): void => {
+          this.progressText = GitNativeService.progressLabel(progress);
+        }
+      };
+      applyRemoteAuth(options, remote, this.authUsername.trim(), token);
+      await GitNativeService.action(options);
+      this.saveCredentialsAfterRemoteSuccess(token);
+      this.missingGit = false;
+      await this.refreshLocalStatus();
+      this.statusMessage = '已重新关联远端；本地笔记未改动。';
+      this.progressText = '重新关联完成';
+    } catch (error) {
+      this.showReattachFailure(error);
+    } finally {
+      this.finishBusy();
+    }
+  }
+
+  private showReattachFailure(error: Error | Object): void {
+    const message: string = (error as BusinessError).message ?? String(error);
+    this.reattachError = '重新关联未完成：' + message +
+      '。本地笔记未改动；修正地址或凭据后可重试。';
     this.progressText = '失败';
   }
 
@@ -1275,6 +1373,83 @@ export struct GitSyncDialog {
     }
   }
 
+  /** v2.10：缺 .git 时的「重新关联远端」卡片，替代常规同步内容。 */
+  @Builder
+  private ReattachCard() {
+    Column({ space: Space.s2 }) {
+      Row() {
+        Text('本地 Git 仓库缺失')
+          .fontSize(FontSize.body2)
+          .fontWeight(Weight.semibold)
+          .fontColor($r('app.color.text_primary'))
+      }
+      .width('100%')
+      Text('此知识库的笔记完好，但本地没有 .git 目录（应用备份不包含 Git 历史）。' +
+        '填写远端地址重新关联后即可继续推送；本地笔记文件不会被修改。')
+        .fontSize(FontSize.body3)
+        .fontColor($r('app.color.text_secondary'))
+        .width('100%')
+      Column({ space: Space.s1 }) {
+        Text('远端仓库地址')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+        TextInput({ placeholder: 'https://example.com/user/repo.git', text: this.reattachUrl })
+          .fontSize(FontSize.body3)
+          .enabled(!this.busy)
+          .fontColor($r('app.color.text_primary'))
+          .placeholderColor($r('app.color.text_tertiary'))
+          .padding({ left: Space.s3, right: Space.s3 })
+          .backgroundColor($r('app.color.bg_secondary'))
+          .borderRadius(Radius.control)
+          .accessibilityText('远端仓库地址')
+          .onChange((value: string): void => { this.reattachUrl = value; })
+          .onSubmit((): void => { void this.runReattach(); })
+      }
+      .width('100%')
+      Column({ space: Space.s2 }) {
+        this.CredentialEditor()
+      }
+      .width('100%')
+      if (this.reattachError.length > 0) {
+        Text(this.reattachError)
+          .fontSize(FontSize.body3)
+          .fontColor($r('app.color.danger'))
+          .width('100%')
+          .accessibilityText(this.reattachError)
+      }
+      if (this.busy) {
+        Text(this.progressText)
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_secondary'))
+          .width('100%')
+          .accessibilityText('重新关联进度：' + this.progressText)
+      }
+      Row() {
+        UtilityDialogAction(UIUtils.makeBinding<string>(() => '重新关联'), 'primary',
+          this.singleScreen, UIUtils.makeBinding<boolean>(() => !this.busy && this.reattachUrlIssue().length === 0),
+          (): void => { void this.runReattach(); })
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.End)
+    }
+    .width('100%')
+    .padding({ left: Space.s4, right: Space.s4, top: Space.s3, bottom: Space.s3 })
+    .borderRadius(Radius.card)
+    .border({ width: 1, color: $r('app.color.line') })
+    .backgroundColor($r('app.color.bg_card'))
+  }
+
+  /** v2.10：内容分流——缺 .git 只展示重新关联卡片，其余场景维持常规同步内容。 */
+  @Builder
+  private ContentBody() {
+    if (this.missingGit) {
+      this.ReattachCard()
+    } else {
+      this.DialogContent()
+    }
+  }
+
   @Builder
   private DialogContent() {
     // v1.87：卡片间距对齐原型 .sync-block 的 margin-bottom --s4。
@@ -1555,7 +1730,7 @@ export struct GitSyncDialog {
       // 主体：单屏简化版（v1.79）——只有一个整页滚动的清单 + 提交流程，不展示逐行差异；
       // 宽屏 / 双屏保持左右分栏 + 右栏铺满 diff（v1.78）。
       if (this.singleScreen) {
-        Scroll() { this.DialogContent() }
+        Scroll() { this.ContentBody() }
           .width('100%')
           .layoutWeight(1)
           // v1.87：单屏对齐原型 phone 下 .sync-side 的 padding --s4 画布内缩。
@@ -1564,7 +1739,7 @@ export struct GitSyncDialog {
           .edgeEffect(EdgeEffect.Spring)
       } else {
         Row() {
-          Scroll() { this.DialogContent() }
+          Scroll() { this.ContentBody() }
             // v1.87：左栏固定宽对齐原型 .sync-side（calc(--nav-width * 1.65) = 396）。
             .width(Size.syncSideW)
             .height('100%')

@@ -65,6 +65,7 @@ typedef struct {
   napi_async_work async_work;
   char *operation;
   char *repository_path;
+  char *remote_url;
   char *target_branch;
   char *username;
   char *password;
@@ -157,6 +158,7 @@ static int check_workdir_clean(git_repository *repository,
                                git_operation_work_t *work);
 static int pull_target_branch(git_repository *repository,
                               git_operation_work_t *work);
+static int reattach_repository(git_operation_work_t *work);
 
 static void initialize_libgit2(void) { g_init_result = git_libgit2_init(); }
 
@@ -669,9 +671,158 @@ cleanup:
   return result;
 }
 
+// v2.10：重新关联远端（reattach）。应用备份不含 .git（v2.10 起无条件排除），
+// 恢复出的 Git 库缺仓库元数据，本操作在原目录重建 .git 并接回远端：
+//   1. 仓库打不开 → git_repository_init；打开成功且 HEAD 未生（unborn）→ 幂等续跑
+//      （上次网络/认证失败留下的半成品 .git，重试不报错）；
+//      打开成功且 HEAD 已有提交 → 拒绝（已是可用仓库，重做会掩盖既有状态）；
+//   2. origin 缺失则 git_remote_create，已存在则 git_remote_set_url 指向 remoteUrl；
+//   3. 复用 fetch_target_branch：远端必须存在 refs/heads/<targetBranch>，
+//      缺失报「远端没有分支 X」；fetch 进 refs/remotes/origin/<targetBranch>；
+//   4. git_branch_create（force=1 幂等）在 refs/heads/<targetBranch> 指向远端跟踪分支，
+//      git_repository_set_head 切过去；
+//   5. index 对齐：显式 git_index_read_tree(HEAD 树) + git_index_write——
+//      不用 git_reset（会按 reset 语义动工作区），本地笔记文件零改动，
+//      对远端表现为「未提交改动」，之后走既有 stage/commit/push。
+// 失败保留半成品 .git（不递归删除用户数据），原地重试幂等。
+static int reattach_repository(git_operation_work_t *work) {
+  git_repository *repository = NULL;
+  git_remote *remote = NULL;
+  git_reference *tracking_ref = NULL;
+  git_reference *branch_ref = NULL;
+  git_reference *head_ref = NULL;
+  git_commit *target_commit = NULL;
+  git_commit *head_commit = NULL;
+  git_tree *head_tree = NULL;
+  git_index *index = NULL;
+  char *authorization_header = NULL;
+  git_strarray headers = { NULL, 0 };
+  int result = -1;
+
+  if (git_repository_open_ext(&repository, work->repository_path,
+                              GIT_REPOSITORY_OPEN_NO_SEARCH, NULL) < 0) {
+    git_repository_free(repository);
+    repository = NULL;
+    if (git_repository_init(&repository, work->repository_path, 0) < 0) {
+      capture_operation_error(work, -1);
+      return -1;
+    }
+  } else {
+    const int unborn = git_repository_head_unborn(repository);
+    if (unborn < 0) {
+      capture_operation_error(work, -1);
+      git_repository_free(repository);
+      return -1;
+    }
+    if (unborn == 0) {
+      work->error_message = strdup("已存在可用的 Git 仓库，无需重新关联");
+      git_repository_free(repository);
+      return -1;
+    }
+  }
+
+  const char *url = work->remote_url;
+  if (is_https_remote(url)) {
+    const char *ca_file = work->ca_file != NULL ? work->ca_file
+                                                : OPENHARMONY_SYSTEM_CA_FILE;
+    if (git_libgit2_opts(GIT_OPT_SET_SSL_CERT_LOCATIONS, ca_file, NULL) < 0) {
+      goto cleanup;
+    }
+  }
+  // origin：已存在则改指 remoteUrl（git_remote_set_url 写配置，内存 remote 对象
+  // 不受影响，须重查拿到新 URL），缺失则创建。
+  if (git_remote_set_url(repository, "origin", url) == 0) {
+    if (git_remote_lookup(&remote, repository, "origin") < 0) {
+      goto cleanup;
+    }
+  } else if (git_remote_create(&remote, repository, "origin", url) < 0) {
+    goto cleanup;
+  }
+
+  git_remote_callbacks callbacks;
+  memset(&callbacks, 0, sizeof(callbacks));
+  callbacks.version = GIT_REMOTE_CALLBACKS_VERSION;
+  if (configure_remote_auth(work, url, &callbacks, &headers,
+                            &authorization_header) < 0) {
+    work->error_message = strdup("remote URL or authentication options are invalid");
+    goto cleanup;
+  }
+  work->progress_phase = PROGRESS_PHASE_FETCH;
+  emit_operation_phase(work, PROGRESS_PHASE_FETCH);
+  if (fetch_target_branch(remote, work, &callbacks, &headers) < 0) {
+    goto cleanup;
+  }
+  if (!work->remote_branch_exists) {
+    const size_t size = strlen(work->target_branch) + 64;
+    char *message = (char *)malloc(size);
+    if (message != NULL) {
+      (void)snprintf(message, size, "远端没有分支 %s，无法重新关联",
+                     work->target_branch);
+      work->error_message = message;
+    }
+    goto cleanup;
+  }
+
+  char tracking_name[MAX_ARGUMENT_BYTES + 24];
+  char head_refname[MAX_ARGUMENT_BYTES + 12];
+  const int tracking_length = snprintf(tracking_name, sizeof(tracking_name),
+                                       "refs/remotes/origin/%s", work->target_branch);
+  const int head_length = snprintf(head_refname, sizeof(head_refname),
+                                   "refs/heads/%s", work->target_branch);
+  if (tracking_length < 0 || (size_t)tracking_length >= sizeof(tracking_name) ||
+      head_length < 0 || (size_t)head_length >= sizeof(head_refname)) {
+    goto cleanup;
+  }
+  if (git_reference_lookup(&tracking_ref, repository, tracking_name) < 0 ||
+      git_reference_target(tracking_ref) == NULL ||
+      git_commit_lookup(&target_commit, repository,
+                        git_reference_target(tracking_ref)) < 0) {
+    goto cleanup;
+  }
+  if (git_branch_create(&branch_ref, repository, work->target_branch,
+                        target_commit, 1) < 0) {
+    goto cleanup;
+  }
+  if (git_repository_set_head(repository, head_refname) < 0) {
+    goto cleanup;
+  }
+
+  if (git_repository_head(&head_ref, repository) < 0 ||
+      git_reference_target(head_ref) == NULL ||
+      git_commit_lookup(&head_commit, repository,
+                        git_reference_target(head_ref)) < 0 ||
+      git_commit_tree(&head_tree, head_commit) < 0) {
+    goto cleanup;
+  }
+  if (git_repository_index(&index, repository) < 0 ||
+      git_index_read_tree(index, head_tree) < 0 ||
+      git_index_write(index) < 0) {
+    goto cleanup;
+  }
+  work->result_text = strdup("reattached");
+  result = work->result_text != NULL ? 0 : -1;
+
+cleanup:
+  if (result < 0 && work->error_message == NULL) {
+    capture_operation_error(work, result);
+  }
+  free(authorization_header);
+  git_index_free(index);
+  git_tree_free(head_tree);
+  git_commit_free(head_commit);
+  git_commit_free(target_commit);
+  git_reference_free(head_ref);
+  git_reference_free(branch_ref);
+  git_reference_free(tracking_ref);
+  git_remote_free(remote);
+  git_repository_free(repository);
+  return result;
+}
+
 static void free_git_operation(git_operation_work_t *work) {
   free(work->operation);
   free(work->repository_path);
+  free(work->remote_url);
   free(work->target_branch);
   free(work->username);
   free(work->password);
@@ -700,6 +851,12 @@ static void execute_git_operation(napi_env env, void *data) {
     return;
   }
   pthread_mutex_lock(&g_clone_mutex);
+  // reattach 仓库可能还不存在（缺 .git），必须在 git_repository_open_ext 之前分流，
+  // 由 reattach_repository 自行 init / open / 幂等续跑。
+  if (strcmp(work->operation, "reattach") == 0) {
+    result = reattach_repository(work);
+    goto operation_failed;
+  }
   if (git_repository_open_ext(&repository, work->repository_path,
                               GIT_REPOSITORY_OPEN_NO_SEARCH, NULL) < 0) {
     capture_operation_error(work, -1);
@@ -813,6 +970,7 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
   bool progress_enabled = false;
   property_status_t operation_status;
   property_status_t path_status;
+  property_status_t remote_url_status;
   property_status_t target_branch_status;
   property_status_t username_status;
   property_status_t password_status;
@@ -836,6 +994,7 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
   work->env = env;
   operation_status = read_string_property(env, argv[0], "operation", &work->operation);
   path_status = read_string_property(env, argv[0], "repositoryPath", &work->repository_path);
+  remote_url_status = read_string_property(env, argv[0], "remoteUrl", &work->remote_url);
   target_branch_status = read_string_property(env, argv[0], "targetBranch", &work->target_branch);
   username_status = read_string_property(env, argv[0], "username", &work->username);
   password_status = read_string_property(env, argv[0], "password", &work->password);
@@ -859,6 +1018,7 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
     progress_enabled = progress_type == napi_function;
   }
   if (operation_status == PROPERTY_READ_ERROR || path_status == PROPERTY_READ_ERROR ||
+      remote_url_status == PROPERTY_READ_ERROR ||
       target_branch_status == PROPERTY_READ_ERROR ||
       username_status == PROPERTY_READ_ERROR || password_status == PROPERTY_READ_ERROR ||
       bearer_status == PROPERTY_READ_ERROR || ca_status == PROPERTY_READ_ERROR ||
@@ -884,7 +1044,7 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
        (work->bearer_token[0] == '\0' || username_status == PROPERTY_PRESENT)) ||
       (strcmp(work->operation, "stage") != 0 && strcmp(work->operation, "commit") != 0 &&
        strcmp(work->operation, "fetch") != 0 && strcmp(work->operation, "push") != 0 &&
-       strcmp(work->operation, "pull") != 0)) {
+       strcmp(work->operation, "pull") != 0 && strcmp(work->operation, "reattach") != 0)) {
     free_git_operation(work);
     return throw_type_error(env, "invalid Git operation options");
   }
@@ -893,6 +1053,19 @@ static napi_value git_action_async(napi_env env, napi_callback_info info) {
        author_email_status != PROPERTY_PRESENT)) {
     free_git_operation(work);
     return throw_type_error(env, "commit requires message, authorName and authorEmail");
+  }
+  // v2.10：reattach 必须给 HTTP(S) remoteUrl，且与 clone 同口径拒绝内嵌凭据。
+  if (strcmp(work->operation, "reattach") == 0) {
+    if (remote_url_status != PROPERTY_PRESENT || work->remote_url[0] == '\0' ||
+        (strncmp(work->remote_url, "https://", 8) != 0 &&
+         strncmp(work->remote_url, "http://", 7) != 0)) {
+      free_git_operation(work);
+      return throw_type_error(env, "reattach requires an HTTP(S) remoteUrl");
+    }
+    if (url_has_embedded_credentials(work->remote_url)) {
+      free_git_operation(work);
+      return throw_type_error(env, "credentials must be passed separately from the remote URL");
+    }
   }
   if (ca_status == PROPERTY_PRESENT &&
       (work->ca_file[0] != '/' || access(work->ca_file, R_OK) != 0)) {

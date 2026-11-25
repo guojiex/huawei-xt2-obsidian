@@ -270,8 +270,13 @@ const SYMBOLS: Record<string, Resource> = {
   'link': $r('sys.symbol.link'),
   'follow': $r('sys.symbol.text_arrow_up_and_down'),
   'columns': $r('sys.symbol.rectangle_split_2x1'),
-  'fileReference': $r('sys.symbol.uiwindow_split_1x2'),
-  'focus': $r('sys.symbol.viewfinder_square'),
+  // 2026-11-24 用户目检：原 uiwindow_split_1x2 是「窗口 + 横线 + 竖线」三格，
+  // 20vp 树行行尾挤成一团；换成只有一条竖线的 rectangle_split_2x1（与 columns 同字形，
+  // 但两个名字各自表达动作/状态，便于日后单边调整）。
+  'fileReference': $r('sys.symbol.rectangle_split_2x1'),
+  // 2026-11-24 用户目检：原 viewfinder_square 是「方框 + 右上角取景括号」，
+  // 20vp 下像「窗口套小窗」，既不表达专注也不是 v1.8 需求要的「向外展开」。
+  'focus': $r('sys.symbol.arrow_up_left_and_arrow_down_right'),
   'exitFocus': $r('sys.symbol.fullscreen'),
   'simpleMode': $r('sys.symbol.text_alignleft'),
   'professionalMode': $r('sys.symbol.code'),
