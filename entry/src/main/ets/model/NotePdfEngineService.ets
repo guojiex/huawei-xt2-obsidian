@@ -4,9 +4,6 @@ import { NotePdfEngineDevice } from './NotePdfEngineDevice';
 /**
  * NotePdfEngineService —— v1.94 PDF 导出服务层（ArkWeb 官方引擎路线）。
  *
- * 与 NotePdfDocumentService（旧位图路线）并存：后者负责「逐页 JPEG → A4 位图 PDF」，
- * 仍被长图链路与降级路径使用；本服务负责「Web 页面 → 官方引擎矢量 PDF」。
- *
  * 官方引擎的分工（见 docs/releases/v1.94/需求文档.md §3.1）：
  * - 分页由 Chromium print 管线按 CSS 纸宽重新布局并分页，原生支持行级断页、
  *   orphans / widows、break-inside / break-after；
@@ -16,13 +13,25 @@ import { NotePdfEngineDevice } from './NotePdfEngineDevice';
  *
  * 2026-11-20 冷启动优化：设备层（ArkWeb webview + PDF Kit pdfService）动态 import，
  * 首次导出 PDF 时才加载。
+ *
+ * 2026-11-25 旧位图链路（NotePdfDocumentService / NotePdfExportDevice /
+ * pdfPagination.mjs，v1.53~v1.93）随 v1.94 验收收口删除，本类承接其仍被
+ * 引用的 A4 point 常量与 syscap 检测；需要旧实现时查 Git 历史。
  */
 export class NotePdfEngineService {
   /** A4 纸型（英寸）——PdfConfiguration.width/height 的单位是英寸。 */
   static readonly A4_WIDTH_INCH: number = 8.27;
   static readonly A4_HEIGHT_INCH: number = 11.69;
+  /** A4 纸型（point）——PDF Kit 页坐标系单位，捕获层视口按此比例取整。 */
+  static readonly A4_WIDTH_PT: number = 595;
+  static readonly A4_HEIGHT_PT: number = 842;
   /** 单文件页数上限（与旧路线一致，需求 53.1）；超限提示改用 Markdown / ZIP。 */
   static readonly MAX_PAGES: number = 100;
+
+  /** AD4：syscap 未核实，必须运行时检测；不支持时分享面板不显示 PDF 入口。 */
+  static isSupported(): boolean {
+    return canIUse('SystemCapability.OfficeService.PDFService.Core');
+  }
 
   /**
    * 生成矢量 PDF 并写入沙箱指定路径，返回产物路径。

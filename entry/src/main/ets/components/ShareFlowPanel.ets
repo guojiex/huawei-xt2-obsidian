@@ -31,7 +31,6 @@ import { SharePdfPreviewFlow, SharePdfPreviewRequest } from '../model/SharePdfPr
 import { NoteShareService, PreparedNoteShare } from '../model/NoteShareService';
 import { NoteImageShareGeometry, NoteImageShareService } from '../model/NoteImageShareService';
 import { NoteImageShareEstimate } from '../model/NoteImageShareEstimate';
-import { NotePdfDocumentService } from '../model/NotePdfDocumentService';
 import { NotePdfEngineService } from '../model/NotePdfEngineService';
 import { NoteTextSharePreview, NoteTextShareService } from '../model/NoteTextShareService';
 import { NoteService } from '../model/NoteService';
@@ -60,7 +59,7 @@ const SHARE_PERF_TRACE: boolean = true;
 // 依据见 docs/releases/v1.94/需求文档.md §3.2。
 const PDF_TARGET_PAGE_WIDTH_VP: number = 700;
 const PDF_TARGET_PAGE_HEIGHT_VP: number = Math.round(
-  PDF_TARGET_PAGE_WIDTH_VP * NotePdfDocumentService.A4_HEIGHT_PT / NotePdfDocumentService.A4_WIDTH_PT);
+  PDF_TARGET_PAGE_WIDTH_VP * NotePdfEngineService.A4_HEIGHT_PT / NotePdfEngineService.A4_WIDTH_PT);
 
 /** 53.10：带旧帧校验的分段快照结果（快照本体 + 用于下一段比对的像素缓冲）。 */
 interface ShareSegmentCapture {
@@ -834,7 +833,7 @@ export struct ShareFlowPanel {
   private async prepareNotePdfShare(vaultId: string, notePath: string,
     itemName: string): Promise<void> {
     const registry: VaultRegistry = VaultRegistry.get();
-    if (!NotePdfDocumentService.isSupported()) {
+    if (!NotePdfEngineService.isSupported()) {
       throw new Error('此设备不支持 PDF 导出');
     }
     this.shareCaptureCancelled = false;
@@ -886,7 +885,7 @@ export struct ShareFlowPanel {
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
       this.shareCaptureController = null;
-      this.openSharePdfPreview(itemName, notePath, sessionId, previewImages, [], pdfPath, vaultId);
+      this.openSharePdfPreview(itemName, notePath, sessionId, previewImages, pdfPath, vaultId);
     } catch (error) {
       this.shareCaptureActive = false;
       this.shareCapturePdfMode = false;
@@ -926,7 +925,7 @@ export struct ShareFlowPanel {
    * v1.94：产物 PDF 已在预览前生成（ArkWeb 官方引擎），此处只传预览缩略图与产物路径。
    */
   private openSharePdfPreview(itemName: string, notePath: string, sessionId: string,
-    previewImages: string[], pageAspects: number[], pdfPath: string, vaultId: string): void {
+    previewImages: string[], pdfPath: string, vaultId: string): void {
     const registry: VaultRegistry = VaultRegistry.get();
     const shareSheet: boolean = this.isSingleScreenLayout() ||
       (this.windowHeightVp > 0 && this.windowHeightVp < 480);
@@ -935,7 +934,6 @@ export struct ShareFlowPanel {
       fileName: this.pdfFileNameOf(itemName),
       sessionId: sessionId,
       previewImages: previewImages,
-      pageAspects: pageAspects,
       pdfPath: pdfPath,
       windowWidthVp: this.windowWidthVp,
       windowHeightVp: this.windowHeightVp,
@@ -956,7 +954,6 @@ export struct ShareFlowPanel {
         itemName: request.itemName,
         fileName: request.fileName,
         pageUris: pageUris,
-        pageAspects: request.pageAspects,
         windowWidthVp: request.windowWidthVp,
         windowHeightVp: request.windowHeightVp,
         singleScreen: request.singleScreen,
@@ -1108,7 +1105,7 @@ export struct ShareFlowPanel {
         detail: '整篇笔记合成一张带水印的图片。', icon: 'image'
       });
     }
-    if (NotePdfDocumentService.isSupported()) {
+    if (NotePdfEngineService.isSupported()) {
       noteOptions.push({
         value: 'pdf', label: 'PDF 文档',
         detail: 'A4 竖版逐页排版，适合打印与通用阅读。', icon: 'doc'

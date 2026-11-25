@@ -16,9 +16,6 @@ export struct SharePdfPreviewDialog {
   itemName: string = '';
   fileName: string = '';
   @Prop pageUris: string[] = [];
-  /** 53.12：非末页裁到切片高后逐页宽高比与 A4 不同；2026-11-18 起缩略图为 A4
-   * 白纸衬底、页图按真实比例顶对齐（与最终 PDF 页面一致）。 */
-  @Prop pageAspects: number[] = [];
   @Prop windowWidthVp: number = 0;
   @Prop windowHeightVp: number = 0;
   @Prop singleScreen: boolean = false;
@@ -57,26 +54,15 @@ export struct SharePdfPreviewDialog {
       .backgroundColor($r('app.color.bg_secondary'))
   }
 
-  /** 缩略图宽高比：优先取该页真实比例（裁剪后），缺失或非法时回退 A4 比例。 */
-  private thumbAspectOf(index: number): number {
-    const aspect: number = this.pageAspects[index];
-    if (aspect > 0) {
-      return aspect;
-    }
-    return 595 / 842;
-  }
-
   @Builder
   PageThumb(uri: string, index: number) {
     Column({ space: Space.s1 }) {
-      // 2026-11-18：缩略图改为 A4 白纸信箱式衬底——53.12 裁剪后非末页切片矮于
-      // 页高，按真实比例直接渲染会变成矮胖条（XT2 实测「每页都很短」）。
-      // 顶对齐衬白纸后与最终 PDF 页面一致（A4 顶对齐贴图、下方留白即自然分页
-      // 留白）；纸面恒白（PDF 模式强制 light），深色主题不变。
+      // 2026-11-18：缩略图为 A4 白纸信箱式衬底。v1.94 起缩略图由 PDF Kit 从真实
+      // PDF 页渲染（恒 A4 比例），纸面恒白（PDF 模式强制 light），深色主题不变。
       Stack({ alignContent: Alignment.TopStart }) {
         Image(uri)
           .width('100%')
-          .aspectRatio(this.thumbAspectOf(index))
+          .aspectRatio(595 / 842)
           .objectFit(ImageFit.Contain)
       }
       .width(Size.pdfThumbW)

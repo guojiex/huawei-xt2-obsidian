@@ -16,8 +16,6 @@ export class SharePdfPreviewRequest {
    * （PDF Kit 从真实 PDF 渲染的页图），不再是端侧逐页截图的 JPEG。
    */
   previewImages: string[] = [];
-  /** 逐页宽高比；官方引擎产出恒为 A4 比例，缺省时弹窗回退 A4。 */
-  pageAspects: number[] = [];
   /** v1.94：已生成的 PDF 产物路径（确认后直接进文件预览，无需再合成）。 */
   pdfPath: string = '';
   windowWidthVp: number = 0;
@@ -42,14 +40,12 @@ export class SharePdfPreviewRequest {
 export class SharePdfPreviewFlow {
   private sessionId: string = '';
   private previewImages: string[] = [];
-  private pageAspects: number[] = [];
   private pdfPath: string = '';
 
   /** 记录会话并生成缩略图 URI 列表；弹窗 builder 由调用方 struct 组装。 */
   openSession(request: SharePdfPreviewRequest): string[] {
     this.sessionId = request.sessionId;
     this.previewImages = request.previewImages;
-    this.pageAspects = request.pageAspects;
     this.pdfPath = request.pdfPath;
     const pageUris: string[] = [];
     for (let i: number = 0; i < request.previewImages.length; i++) {
@@ -75,7 +71,6 @@ export class SharePdfPreviewFlow {
     const sessionId: string = this.sessionId;
     this.sessionId = '';
     this.previewImages = [];
-    this.pageAspects = [];
     this.pdfPath = '';
     if (sessionId.length === 0) {
       return;

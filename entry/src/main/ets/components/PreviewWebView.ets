@@ -26,10 +26,6 @@ export interface PreviewCaptureResult {
   viewportHeight: number;
   viewportWidth: number;
   scrollTop: number;
-  /** v1.53 PDF 分页：preparePdfPages 回传的页数（非 PDF 链路缺省 0）。 */
-  pageCount?: number;
-  /** v1.53 PDF 分页：每页顶部偏移的 JSON 数组字符串（非 PDF 链路缺省空串）。 */
-  pageTops?: string;
   /** 临时调试 53.8：web 侧布局诊断（仅尺寸数值），定位视口高度漂移后移除。 */
   debug?: string;
 }
@@ -724,10 +720,6 @@ class PreviewImpl {
     this.enqueue(`window.__mdpreview.prepareShareCapturePages(${id},${pageCount})`);
   }
 
-  preparePdfPages(id: number, pageHeightVp: number): void {
-    this.enqueue(`window.__mdpreview.preparePdfPages(${id},${pageHeightVp})`);
-  }
-
   private enqueue(script: string): void {
     if (this.readyFlag) {
       void this.controller.runJavaScript(script).then((): void => {
@@ -1027,13 +1019,6 @@ export class PreviewBridge {
     });
   }
 
-  /** v1.53 PDF 分页：计算块边界页顶并补白，回传每页顶部偏移。 */
-  preparePdfPages(pageHeightVp: number): Promise<PreviewCaptureResult> {
-    return this.requestCapture((id: number): void => {
-      this.impl?.preparePdfPages(id, pageHeightVp);
-    });
-  }
-
   cancelShareCaptureRequests(message: string): void {
     this.captureWaiters.forEach((waiter: CaptureWaiter): void => {
       clearTimeout(waiter.timerId);
@@ -1066,8 +1051,6 @@ export class PreviewBridge {
       viewportHeight: result['viewportHeight'] as number,
       viewportWidth: result['viewportWidth'] as number,
       scrollTop: result['scrollTop'] as number,
-      pageCount: (result['pageCount'] as number) ?? 0,
-      pageTops: (result['pageTops'] as string) ?? '',
       debug: (result['debug'] as string) ?? ''
     });
   }

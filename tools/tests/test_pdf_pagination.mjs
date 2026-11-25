@@ -4,298 +4,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// v1.94 收口后的 PDF 分享防线（2026-11-25）：旧位图链路（pdfPagination.mjs 自研分页 /
+// preparePdfPages 协议 / NotePdfDocumentService + NotePdfExportDevice 位图合成）已随
+// 验收通过删除，本文件只锁仍存活的官方引擎接线、捕获层、预览弹窗、长图共用链路
+// 与权限红线。旧链路的防线由 test_pdf_engine.mjs 的 doesNotMatch 断言接管。
+
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const readRepoFile = (relPath) => fs.readFileSync(path.join(repoRoot, relPath), 'utf8');
-
-// v1.53 53.2：pdfPagination.mjs 是纯 ESM，直接 import（无 ArkTS / DOM 依赖）。
-const paginationModule = await import(new URL('../../web/mdpreview/src/pdfPagination.mjs', import.meta.url));
-const { computePdfPageTops, pdfBottomPadding, MAX_PDF_PAGES } = paginationModule;
-
-test('MAX_PDF_PAGES 常量为 100（需求 53.1 页数上限）', () => {
-  assert.equal(MAX_PDF_PAGES, 100);
-});
-
-test('空块数组与单页内容都只产生一页，从 0 开始', () => {
-  assert.deepEqual(computePdfPageTops([], 990), [0]);
-  assert.deepEqual(computePdfPageTops([{ top: 0, bottom: 100 }], 990), [0]);
-});
-
-test('块恰好填满一页不再开新页（边界 <=）', () => {
-  assert.deepEqual(computePdfPageTops([{ top: 0, bottom: 990 }], 990), [0]);
-  assert.deepEqual(computePdfPageTops([{ top: 0, bottom: 500 }, { top: 500, bottom: 990 }], 990), [0]);
-});
-
-test('小块（≤30% 页高）放不下时从其顶部开新页，不切断块（v1.53 拍板：逐页渲染）', () => {
-  // 块 250 < 297（0.3×990 阈值）→ 小块整块下移
-  const tops = computePdfPageTops([
-    { top: 0, bottom: 250 },
-    { top: 250, bottom: 500 },
-    { top: 500, bottom: 750 },
-    { top: 750, bottom: 1000 }
-  ], 990);
-  assert.deepEqual(tops, [0, 750]);
-});
-
-test('大块（>30% 页高）放不下时跨页续排填满本页（2026-11-18 折中拍板）', () => {
-  // 块 400 > 297 → 第三块放不下时本页填满到 990，新页从精确页边界开始
-  const tops = computePdfPageTops([
-    { top: 0, bottom: 400 },
-    { top: 400, bottom: 800 },
-    { top: 800, bottom: 1200 }
-  ], 990);
-  assert.deepEqual(tops, [0, 990]);
-});
-
-test('页底剩余 <15% 页高时大块不切、整块下移（避免页底碎片）', () => {
-  // 块 500（大块）：top=880，页底剩余 990-880=110 < 148.5（0.15×990）→ 不切，整块下移
-  const tops = computePdfPageTops([
-    { top: 0, bottom: 500 },
-    { top: 500, bottom: 880 },
-    { top: 880, bottom: 1380 }
-  ], 990);
-  assert.deepEqual(tops, [0, 880]);
-});
-
-test('折中阈值常量：SPLIT_THRESHOLD_RATIO=0.3 / MIN_FILL_RATIO=0.15', () => {
-  assert.equal(paginationModule.SPLIT_THRESHOLD_RATIO, 0.3);
-  assert.equal(paginationModule.MIN_FILL_RATIO, 0.15);
-});
-
-test('单块自身超页高按页高硬切兜底（不抛错、不越界）', () => {
-  const tops = computePdfPageTops([{ top: 0, bottom: 2500 }], 990);
-  assert.deepEqual(tops, [0, 990, 1980]);
-  assert.ok(2500 - tops[tops.length - 1] <= 990);
-});
-
-test('块顶等于当前页顶且超高时同样硬切', () => {
-  const tops = computePdfPageTops([
-    { top: 0, bottom: 100 },
-    { top: 100, bottom: 1200 }
-  ], 500);
-  assert.deepEqual(tops, [0, 500, 1000]);
-});
-
-test('硬切后不足一页的尾部不再追加空页', () => {
-  const tops = computePdfPageTops([{ top: 0, bottom: 1500 }], 990);
-  assert.deepEqual(tops, [0, 990]);
-});
-
-test('页数超过上限 100 抛错并提示改用 Markdown / ZIP', () => {
-  const bounds = [];
-  for (let i = 0; i < 101; i++) {
-    bounds.push({ top: i * 1000, bottom: i * 1000 + 500 });
-  }
-  assert.throws(() => computePdfPageTops(bounds, 990), /页数上限/);
-});
-
-test('无效输入：页高非正数、bounds 非数组、无效块跳过', () => {
-  assert.throws(() => computePdfPageTops([], 0), /页高参数无效/);
-  assert.throws(() => computePdfPageTops([], -1), /页高参数无效/);
-  assert.throws(() => computePdfPageTops([], NaN), /页高参数无效/);
-  assert.throws(() => computePdfPageTops(null, 990), /分页输入无效/);
-  // 无效块（NaN / bottom <= top）跳过不中断
-  assert.deepEqual(computePdfPageTops([
-    { top: NaN, bottom: 100 },
-    { top: 200, bottom: 200 },
-    { top: 300, bottom: 100 },
-    { top: 0, bottom: 50 }
-  ], 990), [0]);
-});
-
-test('末页补白：内容不足一页时补齐整页高度（含 1px 舍入余量）', () => {
-  // tops=[0]，页高 990，内容只有 400 → 补 590 + 1 舍入余量
-  assert.equal(pdfBottomPadding([0], 990, 400), 591);
-  // 内容恰好满页 → 只补舍入余量
-  assert.equal(pdfBottomPadding([0], 990, 990), 1);
-  // 内容超出末页需求 → 只补舍入余量
-  assert.equal(pdfBottomPadding([0], 990, 1200), 1);
-});
-
-test('末页补白：多页场景按末页顶计算（流内 spacer，不叠加 #content padding）', () => {
-  // 末页顶 800，页高 990 → 需要 1790；scrollHeight 1500 → 补 290 + 1
-  assert.equal(pdfBottomPadding([0, 800], 990, 1500), 291);
-  // scrollHeight 已覆盖 → 只补舍入余量
-  assert.equal(pdfBottomPadding([0, 800], 990, 2000), 1);
-});
-
-test('末页补白：无效输入抛错', () => {
-  assert.throws(() => pdfBottomPadding([], 990, 100), /分页结果为空/);
-  assert.throws(() => pdfBottomPadding([0], 0, 100), /页高参数无效/);
-  assert.throws(() => pdfBottomPadding([0], 990, -1), /内容高度无效/);
-});
-
-// ---------- 53.7 标题与下一块合并（对齐 v2 原型 previewPdfShare） ----------
-
-test('mergeHeadingUnits：标题吞并紧随其后的块为一个分页单元', () => {
-  const units = paginationModule.mergeHeadingUnits([
-    { top: 0, bottom: 100, heading: false },
-    { top: 100, bottom: 160, heading: true },
-    { top: 160, bottom: 500, heading: false }
-  ]);
-  assert.deepEqual(units, [
-    { top: 0, bottom: 100, heading: false },
-    { top: 100, bottom: 500, heading: true }
-  ]);
-});
-
-test('mergeHeadingUnits：连续标题链式合并（H1+H2+正文 → 一个单元）', () => {
-  const units = paginationModule.mergeHeadingUnits([
-    { top: 0, bottom: 40, heading: true },
-    { top: 40, bottom: 80, heading: true },
-    { top: 80, bottom: 400, heading: false }
-  ]);
-  assert.equal(units.length, 1);
-  assert.deepEqual(units[0], { top: 0, bottom: 400, heading: true });
-});
-
-test('mergeHeadingUnits：末尾标题无后继保持原样；标题与水印（末块）合并', () => {
-  // 标题是最后一个块：保持独立
-  assert.deepEqual(paginationModule.mergeHeadingUnits([
-    { top: 0, bottom: 100, heading: false },
-    { top: 100, bottom: 140, heading: true }
-  ]), [
-    { top: 0, bottom: 100, heading: false },
-    { top: 100, bottom: 140, heading: true }
-  ]);
-  // 标题后跟水印块：标题与水印合并（原型把 .share-watermark 作为末块参与）
-  assert.deepEqual(paginationModule.mergeHeadingUnits([
-    { top: 0, bottom: 800, heading: false },
-    { top: 800, bottom: 840, heading: true },
-    { top: 840, bottom: 870, heading: false }
-  ]), [
-    { top: 0, bottom: 800, heading: false },
-    { top: 800, bottom: 870, heading: true }
-  ]);
-});
-
-test('mergeHeadingUnits：纯正文恒等映射、不修改输入数组、无效块过滤', () => {
-  const input = [
-    { top: 0, bottom: 100, heading: false },
-    { top: 100, bottom: 300, heading: false }
-  ];
-  const snapshot = JSON.stringify(input);
-  assert.deepEqual(paginationModule.mergeHeadingUnits(input), input);
-  assert.equal(JSON.stringify(input), snapshot, '不得修改输入数组');
-  // 无效块（NaN / bottom <= top）跳过后再合并
-  assert.deepEqual(paginationModule.mergeHeadingUnits([
-    { top: NaN, bottom: 100, heading: true },
-    { top: 0, bottom: 0, heading: true },
-    { top: 50, bottom: 80, heading: true },
-    { top: 80, bottom: 200, heading: false }
-  ]), [
-    { top: 50, bottom: 200, heading: true }
-  ]);
-  assert.throws(() => paginationModule.mergeHeadingUnits(null), /分页输入无效/);
-});
-
-test('mergeHeadingUnits + computePdfPageTops：页尾孤标题随正文走（53.7 分页行为）', () => {
-  // 页高 500；正文块 0-460 后紧跟标题 460-500 与下一块 500-700：
-  // 合并后标题不孤悬页尾，与下一块一起从新页 460 开始。
-  const tops = computePdfPageTops(paginationModule.mergeHeadingUnits([
-    { top: 0, bottom: 460, heading: false },
-    { top: 460, bottom: 500, heading: true },
-    { top: 500, bottom: 700, heading: false }
-  ]), 500);
-  assert.deepEqual(tops, [0, 460]);
-});
-
-// ---------- 源级断言（v1.53 53.1–53.5 接线与红线） ----------
-
-test('源级：mdpreview index.ts 注册 preparePdfPages 并回传 pageCount / pageTops', () => {
-  const indexTs = readRepoFile('web/mdpreview/src/index.ts');
-  assert.match(indexTs, /preparePdfPages\(id: number, pageHeightVp: number\): void/);
-  assert.match(indexTs, /async preparePdfPages\(id: number, pageHeightVp: number\)/);
-  // 53.7：块收集带 heading 标记，先 mergeHeadingUnits 再 computePdfPageTops。
-  assert.match(indexTs, /bounds\.push\(\{ top: top, bottom: top \+ childRect\.height, heading: \/\^H\[1-6\]\$\/\.test\(child\.tagName\) \}\)/);
-  assert.match(indexTs, /mergeHeadingUnits\(bounds\)/);
-  assert.match(indexTs, /computePdfPageTops\(units, pageHeightVp\)/);
-  assert.match(indexTs, /pageCount: tops\.length/);
-  assert.match(indexTs, /pageTops: JSON\.stringify\(tops\)/);
-});
-
-test('源级：rawfile 产物已同步标题合并规则（53.7）', () => {
-  const bundle = readRepoFile('entry/src/main/resources/rawfile/mdpreview/index.html');
-  // esbuild 混淆函数名，断言行为标记：块收集带 heading 标记（h1-h6 判定）。
-  assert.ok(bundle.includes('H[1-6]'), 'rawfile mdpreview 产物缺少标题判定正则，请重跑 web/mdpreview 的 node build.mjs');
-});
-
-test('源级：rawfile 构建产物已同步 preparePdfPages（防 v1.50 产物 stale 复发）', () => {
-  const bundle = readRepoFile('entry/src/main/resources/rawfile/mdpreview/index.html');
-  assert.ok(bundle.includes('preparePdfPages'), 'rawfile mdpreview 产物缺少 preparePdfPages，请重跑 web/mdpreview 的 node build.mjs');
-});
-
-test('源级：PDF 分页解包 display:contents 包装器（2026-11-18 修复）', () => {
-  const indexTs = readRepoFile('web/mdpreview/src/index.ts');
-  // v0.9 起 .preview-source-block{display:contents} 无盒模型，getBoundingClientRect 全零，
-  // 多页笔记被算成 1 页（XT2 实测 kids=22 bounds=1）。contents 包装器必须改测内部真实块。
-  assert.match(indexTs, /window\.getComputedStyle\(child\)\.display === 'contents'/);
-  assert.match(indexTs, /const inner = child\.children\[k\] as HTMLElement/);
-  assert.match(indexTs, /bounds\.push\(\{ top: innerTop, bottom: innerTop \+ innerRect\.height,/);
-});
-
-test('源级：PDF 分页覆盖度守卫——bounds 失效时明确报错（2026-11-18 防回归）', () => {
-  const indexTs = readRepoFile('web/mdpreview/src/index.ts');
-  // 若块测量再次整体失效（如又出现零高度包装器），报错而非静默截断成 1 页。
-  assert.match(indexTs, /metrics\.scrollHeight - maxBottomAll > pageHeightVp/);
-  assert.match(indexTs, /PDF 分页未能覆盖全部内容/);
-});
-
-test('源级：PreviewWebView 协议含 preparePdfPages 与 pageTops 解析', () => {
-  const preview = readRepoFile('entry/src/main/ets/components/PreviewWebView.ets');
-  assert.match(preview, /preparePdfPages\(id: number, pageHeightVp: number\): void/);
-  assert.match(preview, /preparePdfPages\(pageHeightVp: number\): Promise<PreviewCaptureResult>/);
-  assert.match(preview, /result\['pageTops'\] as string/);
-  assert.match(preview, /pageCount\?: number/);
-});
-
-test('源级：NotePdfDocumentService 走 PDF Kit 图片→PDF 路线且 syscap 检测', () => {
-  const service = readRepoFile('entry/src/main/ets/model/NotePdfDocumentService.ets');
-  // 2026-11-15 冷启动优化：pdfService（@kit.PDFKit）拆到设备层动态 import，首次导出才加载。
-  const device = readRepoFile('entry/src/main/ets/model/NotePdfExportDevice.ets');
-  assert.match(service, /canIUse\('SystemCapability\.OfficeService\.PDFService\.Core'\)/);
-  assert.match(service, /await import\('\.\/NotePdfExportDevice'\)/);
-  assert.match(device, /createDocument\(/);
-  assert.match(device, /insertBlankPage\(/);
-  assert.match(device, /addImageObject\(/);
-  assert.match(device, /saveDocument\(/);
-  assert.match(device, /releaseDocument\(\)/);
-  assert.equal(device.includes('ohos.permission.PRINT'), false);
-  assert.equal(service.includes('ohos.permission.PRINT'), false);
-});
-
-test('源级：addImageObject 顶对齐——y 原点在页底，须传 页高−图高（2026-11-18 XT2 实测）', () => {
-  const device = readRepoFile('entry/src/main/ets/model/NotePdfExportDevice.ets');
-  // XT2 导出产物 fitz 解析：y=0 时不满页高的页图被钉在页底、白边留页顶。
-  // PDF 原生坐标系 y 向上；顶对齐传 y = A4_HEIGHT_PT − drawHeight。
-  assert.match(device, /const drawHeight: number = drawWidth \/ aspect;/);
-  assert.match(device, /A4_HEIGHT_PT - drawHeight, drawWidth, drawHeight\)/);
-  assert.equal(/addImageObject\([^)]*, 0, 0,/.test(device), false, '不得再把 y 固定传 0');
-});
-
-test('源级：exportFromPageImages 删除 createDocument 自带的富余空白页（2026-11-11 实测）', () => {
-  const device = readRepoFile('entry/src/main/ets/model/NotePdfExportDevice.ets');
-  // 模拟器实测（PDF-1.7）：createDocument 自带一张初始空白页，逐图 insertBlankPage 后
-  // 悬在文档末尾（末页 /Resources<<>> 全空白）→ 每本 PDF 多一张空白尾页。
-  // 贴完图后按 getPageCount 富余量 deletePage；若实现不建初始页则 surplus 为 0 不删。
-  assert.match(device, /getPageCount\(\)/);
-  assert.match(device, /const surplus: number = document\.getPageCount\(\) - pageJpegs\.length;/);
-  assert.match(device, /if \(surplus > 0\) \{\s*\n\s*document\.deletePage\(pageJpegs\.length, surplus\);/);
-  // 删除动作必须发生在 saveDocument 之前。
-  const cleanup = device.indexOf('const surplus: number');
-  const del = device.indexOf('document.deletePage(');
-  const save = device.indexOf('document.saveDocument(');
-  assert.ok(cleanup > 0 && del > cleanup && save > del, 'surplus 清理须在 saveDocument 之前');
-});
 
 test('源级：ShareFlowPanel 含 PDF 路由、捕获层 PDF 模式与分享面板 PDF 行', () => {
   const index = readRepoFile('entry/src/main/ets/components/ShareFlowPanel.ets');
   assert.match(index, /format === 'pdf' && scope === 'note'/);
   assert.match(index, /prepareNotePdfShare\(/);
   assert.match(index, /shareCapturePdfMode/);
-  // v1.94：分页改由 ArkWeb 官方引擎负责（Chromium print 管线），不再调 web 侧自研分页
-  assert.doesNotMatch(index, /tryPreparePdfPages\(bridge, this\.pdfPageHeightVp\)/);
   assert.match(index, /value: 'pdf', label: 'PDF 文档'/);
-  assert.match(index, /NotePdfDocumentService\.isSupported\(\)/);
+  assert.match(index, /NotePdfEngineService\.isSupported\(\)/);
   assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF/);
   // 写 JPEG 是长图路径的职责（v1.94：PDF 位图路线已下线，改走官方引擎）
   const imageService = readRepoFile('entry/src/main/ets/model/NoteImageShareService.ets');
@@ -355,13 +78,11 @@ test('源级：SharePdfPreviewDialog 规格胶囊 / 缩略图 / 分享按钮（5
   assert.match(dialog, /'1 个 PDF'/);
   assert.match(dialog, /this\.pageUris\.length\.toString\(\) \+ ' 页'/);
   // 缩略图：逐页 Image + 「N / M」页码 + 第 N 页共 M 页读屏
-  // 53.12：非末页裁到切片高后比例非 A4；2026-11-18 起缩略图为 A4 白纸信箱衬底
-  // （页图按真实比例顶对齐，与最终 PDF 页面一致，XT2 实测矮胖条修复）
-  assert.match(dialog, /aspectRatio\(this\.thumbAspectOf\(index\)\)/);
+  // v1.94：缩略图由 PDF Kit 从真实 PDF 页渲染，恒 A4 比例（595/842），
+  // 不再有 53.12 的逐页宽高比数据
   assert.match(dialog, /aspectRatio\(595 \/ 842\)/);
   assert.match(dialog, /\$r\('app\.color\.bg_paper'\)/);
-  assert.match(dialog, /return 595 \/ 842;/);
-  assert.match(dialog, /@Prop pageAspects: number\[\] = \[\];/);
+  assert.doesNotMatch(dialog, /pageAspects/, '官方引擎产物恒 A4，弹窗不得残留逐页宽高比数据');
   assert.match(dialog, /Size\.pdfThumbW/);
   assert.match(dialog, /' \/ ' \+ this\.pageUris\.length\.toString\(\)/);
   assert.match(dialog, /'第 ' \+ \(index \+ 1\)\.toString\(\) \+ ' 页，共 '/);
@@ -388,21 +109,21 @@ test('源级：PDF 预览会话在 SharePdfPreviewFlow，弹窗控制器在 Shar
   assert.doesNotMatch(flow, /SharePdfPreviewDialog/, '普通类不得组装弹窗 builder');
   // 捕获完成后进预览弹窗，捕获层卸下；导出不再内联在 prepareNotePdfShare
   // v1.94：签名改为传预览缩略图与已生成的 PDF 产物路径（官方引擎路线）
-  assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, previewImages, \[\], pdfPath, vaultId\);/);
+  assert.match(index, /this\.openSharePdfPreview\(itemName, notePath, sessionId, previewImages, pdfPath, vaultId\);/);
   const prepare = index.slice(index.indexOf('private async prepareNotePdfShare'),
     index.indexOf('private pdfFileNameOf'));
   assert.ok(prepare.length > 0, 'prepareNotePdfShare 区间未定位');
   assert.doesNotMatch(prepare, /exportFromPageImages/, 'prepareNotePdfShare 不得内联合成 PDF（53.7 改预览后确认）');
   assert.doesNotMatch(prepare, /openShareFilePreview\(/, 'prepareNotePdfShare 不得直接进文件预览');
-  // Flow：请求对象带逐页宽高比（53.12）；会话记录 / 清理，无弹窗逻辑
+  // Flow：会话记录 / 清理，无弹窗逻辑；官方引擎产物恒 A4，不再携带逐页宽高比
   assert.match(flow, /export class SharePdfPreviewFlow/);
   assert.match(flow, /export class SharePdfPreviewRequest/);
-  assert.match(flow, /pageAspects: number\[\] = \[\];/);
+  assert.doesNotMatch(flow, /pageAspects/, '官方引擎产物恒 A4，会话不得残留逐页宽高比数据');
   // v1.94：官方引擎路线下 PDF 在预览前已生成，flow 不再合成，只返回已有产物路径
   assert.match(flow, /pdfPath: string = '';/);
   assert.match(flow, /async composePdf\(\): Promise<string> \{/);
   assert.doesNotMatch(flow, /exportFromPageImages/);
-  // Panel onConfirm：合成 → 关闭 → 进文件预览；onCancel：清理 → 回分享面板
+  // Panel onConfirm：返回产物 → 关闭 → 进文件预览；onCancel：清理 → 回分享面板
   assert.match(index, /const pdfPath: string = await this\.sharePdfPreviewFlow\.composePdf\(\);/);
   assert.match(index, /this\.sharePdfPreviewCtl\?\.close\(\);\s*\n\s*request\.onComposed\(pdfPath\);/);
   assert.match(index, /this\.sharePdfPreviewFlow\.cleanup\(\);\s*\n\s*request\.onCancelled\(\);/);
@@ -413,7 +134,7 @@ test('源级：PDF 预览会话在 SharePdfPreviewFlow，弹窗控制器在 Shar
   assert.match(index, /onComposed: \(composedPath: string\): void => \{\s*\n\s*this\.openShareFilePreview\(composedPath, this\.pdfFileNameOf\(itemName\), 'PDF', \[\]/);
   assert.match(index, /uniformTypeDescriptor\.UniformDataType\.PDF\);/);
   assert.match(index, /onCancelled: \(\): void => \{\s*\n\s*this\.openShareDialog\('note', notePath\);/);
-  // 缩略图 URI 走 fileUri.getUriFromPath（v1.94：源为预览缩略图而非端侧 JPEG）
+  // 缩略图 URI 走 fileUri.getUriFromPath（v1.94：源为 PDF Kit 渲染的预览缩略图）
   assert.match(flow, /pageUris\.push\(fileUri\.getUriFromPath\(request\.previewImages\[i\]\)\);/);
 });
 
@@ -452,7 +173,7 @@ test('源级：ShareFlowPanel 分段快照带旧帧校验与重试（53.10）', 
 test('源级：web setShareCaptureScrollTop 滚动后给渲染服务留合成时间（53.10，P2 已回退）', () => {
   const indexTs = readRepoFile('web/mdpreview/src/index.ts');
   const scrollFn = indexTs.slice(indexTs.indexOf('async setShareCaptureScrollTop'),
-    indexTs.indexOf('async preparePdfPages'));
+    indexTs.indexOf('window.__mdpreview = api'));
   assert.ok(scrollFn.length > 0, 'setShareCaptureScrollTop 区间未定位');
   // 双 rAF 之后仍有 64ms 沉淀，避免组件快照取到滚动前旧表面。
   // v1.91 P2 曾删除此等待，真机复测旧帧重试率 0.8%→87%、墙钟 15.5s→43.4s，净亏已回退（2026-11-20）。
@@ -461,28 +182,17 @@ test('源级：web setShareCaptureScrollTop 滚动后给渲染服务留合成时
   assert.match(scrollFn, /\}, 64\)/, '64ms 合成等待必须保留（P2 回退后恢复）');
 });
 
-test('源级：PDF 水印转末页 fixed 徽标，不参与分页 bounds（53.13）', () => {
+test('红线：旧 PDF 位图链路源码与产物均已删除（2026-11-25 随 v1.94 验收收口清理）', () => {
+  // 旧链路整链删除：自研分页纯函数 / preparePdfPages 协议 / 位图合成服务。
+  // 需要旧实现时查 Git 历史（v1.94 收口前的提交）。
+  assert.equal(fs.existsSync(path.join(repoRoot, 'web/mdpreview/src/pdfPagination.mjs')), false,
+    'pdfPagination.mjs 应已删除');
+  assert.equal(fs.existsSync(path.join(repoRoot, 'entry/src/main/ets/model/NotePdfDocumentService.ets')), false,
+    'NotePdfDocumentService.ets 应已删除');
+  assert.equal(fs.existsSync(path.join(repoRoot, 'entry/src/main/ets/model/NotePdfExportDevice.ets')), false,
+    'NotePdfExportDevice.ets 应已删除');
   const indexTs = readRepoFile('web/mdpreview/src/index.ts');
-  // 水印在分页前转为隐藏徽标（脱离文档流），bounds 收集显式排除
-  assert.match(indexTs, /pdfWatermarkBadge = prepareShareWatermarkForPdfCapture\(body\)/);
-  assert.match(indexTs, /classList\.contains\('share-watermark'\)/);
-  assert.match(indexTs, /pdfWatermarkLastTop = tops\[tops\.length - 1\]/);
-  // 逐页滚动捕获时仅末页显示徽标；长图分页不复用徽标状态
-  assert.match(indexTs, /setShareWatermarkVisibleAtScroll\(pdfWatermarkBadge, top, pdfWatermarkLastTop\)/);
-  const imagePages = indexTs.slice(indexTs.indexOf('async prepareShareCapturePages'),
-    indexTs.indexOf('async setShareCaptureScrollTop'));
-  assert.match(imagePages, /pdfWatermarkBadge = null/, '长图分页须清空 PDF 水印徽标状态');
-  const watermarkModule = readRepoFile('web/mdpreview/src/shareWatermark.mjs');
-  assert.match(watermarkModule, /position = 'fixed'/);
-  assert.match(watermarkModule, /display = 'none'/);
-  assert.match(watermarkModule, /Math\.abs\(top - lastTop\) < 1/);
-  // 复用水印时清掉徽标内联样式，长图水印保持流内
-  assert.match(watermarkModule, /removeAttribute\('style'\)/);
-});
-
-test('源级：rawfile 产物已同步 53.13 水印徽标', () => {
+  assert.doesNotMatch(indexTs, /preparePdfPages|pdfWatermarkBadge|sendPdfPagesResult/);
   const bundle = readRepoFile('entry/src/main/resources/rawfile/mdpreview/index.html');
-  // esbuild 混淆标识符，断言内联样式字符串字面量（徽标圆角与间距 token）
-  assert.ok(bundle.includes('var(--pill) 0 0 0'), 'rawfile mdpreview 产物缺少水印徽标样式，请重跑 web/mdpreview 的 node build.mjs');
-  assert.ok(bundle.includes('classList.contains'), 'rawfile mdpreview 产物缺少水印排除逻辑，请重跑 web/mdpreview 的 node build.mjs');
+  assert.doesNotMatch(bundle, /preparePdfPages/, 'rawfile 产物不得残留旧分页协议，请重跑 web/mdpreview 的 node build.mjs');
 });
