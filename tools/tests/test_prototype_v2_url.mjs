@@ -22,7 +22,7 @@ test('save-success feedback stays hidden until the simulated save succeeds, then
 function fixture(href='file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&vault=reading&left=reading_stream&right=reading_reading_journal',storage=new Map()){
  const nodes=new Map(),events={document:{},window:{}},pending=[];
  const listen=(area,key,fn)=>(events[area][key]??=[]).push(fn);
- const get=id=>{if(!nodes.has(id))nodes.set(id,{clientWidth:1200,clientHeight:300,scrollHeight:1000,scrollTop:0,innerHTML:'',value:'',textContent:'',dataset:{},attrs:{},style:{setProperty(k,v){this[k]=v},removeProperty(k){delete this[k]}},classList:{values:new Set(),contains(k){return this.values.has(k)},add(...keys){keys.forEach(k=>this.values.add(k))},remove(...keys){keys.forEach(k=>this.values.delete(k))},toggle(k,on=!this.values.has(k)){on?this.values.add(k):this.values.delete(k);return on}},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){return[]},listeners:{},addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)},dispatch(type,event){for(const fn of this.listeners[type]||[])fn(event)},getBoundingClientRect(){return this.rect||(/^(formatBtn|rightFormatBtn)$/.test(id)?{left:100,right:148,top:700,bottom:748,width:48,height:48}:id==='formatDialog'?{left:0,right:360,top:0,bottom:400,width:360,height:400}:{left:0,right:1200,top:0,bottom:800,width:1200,height:800})},focus(){this.focused=true},select(){this.selected=true},contains(){return false},removeAttribute(k){delete this.attrs[k];if(k==='src')this.src=''},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=start;this.selectionEnd=start+text.length},show(){this.open=true},showModal(){this.open=true},close(){this.open=false}});return nodes.get(id);};
+ const get=id=>{if(!nodes.has(id))nodes.set(id,{clientWidth:1200,clientHeight:300,scrollHeight:1000,scrollTop:0,innerHTML:'',value:'',textContent:'',dataset:{},attrs:{},style:{setProperty(k,v){this[k]=v},removeProperty(k){delete this[k]}},classList:{values:new Set(),contains(k){return this.values.has(k)},add(...keys){keys.forEach(k=>this.values.add(k))},remove(...keys){keys.forEach(k=>this.values.delete(k))},toggle(k,on=!this.values.has(k)){on?this.values.add(k):this.values.delete(k);return on}},setAttribute(k,v){this.attrs[k]=v},querySelectorAll(){return[]},querySelector(){return null},listeners:{},addEventListener(k,fn){(this.listeners[k]??=[]).push(fn)},dispatch(type,event){for(const fn of this.listeners[type]||[])fn(event)},getBoundingClientRect(){return this.rect||(/^(formatBtn|rightFormatBtn)$/.test(id)?{left:100,right:148,top:700,bottom:748,width:48,height:48}:id==='formatDialog'?{left:0,right:360,top:0,bottom:400,width:360,height:400}:{left:0,right:1200,top:0,bottom:800,width:1200,height:800})},focus(){this.focused=true},select(){this.selected=true},contains(){return false},removeAttribute(k){delete this.attrs[k];if(k==='src')this.src=''},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b},setRangeText(text,start,end){this.value=this.value.slice(0,start)+text+this.value.slice(end);this.selectionStart=start;this.selectionEnd=start+text.length},show(){this.open=true},showModal(){this.open=true},close(){this.open=false}});return nodes.get(id);};
  const sharePaper=get('sharePaper'),shareStage=get('shareStage');shareStage.clientWidth=520;sharePaper.parentElement=shareStage;sharePaper.scrollHeight=800;sharePaper.style[Symbol.iterator]=function*(){};
  const rootStyle=new Set(['--ink','--paper','--line','--muted','--nav','--blue']);rootStyle.getPropertyValue=name=>name==='--ink'?'#202530':'';
  for(const id of ['navSplitter','contentSplitter'])get(id).querySelector=selector=>selector==='.split-tip'?get(id+'Tip'):null;
@@ -419,29 +419,29 @@ test('hamburger toggles the in-focus navigation without exiting focus',()=>{
 test('focus button icon and accessible label follow mode changes and Escape',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=wide');
  f.run('setFocused(false)');
- assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.match(f.get('focus').innerHTML,/M8 3H5a2 2 0 0 0-2 2v3/);
  assert.equal(f.get('focus').attrs['aria-pressed'],'false');
  assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
  f.get('focus').onclick();
- assert.match(f.get('focus').innerHTML,/M3 8h5V3/);
+ assert.match(f.get('focus').innerHTML,/M11 4v16/);
  assert.equal(f.get('focus').attrs['aria-pressed'],'true');
  assert.equal(f.get('focus').attrs['aria-label'],'退出专注模式');
  assert.equal(f.get('focus').title,'退出专注');
  f.event('document','keydown',{key:'Escape',preventDefault(){}});
  assert.equal(f.run('focused'),false);
- assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.match(f.get('focus').innerHTML,/M8 3H5a2 2 0 0 0-2 2v3/);
  assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
 });
 
 test('restored focus state is announced and compact layout reset updates the button',()=>{
  const f=fixture('file:///repo/docs/prototype/v2/index.html?ui=2&experience=professional&preset=double&focus=1');
  assert.equal(f.run('focused'),true);
- assert.match(f.get('focus').innerHTML,/M3 8h5V3/);
+ assert.match(f.get('focus').innerHTML,/M11 4v16/);
  assert.equal(f.get('focus').attrs['aria-pressed'],'true');
  assert.equal(f.get('focus').attrs['aria-label'],'退出专注模式');
  f.run("setViewport('phone')");
  assert.equal(f.run('focused'),false);
- assert.match(f.get('focus').innerHTML,/M8 3H3v5/);
+ assert.match(f.get('focus').innerHTML,/M8 3H5a2 2 0 0 0-2 2v3/);
  assert.equal(f.get('focus').attrs['aria-pressed'],'false');
  assert.equal(f.get('focus').attrs['aria-label'],'进入专注模式');
 });
