@@ -1,11 +1,12 @@
 /*
- * v2.1 标签浏览与过滤设计稿契约测试。
+ * v2.1 标签浏览与过滤设计稿契约测试（v2.11 改稿二：独立「标签」页签）。
  *
- * 锁五件事：
- * 1. 结构 —— 侧栏「标签」分区（置顶 → 收藏 → 标签 → 全部笔记顺序）、药丸流、过滤条；
+ * 锁六件事：
+ * 1. 结构 —— 侧栏三页签（文件 → 标签 → 章节）；标签是独立 tagsPanel 整栏列表，
+ *    不再占用 filesPanel 分区；过滤条仍在 filesPanel 树顶部；
  * 2. 聚合口径 —— frontmatter tags + 正文行内 #tag（排除代码块 / 行内代码 / 公式）、小写去重、不跨库；
- * 3. 过滤行为 —— 点击药丸切换过滤、再点清除、无效标签丢弃、过滤行点击 selectNote；
- * 4. URL —— tag / tagsOpen 进 stateUrl，restoreUrl 校验标签存在否则丢弃；
+ * 3. 过滤行为 —— 点标签行设置过滤并自动切回文件页签、再点同一行清除、无效标签丢弃、过滤行点击 selectNote；
+ * 4. URL —— tag 进 stateUrl、side 支持 tags、restoreUrl 校验标签存在否则丢弃；tagsOpen 折叠键随页签方案删除；
  * 5. 红线 —— v2.1 CSS 只引用 token、过滤态隐藏「全部笔记」分区标签、tree-help 提示；
  * 6. 笔记内标签 chip —— 预览里的 chip 是按钮，点击切到文件视图并进入该标签过滤（含单屏展开侧栏）。
  */
@@ -17,41 +18,73 @@ import { readSourceFile } from './lib/source.mjs';
 const html = readSourceFile(new URL('../../docs/prototype/v2/index.html', import.meta.url));
 
 // —— 源级结构断言 ——
-test('sidebar gains a tag section between favorites and the full note tree', () => {
-  const panel = html.match(/<section class="sidebar-panel" id="filesPanel">[\s\S]*?<\/section>/)[0];
-  const order = ['id="pinFolder"', 'id="favoritesFolder"', 'id="tagsFolder"', 'id="tagFilterBar"', '全部笔记', 'id="notes"'];
+test('sidebar gains a dedicated tags tab and full-height panel between files and chapters', () => {
+  const tabs = html.match(/<div aria-label="侧栏内容" class="sidebar-tabs" role="group">[\s\S]*?<\/div>/)[0];
+  const order = ['id="filesTab"', 'id="tagsTab"', 'id="chaptersTab"'];
   let cursor = -1;
   for (const marker of order) {
-    const at = panel.indexOf(marker);
+    const at = tabs.indexOf(marker);
+    assert.ok(at > cursor, `tabs order broken at ${marker}`);
+    cursor = at;
+  }
+  assert.match(tabs, /aria-controls="tagsPanel" aria-pressed="false" id="tagsTab">标签</);
+  // 标签独立面板：计数标题 + 整栏滚动列表容器。
+  const tagsPanel = html.match(/<section class="sidebar-panel hidden" id="tagsPanel">[\s\S]*?<\/section>/)[0];
+  assert.match(tagsPanel, /class="nav-label tag-panel-title" id="tagPanelTitle">标签</);
+  assert.match(tagsPanel, /aria-label="当前知识库标签" class="tag-panel" id="tagList"/);
+  // filesPanel 不再有标签分区：置顶 → 收藏 → 过滤条 → 全部笔记 → 目录树。
+  const filesPanel = html.match(/<section class="sidebar-panel" id="filesPanel">[\s\S]*?<\/section>/)[0];
+  assert.ok(!filesPanel.includes('id="tagsFolder"'), '改稿二后 filesPanel 内不得残留标签分区');
+  const fOrder = ['id="pinFolder"', 'id="favoritesFolder"', 'id="tagFilterBar"', '全部笔记', 'id="notes"'];
+  cursor = -1;
+  for (const marker of fOrder) {
+    const at = filesPanel.indexOf(marker);
     assert.ok(at > cursor, `filesPanel marker order broken at ${marker}`);
     cursor = at;
   }
-  assert.match(panel, /class="fav-head" id="openTags"/);
-  assert.match(panel, /class="fav-list tag-cloud" id="tagList"/);
-  assert.match(panel, /class="tag-filter-pill" id="tagFilterPill"/);
-  assert.match(panel, /class="tag-filter-clear" id="tagFilterClear">清除筛选/);
+  assert.match(filesPanel, /class="tag-filter-pill" id="tagFilterPill"/);
+  assert.match(filesPanel, /class="tag-filter-clear" id="tagFilterClear">清除筛选/);
+});
+
+test('tags panel css keeps list rows token-only and scrollable for the full sidebar height', () => {
+  assert.match(html, /\.tag-panel-title\{display:flex;align-items:center;gap:var\(--s2\);padding:var\(--s3\) var\(--s2\) var\(--s1\);font-size:var\(--caption\);font-weight:500;letter-spacing:\.08em;color:var\(--muted\)\}/);
+  assert.match(html, /\.tag-panel\{display:flex;flex-direction:column;gap:2px;flex:1;min-height:0;overflow:auto;scrollbar-width:thin;padding:var\(--s1\) 0 var\(--s2\)\}/);
+  assert.match(html, /\.tag-row\{display:flex;align-items:center;gap:var\(--s2\);width:100%;min-height:var\(--s10\);padding:0 var\(--s2\)/);
+  assert.match(html, /\.tag-row\[aria-pressed="true"\]\{background:var\(--blue-soft\)\}/);
+  assert.match(html, /\.tag-row\[aria-pressed="true"\] \.tag-name\{color:var\(--blue\);font-weight:500\}/);
 });
 
 test('filter bar replaces the all-notes section label and hides the swipe hint while filtering', () => {
   assert.match(html, /\.tag-filter:not\(\.hidden\)\+\.tree-section-label\{display:none\}/);
   assert.match(html, /\.window\.tag-filtering #pinFolder,\.window\.tag-filtering #favoritesFolder\{display:none!important\}/);
-  assert.match(html, /\.window\.phone\.tag-filtering #tagsFolder\{display:none!important\}/);
+  // 标签独立页签后不再需要 phone 折叠特例。
+  assert.ok(!html.includes('.window.phone.tag-filtering #tagsFolder'));
+  // tagsFolder 移出 filesPanel 后，兄弟 / 后代选择器不得误伤过滤条（:not(.tag-filter) 守护）。
+  assert.match(html, /#pinFolder\.hidden~#favoritesFolder\.hidden\+\.tree-section-label:not\(\.tag-filter\)\{display:none\}/);
+  assert.match(html, /\.sidebar:not\(:has\(\.favorites-folder:not\(\.hidden\)\)\) \.tree-section-label:not\(\.tag-filter\)\{display:none\}/);
   assert.match(html, /\$\('window'\)\.classList\.toggle\('tag-filtering',filtering\);\s*\n?\s*\$\('tagFilterBar'\)\.classList\.toggle\('hidden',!filtering\);\$\('treeHelp'\)\.classList\.toggle\('hidden',filtering\)/);
 });
 
-test('tag state is persisted and restored through the URL', () => {
-  assert.match(html, /if\(activeTagFilter\)put\('tag',activeTagFilter\);put\('tagsOpen',\$\('tagsFolder'\)\.open\?1:0\)/);
+test('tag state is persisted and restored through the URL; tagsOpen collapse key is gone', () => {
+  assert.match(html, /side:\['files','tags','chapters'\]/);
+  assert.match(html, /if\(activeTagFilter\)put\('tag',activeTagFilter\);/);
   assert.match(html, /if\(params\.has\('tag'\)\)\{const value=params\.get\('tag'\);activeTagFilter=tagIndex\(\)\.has\(value\)\?value:'';\}else activeTagFilter='';/);
-  assert.match(html, /if\(params\.has\('tagsOpen'\)\)tagsFolderState\[activeVault\]=params\.get\('tagsOpen'\)==='1';/);
+  assert.ok(!html.includes("put('tagsOpen'"), '页签方案删除折叠记忆键');
+  assert.ok(!html.includes('tagsFolderState'), '折叠状态对象随分区一起删除');
   // 切库清除过滤：标签集合按库不同。
   assert.match(html, /activeVault=id;activeTagFilter='';/);
 });
 
-test('render pipeline wires renderTags next to favorites and pins', () => {
+test('render pipeline refreshes the tags panel and wires tabs, rows and filter handlers', () => {
   assert.match(html, /renderTrash\(\);renderPins\(\);renderFavorites\(\);renderTags\(\);renderStatsMenu\(\);/);
-  assert.match(html, /\$\('tagList'\)\.querySelectorAll\('\[data-tag\]'\)\.forEach\(b=>b\.onclick=\(\)=>setTagFilter\(b\.dataset\.tag===activeTagFilter\?'':b\.dataset\.tag\)\)/);
+  assert.match(html, /\$\('tagPanelTitle'\)\.textContent=entries\.length\?\('标签 · '\+entries\.length\+' 个'\):'标签';/);
+  // 点标签行：设置过滤并自动切回文件页签；再点同一行清除过滤（留在标签页签）。
+  assert.match(html, /\$\('tagList'\)\.querySelectorAll\('\[data-tag\]'\)\.forEach\(b=>b\.onclick=\(\)=>\{const next=b\.dataset\.tag===activeTagFilter\?'':b\.dataset\.tag;setTagFilter\(next\);if\(next&&sidebarView!=='files'\)setSidebarView\('files'\);\}\);/);
   assert.match(html, /\$\('notes'\)\.querySelectorAll\('\[data-tag-open\]'\)\.forEach\(b=>b\.onclick=\(\)=>selectNote\(b\.dataset\.tagOpen\)\)/);
   assert.match(html, /\$\('tagFilterClear'\)\.onclick=\(\)=>setTagFilter\(''\)/);
+  // 三页签切换：aria-pressed 与面板 visibility 一一对应，文件页签动作只随文件页签显示。
+  assert.match(html, /function setSidebarView\(view\)\{sidebarView=view;\$\('filesTab'\)\.setAttribute\('aria-pressed',String\(view==='files'\)\);\$\('tagsTab'\)\.setAttribute\('aria-pressed',String\(view==='tags'\)\);\$\('chaptersTab'\)\.setAttribute\('aria-pressed',String\(view==='chapters'\)\);\$\('filesPanel'\)\.classList\.toggle\('hidden',view!=='files'\);\$\('tagsPanel'\)\.classList\.toggle\('hidden',view!=='tags'\);\$\('chaptersPanel'\)\.classList\.toggle\('hidden',view!=='chapters'\);\$\('sidebarFileActions'\)\.classList\.toggle\('hidden',view!=='files'\);\}/);
+  assert.match(html, /\$\('filesTab'\)\.onclick=\(\)=>setSidebarView\('files'\);\$\('tagsTab'\)\.onclick=\(\)=>setSidebarView\('tags'\);\$\('chaptersTab'\)\.onclick=\(\)=>setSidebarView\('chapters'\);/);
 });
 
 test('note tag chips filter the left list instead of opening block editing', () => {
@@ -77,9 +110,11 @@ test('note tag chips filter the left list instead of opening block editing', () 
 });
 
 test('v2.1 CSS only references tokens, never scattered colors', () => {
-  const start = html.indexOf('/* v2.1: tag cloud + tag filter bar');
+  const start = html.indexOf('/* v2.1: tag list rows + tag filter bar');
   assert.ok(start >= 0, 'v2.1 css block found');
-  const css = html.slice(start, html.indexOf('/*', start + 10) === -1 ? html.indexOf('</style>', start) : Math.min(html.indexOf('</style>', start), html.indexOf('\n.tag-filter:not', start) + 400));
+  const end = html.indexOf('.fav-list{', start);
+  assert.ok(end > start, 'v2.1 css block end found');
+  const css = html.slice(start, end);
   assert.ok(css.length > 200, 'v2.1 css block is substantial');
   assert.doesNotMatch(css, /#[0-9a-fA-F]{3,8}\b/, 'no raw hex colors');
   assert.doesNotMatch(css, /font-size:\s*\d+px/);
@@ -161,7 +196,7 @@ function fixture(initial = {}) {
   run(lineOf('function tagChip('));
   run(lineOf('function markdownBody('));
   run(lineOf('function frontmatterTags('));
-  // v2.1 聚合 + 过滤状态块（注释行到 setTagFilter 行）。
+  // v2.1 聚合 + 过滤状态块（注释行到 visiblePins 之前）。
   run(sliceFrom('// v2.1: tag aggregation', '\nfunction visiblePins()'));
   return { get, run, context };
 }
@@ -184,11 +219,10 @@ test('tagIndex is per-vault and counts notes per tag', () => {
   assert.deepEqual([...ids], ['a', 'b']);
 });
 
-test('renderTags sorts pills by note count desc and reflects the active filter', () => {
+test('renderTags fills the panel title and sorted rows, reflecting the active filter', () => {
   const f = fixture();
   f.run('renderTags()');
-  assert.equal(f.get('tagCount').textContent, '3');
-  assert.equal(f.get('tagsFolder').classList.contains('hidden'), false);
+  assert.equal(f.get('tagPanelTitle').textContent, '标签 · 3 个');
   const list = f.get('tagList').innerHTML;
   assert.ok(list.indexOf('#工作') < list.indexOf('#项目'), '工作(2) sorts before 项目(1)');
   // 同数标签按 localeCompare("zh")（拼音）排序。
@@ -196,10 +230,20 @@ test('renderTags sorts pills by note count desc and reflects the active filter',
   assert.ok(list.indexOf('#' + sameCount[0]) < list.indexOf('#' + sameCount[1]),
     `同数按名称排序：${sameCount[0]} before ${sameCount[1]}`);
   assert.ok(list.includes('aria-pressed="false"'));
-  // 进入过滤后，药丸 aria-pressed 翻转。
+  // 进入过滤后，行 aria-pressed 翻转（页签内可见当前过滤目标）。
   f.run("setTagFilter('工作')");
   f.run('renderTags()');
   assert.ok(f.get('tagList').innerHTML.includes('aria-pressed="true"'));
+});
+
+test('renderTags degrades to a bare title and empty hint when the vault has no tags', () => {
+  const f = fixture({ notes: [
+    { id: 'x', vault: 'local', folder: '', title: '无标签', text: '正文\n', deleted: false },
+  ] });
+  f.run('renderTags()');
+  assert.equal(f.get('tagPanelTitle').textContent, '标签');
+  assert.ok(f.get('tagList').innerHTML.includes('fav-empty'), '空态文案存在');
+  assert.ok(f.get('tagList').innerHTML.includes('还没有带标签的笔记'));
 });
 
 test('tagChip renders a keyboard-reachable filter button', () => {
@@ -215,14 +259,14 @@ test('tagChip renders a keyboard-reachable filter button', () => {
 
 test('openTagFilter switches to files view, enters the filter and reveals the sidebar', () => {
   const f = fixture();
-  f.context.sidebarView = 'chapters';
+  f.context.sidebarView = 'tags';
   f.run('openTagFilter(\'工作\')');
   assert.equal(f.run('activeTagFilter'), '工作');
   assert.equal(f.context.sidebarView, 'files');
   assert.equal(f.get('window').classList.contains('nav-hidden'), false);
   assert.ok((f.context.splits || 0) >= 1, '布局在展开侧栏后重算');
   assert.equal(f.get('tagFilterBar').classList.contains('hidden'), false);
-  // 大小写不敏感地命中药丸的书写形式。
+  // 大小写不敏感地命中标签行的书写形式。
   f.run('openTagFilter(\'灵感\')');
   assert.equal(f.run('activeTagFilter'), '灵感');
   // 当前库不存在的标签忽略，不破坏已有过滤。
@@ -238,7 +282,7 @@ test('setTagFilter toggles the filter, re-click clears, invalid tags are dropped
   assert.equal(f.run('activeTagFilter'), '工作');
   assert.equal(f.get('tagFilterBar').classList.contains('hidden'), false);
   assert.ok(f.get('notes').innerHTML.includes('data-tag-open="a"'), '过滤分支已渲染');
-  // 模拟再点同一药丸：dataset.tag === activeTagFilter → 传空清除。
+  // 模拟再点同一标签行：dataset.tag === activeTagFilter → 传空清除。
   f.run("setTagFilter('工作' === activeTagFilter ? '' : '工作')");
   assert.equal(f.run('activeTagFilter'), '');
   assert.equal(f.get('tagFilterBar').classList.contains('hidden'), true);

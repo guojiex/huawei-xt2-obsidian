@@ -13,12 +13,13 @@
 import { VaultEntry } from '../model/Vault';
 import { FileListSortMode, FileListSortStore } from '../model/FileTree';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { TagCountRow } from '../model/SearchStore';
 import { FileTreeView } from './FileTreeView';
 import { VaultStatsStreakChip } from './VaultStatsStreakChip';
 import { Icon } from '../common/Icons';
 import { noteDisplayNameOfPath } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
-import { Space, Radius, FontSize, Size } from '../common/Tokens';
+import { Space, Radius, FontSize, Size, Weight } from '../common/Tokens';
 import { KeyCode } from '@ohos.multimodalInput.keyCode';
 
 export interface ChapterEntry {
@@ -56,6 +57,16 @@ export struct VaultSidebar {
   @Prop refreshSeq: number = 0;
   @Prop trashRefreshSeq: number = 0;
   @Prop revealPath: string = '';
+  /**
+   * v2.11 标签过滤（211.6）：当前筛选标签（父级 Index 单一真源，空串 = 未过滤），
+   * 透传 FileTreeView 与标签面板；切换回调也只透传。
+   */
+  @Prop tagFilter: string = '';
+  /**
+   * v2.11 标签页签数据（211.3 改稿二）：tagCounts 由 Index 统一查询后传入
+   * （noteCount 降序 + tag zh 升序），FileTreeView 不再持有标签聚合数据。
+   */
+  @Prop tagRows: TagCountRow[] = [];
   /** 下拉菜单开关（瞬态） */
   @State menuOpen: boolean = false;
   @State collapsedChapterKeys: string[] = [];
@@ -128,6 +139,8 @@ export struct VaultSidebar {
   /** v1.71 拖拽会话开始 / 结束：父级据此启用正文栏「拖进打开」落点。侧栏只透传。 */
   onTreeDragStart: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onTreeDragEnd: () => void = () => {};
+  /** v2.11 标签过滤切换回调，透传给 FileTreeView。 */
+  onTagFilterChange: (tag: string) => void = (tag: string) => {};
 
   /** 文件树排序模式（v1.49）：App 级偏好，本组件持有并下传 FileTreeView。 */
   @State sortMode: FileListSortMode = 'name';
@@ -167,6 +180,22 @@ export struct VaultSidebar {
       return '未选择笔记 · 0 个章节';
     }
     return noteDisplayNameOfPath(this.currentFilePath) + ' · ' + this.chapters.length.toString() + ' 个章节';
+  }
+
+  /** 章节行字号（原型 .chapter-jump[data-level]）：1→--large、2→--body、3/4→--small、5/6→--caption。 */
+  private chapterFontSize(level: number): number {
+    return level === 1 ? FontSize.s2 : level === 2 ? FontSize.body1 :
+      level <= 4 ? FontSize.body2 : FontSize.caption;
+  }
+
+  /** 章节行字重（原型 font-weight）：1/2/3/5 → 600（semibold），4/6 → 400。 */
+  private chapterFontWeight(level: number): number {
+    return level <= 3 || level === 5 ? Weight.semibold : FontWeight.Normal;
+  }
+
+  /** 章节行行高（fp）：原型全局 line-height 1.6，行高随层级字号变化，不钉死 48vp。 */
+  private chapterLineHeightFp(level: number): number {
+    return this.chapterFontSize(level) * 1.6;
   }
 
   private hasChapterChildren(index: number): boolean {
@@ -472,6 +501,103 @@ export struct VaultSidebar {
     .shadow({ radius: 30, color: $r('app.color.float_shadow'), offsetX: 0, offsetY: 10 })
   }
 
+  /**
+   * 标签页签面板（v2.11 改稿二 · 211.3）：面板标题「标签 · N 个」+ 整栏滚动列表；
+   * 空态「还没有带标签的笔记」。无折叠态、无折叠记忆——页签天然承担收起。
+   * 逐条对原型 .tag-panel-title / .tag-panel / .fav-empty。
+   */
+  @Builder
+  TagsPanel() {
+    Column() {
+      Text(this.tagRows.length > 0
+        ? '标签 · ' + this.tagRows.length.toString() + ' 个' : '标签')
+        .fontSize(FontSize.caption)
+        .fontWeight(FontWeight.Medium)
+        .letterSpacing(Size.pinLabelTracking)
+        .fontColor($r('app.color.text_tertiary'))
+        .width('100%')
+        .padding({ left: Space.s2, right: Space.s2, top: Space.s3, bottom: Space.s1 })
+
+      if (this.tagRows.length > 0) {
+        List() {
+          ForEach(this.tagRows, (row: TagCountRow) => {
+            ListItem() {
+              this.TagRow(row)
+            }
+            .width('100%')
+          }, (row: TagCountRow): string => {
+            // 选中态进键：行选中样式（Z2/L-7 首帧固化同机理）靠键值刷新。
+            return 'tagrow-' + row.tagKey + (row.tag === this.tagFilter ? '|on' : '|u');
+          })
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ top: Space.s1, bottom: Space.s2 })
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+      } else {
+        Column() {
+          Text('还没有带标签的笔记')
+            .fontSize(FontSize.caption)
+            .fontColor($r('app.color.text_tertiary'))
+            .width('100%')
+            .padding(Space.s3)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .visibility(!this.referenceOnly && this.sidebarTab === 'tags' ? Visibility.Visible : Visibility.Hidden)
+  }
+
+  /**
+   * 标签行（211.3）：列表行——`#` 引导符 + 标签名（超长省略）+ 行尾小字笔记数；
+   * 触达 48vp，当前过滤项整行高亮（原型 .tag-row / .tag-hash / .tag-name /
+   * .tag-count，选中态 .tag-row[aria-pressed]）。点按：置过滤并自动切回文件页签；
+   * 再点同一行取消过滤、留在标签页签。
+   */
+  @Builder
+  TagRow(row: TagCountRow) {
+    Row({ space: Space.s2 }) {
+      Text('#')
+        .fontSize(FontSize.body2)
+        .fontWeight(Weight.semibold)
+        .fontColor(row.tag === this.tagFilter
+          ? $r('app.color.brand') : $r('app.color.text_tertiary'))
+      Text(row.tag)
+        .fontSize(FontSize.body2)
+        .fontWeight(row.tag === this.tagFilter ? FontWeight.Medium : FontWeight.Normal)
+        .fontColor(row.tag === this.tagFilter
+          ? $r('app.color.brand') : $r('app.color.text_primary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+      Text(row.noteCount.toString())
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+    }
+    .width('100%')
+    .constraintSize({ minHeight: Size.touch })
+    .padding({ left: Space.s2, right: Space.s2 })
+    .borderRadius(Radius.control)
+    .backgroundColor(row.tag === this.tagFilter
+      ? $r('app.color.brand_bg') : Color.Transparent)
+    .alignItems(VerticalAlign.Center)
+    .onClick((): void => {
+      const next: string = row.tag === this.tagFilter ? '' : row.tag;
+      this.onTagFilterChange(next);
+      if (next.length > 0 && this.sidebarTab !== 'files') {
+        this.onSidebarTabChange('files');
+      }
+    })
+    .focusable(true)
+    .accessibilityText('按标签筛选：#' + row.tag + '，' + row.noteCount.toString() + ' 篇笔记' +
+      (row.tag === this.tagFilter ? '，当前筛选中' : ''))
+  }
+
   private vaultTypeLabel(vault: VaultEntry): string {
     return vault.rootKind === 'external'
       ? '外部目录库' : (vault.type === 'git' ? 'Git 库' : '本地库');
@@ -612,6 +738,32 @@ export struct VaultSidebar {
             .focusable(true)
             .onClick((): void => { this.onSidebarTabChange('files'); })
 
+            // v2.11 改稿二（211.3）：标签独立页签，与文件 / 章节同款选中视觉。
+            Column() {
+              Column() {
+                Text('标签')
+                  .fontSize(FontSize.body2)
+                  .fontWeight(this.sidebarTab === 'tags' ? 600 : FontWeight.Normal)
+                  .fontColor(this.sidebarTab === 'tags' ? $r('app.color.brand') : $r('app.color.text_secondary'))
+                  .textAlign(TextAlign.Center)
+                  .maxLines(1)
+              }
+              .layoutWeight(1)
+              .justifyContent(FlexAlign.Center)
+              Row()
+                .width(Space.s5)
+                .height(Space.s1 / 2)
+                .borderRadius(Radius.full)
+                .backgroundColor(this.sidebarTab === 'tags'
+                  ? $r('app.color.brand') : Color.Transparent)
+            }
+            .layoutWeight(1)
+            .height(Size.touch)
+            .alignItems(HorizontalAlign.Center)
+            .padding({ left: Space.s1, right: Space.s1 })
+            .focusable(true)
+            .onClick((): void => { this.onSidebarTabChange('tags'); })
+
             Column() {
               Column() {
                 Text('章节')
@@ -698,6 +850,7 @@ export struct VaultSidebar {
             referenceOnly: this.referenceOnly,
             hideOtherPane: this.asDrawer || this.compact,
             clusterOffsetVp: this.fileTreeClusterOffsetVp(),
+            tagFilter: this.tagFilter,
             onSelectFile: (relPath: string): void => { this.onSelectFile(relPath); },
             onOpenOtherPane: (relPath: string): void => { this.onOpenOtherPane(relPath); },
             onReferenceNote: (relPath: string, vaultId: string): void => {
@@ -719,11 +872,15 @@ export struct VaultSidebar {
             onTreeDragStart: (relPath: string, isDir: boolean): void => {
               this.onTreeDragStart(relPath, isDir);
             },
-            onTreeDragEnd: (): void => { this.onTreeDragEnd(); }
+            onTreeDragEnd: (): void => { this.onTreeDragEnd(); },
+            onTagFilterChange: (tag: string): void => { this.onTagFilterChange(tag); }
           })
             .width('100%')
             .height('100%')
             .visibility(this.referenceOnly || this.sidebarTab === 'files' ? Visibility.Visible : Visibility.Hidden)
+
+          // v2.11 改稿二（211.3）：标签独立页签整栏面板，不占文件页签高度。
+          this.TagsPanel()
 
           Column() {
             Text(this.chapterTitleText())
@@ -742,7 +899,7 @@ export struct VaultSidebar {
                             Space.s4, $r('app.color.text_secondary'))
                         }
                         .width(Space.s8)
-                        .height(Size.touch)
+                        .alignSelf(ItemAlign.Stretch)
                         .justifyContent(FlexAlign.Center)
                         .alignItems(VerticalAlign.Center)
                         .focusable(true)
@@ -752,21 +909,17 @@ export struct VaultSidebar {
                       } else {
                         Column()
                           .width(Space.s8)
-                          .height(Size.touch)
                       }
                       Text(chapter.title)
-                        .fontSize(chapter.level === 1 ? FontSize.s2 :
-                          chapter.level === 2 ? FontSize.body1 :
-                          chapter.level <= 4 ? FontSize.body2 : FontSize.caption)
-                        .fontWeight(chapter.level <= 3 || chapter.level === 5
-                          ? FontWeight.Bold : FontWeight.Normal)
+                        .fontSize(this.chapterFontSize(chapter.level))
+                        .fontWeight(this.chapterFontWeight(chapter.level))
+                        .lineHeight(this.chapterLineHeightFp(chapter.level))
                         .fontColor(chapter.index === this.selectedChapterIndex
                           ? $r('app.color.brand') : $r('app.color.text_primary'))
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .padding({ left: Space.s2, right: Space.s2 })
+                        .padding(Space.s2)
                         .layoutWeight(1)
-                        .height(Size.touch)
                         .focusable(true)
                         .id(this.chapterFocusId(chapter))
                         .onKeyEvent((event: KeyEvent): boolean => {
@@ -775,11 +928,10 @@ export struct VaultSidebar {
                         .onClick((): void => { this.onSelectChapter(chapter.index); })
                     }
                     .width('100%')
-                    .padding({ left: this.chapterDepth(chapter.index) * Space.s4,
-                      right: Space.s2 })
+                    .padding({ left: this.chapterDepth(chapter.index) * Space.s4 })
                     .backgroundColor(chapter.index === this.selectedChapterIndex
                       ? $r('app.color.brand_bg') : Color.Transparent)
-                    .borderRadius(Radius.icon)
+                    .borderRadius(Radius.control)
                   }
                   .width('100%')
                 }, (chapter: ChapterEntry): string => {

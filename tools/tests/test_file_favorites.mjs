@@ -175,16 +175,20 @@ test('源级：收藏区与置顶 / 树同源一次 snapshot，行组件共用�
 });
 
 test('源级：四段布局 置顶 → 收藏 → 全部笔记 → 树，referenceOnly 全隐藏', () => {
-  const layout = fileTreeViewSource.slice(
-    fileTreeViewSource.indexOf('      Column() {\n        if (!this.referenceOnly && this.pinRows.length > 0)'));
-  assert.ok(layout.length > 0, '找不到 build 布局段');
+  // v2.11 过滤态（211.1）：置顶 / 收藏区整体让位，分区条件带 !isTagFiltering()
+  const layoutAt = fileTreeViewSource.indexOf(
+    'if (!this.referenceOnly && !this.isTagFiltering() && this.pinRows.length > 0)');
+  assert.ok(layoutAt >= 0, '找不到 build 布局段');
+  const layout = fileTreeViewSource.slice(layoutAt);
   const iPin = layout.indexOf('this.PinSection()');
   const iFav = layout.indexOf('this.FavSection()');
   const iLabel = layout.indexOf('this.AllNotesLabel()');
   const iTree = layout.indexOf('this.TreeList()');
   assert.ok(iPin >= 0 && iFav > iPin && iLabel > iFav && iTree > iLabel, '四段顺序错误');
-  assert.match(fileTreeViewSource, /!this\.referenceOnly && this\.favRows\.length > 0/);
-  assert.match(fileTreeViewSource, /!this\.referenceOnly && \(this\.pinRows\.length > 0 \|\| this\.favRows\.length > 0\)/);
+  assert.match(fileTreeViewSource,
+    /!this\.referenceOnly && !this\.isTagFiltering\(\) && this\.favRows\.length > 0/);
+  assert.match(fileTreeViewSource,
+    /!this\.referenceOnly && !this\.isTagFiltering\(\) &&\s*\(this\.pinRows\.length > 0 \|\| this\.favRows\.length > 0\)/);
   assert.match(fileTreeViewSource, /Text\('收藏'\)/);
   assert.match(fileTreeViewSource, /打开收藏的笔记：/);
   assert.match(fileTreeViewSource, /收藏，' \+ this\.favRows\.length\.toString\(\) \+ ' 篇笔记/);

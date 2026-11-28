@@ -26,14 +26,15 @@ import {
   SearchDocWrite,
   SearchPendingRow,
   SearchStore,
-  SearchVaultRow
+  SearchVaultRow,
+  TagCountRow
 } from './SearchStore';
 
 const STORE_DOMAIN: number = 0x0000;
 const STORE_TAG: string = 'SearchStoreDevice';
 
 const DB_NAME: string = 'search.db';
-const SCHEMA_VERSION: string = '1';
+const SCHEMA_VERSION: string = '2';
 const TOKENIZER_ID: string = 'customtokenizer-cut_mode-short_words';
 const META_UNAVAILABLE: string = 'unavailable';
 
@@ -51,6 +52,10 @@ const SQL_CREATE_DOCUMENTS: string =
 const SQL_CREATE_PENDING: string =
   'CREATE TABLE IF NOT EXISTS search_pending (vault_key TEXT NOT NULL, path TEXT NOT NULL, ' +
   'generation INTEGER NOT NULL, PRIMARY KEY (vault_key, path))';
+/** v2.11 211.1：标签行。tag_key = 小写去重键，tag = 该笔记的首个书写形式。 */
+const SQL_CREATE_TAGS: string =
+  'CREATE TABLE IF NOT EXISTS search_tags (vault_key TEXT NOT NULL, tag_key TEXT NOT NULL, ' +
+  'tag TEXT NOT NULL, path TEXT NOT NULL, PRIMARY KEY (vault_key, tag_key, path))';
 const SQL_CREATE_FTS: string =
   "CREATE VIRTUAL TABLE IF NOT EXISTS search_fts USING fts5(title, body, " +
   "tokenize='customtokenizer cut_mode short_words')";
@@ -179,6 +184,36 @@ class RelationalSearchStore implements SearchStore {
     return this.enqueue((): Promise<void> => this.markVaultLocked(vaultKey, false));
   }
 
+  /** v2.11 211.1：按 tag_key 聚合的标签药丸数据；tag 取聚合内字典序最小书写形（确定性）。 */
+  async tagCounts(vaultKey: string): Promise<TagCountRow[]> {
+    const rs: relationalStore.ResultSet = await this.requireDb().querySql(
+      'SELECT tag_key, MIN(tag), COUNT(*) FROM search_tags WHERE vault_key = ? GROUP BY tag_key',
+      [vaultKey]);
+    const rows: TagCountRow[] = [];
+    while (rs.goToNextRow()) {
+      rows.push({
+        tag: rs.getString(1),
+        tagKey: rs.getString(0),
+        noteCount: rs.getLong(2)
+      });
+    }
+    rs.close();
+    return rows;
+  }
+
+  /** v2.11 211.1：某标签（小写键）命中的笔记相对路径，按路径排序。 */
+  async pathsForTag(vaultKey: string, tagKey: string): Promise<string[]> {
+    const rs: relationalStore.ResultSet = await this.requireDb().querySql(
+      'SELECT path FROM search_tags WHERE vault_key = ? AND tag_key = ? ORDER BY path',
+      [vaultKey, tagKey.toLowerCase()]);
+    const paths: string[] = [];
+    while (rs.goToNextRow()) {
+      paths.push(rs.getString(0));
+    }
+    rs.close();
+    return paths;
+  }
+
   clearVault(vaultKey: string): Promise<void> {
     return this.enqueue((): Promise<void> => this.clearVaultLocked(vaultKey));
   }
@@ -223,6 +258,7 @@ class RelationalSearchStore implements SearchStore {
       await db.executeSql('DROP TABLE IF EXISTS search_fts');
       await db.executeSql('DROP TABLE IF EXISTS search_documents');
       await db.executeSql('DROP TABLE IF EXISTS search_pending');
+      await db.executeSql('DROP TABLE IF EXISTS search_tags');
       await db.executeSql('DROP TABLE IF EXISTS search_vaults');
       await db.executeSql('DROP TABLE IF EXISTS search_meta');
       hilog.info(STORE_DOMAIN, STORE_TAG, '%{public}s', 'schema 或分词配置版本变化，搜索索引整库重建');
@@ -231,6 +267,7 @@ class RelationalSearchStore implements SearchStore {
     await db.executeSql(SQL_CREATE_VAULTS);
     await db.executeSql(SQL_CREATE_DOCUMENTS);
     await db.executeSql(SQL_CREATE_PENDING);
+    await db.executeSql(SQL_CREATE_TAGS);
     let ftsOk: boolean = false;
     try {
       await db.executeSql(SQL_CREATE_FTS);
@@ -334,6 +371,14 @@ class RelationalSearchStore implements SearchStore {
       }
       await db.executeSql('INSERT INTO search_fts (rowid, title, body) VALUES (?, ?, ?)',
         [rowId, doc.title, doc.content]);
+      // v2.11 211.1：整篇 replace 该路径的 tag 行（旧代次守卫已在上面早退）。
+      await db.executeSql('DELETE FROM search_tags WHERE vault_key = ? AND path = ?',
+        [vaultKey, doc.path]);
+      for (let i = 0; i < doc.tags.length; i++) {
+        await db.executeSql(
+          'INSERT OR REPLACE INTO search_tags (vault_key, tag_key, tag, path) VALUES (?, ?, ?, ?)',
+          [vaultKey, doc.tags[i].toLowerCase(), doc.tags[i], doc.path]);
+      }
       await db.executeSql(
         'DELETE FROM search_pending WHERE vault_key = ? AND path = ? AND generation <= ?',
         [vaultKey, doc.path, taskGeneration]);
@@ -352,17 +397,24 @@ class RelationalSearchStore implements SearchStore {
       const rs: relationalStore.ResultSet = await db.querySql(
         'SELECT doc_id, path, generation FROM search_documents WHERE vault_key = ?', [vaultKey]);
       const docIds: number[] = [];
+      const removedPaths: string[] = [];
       while (rs.goToNextRow()) {
         const candidate: string = rs.getString(1);
         if (rs.getLong(2) <= taskGeneration &&
           RelationalSearchStore.pathMatches(candidate, path, isDirectory)) {
           docIds.push(rs.getLong(0));
+          removedPaths.push(candidate);
         }
       }
       rs.close();
       for (let i = 0; i < docIds.length; i++) {
         await db.executeSql('DELETE FROM search_fts WHERE rowid = ?', [docIds[i]]);
         await db.executeSql('DELETE FROM search_documents WHERE doc_id = ?', [docIds[i]]);
+      }
+      // v2.11 211.1：删除文档连带删除 tag 行。
+      for (let i = 0; i < removedPaths.length; i++) {
+        await db.executeSql('DELETE FROM search_tags WHERE vault_key = ? AND path = ?',
+          [vaultKey, removedPaths[i]]);
       }
       const pending: relationalStore.ResultSet = await db.querySql(
         'SELECT path, generation FROM search_pending WHERE vault_key = ?', [vaultKey]);
@@ -415,6 +467,7 @@ class RelationalSearchStore implements SearchStore {
         [vaultKey]);
       await db.executeSql('DELETE FROM search_documents WHERE vault_key = ?', [vaultKey]);
       await db.executeSql('DELETE FROM search_pending WHERE vault_key = ?', [vaultKey]);
+      await db.executeSql('DELETE FROM search_tags WHERE vault_key = ?', [vaultKey]);
       await db.executeSql('DELETE FROM search_vaults WHERE vault_key = ?', [vaultKey]);
       db.commit();
     } catch (error) {

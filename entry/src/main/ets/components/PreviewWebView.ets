@@ -395,6 +395,7 @@ class PreviewNativeProxy {
   codeBlockCopyFailedHandler: () => void = () => {};
   simpleFormatUnsupportedHandler: () => void = () => {};
   simpleTextFocusChangeHandler: (focused: boolean) => void = (_focused: boolean) => {};
+  noteTagClickHandler: (tagB64: string) => void = (_tagB64: string) => {};
 
   readAsset(relB64: string): string {
     return this.readAssetHandler(relB64);
@@ -506,6 +507,11 @@ class PreviewNativeProxy {
 
   onSimpleTextFocusChange(focused: boolean): void {
     this.simpleTextFocusChangeHandler(focused);
+  }
+
+  /** v2.11 211.5：预览标签 chip 点击（base64 标签值），Index 侧消费进入标签过滤。 */
+  onNoteTagClick(tagB64: string): void {
+    this.noteTagClickHandler(tagB64);
   }
 }
 
@@ -698,7 +704,12 @@ class PreviewImpl {
   /** Install a fixed click delegate; link targets travel through the existing JS proxy. */
   watchWikiLinks(): void {
     this.enqueue(`document.addEventListener('click',function(event){var node=event.target;
-      while(node&&node!==document){if(node.nodeType===1&&node.classList&&node.classList.contains('wiki-link')){
+      while(node&&node!==document){
+      if(node.nodeType===1&&node.tagName==='BUTTON'&&node.classList.contains('note-tag')&&
+      node.hasAttribute('data-note-tag')){event.preventDefault();event.stopPropagation();
+      var tagApi=window.__arkts;if(tagApi&&typeof tagApi.onNoteTagClick==='function'){
+      tagApi.onNoteTagClick(btoa(unescape(encodeURIComponent(node.getAttribute('data-note-tag')||''))));}return;}
+      if(node.nodeType===1&&node.classList&&node.classList.contains('wiki-link')){
       var href=node.getAttribute('href')||'';if(href.indexOf('#wikilink:')===0){
       if(window.__mdpreview&&window.__mdpreview.isEditable()&&
       node.hasAttribute('data-preview-inline-index')&&
@@ -1116,6 +1127,8 @@ export struct PreviewWebView {
   onSimpleFormatUnsupported: () => void = () => {};
   /** v1.30 30.1：简单模式正文可编辑块聚焦/失焦通知（停靠格式栏显隐依据） */
   onSimpleTextFocusChange: (focused: boolean) => void = (_focused: boolean) => {};
+  /** v2.11 211.5：预览标签 chip 点击回调，参数为标签书写形式（不含 #）。 */
+  onNoteTagClick: (tag: string) => void = (_tag: string) => {};
   onLockedContentTap: (anchor: PreviewBlockAnchor | null) => void =
     (_anchor: PreviewBlockAnchor | null) => {};
   /** Web 组件标识，供单张长图的视口分段截图定位。 */
@@ -1213,6 +1226,9 @@ export struct PreviewWebView {
     this.proxy.simpleTextFocusChangeHandler = (focused: boolean): void => {
       this.onSimpleTextFocusChange(focused);
     };
+    this.proxy.noteTagClickHandler = (tagB64: string): void => {
+      this.handleNoteTagClick(tagB64);
+    };
     this.bridge.onEditableContentChange = (content: string): void => {
       this.onEditableContentChange(content);
     };
@@ -1256,6 +1272,15 @@ export struct PreviewWebView {
       this.onWikiLinkClick(BridgeCodec.decode(targetB64));
     } catch (_error) {
       hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '双链目标解码失败');
+    }
+  }
+
+  /** v2.11 211.5：chip 标签值解码；失败只记错误码，不落标签值（硬约束 16）。 */
+  private handleNoteTagClick(tagB64: string): void {
+    try {
+      this.onNoteTagClick(BridgeCodec.decode(tagB64));
+    } catch (_error) {
+      hilog.warn(PREVIEW_DOMAIN, PREVIEW_TAG, '标签 chip 点击参数解码失败');
     }
   }
 
@@ -1312,7 +1337,8 @@ export struct PreviewWebView {
           'onEditableContentChange', 'onEditableContent', 'onCompositionChange', 'onLockedContentTap',
           'onLockedBlockSelection', 'onPreviewZoomChange', 'onCodeBlockEdit', 'onTableActionMessage',
           'onCodeBlockEditingChange',
-          'onCopyCodeBlockContent', 'onCodeBlockCopyFailed', 'onSimpleFormatUnsupported', 'onSimpleTextFocusChange']);
+          'onCopyCodeBlockContent', 'onCodeBlockCopyFailed', 'onSimpleFormatUnsupported', 'onSimpleTextFocusChange',
+          'onNoteTagClick']);
       this.proxyRegistered = true;
       hilog.info(PREVIEW_DOMAIN, PREVIEW_TAG, '__arkts 代理已注册（readAsset）');
     } catch (_error) {

@@ -57,7 +57,7 @@ export interface SearchDocRow {
   generation: number;
 }
 
-/** 一次索引写入的载荷（title/body 由存储方拆进 FTS 表）。 */
+/** 一次索引写入的载荷（title/body 由存储方拆进 FTS 表；tags 由 NoteTagParser 提取，书写形去重）。 */
 export interface SearchDocWrite {
   path: string;
   title: string;
@@ -65,6 +65,8 @@ export interface SearchDocWrite {
   size: number;
   mtimeSec: number;
   contentHash: string;
+  /** v2.11 211.1：该笔记标签（noteTagList 产出，小写去重保首书写形）；空数组 = 无标签。 */
+  tags: string[];
 }
 
 /** search_vaults 单行。 */
@@ -78,6 +80,16 @@ export interface SearchVaultRow {
 export interface SearchPendingRow {
   path: string;
   generation: number;
+}
+
+/**
+ * v2.11 211.1 标签药丸聚合行：tagKey = 小写去重键，tag = 首个书写形式，
+ * noteCount = 去重笔记数（同一笔记同一标签只计 1）。
+ */
+export interface TagCountRow {
+  tag: string;
+  tagKey: string;
+  noteCount: number;
 }
 
 /**
@@ -117,6 +129,12 @@ export interface SearchStore {
   markVaultInitialized(vaultKey: string): Promise<void>;
 
   markVaultReconciled(vaultKey: string): Promise<void>;
+
+  /** v2.11 211.1：标签药丸聚合（按 tagKey 去重）；排序统一为 noteCount 降序、tagKey 升序。 */
+  tagCounts(vaultKey: string): Promise<TagCountRow[]>;
+
+  /** v2.11 211.1：某标签（tagKey 小写）命中的笔记路径（库内相对路径）。 */
+  pathsForTag(vaultKey: string, tagKey: string): Promise<string[]>;
 
   /** 删除某库全部索引数据（40.9 删库/清理）。 */
   clearVault(vaultKey: string): Promise<void>;

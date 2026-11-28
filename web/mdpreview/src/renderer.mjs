@@ -187,6 +187,38 @@ marked.use({
       renderer(token) {
         return mathHtml(token.text, false)
       }
+    },
+    {
+      // v2.11 211.3：正文行内 #tag 渲染为可点 chip。口径对齐原型 inlineTags：
+      // # 前必须是行首或空白/半角·全角左括号；代码/公式 token 之后的 #tag
+      // 在原型里等价于剥离后接空格，同样渲染。tag 字符集与 validTag 一致。
+      name: 'noteTag',
+      level: 'inline',
+      start(source) {
+        const match = /[\s(（]#/u.exec(source)
+        return match === null ? undefined : match.index
+      },
+      tokenizer(source, tokens) {
+        let match = /^([\s(（])#([\p{L}\p{N}\p{M}\p{S}_/-]+)/u.exec(source)
+        if (match !== null) {
+          if (!validTag(match[2])) return undefined
+          return { type: 'noteTag', raw: match[0], lead: match[1], tag: match[2] }
+        }
+        match = /^#([\p{L}\p{N}\p{M}\p{S}_/-]+)/u.exec(source)
+        if (match === null || !validTag(match[1])) return undefined
+        // 无前置字符可见（行内串起点）：只有块内首 token，或前一个 token 是
+        // 换行/行内代码/行内公式（原型剥离后视为空格）时才算行首 #tag。
+        const last = tokens.length > 0 ? tokens[tokens.length - 1] : undefined
+        if (last !== undefined) {
+          const allowed = last.type === 'br' || last.type === 'codespan' || last.type === 'mathInline' ||
+            (last.type === 'text' && /[\s(（]$/u.test(last.raw ?? ''))
+          if (!allowed) return undefined
+        }
+        return { type: 'noteTag', raw: match[0], lead: '', tag: match[1] }
+      },
+      renderer(token) {
+        return `${escapeHtml(token.lead)}${noteTagChip(token.tag)}`
+      }
     }
   ],
   renderer: {
@@ -388,7 +420,20 @@ export function splitFrontmatter(markdown) {
 
 /** Tag validity per v2 prototype: non-empty word characters plus at least one non-numeric character. */
 function validTag(value) {
-  return /^[\p{L}\p{N}\p{M}\p{S}_/-]+$/u.test(value) && /[^\p{N}]/u.test(value)
+  return /^[\p{L}\p{N}\p{M}\p{S}_/.-]+$/u.test(value) && /[^\p{N}]/u.test(value)
+}
+
+/** Quoted frontmatter values allow spaces and apostrophes beyond the bare-value charset. */
+function validQuotedTag(value) {
+  return /^[\p{L}\p{N}\p{M}\p{S}_/.' -]+$/u.test(value) && /[^\p{N}]/u.test(value)
+}
+
+/** Collect the elements of an inline `[a, b]` list (same item regex across sources). */
+function pushInlineItems(values, inline) {
+  const items = inline.slice(1, -1).match(/"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|[^,]+/g)
+  if (items) {
+    values.push(...items)
+  }
 }
 
 /** Extract deduplicated `tags:` values from the YAML frontmatter (inline or block list, quoted or bare). */
@@ -404,9 +449,18 @@ export function frontmatterTags(markdown) {
     const key = line.match(/^tags:[ \t]*(.*)$/)
     if (key) {
       reading = true
-      const inline = key[1].replace(/[ \t]+#.*$/, '').trim()
+      const inline = key[1].trim()
       if (inline.startsWith('[') && inline.endsWith(']')) {
-        values.push(...(inline.slice(1, -1).match(/"(?:\\.|[^"\\])*"|'(?:''|[^'])*'|[^,]+/g) || []))
+        // Collect the list verbatim so `#`-prefixed items survive trailing-comment stripping.
+        pushInlineItems(values, inline)
+      } else {
+        const stripped = inline.replace(/[ \t]+#.*$/, '').trim()
+        if (stripped.startsWith('[') && stripped.endsWith(']')) {
+          pushInlineItems(values, stripped)
+        } else if (stripped.length > 0) {
+          // Bare scalar (`tags: foo`) is recognized too.
+          values.push(stripped)
+        }
       }
       continue
     }
@@ -423,19 +477,23 @@ export function frontmatterTags(markdown) {
   const seen = new Set()
   for (let value of values) {
     value = value.trim()
+    let quoted = false
     if (value.startsWith('"') && value.endsWith('"')) {
+      quoted = true
       try {
         value = JSON.parse(value)
       } catch {
         continue
       }
     } else if (value.startsWith("'") && value.endsWith("'")) {
+      quoted = true
       value = value.slice(1, -1).replace(/''/g, "'")
     } else {
       value = value.replace(/[ \t]+#.*$/, '')
     }
     value = value.replace(/^#/, '')
-    if (validTag(value) && !seen.has(value.toLowerCase())) {
+    const valid = quoted ? validQuotedTag(value) : validTag(value)
+    if (valid && !seen.has(value.toLowerCase())) {
       seen.add(value.toLowerCase())
       tags.push(value)
     }
@@ -446,6 +504,13 @@ export function frontmatterTags(markdown) {
 function frontmatterPropertyCount(frontmatter) {
   const lines = frontmatter.replace(/^\uFEFF/, '').split(/\r?\n/)
   return lines.filter((line) => /^[^\s#:-][^:\n]*:/.test(line)).length
+}
+
+/** v2.11：标签 chip（frontmatter 与正文行内共用），点击由 ArkTS 委托接管进入标签过滤。 */
+function noteTagChip(tag) {
+  const label = escapeHtml(tag)
+  return `<button type="button" class="note-tag" data-note-tag="${label}" ` +
+    `aria-label="按标签筛选：#${label}">#${label}</button>`
 }
 
 /** Render the editable property entry and frontmatter tags for the v2 preview. */
@@ -462,7 +527,7 @@ export function renderNoteTags(markdown, propertySource = markdown) {
       `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg>` +
       `属性 · ${propertyCount} 项</button>`
     : ''
-  const chips = tags.map((tag) => `<span class="note-tag">#${escapeHtml(tag)}</span>`).join('')
+  const chips = tags.map((tag) => noteTagChip(tag)).join('')
   return `<div class="note-tags" aria-label="笔记属性与标签">${entry}${chips}</div>`
 }
 

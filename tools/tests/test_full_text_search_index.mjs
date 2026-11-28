@@ -18,6 +18,7 @@ const { transformSync } = require('esbuild');
 import { readSourceFile } from './lib/source.mjs';
 
 const searchStoreSource = readSourceFile(new URL('../../entry/src/main/ets/model/SearchStore.ets', import.meta.url));
+const noteTagParserSource = readSourceFile(new URL('../../entry/src/main/ets/model/NoteTagParser.ets', import.meta.url));
 const noteDisplayNameSource = readSourceFile(new URL('../../entry/src/main/ets/common/NoteDisplayName.ets', import.meta.url));
 const errorCodeSource = readSourceFile(new URL('../../entry/src/main/ets/common/ErrorCode.ets', import.meta.url));
 const vaultAccessSource = readSourceFile(new URL('../../entry/src/main/ets/model/VaultAccess.ets', import.meta.url));
@@ -38,6 +39,7 @@ function loadModule(source) {
 }
 
 const searchStore = loadModule(noteDisplayNameSource + '\n' + searchStoreSource);
+const noteTagParser = loadModule(noteTagParserSource);
 const vaultAccess = loadModule(errorCodeSource + '\n' + vaultAccessSource);
 
 const serviceCode = transformSync(
@@ -53,7 +55,9 @@ function loadService() {
     isVaultNoteName: vaultAccess.isVaultNoteName,
     contentHashOf: searchStore.contentHashOf,
     excerptOf: searchStore.excerptOf,
-    searchTitleOf: searchStore.searchTitleOf
+    searchTitleOf: searchStore.searchTitleOf,
+    // v2.11：upsert 载荷用 noteTagList（211.1），vm realm 必须提供
+    noteTagList: noteTagParser.noteTagList
   });
   vm.runInContext(serviceCode, context);
   return context.module.exports;
@@ -519,7 +523,9 @@ test('v1.40 EntryAbility wires the persistent store into FullTextSearchService a
 });
 
 test('v1.40 Index wires searchDetailed into the switcher and discards index rows on vault delete', () => {
-  assert.match(indexSource, /import \{ SearchOutcome \} from '\.\.\/model\/SearchStore'/);
+  // v2.11：import 扩为 { SearchOutcome, TagCountRow }（211.3 标签页签数据）
+  assert.match(indexSource,
+    /import \{ SearchOutcome, TagCountRow \} from '\.\.\/model\/SearchStore'/);
   assert.match(indexSource, /FullTextSearchService\.searchDetailed\(/);
   assert.match(indexSource, /FullTextSearchService\.discardVaultKey\(vaultKey\)/);
 });

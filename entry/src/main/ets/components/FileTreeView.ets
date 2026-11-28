@@ -24,6 +24,7 @@ import { util } from '@kit.ArkTS';
 import { FileTree, ExpandStore, PinStore, FavoriteStore, TreeNode, PinnedNote } from '../model/FileTree';
 import { VaultAccess, VaultDirChild, VaultFileStat } from '../model/VaultAccess';
 import { VaultRegistry } from '../model/VaultRegistry';
+import { FullTextSearchService } from '../model/FullTextSearchService';
 import { Icon, symbolGlyphOf } from '../common/Icons';
 import { noteDisplayName, noteDisplayNameOfPath } from '../common/NoteDisplayName';
 import { FocusRequest } from '../common/FocusRequest';
@@ -139,6 +140,11 @@ export struct FileTreeView {
   @Prop @Watch('onReveal') revealPath: string = '';
   /** Agent 引用模式：沿用同一棵树，但隐藏改名/移动/删除动作。 */
   @Prop referenceOnly: boolean = false;
+  /**
+   * v2.11 标签过滤（211.6）：当前筛选标签的书写形式，父级（Index）是单一真源，
+   * 空串 = 未过滤。切换经 @Watch 触发过滤行重载。
+   */
+  @Prop @Watch('onTagFilterChanged') tagFilter: string = '';
   /** 单屏工作区不显示跨栏打开入口。 */
   @Prop hideOtherPane: boolean = false;
   /**
@@ -199,6 +205,11 @@ export struct FileTreeView {
    */
   onTreeDragStart: (relPath: string, isDir: boolean) => void = (relPath: string, isDir: boolean) => {};
   onTreeDragEnd: () => void = () => {};
+  /**
+   * v2.11 标签过滤切换回调（211.6）：过滤态由父级持有，这里只上报意图
+   * （药丸点按 / 过滤条清除 / 防御性退出），不自己改 tagFilter。
+   */
+  onTagFilterChange: (tag: string) => void = (tag: string) => {};
 
   @State nodes: TreeNode[] = [];
   @State expanded: string[] = [];
@@ -213,6 +224,8 @@ export struct FileTreeView {
   @State pinSectionOpen: boolean = true;
   /** 收藏区折叠状态，按库持久化（FavoriteStore.loadSectionOpen / saveSectionOpen）。 */
   @State favSectionOpen: boolean = true;
+  /** v2.11 标签过滤结果行（211.2）：tagFilter 命中路径解析成 PinnedNote 行。 */
+  @State filterRows: PinnedNote[] = [];
   /** v2.5 闭环（方案 A）：树 List 实测宽（onAreaChange 回填，vp），驱动 isNarrowNav()。 */
   @State treeWidthVp: number = 0;
   @State pinHoverPath: string = '';
@@ -234,6 +247,10 @@ export struct FileTreeView {
   private treeSource: TreeRowDataSource = new TreeRowDataSource();
   private pinSource: SectionRowDataSource = new SectionRowDataSource();
   private favSource: SectionRowDataSource = new SectionRowDataSource();
+  /** v2.11 标签过滤列表数据源（PinnedNote 行，独立键空间 `tagfilter-`）。 */
+  private filterSource: SectionRowDataSource = new SectionRowDataSource();
+  /** v2.11 异步加载防串号：切库 / 重扫会让旧请求的 seq 失效，后到者丢弃。 */
+  private filterLoadSeq: number = 0;
   /** v1.71 拖拽会话源：onDragStart 记录、onDragEnd 清空；只在事件回调里读，不进渲染绑定。 */
   private dragSourcePath: string = '';
   private dragSourceIsDir: boolean = false;
@@ -358,6 +375,7 @@ export struct FileTreeView {
       this.applyNodes([]);
       this.applyPinRows([]);
       this.applyFavRows([]);
+      this.applyFilterRows([]);
       return;
     }
     const store: ExpandStore = this.store as ExpandStore;
@@ -374,6 +392,9 @@ export struct FileTreeView {
     this.favFocusPath = '';
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描开始');
     this.rescan();
+    // v2.11 改稿二（211.3）：标签聚合已上提 Index（标签独立页签），这里只随树
+    // 重扫刷新过滤行（新建 / 删除笔记后命中列表保持最新）。
+    this.refreshTagFilterRows();
   }
 
   /** 按当前 expanded 重新扫描库目录，并同源解析置顶区与收藏区（一次 snapshot 三处用）。 */
@@ -382,6 +403,7 @@ export struct FileTreeView {
       this.applyNodes([]);
       this.applyPinRows([]);
       this.applyFavRows([]);
+      this.applyFilterRows([]);
       return;
     }
     // v1.5：不再拿绝对路径自己递归 —— 外部授权库给不出绝对路径。
@@ -402,6 +424,63 @@ export struct FileTreeView {
     this.applyFavRows(FileTree.pinnedNotes(FileTree.notesOfEntries(entries), this.favorites));
     this.applyNodes(nodes);
     hilog.info(TREE_DOMAIN, TREE_TAG, '文件树扫描完成');
+  }
+
+  /* ------------------------------------------------------------------- */
+  /* v2.11 标签浏览与过滤（211.1 / 211.2 / 211.6）                        */
+  /* ------------------------------------------------------------------- */
+
+  /** 是否处于标签过滤态：Agent 引用树（referenceOnly）不支持过滤。 */
+  private isTagFiltering(): boolean {
+    return !this.referenceOnly && this.tagFilter.length > 0;
+  }
+
+  /** 过滤行唯一写入口：显隐 @State 与独立数据源必须同批更新。 */
+  private applyFilterRows(rows: PinnedNote[]): void {
+    this.filterRows = rows;
+    this.filterSource.reload(rows);
+  }
+
+  /**
+   * 过滤结果行（211.2）：pathsForTag 轻量查询（不重复建库/对账）→ 与全量笔记
+   * 交集解析（taggedNotes，文件夹+标题 zh 排序）。失败按「无结果」处理。
+   */
+  private refreshTagFilterRows(): void {
+    if (!this.isTagFiltering() || this.vaultId.length === 0) {
+      this.applyFilterRows([]);
+      return;
+    }
+    const seq: number = ++this.filterLoadSeq;
+    const registry: VaultRegistry = VaultRegistry.get();
+    FullTextSearchService.pathsForTag(registry, this.vaultId, this.tagFilter.toLowerCase())
+      .then((paths: string[]): void => {
+        if (seq !== this.filterLoadSeq) {
+          return;
+        }
+        let allNotes: string[] = [];
+        try {
+          const access: VaultAccess = registry.accessFor(this.vaultId);
+          allNotes = FileTree.notesOfEntries(access.snapshot());
+        } catch (error) {
+          allNotes = [];
+        }
+        this.applyFilterRows(FileTree.taggedNotes(allNotes, paths));
+      })
+      .catch((): void => {
+        if (seq === this.filterLoadSeq) {
+          this.applyFilterRows([]);
+        }
+      });
+  }
+
+  /** 父级切换过滤态（@Watch）：重载过滤行。 */
+  private onTagFilterChanged(): void {
+    this.refreshTagFilterRows();
+  }
+
+  /** 过滤条清除（211.1）：过滤条或「清除筛选」都走这里。 */
+  private clearTagFilter(): void {
+    this.onTagFilterChange('');
   }
 
   private isExpanded(relPath: string): boolean {
@@ -757,16 +836,28 @@ export struct FileTreeView {
       // v1.97：收藏区在置顶区之下、目录树之上（97.1 四段：置顶 → 收藏 → 全部笔记 → 树）；
       // referenceOnly（Agent 引用侧栏）保持纯树，「章节」页签由父级整树隐藏。
       Column() {
-        if (!this.referenceOnly && this.pinRows.length > 0) {
+        // v2.11 过滤态（211.1）：置顶 / 收藏区整体让位（原型 #pinFolder、
+        // #favoritesFolder display:none），宽屏保留标签分区，抽屉连标签一起收起。
+        if (!this.referenceOnly && !this.isTagFiltering() && this.pinRows.length > 0) {
           this.PinSection()
         }
-        if (!this.referenceOnly && this.favRows.length > 0) {
+        if (!this.referenceOnly && !this.isTagFiltering() && this.favRows.length > 0) {
           this.FavSection()
         }
-        if (!this.referenceOnly && (this.pinRows.length > 0 || this.favRows.length > 0)) {
+        if (this.isTagFiltering()) {
+          this.TagFilterBar()
+        }
+        if (!this.referenceOnly && !this.isTagFiltering() &&
+          (this.pinRows.length > 0 || this.favRows.length > 0)) {
           this.AllNotesLabel()
         }
-        if (this.nodes.length === 0) {
+        if (this.isTagFiltering()) {
+          if (this.filterRows.length === 0) {
+            this.TagFilterEmpty()
+          } else {
+            this.TagFilterList()
+          }
+        } else if (this.nodes.length === 0) {
           this.EmptyHint()
         } else {
           this.TreeList()
@@ -777,25 +868,28 @@ export struct FileTreeView {
 
       if (!this.referenceOnly) {
         Column() {
-          Text('左滑操作 · 拖动移动或打开')
-            .fontSize(FontSize.caption)
-            .fontColor($r('app.color.text_tertiary'))
-            .width('100%')
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .padding({ top: Space.s2, left: Space.s2, right: Space.s2, bottom: Space.s1 })
-            .onHover((isHover: boolean): void => {
-              this.helpHintOpen = isHover;
-            })
-            .accessibilityText('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开')
-            .bindPopup(this.helpHintOpen, {
-              builder: this.HelpHint(),
-              placement: Placement.Top,
-              enableArrow: false,
-              mask: false,
-              autoCancel: false,
-              popupColor: Color.Transparent
-            })
+          // v2.11 过滤态隐藏左滑提示（过滤列表行无左滑操作）；回收站保留。
+          if (!this.isTagFiltering()) {
+            Text('左滑操作 · 拖动移动或打开')
+              .fontSize(FontSize.caption)
+              .fontColor($r('app.color.text_tertiary'))
+              .width('100%')
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .padding({ top: Space.s2, left: Space.s2, right: Space.s2, bottom: Space.s1 })
+              .onHover((isHover: boolean): void => {
+                this.helpHintOpen = isHover;
+              })
+              .accessibilityText('左滑文件可操作；长按拖动笔记或文件夹移动，拖笔记到任一栏打开')
+              .bindPopup(this.helpHintOpen, {
+                builder: this.HelpHint(),
+                placement: Placement.Top,
+                enableArrow: false,
+                mask: false,
+                autoCancel: false,
+                popupColor: Color.Transparent
+              })
+          }
 
           TrashView({
             vaultId: this.vaultId,
@@ -973,6 +1067,154 @@ export struct FileTreeView {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
+  }
+
+  /**
+   * 过滤条（211.1）：`标签 [#标签] 清除筛选`，替代该位置的分段标签
+   * （原型 .tag-filter；药丸或「清除筛选」点按均退出过滤）。
+   */
+  @Builder
+  TagFilterBar() {
+    Row({ space: Space.s2 }) {
+      Text('标签')
+        .fontSize(FontSize.caption)
+        .fontWeight(FontWeight.Medium)
+        .letterSpacing(Size.pinLabelTracking)
+        .fontColor($r('app.color.text_tertiary'))
+      Row() {
+        Text('#' + this.tagFilter)
+          .fontSize(FontSize.body2)
+          .fontWeight(Weight.medium)
+          .fontColor($r('app.color.brand'))
+          .maxLines(1)
+      }
+      .constraintSize({ minHeight: Size.touch })
+      .padding({ left: Space.s2, right: Space.s2 })
+      .borderRadius(Radius.full)
+      .backgroundColor($r('app.color.brand_bg'))
+      .alignItems(VerticalAlign.Center)
+      .onClick((): void => { this.clearTagFilter(); })
+      .focusable(true)
+      .accessibilityText('当前筛选标签：#' + this.tagFilter + '，点按清除筛选')
+
+      Row() {
+        Text('清除筛选')
+          .fontSize(FontSize.caption)
+          .fontColor($r('app.color.text_tertiary'))
+          .letterSpacing(Size.pinLabelTracking)
+      }
+      .constraintSize({ minHeight: Size.touch })
+      .padding({ left: Space.s1, right: Space.s1 })
+      .alignItems(VerticalAlign.Center)
+      .onClick((): void => { this.clearTagFilter(); })
+      .focusable(true)
+      .accessibilityText('清除标签筛选')
+    }
+    .width('100%')
+    .padding({ left: Space.s4, right: Space.s2, top: Space.s2, bottom: Space.s1 })
+    .alignItems(VerticalAlign.Center)
+    .accessibilityText('已按标签「#' + this.tagFilter + '」筛选笔记列表')
+  }
+
+  /** 过滤空态（211.5）：无命中笔记时的提示文案。 */
+  @Builder
+  TagFilterEmpty() {
+    Column() {
+      Text('没有带「#' + this.tagFilter + '」的笔记')
+        .fontSize(FontSize.body2)
+        .fontColor($r('app.color.text_tertiary'))
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  /**
+   * 过滤列表（211.2）：命中笔记的独立懒加载列表（键空间 `tagfilter-`）。
+   * 底部让位 / 安全区扩展与主树同款（57.7）。
+   */
+  @Builder
+  TagFilterList() {
+    List() {
+      LazyForEach(this.filterSource, (row: PinnedNote) => {
+        ListItem() {
+          this.TagFilterRow(row)
+        }
+        .width('100%')
+        .padding({ right: Space.s2 })
+      }, (row: PinnedNote): string => {
+        return 'tagfilter-' + row.relPath +
+          (row.relPath === this.currentFilePath ? '|cur' : '|u');
+      })
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .padding({ left: Space.s4, bottom: this.treeBottomClearanceVp() })
+    .scrollBar(BarState.Auto)
+    .cachedCount(10)
+    .backgroundColor($r('app.color.bg_navigation'))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+  }
+
+  /**
+   * 过滤列表行（211.4）：与 SectionRow 同构（首字色块 + 标题 + 行尾文件夹），
+   * 但不写两套复用它——本行无左滑、无悬停取消按钮，行尾文件夹常显，
+   * 当前笔记标题高亮（原型过滤分支行规格）。
+   */
+  @Builder
+  TagFilterRow(row: PinnedNote) {
+    Row() {
+      Row({ space: Space.s2 }) {
+        Row() {
+          Text(row.initial)
+            .fontSize(FontSize.caption)
+            .fontWeight(Weight.semibold)
+            .fontColor(this.pinToneFg(row.tone))
+            .textAlign(TextAlign.Center)
+        }
+        .width(Size.pinMonogram)
+        .height(Size.pinMonogram)
+        .borderRadius(Size.pinMonogramRadius)
+        .backgroundColor(this.pinToneBg(row.tone))
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+
+        Text(row.title)
+          .fontSize(FontSize.body2)
+          .fontWeight(row.relPath === this.currentFilePath ? FontWeight.Medium : FontWeight.Normal)
+          .fontColor(row.relPath === this.currentFilePath
+            ? $r('app.color.brand') : $r('app.color.text_primary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .layoutWeight(1)
+      }
+      .layoutWeight(1)
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: Space.s2, right: Space.s3 })
+      .hitTestBehavior(HitTestMode.None)
+
+      Text(row.folder)
+        .fontSize(FontSize.caption)
+        .fontColor($r('app.color.text_tertiary'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textAlign(TextAlign.End)
+        .width('40%')
+    }
+    .width('100%')
+    .height(Size.pinRowH)
+    .alignItems(VerticalAlign.Center)
+    .borderRadius(Radius.control)
+    .onClick((): void => {
+      if (row.relPath !== this.currentFilePath) {
+        this.onSelectFile(row.relPath);
+      }
+    })
+    .focusable(true)
+    .id('tagfilter-row-' + this.vaultId + ':' + row.relPath)
+    .accessibilityText('打开笔记：' + row.title + '，位于 ' +
+      (row.folderPath.length === 0 ? '根目录' : row.folderPath))
   }
 
   /** 置顶区可见时，目录树上方补同款分区标签（62.1）。 */

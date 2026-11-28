@@ -215,7 +215,9 @@ test('源级：置顶区与树同源一次 snapshot，行键独立、折叠按�
 });
 
 test('源级：分区标签与行形态（置顶 / 全部笔记 / 首字色块 / 只对当前笔记变品牌色）', () => {
-  assert.match(fileTreeViewSource, /!this\.referenceOnly && this\.pinRows\.length > 0/);
+  // v2.11 过滤态（211.1）：置顶 / 收藏区整体让位，条件带 !isTagFiltering()
+  assert.match(fileTreeViewSource,
+    /!this\.referenceOnly && !this\.isTagFiltering\(\) && this\.pinRows\.length > 0/);
   assert.match(fileTreeViewSource, /this\.PinSection\(\)/);
   assert.match(fileTreeViewSource, /this\.AllNotesLabel\(\)/);
   assert.match(fileTreeViewSource, /Text\('置顶'\)/);
@@ -250,8 +252,10 @@ test('源级：取消置顶双入口与 toast（不复用树行删除手势）',
   assert.match(fileTreeViewSource, /取消置顶：/);
 });
 
-test('源级：树内入口与 pin 标记沿用 v1.50（LazyForEach 键含置顶态）', () => {
-  assert.match(fileTreeViewSource, /this\.isPinned\(n\.relPath\) \? '已置顶' : '置顶'/);
+test('源级：树内入口与 pin 标记沿用 v1.50 / v2.3 图标化（LazyForEach 键含置顶态）', () => {
+  // v2.3：左滑操作条 pin/pinOff 图标化（图标名字面量分支 Z2/L-7），读屏名区分置顶态
+  assert.match(fileTreeViewSource, /Icon\('pinOff', Space\.s5, \$r\('app\.color\.brand'\)\)/);
+  assert.match(fileTreeViewSource, /'取消置顶：' \+ n\.name : '置顶：' \+ n\.name/);
   assert.match(fileTreeViewSource, /this\.isPinned\(n\.relPath\) \? '取消置顶' : '置顶'/);
   assert.match(fileTreeViewSource, /if \(action === 'pin'\) \{/);
   assert.match(fileTreeViewSource, /Icon\('pin', 12, \$r\('app\.color\.text_tertiary'\)\)/);

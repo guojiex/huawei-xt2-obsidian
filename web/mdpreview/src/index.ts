@@ -72,6 +72,7 @@ declare global {
       onCodeBlockCopyFailed?: () => void
       onSimpleFormatUnsupported?: () => void
       onSimpleTextFocusChange?: (focused: boolean) => void
+      onNoteTagClick?: (tagB64: string) => void
     }
   }
 }
@@ -846,7 +847,7 @@ function containsLockedSyntax(block: HTMLElement): boolean {
   const raw = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from
     ? sourceText.slice(from, to) : ''
   return block.textContent?.includes('[[') === true ||
-    block.querySelector('a, img, code, pre, details, .callout, .math-error, .mermaid-block') !== null ||
+    block.querySelector('a, img, code, pre, details, .callout, .math-error, .mermaid-block, .note-tag') !== null ||
     /%%|\[\^[^\]]+\]|==|\$\$|(?:^|\s)\^[\w-]+\s*$|^\s*:{3,}/m.test(raw)
 }
 

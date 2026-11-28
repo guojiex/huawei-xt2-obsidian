@@ -164,6 +164,46 @@ export class FileTree {
     return out;
   }
 
+  /**
+   * 标签过滤行（v2.11 · 211.4）：由 `pathsForTag` 命中路径与全量笔记路径解析。
+   * - 排序按「文件夹完整路径 + 标题」zh localeCompare（对齐原型过滤分支 renderTree），
+   *   平局按 relPath 兜底稳定；
+   * - 路径不在当前库全量笔记里（删除 / 移动后索引尚未同步的瞬态）自动跳过，
+   *   与置顶区陈旧条目口径一致（不自动清理上游数据）；
+   * - 行结构与 pinnedNotes 同构（复用 PinnedNote），纯逻辑可在 Node 单测里跑。
+   */
+  static taggedNotes(allNotes: string[], paths: string[]): PinnedNote[] {
+    const out: PinnedNote[] = [];
+    const seen: Map<string, boolean> = new Map<string, boolean>();
+    for (let i = 0; i < paths.length; i++) {
+      const relPath: string = paths[i];
+      if (relPath.length === 0 || seen.has(relPath) || allNotes.indexOf(relPath) < 0) {
+        continue;
+      }
+      seen.set(relPath, true);
+      const title: string = FileTree.noteTitleOf(FileTree.lastSegment(relPath));
+      const folderPath: string = FileTree.parentOf(relPath);
+      out.push({
+        relPath: relPath,
+        title: title,
+        folder: folderPath.length === 0 ? '根目录' : FileTree.lastSegment(folderPath),
+        folderPath: folderPath,
+        initial: FileTree.initialOf(title),
+        tone: FileTree.toneOf(folderPath)
+      });
+    }
+    out.sort((a: PinnedNote, b: PinnedNote): number => {
+      const byFolderTitle: number =
+        ((a.folderPath.length > 0 ? a.folderPath + '/' : '') + a.title)
+          .localeCompare((b.folderPath.length > 0 ? b.folderPath + '/' : '') + b.title, 'zh');
+      if (byFolderTitle !== 0) {
+        return byFolderTitle;
+      }
+      return a.relPath < b.relPath ? -1 : (a.relPath > b.relPath ? 1 : 0);
+    });
+    return out;
+  }
+
   /** 与 NoteDisplayName 同口径：剥一层 .markdown / .md，大小写不敏感。 */
   private static noteTitleOf(fileName: string): string {
     const lower: string = fileName.toLowerCase();

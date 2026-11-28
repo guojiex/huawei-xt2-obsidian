@@ -24,7 +24,8 @@ test('v2 files panel hosts a collapsible favorites section mirroring the trash f
   assert.ok(html.includes('<div class="tree-section-label" aria-hidden="true">全部笔记</div>'));
   assert.match(html, /aria-label="收藏的笔记" class="fav-list" id="favList"/);
   // v1.62 同框：置顶区在收藏区上方；「全部笔记」标签只在两区都隐藏时才隐藏。
-  assert.match(html, /#pinFolder\.hidden~#favoritesFolder\.hidden\+\.tree-section-label\{display:none\}/);
+  // v2.11 改稿二：tagsFolder 移出 filesPanel 后，该兄弟选择器不得误伤过滤条（:not(.tag-filter) 守护）。
+  assert.match(html, /#pinFolder\.hidden~#favoritesFolder\.hidden\+\.tree-section-label:not\(\.tag-filter\)\{display:none\}/);
   assert.ok(html.indexOf('id="pinFolder"') < html.indexOf('id="favoritesFolder"'));
 });
 

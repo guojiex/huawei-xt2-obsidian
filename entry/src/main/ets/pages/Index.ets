@@ -123,7 +123,7 @@ import { ShareArchiveService } from '../model/ShareArchiveService';
 import { FullTextSearchService } from '../model/FullTextSearchService';
 import { ApplicationBackupOutcome, ApplicationBackupService } from '../model/ApplicationBackupService';
 import { AgentConfigStore } from '../model/AgentConfigStore';
-import { SearchOutcome } from '../model/SearchStore';
+import { SearchOutcome, TagCountRow } from '../model/SearchStore';
 import { CrossVaultSearchOutcome, CrossVaultSearchService } from '../model/CrossVaultSearchService';
 import {
   ExternalDirectoryGrant,
@@ -575,6 +575,20 @@ struct Index {
    * （没有文件监听），用显式信号换确定性和简单性。
    */
   @State treeSeq: number = 0;
+  /**
+   * v2.11 标签过滤态（211.6）：当前筛选标签的书写形式，单一真源在页面（本字段），
+   * FileTreeView 经 @Prop 镜像、切换回调上报回这里。会话内存态：不持久化、
+   * 切库清空；标签值是笔记内容，不进日志/埋点（硬约束 16）。
+   */
+  @State activeTagFilter: string = '';
+  /**
+   * v2.11 标签页签数据（211.3 改稿二）：tagCounts 由本页统一查询（noteCount
+   * 降序 + tag zh 升序）经 VaultSidebar 传入标签面板，FileTreeView 不再持有
+   * 标签聚合数据。标签值不进日志/埋点（硬约束 16）。
+   */
+  @State tagRows: TagCountRow[] = [];
+  /** v2.11 标签聚合异步防串号：切库后旧请求结果丢弃。 */
+  private tagLoadSeq: number = 0;
   /**
    * 需要树展开到可见的目标路径。建完笔记置位 → 树展开它的父目录 → 立刻看得见。
    */
@@ -2079,6 +2093,8 @@ struct Index {
     this.currentVaultId = reg.currentId();
     this.refreshCurrentVaultNoteCount();
     void this.refreshGitAheadCommitCount();
+    // v2.11：启动 / 切库 / 库列表变化时重载标签页签数据（211.3 改稿二）。
+    this.refreshTagRows();
     if (this.topView === 'vaults') {
       this.refreshVaultManagerShareSummaries();
     }
@@ -2160,6 +2176,8 @@ struct Index {
   private refreshFileTree(): void {
     this.refreshCurrentVaultNoteCount();
     this.treeSeq++;
+    // v2.11：笔记内容变化连带重载标签页签数据（211.3 改稿二上提）。
+    this.refreshTagRows();
     void this.refreshBacklinks();
     void this.refreshActiveChaptersFromBridge();
   }
@@ -3597,7 +3615,9 @@ struct Index {
   }
 
   private setSidebarTab(tab: string): void {
-    this.sidebarTab = tab === 'chapters' ? 'chapters' : 'files';
+    // v2.11：三值页签（文件 / 标签 / 章节，211.3 改稿二），未知值回落文件。
+    this.sidebarTab = tab === 'chapters' ? 'chapters'
+      : (tab === 'tags' ? 'tags' : 'files');
     this.scheduleWorkspaceSessionSave();
   }
 
@@ -5985,6 +6005,112 @@ struct Index {
     }
   }
 
+  /**
+   * v2.11 标签过滤态唯一写入口（211.6）：侧栏药丸 / 过滤条 / 预览 chip 都经
+   * 回调改这里，FileTreeView 经 @Prop 镜像。会话内存态，不进工作区快照。
+   */
+  private setTagFilter(tag: string): void {
+    this.activeTagFilter = tag;
+  }
+
+  /**
+   * v2.11 标签页签数据加载（211.3 改稿二）：tagCounts 聚合（内部与正文搜索同款
+   * ensure 流程）→ noteCount 降序、tag zh 升序。聚合里查不到过滤中的标签 =
+   * 已被删光 / 改写：防御性退出过滤回完整树（211.6）。失败 / 空集 = 空态文案，
+   * 不阻塞文件树与搜索既有行为。标签值不进日志（硬约束 16）。
+   */
+  private refreshTagRows(): void {
+    const vaultId: string = this.currentVaultId;
+    if (vaultId.length === 0) {
+      this.tagRows = [];
+      return;
+    }
+    const seq: number = ++this.tagLoadSeq;
+    const registry: VaultRegistry = VaultRegistry.get();
+    FullTextSearchService.tagCounts(registry, vaultId)
+      .then((rows: TagCountRow[]): void => {
+        if (seq !== this.tagLoadSeq || vaultId !== this.currentVaultId) {
+          return; // 异步期间已切库 / 已重扫：丢弃本次结果
+        }
+        const sorted: TagCountRow[] = [];
+        for (let i = 0; i < rows.length; i++) {
+          sorted.push(rows[i]);
+        }
+        sorted.sort((a: TagCountRow, b: TagCountRow): number => {
+          if (a.noteCount !== b.noteCount) {
+            return a.noteCount > b.noteCount ? -1 : 1;
+          }
+          const byName: number = a.tag.localeCompare(b.tag, 'zh');
+          if (byName !== 0) {
+            return byName;
+          }
+          return a.tagKey < b.tagKey ? -1 : 1;
+        });
+        this.tagRows = sorted;
+        if (this.activeTagFilter.length > 0) {
+          const key: string = this.activeTagFilter.toLowerCase();
+          let found: boolean = false;
+          for (let i = 0; i < sorted.length; i++) {
+            if (sorted[i].tagKey === key) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            // 过滤中的标签被删光 / 索引暂不可用：退出过滤回完整树（211.6 防御）。
+            this.setTagFilter('');
+          }
+        }
+      })
+      .catch((): void => {
+        if (seq === this.tagLoadSeq && vaultId === this.currentVaultId) {
+          this.tagRows = [];
+        }
+      });
+  }
+
+  /**
+   * 预览标签 chip 点击（v2.11 · 211.4）：按小写匹配当前库标签聚合，命中取书写
+   * 形置过滤并导航到文件页签；未命中静默忽略。导航链：退专注 → 文件页签 →
+   * 单屏开抽屉 → 置过滤。标签值不进日志/埋点（硬约束 16）。
+   */
+  private handleNoteTagClick(tag: string): void {
+    const vaultId: string = this.currentVaultId;
+    if (tag.length === 0 || vaultId.length === 0) {
+      return;
+    }
+    const registry: VaultRegistry = VaultRegistry.get();
+    FullTextSearchService.tagCounts(registry, vaultId)
+      .then((rows: TagCountRow[]): void => {
+        if (vaultId !== this.currentVaultId) {
+          return; // 异步期间已切库：丢弃本次结果
+        }
+        const key: string = tag.toLowerCase();
+        let matched: string = '';
+        for (let i = 0; i < rows.length; i++) {
+          if (rows[i].tagKey === key) {
+            matched = rows[i].tag;
+            break;
+          }
+        }
+        if (matched.length === 0) {
+          return; // 未命中当前库标签集合：静默忽略（211.4）
+        }
+        if (this.focused) {
+          this.focused = false;
+          this.focusNavigationOpen = false;
+          this.moreMenuOpen = false;
+          this.scheduleWorkspaceSessionSave();
+        }
+        this.setSidebarTab('files');
+        if (this.breakpoint === Breakpoint.SM) {
+          this.setDrawerOpen(true);
+        }
+        this.setTagFilter(matched);
+      })
+      .catch((): void => {});
+  }
+
   /** 预览里点击库内普通 Markdown 链接：解析目标笔记后打开；外链/锚点不在此处理。 */
   private handleVaultLinkClick(href: string, pane: string = 'left'): void {
     const vaultId: string = this.currentVaultId;
@@ -6288,6 +6414,8 @@ struct Index {
       this.quickSwitchFiles = [];
       this.noteNavStack = [];
       this.recentOpenPaths = [];
+      // v2.11：标签过滤是库内状态，切库即清（211.6），目标库不继承旧库的过滤。
+      this.activeTagFilter = '';
       this.smMode = 'edit';
       if (targetSession === null) {
         if (!await this.readAndPush('') || !await this.readRightAndPush('')) {
@@ -8755,6 +8883,8 @@ struct Index {
       refreshSeq: this.treeSeq,
       trashRefreshSeq: this.trashSeq,
       revealPath: this.revealPath,
+      tagFilter: this.activeTagFilter,
+      tagRows: this.tagRows,
       onSwitchVault: (id: string): void => {
         this.switchVaultFromNavigation(id);
       },
@@ -8817,7 +8947,8 @@ struct Index {
       onTreeDragEnd: (): void => { this.onTreeDragEnd(); },
       onDragMovePath: (relPath: string, isDir: boolean, destDir: string): void => {
         void this.doDragMovePath(relPath, isDir, destDir);
-      }
+      },
+      onTagFilterChange: (tag: string): void => { this.setTagFilter(tag); }
     })
   }
 
@@ -9243,6 +9374,7 @@ struct Index {
             },
             onWikiLinkClick: (target: string): void => { void this.handleWikiLinkClick(target, 'right'); },
             onVaultLinkClick: (href: string): void => { this.handleVaultLinkClick(href, 'right'); },
+            onNoteTagClick: (tag: string): void => { this.handleNoteTagClick(tag); },
             onEditableContentChange: (content: string): void => {
               this.handleSimplePreviewEdit('right', content);
             },
@@ -9492,6 +9624,9 @@ struct Index {
           },
           onVaultLinkClick: (href: string): void => {
             this.handleVaultLinkClick(href);
+          },
+          onNoteTagClick: (tag: string): void => {
+            this.handleNoteTagClick(tag);
           },
           onEditableContentChange: (content: string): void => {
             this.handleSimplePreviewEdit('left', content);

@@ -30,6 +30,7 @@ import {
   VaultSnapshotReport
 } from './VaultAccess';
 import { VaultEntry } from './Vault';
+import { noteTagList } from './NoteTagParser';
 import {
   contentHashOf,
   excerptOf,
@@ -42,7 +43,8 @@ import {
   SearchStore,
   SearchVaultRegistry,
   SearchVaultRow,
-  searchTitleOf
+  searchTitleOf,
+  TagCountRow
 } from './SearchStore';
 
 type ProgressListener = (completed: number, total: number) => void;
@@ -227,6 +229,80 @@ export class FullTextSearchService {
     } catch (error) {
       // 取消（删库）也走这里：调用方按请求号/跳过逻辑丢弃结果。
       return { results: [], indexState: 'error', indexComplete: false, reconciledAt: 0 };
+    }
+  }
+
+  /* --------------------------------------------------------------------- */
+  /* v2.11 标签查询（211.1 / 211.2）                                        */
+  /* --------------------------------------------------------------------- */
+
+  /**
+   * 标签药丸聚合（211.1）：与正文搜索同款「消化 pending → 确保建库/对账」流程，
+   * 之后按 tag_key 聚合取形与笔记数。任何失败一律返回空集：调用方据此隐藏标签分区，
+   * 不编造结果（RDB 不可用 / 库已删除 / 备份恢复暂停等场景同此降级）。
+   */
+  static async tagCounts(registry: SearchVaultRegistry, vaultId: string): Promise<TagCountRow[]> {
+    if (FullTextSearchService.backupRestorePaused) {
+      return [];
+    }
+    const store: SearchStore | null = FullTextSearchService.store;
+    if (store === null || FullTextSearchService.storeReady === null) {
+      return [];
+    }
+    let vaultKey: string = '';
+    try {
+      vaultKey = registry.vaultKeyOf(vaultId);
+    } catch (error) {
+      vaultKey = '';
+    }
+    if (vaultKey === '' || FullTextSearchService.discardedKeys.has(vaultKey)) {
+      return [];
+    }
+    const silentProgress: ProgressListener = (_completed: number, _total: number): void => {};
+    try {
+      await FullTextSearchService.storeReady;
+      await FullTextSearchService.drainPending(vaultKey);
+      const state: SearchVaultRow | null = await store.getVaultState(vaultKey);
+      if (state === null || !state.initialized) {
+        await FullTextSearchService.ensureBuilt(store, registry, vaultKey, vaultId, silentProgress);
+      } else if (!FullTextSearchService.reconciledKeys.has(vaultKey)) {
+        await FullTextSearchService.ensureReconciled(store, registry, vaultKey, vaultId,
+          silentProgress);
+      }
+      return await store.tagCounts(vaultKey);
+    } catch (error) {
+      // 索引只是缓存：失败返回空集，标签分区隐藏，不阻塞侧栏。
+      return [];
+    }
+  }
+
+  /**
+   * 标签过滤路径列表（211.2）：不重复建库/对账（tagCounts 已确保索引就绪），
+   * 小写 tagKey 命中；失败返回空集，调用方按「过滤无结果」处理。
+   */
+  static async pathsForTag(registry: SearchVaultRegistry, vaultId: string,
+    tagKey: string): Promise<string[]> {
+    if (FullTextSearchService.backupRestorePaused || tagKey.length === 0) {
+      return [];
+    }
+    const store: SearchStore | null = FullTextSearchService.store;
+    if (store === null || FullTextSearchService.storeReady === null) {
+      return [];
+    }
+    let vaultKey: string = '';
+    try {
+      vaultKey = registry.vaultKeyOf(vaultId);
+    } catch (error) {
+      vaultKey = '';
+    }
+    if (vaultKey === '' || FullTextSearchService.discardedKeys.has(vaultKey)) {
+      return [];
+    }
+    try {
+      await FullTextSearchService.storeReady;
+      return await store.pathsForTag(vaultKey, tagKey);
+    } catch (error) {
+      return [];
     }
   }
 
@@ -446,7 +522,8 @@ export class FullTextSearchService {
       content: content,
       size: stat.size,
       mtimeSec: stat.mtimeSec,
-      contentHash: contentHashOf(content)
+      contentHash: contentHashOf(content),
+      tags: noteTagList(content)
     };
   }
 
