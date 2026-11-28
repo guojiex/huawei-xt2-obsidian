@@ -291,6 +291,10 @@ export default class EntryAbility extends UIAbility {
   onForeground(): void {
     // Ability has brought to foreground
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onForeground');
+    // AppFreeze 缓解（2026-11-28，纯代码修复豁免）：后台时常驻 Web 调 onInactive()
+    // 退出激活态、回前台 onActive()，降低 ArkWeb 主线程动态帧率决策的暴露面。
+    // 详见 docs/harmonyos/api_notes.md（AppFreeze：ArkWeb 输入时间查询阻塞）。
+    AppStorage.setOrCreate('appInForeground', true);
     void this.restoreExternalVaultPermissions();
   }
 
@@ -319,6 +323,7 @@ export default class EntryAbility extends UIAbility {
     void AgentMemoryStore.flushPending().catch((): void => {
       hilog.error(DOMAIN, TAG, 'Agent 草稿后台保存失败；保留原会话文件');
     });
+    AppStorage.setOrCreate('appInForeground', false);
   }
 
   /**

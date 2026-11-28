@@ -552,6 +552,8 @@ export class EditorBridge {
 export struct EditorWebView {
   /** 由 EntryAbility 跟随系统颜色模式写入。 */
   @StorageProp('appTheme') @Watch('onThemeChanged') theme: string = 'light';
+  /** 前后台标记（AppFreeze 缓解，2026-11-28）：后台 → onInactive()，前台 → onActive()。 */
+  @StorageProp('appInForeground') @Watch('onAppForegroundChanged') appInForeground: boolean = true;
   @Prop @Watch('onLineNumbersChanged') showLineNumbers: boolean = false;
   @Prop @Watch('onExperienceChanged') experienceMode: string = 'simple';
   @State private pageReady: boolean = false;
@@ -608,6 +610,19 @@ export struct EditorWebView {
   onThemeChanged(): void {
     this.impl?.setTheme(this.theme);
     this.impl?.setLineNumbers(this.showLineNumbers);
+  }
+
+  /** AppFreeze 缓解：应用退后台让常驻编辑器 Web 退出激活态，回前台恢复；controller 未关联时忽略。 */
+  private onAppForegroundChanged(): void {
+    try {
+      if (this.appInForeground) {
+        this.controller.onActive();
+      } else {
+        this.controller.onInactive();
+      }
+    } catch (_error) {
+      hilog.debug(EDITOR_DOMAIN, EDITOR_TAG, '前后台激活态切换时 controller 不可用，跳过');
+    }
   }
 
   onLineNumbersChanged(): void {

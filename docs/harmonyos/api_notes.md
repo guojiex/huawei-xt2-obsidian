@@ -508,6 +508,28 @@ nativePort.onMessageEvent((result: WebMessage) => {
   见 `docs/releases/v1.93/需求文档.md` §2.1）。**不要把它当官方保证**，改动捕获层形态时
   需重测。超过 B5 的 7680px 物理像素上限仍会白屏（本工程 700vp×dpr3=2100px，安全）。
 
+### B11 ArkWeb 主线程同步输入时间查询可阻塞致 AppFreeze ⚠️（2026-11-28，x86 模拟器）
+
+- **现象**：应用闲置约 40 分钟（双常驻预览 Web 持续 vsync）后点击文件树行，出现
+  `AppFreeze`（`THREAD_BLOCK_6S`，主线程阻塞 ≥6s）。faultlog 主线程栈：
+  `libarkweb_engine.so` → `OH_Input_GetIntervalSinceLastInput`（libmmi-client/libohinput）
+  → binder 同步调用 mmi_service 不回包。应用代码不在故障链中。
+- **根因在系统侧**：ArkWeb 主线程的动态帧率决策路径同步调 MMI 查询「距上次输入的时间」，
+  binder 对端不响应即卡主线程；属 ArkWeb + 输入子系统组合缺陷，应用无法根治
+  （换 ASYNC_RENDER、改 watchdog 均不可缓解）。
+- **应用侧缓解（已落地，2026-11-28）**：`EntryAbility.onBackground` 发布
+  `AppStorage('appInForeground')=false` / `onForeground` 发布 `true`；常驻 Web 组件
+  （`PreviewWebView`、`EditorWebView`）用 `@StorageProp + @Watch` 在后台调
+  `webview.WebviewController.onInactive()`、回前台调 `onActive()`，缩小 ArkWeb
+  后台/闲置时的帧率决策暴露面。controller 未关联 Web 组件时（17100001）忽略。
+- **⚠️ 边界**：冻结触发时应用在前台，`onInactive()` 只覆盖后台暴露面，**不能保证前台
+  闲置不再冻结**——本条为缓解非根治；触发时宿主 `iowait` 46%，mmi 不回包或与宿主 IO
+  压力相关。证据：`appfreeze-com.jxg.huaweiobsidian-20020063-20261128171443294.log`
+  （x86 模拟器；其证据不外推 API 24 / XT2 真机）。根治建议向华为提单（AGC/DevEco）。
+- **onInactive/onActive 语义（官方 FAQ 核实）**：`onInactive()` 通知 Web 进入未激活态
+  （应用失焦时的恰当行为），`onActive()` 通知进入前台激活态；二者正是官方对
+  「切换可见状态出现残留帧」等场景给出的生命周期接口（API 9+，≤24 可用）。
+
 ---
 
 ## C 组：文件系统与存储
